@@ -167,7 +167,7 @@ impl Table
 
 /// Which live declaration kind a decoded segment carried.
 ///
-/// A missing body root no longer distinguishes them: an axiom and an abstract
+/// A missing body root does not distinguish them: an axiom and an abstract
 /// type both decode to a single root and no body, and conflating the two would
 /// silently turn every atom back into a hole on replay — inverting exactly the
 /// distinction sealing exists to draw.

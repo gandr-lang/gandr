@@ -14,9 +14,9 @@
 //!
 //! Two consequences ride on that one child and are stated here because every
 //! consumer inherits them: a type can carry a free de Bruijn index, so a type
-//! stored in a context is no longer closed and has to be shifted; and type
-//! conversion descends into terms, so definitional equality on types is no
-//! longer a walk over types alone.
+//! stored in a context is open and has to be shifted; and type conversion
+//! descends into terms, so definitional equality on types is more than a walk
+//! over types.
 //!
 //! # Two arrows, and why the dependent one is its own node
 //!

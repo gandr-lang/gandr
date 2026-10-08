@@ -19,12 +19,10 @@ use crate::wire::WireTag;
 /// A reserved declaration kind: a shape the encoder never emits and the decoder
 /// refuses distinctly.
 ///
-/// The four kinds a module layer would export were reserved together so that a
-/// later decision to graduate one of them into the kernel never renumbers a
-/// shipped format. The abstract-type kind is no longer among them — it is live,
-/// written and decoded like a definition — and its variant is gone rather than
-/// retained unused, because a vocabulary of reserved kinds that lists a live
-/// one misdescribes what the decoder does.
+/// The kinds a module layer would export are reserved together, so graduating
+/// one of them into the kernel never renumbers a shipped format. A live kind,
+/// such as the abstract type, is written and decoded like a definition and has
+/// no variant here: this vocabulary lists only kinds the decoder refuses.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ReservedKind
 {

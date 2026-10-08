@@ -27,10 +27,10 @@
 //! a field makes an older reader parse successfully and *wrongly*, which is the
 //! failure the version field exists to prevent and the only one it can prevent.
 //!
-//! # The settled numbering above the frozen block
+//! # The numbering above the frozen block
 //!
-//! Two claims on the numbering are settled together rather than discovered at a
-//! merge, and the settlement is what the dependent former is written against.
+//! The numbering above the frozen block is settled in one table, and the
+//! dependent former's tag is assigned against it.
 //!
 //! | region        | tags        | holds                                                                |
 //! | ------------- | ----------- | -------------------------------------------------------------------- |
@@ -241,9 +241,9 @@ impl From<TokenCount> for u8
 /// The alias criterion is the conservative rule: a tag is an alias only when
 /// its payload has one constructor and a finite static token bound. The
 /// threshold alternative admits a bounded multi-constructor payload when its
-/// duplication bound fits a threshold a later storage rung would choose;
-/// recording the verdict symbolically is what lets that rung choose without
-/// reopening this table.
+/// duplication bound fits a threshold the storage tier chooses; recording the
+/// verdict symbolically lets the storage tier choose without reopening this
+/// table.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum NodeTagVerdict
 {
@@ -261,7 +261,7 @@ pub enum NodeTagVerdict
 ///   of child references the encoder emits after the inline payload, which the
 ///   arena's own child relation is differentially compared against; and the two
 ///   verdicts record the two storage classifications.
-/// - provides: the const protocol input a later storage rung reads, without
+/// - provides: the const protocol input the storage tier reads, without
 ///   altering a single artifact byte. Table-wide protocol agreement stays
 ///   prose: a data-item `#[spec]` does not check const construction or compare
 ///   encoder and arena observations.
@@ -337,8 +337,8 @@ const fn bounded_alias(
 
 /// The complete node-tag vocabulary and its storage-boundary analysis.
 ///
-/// This table is documentation and a const protocol input for later storage
-/// work; it alters no artifact byte. Its arities are pinned against the arena's
+/// This table is documentation and a const protocol input for the storage
+/// tier; it alters no artifact byte. Its arities are pinned against the arena's
 /// own child relation, and its rows are pinned against the encoder's wire
 /// images by the round-trip suites, so a row that drifts from the code is a
 /// test failure rather than a comment that quietly went stale.

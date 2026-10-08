@@ -27,9 +27,8 @@
 //! billion-laughs attack from memory to consumer time, so an artifact's
 //! expanded work is bounded before anything downstream sees it.
 //!
-//! Choosing owned trees would have foreclosed the format decision it was
-//! supposed to be independent of. That is the whole coupling, and it is why the
-//! four are one page rather than four.
+//! Owned trees would foreclose the format decision they look independent of.
+//! That coupling is why the four are decided together.
 //!
 //! # Canonical form is enforced by re-encoding
 //!
@@ -37,12 +36,11 @@
 //! is a whole-artifact re-encode-compare on the reading side, and the
 //! maximal-sharing encoder *is* the re-encoder — so a redundant duplicate
 //! entry, a mis-ordered table and a dead entry are all caught by one mechanism
-//! that needed no second implementation. The re-encoder is itself
-//! sharing-aware, which is the sharpening not to miss: a tree-walking
-//! re-encoder would make the canonical check an amplification vector rather
-//! than a defence.
+//! that needs no second implementation. The re-encoder is itself sharing-aware:
+//! a tree-walking re-encoder would make the canonical check an amplification
+//! vector rather than a defence.
 //!
-//! # What this crate refuses to hold
+//! # Sharing and compression
 //!
 //! No interning table and no content-keyed memo of *values* belongs here or
 //! anywhere the kernel can reach. Sharing is **preserved** by the kernel and
@@ -52,8 +50,7 @@
 //! and transport concern; the canonical bytes remain the bytes, and no codec
 //! belongs inside a reader whose rejection vocabulary has to stay clean.
 //!
-//! The named ideas, the crate's status, and its plan-milestone mapping are in
-//! this crate's `README.md`.
+//! The papers the crate draws on are in its `README.md`, § References.
 
 #![no_std]
 

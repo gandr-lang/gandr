@@ -1,76 +1,55 @@
 # gandr-kernel-term
 
-The kernel's term arena and sharing format: a flat, id-addressed arena with constructor-only minting and an admission watermark, the unified subterm-table encoding over it, canonical decode with a sharing-aware re-encoder, and the decode-time budgets that stop a small artifact from costing an unbounded amount of downstream work.
+The kernel's term arena and sharing format: a flat, id-addressed arena, the unified subterm-table encoding over it, canonical decode, and the decode-time budgets that bound the work a small artifact can cost.
 
-It holds **representation and bytes only** — no checker, no conversion, no environment, no admission choke point. It is `no_std` over `core` and `alloc` and depends on `gandr-kernel-strata` alone, which is the shape of the trusted base's dependency wall.
+<!-- toc -->
 
-## Plan-milestone mapping
+- [Synopsis](#synopsis)
+- [References](#references)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Canonical form by re-encoding](#canonical-form-by-re-encoding)
+- [Amplification budgets](#amplification-budgets)
+- [Admission watermark](#admission-watermark)
+- [Rejection vocabulary](#rejection-vocabulary)
+- [Tag numbering and versioning](#tag-numbering-and-versioning)
+- [Sharing and compression](#sharing-and-compression)
+- [Contract attributes](#contract-attributes)
+- [License](#license)
 
-This crate is the second half of the `kernel-term` milestone of the ratified normalizer-and-elaborator plan, its milestones module; the first half is `gandr-kernel-strata`, which landed before it. The milestone's scope maps onto the modules one to one:
+<!-- tocstop -->
 
-| plan clause | where it lives |
-| ----------- | -------------- |
-| the arena with constructor-only minting and the admission watermark | `src/arena.rs` |
-| the four typed id families | `src/arena.rs`, over the node vocabularies in `src/term.rs` and `src/types.rs` |
-| the tag table as a const protocol input | `src/tags.rs` |
-| canonical encode, with the sharing-aware re-encoder | `src/encode.rs` |
-| canonical decode and its rejection vocabulary | `src/decode.rs`, `src/error.rs` |
-| the four amplification budgets in one forward scan | `src/budget.rs`, scanned in `src/decode.rs` |
+## Synopsis
 
-Ref: 01a051fd-253b-7dbc-8cb8-d880c051ad15
+**What.** `TermArena` holds the kernel's terms and types in four typed id families: values, computations, value types and computation types. `encode` writes an arena and a sequence of marked declarations as one canonical artifact; `decode` reads an artifact back into a fresh arena, refusing anything malformed, non-canonical or over budget with a typed `DecodeError`. The crate holds representation and bytes only: the checker, conversion, the environment and the admission choke point live in `gandr-kernel-core` and consume this vocabulary. It is `no_std` over `core` and `alloc` and depends on `gandr-kernel-strata` alone among workspace crates.
 
-The design page of record for the whole cluster governs where the plan defers to it: the arena and its four id families, the unified maximally-shared subterm table, the frozen tag block, the four budget constants and their floor argument, the canonical-form conditions, and the version-refusal posture are all that page's decisions.
+**Why.** A kernel that checks large proofs needs shared subterms to stay shared from the bytes to the checker, or every reference to a shared subterm costs its full size again. Retaining that sharing is also an attack surface: a small artifact can name a DAG whose tree-expanded size is astronomical, so a reader must bound expanded work before anything downstream sees the artifact, without trusting the writer.
 
-Ref: 01a051fd-25fd-7f24-a5d4-a72eca18a687
+**How.** Four decisions interlock. The representation is an arena of `Copy` ids, so a graph of shared ids is representable at all and teardown is a flat vector drop rather than a recursion over term depth. The format is one per-artifact tagged subterm table over all four families in a single index space, maximally shared under structural equality, declaration-segmented, with children referenced only by strictly earlier index in post-order first-completion order. Decode retains sharing, which the arena makes possible: a table entry is an arena id, and decode is arena construction. Because decode retains sharing, a single forward scan over memoized saturating sizes bounds the expanded work before any consumer runs. Owned trees would foreclose the format, which is why the four are decided together.
 
-The milestone's acceptance is the rejection suite, and it is complete: `tests/sharing_format.rs` carries the sharing round trip with sharing asserted at the shared nodes, the sharing determinism over two differently shared equal inputs, the four canonical-form refusals, the two amplification goldens, the boundary goldens derived from the constants, and the version refusal; `tests/adversarial_depth.rs` carries the teardown witness inside a small-stack thread.
+## References
 
-## Status
+- Simon L. Peyton Jones. _The Implementation of Functional Programming Languages_. Prentice Hall, 1987. `isbn:978-0134533339` — the graph representation and maximal sharing this format's stored plane realizes statically.
+- Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility Checker." _Proceedings of the ACM on Programming Languages_ 10 (POPL), Article 53, January 2026. `doi:10.1145/3776695` — §6.4 builds the hash-consed subterm DAG as a pre-pass; this format hands a consumer that DAG already built, so transcription is a pass over a table.
 
-Split out of the pre-reboot prototype's `kernel-core`, which held the whole trusted base in one crate, and revised against the reboot constraints. The split is the plan's own deviation from the standing preference for prototype crate names, and its reason is that the memo's support type and the conversion trace's identifier type both need the term vocabulary without needing a checker — so the arena, the format and the amplification defence land under the type-plane gate before any checking code exists.
+## Provided features
 
-The revisions, all constraint-driven:
+- **A flat arena in four typed id families** (`ValueId`, `ComputationId`, `ValueTypeId`, `CompTypeId`) where a node's children are `Copy` ids. Ids are minted only by constructors over already-allocated children, so a child id is always strictly less than its parent's and a dangling id is impossible within an arena. Derived equality, hashing and debug output are shallow.
+- **The admission watermark** (`ArenaWatermark`): a snapshot of the four family lengths, truncation back to one, and the clamp a rollback needs when staging order differs from admission order. `DeclarationBuilder` ties content minting to it.
+- **The unified subterm table**: `encode` and `decode` over `EncodedArtifact` and `ArtifactImage`, with `DecodedArtifact` holding the arena and its `MarkedDeclaration` sequence. Polarity is recoverable from the tag alone, so a child slot's requirement is a table lookup.
+- **Canonical form enforced by re-encoding**, described in [Canonical form by re-encoding](#canonical-form-by-re-encoding).
+- **The amplification defence**: `MAX_TABLE_ENTRIES`, `MAX_EXPANDED_TERM_WORK`, `MAX_ARTIFACT_EXPANDED_WORK` and `MAX_DECODED_LEVEL_OFFSET`, enforced during decode, and `DecodeMetrics`, the deterministic measurements the same scan yields for a caller to record.
+- **The node-tag table** (`NODE_TAG_TABLE`): a const protocol input with one row per frozen tag, giving its child arity, its token bound and its two storage-boundary verdicts. A differential pins its arities against the arena's own child relation.
 
-- **The format plane is separated from the export path.** The prototype's writer and reader took an `Environment` and replayed declarations through the admission choke point. Here the encoder takes an arena and a marked declaration sequence, and the decoder returns one; the environment, admission and replay belong to `kernel-core` and consume this surface rather than living inside it.
-- **No bare primitives at a signature.** The prototype's wire constants, budget constants and tag-table fields were bare `u8`, `u64` and `usize`. Every one now crosses a nominal boundary — `WireTag`, `ExpandedWork`, `TableEntryCount`, `GlobalIndex`, `LevelAtomOffset`, `ChildArity`, `TokenCount`, `FormatVersion` — and a signature reaches a primitive nowhere, the test suites included.
-- **A declaration no longer carries a watermark it cannot use.** The prototype stored each declaration's content-start mark on the declaration itself, which a decoded declaration cannot meaningfully hold, since decode builds one table for the whole artifact. The builder still records the mark and still rolls the arena back when it is abandoned; a choke point takes its own mark.
-- **The reserved-slot vocabulary says what it means.** The prototype refused a refuted minted-atom table under a variant whose name and message said the slot was "non-empty at v0", which described neither the version nor the failure. The slot family now states that one of its members is live and refuted rather than merely required to be empty.
-- **References resolve away from their original artifact.** Bare letter-number invariant labels, section numbers and tracker identifiers are gone; where a claim needs a source, it is stated in full at the point of use.
+## Expected features
 
-Everything already conformant in the prototype is preserved: no recursion of any kind, transparent newtype wrappers, no `as` casts, checked or saturating arithmetic throughout, typed errors with no `unwrap`, `expect` or `panic` outside tests, and constructor-only minting so a dangling id is impossible within an arena.
+- **Admission by the consumer.** Decoding checks format, canonicality and budgets, never typing. A decoded declaration is trusted only after an admission choke point (`gandr-kernel-core`) re-checks it.
+- **`--cfg anodized_panic` for enforcement.** Built with this `cfg` across the whole dependency graph, the `#[spec]` attributes check their clauses at runtime and panic on a violation. The enforcing test lane sets it.
 
-## What it provides
+## Examples
 
-- **A flat arena in four typed id families** — values, computations, value types and computation types — where a node's children are `Copy` ids rather than owned pointers. Teardown is a flat vector drop and the derived equality, hashing and debug instances are shallow, which is what retires the hand-written iterative destructor an owned-tree representation needs. Ids are minted only by constructors over already-allocated children, so a child id is always strictly less than its parent's.
-- **The admission watermark**: a snapshot of the four family lengths, a truncation back to one, and the clamp a rollback needs when staging order is not admission order. A declaration builder ties content minting to it, so an abandoned build rolls back structurally rather than by remembering to.
-- **The unified subterm table**: one per-artifact tagged table over all four families in a single index space, maximally shared under structural equality, declaration-segmented, with children referenced only by strictly earlier index in post-order first-completion order. Polarity is recoverable from the tag alone, so a child slot's requirement is a table lookup.
-- **Canonical form enforced by re-encoding.** The encoder is untrusted and feeds no judgement; what enforces canonical form is a whole-artifact re-encode-compare on the reading side, and the maximal-sharing encoder _is_ the re-encoder. That one mechanism catches a redundant duplicate entry, a mis-ordered table and a dead entry. The re-encoder is itself sharing-aware, without which the canonical check would be an amplification vector rather than a defence.
-- **The amplification defence**: the entry cap enforced as entries accrue, the per-declaration and artifact-total expanded-work caps off one forward scan of memoized saturating sizes, and the level-offset cap at the level decoder. The same scan yields deterministic metrics a caller can record as telemetry.
-- **The node-tag table as a const protocol input**: one row per frozen tag with its child arity and its two storage-boundary verdicts, pinned against the arena's own child relation by a differential rather than by a comment.
-
-## The contract attributes
-
-The `# Specification` prose stays the statement of record; a combined `#[spec(...)]` attribute mirrors it where the clause is a cheap runtime predicate. Six items carry one:
-
-- `check_budget` — acceptance exactly when both expanded-work caps hold, stated as one conjunction against the body's two sequential guards, at the point where the amplification defence binds;
-- `EncodedArtifact::put_uvarint` and `ArtifactImage::span` — the terminator half of varint minimality, and the in-bounds condition of every adversarial read;
-- `LevelSignature::new`, `DeclarationBuilder::sealed_def` and `DeclarationBuilder::abstract_type` — each pinning the content variant and the slot arity its finisher promises, which is what separates four adjacent finishers that differ only in a variant.
-
-Two do not, and say so at the site. `TermArena::truncate_to` is the sharper refusal: `self.watermark() == watermark` is exactly the postcondition _under the precondition_, but the `- fails:` clause admits a stale watermark past the end as a documented no-op, so the predicate would turn that no-op into a panic. `TermArena::children_of` is skipped because the "strictly less than the node's own id" half is only defined within one family, and because it is the edge relation every walk over the arena runs.
-
-`anodized` supplies core-only specification helpers with default features disabled. The enforcing test lane selects `--cfg anodized_panic` for the whole dependency graph; no logic/BigInt dependency is enabled.
-
-## Not provided
-
-No interning table, no content-keyed memo of values, and no sharing-creating pass: sharing is preserved by the kernel and never created, so what a decode hands over is the sharing a consumer sees, and id equality is a positive-only fast path deciding reflexive pairs alone. Compression lives outside the format — the canonical bytes remain the bytes, and a codec inside a reader would muddy a rejection vocabulary that has to stay clean.
-
-Two capabilities a consumer will want are deliberately left to the crate that needs them rather than speculated here: grafting a decoded sub-DAG into another arena, which the admission path needs and this crate has no caller for, and the per-declaration byte-segment offsets an outer content-addressed layer would chunk on. The bytes are already declaration-segmented and self-delimiting; only the projection is absent.
-
-The tag space above the frozen block is settled in one pass rather than claim by claim. The frozen block runs contiguously from zero through the universe-decoding former's own tag; the bytes between it and `0x20` are growth room for the core vocabulary; and `0x20` through `0x27` are reserved for a stored sharing plane — one sharing former per family, so polarity stays recoverable from the tag alone, plus held room for an explicit weakening form. The reserved block carries no former yet, and a decoder meeting one of its bytes refuses it by name exactly as it refuses any other unassigned byte. Settling the block rather than numbering it on demand is what keeps the core vocabulary from growing into it: the core grows through the growth room and resumes above the block.
-
-## Using it
-
-`cargo test -p gandr-kernel-term --all-targets` runs the suite. Consumers reach the crate through the kernel rather than directly.
+Consumers reach the crate through the kernel; a direct round trip builds a declaration, encodes it and decodes it.
 
 ```rust
 use gandr_kernel_term::AdmissionMark;
@@ -96,15 +75,76 @@ fn example() {
 }
 ```
 
-## Theoretical ideas relied on
+`tests/sharing_format.rs` carries the rejection suite: the sharing round trip with sharing asserted at the shared nodes, sharing determinism over two differently shared equal inputs, the canonical-form refusals, the amplification goldens, the boundary goldens derived from the constants, and the version refusal. `tests/adversarial_depth.rs` decodes and drops the deepest artifact the kernel round-trips inside a small-stack thread. Run them, then the enforcing twin:
 
-Hash-consing under structural equality as a canonical form for a stored term, which is what makes the bytes a function of the abstract environment rather than of decode history; the transactional staging overlay, where a checker's intermediates allocate past a mark and are truncated after the verdict on both verdicts alike; and the reading of a decoder's acceptance as a bounded-work guarantee, so that a defence against exponential expansion lives at an import boundary and takes no table into the trusted base.
+```sh
+cargo nextest run -p gandr-kernel-term
+RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-kernel-term
+```
 
-## Primary references
+## Canonical form by re-encoding
 
-- Simon L. Peyton Jones. _The Implementation of Functional Programming Languages_. Prentice Hall, 1987. `isbn:978-0134533339` — the graph representation and maximal sharing this format's stored plane realizes statically. Locator unverified: the ISBN identifies a printing and has not been checked against a title page.
-- Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility Checker." _Proceedings of the ACM on Programming Languages_ 10 (POPL), Article 53, January 2026. `doi:10.1145/3776695` — §6.4 builds, as a pre-pass, the hash-consed subterm DAG this format hands a consumer already built, which is why the transcription is a pass over a table rather than a pre-pass of its own.
+The encoder is untrusted and feeds no judgement. The reader enforces canonical form by re-encoding the whole decoded artifact and comparing bytes, and the maximal-sharing encoder is the re-encoder. One mechanism therefore catches a redundant duplicate entry, a mis-ordered table and a dead entry. The re-encoder is itself sharing-aware; a tree-walking re-encoder would turn the canonical check into an amplification vector.
+
+Canonical bytes are a function of the declarations' abstract content, never of how they were built or decoded, so two differently shared equal inputs encode identically.
+
+## Amplification budgets
+
+Each budget bounds one axis and is enforced where it is cheapest:
+
+| budget | axis | enforced |
+| ------ | ---- | -------- |
+| `MAX_TABLE_ENTRIES` | distinct graph nodes | as entries accrue |
+| `MAX_EXPANDED_TERM_WORK` | tree work per declaration root | on the forward scan |
+| `MAX_ARTIFACT_EXPANDED_WORK` | tree work over the whole artifact | on the same scan, one extra accumulator |
+| `MAX_DECODED_LEVEL_OFFSET` | a level atom's successor offset | at the level decoder, per atom |
+
+An entry's expanded size is one plus the saturating sum of its children's. Children are strictly earlier, so one forward scan computes every size in linear time. The artifact-total cap exists because many small declaration segments referencing one near-cap root pass the per-declaration cap individually while forcing many times its work together.
+
+The budgets bound work without touching the checker, so they stay outside the trusted base, and they are reader acceptance policy only: they change neither the wire format nor canonicality. The constants are set against the deepest artifact the kernel itself round-trips, the adversarial-depth witness, and clear it with headroom while refusing an obvious billion-laughs artifact by orders of magnitude.
+
+## Admission watermark
+
+A choke point takes an `ArenaWatermark` before staging a declaration and truncates back to it after the verdict, on rejection and on success alike. `DeclarationBuilder` records its own mark and rolls the arena back when the builder is abandoned, so an abandoned build rolls back structurally. A `Declaration` carries no watermark: decode builds one table for the whole artifact, so a decoded declaration has no meaningful content-start mark.
+
+`TermArena::truncate_to` with a stale watermark past the arena's end is a documented no-op, not a failure.
+
+## Rejection vocabulary
+
+A decode failure is a format failure and never a typing failure. `DecodeError` is a rejection triple — truncation, an unknown tag at a named `TagSite`, a violated structural invariant at a named `MalformedSite` — plus two by-name refusals for the reserved parts of the format and a version refusal that names the version it met.
+
+`ReservedKind` names the declaration kinds a module layer would export (`ModuleSig`, `ModuleDef`, `FunctorDef`); they are reserved together so graduating one into the kernel never renumbers a shipped format, and a live kind such as the abstract type has no variant. `ReservedSlot` names the slots and sections that must be empty, and the minted-atom table, the one live member, refused when the declarations decoded beside it refute it.
+
+## Tag numbering and versioning
+
+The tag space is one disjoint enumeration over the four families:
+
+| region | tags | holds |
+| ------ | ---- | ----- |
+| frozen block | `0x00–0x19` | every former this crate mints, contiguous from zero through the universe-decoding former |
+| growth room | `0x1A–0x1F` | the core vocabulary's next formers |
+| sharing block | `0x20–0x27` | a stored sharing plane: one former per family, plus four held slots for an explicit weakening form |
+
+The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core grows through the growth room and resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
+
+Assigning an unassigned tag or kind byte, or filling a reserved slot that is framed from the start, holds `FORMAT_VERSION`: the reader is a closed-vocabulary parser, so an unknown byte is a named refusal rather than a mis-parse. Reassigning a byte or changing a field's shape, order or width bumps it, because an older reader would otherwise parse successfully and wrongly.
+
+## Sharing and compression
+
+The kernel preserves sharing and never creates it. The crate has no interning table and no content-keyed memo of values; a decode hands over exactly the sharing the artifact encodes, id equality is a positive-only fast path deciding reflexive pairs, and any pass that creates sharing is elaborator-side. A decoded artifact owns its arena.
+
+Compression is a storage and transport concern. The canonical bytes are the bytes, and no codec sits inside a reader whose rejection vocabulary has to stay clean. The bytes are declaration-segmented and self-delimiting.
+
+## Contract attributes
+
+The `# Specification` prose is the statement of record; a combined `#[spec(...)]` attribute mirrors it where the clause is a cheap runtime predicate.
+
+- `check_budget` accepts exactly when both expanded-work caps hold, stated as one conjunction against the body's two sequential guards, where the amplification defence binds.
+- `EncodedArtifact::put_uvarint` states the terminator half of varint minimality, and `ArtifactImage::span` the in-bounds condition of every adversarial read.
+- `LevelSignature::new`, `DeclarationBuilder::sealed_def` and `DeclarationBuilder::abstract_type` pin the content variant and slot arity each finisher promises, which separates adjacent finishers that differ only in a variant.
+
+Two sites keep prose and say why at the site. `TermArena::truncate_to` would panic on its documented stale-watermark no-op if `self.watermark() == watermark` were asserted. `TermArena::children_of` defines "strictly less than the node's own id" only within one family, and it is the edge relation every walk over the arena runs.
 
 ## License
 
-Apache-2.0 WITH LLVM-exception.
+Apache-2.0 WITH LLVM-exception, the workspace licence; the text is at the repository root.
