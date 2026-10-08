@@ -1,54 +1,51 @@
 # gandr-kernel-strata
 
-The certified kernel's level oracle: the universe-level algebra over zero, level variables, successor and binary maximum, held in always-canonical form, with an order oracle that returns checkable evidence in both directions.
+The certified kernel's level oracle: universe levels over zero, variables, successor and binary maximum, held in canonical form, with order and entailment oracles that return checkable evidence in both directions.
 
-It holds **levels only** — no terms, no types, and not even the universe rule, which is one call into the strict-order predicate and belongs to the kernel proper. It is `no_std` over `core` and `alloc` and depends on no other crate, which is the sharpest form of the trusted base's dependency wall.
+<!-- toc -->
 
-## Status
+- [Synopsis](#synopsis)
+- [References](#references)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Evidence and its validators](#evidence-and-its-validators)
+- [The level language](#the-level-language)
+- [Contract attributes](#contract-attributes)
+- [Differential suites](#differential-suites)
+- [Relationship to `gandr-theory-orders`](#relationship-to-gandr-theory-orders)
+- [License](#license)
 
-Ported from the `kernel-strata` crate of the pre-reboot prototype and revised against the reboot constraints. The revisions, all constraint-driven:
+<!-- tocstop -->
 
-- **No owning-pointer recursion in the test generators.** The prototype's differential suites generated free level terms as a `Box`-recursive `Ast` enum. Terms are now a flat, id-addressed arena: a node vector in topological order where every child is an index into an earlier slot, with the root at the last slot. Every fold — reference evaluation, canonical-form construction, successor counting — is one forward pass over that vector rather than a traversal, so the suites carry no recursive type and no explicit frame stack. Sharing between nodes comes for free and is semantically transparent, since a shared node denotes one value.
-- **No collapsed failure modes in prefix extraction.** The prototype's witness truncation returned a bare `Option` in which "the log does not cover the goals", "a log step named an unknown clause", and "the concluded offset overflowed" were the same `None`. Each firing-log step now carries the atom its instance concluded, so truncation needs neither a clause lookup nor arithmetic: two of the three failure modes are gone by construction and the surviving `None` means exactly what the caller reports. The public derivation format is unchanged — it still records only clause and shift, because a validator recomputes the conclusion rather than trusting it.
-- **Absent variable against distinct generator.** The prototype encoded "which goal or seed this evidence names" as `Option<LevelVar>`, with `None` standing for the pinned bottom generator that carries constants. That is a semantic case, not an absence, so it is now the two-case `EvidenceSubject`. The `Option` returns that remain — `Level::offset_of`, `ModelValue::as_finite`, the two model lookups — are genuine absence and each says so in its contract.
-- **Wrapped indices in the evidence vocabulary.** A violated constraint is reported with a `ConstraintIndex` rather than a bare `usize`.
-- **Contract clauses in the fixed grammar.** The prototype carried an ad-hoc `- termination:` clause on the saturation and derivation engines and an abbreviated `- fails, panics, intension: as …` line on one method. Termination reasoning now lives in `- intension:`, which is where a promised property of how a computation proceeds belongs, and every clause is written out.
-- **References resolve away from their original artifact.** Tracker identifiers, internal design-record section numbers, and slice numbering are gone; the loop-checking results are cited by author, title, venue and DOI at the point of use.
+## Synopsis
 
-Everything already conformant in the prototype is preserved: no recursion of any kind, transparent newtype wrappers instead of bare primitives, no `as` casts, checked or saturating arithmetic throughout, typed errors with no `unwrap`/`expect`/`panic` outside tests, and evidence types whose fields are private so a witness is unforgeable outside the oracle.
+**What.** `Level` is a universe level over zero, level variables, successor and binary maximum, held in canonical form. `Level::leq_with_evidence` and `Level::lt_with_evidence` decide the order over all valuations; `LandmarkPoset::admit` admits a declared set of order constraints over level variables; `LandmarkPoset::entails_leq_with_evidence` and `entails_lt_with_evidence` decide the order under those constraints. Every decision returns checkable evidence either way. The crate holds levels only: the universe rule is one call into `Level::lt` and belongs to the kernel proper.
 
-## What it provides
+**Why.** Universe stratification keeps `U_l : U_l` underivable, and the kernel's soundness rests on the level order it consults. An oracle that returns evidence instead of a bare verdict concentrates that trust in small validators, and a wrong decision comes with evidence its validator refuses, so the decision procedure is self-incriminating under mutation. The crate is `no_std` over `core` and `alloc` and depends on no other workspace crate, the narrowest form of the trusted base's dependency wall.
 
-- The level type **is** the canonical form: a finite join of a constant part and per-variable offsets, dominated components removed and atoms keyed by variable. The smart constructors maintain it, so a non-canonical level is unrepresentable rather than merely rejected, and canonical-form identity is the level-equality oracle.
-- An order oracle deciding `l ≤ m` over all valuations by domination, returning either a witness pairing each left atom with its dominating bound or a refutation carrying a concrete counter-valuation. Both have validators, so trust concentrates in the checkers and the decision procedure is self-incriminating under mutation.
-- A landmark poset: a fixed declared set of order constraints over level variables, admitted by loop-checking as a dichotomy with evidence on each side — an admitted poset carrying an explicit homomorphism into the naturals, or a replayable pumping derivation showing none can exist.
-- Entailment under an admitted poset, again with a forward-derivation witness or a countermodel, each with its validator. With no constraints declared, entailment agrees with the free-fragment oracle on every input, which a property differential pins.
+**How.** Every level is semantically a finite join `max(c, x_1 + o_1, …, x_k + o_k)` of a constant part and per-variable offsets. With dominated components removed and atoms keyed by variable, that join is a sorted canonical form: two levels denote the same function exactly when their canonical forms are identical, so canonical-form identity is level equality, and the smart constructors make a non-canonical level unrepresentable. `l ≤ m` holds over all valuations exactly when every atom of `l` is dominated by a same-variable atom of `m` and `l`'s constant part by `m`'s value at the zero valuation. Declared constraints compile to Horn clauses over the variables, and loop-checking decides admission as a dichotomy: a least model gives an explicit homomorphism into `ℕ`, and a diverging saturation gives a replayable pumping derivation showing none exists. Entailment under an admitted poset is the minimal-model computation over the same clauses.
 
-## The contract attributes
+## References
 
-The `# Specification` prose stays the statement of record; a combined `#[spec(...)]` attribute mirrors it where the clause is a cheap runtime predicate. Eleven items carry one:
+- Marc Bezem and Thierry Coquand. "Loop-checking and the uniform word problem for join-semilattices with an inflationary endomorphism." _Theoretical Computer Science_ 913 (2022), pages 1–7. `doi:10.1016/j.tcs.2022.01.017` — the decision procedure, the loop-checking dichotomy (corollary 3.5, admission), entailment by minimal models (corollary 3.4), the shift-by-one device (lemma 2.1), and the worked example the admission and divergence goldens replay.
+- Per Martin-Löf. _Intuitionistic Type Theory_. Notes by Giovanni Sambin. Bibliopolis, Naples, 1984. `isbn:978-88-7088-105-9` — the universe stratification this crate is the level layer of.
 
-- the five checked-arithmetic faces — `LevelOffset::succ`, `LevelConstant::succ`, `LevelValue::checked_add_offset`, `HornOffset::checked_add` and `HornOffset::checked_add_shift` — each stating its refusal boundary as an `is_ok()` equivalence against the complementary operation, so a guard that moved off the ceiling is caught;
-- `Level::canonicalized`, whose predicate is the canonical-constant invariant read off the _result_. It repeats the body's `max` scan, so the function costs twice its atom walk — the same order, over a map the size of a declaration's level arity;
-- `LandmarkConstraint::leq` and `equal`, each pinning the relation it declares, which is what separates the two adjacent constructors;
-- `compile`'s `requires`, re-reading the variable-only guard the constraint constructor established, and `push_family`'s nonempty body;
-- `HornClause::new`, whose `Some`-exactly-when-nonempty is the constructor guard stated on the output.
+## Provided features
 
-`Level::succ`, `Level::eval`, `LandmarkPoset::admit`, `consistency_certificate`, and `horn::saturate` retain prose-only postconditions. `leq_with_evidence` and `lt_with_evidence` use independent oracle witnesses: their validators re-walk the atoms with a `BTreeMap` lookup each on the kernel’s hottest comparison path.
+- `Level`, `LevelVar` and `LevelVarIndex`: the canonical form and its variables. `Level::zero`, `Level::var`, `Level::succ` and `Level::max` construct; `Level::eval` evaluates under a valuation; `Level::lt` and `Level::leq` decide.
+- `Level::leq_with_evidence` and `Level::lt_with_evidence`: the order oracle, returning a `LeqWitness` or a `LeqRefutation`. `validate_witness` and `validate_refutation` check either against the two levels.
+- `LandmarkConstraint`, `LandmarkPoset` and `LandmarkPoset::admit`: constraint declaration and admission. Admission returns `AdmissionOutcome::Admitted`, a poset carrying its `ConsistencyWitness`, or `AdmissionOutcome::Loop` with a `LoopWitness`; `validate_consistency` and `validate_loop_witness` check them.
+- `LandmarkPoset::entails_leq_with_evidence` and `entails_lt_with_evidence`: entailment under an admitted poset, returning an `EntailmentWitness` or an `EntailmentCountermodel`; `validate_entailment_witness` and `validate_entailment_countermodel` check them.
+- `LevelError`, `EvidenceError`, `PosetError` and `PosetEvidenceError`: every failure as a typed value.
 
-`anodized` supplies core-only specification helpers with default features disabled. The enforcing test lane selects `--cfg anodized_panic` for the whole dependency graph; no logic/BigInt dependency is enabled.
+## Expected features
 
-## Not provided
+- **`--cfg anodized_panic` for enforcement.** Built with this `cfg` across the whole dependency graph, the `#[spec]` attributes check their clauses at runtime and panic on a violation. The enforcing test lane sets it.
 
-Declared constraints are variable-only, and query constants ride a pinned bottom generator internal to the encoding. The crate deliberately refuses level inference and unification, generalization, displacement, constraint hypotheses beyond the declared landmark poset, `imax`, and cumulativity — these are exclusions of the stratification design rather than unbuilt steps. A constant-time variable-plus-offset constructor remains a follow-up.
+## Examples
 
-## Relationship to `gandr-theory-orders`
-
-The two crates share no machinery and the kernel takes no dependency on the theory crate. `gandr-theory-orders` maintains a **total** order over opaque element handles for constant-time comparison, which is a data-structure problem for the incremental checking layer. This crate decides a **partial** order over universe-level terms, quantified over all valuations, and returns a certificate either way. Neither operation is expressible in the other's vocabulary, so there is nothing to reuse; and the dependency wall would refuse the dependency in any case, since a `kernel-*` crate depends only on other `kernel-*` crates and on `core` and `alloc`.
-
-## Using it
-
-`cargo test -p gandr-kernel-strata --all-targets` runs the suite, including the property differential that pins the no-constraints agreement between entailment and the free-fragment oracle. Consumers reach the crate through the kernel and the core checker rather than directly.
+Consumers reach the crate through the kernel and the core checker; a direct call decides an order and checks its evidence.
 
 ```rust
 use gandr_kernel_strata::Level;
@@ -69,15 +66,51 @@ fn example() -> Result<(), LevelError> {
 }
 ```
 
-## Theoretical ideas relied on
+Run the tests, including the property differential that pins empty-poset entailment to the free-fragment oracle, then the enforcing twin:
 
-Universe stratification with levels as a separate certified layer; a sorted canonical form as the decision procedure for the word problem on the free fragment; loop-checking as a dichotomy with evidence on both sides; and the certificate posture at its smallest scale — an oracle that returns checkable evidence instead of a bare verdict, so the validators rather than the procedure carry the trust.
+```sh
+cargo nextest run -p gandr-kernel-strata
+RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-kernel-strata
+```
 
-## Primary references
+## Evidence and its validators
 
-- Marc Bezem and Thierry Coquand. "Loop-checking and the uniform word problem for join-semilattices with an inflationary endomorphism." _Theoretical Computer Science_ 913 (2022), pages 1–7. `doi:10.1016/j.tcs.2022.01.017` — the decision procedure, the loop-checking dichotomy, and the worked example the admission and divergence goldens replay.
-- Per Martin-Löf. _Intuitionistic Type Theory_. Bibliopolis, 1984. `isbn:978-8870881052` — the universe stratification this crate is the level layer of. Locator unverified: the ISBN identifies a printing and has not been checked against a title page.
+Evidence types keep their fields private, so a witness is unforgeable outside the oracle. Each validator recomputes what the evidence claims rather than trusting it.
+
+A derivation records only clause index and shift for each step; a validator recomputes every conclusion. Clause indices refer to one documented, deterministic compilation (declaration order, ascending variable order within a constraint), so an index means the same thing to the oracle, the validators and a reviewer.
+
+The firing log behind a derivation carries, at each step, the atom its instance concluded. Truncating the log to the prefix that covers the goals therefore needs neither a clause lookup nor arithmetic, and its one `None` means exactly that the log does not cover the goals.
+
+`EvidenceSubject` names what a seed or goal refers to: a declared level variable, or the pinned bottom generator that carries constants. The crate's `Option` returns — `Level::offset_of`, `ModelValue::as_finite` and the model lookups — are genuine absence, and each contract says so. A violated constraint is reported by `ConstraintIndex`.
+
+## The level language
+
+Declared constraints are variable-only: each side has constant part `0` and at least one atom. Query constants ride a pinned bottom generator `⊥`, ordered below every in-scope variable by clauses added at query time. That encoding is sound, conservative and loop-immune because no declared clause mentions `⊥`; the module docs of `poset` carry the argument. With no constraints declared, entailment agrees with the free-fragment oracle on every input.
+
+The stratification design excludes level inference and unification, generalization, displacement, constraint hypotheses beyond the declared landmark poset, `imax`, and cumulativity.
+
+## Contract attributes
+
+The `# Specification` prose is the statement of record; a combined `#[spec(...)]` attribute mirrors it where the clause is a cheap runtime predicate.
+
+- The checked-arithmetic faces — `LevelOffset::succ`, `LevelConstant::succ`, `LevelValue::checked_add_offset`, `HornOffset::checked_add` and `HornOffset::checked_add_shift` — state their refusal boundary as an `is_ok()` equivalence against the complementary operation, so a guard moved off the ceiling is caught.
+- `Level::canonicalized` states the canonical-constant invariant on its result. The predicate repeats the body's `max` scan, so under enforcement the function costs twice its atom walk, over a map the size of a declaration's level arity.
+- `LandmarkConstraint::leq` and `LandmarkConstraint::equal` pin the relation each declares, which separates the two adjacent constructors.
+- `compile` requires the variable-only guard the constraint constructor establishes, and `push_family` a nonempty body.
+- `HornClause::new` returns `Some` exactly when the body is nonempty.
+
+`Level::succ`, `Level::eval`, `LandmarkPoset::admit`, `consistency_certificate` and `horn::saturate` keep prose-only postconditions. `leq_with_evidence` and `lt_with_evidence` rely on their independent validators instead of an attribute: a check would re-walk the atoms with a `BTreeMap` lookup each on the kernel's hottest comparison path.
+
+Termination of the saturation and derivation engines is argued in their `- intension:` clauses.
+
+## Differential suites
+
+The property suites generate free level terms as a flat, id-addressed arena: a node vector in topological order, every child an index into an earlier slot, the root at the last slot. Reference evaluation, canonical-form construction and successor counting are each one forward pass over that vector, so the suites carry no recursive type and no explicit frame stack. A shared node denotes one value, so sharing is semantically transparent.
+
+## Relationship to `gandr-theory-orders`
+
+The two crates share no machinery, and the kernel takes no dependency on the theory crate. `gandr-theory-orders` maintains a total order over opaque handles for constant-time comparison. This crate decides a partial order over level terms, quantified over all valuations, and returns a certificate either way. Neither operation is expressible in the other's vocabulary, and the trusted base depends on no workspace crate outside the kernel category.
 
 ## License
 
-Apache-2.0 WITH LLVM-exception.
+Apache-2.0 WITH LLVM-exception, the workspace licence; the text is at the repository root.

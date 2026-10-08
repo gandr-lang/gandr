@@ -6,7 +6,7 @@
 //! The crate holds **levels only** — no terms, no types, and not even the
 //! universe rule, which is one call into [`Level::lt`] and belongs to the
 //! kernel proper. It is `no_std` over `core` and `alloc`, the sharpest form of
-//! the trusted base's dependency wall, and depends on no other crate.
+//! the trusted base's dependency wall, and depends on no other workspace crate.
 //!
 //! # The algebra and its canonical form
 //!
@@ -51,14 +51,13 @@
 //! agrees with the free-fragment oracle on every input, which the property
 //! differential pins.
 //!
-//! # What this crate refuses to hold
+//! # The level language
 //!
-//! Level inference and unification, generalization, displacement, constraint
-//! hypotheses beyond the declared landmark poset, `imax`, and cumulativity are
-//! exclusions of the stratification design rather than unbuilt steps.
+//! The stratification design excludes level inference and unification,
+//! generalization, displacement, constraint hypotheses beyond the declared
+//! landmark poset, `imax`, and cumulativity.
 //!
-//! The named ideas and their primary references are in this crate's
-//! `README.md`.
+//! The papers the crate draws on are in its `README.md`, § References.
 
 #![no_std]
 
