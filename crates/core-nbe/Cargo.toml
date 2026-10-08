@@ -1,0 +1,25 @@
+[package]
+name = "gandr-core-nbe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The glued value domain with both faces and both closure spaces, its per-run arena, the scheduling and duplication policy parameters, and evaluation to weak head"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "glued-evaluation", "normalization-by-evaluation", "scheduling", "sharing"]
+categories = ["data-structures"]
+publish.workspace = true
+
+# The domain and its evaluator are built over the core language's syntax and
+# context, and read levels and the leaf vocabularies through them.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled in this no_std library.
+[dependencies]
+anodized.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+
+[lints]
+workspace = true

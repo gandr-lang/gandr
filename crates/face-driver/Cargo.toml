@@ -1,0 +1,29 @@
+# The registry name `gandr` belongs to an unrelated crate, so the driver's
+# package is `gandr-lang`, the name this project holds; it installs the `gandr`
+# binary. The one exception to the `gandr-<directory>` package schema
+# (`crates/README.md`).
+[package]
+name = "gandr-lang"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Driver for the gandr language toolchain"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language", "toolchain"]
+categories = ["development-tools"]
+# Publishing is manual: flipping this field is itself the deliberate act of a
+# manual publish.
+publish.workspace = true
+
+[[bin]]
+name = "gandr"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+gandr-surface-dispatcher.workspace = true
+
+[lints]
+workspace = true

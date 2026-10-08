@@ -1,0 +1,31 @@
+[package]
+name = "gandr-storage-records"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Authenticated ordered-record plane: a content-defined Merkle search tree over sorted byte records, with store-independent membership, non-membership and range proofs"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["authenticated-data", "content-addressing", "gandr", "merkle-search-tree"]
+categories = ["data-structures"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file wrapped in its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled in this no_std library.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

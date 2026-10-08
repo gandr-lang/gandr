@@ -1,0 +1,25 @@
+[package]
+name = "gandr-kernel-strata"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Certified universe-level oracle over zero, successor and binary maximum, with evidence-returning order, landmark-poset admission and entailment"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["certificates", "gandr", "loop-checking", "universe-levels"]
+categories = ["mathematics"]
+publish.workspace = true
+
+# The certified trusted base depends only on other kernel crates and
+# core/alloc. Dev-dependencies are exempt: test code is not shipped trust.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled in this no_std library.
+[dependencies]
+anodized.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

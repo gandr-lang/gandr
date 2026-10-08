@@ -1,0 +1,14 @@
+[package]
+name = "gandr-surface-dispatcher"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Routes a driver invocation into the gandr surface pipeline"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language", "toolchain"]
+categories = ["development-tools"]
+publish.workspace = true
+
+[lints]
+workspace = true

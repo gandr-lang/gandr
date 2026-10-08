@@ -1,0 +1,25 @@
+[package]
+name = "gandr-kernel-term"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Flat term arena with constructor-only minting, the unified subterm-table sharing format, and the decode-time amplification budgets"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["canonical-form", "gandr", "serialization", "sharing", "term-arena"]
+categories = ["data-structures"]
+publish.workspace = true
+
+# The certified trusted base depends only on other kernel crates and
+# core/alloc. Dev-dependencies are exempt: test code is not shipped trust.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled in this no_std library.
+[dependencies]
+anodized.workspace = true
+gandr-kernel-strata.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

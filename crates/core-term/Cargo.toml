@@ -1,0 +1,28 @@
+[package]
+name = "gandr-core-term"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The core call-by-push-value syntax and the one unified context: two flat zones, a per-scope definitional environment, and an arena-free definition chain"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["call-by-push-value", "context", "de-bruijn", "gandr", "linear-types"]
+categories = ["data-structures"]
+publish.workspace = true
+
+# The core language stands above the trusted base and reuses its leaf
+# vocabularies rather than restating them: levels from the level oracle, and
+# base types, literals, reference forms and the subterm-table index from the
+# term crate. The node enums, the arena and the context are this crate's own,
+# so a former the kernel refuses to represent can enter here without touching
+# the kernel's grammar.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled in this no_std library.
+[dependencies]
+anodized.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+
+[lints]
+workspace = true

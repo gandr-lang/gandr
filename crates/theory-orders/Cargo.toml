@@ -1,0 +1,23 @@
+[package]
+name = "gandr-theory-orders"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Order-maintenance structure with constant-time comparison for the gandr toolchain"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "list-labeling", "order-maintenance"]
+categories = ["data-structures"]
+publish.workspace = true
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled in this no_std library.
+[dependencies]
+anodized.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

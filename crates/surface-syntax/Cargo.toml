@@ -1,0 +1,21 @@
+[package]
+name = "gandr-surface-syntax"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Concrete syntax tree for the gandr surface: token vocabulary, closed node kinds, a flat node arena with children as an index range, byte spans, and per-node arena and content identities"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["arena", "concrete-syntax-tree", "content-addressing", "gandr", "parsing"]
+categories = ["data-structures", "parser-implementations"]
+publish.workspace = true
+
+# `blake3` computes content-derived node identity. The pinned anodized
+# facade supplies core-only specification helpers; logic/BigInt stays disabled.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+
+[lints]
+workspace = true

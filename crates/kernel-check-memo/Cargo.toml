@@ -1,0 +1,20 @@
+[package]
+name = "gandr-kernel-check-memo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The support-keyed check-memo seam the certified kernel's sharing-aware checker consults: generic, no_std, no runtime dependencies"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "incremental", "kernel", "memoization"]
+categories = ["caching", "no-std"]
+publish.workspace = true
+
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled in this no_std library.
+[dependencies]
+anodized.workspace = true
+
+[lints]
+workspace = true

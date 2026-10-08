@@ -1,0 +1,27 @@
+[package]
+name = "gandr-kernel-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The kernel's defunctionalized checking machine, structural conversion, admission choke point, and the content-keyed check memo wired as the default path"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["content-addressing", "gandr", "kernel", "memoization", "type-checker"]
+categories = ["compilers"]
+publish.workspace = true
+
+# The certified trusted base depends only on other kernel crates and
+# core/alloc. Dev-dependencies are exempt: test code is not shipped trust.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled in this no_std library.
+[dependencies]
+anodized.workspace = true
+gandr-kernel-check-memo.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

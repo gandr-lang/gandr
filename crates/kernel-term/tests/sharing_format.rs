@@ -1,0 +1,1548 @@
+//! The format's real contract is its rejection suite.
+//!
+//! Every case here is either a property the format promises — sharing survives
+//! a round trip, two differently shared spellings of one abstract environment
+//! write identically — or a named refusal, asserted at its exact variant on an
+//! artifact built to trigger exactly it. The boundary goldens derive their
+//! shapes from the budget constants rather than from hand-written numbers, so
+//! retuning a constant to another power of two needs no edit here.
+
+/// The sharing-format conformance and rejection suite.
+#[cfg(test)]
+mod sharing_format
+{
+    use gandr_kernel_term::AdmissionMark;
+    use gandr_kernel_term::ArtifactImage;
+    use gandr_kernel_term::CompType;
+    use gandr_kernel_term::Computation;
+    use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::DeclarationBuilder;
+    use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::DecodeError;
+    use gandr_kernel_term::DecodedArtifact;
+    use gandr_kernel_term::EncodedArtifact;
+    use gandr_kernel_term::ExpandedWork;
+    use gandr_kernel_term::FORMAT_VERSION;
+    use gandr_kernel_term::FormatVersion;
+    use gandr_kernel_term::LevelSignature;
+    use gandr_kernel_term::MAX_ARTIFACT_EXPANDED_WORK;
+    use gandr_kernel_term::MAX_DECODED_LEVEL_OFFSET;
+    use gandr_kernel_term::MAX_EXPANDED_TERM_WORK;
+    use gandr_kernel_term::MAX_TABLE_ENTRIES;
+    use gandr_kernel_term::MalformedSite;
+    use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::ReservedKind;
+    use gandr_kernel_term::ReservedSlot;
+    use gandr_kernel_term::SHARING_BLOCK_FIRST;
+    use gandr_kernel_term::SHARING_BLOCK_LAST;
+    use gandr_kernel_term::TableEntryCount;
+    use gandr_kernel_term::TagSite;
+    use gandr_kernel_term::TermArena;
+    use gandr_kernel_term::Value;
+    use gandr_kernel_term::ValueId;
+    use gandr_kernel_term::ValueType;
+    use gandr_kernel_term::ValueTypeId;
+    use gandr_kernel_term::WireTag;
+    use gandr_kernel_term::decode;
+    use gandr_kernel_term::encode;
+
+    // ---------------------------------------------------------------------------
+    // The suite's own nominal vocabulary
+    // ---------------------------------------------------------------------------
+
+    /// A hand-built byte image.
+    #[repr(transparent)]
+    #[derive(Clone, Debug, Default, Eq, PartialEq)]
+    struct Bytes(Vec<u8>);
+
+    impl AsRef<[u8]> for Bytes
+    {
+        fn as_ref(&self) -> &[u8]
+        {
+            self.0.as_slice()
+        }
+    }
+
+    /// One literal byte written into a hand-built image.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct RawByte(u8);
+
+    /// One wire integer, written as a minimal unsigned LEB128 varint.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct WireValue(u64);
+
+    /// A subterm-table index, as a hand-built artifact spells one.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct TableIndex(u32);
+
+    /// A declared format version, as a hand-built header spells one.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Version(u16);
+
+    /// A position in a decoded declaration sequence, or in a byte image.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Position(usize);
+
+    /// A repeated-diamond depth.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct Depth(u32);
+
+    impl Depth
+    {
+        /// The depth one above this one.
+        fn next(self) -> Self
+        {
+            Self(self.0.saturating_add(1))
+        }
+    }
+
+    /// A count of links in a value-type chain.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    struct LinkCount(usize);
+
+    impl Bytes
+    {
+        /// An empty image.
+        fn new() -> Self
+        {
+            Self::default()
+        }
+
+        /// Append one literal byte.
+        fn byte(
+            &mut self,
+            byte: RawByte,
+        )
+        {
+            self.0.push(byte.0);
+        }
+
+        /// Append the minimal unsigned LEB128 encoding of `value`.
+        fn varint(
+            &mut self,
+            value: WireValue,
+        )
+        {
+            let mut remaining = value.0;
+            loop {
+                let low = u8::try_from(remaining & 0x7f).unwrap_or(0_u8);
+                remaining = remaining.wrapping_shr(7);
+                if remaining == 0_u64 {
+                    self.0.push(low);
+                    return;
+                }
+                self.0.push(low | 0x80);
+            }
+        }
+
+        /// Append another image verbatim.
+        fn append(
+            &mut self,
+            other: &Self,
+        )
+        {
+            self.0.extend_from_slice(&other.0);
+        }
+
+        /// Append the four-byte artifact magic.
+        fn magic(&mut self)
+        {
+            self.0.extend_from_slice(b"GKX1");
+        }
+
+        /// Append a little-endian format version.
+        fn version(
+            &mut self,
+            version: Version,
+        )
+        {
+            self.0.extend_from_slice(&version.0.to_le_bytes());
+        }
+
+        /// Append everything from `offset` onward in `other`, which the caller
+        /// keeps within `other`'s length.
+        fn append_tail(
+            &mut self,
+            other: &Self,
+            offset: Position,
+        )
+        {
+            let tail = other
+                .0
+                .get(offset.0 ..)
+                .expect("the image is at least as long as the offset");
+            self.0.extend_from_slice(tail);
+        }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Raw artifact construction, for the cases a well-formed encoder cannot produce
+    // ---------------------------------------------------------------------------
+
+    /// A hand-built declaration segment.
+    struct RawDeclaration
+    {
+        /// The admission mark byte.
+        mark: RawByte,
+        /// The declaration kind byte.
+        kind: RawByte,
+        /// The structured-name segment count, which must be zero to be
+        /// accepted.
+        name_segments: WireValue,
+        /// The entries this segment introduces, already encoded.
+        entries: Vec<Bytes>,
+        /// The declared-type root's global index.
+        root_declared: TableIndex,
+        /// The body root's global index, for a definition.
+        root_body: Option<TableIndex>,
+        /// The erasure annotation slot, which must be zero to be accepted.
+        erasure: WireValue,
+    }
+
+    impl RawDeclaration
+    {
+        /// A definition segment with every reserved slot empty.
+        fn definition(
+            entries: Vec<Bytes>,
+            root_declared: TableIndex,
+            root_body: TableIndex,
+        ) -> Self
+        {
+            Self {
+                mark: RawByte(0),
+                kind: RawByte(0),
+                name_segments: WireValue(0),
+                entries,
+                root_declared,
+                root_body: Some(root_body),
+                erasure: WireValue(0),
+            }
+        }
+
+        /// An axiom segment, which carries a declared root and no body.
+        fn axiom(
+            entries: Vec<Bytes>,
+            root_declared: TableIndex,
+        ) -> Self
+        {
+            Self {
+                mark: RawByte(0),
+                kind: RawByte(1),
+                name_segments: WireValue(0),
+                entries,
+                root_declared,
+                root_body: None,
+                erasure: WireValue(0),
+            }
+        }
+
+        /// This segment's bytes.
+        fn bytes(&self) -> Bytes
+        {
+            let mut out = Bytes::new();
+            out.byte(self.mark);
+            out.byte(self.kind);
+            out.varint(self.name_segments);
+            out.varint(WireValue(0)); // the level parameter count
+            out.varint(WireValue(0)); // the landmark constraint count
+            out.varint(WireValue(
+                u64::try_from(self.entries.len()).unwrap_or(u64::MAX),
+            ));
+            for entry in &self.entries {
+                out.append(entry);
+            }
+            out.varint(WireValue(u64::from(self.root_declared.0)));
+            if let Some(root_body) = self.root_body {
+                out.varint(WireValue(u64::from(root_body.0)));
+                out.varint(self.erasure);
+                out.varint(WireValue(0)); // modes and grades
+                out.varint(WireValue(0)); // sealing provenance
+                out.varint(WireValue(0)); // directedness and variance
+            }
+            out
+        }
+    }
+
+    /// A hand-built artifact: a header naming `atoms`, then the segments.
+    fn raw_artifact(
+        version: Version,
+        atoms: &[WireValue],
+        declarations: &[RawDeclaration],
+    ) -> Bytes
+    {
+        let mut out = Bytes::new();
+        out.magic();
+        out.version(version);
+        out.varint(WireValue(u64::try_from(atoms.len()).unwrap_or(u64::MAX)));
+        for &atom in atoms {
+            out.varint(atom);
+        }
+        out.varint(WireValue(
+            u64::try_from(declarations.len()).unwrap_or(u64::MAX),
+        ));
+        for declaration in declarations {
+            out.append(&declaration.bytes());
+        }
+        out
+    }
+
+    /// The version every accepted artifact declares.
+    fn current_version() -> Version
+    {
+        Version(u16::from(FORMAT_VERSION))
+    }
+
+    /// The value-type unit entry.
+    fn entry_unit_type() -> Bytes
+    {
+        let mut out = Bytes::new();
+        out.byte(RawByte(0x01));
+        out
+    }
+
+    /// The universe entry at a constant level with no variable atoms.
+    fn entry_universe(constant: WireValue) -> Bytes
+    {
+        let mut out = Bytes::new();
+        out.byte(RawByte(0x02));
+        out.varint(constant);
+        out.varint(WireValue(0));
+        out
+    }
+
+    /// The universe entry at one variable atom with the given offset.
+    fn entry_universe_atom(
+        variable: WireValue,
+        offset: WireValue,
+    ) -> Bytes
+    {
+        let mut out = Bytes::new();
+        out.byte(RawByte(0x02));
+        out.varint(WireValue(0));
+        out.varint(WireValue(1));
+        out.varint(variable);
+        out.varint(offset);
+        out
+    }
+
+    /// A universe entry whose atom list names one variable twice.
+    fn entry_universe_repeated_atom() -> Bytes
+    {
+        let mut out = Bytes::new();
+        out.byte(RawByte(0x02));
+        out.varint(WireValue(0));
+        out.varint(WireValue(2));
+        out.varint(WireValue(0));
+        out.varint(WireValue(1));
+        out.varint(WireValue(0));
+        out.varint(WireValue(1));
+        out
+    }
+
+    /// A universe entry whose inline constant is written as an overlong varint.
+    fn entry_universe_overlong_constant() -> Bytes
+    {
+        let mut out = Bytes::new();
+        out.byte(RawByte(0x02));
+        out.byte(RawByte(0x80));
+        out.byte(RawByte(0x00));
+        out.byte(RawByte(0x00));
+        out
+    }
+
+    /// The unit value entry.
+    fn entry_unit() -> Bytes
+    {
+        let mut out = Bytes::new();
+        out.byte(RawByte(0x0B));
+        out
+    }
+
+    /// A pair value entry over two global indices.
+    fn entry_pair(
+        first: TableIndex,
+        second: TableIndex,
+    ) -> Bytes
+    {
+        let mut out = Bytes::new();
+        out.byte(RawByte(0x0D));
+        out.varint(WireValue(u64::from(first.0)));
+        out.varint(WireValue(u64::from(second.0)));
+        out
+    }
+
+    /// A bound-variable value entry.
+    fn entry_variable(index: WireValue) -> Bytes
+    {
+        let mut out = Bytes::new();
+        out.byte(RawByte(0x09));
+        out.varint(index);
+        out
+    }
+
+    /// An entry whose tag byte lies above the frozen block.
+    fn entry_unassigned_tag(tag: RawByte) -> Bytes
+    {
+        let mut out = Bytes::new();
+        out.byte(tag);
+        out
+    }
+
+    /// A dependent-arrow entry over a value-type domain and a computation-type
+    /// codomain.
+    fn entry_pi(
+        domain: TableIndex,
+        codomain: TableIndex,
+    ) -> Bytes
+    {
+        let mut out = Bytes::new();
+        out.byte(RawByte(0x18));
+        out.varint(WireValue(u64::from(domain.0)));
+        out.varint(WireValue(u64::from(codomain.0)));
+        out
+    }
+
+    // ---------------------------------------------------------------------------
+    // Shapes built through the public constructors
+    // ---------------------------------------------------------------------------
+
+    /// Two to the power of `exponent`, saturating rather than overflowing.
+    fn power_of_two(exponent: Depth) -> ExpandedWork
+    {
+        let mut value = 1_u64;
+        let mut remaining = exponent.0;
+        while remaining > 0 {
+            value = value.saturating_mul(2);
+            remaining = remaining.saturating_sub(1);
+        }
+        ExpandedWork::from(value)
+    }
+
+    /// The largest diamond depth whose expanded size, plus the one node a
+    /// declared type costs beside it, still fits `cap`.
+    fn diamond_depth_within(cap: ExpandedWork) -> Depth
+    {
+        let mut depth = Depth(0);
+        while power_of_two(depth.next().next()) <= cap {
+            depth = depth.next();
+        }
+        depth
+    }
+
+    /// A repeated-diamond value of the given depth: each level pairs the level
+    /// below it with itself, so the expanded size doubles while the node
+    /// count grows by one.
+    fn diamond(
+        arena: &mut TermArena,
+        depth: Depth,
+    ) -> ValueId
+    {
+        let mut node = arena.value_unit();
+        let mut remaining = depth.0;
+        while remaining > 0 {
+            node = arena.value_pair(node, node);
+            remaining = remaining.saturating_sub(1);
+        }
+        node
+    }
+
+    /// The expanded size of a diamond of the given depth.
+    fn diamond_expanded(depth: Depth) -> ExpandedWork
+    {
+        ExpandedWork::from(u64::from(power_of_two(depth.next())).saturating_sub(1))
+    }
+
+    /// A value-type chain of `links` thunk-over-returner steps above the unit
+    /// type, which contributes one entry for the unit and two per link,
+    /// with an expanded size equal to that entry count.
+    fn type_chain(
+        arena: &mut TermArena,
+        links: LinkCount,
+    ) -> ValueTypeId
+    {
+        let mut node = arena.value_type_unit();
+        let mut remaining = links.0;
+        while remaining > 0 {
+            let returner = arena.comp_type_returner(node);
+            node = arena.value_type_thunk(returner);
+            remaining = remaining.saturating_sub(1);
+        }
+        node
+    }
+
+    /// One checked definition over the given roots.
+    fn definition_over(
+        arena: &mut TermArena,
+        declared: ValueTypeId,
+        body: ValueId,
+    ) -> MarkedDeclaration
+    {
+        let builder = DeclarationBuilder::new(arena);
+        let declaration = builder.def(LevelSignature::monomorphic(), declared, body);
+        MarkedDeclaration::new(AdmissionMark::Checked, declaration)
+    }
+
+    /// The decoded body root of the definition at `position`, or `None` when no
+    /// declaration decoded there or the one that did is not a definition.
+    fn decoded_body(
+        artifact: &DecodedArtifact,
+        position: Position,
+    ) -> Option<ValueId>
+    {
+        let declaration = artifact.declarations().get(position.0)?;
+        match *declaration.declaration().content() {
+            | DeclarationContent::Def { body, .. } => Some(body),
+            | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => None,
+        }
+    }
+
+    /// The declared-type root of the declaration at `position`, or `None` when
+    /// no declaration decoded there.
+    fn decoded_declared(
+        artifact: &DecodedArtifact,
+        position: Position,
+    ) -> Option<ValueTypeId>
+    {
+        let declaration = artifact.declarations().get(position.0)?;
+        Some(declaration.declaration().declared_id())
+    }
+
+    // ---------------------------------------------------------------------------
+    // Sharing: the round trip and the determinism
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn sharing_round_trips_with_sharing_at_the_shared_nodes()
+    {
+        let mut arena = TermArena::new();
+
+        // The first declaration's body shares one unit value with itself.
+        let first_declared = arena.value_type_unit();
+        let shared = arena.value_unit();
+        let first_body = arena.value_pair(shared, shared);
+        let first = definition_over(&mut arena, first_declared, first_body);
+
+        // The second declaration mints its own structurally equal nodes, so any
+        // sharing the artifact shows between the two is the format's rather than a
+        // consequence of how this arena happened to be built.
+        let second_declared = arena.value_type_unit();
+        let second_body = arena.value_unit();
+        let second = definition_over(&mut arena, second_declared, second_body);
+
+        let declarations = vec![first, second];
+        let bytes = encode(&arena, &declarations);
+        let artifact = decode(bytes.as_image()).expect("a well-formed artifact decodes");
+
+        let re_encoded = encode(artifact.arena(), artifact.declarations());
+        assert_eq!(
+            Vec::from(bytes),
+            Vec::from(re_encoded),
+            "the decoded artifact re-encodes to the bytes it came from"
+        );
+
+        let first_body =
+            decoded_body(&artifact, Position(0)).expect("the first definition decodes");
+        let second_body =
+            decoded_body(&artifact, Position(1)).expect("the second definition decodes");
+        match artifact.arena().value(first_body) {
+            | Some(&Value::Pair(left, right)) => {
+                assert_eq!(
+                    left, right,
+                    "the shared pair children decode to one arena id"
+                );
+                assert_eq!(
+                    left, second_body,
+                    "the second declaration's unit is the first's very node"
+                );
+            },
+            | other => panic!("the first body decodes to a pair, not {other:?}"),
+        }
+
+        assert_eq!(
+            decoded_declared(&artifact, Position(0)).expect("the first declaration decodes"),
+            decoded_declared(&artifact, Position(1)).expect("the second declaration decodes"),
+            "the two declared types share one entry across declaration segments"
+        );
+        assert_eq!(
+            TableEntryCount::from(3),
+            artifact.metrics().table_entries(),
+            "the unit type, the unit value and the pair are the whole table"
+        );
+    }
+
+    #[test]
+    fn differently_shared_equal_inputs_write_identical_bytes()
+    {
+        let shared_bytes = {
+            let mut arena = TermArena::new();
+            let declared = arena.value_type_unit();
+            let unit = arena.value_unit();
+            let body = arena.value_pair(unit, unit);
+            let declarations = vec![definition_over(&mut arena, declared, body)];
+            Vec::from(encode(&arena, &declarations))
+        };
+        let unshared_bytes = {
+            let mut arena = TermArena::new();
+            let declared = arena.value_type_unit();
+            let left = arena.value_unit();
+            let right = arena.value_unit();
+            let body = arena.value_pair(left, right);
+            let declarations = vec![definition_over(&mut arena, declared, body)];
+            Vec::from(encode(&arena, &declarations))
+        };
+        assert_eq!(
+            shared_bytes, unshared_bytes,
+            "the bytes are a function of the abstract environment, not of how it shares in memory"
+        );
+    }
+
+    /// The dependent arrow round-trips, and it does **not** collapse onto the
+    /// non-dependent arrow over the same two children.
+    ///
+    /// The deduplication key is an entry's own bytes, so the two formers stay
+    /// two entries exactly because they carry two tags. A shared tag would
+    /// have merged the ambient-context codomain with the under-a-binder
+    /// one, which is the collapse the settled numbering exists to prevent.
+    #[test]
+    fn a_dependent_arrow_round_trips_and_stays_distinct_from_the_arrow()
+    {
+        let mut arena = TermArena::new();
+        let unit_type = arena.value_type_unit();
+        let returner = arena.comp_type_returner(unit_type);
+        let dependent = arena.comp_type_pi(unit_type, returner);
+        let plain = arena.comp_type_arrow(unit_type, returner);
+        let dependent_declared = arena.value_type_thunk(dependent);
+        let plain_declared = arena.value_type_thunk(plain);
+        let body = arena.value_unit();
+        let declarations = vec![
+            definition_over(&mut arena, dependent_declared, body),
+            definition_over(&mut arena, plain_declared, body),
+        ];
+
+        let bytes = encode(&arena, &declarations);
+        let artifact = decode(bytes.as_image()).expect("the dependent artifact decodes");
+        let re_encoded = encode(artifact.arena(), artifact.declarations());
+        assert_eq!(
+            Vec::from(bytes),
+            Vec::from(re_encoded),
+            "the decoded dependent arrow re-encodes to the bytes it came from"
+        );
+
+        let decoded_dependent =
+            decoded_declared(&artifact, Position(0)).expect("the dependent declaration decodes");
+        let decoded_plain =
+            decoded_declared(&artifact, Position(1)).expect("the plain declaration decodes");
+        assert_ne!(
+            decoded_dependent, decoded_plain,
+            "the two arrows over the same children are two entries, so their thunks are two nodes"
+        );
+        let (Some(&ValueType::Thunk(dependent)), Some(&ValueType::Thunk(plain))) = (
+            artifact.arena().value_type(decoded_dependent),
+            artifact.arena().value_type(decoded_plain),
+        )
+        else {
+            panic!("both declared types decode to thunks");
+        };
+        match (
+            artifact.arena().comp_type(dependent),
+            artifact.arena().comp_type(plain),
+        ) {
+            | (
+                Some(&CompType::Pi { domain, codomain }),
+                Some(&CompType::Arrow {
+                    domain: plain_domain,
+                    codomain: plain_codomain,
+                }),
+            ) => {
+                assert_eq!(
+                    domain, plain_domain,
+                    "the domain is one shared entry across the two formers"
+                );
+                assert_eq!(
+                    codomain, plain_codomain,
+                    "and so is the codomain: only the tag separates them"
+                );
+            },
+            | other => {
+                panic!("the two formers decode to a dependent and a plain arrow, not {other:?}")
+            },
+        }
+    }
+
+    /// The dependent arrow's children carry the arrow's polarities: a
+    /// value-type domain and a computation-type codomain. Offering the
+    /// codomain a value type is refused at the polarity site rather than
+    /// minted.
+    #[test]
+    fn a_dependent_arrow_refuses_a_mis_polarized_codomain()
+    {
+        let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
+            vec![
+                entry_unit_type(),
+                entry_pi(TableIndex(0), TableIndex(0)),
+                entry_unit_type(),
+            ],
+            TableIndex(2),
+        )]);
+        assert_eq!(
+            Err(DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            }),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "a value type offered as a dependent codomain is a polarity refusal"
+        );
+    }
+
+    /// A type that mentions a bound variable through a code round-trips,
+    /// sharing the code with the term that produced it.
+    ///
+    /// This is the edge that leaves the type language: the declared type
+    /// reaches a *value*, so the subterm table's single index space is
+    /// carrying a type-to-term reference rather than only type-to-type
+    /// ones.
+    #[test]
+    fn a_type_mentioning_a_code_round_trips()
+    {
+        let mut arena = TermArena::new();
+        let level = gandr_kernel_strata::Level::zero();
+        let universe = arena.value_type_universe(level.clone());
+        let code = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let element = arena.value_type_element(code, level);
+        let returner = arena.comp_type_returner(element);
+        let dependent = arena.comp_type_pi(universe, returner);
+        let declared = arena.value_type_thunk(dependent);
+        let body_value = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let inner = arena.computation_return(body_value);
+        let lambda = arena.computation_lambda(inner);
+        let body = arena.value_thunk(lambda);
+        let declarations = vec![definition_over(&mut arena, declared, body)];
+
+        let bytes = encode(&arena, &declarations);
+        let artifact = decode(bytes.as_image()).expect("the code-carrying artifact decodes");
+        assert_eq!(
+            Vec::from(bytes),
+            Vec::from(encode(artifact.arena(), artifact.declarations())),
+            "the decoded artifact re-encodes to the bytes it came from"
+        );
+
+        let decoded_declared =
+            decoded_declared(&artifact, Position(0)).expect("the declaration decodes");
+        let Some(&ValueType::Thunk(decoded_pi)) = artifact.arena().value_type(decoded_declared)
+        else {
+            panic!("the declared type decodes to a thunk");
+        };
+        let Some(&CompType::Pi { codomain, .. }) = artifact.arena().comp_type(decoded_pi)
+        else {
+            panic!("over a dependent arrow");
+        };
+        let Some(&CompType::Returner(result)) = artifact.arena().comp_type(codomain)
+        else {
+            panic!("whose codomain returns");
+        };
+        let Some(&ValueType::Element { code, .. }) = artifact.arena().value_type(result)
+        else {
+            panic!("a type read off a code");
+        };
+        assert_eq!(
+            Some(&Value::Variable(DeBruijnIndex::from(0_u32))),
+            artifact.arena().value(code),
+            "the code is the bound variable the type was written against"
+        );
+
+        // And it is the *same entry* as the variable the body returns: the subterm
+        // table's single index space shares across the type-to-term boundary, which
+        // is the payoff of one table over four.
+        let decoded_body = decoded_body(&artifact, Position(0)).expect("the definition decodes");
+        let Some(&Value::Thunk(decoded_lambda)) = artifact.arena().value(decoded_body)
+        else {
+            panic!("the body decodes to a thunk");
+        };
+        let Some(&Computation::Lambda(decoded_inner)) =
+            artifact.arena().computation(decoded_lambda)
+        else {
+            panic!("holding a lambda");
+        };
+        let Some(&Computation::Return(returned)) = artifact.arena().computation(decoded_inner)
+        else {
+            panic!("whose body returns");
+        };
+        assert_eq!(
+            code, returned,
+            "the code and the returned variable are one entry"
+        );
+    }
+
+    #[test]
+    fn the_empty_sequence_encodes_to_a_bare_header()
+    {
+        let arena = TermArena::new();
+        let bytes = encode(&arena, &[]);
+        // Hand check of the version field: the version is 2, which as a
+        // little-endian sixteen-bit field is the low byte 0x02 first and the
+        // high byte 0x00 after. The header is the four-byte magic, that
+        // two-byte field, the empty atom table as one varint zero and the
+        // declaration count as one varint zero.
+        assert_eq!(
+            vec![b'G', b'K', b'X', b'1', 0x02, 0x00, 0x00, 0x00],
+            Vec::from(bytes.clone()),
+            "the empty artifact is the magic, the version, an empty atom table and a zero count"
+        );
+        let artifact = decode(bytes.as_image()).expect("the empty artifact decodes");
+        assert!(
+            artifact.declarations().is_empty(),
+            "the empty artifact decodes to no declarations"
+        );
+        assert_eq!(
+            TableEntryCount::from(0),
+            artifact.metrics().table_entries(),
+            "the empty artifact has an empty table"
+        );
+    }
+
+    #[test]
+    fn a_bypass_admission_mark_survives_the_round_trip()
+    {
+        let mut arena = TermArena::new();
+        let declared = arena.value_type_unit();
+        let body = arena.value_unit();
+        let builder = DeclarationBuilder::new(&mut arena);
+        let declaration = builder.def(LevelSignature::monomorphic(), declared, body);
+        let declarations = vec![MarkedDeclaration::new(
+            AdmissionMark::UncheckedBypass,
+            declaration,
+        )];
+        let bytes = encode(&arena, &declarations);
+        let artifact = decode(bytes.as_image()).expect("the bypass artifact decodes");
+        assert_eq!(
+            AdmissionMark::UncheckedBypass,
+            artifact
+                .declarations()
+                .first()
+                .expect("the declaration decodes")
+                .mark(),
+            "the bypass mark rides in the bytes rather than being re-derived"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // The four canonical-form refusals
+    // ---------------------------------------------------------------------------
+
+    /// The refusal a non-canonical artifact takes.
+    fn non_canonical() -> DecodeError
+    {
+        DecodeError::Malformed {
+            site: MalformedSite::NonCanonical,
+        }
+    }
+
+    #[test]
+    fn a_duplicate_entry_is_refused_as_non_canonical()
+    {
+        let entries = vec![
+            entry_unit_type(),
+            entry_unit(),
+            entry_unit(),
+            entry_pair(TableIndex(1), TableIndex(2)),
+        ];
+        let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
+            entries,
+            TableIndex(0),
+            TableIndex(3),
+        )]);
+        assert_eq!(
+            Err(non_canonical()),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "two structurally equal entries are not maximal sharing"
+        );
+    }
+
+    #[test]
+    fn a_mis_ordered_table_is_refused_as_non_canonical()
+    {
+        // Every child reference is still strictly earlier, so this is a genuine
+        // ordering violation rather than a child-order one.
+        let entries = vec![
+            entry_unit(),
+            entry_unit_type(),
+            entry_pair(TableIndex(0), TableIndex(0)),
+        ];
+        let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
+            entries,
+            TableIndex(1),
+            TableIndex(2),
+        )]);
+        assert_eq!(
+            Err(non_canonical()),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "any permutation of the table re-encodes to a different index assignment"
+        );
+    }
+
+    #[test]
+    fn a_dead_entry_is_refused_as_non_canonical()
+    {
+        let entries = vec![
+            entry_unit_type(),
+            entry_unit(),
+            entry_pair(TableIndex(1), TableIndex(1)),
+            entry_variable(WireValue(7)),
+        ];
+        let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
+            entries,
+            TableIndex(0),
+            TableIndex(2),
+        )]);
+        assert_eq!(
+            Err(non_canonical()),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "an entry no declaration root reaches re-encodes away"
+        );
+    }
+
+    #[test]
+    fn a_self_or_forward_child_reference_is_refused()
+    {
+        let child_order = DecodeError::Malformed {
+            site: MalformedSite::ChildOrder,
+        };
+        let self_reference = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
+            vec![entry_pair(TableIndex(0), TableIndex(0))],
+            TableIndex(0),
+            TableIndex(0),
+        )]);
+        assert_eq!(
+            Err(child_order),
+            decode(ArtifactImage::from(self_reference.as_ref())),
+            "an entry naming itself is not strictly earlier than itself"
+        );
+
+        let forward_reference =
+            raw_artifact(current_version(), &[], &[RawDeclaration::definition(
+                vec![entry_pair(TableIndex(1), TableIndex(1)), entry_unit()],
+                TableIndex(0),
+                TableIndex(0),
+            )]);
+        assert_eq!(
+            Err(child_order),
+            decode(ArtifactImage::from(forward_reference.as_ref())),
+            "an entry naming a later entry breaks topological order"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // The amplification goldens
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn a_repeated_diamond_is_refused_before_any_consumer()
+    {
+        let depth = diamond_depth_within(MAX_EXPANDED_TERM_WORK).next();
+        let mut arena = TermArena::new();
+        let declared = arena.value_type_unit();
+        let body = diamond(&mut arena, depth);
+        let declarations = vec![definition_over(&mut arena, declared, body)];
+        let bytes = encode(&arena, &declarations);
+
+        assert!(
+            Vec::from(bytes.clone()).len() < 200,
+            "the artifact is a few dozen bytes: the amplification is in its expansion, not its size"
+        );
+        assert!(
+            diamond_expanded(depth) > MAX_EXPANDED_TERM_WORK,
+            "the golden really does exceed the per-declaration budget"
+        );
+        assert_eq!(
+            Err(DecodeError::Malformed {
+                site: MalformedSite::ExpandedWork,
+            }),
+            decode(bytes.as_image()),
+            "an over-budget declaration yields no artifact at all, so nothing downstream sees it"
+        );
+    }
+
+    #[test]
+    fn many_cheap_segments_sharing_one_root_are_refused()
+    {
+        let depth = diamond_depth_within(MAX_EXPANDED_TERM_WORK);
+        let per_declaration = u64::from(diamond_expanded(depth)).saturating_add(1);
+        let accepted = u64::from(MAX_ARTIFACT_EXPANDED_WORK)
+            .checked_div(per_declaration)
+            .expect("the per-declaration cost is nonzero");
+
+        let build = |count: u64| {
+            let mut arena = TermArena::new();
+            let declared = arena.value_type_unit();
+            let body = diamond(&mut arena, depth);
+            let mut declarations: Vec<MarkedDeclaration> = Vec::new();
+            let mut remaining = count;
+            while remaining > 0 {
+                declarations.push(definition_over(&mut arena, declared, body));
+                remaining = remaining.saturating_sub(1);
+            }
+            Vec::from(encode(&arena, &declarations))
+        };
+
+        let under = build(accepted);
+        let artifact = decode(ArtifactImage::from(under.as_slice()))
+            .expect("the artifact-total budget accepts its own boundary");
+        assert_eq!(
+            MAX_ARTIFACT_EXPANDED_WORK,
+            artifact.metrics().artifact_expanded_work(),
+            "the accepted boundary sits exactly at the artifact cap"
+        );
+
+        let over = build(accepted.saturating_add(1));
+        assert!(
+            over.len() < 400,
+            "each extra segment costs a handful of bytes while forcing a whole budget's work"
+        );
+        assert_eq!(
+            Err(DecodeError::Malformed {
+                site: MalformedSite::ArtifactExpandedWork,
+            }),
+            decode(ArtifactImage::from(over.as_slice())),
+            "the artifact total closes the hole no per-declaration bound can see"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // The boundary goldens, derived from the constants
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn the_declaration_work_boundary_accepts_under_and_refuses_over()
+    {
+        let under = diamond_depth_within(MAX_EXPANDED_TERM_WORK);
+        let over = under.next();
+
+        let build = |depth: Depth| {
+            let mut arena = TermArena::new();
+            let declared = arena.value_type_unit();
+            let body = diamond(&mut arena, depth);
+            let declarations = vec![definition_over(&mut arena, declared, body)];
+            Vec::from(encode(&arena, &declarations))
+        };
+
+        let accepted = build(under);
+        let artifact = decode(ArtifactImage::from(accepted.as_slice()))
+            .expect("the largest in-budget declaration is accepted");
+        assert_eq!(
+            diamond_expanded(under),
+            artifact.metrics().max_declaration_expanded_work(),
+            "the metric reports the expanded size the shape actually has"
+        );
+
+        let refused = build(over);
+        assert_eq!(
+            Err(DecodeError::Malformed {
+                site: MalformedSite::ExpandedWork,
+            }),
+            decode(ArtifactImage::from(refused.as_slice())),
+            "one level deeper crosses the per-declaration cap"
+        );
+    }
+
+    #[test]
+    fn the_table_entry_boundary_accepts_under_and_refuses_over()
+    {
+        let cap = usize::from(MAX_TABLE_ENTRIES);
+        // A chain of `links` steps contributes `1 + 2 * links` entries; the body
+        // contributes the rest, so the entry count lands exactly on the cap.
+        let links = LinkCount(
+            cap.saturating_sub(2)
+                .checked_div(2)
+                .expect("a chain step contributes two entries"),
+        );
+
+        let build = |body_is_a_pair: bool| {
+            let mut arena = TermArena::new();
+            let declared = type_chain(&mut arena, links);
+            let unit = arena.value_unit();
+            let body = if body_is_a_pair {
+                arena.value_pair(unit, unit)
+            }
+            else {
+                unit
+            };
+            let declarations = vec![definition_over(&mut arena, declared, body)];
+            Vec::from(encode(&arena, &declarations))
+        };
+
+        let accepted = build(false);
+        let artifact = decode(ArtifactImage::from(accepted.as_slice()))
+            .expect("a table exactly at the entry cap is accepted");
+        assert_eq!(
+            MAX_TABLE_ENTRIES,
+            artifact.metrics().table_entries(),
+            "the accepted boundary sits exactly at the entry cap"
+        );
+
+        let refused = build(true);
+        assert_eq!(
+            Err(DecodeError::Malformed {
+                site: MalformedSite::TableSize,
+            }),
+            decode(ArtifactImage::from(refused.as_slice())),
+            "one entry past the cap is refused as the entries accrue"
+        );
+    }
+
+    #[test]
+    fn the_level_offset_boundary_accepts_under_and_refuses_over()
+    {
+        let cap = u64::from(MAX_DECODED_LEVEL_OFFSET);
+
+        let mut level = gandr_kernel_strata::Level::var(gandr_kernel_strata::LevelVar::new(
+            gandr_kernel_strata::LevelVarIndex::from(0),
+        ));
+        let mut remaining = cap.saturating_sub(1);
+        while remaining > 0 {
+            level = level
+                .succ()
+                .expect("a level offset below the cap is representable");
+            remaining = remaining.saturating_sub(1);
+        }
+        let mut arena = TermArena::new();
+        let declared = arena.value_type_universe(level);
+        let builder = DeclarationBuilder::new(&mut arena);
+        let declaration = builder.axiom(LevelSignature::monomorphic(), declared);
+        let declarations = vec![MarkedDeclaration::new(AdmissionMark::Checked, declaration)];
+        let accepted = encode(&arena, &declarations);
+        let artifact =
+            decode(accepted.as_image()).expect("an atom offset just under the cap is accepted");
+        assert_eq!(
+            1,
+            artifact.declarations().len(),
+            "the accepted level artifact carries its one declaration"
+        );
+
+        let refused = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
+            vec![entry_universe_atom(WireValue(0), WireValue(cap))],
+            TableIndex(0),
+        )]);
+        assert_eq!(
+            Err(DecodeError::Malformed {
+                site: MalformedSite::LevelOffset,
+            }),
+            decode(ArtifactImage::from(refused.as_ref())),
+            "an atom offset at the cap demands unbounded reconstruction and is refused"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // The version refusal and the totality properties
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn a_predecessor_version_is_refused_by_name()
+    {
+        let bytes = raw_artifact(Version(1), &[], &[]);
+        assert_eq!(
+            Err(DecodeError::UnsupportedVersion {
+                found: FormatVersion::from(1),
+            }),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "a predecessor version is named rather than guessed at"
+        );
+
+        let future = raw_artifact(Version(3), &[], &[]);
+        assert_eq!(
+            Err(DecodeError::UnsupportedVersion {
+                found: FormatVersion::from(3),
+            }),
+            decode(ArtifactImage::from(future.as_ref())),
+            "a later version is refused with the version it declared"
+        );
+    }
+
+    #[test]
+    fn a_foreign_magic_is_refused_at_the_header()
+    {
+        let bytes = vec![b'N', b'O', b'P', b'E', 0x02, 0x00, 0x00, 0x00];
+        assert_eq!(
+            Err(DecodeError::Malformed {
+                site: MalformedSite::Header,
+            }),
+            decode(ArtifactImage::from(bytes.as_slice())),
+            "bytes that are not a gandr kernel export are refused at the magic"
+        );
+    }
+
+    #[test]
+    fn truncation_at_every_prefix_is_refused_without_panicking()
+    {
+        let mut arena = TermArena::new();
+        let declared = arena.value_type_unit();
+        let unit = arena.value_unit();
+        let body = arena.value_pair(unit, unit);
+        let declarations = vec![definition_over(&mut arena, declared, body)];
+        let bytes = Vec::from(encode(&arena, &declarations));
+
+        let mut length = 0_usize;
+        while length < bytes.len() {
+            let prefix = bytes.get(.. length).expect("a prefix of the artifact");
+            assert!(
+                decode(ArtifactImage::from(prefix)).is_err(),
+                "the artifact truncated to {length} bytes is refused rather than accepted"
+            );
+            length = length.saturating_add(1);
+        }
+        assert!(
+            decode(ArtifactImage::from(bytes.as_slice())).is_ok(),
+            "the whole artifact is accepted, so the truncation sweep is not vacuous"
+        );
+    }
+
+    #[test]
+    fn arbitrary_bytes_never_panic()
+    {
+        // A deterministic sweep: every one-byte and two-byte image, then a
+        // scattering of longer ones that begin with the magic, built from a linear
+        // congruential sequence so the case is reproducible.
+        let mut first = 0_u16;
+        while first < 256 {
+            let byte = u8::try_from(first).unwrap_or(0);
+            let _ignored = decode(ArtifactImage::from([byte].as_slice()));
+            let _ignored = decode(ArtifactImage::from([byte, byte].as_slice()));
+            first = first.saturating_add(1);
+        }
+
+        let mut state = 0x2545_f491_4f6c_dd1d_u64;
+        let mut trial = 0_u32;
+        while trial < 512 {
+            let mut bytes: Vec<u8> = b"GKX1".to_vec();
+            let mut remaining = 24_u32;
+            while remaining > 0 {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                bytes.push(u8::try_from(state.wrapping_shr(33) & 0xff).unwrap_or(0));
+                remaining = remaining.saturating_sub(1);
+            }
+            let _ignored = decode(ArtifactImage::from(bytes.as_slice()));
+            trial = trial.saturating_add(1);
+        }
+    }
+
+    #[test]
+    fn trailing_bytes_are_refused()
+    {
+        let arena = TermArena::new();
+        let mut bytes = Vec::from(encode(&arena, &[]));
+        bytes.push(0x00);
+        assert_eq!(
+            Err(DecodeError::Malformed {
+                site: MalformedSite::TrailingBytes,
+            }),
+            decode(ArtifactImage::from(bytes.as_slice())),
+            "an artifact is the whole image, not a prefix of it"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // The closed vocabulary: unknown tags, reserved kinds, reserved slots
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn an_unassigned_node_tag_is_refused_by_name()
+    {
+        // The growth room's first byte, and both ends of the reserved sharing
+        // block. The settled numbering assigns the block but this crate emits no
+        // entry carrying one, so a reader meeting one refuses it exactly as it
+        // refuses any other unassigned byte — the reservation is a numbering claim,
+        // never a parse.
+        let unassigned = [
+            RawByte(0x1A),
+            RawByte(u8::from(SHARING_BLOCK_FIRST)),
+            RawByte(u8::from(SHARING_BLOCK_LAST)),
+        ];
+        for tag in unassigned {
+            let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
+                vec![entry_unassigned_tag(tag)],
+                TableIndex(0),
+            )]);
+            assert_eq!(
+                Err(DecodeError::UnknownTag {
+                    site: TagSite::Node,
+                    tag: WireTag::from(tag.0),
+                }),
+                decode(ArtifactImage::from(bytes.as_ref())),
+                "the space above the frozen block is a named refusal, never a mis-parse"
+            );
+        }
+    }
+
+    #[test]
+    fn a_reserved_declaration_kind_is_refused_distinctly()
+    {
+        let reserved = [
+            (RawByte(3), ReservedKind::ModuleSig),
+            (RawByte(4), ReservedKind::ModuleDef),
+            (RawByte(5), ReservedKind::FunctorDef),
+        ];
+        for (byte, kind) in reserved {
+            let mut declaration = RawDeclaration::axiom(vec![entry_unit_type()], TableIndex(0));
+            declaration.kind = byte;
+            let bytes = raw_artifact(current_version(), &[], &[declaration]);
+            assert_eq!(
+                Err(DecodeError::ReservedDeclarationKind { kind }),
+                decode(ArtifactImage::from(bytes.as_ref())),
+                "a reserved kind is refused as reserved rather than as unknown"
+            );
+        }
+
+        let mut unknown = RawDeclaration::axiom(vec![entry_unit_type()], TableIndex(0));
+        unknown.kind = RawByte(9);
+        let bytes = raw_artifact(current_version(), &[], &[unknown]);
+        assert_eq!(
+            Err(DecodeError::UnknownTag {
+                site: TagSite::DeclarationKind,
+                tag: WireTag::from(9),
+            }),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "a kind byte outside the reserved block is an unknown tag"
+        );
+    }
+
+    #[test]
+    fn an_unknown_admission_mark_is_refused()
+    {
+        let mut declaration = RawDeclaration::axiom(vec![entry_unit_type()], TableIndex(0));
+        declaration.mark = RawByte(7);
+        let bytes = raw_artifact(current_version(), &[], &[declaration]);
+        assert_eq!(
+            Err(DecodeError::UnknownTag {
+                site: TagSite::Admission,
+                tag: WireTag::from(7),
+            }),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "the admission bit is one of exactly two bytes"
+        );
+    }
+
+    #[test]
+    fn an_occupied_reserved_slot_is_refused_by_name()
+    {
+        let mut named = RawDeclaration::axiom(vec![entry_unit_type()], TableIndex(0));
+        named.name_segments = WireValue(1);
+        let bytes = raw_artifact(current_version(), &[], &[named]);
+        assert_eq!(
+            Err(DecodeError::ReservedSlotOccupied {
+                slot: ReservedSlot::StructuredName,
+            }),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "a name segment would make a namespace string the export identity"
+        );
+
+        let mut erased = RawDeclaration::definition(
+            vec![entry_unit_type(), entry_unit()],
+            TableIndex(0),
+            TableIndex(1),
+        );
+        erased.erasure = WireValue(1);
+        let bytes = raw_artifact(current_version(), &[], &[erased]);
+        assert_eq!(
+            Err(DecodeError::ReservedSlotOccupied {
+                slot: ReservedSlot::ErasureAnnotation,
+            }),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "an occupied erasure slot is refused at the slot that carried it"
+        );
+    }
+
+    #[test]
+    fn a_child_of_the_wrong_polarity_is_refused()
+    {
+        let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::definition(
+            vec![entry_unit_type(), entry_pair(TableIndex(0), TableIndex(0))],
+            TableIndex(0),
+            TableIndex(1),
+        )]);
+        assert_eq!(
+            Err(DecodeError::Malformed {
+                site: MalformedSite::Polarity,
+            }),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "polarity is recoverable from the tag alone, so a value slot refuses a type"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // The minted-atom table is refuted rather than believed
+    // ---------------------------------------------------------------------------
+
+    /// A sealed artifact: an abstract type at position zero, a definition after
+    /// it.
+    fn sealed_artifact() -> EncodedArtifact
+    {
+        let mut arena = TermArena::new();
+        let kind = arena.value_type_universe(gandr_kernel_strata::Level::zero());
+        let builder = DeclarationBuilder::new(&mut arena);
+        let atom = builder.abstract_type(LevelSignature::monomorphic(), kind);
+        let declared = arena.value_type_unit();
+        let body = arena.value_unit();
+        let definition = definition_over(&mut arena, declared, body);
+        let declarations = vec![
+            MarkedDeclaration::new(AdmissionMark::Checked, atom),
+            definition,
+        ];
+        encode(&arena, &declarations)
+    }
+
+    /// The sealed artifact's bytes with its declared atom table replaced.
+    ///
+    /// The header the sealed artifact writes is the magic, the version, a
+    /// one-byte table count and one one-byte position, so its tail begins
+    /// at the eighth byte.
+    fn sealed_with_atom_table(atoms: &[WireValue]) -> Bytes
+    {
+        let original = Bytes(Vec::from(sealed_artifact()));
+        let mut bytes = Bytes::new();
+        bytes.magic();
+        bytes.version(current_version());
+        bytes.varint(WireValue(u64::try_from(atoms.len()).unwrap_or(u64::MAX)));
+        for &atom in atoms {
+            bytes.varint(atom);
+        }
+        bytes.append_tail(&original, Position(8));
+        bytes
+    }
+
+    /// The refusal a refuted atom table takes.
+    fn refuted_atom_table() -> DecodeError
+    {
+        DecodeError::ReservedSlotOccupied {
+            slot: ReservedSlot::MintedAtomTable,
+        }
+    }
+
+    #[test]
+    fn a_sealed_artifact_round_trips_with_its_atom_table()
+    {
+        let bytes = sealed_artifact();
+        let artifact = decode(bytes.as_image()).expect("a sealed artifact decodes");
+        let first = artifact
+            .declarations()
+            .first()
+            .expect("the atom declaration decodes");
+        assert!(
+            matches!(
+                *first.declaration().content(),
+                DeclarationContent::AbstractType { .. }
+            ),
+            "an atom decodes as an atom rather than as an axiom"
+        );
+        assert_eq!(
+            Vec::from(bytes),
+            Vec::from(encode(artifact.arena(), artifact.declarations())),
+            "the sealed artifact re-encodes to the bytes it came from"
+        );
+    }
+
+    #[test]
+    fn a_minted_atom_table_with_a_repeat_is_refused()
+    {
+        let bytes = sealed_with_atom_table(&[WireValue(0), WireValue(0)]);
+        assert_eq!(
+            Err(refuted_atom_table()),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "two atoms cannot occupy one admission position"
+        );
+    }
+
+    #[test]
+    fn a_minted_atom_table_omitting_an_atom_is_refused()
+    {
+        let bytes = sealed_with_atom_table(&[]);
+        assert_eq!(
+            Err(refuted_atom_table()),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "an atom cannot be smuggled past the table"
+        );
+    }
+
+    #[test]
+    fn a_minted_atom_table_naming_a_definition_is_refused()
+    {
+        let bytes = sealed_with_atom_table(&[WireValue(1)]);
+        assert_eq!(
+            Err(refuted_atom_table()),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "the table cannot conjure an atom the declarations do not contain"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // Universes and levels ride the same canonical discipline
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn a_non_canonical_inline_level_is_refused()
+    {
+        // The atom list names one variable twice. The level oracle's canonical form
+        // keeps one atom per variable, so re-encoding writes one atom where the
+        // artifact carried two.
+        let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
+            vec![entry_universe_repeated_atom()],
+            TableIndex(0),
+        )]);
+        assert_eq!(
+            Err(non_canonical()),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "a level is rebuilt through its smart constructors, so a redundant atom re-encodes away"
+        );
+    }
+
+    #[test]
+    fn an_overlong_varint_inside_an_entry_is_refused()
+    {
+        let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
+            vec![entry_universe_overlong_constant()],
+            TableIndex(0),
+        )]);
+        assert_eq!(
+            Err(DecodeError::Malformed {
+                site: MalformedSite::Varint,
+            }),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "an overlong varint would be a second byte image of one value"
+        );
+    }
+
+    #[test]
+    fn a_universe_artifact_round_trips_byte_identically()
+    {
+        let mut arena = TermArena::new();
+        let declared = arena.value_type_universe(gandr_kernel_strata::Level::zero());
+        let builder = DeclarationBuilder::new(&mut arena);
+        let declaration = builder.axiom(LevelSignature::monomorphic(), declared);
+        let declarations = vec![MarkedDeclaration::new(AdmissionMark::Checked, declaration)];
+        let bytes = encode(&arena, &declarations);
+        let artifact = decode(bytes.as_image()).expect("the universe artifact decodes");
+        assert_eq!(
+            Vec::from(bytes),
+            Vec::from(encode(artifact.arena(), artifact.declarations())),
+            "a decoded universe re-encodes identically"
+        );
+        // The entry shape the raw builders use must agree with what the encoder
+        // writes, or every hand-built golden above would be testing a format the
+        // encoder does not produce.
+        let expected = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
+            vec![entry_universe(WireValue(0))],
+            TableIndex(0),
+        )]);
+        assert_eq!(
+            expected.0,
+            Vec::from(encode(artifact.arena(), artifact.declarations())),
+            "the hand-built segment shape is the shape the encoder produces"
+        );
+    }
+}
