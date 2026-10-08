@@ -158,7 +158,7 @@ export default {
     "subject-empty": [2, "never"],
     "subject-full-stop": [2, "never", "."],
     "body-leading-blank": [2, "always"],
-    "body-max-line-length": [2, "always", 100],
+    "body-max-line-length": [2, "always", 72],
     // Disabled: the conventional-commits parser reclassifies wrapped prose
     // bodies as footer whenever a line starts with `word:`; the custom
     // trailer-leading-blank rule above is the sound replacement.
