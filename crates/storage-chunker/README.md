@@ -1,41 +1,54 @@
 # gandr-storage-chunker
 
-**Content-defined chunking** for the storage tier: where a stream of canonical units is cut into chunks, decided by the content rather than by a position counter, under parameters a downstream root commits.
+Content-defined chunk boundaries over canonical records or typed boundary events, under parameters a downstream root commits.
 
-A store that cuts by position shifts every later cut when one byte is inserted, so two versions of a value share nothing past the edit. A store that cuts where the content says moves only the cuts near the edit, and the chunks around it keep their identities and their storage. This crate is that decision and nothing else: it reads no store, hashes no chunk and names no chunk. It returns where the cuts fall and why, and it has no dependencies.
+- [Synopsis](#synopsis)
+- [References](#references)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Two profiles](#two-profiles)
+- [Parameter commitments](#parameter-commitments)
+- [License](#license)
 
-## Two profiles
+## Synopsis
 
-| profile | input | cuts | committed fields |
-| ------- | ----- | ---- | ---------------- |
-| **record-safe** (`ChunkerParams`) | canonical record bytes, as slices or as one buffer with record spans | between complete records, when a Gear rolling hash masked by the byte target is zero, or at a byte or record cap | Gear table, seed policy and salt, normalization, record-boundary rule, three byte limits, three record limits |
-| **typed** (`TypedChunkerParams`) | boundary events a caller reports while walking its own grammar: the tokens since the previous event and a residue | when the residue is divisible by kappa, or when the pending tokens reach the cap | kappa, token cap |
+**What.** `gandr-storage-chunker` decides where a stream of canonical units is cut and reports each cut's reason. It provides a record-safe Gear scanner and a typed scanner over caller-reported boundary events. The crate is dependency-free and uses `core` and `alloc` under `no_std`.
 
-The typed scanner never sees bytes. A caller reports an event wherever its grammar admits a cut — after a record, after a constructor closes — with a residue taken under the caller's own committed hash. Kappa is the expected number of events per content-defined cut; the cap bounds every chunk's tokens whatever the residues do. A record store whose records are its events, one token each, is the degenerate instance, and `gandr-storage-records` cuts its leaves that way.
+**Why.** Position-based cuts shift after an insertion, changing the identity of otherwise unchanged chunks. Content-defined cuts let boundaries resynchronize after an edit, enabling storage consumers to share unchanged chunks. Explicit parameter commitments let a root bind the rule that produced its partition.
 
-Both profiles are deterministic, read each input once with no lookahead, and commit their parameters as bytes opening with one domain, `gandr:storage-chunker:params:v1`, followed by the algorithm discriminator and the profile's fields, every integer little-endian at a fixed width. Two writers that disagree on a parameter then produce different roots instead of silently different cuts.
+**How.** The record-safe profile scans canonical bytes with a Gear rolling hash and tests for cuts only between records, under byte and record limits. The typed profile accumulates token counts and cuts at an admissible event when its residue is divisible by kappa or its pending count reaches the cap. Both scanners make one forward pass without lookahead; hashing chunks and storing them belong to the consumer.
 
-## Status
+## References
 
-Ported from the `storage-chunker` crate of the pre-reboot prototype and revised against the reboot constraints. The revisions:
+- Athicha Muthitacharoen, Benjie Chen, and David Mazières. "A Low-Bandwidth Network File System." _Proceedings of the Eighteenth ACM Symposium on Operating Systems Principles (SOSP '01)_, pages 174–187, 2001. [doi:10.1145/502034.502052](https://doi.org/10.1145/502034.502052) — content-defined cuts that resynchronize after edits.
+- Wen Xia, Hong Jiang, Dan Feng, Lei Tian, Min Fu, and Yukun Zhou. "Ddelta: A Deduplication-Inspired Fast Delta Compression Approach." _Performance Evaluation_ 79, pages 258–272, 2014. [doi:10.1016/j.peva.2014.07.016](https://doi.org/10.1016/j.peva.2014.07.016) — the Gear rolling hash.
+- Wen Xia, Yukun Zhou, Hong Jiang, Dan Feng, Yu Hua, Yuchong Hu, Qing Liu, and Yucheng Zhang. "FastCDC: A Fast and Efficient Content-Defined Chunking Approach for Data Deduplication." _2016 USENIX Annual Technical Conference (USENIX ATC '16)_, 2016. [USENIX publication](https://www.usenix.org/conference/atc16/technical-sessions/presentation/xia), ISBN 978-1-931971-30-0 — the masked Gear cut test under size limits.
+- Wen Xia, Xiangyu Zou, Hong Jiang, Yukun Zhou, Chuanyi Liu, Dan Feng, Yu Hua, Yuchong Hu, and Yucheng Zhang. "The Design of Fast Content-Defined Chunking for Data Deduplication Based Storage Systems." _IEEE Transactions on Parallel and Distributed Systems_ 31(9), 2020. [doi:10.1109/TPDS.2020.2984632](https://doi.org/10.1109/TPDS.2020.2984632) — the cut-point discipline, applied here only between records and without normalized chunking.
+- Trevor Rainey, Nathan Borkowski, Michael Vollmer, Chaitanya Koparkar, Nathan Kainen, and Vidush Singhal. "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory." _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290, August 2026. [doi:10.1145/3828688](https://doi.org/10.1145/3828688) — typed constructor boundaries, residue divisibility and a token cap.
+- Guy L. Steele Jr., Doug Lea, and Christine H. Flood. "Fast Splittable Pseudorandom Number Generators." _Proceedings of the 2014 ACM International Conference on Object Oriented Programming Systems Languages & Applications (OOPSLA '14)_, 2014. [doi:10.1145/2660193.2660195](https://doi.org/10.1145/2660193.2660195) — `SplitMix64`, which generates the Gear table.
 
-- **A domain inside every commitment, and one layout per profile.** The prototype opened every commitment with a fixed magic and padded the typed profile's commitment with the record-safe profile's zeroed fields. A commitment now opens with the domain string, the algorithm discriminator selects the fields that follow, and each profile commits only its own fields.
-- **Little-endian throughout.** The prototype committed big-endian integers; every committed integer is now little-endian, the workspace's one byte order.
-- **The Gear table is built from its statement.** The prototype carried 256 literal constants. The table is the first 256 outputs of `SplitMix64` from the first sixty-four fractional bits of the square root of two, generated at compile time by that statement; a unit test pins entries at both ends and the middle against the table as first published, and every entry is equal to the prototype's.
-- **Sixty-four-bit typed constants.** Kappa and the cap are sixty-four bits wide, so a power-of-two kappa covers every mask width the record plane admits (up to two to the thirty-second).
-- **Unrepresentable states removed.** The algorithm is no longer an argument to the record-safe parameters, so a typed algorithm with record-safe fields cannot be built and its refusal is gone; a seed policy is either unsalted or a public salt, with no unsupported variant to refuse; one `UnsupportedProfileValue` refusal names the field and the raw value in place of four per-field variants.
-- **An unreachable refusal removed.** A chunk closes the moment it reaches the record cap, so the prototype's refusal for a record that would cross the record cap before the minimums were met could never fire. It is gone; the byte-cap counterpart, which can fire, stays.
-- **Typed errors with no dependency.** Hand-written `Display` and `core::error::Error` implementations, payloads typed (`RecordPosition`, `BytePosition`, `ByteCount`, `ProfileField`, `RawDiscriminator`). The crate is `no_std` over `core` and `alloc`.
-- **No bare primitives across the crate's own signatures**, `#[repr(transparent)]` on every single-field wrapper, checked arithmetic wherever a count or a position is concerned, no `as` conversions, and no `unwrap`/`expect`/`panic` outside tests.
+## Provided features
 
-The `# Specification` blocks stay prose: the crate has no dependencies, so it carries no `#[spec(...)]` attributes, and every runtime-checkable claim is exercised by its witnesses instead.
+- `chunk_record_slices` and `chunk_spans` partition canonical records without splitting a record.
+- `TypedChunker::on_boundary` reports a cut or continuation and identifies the cut reason.
+- Validated parameter types reject zero kappa, zero token cap and inconsistent record-safe limits.
+- `ParameterCommitment` encodes either profile for downstream root commitments.
+- `ChunkerError` distinguishes invalid parameters, invalid spans and arithmetic failures.
 
-## Using it
+## Expected features
 
-The typed profile, driven by a caller's own events:
+Consumers supply canonical record bytes or grammar-admissible boundary events. A typed event carries the tokens since the preceding event and a residue from the consumer's committed hash rule. The scanner does not derive residues or validate the grammar.
+
+A consumer defining chunk identities must bind the parameter commitment alongside its content. Use an allocator for the crate's `alloc`-backed results; `std` is not required.
+
+## Examples
+
+Drive the typed profile with a boundary whose residue satisfies the cut predicate:
 
 ```rust
 use gandr_storage_chunker::BoundaryEvent;
+use gandr_storage_chunker::BoundaryReason;
 use gandr_storage_chunker::BoundaryResidue;
 use gandr_storage_chunker::ChunkerError;
 use gandr_storage_chunker::CutDecision;
@@ -45,30 +58,45 @@ use gandr_storage_chunker::TokenCount;
 use gandr_storage_chunker::TypedChunker;
 use gandr_storage_chunker::TypedChunkerParams;
 
-fn example() -> Result<(), ChunkerError> {
-    let params = TypedChunkerParams::new(Kappa::try_from(4_u64)?, TokenCap::try_from(64_u64)?);
+fn main() -> Result<(), ChunkerError> {
+    let kappa = Kappa::try_from(4_u64)?;
+    let cap = TokenCap::try_from(64_u64)?;
+    let params = TypedChunkerParams::new(kappa, cap);
     let mut scanner = TypedChunker::new(&params);
-
     let event = BoundaryEvent::new(TokenCount::from(3_u64), BoundaryResidue::from(8_u64));
-    assert!(matches!(scanner.on_boundary(event), CutDecision::Cut(_)));
 
-    // A root binds these bytes, not the parsed parameters.
+    assert_eq!(scanner.on_boundary(event), CutDecision::Cut(BoundaryReason::HashPredicate));
+    assert_eq!(scanner.pending(), TokenCount::ZERO);
+
+    // A downstream root binds these bytes.
     let _committed = params.commitment();
-
     Ok(())
 }
 ```
 
-## Ideas and references
+Run the crate's tests from the repository root:
 
-The named ideas: content-defined chunking as a cut rule that travels with the data; the Gear rolling hash and the `FastCDC` cut-point discipline the record-safe profile follows; a typed, grammar-directed boundary in place of a byte-level one; and a splittable generator as the stated provenance of a constant table.
+```sh
+mise exec -- cargo test -p gandr-storage-chunker
+```
 
-- Athicha Muthitacharoen, Benjie Chen, and David Mazières. "A Low-Bandwidth Network File System." In _Proceedings of the Eighteenth ACM Symposium on Operating Systems Principles (SOSP '01)_, pages 174–187, 2001 — the content-defined cut rule.
-- Wen Xia, Hong Jiang, Dan Feng, Lei Tian, Min Fu, and Yukun Zhou. "Ddelta: A Deduplication-Inspired Fast Delta Compression Approach." _Performance Evaluation_ 79, 2014 — the Gear rolling hash.
-- Wen Xia, Yukun Zhou, Hong Jiang, Dan Feng, Yu Hua, Yuchong Hu, Qing Liu, and Yucheng Zhang. "FastCDC: A Fast and Efficient Content-Defined Chunking Approach for Data Deduplication." In _2016 USENIX Annual Technical Conference (USENIX ATC '16)_, 2016; and Wen Xia, Xiangyu Zou, Hong Jiang, Yukun Zhou, Chuanyi Liu, Dan Feng, Yu Hua, Yuchong Hu, and Yucheng Zhang. "The Design of Fast Content-Defined Chunking for Data Deduplication Based Storage Systems." _IEEE Transactions on Parallel and Distributed Systems_ 31(9), 2020 — the masked Gear test under minimum and maximum limits the record-safe profile follows; it applies the test only between records and does not adopt normalized chunking.
-- Trevor Rainey, Nathan Borkowski, Michael Vollmer, Chaitanya Koparkar, Nathan Kainen, and Vidush Singhal. "LoCalMem: Type-Directed Adaptive Serialization for Location- and Content-Addressable Memory." _Proceedings of the ACM on Programming Languages_ 10, ICFP, article 290, August 2026. `doi:10.1145/3828688` — the boundary discipline whose typed chunking profile the typed scanner implements: cuts at a type's own constructor boundaries, a residue divisible by kappa, and a hard token cap.
-- Guy L. Steele Jr., Doug Lea, and Christine H. Flood. "Fast Splittable Pseudorandom Number Generators." In _Proceedings of the 2014 ACM International Conference on Object Oriented Programming Systems Languages & Applications (OOPSLA '14)_, 2014. `doi:10.1145/2660193.2660195` — `SplitMix64`, the generator the Gear table is stated by.
+## Two profiles
+
+The profiles admit different cut positions and commit only the fields they use.
+
+| Profile | Input | Cut rule | Parameters |
+| ------- | ----- | -------- | ---------- |
+| Record-safe (`ChunkerParams`) | Canonical record slices, or one buffer with record spans | Masked Gear predicate between complete records, subject to minimums and byte or record caps | Gear table, seed policy and salt, normalization, record-boundary rule, byte limits, record limits |
+| Typed (`TypedChunkerParams`) | Token count and residue at each admissible boundary | Pending count reaches the token cap, otherwise residue is divisible by kappa | Kappa and token cap |
+
+The typed scanner cuts only at reported events; a multi-token event can take the pending count past the cap. The cap takes precedence over the hash predicate, and a cut resets the count. One token per record with a power-of-two kappa gives the record-boundary rule used by `gandr-storage-records`.
+
+The Gear table is generated at compile time from the first 256 outputs of `SplitMix64`, seeded by the first sixty-four fractional bits of the square root of two. A seed policy selects either the unsalted state or a public salt.
+
+## Parameter commitments
+
+A commitment opens with `gandr:storage-chunker:params:v1`, followed by an algorithm discriminator and that profile's fields. Every integer has a fixed width and little-endian encoding; the typed profile's kappa and token cap are both sixty-four bits. This framing distinguishes profiles without padding one profile with another's unused fields.
 
 ## License
 
-Apache-2.0 WITH LLVM-exception.
+Apache-2.0 WITH LLVM-exception. See [Apache-2.0](../../LICENSE.Apache-2.0.txt) and the [LLVM exception](../../LICENSE.LLVM-exception.txt) at the repository root.

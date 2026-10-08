@@ -5,15 +5,15 @@
 //!
 //! A caller walking a typed structure reports a boundary event wherever its
 //! own grammar admits a cut — after a record, after a constructor closes —
-//! carrying the tokens it consumed since the previous event and a residue,
-//! a rolling hash of the subtree the event closes, taken under the caller's
-//! own committed hash. The scanner adds the tokens to the pending count, then
+//! carrying the tokens it consumed since the previous event and a residue
+//! taken under the caller's committed hash rule. The scanner adds the tokens
+//! to the pending count, then
 //! cuts when the pending count has reached the hard token cap, or else when
 //! the residue is divisible by kappa; a cut resets the pending count to zero.
 //!
-//! Kappa is the expected number of boundary events per content-defined cut: a
-//! residue uniform over its width is divisible by kappa with probability one
-//! over kappa. The cap bounds every chunk's tokens whatever the residues do.
+//! Kappa controls the expected number of events per content-defined cut under
+//! a uniform residue distribution. The cap forces a cut at the first event
+//! that reaches or exceeds it; a multi-token event can overshoot the cap.
 //!
 //! The scanner never sees bytes. A record-safe store whose records are its
 //! boundary events, each one token, is the degenerate instance: kappa a power

@@ -19,9 +19,8 @@
 //! - The **typed** profile ([`TypedChunkerParams`], [`TypedChunker`]) never
 //!   sees bytes: a caller walking its own grammar reports a boundary event
 //!   wherever a cut is admissible, with the tokens since the previous event and
-//!   a residue — a rolling hash of the subtree the event closes. The scanner
-//!   cuts when the residue is divisible by kappa or the pending tokens reach
-//!   the cap.
+//!   a residue from the caller's committed hash rule. The scanner cuts when the
+//!   residue is divisible by kappa or the pending tokens reach the cap.
 //!
 //! Both profiles are deterministic, read each input once with no lookahead,
 //! and commit their parameters as bytes ([`ParameterCommitment`]) opening with
@@ -34,8 +33,8 @@
 //! panics, no arithmetic wraps where a count or position is concerned, and no
 //! operation repairs an input it was handed.
 //!
-//! The named ideas and their primary references are in this crate's
-//! `README.md`.
+//! See the [profiles and commitments](https://github.com/gandr-lang/gandr/blob/main/crates/storage-chunker/README.md#two-profiles)
+//! and [references](https://github.com/gandr-lang/gandr/blob/main/crates/storage-chunker/README.md#references).
 
 #![no_std]
 
