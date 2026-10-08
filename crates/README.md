@@ -41,6 +41,20 @@ crates/
 
 `workflow` has no member: the policy library and the gate binary come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
 
+## Crate README shape
+
+Every crate's `README.md` follows one order. A section is present when the crate has content for it. A crate-specific section is named plainly by its subject, never by negation or metaphor.
+
+1. `# <package>`, followed by one sentence stating what the crate is.
+2. A table of contents linking every section below.
+3. `## Synopsis`: three paragraphs, each opening with a bold word. **What.** names the thing the crate is, **Why.** the need it answers, and **How.** the mechanism, named concretely. The prose is dense, technical and in the present tense, and carries no history.
+4. `## References`: the papers and technical artifacts the crate draws on. Each entry gives the full title, the authors, the venue, the date and a stable identifier (DOI, ISBN, arXiv, HAL), and one clause on what the crate takes from it.
+5. `## Provided features`: what the crate provides, as items.
+6. `## Expected features`: what the crate requires of its consumer or its environment to be useful, such as a digest function, a store implementation, a spawner, a target requirement or a specification facade's `cfg`. Absent or planned work is not listed here.
+7. `## Examples`: runnable usage and the command that runs the crate's tests.
+8. Crate-specific sections, one per decision or mechanism, each stated as present fact with its reason.
+9. `## License`: `Apache-2.0 WITH LLVM-exception`, the workspace licence, whose text is at the repository root.
+
 ## Divergences
 
 None.
