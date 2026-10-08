@@ -38,8 +38,7 @@
 //! obtain. The requirement is checked below rather than surfacing as a missing
 //! atomic type.
 //!
-//! The named ideas and their primary references are in this crate's
-//! `README.md`.
+//! The papers the crate draws on are in its `README.md`, § References.
 
 #![no_std]
 
