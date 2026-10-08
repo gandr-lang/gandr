@@ -10,12 +10,11 @@
 //! rather than by review. Three properties follow.
 //!
 //! The certified kernel can depend on this crate without a cycle, since this
-//! crate cannot mention the kernel's types. The table's bytes, its eviction,
-//! and its lifetime live here rather than inside the checker, so what the
-//! checker holds is a seam and not a cache. And no interning table enters the
-//! trusted base.
+//! crate cannot mention the kernel's types. The table's storage and its
+//! lifetime live outside the checker, so what the checker holds is a seam and
+//! not a cache. And no interning table enters the trusted base.
 //!
-//! # What a hit claims, and what it does not
+//! # What a hit claims
 //!
 //! A hit claims exactly this: **this process already computed this answer for
 //! this support**. It does not claim the answer is right, that the support was
@@ -37,15 +36,15 @@
 //! can branch on liveness at **compile** time. Instantiated at [`NullMemo`],
 //! every memo interaction — the support construction included, when the
 //! consumer guards it — is a constant-false branch that monomorphization
-//! removes, so the unmemoized path keeps the code it had before the seam
-//! existed. That is what makes the memoized and unmemoized paths comparable:
-//! the differential's fresh side is not a re-implementation, it is **the same
-//! function at a different type parameter**.
+//! removes, so the unmemoized path compiles to the code it would have with no
+//! memo at all. That is what makes the memoized and unmemoized paths
+//! comparable: the differential's fresh side is not a re-implementation, it is
+//! **the same function at a different type parameter**.
 //!
 //! # The digest is a fast path and never a decision
 //!
-//! A key is content-derived from the start, so it survives relocation and two
-//! equal obligations key equally wherever they arise. A content key is carried
+//! A key is content-derived, so it survives relocation and two equal
+//! obligations key equally wherever they arise. A content key is carried
 //! as a [`ContentDigest`] beside a deciding comparison, and the direction of
 //! error is the whole of the contract: **equal digests never decide
 //! agreement**. Different digests prove disagreement; equal digests hand off to
@@ -62,10 +61,10 @@
 //! numbers. The counts are a contract rather than telemetry, so they are
 //! maintained with checked arithmetic and a typed refusal at the ceiling.
 //!
-//! The crate is `no_std` and depends only on `core` and `alloc`.
+//! The crate is `no_std` and depends only on `core`, `alloc` and the
+//! specification facade.
 //!
-//! The plan milestone and the obligations this crate discharges are in its
-//! `README.md`.
+//! The paper the crate draws on is in its `README.md`, § References.
 
 #![no_std]
 

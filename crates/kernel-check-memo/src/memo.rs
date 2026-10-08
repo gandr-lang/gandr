@@ -308,8 +308,8 @@ struct MemoEntry<Support, Outcome>
 /// comparison. So a digest collision costs one comparison and degrades to a
 /// miss; it cannot answer for the wrong support. That is the
 /// positive-fast-path-only discipline as a data structure rather than as a rule
-/// to remember, and it is what lets the key be content-derived — and therefore
-/// arena-free — from the start.
+/// to remember, and it is what lets the key be content-derived, and therefore
+/// arena-free.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OrderedMemo<Support, Outcome>
 where

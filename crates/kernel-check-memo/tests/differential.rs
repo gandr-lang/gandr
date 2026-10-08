@@ -23,7 +23,7 @@
 //!   weight-plane answer — the hit counts are asserted exactly rather than
 //!   reported, and a separate case pins that the shared composite and its fully
 //!   unshared spelling cost the **memoless** walk identically, which is the
-//!   statement that sharing bought this walk nothing before the memo existed.
+//!   statement that sharing buys this walk nothing without the memo.
 //!
 //! The support is content-derived, so the unshared spelling collapses under the
 //! memo exactly as the shared one does — which is the content key's payoff
