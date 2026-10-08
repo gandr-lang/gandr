@@ -1,14 +1,32 @@
 # gandr-lang
 
-Driver for the [gandr](https://github.com/gandr-lang/gandr) language toolchain.
+The `gandr` binary, the entry point of the gandr language toolchain.
 
-Installs the `gandr` binary. The driver manages the gandr toolchain: it fetches toolchain releases, installs optional components (script runner, REPL, LSP, native compile host), and dispatches to installed tools.
+<!-- toc -->
 
-## Status
+- [Synopsis](#synopsis)
+- [Examples](#examples)
+- [License](#license)
 
-Pre-release stub. The CLI parses arguments and reports its version; toolchain management is under active development in the
-[gandr repository](https://github.com/gandr-lang/gandr).
+<!-- tocstop -->
+
+## Synopsis
+
+**What.** The package `gandr-lang` builds the `gandr` binary. It accepts `--help` and `--version` and no other argument; a bare `gandr` prints one status line naming the driver version and stating that toolchain management is not implemented.
+
+**Why.** The driver owns the argument surface and the process boundary, and routes everything after that through `gandr-surface-dispatcher`, which a test exercises without a process. The registry name `gandr` belongs to an unrelated crate, so the package is `gandr-lang` and the binary is `gandr`.
+
+**How.** `clap` parses the arguments before anything is written, so `--help`, `--version` and an argument error take clap's exit path. A bare invocation dispatches `Invocation::Status`, writes the report through a locked standard-output handle with a fallible `writeln!`, and flushes it; a closed or full standard output is an error exit rather than a panic.
+
+## Examples
+
+```console
+$ cargo run -q -p gandr-lang
+gandr 0.0.0 — toolchain management is not yet implemented; see https://github.com/gandr-lang/gandr
+$ cargo run -q -p gandr-lang -- --version
+gandr 0.0.0
+```
 
 ## License
 
-Apache-2.0 WITH LLVM-exception.
+Apache-2.0 WITH LLVM-exception. The licence text is at the repository root.

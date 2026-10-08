@@ -2,9 +2,8 @@
 //!
 //! Installs as `gandr`. The driver owns the argument surface and the process
 //! boundary: it parses an invocation, routes it through the surface
-//! dispatcher, and renders the outcome. Toolchain management — fetching
-//! releases, installing components, dispatching to installed tools — arrives
-//! here as it lands.
+//! dispatcher, and renders the outcome. It accepts `--help` and `--version`;
+//! a bare invocation prints the dispatcher's status report.
 
 use std::io::Write as _;
 
