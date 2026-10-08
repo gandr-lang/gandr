@@ -1,0 +1,26 @@
+[package]
+name = "gandr-storage-chunker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Content-defined chunk boundaries for the storage tier: a record-safe byte profile and a typed boundary-event profile, each a committed parameter block"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["chunking", "content-defined", "gandr", "no-std"]
+categories = ["algorithms", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# No dependencies, by design: the chunker decides boundaries over bytes and
+# events a caller supplies, and hashes nothing itself.
+[dependencies]
+
+[lints]
+workspace = true

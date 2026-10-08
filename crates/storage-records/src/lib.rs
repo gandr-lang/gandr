@@ -72,13 +72,10 @@ pub mod store;
 pub mod tree;
 pub mod wire;
 
-pub use crate::boundary::BoundaryDecision;
 pub use crate::boundary::BoundaryMaskBits;
 pub use crate::boundary::BoundaryParams;
 pub use crate::boundary::BoundaryProfile;
 pub use crate::boundary::BoundaryRecordCap;
-pub use crate::boundary::DigestPrefix;
-pub use crate::boundary::LeafRunLength;
 pub use crate::boundary::ProfileCommitment;
 pub use crate::boundary::RecordSpan;
 pub use crate::bytes::EncodedNode;

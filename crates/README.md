@@ -32,7 +32,9 @@ crates/
 ├── kernel-core/               gandr-kernel-core               the checking machine, conversion, admission, the check memo
 ├── core-term/                 gandr-core-term                 the core syntax and the one unified context
 ├── core-nbe/                  gandr-core-nbe                  the glued value domain, evaluation and readback
+├── storage-chunker/           gandr-storage-chunker           content-defined chunk boundaries and their committed parameters
 ├── storage-records/           gandr-storage-records           the authenticated ordered-record plane
+├── storage-values/            gandr-storage-values            the content-addressed value plane: typed chunk DAG and content pointers
 ├── surface-syntax/            gandr-surface-syntax            the concrete syntax tree
 ├── surface-dispatcher/        gandr-surface-dispatcher        routes a driver invocation into the surface pipeline
 └── face-driver/               gandr-lang                      the `gandr` driver binary

@@ -1,0 +1,34 @@
+[package]
+name = "gandr-storage-values"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Value plane for the storage tier: one value as a typed chunk DAG under content pointers, with its flat canonical token bytes"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["chunking", "content-addressing", "gandr", "no-std"]
+categories = ["data-structures", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The pinned anodized facade supplies core-only specification helpers; BLAKE3
+# is the digest family; the chunker supplies the typed boundary scanner.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+gandr-storage-chunker.workspace = true
+
+# The record plane supplies a real node image for the domain-separation
+# witness.
+[dev-dependencies]
+gandr-storage-records.workspace = true
+
+[lints]
+workspace = true

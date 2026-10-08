@@ -212,12 +212,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-storage-chunker"
+version = "0.0.0"
+
+[[package]]
 name = "gandr-storage-records"
 version = "0.0.0"
 dependencies = [
  "anodized",
  "blake3",
+ "gandr-storage-chunker",
  "proptest",
+]
+
+[[package]]
+name = "gandr-storage-values"
+version = "0.0.0"
+dependencies = [
+ "anodized",
+ "blake3",
+ "gandr-storage-chunker",
+ "gandr-storage-records",
 ]
 
 [[package]]

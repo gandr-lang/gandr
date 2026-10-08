@@ -17,7 +17,8 @@ The revisions, all constraint-driven:
 - **A prover and a verifier that share their rules.** Child selection, the successor-leaf requirement, the bracketing-neighbour derivation and the selected leaf run are each one function called from both sides. Two implementations of one rule agree until they do not, and here a disagreement would read as a forgery.
 - **Agreement is separated from root identity.** `TreeRoot` equality is identity of the commitment. Whether two trees hold the same records is a different question with its own answer, `RecordTree::agrees_with`, in which the digest is a fast path for _disagreement_ and an equal-root pair is handed to the deciding comparison over the records themselves. Reading an equal digest as agreement is a silent false agreement, which is the one error this comparison must not make.
 - **The tree keeps its own structure.** The prototype re-decoded its own encoded root to answer a query or build a proof. The tree now holds its child references and leaf runs, so proving reads no bytes back.
-- **Typed errors with no dependency.** `thiserror` is replaced by hand-written `Display` and `core::error::Error` implementations, and error payloads are typed (`RecordIndex`, `NodeHash`, `FailureContext`, `WireVersion`) rather than bare integers and strings. The crate is `no_std` over `core` and `alloc`, with BLAKE3 its only dependency.
+- **Typed errors with no dependency.** `thiserror` is replaced by hand-written `Display` and `core::error::Error` implementations, and error payloads are typed (`RecordIndex`, `NodeHash`, `FailureContext`, `WireVersion`) rather than bare integers and strings. The crate is `no_std` over `core` and `alloc`; beside the `anodized` specification facade its dependencies are BLAKE3 and the workspace's dependency-free `gandr-storage-chunker`.
+- **One boundary scanner for both planes.** Where a leaf ends is decided by the chunker's typed boundary scanner in its degenerate instance: every record is one boundary event of one token, its residue the leading eight bytes of its boundary digest, kappa two to the mask width, and the token cap the record cap. The rule is stated once, in the chunker, and this crate supplies only the events. Cut positions, commitment bytes and roots are what the crate's own scan produced before it, pinned by `boundary::tests::the_cuts_of_a_fixed_corpus_are_pinned`.
 - **No bare primitives across the crate's own signatures**, `#[repr(transparent)]` on every single-field wrapper, checked arithmetic throughout, no `as` conversions, and no `unwrap`/`expect`/`panic` outside tests.
 
 Everything already conformant in the prototype — no recursion, flat id-addressed nodes with no owning pointer routed through a recursive type, fail-closed record discipline, canonical encodings with trailing bytes refused — is preserved. The tree is two levels deep and every structure and proof here is written for that and refuses any other shape; depth is named work rather than a partial implementation.
@@ -51,20 +52,20 @@ What the rungs are, and what each needs that this repository does not have yet:
 | ---- | ------- | --------------------- |
 | 0 | classify the wire vocabulary: boundary/alias verdicts and token bounds | none directly; it classifies kernel term tags |
 | 1 | the metatheory port of the token model through the linearization bound | supplies the statements this crate's canonicality is checked against |
-| 2 | a typed content-defined chunking profile beside the record-safe one | a sibling crate; the record-safe rule here is its degenerate instance, whose boundary vocabulary has one member |
-| 3 | the value-plane chunk DAG, content pointers, commit and dereference | the other plane; shares the backing store, not the verifier |
+| 2 | a typed content-defined chunking profile beside the record-safe one | `gandr-storage-chunker`; this crate's leaf rule runs on its typed scanner as the degenerate instance, whose boundary vocabulary has one member |
+| 3 | the value-plane chunk DAG, content pointers, commit and dereference | `gandr-storage-values`, the other plane; shares the backing store, not the verifier |
 | 4 | session checkpoints keyed by content pointers | consumes rung 3, not this crate |
 | 5 | certificate transport addresses as content pointers | would supply the transport a proof encoding belongs to |
 | 6 | the runtime design pass: the memory model as the value-representation specification | none directly |
 | 7 | worlds and distribution alignment | none directly |
 
-Rungs 0 through 3 landed in the prototype. **Rungs 4 through 7 are open**, and none of the four is a prerequisite for this crate: it is landable, and landed, on its own.
+Rungs 0 through 3 landed in the prototype, and rungs 2 and 3 are ported here as `gandr-storage-chunker` and `gandr-storage-values`. **Rungs 4 through 7 are open**, and none of the four is a prerequisite for this crate: it is landable, and landed, on its own.
 
 Two fences bind this crate and do not move. Every adopted statement is a deep-equality statement — integrity only, and a digest match licenses no rewrite, no admission and no replay skip. And a digest is a positive fast path only: different digests prove disagreement, equal digests hand off to the deciding comparison, and a structure keyed by digest validates its hit against content rather than answering from the key.
 
 ## The contract attributes
 
-The `# Specification` prose stays the statement of record, and a combined `#[spec(...)]` attribute states the same predicate wherever one is a runtime-checkable expression. Fifty-eight of the crate's seventy-nine blocks carry one; the remaining twenty-one stay prose and name their boundary in `- provides:`.
+The `# Specification` prose stays the statement of record, and a combined `#[spec(...)]` attribute states the same predicate wherever one is a runtime-checkable expression. Fifty-seven of the crate's seventy-eight blocks carry one; the remaining twenty-one stay prose and name their boundary in `- provides:`.
 
 A clause carries the whole of one `- requires:` or `- ensures:` line, never a decidable half of it. Three shapes recur:
 
@@ -80,7 +81,7 @@ A block stays prose for one of four reasons, each recorded in its own `- provide
 
 - **Depth beyond two.** The record count one internal root can address is bounded by the child ceiling. Past it the root becomes a level of internal nodes over internal nodes, and the proof shapes change with it: a membership proof becomes a path rather than a pair. This is the keyed plane's half of the storage tier's multi-level question.
 - **A store-backed reader.** `StoredRoot` attests that a root's own node is present and verifies, and nothing more: it does not walk children, so it does not attest that the tree below is present. A reader that answers queries from a store needs a traversal with its own budget, and a handle that answered from a partially present tree would be worse than one that refuses.
-- **A committed second boundary profile.** `BoundaryProfile` is the door a second rule enters by; the typed profile of rung 2 is the expected one.
+- **A committed second boundary profile.** `BoundaryProfile` is the door a second rule enters by. The scanner already takes events that carry several tokens and residues from any committed hash; a profile with more than one boundary kind per record would be named and committed there.
 - **Compact witnesses.** A proof carries whole leaves. Sibling-path witnesses would be smaller and are a size question, not a soundness one.
 - **The canonicality statement as a proved theorem.** That two writers agreeing on the parameters agree on the root is enforced by construction and exercised by differential; the metatheory port of rung 1 is where it becomes a theorem.
 

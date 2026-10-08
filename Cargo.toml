@@ -9,7 +9,9 @@ members = [
   "crates/kernel-core",
   "crates/kernel-strata",
   "crates/kernel-term",
+  "crates/storage-chunker",
   "crates/storage-records",
+  "crates/storage-values",
   "crates/surface-dispatcher",
   "crates/surface-syntax",
   "crates/theory-orders",
@@ -43,6 +45,7 @@ publish = false
 # - kernel-strata
 # - kernel-term
 # - storage-records
+# - storage-values
 # - surface-syntax
 # - theory-orders
 [workspace.dependencies.anodized]
@@ -53,6 +56,7 @@ default-features = false
 # BLAKE3 hashing for content and node identities.
 # consumers:
 # - storage-records
+# - storage-values
 # - surface-syntax
 [workspace.dependencies.blake3]
 version = "1.8.7"
@@ -104,6 +108,20 @@ path = "crates/kernel-strata"
 # - kernel-core
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
+
+# Content-defined chunking: where a stream of canonical units is cut, and the
+# committed parameters that decide it.
+# consumers:
+# - storage-records
+# - storage-values
+[workspace.dependencies.gandr-storage-chunker]
+path = "crates/storage-chunker"
+
+# The authenticated ordered-record plane.
+# consumers:
+# - storage-values (dev)
+[workspace.dependencies.gandr-storage-records]
+path = "crates/storage-records"
 
 # Routes a driver invocation into the surface pipeline.
 # consumers:

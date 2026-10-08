@@ -19,10 +19,12 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled in this no_std library.
+# logic/BigInt stays disabled in this no_std library. The chunker supplies the
+# typed boundary scanner the leaf rule is the degenerate instance of.
 [dependencies]
 anodized.workspace = true
 blake3.workspace = true
+gandr-storage-chunker.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

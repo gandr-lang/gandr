@@ -11,13 +11,17 @@
 //!
 //! # The rule
 //!
-//! A record ends a leaf when the digest of its canonical encoding, taken under
-//! the boundary domain, has [`BoundaryMaskBits`] low zero bits — a decision
-//! that reads one record and nothing else. A cap ([`BoundaryRecordCap`]) ends a
-//! leaf that the digest rule has not ended, which bounds leaf size at the cost
-//! of making the cut position-dependent inside one capped run: an edit can move
-//! a capped cut, but only within the run it falls in, never past the next
-//! digest-induced cut.
+//! The rule is the chunker's typed boundary scanner in its degenerate
+//! instance: every record is one boundary event of one token, and its residue
+//! is the leading eight bytes, little-endian, of the digest of its canonical
+//! encoding under the boundary domain. Kappa is two to the
+//! [`BoundaryMaskBits`] power, so a record ends a leaf when its residue has
+//! that many low zero bits — a decision that reads one record and nothing
+//! else. The token cap is the [`BoundaryRecordCap`], which ends a leaf the
+//! digest has not ended and so bounds leaf size, at the cost of making the cut
+//! position-dependent inside one capped run: an edit can move a capped cut,
+//! but only within the run it falls in, never past the next digest-induced
+//! cut.
 //!
 //! The parameters are protocol constants, not tuning knobs: two writers that
 //! disagree on them build different trees from the same records. They are
@@ -27,8 +31,17 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
+use core::num::NonZeroU64;
 
 use anodized::spec;
+use gandr_storage_chunker::BoundaryEvent;
+use gandr_storage_chunker::BoundaryResidue;
+use gandr_storage_chunker::CutDecision;
+use gandr_storage_chunker::Kappa;
+use gandr_storage_chunker::TokenCap;
+use gandr_storage_chunker::TokenCount;
+use gandr_storage_chunker::TypedChunker;
+use gandr_storage_chunker::TypedChunkerParams;
 
 use crate::bytes::OwnedRecordEncoding;
 use crate::bytes::RecordEncoding;
@@ -63,75 +76,6 @@ impl BoundaryMaskBits
     /// Zero would make every record a boundary, collapsing every leaf to one
     /// record and the tree to a list of singleton leaves.
     pub const MIN: Self = Self(1_u8);
-
-    /// Reports whether a digest prefix satisfies this width.
-    ///
-    /// The width is always at most [`BoundaryMaskBits::MAX`], which the
-    /// prefix's 64-bit window holds, so the mask is exact.
-    ///
-    /// # Specification
-    /// - requires: `(Self::MIN.0 ..= Self::MAX.0).contains(&self.0)` — `self`
-    ///   is built through the only constructor, so the width is admissible and
-    ///   the mask exact.
-    /// - ensures: `|ret| (ret == BoundaryDecision::EndsLeaf) ==
-    ///   (u64::from(prefix).trailing_zeros() >= u32::from(self.0))` — reports
-    ///   `EndsLeaf` exactly when the prefix's masked bits are all zero.
-    /// - provides: the digest side of the boundary rule, against which a
-    ///   committed commitment is checked.
-    /// - fails: none — the decision is total.
-    /// - panics: none.
-    #[inline]
-    #[must_use]
-    #[spec(
-        requires: (Self::MIN.0 ..= Self::MAX.0).contains(&self.0),
-        ensures: |ret| (ret == BoundaryDecision::EndsLeaf)
-            == (u64::from(prefix).trailing_zeros() >= u32::from(self.0)),
-    )]
-    fn ends_leaf(
-        self,
-        prefix: DigestPrefix,
-    ) -> BoundaryDecision
-    {
-        let mask = (1_u64 << u32::from(self.0)).saturating_sub(1_u64);
-
-        if u64::from(prefix) & mask == 0_u64 {
-            BoundaryDecision::EndsLeaf
-        }
-        else {
-            BoundaryDecision::Continues
-        }
-    }
-}
-
-/// The leading bits of a boundary digest, read as one number.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct DigestPrefix(u64);
-
-impl From<u64> for DigestPrefix
-{
-    /// Reads a `u64` as a digest prefix.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(prefix: u64) -> Self
-    {
-        Self(prefix)
-    }
-}
-
-impl From<DigestPrefix> for u64
-{
-    /// Reads the prefix back out as a `u64`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(prefix: DigestPrefix) -> Self
-    {
-        prefix.0
-    }
 }
 
 impl TryFrom<u8> for BoundaryMaskBits
@@ -212,32 +156,6 @@ impl fmt::Display for BoundaryMaskBits
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BoundaryRecordCap(u32);
 
-impl BoundaryRecordCap
-{
-    /// Returns the cap as a run length.
-    ///
-    /// Every target this crate builds for has a pointer at least as wide as
-    /// thirty-two bits, so the widening is exact; a narrower target saturates,
-    /// which can only end a run earlier and never later.
-    ///
-    /// # Specification
-    /// - requires: nothing; the cap is committed at seal time.
-    /// - ensures: `|ret| usize::from(ret) ==
-    ///   usize::try_from(self.0).unwrap_or(usize::MAX)` — the exact run length
-    ///   on every target this crate builds for, and the host ceiling on a
-    ///   narrower one.
-    /// - provides: the host-width widening a span walk consumes.
-    /// - fails: none — saturation can only end a run earlier.
-    /// - panics: none.
-    #[inline]
-    #[must_use]
-    #[spec(ensures: |ret| usize::from(ret) == usize::try_from(self.0).unwrap_or(usize::MAX))]
-    fn as_run_length(self) -> LeafRunLength
-    {
-        LeafRunLength(usize::try_from(self.0).unwrap_or(usize::MAX))
-    }
-}
-
 impl TryFrom<u32> for BoundaryRecordCap
 {
     type Error = RecordTreeError;
@@ -271,37 +189,6 @@ impl TryFrom<u32> for BoundaryRecordCap
         }
 
         Ok(Self(cap))
-    }
-}
-
-/// How many records a leaf run holds so far.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct LeafRunLength(usize);
-
-impl From<usize> for LeafRunLength
-{
-    /// Reads a `usize` as a run length.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(length: usize) -> Self
-    {
-        Self(length)
-    }
-}
-
-impl From<LeafRunLength> for usize
-{
-    /// Reads the run length back out as a `usize`.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn from(length: LeafRunLength) -> Self
-    {
-        length.0
     }
 }
 
@@ -515,24 +402,57 @@ impl BoundaryParams
         ProfileCommitment::from(Vec::<u8>::from(bytes))
     }
 
-    /// Reports whether `record` ends the leaf it falls in.
+    /// Returns the typed-scanner rule these parameters are the degenerate
+    /// instance of: kappa two to the mask width, and the record cap as the
+    /// token cap.
     ///
     /// # Specification
-    /// - requires: `record` is the encoding of a leaf-start record.
-    /// - ensures: reports `EndsLeaf` exactly when the record's digest has every
-    ///   masked bit clear.
-    /// - provides: the digest side of the run rule; the record-cap side is
-    ///   applied by the span walk. The postcondition stays prose: the decision
-    ///   is [`BoundaryMaskBits::ends_leaf`]'s, which carries it as a clause,
-    ///   and restating the digest here would be this body again.
-    /// - fails: none — the decision is total.
+    /// - requires: the mask width and the cap were minted through their own
+    ///   conversions, so the width is at most thirty-two and the cap at least
+    ///   one.
+    /// - ensures: `|ret| u64::from(ret.kappa()).is_power_of_two() &&
+    ///   u64::from(ret.kappa()).trailing_zeros() == u32::from(self.mask_bits.0)
+    ///   && u64::from(ret.cap()) == u64::from(self.record_cap.0)` — kappa is
+    ///   exactly two to the mask width and the cap is exactly the record cap,
+    ///   so a residue is divisible by kappa when its masked bits are all zero.
+    /// - provides: the rule the span walk drives the scanner with.
+    /// - fails: never.
     /// - panics: none.
     #[inline]
     #[must_use]
-    fn cuts_after(
+    #[spec(ensures: |ret| u64::from(ret.kappa()).is_power_of_two()
+        && u64::from(ret.kappa()).trailing_zeros() == u32::from(self.mask_bits.0)
+        && u64::from(ret.cap()) == u64::from(self.record_cap.0))]
+    fn scanner_params(self) -> TypedChunkerParams
+    {
+        // Both forms are exact on minted parameters: two to at most the
+        // thirty-second power fits sixty-four bits, and a cap of at least one
+        // is one plus its predecessor. Neither saturates.
+        let two = NonZeroU64::MIN.saturating_add(1_u64);
+        let kappa = two.saturating_pow(u32::from(self.mask_bits.0));
+        let cap =
+            NonZeroU64::MIN.saturating_add(u64::from(self.record_cap.0).saturating_sub(1_u64));
+
+        TypedChunkerParams::new(Kappa::from(kappa), TokenCap::from(cap))
+    }
+
+    /// Returns the residue the scanner reads for one record.
+    ///
+    /// # Specification
+    /// - requires: `record` is the canonical encoding of one record.
+    /// - ensures: the leading eight bytes of the record's digest under the
+    ///   boundary domain, read little-endian.
+    /// - provides: the boundary event's residue, read from this record alone,
+    ///   which is what keeps the rule local. The postcondition stays prose:
+    ///   restating the digest here would be this body again.
+    /// - fails: none — the residue is total.
+    /// - panics: none.
+    #[inline]
+    #[must_use]
+    fn residue(
         self,
         record: RecordEncoding<'_>,
-    ) -> BoundaryDecision
+    ) -> BoundaryResidue
     {
         match self.profile {
             | BoundaryProfile::RecordDigest => {
@@ -541,8 +461,7 @@ impl BoundaryParams
                 let (head, _tail) = hash.as_ref().split_at(leading.len());
                 leading.copy_from_slice(head);
 
-                self.mask_bits
-                    .ends_leaf(DigestPrefix::from(u64::from_le_bytes(leading)))
+                BoundaryResidue::from(u64::from_le_bytes(leading))
             },
         }
     }
@@ -613,16 +532,6 @@ impl AsRef<[u8]> for ProfileCommitment
     {
         self.0.as_ref()
     }
-}
-
-/// Whether a record ends the leaf it falls in.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BoundaryDecision
-{
-    /// The leaf ends after this record.
-    EndsLeaf,
-    /// The leaf continues past this record.
-    Continues,
 }
 
 /// A half-open run of record positions forming one leaf.
@@ -743,10 +652,11 @@ pub(crate) fn encode_record(record: RecordRef<'_>) -> Result<OwnedRecordEncoding
 /// - fails: [`RecordTreeError::ArithmeticOverflow`] when a record cannot be
 ///   encoded for the rule, or when a position exceeds the host width.
 /// - panics: none.
-/// - intension: exactly one pass over `records`, one record encoding and one
-///   digest per record, and no lookahead — the promised property is that a
-///   record's own decision never reads a later record, which is what makes the
-///   partition local. The observation is the returned partition itself.
+/// - intension: exactly one pass over `records`, one record encoding, one
+///   digest and one scanner step per record, and no lookahead — the promised
+///   property is that a record's own decision never reads a later record, which
+///   is what makes the partition local. The observation is the returned
+///   partition itself.
 ///
 /// # Errors
 /// [`RecordTreeError::ArithmeticOverflow`] — a record's fields or a position
@@ -754,10 +664,12 @@ pub(crate) fn encode_record(record: RecordRef<'_>) -> Result<OwnedRecordEncoding
 ///
 /// # Adequacy
 /// - hypothesis: L2 agreement for the partition law — a property over generated
-///   corpora asserts the spans reassemble the input exactly — plus L3 for the
-///   two cut causes, separated by a corpus with a digest-induced cut and by a
-///   corpus of cap-length runs, and by the empty input.
+///   corpora asserts the spans reassemble the input exactly — and against a
+///   pinned golden of where one fixed corpus is cut under two rules, plus L3
+///   for the two cut causes, separated by a corpus with a digest-induced cut
+///   and by a corpus of cap-length runs, and by the empty input.
 /// - witness: `boundary::tests::spans_partition_the_input`
+/// - witness: `boundary::tests::the_cuts_of_a_fixed_corpus_are_pinned`
 /// - witness: `boundary::tests::the_cap_ends_a_run_the_digest_does_not`
 /// - witness: `boundary::tests::an_empty_input_has_no_spans`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|spans| {
@@ -777,24 +689,19 @@ pub(crate) fn leaf_spans(
 ) -> Result<Box<[RecordSpan]>, RecordTreeError>
 {
     let mut spans = Vec::<RecordSpan>::new();
+    let mut scanner = TypedChunker::new(&params.scanner_params());
     let mut start = RecordIndex::ZERO;
     let mut position = RecordIndex::ZERO;
-    let cap = params.record_cap().as_run_length();
 
     for record in records {
         let encoded = encode_record(*record)?;
         position = position.next()?;
 
-        let run_length = usize::from(position)
-            .checked_sub(usize::from(start))
-            .map(LeafRunLength::from)
-            .ok_or_else(|| RecordTreeError::ArithmeticOverflow {
-                context: "leaf run length".into(),
-            })?;
-        let ends = params.cuts_after(encoded.as_borrowed()) == BoundaryDecision::EndsLeaf
-            || run_length >= cap;
+        // Every record is one boundary event of one token, so the scanner's
+        // pending count is the run length and its cap the record cap.
+        let event = BoundaryEvent::new(TokenCount::ONE, params.residue(encoded.as_borrowed()));
 
-        if ends {
+        if let CutDecision::Cut(_reason) = scanner.on_boundary(event) {
             spans.push(RecordSpan {
                 start,
                 end: position,
@@ -893,6 +800,32 @@ mod tests
             })
         );
         assert!(BoundaryRecordCap::try_from(1_u32).is_ok());
+    }
+
+    #[test]
+    fn the_scanner_rule_is_two_to_the_width_and_the_cap()
+    {
+        let rule = |bits: BoundaryMaskBits, cap: u32| {
+            let params = BoundaryParams::new(
+                BoundaryProfile::CURRENT,
+                bits,
+                BoundaryRecordCap::try_from(cap).expect("a fixture cap is admissible"),
+            )
+            .scanner_params();
+            (u64::from(params.kappa()), u64::from(params.cap()))
+        };
+
+        // Both ends of each range: the narrowest and widest widths, and the
+        // smallest and largest caps, none of which may saturate.
+        assert_eq!(rule(BoundaryMaskBits::MIN, 1_u32), (2_u64, 1_u64));
+        assert_eq!(
+            rule(BoundaryMaskBits::MAX, u32::MAX),
+            (1_u64 << 32_u32, u64::from(u32::MAX))
+        );
+        assert_eq!(
+            rule(BoundaryParams::current().mask_bits(), 64_u32),
+            (16_u64, 64_u64)
+        );
     }
 
     #[test]
@@ -1030,5 +963,38 @@ mod tests
             .expect("an empty record encodes");
 
         assert_eq!(spans.len(), 1_usize);
+    }
+
+    #[test]
+    fn the_cuts_of_a_fixed_corpus_are_pinned()
+    {
+        let owned = corpus(RecordCount::from(200_u64));
+        let records = borrow(owned.as_slice());
+        let ends = |params: BoundaryParams| -> Vec<usize> {
+            leaf_spans(records.as_slice(), params)
+                .expect("the corpus encodes")
+                .iter()
+                .map(|span| usize::from(span.end()))
+                .collect()
+        };
+        // A one-bit mask under a cap of three mixes digest cuts with cap cuts,
+        // so the pin covers both causes and their interaction.
+        let mixed = BoundaryParams::new(
+            BoundaryProfile::CURRENT,
+            BoundaryMaskBits::MIN,
+            BoundaryRecordCap::try_from(3_u32).expect("three is admissible"),
+        );
+
+        // Where leaves end is protocol: these positions are what every root
+        // built under these parameters commits to.
+        assert_eq!(ends(BoundaryParams::current()), vec![
+            12, 55, 64, 97, 100, 139, 144, 160, 165, 175, 200
+        ]);
+        let mixed_ends = ends(mixed);
+        assert_eq!(mixed_ends.len(), 112_usize);
+        assert_eq!(mixed_ends[.. 25_usize], [
+            1, 4, 6, 9, 10, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24, 26, 27, 28, 30, 33, 36, 38, 39,
+            41, 43
+        ]);
     }
 }
