@@ -773,7 +773,7 @@ fn composite_comp_face(
 // stuck head costs O(n^2) copying. Upgrade path: hold the spine as an
 // id-addressed cons chain in its own arena family, where extending is one cell
 // and the tail is shared — the same flat-representation move the arena already
-// makes for terms, deferred here because it costs every reader of `spine()` a
+// makes for terms, not taken here because it costs every reader of `spine()` a
 // walk in exchange.
 #[spec(
     captures: [

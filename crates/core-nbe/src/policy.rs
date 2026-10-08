@@ -1,11 +1,10 @@
 //! The two policy parameters the value domain is written against: the
 //! scheduling policy and the duplication policy.
 //!
-//! Both are parameters from the moment the domain exists rather than after a
-//! measurement asks for them, because retrofitting either costs the domain's
-//! shape: a scheduler that hardcodes one share is rewritten rather than
-//! reconfigured, and a duplication rule baked into the value representation is
-//! not a rule that can be replaced.
+//! Both are parameters of the domain rather than constants inside it, because
+//! fixing either costs the domain's shape: a scheduler that hardcodes one share
+//! is rewritten rather than reconfigured, and a duplication rule baked into the
+//! value representation is not a rule that can be replaced.
 //!
 //! # A share never forecloses a proof
 //!
@@ -27,13 +26,14 @@
 //!
 //! # The finer duplication stance is gated, and the gate is the point
 //!
-//! The erase-and-clone stance is the baseline and the reference every later
+//! The erase-and-clone stance is the baseline and the reference every other
 //! stance replays against. The spinal stance is representable here — the
 //! parameter's shape has to admit it or the parameter buys nothing — and it is
-//! **refused at installation** until the certification trace that would make it
-//! checkable exists. Installing an uncertified strategy is precisely the
-//! inversion the trace-before-strategy ordering forbids, so the refusal is the
-//! ordering made mechanical rather than a note in a design document.
+//! **refused at installation**: it installs only behind a certification trace
+//! that checks it by replay, and this crate takes no such trace. Installing an
+//! uncertified strategy is precisely the inversion the trace-before-strategy
+//! ordering forbids, so the refusal is the ordering made mechanical rather
+//! than a note in a design document.
 
 use anodized::spec;
 use gandr_core_term::DefinitionHeight;
@@ -213,9 +213,10 @@ pub enum Copied
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PolicyRefusal
 {
-    /// The stance is gated behind a certification trace that does not exist
-    /// yet. Installing it would put an uncertified strategy where the design
-    /// requires evidence, which is the ordering the gate makes mechanical.
+    /// The stance installs only behind a certification trace, which this crate
+    /// does not take. Installing it would put an uncertified strategy where the
+    /// design requires evidence, which is the ordering the gate makes
+    /// mechanical.
     StanceGated
     {
         /// The stance that was refused.
@@ -245,13 +246,13 @@ impl DuplicationPolicy
     /// - provides: the installation point a measurement moves, and the gate
     ///   that keeps an uncertified stance out of it.
     /// - fails: [`PolicyRefusal::StanceGated`] for the spinal stance, naming
-    ///   the stance it refused, until the conversion trace that certifies it
-    ///   exists.
+    ///   the stance it refused, because no certification trace is an input
+    ///   here.
     /// - panics: none.
     ///
     /// # Errors
     /// - [`PolicyRefusal::StanceGated`] — the stance needs a certification
-    ///   trace that has not been built.
+    ///   trace, and installation takes none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the decision surface is the gate, separated by

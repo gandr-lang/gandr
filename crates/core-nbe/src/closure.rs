@@ -1,22 +1,19 @@
 //! Both closure spaces, and the environment they close over.
 //!
-//! # Two spaces, named together
+//! # Two spaces, one entry operation
 //!
 //! The core language has two term families, so a suspended body is one of two
-//! things and a domain that names only the one it happens to need first
-//! acquires the second as a retrofit through every site that builds or enters a
-//! closure.
+//! things:
 //!
 //! - [`ValueClosure`] suspends a **value** body: the shape a code standing
-//!   under a binder takes, which is what a dependent domain's codomain becomes
-//!   once the type language can read a type off a value.
+//!   under a binder takes.
 //! - [`CompClosure`] suspends a **computation** body: the shape a lambda, a
 //!   thunk, a bind continuation and a case branch all take.
 //!
-//! Only the second has producers at today's vocabulary. Naming both now is the
-//! same discipline the two faces of [the domain] are named under, and for the
-//! same reason: entering a closure is one operation, and it cannot be one
-//! operation if the two spaces arrive at different times.
+//! No former in the core vocabulary produces a value closure. Both spaces close
+//! over the same [`Environment`], so entering a closure is one operation over
+//! either, for the same reason the two faces of [the domain] are named on one
+//! type.
 //!
 //! # The environment mirrors the context's two zones
 //!
@@ -271,9 +268,9 @@ fn entry_offset(
 
 /// A suspended **value** body with the environment its free variables stand in.
 ///
-/// The space has no producer at today's vocabulary; it is named with its
-/// sibling because entering a closure is one operation and the two spaces
-/// cannot arrive at different times without splitting it.
+/// No former in the core vocabulary produces one; it is named beside
+/// [`CompClosure`] so that entering a closure is one operation over both term
+/// families.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValueClosure
 {

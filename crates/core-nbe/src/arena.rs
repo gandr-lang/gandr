@@ -5,9 +5,9 @@
 //!
 //! A domain arena belongs to one run and dies with it. Nothing here is
 //! persisted, nothing is shared between runs, and teardown is six flat vector
-//! drops in any order — which is the claim the milestone's adequacy anchor
-//! tests: a deep chain released in both orders, observed through a handle that
-//! does not keep it alive.
+//! drops in any order. The teardown suite releases a deep chain in both orders
+//! inside a small stack and observes the release through a handle that does
+//! not keep the chain alive.
 //!
 //! [`DomainArena::truncate_to`] is the same operation at a mark rather than at
 //! the floor, so a speculative evaluation allocates past a watermark and is

@@ -3,10 +3,9 @@
 //! # Why both faces are named together
 //!
 //! Readback *chooses* a face and conversion *forces* a face, so the two
-//! policies are one table. A domain that grew the second face after the first
-//! was in use would get two tables that disagree at the seams — the
-//! half-built-glue failure the plan names — and the repair costs the domain's
-//! shape rather than a field.
+//! policies are one table. Both faces are fields of the domain's own types, so
+//! the table has one shape; a face kept beside the domain would give two
+//! tables that disagree at the seams.
 //!
 //! **The term face.** A domain value caches the id of the core term it came
 //! from, and keeps it exactly while nothing inside it reduced. Readback of such

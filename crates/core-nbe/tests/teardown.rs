@@ -1,4 +1,4 @@
-//! The teardown witness: the milestone's adequacy anchor for the per-run arena.
+//! The teardown witness for the per-run domain arena.
 //!
 //! The claim under test is that the domain arena is **flat**, not that some
 //! particular release order happens to work. So a chain is released twice —
