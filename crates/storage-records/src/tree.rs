@@ -1,20 +1,14 @@
 //! The tree itself: how a sorted record sequence becomes nodes and a root, what
 //! the tree answers, and what it can prove.
 //!
-//! # Two levels, and why that is the shape today
+//! # Tree shape
 //!
-//! A tree is either one leaf, or one internal root over a run of leaves. Every
-//! structure and every proof in this crate is written for that shape and
-//! refuses any other, so nothing here silently half-works on a deeper tree.
+//! A tree is one leaf or one internal root over a run of leaves. Every node
+//! and proof enforces this two-level shape. See
+//! [tree and proof shapes](https://github.com/gandr-lang/gandr/blob/main/crates/storage-records/README.md#tree-and-proof-shapes)
+//! for the child ceiling and storage boundary.
 //!
-//! Depth beyond two is the crate's named open work. The record count one
-//! internal root can address is bounded by the child ceiling, and past it the
-//! root has to become a level of internal nodes over internal nodes. That lift
-//! changes the proof shapes — a membership proof becomes a path rather than a
-//! pair — and is the keyed plane's half of the storage tier's multi-level
-//! question.
-//!
-//! # What building does
+//! # Building
 //!
 //! Building sorts nothing: it requires a strictly increasing sequence and
 //! refuses anything else, because the order is the tree's index and a builder
@@ -834,11 +828,9 @@ pub enum RecordAgreement
 
 /// A root whose root node was found in a store and verified.
 ///
-/// The handle says exactly that and no more. It is not a store-backed tree: it
-/// does not walk children, so it does not attest that the tree below the root
-/// is present. A store-backed reader is named open work rather than half-built
-/// here, because a handle that answered queries from a partially present tree
-/// would be the worst of both.
+/// Verification covers only the root node. The handle does not traverse
+/// children or attest that every leaf is present; queries and proof
+/// construction require a [`RecordTree`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StoredRoot
 {

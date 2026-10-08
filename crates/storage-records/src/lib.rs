@@ -1,61 +1,28 @@
-//! The **authenticated ordered-record plane**: a content-defined Merkle search
-//! tree over sorted byte records, with proofs that a key is present, that a key
-//! is absent, or that a range holds exactly these records — each checkable
-//! against a root alone, with no access to the store the tree was built into.
+//! Authenticated ordered records with content-defined Merkle leaves and
+//! root-checkable membership, absence and range proofs.
 //!
-//! # What the crate is for
+//! [`RecordTree`] builds from strictly increasing keys under [`TreeParams`].
+//! Its [`TreeRoot`] binds the parameters, record count and root-node identity.
+//! Proof verification needs the expected root and query, not the tree or store.
 //!
-//! One artifact is a set of records under an ordering key. Two versions of such
-//! an artifact usually differ in a few records, and the storage tier wants
-//! three things from that: the unchanged parts to be shared rather than
-//! rewritten, the whole to have one name, and a part to be provable against
-//! that name without shipping the whole. A content-defined Merkle search tree
-//! gives all three, because a leaf ends where the data says rather than where a
-//! position counter says — so an edit perturbs the leaf it falls in and leaves
-//! its neighbours identical, keeping their identities and their storage.
+//! # Tree shape
 //!
-//! # The plane this crate is, and the plane it is not
+//! A tree is one leaf or one internal root over a run of leaves. See
+//! [tree and proof shapes](https://github.com/gandr-lang/gandr/blob/main/crates/storage-records/README.md#tree-and-proof-shapes)
+//! for layout limits and the scope of [`StoredRoot`].
 //!
-//! The storage tier has two planes with two grains. This crate is the **keyed**
-//! one: records under an ordering key, cut between records. The other is the
-//! **value** plane — one large value cut between its own constructors, with a
-//! chunk identity that is a function of the value's canonical bytes. The two
-//! are expected to share a backing object, and they cannot share a verifier: a
-//! chunk is not node material, and forcing a chunk through this crate's node
-//! store would make its identity depend on this crate's leaf framing instead of
-//! on the value's own bytes. Domain-separated digests are what make one backing
-//! namespace safe for two byte languages, and every digest here carries its
-//! domain inside the hashed preimage.
+//! # Identity and agreement
 //!
-//! # What a digest decides, and what it does not
+//! [`RecordTree::agrees_with`] decides record equality separately from root
+//! identity. See [identity and agreement](https://github.com/gandr-lang/gandr/blob/main/crates/storage-records/README.md#identity-and-agreement).
 //!
-//! Every identity comparison in this crate is against an identity **recomputed
-//! from bytes the comparer holds** — a store checks its own bytes, a verifier
-//! checks the proof's bytes, a root manifest is resealed from its own
-//! parameters. No comparison treats an equal digest as agreement between two
-//! things not both in hand, because that direction of error is a silent false
-//! agreement. Where an agreement question does arise, between two whole trees,
-//! it has its own answer — [`RecordTree::agrees_with`] — in which the digest is
-//! a fast path for disagreement and an equal pair is handed to the deciding
-//! comparison over the records themselves.
+//! # Verification boundaries
 //!
-//! # Bounds
-//!
-//! A decoder facing hostile bytes is bounded twice: per-structure ceilings on
-//! node size, leaf records, children and carried nodes, and a total accumulator
-//! over one proof. The second is not implied by the first, because node count
-//! and per-node record count are separately bounded and their product is not.
-//!
-//! # Shape and open work
-//!
-//! The tree is two levels: one leaf, or one internal root over a run of leaves.
-//! Every proof shape is written for that and refuses any other. Depth beyond
-//! two, a store-backed reader that walks a tree it does not hold in memory, and
-//! a transport encoding for proofs are named open work rather than partial
-//! implementations; the crate's `README.md` says where each belongs.
-//!
-//! The named ideas and their primary references are in this crate's
-//! `README.md`.
+//! [`BlockStore`] admits verified node material. Proof decoders enforce
+//! per-structure limits and a total work budget. See the
+//! [decode budgets](https://github.com/gandr-lang/gandr/blob/main/crates/storage-records/README.md#decode-budgets),
+//! [storage planes](https://github.com/gandr-lang/gandr/blob/main/crates/storage-records/README.md#storage-planes)
+//! and [references](https://github.com/gandr-lang/gandr/blob/main/crates/storage-records/README.md#references).
 
 #![no_std]
 

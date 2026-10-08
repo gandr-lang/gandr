@@ -1,28 +1,16 @@
-//! The node store boundary: [`BlockStore`], the contract an implementor owes,
-//! and the in-memory implementation.
+//! Verified node storage through [`BlockStore`] and its in-memory
+//! implementation.
 //!
-//! # This store holds node material and nothing else
+//! # Node admission
 //!
-//! Both [`BlockStore`] methods run the node admission check, so this trait is
-//! the **keyed-record plane's** store: it admits canonical node encodings and
-//! refuses everything else. That is deliberate and it is a boundary, not a
-//! limitation to work around. A value-plane chunk is not node material, and
-//! wrapping a chunk as a one-record leaf to fit it through this trait would
-//! make the chunk's identity depend on this crate's leaf framing instead of on
-//! the value's own canonical bytes — destroying exactly the identity a value
-//! plane exists to provide.
+//! Both store methods verify canonical node encodings. Value-plane chunks
+//! use a separate store trait and byte language; see
+//! [storage planes](https://github.com/gandr-lang/gandr/blob/main/crates/storage-records/README.md#storage-planes).
 //!
-//! The value plane's store is therefore a **sibling trait** with the chunk
-//! domain inside its own hashed preimage, not this one with a relaxed
-//! verifier. One backing object implementing both traits gives the shared
-//! backing store the storage design wants, while each plane keeps a verifier
-//! that answers for its own byte language.
+//! # Store requirements
 //!
-//! # What an implementor owes
-//!
-//! An implementor must not hand out bytes it has not verified. Both bundled
-//! paths recompute on insertion and on load, so a store whose backing bytes rot
-//! reports a mismatch rather than propagating them.
+//! Implementations verify bytes on insertion and load. Corrupted backing
+//! bytes must produce an error rather than propagate to the caller.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
