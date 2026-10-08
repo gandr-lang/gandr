@@ -870,12 +870,11 @@ impl Environment
     ///
     /// # Soundness warning
     ///
-    /// This is the one escape hatch, present from the start so no second bypass
-    /// is ever improvised. It performs no type checking and no level admission:
-    /// the declaration is trusted verbatim, and a wrong one admitted here can
-    /// make the kernel prove anything. Every admission through it is tracked,
-    /// and surfaces in the [`Self::audit`] of everything that transitively
-    /// rests on it.
+    /// This is the one escape hatch, so no second bypass is ever improvised. It
+    /// performs no type checking and no level admission: the declaration is
+    /// trusted verbatim, and a wrong one admitted here can make the kernel
+    /// prove anything. Every admission through it is tracked, and surfaces
+    /// in the [`Self::audit`] of everything that transitively rests on it.
     ///
     /// # Specification
     /// - requires: `staged` was built into this environment's arena; the caller

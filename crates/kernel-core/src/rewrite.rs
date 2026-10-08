@@ -1026,8 +1026,8 @@ fn push_rewrite_children(
                 tasks.push(RewriteTask::Open(AnyNode::ValueType(inner), depth, rewrite));
             },
             // The type-to-term edge: a code is rewritten at the depth the type
-            // stands at, which is why every rewrite over types stopped being the
-            // identity the moment this former landed.
+            // stands at, which is why a rewrite over a type that carries a code
+            // is not the identity.
             | Some(&ValueType::Element { code, .. }) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(code), depth, rewrite));
             },

@@ -4,8 +4,8 @@
 //! # What the relation is, precisely
 //!
 //! The checker invokes conversion at a mode switch — when a synthesizing term
-//! is used where a type is expected. At this subset the definitional equality
-//! that needs is **type conversion only**, and it is exactly:
+//! is used where a type is expected. Over this vocabulary the definitional
+//! equality that needs is **type conversion only**, and it is exactly:
 //!
 //! - an **id-equality fast path**, which is **positive only**: two nodes named
 //!   by the same id in the same arena are the same node, so the pair is
@@ -41,10 +41,8 @@
 //! **No reduction fires and nothing is evaluated.** Two codes convert when they
 //! are structurally equal, which is α-equality because terms are nameless. That
 //! is sound and **incomplete**: `El ((λ. x) v)` and `El (x[v])` denote one type
-//! and this walk separates them. Closing that gap is the convertibility
-//! machine's whole job, and until it lands the incompleteness is a refusal a
-//! producer can avoid by handing the kernel reduced codes rather than a
-//! soundness hazard.
+//! and this walk separates them. The incompleteness is a refusal a producer
+//! avoids by handing the kernel reduced codes, never a soundness hazard.
 //!
 //! # Fail-closed on an unreadable id
 //!
@@ -295,8 +293,8 @@ pub(crate) fn case_branch_mismatch(
 /// Without it two roots that share a subgraph re-walk every shared pair once
 /// per occurrence, so the work is the *expansion* of the compared graphs rather
 /// than their size — exponential in sharing depth on a term a decoder handed
-/// over. A pair discharged once stays discharged: at this subset a type pair's
-/// verdict is a function of the two nodes alone, and any pair that fails
+/// over. A pair discharged once stays discharged: over this vocabulary a type
+/// pair's verdict is a function of the two nodes alone, and any pair that fails
 /// returns immediately, so nothing is recorded as discharged while its own
 /// subtree is still undecided.
 ///

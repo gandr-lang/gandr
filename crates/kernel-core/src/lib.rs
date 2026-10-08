@@ -1,11 +1,10 @@
-//! The kernel's **checking machine, conversion, and admission choke point** at
-//! the non-dependent subset, with the check memo wired as the default path on
-//! both machines.
+//! The kernel's **checking machine, conversion, and admission choke point**,
+//! with the check memo wired as the default path on both machines.
 //!
 //! The crate holds judgements. The representation, the sharing format and the
 //! decode budgets belong to the term crate below it; the level algebra to the
-//! strata crate; the memo's storage and the trace's vocabulary to the two seam
-//! crates. What lives here is what re-derives an obligation.
+//! strata crate; the memo's storage to the check-memo seam crate. What lives
+//! here is what re-derives an obligation.
 //!
 //! # Four decisions that interlock
 //!
@@ -33,31 +32,30 @@
 //!
 //! # The memo's six binding conditions, and where each lives
 //!
-//! The seam crate ports verbatim precisely because it names no term type;
-//! everything that makes a memo *sound* is a consumer obligation, and this
-//! crate is the consumer.
+//! The seam crate names no term type, so everything that makes a memo *sound*
+//! is a consumer obligation, and this crate is the consumer.
 //!
 //! | condition                                              | where it is discharged                                                                             |
 //! | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 //! | static dispatch on a null-object seam that compiles away | [`check::check_declaration_with_memo`] is generic; every memo interaction is behind a compile-time activity constant |
 //! | the public admission entry cannot reach the opt-in entry | [`env::Environment::add_decl`] takes no memo and builds its own; the memo-taking entry admits nothing and returns no receipt |
 //! | a lifetime of one check call                            | [`check::check_declaration`] builds a memo and drops it; nothing stores one                        |
-//! | the content-only key                                    | [`encoding`] and [`support`]: `(obligation content, telescope content, direction)`, arena-free      |
-//! | storage and policy outside the kernel crate             | the seam crate owns the table, its ordering, and its eviction; this crate holds a type parameter    |
+//! | the content-only key                                    | [`encoding`] and [`support`]: `(direction, obligation content, expected content, telescope content)`, arena-free |
+//! | storage and policy outside the kernel crate             | the seam crate owns the table and its ordering; this crate holds a type parameter                  |
 //! | no authority and no persistence in a hit                | a hit claims only that this process already computed this answer for this support                   |
 //!
-//! # What this crate does not hold
+//! # Sharing and persistence
 //!
-//! No interning table of values, no content-keyed memo the *conversion* path
-//! consults, and no persistence. Sharing is preserved by the kernel and never
-//! created: what a decode hands over is the sharing the checker sees, and id
-//! equality is its only sharing-aware step. The conversion trace's static sink
-//! has no consumer here — conversion at this subset performs no search and so
-//! makes no decision worth recording — and it acquires one when the
-//! convertibility machine lands.
+//! No interning table of decoded values, no content-keyed memo the
+//! *conversion* path consults, and no persistence. What a decode hands over is
+//! the sharing the checker sees, and id equality is conversion's only
+//! sharing-aware step. The one place the kernel creates sharing is the rewrite
+//! memo, among nodes it minted past the admission watermark, and nothing
+//! decides on that sharing. Conversion over this vocabulary performs no search,
+//! so it records no conversion trace.
 //!
-//! The named ideas, the crate's status, and its plan-milestone mapping are in
-//! this crate's `README.md`.
+//! The crate's measurements, mutation findings and admission rules are in its
+//! `README.md`.
 
 #![no_std]
 

@@ -6,8 +6,8 @@
 //! A differential can be green while never reaching the code it tests, so every
 //! reuse harness here **asserts** its exercised-path counts rather than
 //! reporting them. That needs a declared projection: the counts are the
-//! observation the collapse law, the anti-vacuity cases and the teeth are all
-//! stated over.
+//! observation the collapse law, the anti-vacuity cases and the poisoned-entry
+//! cases are all stated over.
 //!
 //! It is an intensional projection — it says how the computation proceeded, not
 //! what it returned — so no extensional clause anywhere references it, and

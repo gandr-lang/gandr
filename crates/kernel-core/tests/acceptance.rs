@@ -1,6 +1,6 @@
-//! The milestone's acceptance suite: the collapse law, anti-vacuity on both
-//! sides, edit locality, the memoized-against-memoless differential, and the
-//! teeth that prove the differential bites.
+//! The kernel's acceptance suite: the collapse law, anti-vacuity on both sides,
+//! edit locality, the memoized-against-memoless differential, and the
+//! poisoned-entry cases that prove the differential bites.
 //!
 //! Every measurement here is asserted rather than reported. A differential can
 //! be green while never reaching the code it tests, so each case pins its
@@ -722,9 +722,9 @@ mod acceptance
     #[test]
     fn sharing_costs_the_memoless_checker_nothing()
     {
-        // The statement this pins is that sharing bought *checking* nothing before
-        // the memo existed: the shared composite and its fully unshared spelling
-        // cost the memoless checker identically, node check for node check.
+        // The statement this pins is that sharing buys *checking* nothing without
+        // the memo: the shared composite and its fully unshared spelling cost
+        // the memoless checker identically, node check for node check.
         for depth in [CompositeDepth(8), CompositeDepth(12)] {
             let (mut shared_arena, shared_declaration) =
                 stage(|arena| shared_composite(arena, depth));
@@ -968,7 +968,7 @@ mod acceptance
     }
 
     // ---------------------------------------------------------------------------
-    // The teeth: both directions, both planes, all permanent suite members
+    // Poisoned entries: both directions, both planes, all permanent suite members
     // ---------------------------------------------------------------------------
 
     /// Stage the refusing declaration the term-plane poison turns into an
@@ -1412,9 +1412,9 @@ mod acceptance
     /// The zero-drift differential over the dependent shapes, in **both**
     /// directions.
     ///
-    /// The dependent path is where a memo could go wrong in a new way: a type's
-    /// formation now depends on the binder slice its codes reach, and a key
-    /// that dropped that slice would serve one type's level for another's.
+    /// The dependent path is where a memo can serve a wrong answer: a type's
+    /// formation depends on the binder slice its codes reach, and a key that
+    /// dropped that slice would serve one type's level for another's.
     /// So the acceptance and the refusal are both differentialed, and the
     /// refusal is compared as the *same* refusal rather than merely as a
     /// refusal.

@@ -19,14 +19,14 @@
 //! Synthesized types are minted into the arena as checker intermediates, which
 //! the admission choke point truncates after the verdict.
 //!
-//! # Terms live in types, and four rules change because of it
+//! # Terms live in types, and four rules rest on it
 //!
 //! The universe-decoding former carries a value, so a type can mention a bound
 //! variable. Four consequences are load-bearing here and each is one arm:
 //!
-//! - **A context slot is no longer closed.** A slot was recorded against the
-//!   context prefix that preceded it, so a variable synthesis raises it past
-//!   the binders between the slot and the use site before returning it.
+//! - **A context slot is open.** A slot is recorded against the context prefix
+//!   that precedes it, so a variable synthesis raises it past the binders
+//!   between the slot and the use site before returning it.
 //! - **An application substitutes into the codomain.** At a dependent head the
 //!   codomain is instantiated at the argument rather than produced as it
 //!   stands.
@@ -1056,8 +1056,8 @@ where
         // Consult the memo for this goal's support before reading the node.
         // When the memo is inactive this whole block — the support
         // construction included — is a constant-false branch that
-        // monomorphization removes, so the memoless path keeps the code it had
-        // before the seam existed.
+        // monomorphization removes, so the memoless path compiles to the code
+        // it would have with no memo at all.
         let mut recalled: Option<Produced> = None;
         if matches!(M::ACTIVITY, MemoActivity::Active) {
             let support = NodeSupport::build(arena, session, goal.support(), context.as_slice());
@@ -1632,18 +1632,16 @@ pub fn check_declaration(
 /// entry that accepts one. So the memo's lifetime being a single call is a
 /// property of the surface rather than a discipline a caller has to remember.
 ///
-/// # Why the lifetime rule survives the content key
+/// # Why the memo lives for one call
 ///
-/// Under an arena-identity key the one-call lifetime was a *consequence*: ids
-/// dangle once the choke point truncates. A content key dissolves that reason,
-/// so the rule now rests on the two-wall discipline directly — **a hit claims
-/// only its own history, and no kernel-checked support discipline exists**.
-/// Until one does, or its impossibility is recorded, nothing here persists. The
-/// content key removed the fence, not the rule.
+/// The key is content and carries no arena id, so dangling ids are not the
+/// reason. The rule rests on the two-wall discipline directly: **a hit claims
+/// only its own history, and no kernel-checked support discipline exists**, so
+/// nothing here persists.
 ///
-/// A second reason survives independently and is worth naming: an *outcome*
-/// still carries arena ids even though the key does not, so an entry outliving
-/// its arena would hand back a synthesized type that no longer resolves.
+/// An *outcome* also carries arena ids even though the key does not, so an
+/// entry outliving its arena would hand back a synthesized type that no longer
+/// resolves.
 ///
 /// # Specification
 /// - requires: as [`check_declaration`]; additionally, `memo` holds only
@@ -2604,7 +2602,7 @@ mod tests
         );
     }
 
-    /// Instantiating a dependent codomain at an argument is observable now that
+    /// Instantiating a dependent codomain at an argument is observable because
     /// a codomain can mention its binder: applying the polymorphic identity's
     /// type to a code produces the arrow over *that* code.
     #[test]

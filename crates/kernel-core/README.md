@@ -2,19 +2,98 @@
 
 The certified kernel's judgements: the defunctionalized checking machine, type formation, conversion, the admission choke point, and the check memo wired as the default path on both machines.
 
-Representation, the sharing format and the decode budgets belong to `gandr-kernel-term` below this crate; the universe algebra to `gandr-kernel-strata`; the memo's storage to `gandr-kernel-check-memo`. What lives here is what re-derives an obligation.
+<!-- toc -->
 
-## Provision
+- [Synopsis](#synopsis)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Memo binding conditions](#memo-binding-conditions)
+- [Key derivation](#key-derivation)
+- [Memo measurements](#memo-measurements)
+- [Poisoned memo entries](#poisoned-memo-entries)
+- [Staging order and admission](#staging-order-and-admission)
+- [Sharing-aware conversion](#sharing-aware-conversion)
+- [Dependent arrow and rewrites](#dependent-arrow-and-rewrites)
+- [Sharing and persistence](#sharing-and-persistence)
+- [Mutation findings](#mutation-findings)
+- [Contract attributes](#contract-attributes)
+- [License](#license)
 
-- **The checking machine.** Bidirectional, annotation-free, and defunctionalized over a goal register, a produced register, a heap frame stack and an explicit typing-context stack. Its arm-by-arm correspondence table is the module doc of `check`, and it is the trusted-base audit artifact: a reviewer walks it to confirm the machine _is_ the judgement rather than an approximation of it.
-- **Type formation.** A second iterative walk that computes a type's universe level, gating lift strictness, level scope, and a sealed atom's kind.
-- **Conversion.** Structural comparison of two types, descending into the terms they carry, with an id-equality fast path above it. The fast path is **positive only**: equal ids discharge a pair, unequal ids decide nothing and fall through to the structural walk. That asymmetry is what makes it sound while taking no table into the trusted base. No reduction fires: two codes convert when they are structurally equal, which is sound and incomplete, and closing the gap is the convertibility machine's job.
-- **Admission.** One checked choke point, one warned bypass, and a per- declaration audit of what a declaration transitively rests on. The arena is truncated on both verdicts — to content-end on success, to the declaration's content-start on rejection, clamped at the admission floor — and a declaration with a **later staging still outstanding above it** is refused rather than rolled back, because a contiguous truncation cannot spare a disjoint region.
-- **The memo, on by default, on both machines.** Admitting one declaration runs two iterative machines over the shared graph, and both consult the memo.
+<!-- tocstop -->
 
-## The memo's six binding conditions
+## Synopsis
 
-The seam crate ports verbatim precisely because it names no term type; everything that makes a memo _sound_ is a consumer obligation, and this crate is the consumer.
+**What.** `Environment` admits declarations through one checked choke point, `add_decl`, and one warned bypass, `add_decl_unchecked`; `audit` reports what an admitted declaration transitively rests on. Beneath the choke point sit a bidirectional checking machine, a type-formation walk that computes a type's universe level, and structural conversion. Representation, the sharing format and the decode budgets belong to `gandr-kernel-term`, the universe algebra to `gandr-kernel-strata`, and the memo's storage to `gandr-kernel-check-memo`; this crate is what re-derives an obligation.
+
+**Why.** The kernel grants a producer no credence: every declaration is re-checked before admission, including one a decoder built from untrusted bytes. Such a term can be arbitrarily deep and heavily shared, so the checker must be total on adversarial depth and must not pay for a shared subterm once per occurrence.
+
+**How.** The checker is a defunctionalized machine over a goal register, a produced register, a heap frame stack and an explicit typing-context stack, never mutually recursive methods bounded by a depth budget, so it is total on depth. The arm-by-arm correspondence table in the `check` module docs is the trusted-base audit artifact: a reviewer walks it to confirm the machine is the judgement. Conversion is structural comparison with a positive-only id-equality fast path: equal ids discharge a pair, unequal ids decide nothing. Both machines consult a check memo keyed by content, so a shared subterm is checked once per distinct support, and the memo lives for one check call. Admission truncates the arena on both verdicts, clamped at the admission floor so a rollback never deletes committed content.
+
+## Provided features
+
+- **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration` and `AxiomReport`. The arena is truncated on both verdicts: to content-end on success, to the declaration's content-start on rejection, clamped at the admission floor.
+- **The checking machine.** `check_declaration`, the default path with a fresh memo, and `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`. Checking is bidirectional and annotation-free.
+- **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope and a sealed atom's kind.
+- **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
+- **The content key.** `ContentTable`, `encode_support`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, canonical support encodings and their digests.
+- **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
+- **Accounting.** `ExpansionCensus`: goal expansions and memo recalls per plane, the observation every measurement here is asserted through.
+- **Errors.** `KernelError`, whose payloads are content — a head former and the offending node's content digest — because admission truncates the arena and an arena id would dangle.
+
+## Expected features
+
+- **Staging discipline.** A producer resolves every staged declaration by admitting, bypassing or abandoning it. A staged declaration left unresolved keeps its content in the arena and blocks the admission of every declaration staged before it (see [Staging order and admission](#staging-order-and-admission)).
+- **A vouched bypass.** `add_decl_unchecked` performs no checking: the caller vouches for the declaration, a wrong one can make the kernel prove anything, and `audit` reports every declaration that rests on it.
+- **Reduced codes.** Conversion fires no reduction, so two codes convert only when they are structurally equal. A producer hands the kernel reduced codes to avoid a refusal.
+- **`--cfg anodized_panic` for enforcement.** Built with this `cfg` across the whole dependency graph, the `#[spec]` attributes check their clauses at runtime and panic on a violation. The enforcing test lane sets it.
+
+## Examples
+
+Stage a declaration, admit it, watch an ill-typed one refused, and audit what the admitted one rests on.
+
+```rust
+use gandr_kernel_core::Environment;
+use gandr_kernel_core::KernelError;
+use gandr_kernel_term::BaseType;
+use gandr_kernel_term::LevelSignature;
+
+fn example() -> Result<(), KernelError> {
+    let mut environment = Environment::new();
+
+    let unit = {
+        let mut staging = environment.stage();
+        let declared = staging.arena().value_type_unit();
+        let body = staging.arena().value_unit();
+        staging.def(LevelSignature::monomorphic(), declared, body)
+    };
+    let admitted = environment.add_decl(unit)?;
+
+    let ill_typed = {
+        let mut staging = environment.stage();
+        let declared = staging.arena().value_type_base(BaseType::Integer);
+        let body = staging.arena().value_unit();
+        staging.def(LevelSignature::monomorphic(), declared, body)
+    };
+    assert!(environment.add_decl(ill_typed).is_err());
+
+    let report = environment.audit(admitted);
+    assert!(report.axioms().is_empty());
+    assert!(report.unchecked_admissions().is_empty());
+    Ok(())
+}
+```
+
+`tests/acceptance.rs` carries the memo measurements and the poisoned-entry cases; `tests/adversarial_depth.rs` the depth totality. Run them with the unit tests, then the enforcing twin:
+
+```sh
+cargo nextest run -p gandr-kernel-core
+RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-kernel-core
+```
+
+## Memo binding conditions
+
+The seam crate names no term type, so everything that makes a memo sound is a consumer obligation, and this crate is the consumer. Six conditions bind it:
 
 | condition | discharged by |
 | --------- | ------------- |
@@ -22,22 +101,24 @@ The seam crate ports verbatim precisely because it names no term type; everythin
 | the public admission entry cannot reach the opt-in entry | `Environment::add_decl` takes no memo and builds its own; the memo-taking entry returns a verdict and never a `CheckedId` |
 | a lifetime of one check call | `check_declaration` builds a memo and a session and drops both; a support is meaningful only against its own session |
 | the content-only key | `(direction, obligation content, expected content, telescope content)` — no arena id, no allocation order |
-| storage and policy outside the kernel crate | the seam crate owns the table, its ordering and its eviction; this crate holds a type parameter |
+| storage and policy outside the kernel crate | the seam crate owns the table and its ordering; this crate holds a type parameter |
 | no authority and no persistence in a hit | a hit claims only that this process already computed this answer for this support |
 
-**Why the lifetime rule survives the content key.** Under an arena-identity key the one-call lifetime was a _consequence_: ids dangle once the choke point truncates. A content key dissolves that reason, so the rule rests on the two-wall discipline directly — a hit claims only its own history, and no kernel-checked support discipline exists. A second reason survives independently: an _outcome_ still carries arena ids even though the key does not.
+The key carries no arena id, so dangling ids are not why the memo lives for one call. The lifetime rests on the two-wall discipline directly: a hit claims only its own history, and no kernel-checked support discipline exists. An outcome also carries arena ids even though the key does not, so an entry outliving its arena would hand back a type that no longer resolves.
 
-## The key derivation
+## Key derivation
 
-Content is named by a content id, assigned by interning each node's one-level record — its tag, its inline payload, and its children's already-assigned ids — bottom-up and exactly. No hash decides an id. The digest above it is a **positive fast path only**: different digests prove disagreement, equal digests hand off to byte equality of the canonical support encodings, and a collision costs one comparison and degrades to a miss.
+Content is named by a content id, assigned by interning each node's one-level record — its tag, its inline payload, and its children's already-assigned ids — bottom-up and exactly. No hash decides an id. The digest above it is a positive fast path only: different digests prove disagreement, equal digests hand off to byte equality of the canonical support encodings, and a collision costs one comparison and degrades to a miss.
 
-Injectivity is carried by four trap pairs riding on the record encoder rather than by randomized testing, because key collision is the one obligation a randomized differential cannot probe: two field orders, two families sharing a payload, signed zeroes, and the length-prefix ambiguity pair.
+Only the binder slice a node can reach enters its support, folded in telescope order. `LooseDepths` computes each node's reach bottom-up and widens to the whole context where it cannot answer, so a defect here costs collapse and never manufactures a hit.
 
-Each distinct node is encoded once per session, so deriving every key of one check costs one pass over the distinct nodes — linear rather than quadratic even on a chain-deep term a decoder built from bytes.
+Four trap pairs carry injectivity of the record encoder rather than randomized testing, because key collision is the one obligation a randomized differential cannot probe: two field orders, two families sharing a payload, signed zeroes, and a length-prefix ambiguity.
 
-## Measured acceptance
+Each distinct node is encoded once per session, so deriving every key of one check costs one pass over the distinct nodes — linear even on a chain-deep term a decoder built from bytes. What the content key buys over an identity key on a real corpus is unmeasured; a measurement showing that pass dominating the reuse payoff re-keys the memo.
 
-The self-similar composite is `t_0 = ()`, `t_{k+1} = (t_k, t_k)` against `T_0 = Unit`, `T_{k+1} = T_k x T_k`. The law is asserted as a closed form at three depths, decomposed per plane, rather than sampled.
+## Memo measurements
+
+The self-similar composite is `t_0 = ()`, `t_{k+1} = (t_k, t_k)` against `T_0 = Unit`, `T_{k+1} = T_k x T_k`. The collapse law is asserted as a closed form at three depths, decomposed per plane.
 
 | depth | memoless total | memoless term | memoless type | memoized total | memoized term | memoized type | collapse |
 | ----- | -------------- | ------------- | ------------- | -------------- | ------------- | ------------- | -------- |
@@ -46,98 +127,83 @@ The self-similar composite is `t_0 = ()`, `t_{k+1} = (t_k, t_k)` against `T_0 = 
 | 16 | 327,678 | 196,607 | 131,071 | 35 | 18 | 17 | 9,362x |
 | 28 | 1,342,177,278 | — | — | 59 | 30 | 29 | 22.7M x |
 
-Memoless is `5 * 2^d - 2` in total, `3 * 2^d - 1` body checks against `2^(d+1) - 1` type formations. Memoized is `2d + 3`, `d + 2` term supports against `d + 1` type supports. The depth-28 row is the capability, and it is measured at the public choke point: a definition whose tree expansion is 1,342,177,278 goals admits **checked** through `Environment::add_decl`, with no bypass. Its memoized columns are asserted through the opt-in entry on the same shape; its memoless columns are the closed form's value and are never run.
+Memoless is `5 * 2^d - 2` in total: `3 * 2^d - 1` body checks against `2^(d+1) - 1` type formations. Memoized is `2d + 3`: `d + 2` term supports against `d + 1` type supports. The depth-28 row is measured at the public choke point: a definition whose tree expansion is 1,342,177,278 goals admits checked through `Environment::add_decl`, with no bypass. Its memoized columns are asserted through the opt-in entry on the same shape; its memoless columns are the closed form's value and are never run.
 
-**Anti-vacuity, on both sides.** The occurrence count is pinned by the memoless term-plane law, so the workload cannot stop being shared unnoticed. The memo's own entry count is compared against the census from the other direction, per plane and in total. And a separate case pins that the shared composite and its fully unshared spelling cost the **memoless** checker identically — which is the statement that sharing bought checking nothing before the memo existed.
+**Anti-vacuity.** The memoless term-plane law pins the occurrence count, so the workload cannot stop being shared unnoticed. The memo's entry count is compared against the census from the other direction, per plane and in total. A separate case pins that the shared composite and its fully unshared spelling cost the memoless checker identically: sharing buys checking nothing without the memo.
 
-**Edit locality: `d + 1` node checks per depth-`d` edit,** measured within one check call. Both spellings are checked in one pass, because warming a memo on the original and reusing it across calls would measure exactly the unsound thing the lifetime rule forbids. Measured extra term-plane expansions: 9 at depth 8, 13 at depth 12, 17 at depth 16. The type plane adds nothing, because the edit changes no type. The `d + 1` rather than `d + 2` is the content key: the edited leaf's freshly minted payload collapses with the original's.
+**Edit locality: `d + 1` node checks per depth-`d` edit,** measured within one check call. Both spellings are checked in one pass, because warming a memo on the original and reusing it across calls would measure exactly what the lifetime rule forbids. Extra term-plane expansions are 9 at depth 8, 13 at depth 12 and 17 at depth 16; the type plane adds nothing, because the edit changes no type. The count is `d + 1` rather than `d + 2` because of the content key: the edited leaf's freshly minted payload collapses with the original's.
 
-**Adversarial depth.** A 20,000-link `thunk`-over-`return` chain checks totally inside a 256 KiB stack, at both memo instantiations, costing 40,002 term-plane expansions — asserted, so the case cannot degenerate into a shallow term and keep passing.
+**Adversarial depth.** A 20,000-link `thunk`-over-`return` chain checks totally inside a 256 KiB stack at both memo instantiations, costing 40,002 term-plane expansions. The count is asserted, so the case cannot degenerate into a shallow term and keep passing.
 
-## Teeth
+## Poisoned memo entries
 
-Permanent suite members, in both directions and on both planes, each asserting its exercised-path count through the expansion census:
+Each case is a permanent suite member, in both directions and on both planes, and asserts its exercised-path count through the expansion census:
 
 - a poisoned term entry turns a refusal into an acceptance (served once);
-- an entry differing only in its binder component is **not** served (served zero times), with a positive control under the matching telescope that does change the verdict, so the case measures the binder component rather than an inert poison;
+- an entry differing only in its binder component is not served (served zero times), with a positive control under the matching telescope that does change the verdict, so the case measures the binder component rather than an inert poison;
 - a poisoned type-formation entry turns an admission into a universe-violation refusal (served once, on the type plane);
-- a term-shaped answer in a type-formation support is declined and recomputed at exactly the cost of having had no entry, and the mirror case on the term plane.
+- a term-shaped answer in a type-formation support is declined and recomputed at exactly the cost of having had no entry, and the mirror case holds on the term plane.
 
-## Staging order, and what admission refuses
+## Staging order and admission
 
-A staged declaration outlives its builder's borrow, so staging order need not be admission order. That divergence has two shapes and only one is absorbable.
+A staged declaration outlives its builder's borrow, so staging order need not be admission order. The admission floor absorbs one shape of divergence, and admission refuses the other.
 
-**Content-start below already-admitted content** is absorbed by the admission floor: a rejection clamps its rollback into `[floor, content-end]`, so it never deletes committed content and never leaves an intermediate behind, retaining the rejected declaration's own nodes as unreachable orphans instead. Retaining garbage is the failure that trades for deleting evidence.
+**Content-start below already-admitted content** is absorbed. A rejection clamps its rollback into `[floor, content-end]`, so it never deletes committed content and never leaves an intermediate behind; the rejected declaration's own nodes stay as unreachable orphans. Retaining garbage is the failure that trades for deleting evidence.
 
-**Content-start below _outstanding_ content is refused.** Stage one declaration, stage a second, then offer the first: the second's nodes sit above the first's content-start while its `StagedDeclaration` is live, the floor lies below both, and a contiguous truncation cannot spare a disjoint region. Performing the rollback would hand the producer dangling roots — or, worse, free indices a later staging re-mints, so a subsequent admission would check _other_ content and admit a different declaration under that name. The environment therefore tracks the content-start mark of every staged, unresolved declaration and answers `KernelError::OutstandingStagedContent` naming how many sit above. A silent index retarget is the one outcome the floor's evidence-preservation rule exists to rule out, so the refusal is the fail-closed posture the rest of the kernel takes.
+**Content-start below outstanding content is refused.** Stage one declaration, stage a second, then offer the first: the second's nodes sit above the first's content-start while its `StagedDeclaration` is live, the floor lies below both, and a contiguous truncation cannot spare a disjoint region. Rolling back would hand the producer dangling roots, or free indices a later staging re-mints so that a subsequent admission checks other content under that name. The environment tracks the content-start mark of every staged, unresolved declaration and answers `KernelError::OutstandingStagedContent`, naming how many sit above.
 
-A mark is resolved by admitting, bypassing, or `Environment::abandon`; abandoning a staging session before it finishes resolves its mark too. `abandon` truncates when nothing outstanding sits above the mark and retains the region as an orphan otherwise, which is the same clamp a rejection takes. "Above" is componentwise rather than lexicographic, because truncation is per family.
+A mark is resolved by admitting, bypassing or `Environment::abandon`; abandoning a staging session before it finishes resolves its mark too. `abandon` truncates when nothing outstanding sits above the mark and otherwise retains the region as an orphan, the same clamp a rejection takes. "Above" is componentwise rather than lexicographic, because truncation is per family.
 
-## Conversion is sharing-aware
+## Sharing-aware conversion
 
-`converge` carries a per-call set of discharged pairs. Without it two roots that share a subgraph re-walk every shared pair once per occurrence, so the work is the _expansion_ of the compared graphs rather than their size — exponential in sharing depth on a term a decoder handed over. A pair discharged once stays discharged: at this subset a type pair's verdict is a function of the two nodes alone, and any pair that fails returns immediately, so nothing is recorded as discharged while its own subtree is undecided. The set holds only pairs, creates no sharing, is consulted for nothing but skipping a repeat inside one comparison, and dies with the call.
+Conversion carries a per-call set of discharged pairs. Without it, two roots that share a subgraph re-walk every shared pair once per occurrence, so the work is the expansion of the compared graphs rather than their size — exponential in sharing depth on a term a decoder handed over. A pair discharged once stays discharged: over this vocabulary a type pair's verdict is a function of the two nodes alone, and any pair that fails returns immediately, so nothing is recorded as discharged while its own subtree is undecided. The set holds only pairs, creates no sharing, is consulted for nothing but skipping a repeat inside one comparison, and dies with the call.
 
-## Findings from inert mutations
+The set bounds the conversion path rather than decoding, so it sits outside the four amplification budgets of `gandr-kernel-term`. It guards a public surface — a direct arena caller is not behind the decoder's expanded-work gate — and it has no extensional face.
 
-Recorded rather than deleted, because an inert mutation identifies what the design does not depend on.
+No reduction fires: two codes convert when they are structurally equal, which is sound and incomplete.
 
-- **The plane component of the deciding comparison is inert.** Deleting `self.plane == other.plane` from `NodeSupport::agreement` leaves the whole suite green: the encoding's first byte is the goal's direction tag, and the two type-formation directions draw from a disjoint part of that alphabet, so the encodings already separate the planes. The plane field is load-bearing for _accounting_, not for agreement. The redundant check is kept as defence against a future direction tag that does not separate.
-- **A trap pair that framing already separated.** Dropping the length prefix from a text payload was initially inert, because two literals sit in two records and the record framing separates them whatever their payloads do. The pair was restated over a numeric literal, which carries two text payloads in **one** record, so `1.23` and `12.3` concatenate to the same digits — and the mutation is now killed. The finding is about the shape of a trap pair: the ambiguity has to be exhibited inside the unit the encoder frames.
-- **The digest is killed only by its own witnesses.** Collapsing every digest to one constant changes no verdict and no count — it costs a linear bucket scan — and is killed by the digest's L3 unit witnesses rather than by any verdict test. That is the positive-fast-path-only design seen from the other side.
-- **The conversion discharged set is `timed_out`, not killed.** Removing it leaves the suite unable to finish rather than failing: the claim it carries is intensional and exponential, and a timeout stays indeterminate rather than collapsing into a kill. Recorded as what it is, because a surviving mutant and an unfinished one call for opposite work.
+## Dependent arrow and rewrites
 
-Two mechanisms added under review are pinned as genuine kills: removing the outstanding-staged-content guard from `add_decl` is **killed** by the witness that the later staging's root still resolves after the refusal, and shortening the node-tag block below the dangling sentinel is a **build failure**, since the reservation is an anonymous `const` assertion rather than a named one — a named unused constant is never evaluated, so `const _NAME: () = assert!(..)` would be a guard that does not guard.
+The dependent arrow forms at the join of its children like the non-dependent one, and a lambda checks against it through the domain slot its codomain is written against. What makes it dependent is the universe-decoding former: a type read off a code, a value whose type is a universe, and the only former whose child crosses from the type language into the term language.
 
-## The contract attributes
+**The carried level keeps the two machines apart.** The former names the universe it is read out of, so type formation is a lookup rather than an inference, and the obligation formation cannot discharge — that the code inhabits that universe — is recorded rather than pursued. The driver drains the record through the checking machine, and a drained check that owes further codes appends to the same worklist. Neither walk calls the other, so the recursion ban is met by the architecture rather than by a depth budget. The drain carries a ceiling derived from the format's subterm-table cap, because a drained check can form a synthesized type and owe more codes, so the loop's bound is not the artifact's own size.
 
-The `# Specification` prose stays the statement of record. A combined `#[spec(...)]` attribute mirrors expressible requirements and postconditions; each new predicate appears verbatim in its prose clause. Fourteen items carry attributes, including both admission choke points:
+**The two de Bruijn rewrites are machines.** Shifting raises every free index at or above a cutoff; substitution replaces the innermost binder's variable and lowers everything outside it. Both are loops over an explicit task stack and an explicit results stack, so they are total on a term a decoder built from bytes, and each is memoized at its own instantiation of the check-memo seam, so a shared subterm is rewritten once. Carrying a replacement under a crossed binder is a shift, scheduled as a task on the same stack.
 
-- `Environment::add_decl` — on success exactly one entry is appended and the admission floor ends at the arena's own watermark, which is the machine form of "the checker's intermediates were truncated rather than committed". Whether the declaration is _well-typed_ is what the body decides and is not restated.
-- `Environment::add_decl_unchecked` — the same, plus the entry carrying `Admission::Unchecked` and the arena watermark unmoved, so the one warned bypass cannot quietly grow or shrink the arena.
-- `check_sealing_provenance` — the ascending half, stated as a sortedness test rather than through the body's own previous-index loop. The occurrence half would mean re-deriving the projected-atom set and doubling a walk over the declared type.
-- `StagedMarks::resolve` and `ContentEncoding::put_word` — exactly one mark gone when one was held, and the varint terminator.
+Two sites in the checker consume them: a variable synthesis raises its context slot past the binders between the slot and the use site, and an application at a dependent head instantiates the codomain at its argument. Those two faces — shifting a value type, instantiating a computation type — are the public rewrite surface; the other four family faces are crate-visible. A type carrying no code rewrites to itself and the walk hands back the node it was given, so the common case costs nothing and the sharing a decode preserved survives.
 
-The other attributes check the level-scope boundary, the universe-order precondition, sealed-atom universe lookup, conversion mode-switch results, outstanding-mark counts, rewrite counts, and both type-witness projections. Conversion and witness postconditions repeat their named query only in the enforcing lane; no new capture allocates or runs extra work in the ordinary lane.
+**The audit follows codes.** A declaration's type reaches another declaration two ways — a sealed atom names one directly, and a code names one through the term language — and the trust report would miss the second if it followed only the first. The sealing-provenance set does not follow codes: it asks which sealed atoms a projection rebound, and widening it would make the gate more permissive on the one surface whose job is to be falsifiable.
 
-Each remaining prose-only block names its boundary in `provides`: cross-input laws, historical provenance, lifecycle transitions, or semantic graph judgements needing independent traversals. These are residual obligations, not empty attributes or weakened predicates. The two const register projections preserve their API without attributes because the pinned expansion calls a non-const evaluator (`E0015`). Existing adequacy hypotheses and witnesses remain unchanged; runtime checks do not establish their claims.
+## Sharing and persistence
 
-`anodized` supplies core-only specification helpers with default features disabled. The enforcing test lane selects `--cfg anodized_panic` for the whole dependency graph; no logic/BigInt dependency is enabled.
+The crate holds no interning table of decoded values that conversion consults, no content-keyed memo on the conversion path, and no persistence. The sharing a decode hands over is the sharing the checker sees, and identity equality is conversion's only sharing-aware step. Conversion over this vocabulary performs no search, so it records no conversion trace.
 
-## What this crate refuses to hold
+The one place the kernel creates sharing is the rewrite memo, and it is fenced: it shares only among nodes the kernel itself minted past the admission watermark, and nothing decides on that sharing, because conversion's identity fast path is positive-only.
 
-No interning table of _decoded_ values that conversion consults, no content-keyed memo on the conversion path, and no persistence. The sharing a decode hands over is the sharing the checker sees, and identity equality is conversion's only sharing-aware step. The conversion trace's static sink has no consumer here — conversion at this type vocabulary performs no search, so it makes no decision worth recording — and it acquires one when the convertibility machine lands.
+## Mutation findings
 
-The one place the kernel _creates_ sharing is the rewrite memo, and it is fenced rather than excepted: it shares only among nodes the kernel itself minted past the admission watermark, and nothing decides on that sharing, because conversion's identity fast path is positive-only.
+An inert mutation identifies what the design does not depend on.
 
-## The dependent arrow, the two rewrites, and the deferred codes
+- **The plane component of the deciding comparison is inert.** Deleting `self.plane == other.plane` from `NodeSupport::agreement` leaves the suite green: the encoding's first byte is the goal's direction tag, and the two type-formation directions draw from a disjoint part of that alphabet, so the encodings already separate the planes. The plane field is load-bearing for accounting, not for agreement; the check stays as defence against a direction tag that does not separate.
+- **A trap pair has to exhibit its ambiguity inside one framed unit.** The length-prefix pair is stated over a numeric literal, which carries two text payloads in one record, so `1.23` and `12.3` concatenate to the same digits and dropping the length prefix is killed. Over two text literals the pair would be inert, because the record framing separates two records whatever their payloads do.
+- **The digest is killed only by its own witnesses.** Collapsing every digest to one constant changes no verdict and no count — it costs a linear bucket scan — and is killed by the digest's unit witnesses rather than by any verdict test, the positive-fast-path design seen from the other side.
+- **The conversion discharged set times out rather than dying.** Removing it leaves the suite unable to finish: the claim it carries is intensional and exponential, and a timeout stays indeterminate rather than counting as a kill. A surviving mutant and an unfinished one call for opposite work.
 
-The dependent arrow forms at the join of its children like the non-dependent one, and a lambda checks against it through the domain slot its codomain is already written against. What makes it dependent is the universe-decoding former: a type read off a **code**, a value whose type is a universe, and the only former whose child crosses from the type language into the term language.
+Two guards are pinned as kills. Removing the outstanding-staged-content guard from `add_decl` is killed by the witness that the later staging's root still resolves after the refusal. Shortening the node-tag block below the dangling sentinel is a build failure, because the reservation is an anonymous `const` assertion: a named unused constant is never evaluated, so `const _NAME: () = assert!(..)` would not guard.
 
-**The carried level is what keeps the two machines two machines.** The former names the universe it is read out of, so type formation is a lookup rather than an inference, and the obligation it cannot discharge — that the code inhabits that universe — is _recorded_ rather than pursued. The driver drains the record through the checking machine, and a drained check that owes further codes appends to the same worklist. Neither walk calls the other, so the recursion ban is met by the architecture rather than by a depth budget. The drain carries a ceiling derived from the format's subterm-table cap, because a drained check can form a synthesized type and owe more codes, so the loop's bound is not the artifact's own size.
+## Contract attributes
 
-**The two de Bruijn rewrites its rules stand on are here as machines.** Shifting raises every free index at or above a cutoff; substitution replaces the innermost binder's variable and lowers everything outside it. Both are loops over an explicit task stack and an explicit results stack, so they are total on a term a decoder built from bytes, and each is memoized at its own instantiation of the check-memo seam so a shared subterm is rewritten once rather than once per occurrence. Carrying a replacement under a crossed binder is a shift, and the engine schedules it as a task on the same stack rather than calling itself.
+The `# Specification` prose is the statement of record. A combined `#[spec(...)]` attribute mirrors expressible requirements and postconditions, and each predicate appears verbatim in its prose clause. Both admission choke points carry one:
 
-Two sites in the checker consume them: a variable synthesis raises its context slot past the binders between the slot and the use site, and an application at a dependent head instantiates the codomain at its argument. Those two faces — shifting a value type, instantiating a computation type — are the crate's public rewrite surface; the machines' other four family faces stay crate-visible until a production caller wants them, and the compiler says so rather than a comment. A type carrying no code rewrites to itself and the walk hands back the node it was given, so the common case costs nothing and the sharing a decode preserved survives.
+- `Environment::add_decl`: on success exactly one entry is appended and the admission floor ends at the arena's own watermark, the machine form of "the checker's intermediates were truncated rather than committed". Whether the declaration is well-typed is what the body decides and is not restated.
+- `Environment::add_decl_unchecked`: the same, plus the entry carrying `Admission::Unchecked` and the arena watermark unmoved, so the warned bypass cannot quietly grow or shrink the arena.
+- `check_sealing_provenance`: the ascending half, stated as a sortedness test rather than through the body's own previous-index loop. The occurrence half would re-derive the projected-atom set and double a walk over the declared type.
+- `StagedMarks::resolve` and `ContentEncoding::put_word`: exactly one mark gone when one was held, and the varint terminator.
 
-The audit graph follows codes. A declaration's declared type reaches another declaration two ways — a sealed atom names one directly, and a code names one through the term language — and the trust report is a false negative if it follows only the first. The sealing-provenance set deliberately does **not** follow codes: it asks which sealed atoms a projection rebound, and widening it would make the gate more permissive on the one surface whose job is to be falsifiable.
+Further attributes check the level-scope boundary, the universe-order precondition, sealed-atom universe lookup, conversion mode-switch results, outstanding-mark counts, rewrite counts, and both type-witness projections. Conversion and witness postconditions repeat their named query only in the enforcing lane; no capture allocates or runs extra work in the ordinary lane.
 
-## Plan mapping
+Each prose-only block names its boundary in `- provides:`: a cross-input law, arena provenance, a lifecycle transition, or a semantic graph judgement needing an independent traversal. The two const register projections keep their API without attributes, because the attribute's expansion calls a non-const evaluator (`E0015`). Runtime checks do not establish the adequacy hypotheses; the witnesses do.
 
-Implements the `kernel-core` milestone of the ratified normalizer and elaborator plan, together with the `pi` milestone's dependent arrow, its two de Bruijn rewrites, and the type former indexed by a value term.
+## License
 
-| plan module | anchor | what this crate carries |
-| ----------- | ------ | ----------------------- |
-| kernel | `checking-machine` | the defunctionalized machine and its correspondence table |
-| kernel | `one-context` | one flat, de Bruijn, id-addressed, name-free context; a single-valued error face |
-| kernel | `arena-watermark` | constructor-only minting, the admission watermark, the anti-commitments |
-| architecture | `pipeline-split` | pipeline steps 1 and 3 as the kept fast paths: identity equality, then structure |
-| incremental | `check-memo-vocab` | the seam consumed at two instantiations, with the memoless path differentialed |
-| incremental | `support-is-soundness` | the content-only key, the loose-depth pass, the digest contract, the trap pairs |
-| incremental | `recorded-numbers` | the collapse law and the edit-locality figure, asserted as closed forms |
-| incremental | `two-machines-one-memo` | one memo, two machines, per-plane accounting |
-
-Ref: 01a051fd-253b-7dbc-8cb8-d880c051ad15
-
-The content key is a settled commitment carrying an unmeasured trade, recorded as `norm-decision-content-memo-key` on the plan's question surface: its cost is now measured in shape — one pass over the distinct nodes of a check — but what it buys over an identity key on a real corpus still has no number attached, and a measurement showing the cost dominating the reuse payoff is what re-keys it.
-
-The conversion discharged set is a bound on the conversion path and therefore outside the four ratified amplification budgets, which are a design-page matter. It is taken here because the surface it guards is public — a direct arena caller is not behind the decoder's expanded-work gate — and because it is a strict improvement with no extensional face. It is recorded for owner ratification rather than assumed.
+Apache-2.0 WITH LLVM-exception, the workspace licence; the text is at the repository root.
