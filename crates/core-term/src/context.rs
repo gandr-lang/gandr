@@ -2,17 +2,12 @@
 //! `Γ; Σ`, with the linear zone's one-shot discipline enforced by the lookup
 //! that reads it.
 //!
-//! # One representation, and what it replaces
+//! # One representation
 //!
-//! The pre-reboot prototype carried three spellings of "the context" that did
-//! not agree: a name-keyed binding stack of `(String, ValueType)` pairs with a
-//! shadowing scan at every variable, a flat de Bruijn stack of type ids in the
-//! kernel machine, and string-keyed maps of family signatures elsewhere. A
-//! name-keyed scan costs a heap string per binder and a linear lookup per
-//! occurrence, and having two of them in one tree is how the two faces drift.
-//!
-//! There is one representation here and it is the flat one. Names live in the
-//! surface syntax and in diagnostics, above this crate.
+//! There is one spelling of "the context", and it is the flat one: no name
+//! keys a binder, so a lookup is an index into a stack rather than a scan, and
+//! no binder costs a heap string. Names live in the surface syntax and in
+//! diagnostics, above this crate.
 //!
 //! # Two zones, two index spaces
 //!
@@ -25,22 +20,17 @@
 //! Each zone has its own binder stack and its own de Bruijn index space, which
 //! is why [`Value::Variable`] carries the zone beside the index.
 //!
-//! The linear zone is kept rather than dropped as vacuous because it is the
-//! type-level form of "a control capture cannot be naively duplicated": it is
-//! the half a duplication policy asks rather than re-decides, and retrofitting
-//! a zone into a context every occurrence site already reads is exactly the
-//! expensive change the shape is kept to avoid. Its laws are unit-tested here
-//! rather than left to the deferred former that will introduce its binders.
+//! The linear zone is the type-level form of "a control capture cannot be
+//! naively duplicated": it is the half a duplication policy asks rather than
+//! re-decides. No former in the core vocabulary binds into it, so its laws are
+//! unit-tested here against a context opened with [`Zone::Linear`] directly.
 //!
 //! # The error path is single-valued
 //!
 //! A failing operation leaves the context **at the failure point**, unchanged
-//! by the failure itself and un-unwound. The prototype had two faces that
-//! disagreed here — a recursive checker unwound the context along the host call
-//! stack while the machine left it where it stopped — and papered the
-//! divergence over by comparing error values rather than contexts. With
-//! recursion banned there is one face, so the failure state *is* the contract
-//! and it is asserted rather than described.
+//! by the failure itself and un-unwound. The context has one implementation,
+//! iterative, so no second face can unwind it differently, and the failure
+//! state *is* the specification: it is asserted rather than described.
 //!
 //! [`Value::Variable`]: crate::Value::Variable
 

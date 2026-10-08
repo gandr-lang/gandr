@@ -1,19 +1,16 @@
 //! The definition chain and the per-scope definitional environment: what a
 //! definition *is*, and where it is *manifest*.
 //!
-//! # The chain carries content ids, not pointers and not arena ids
+//! # The chain carries content ids
 //!
-//! The prototype carried definition bodies as syntax behind reference-counted
-//! pointers, and it did so for a real reason: an arena id is meaningful only in
-//! the arena that minted it, while a context is cloned into whatever normalizer
-//! a conversion mints, so compiled ids would dangle silently.
-//!
-//! The property is kept and the pointer is dropped. A [`DefinitionEntry`]
-//! carries a **content id** — an entry index in the artifact's canonical
-//! subterm table — which is arena-independent by construction, because the
-//! table is canonical: the same content is the same entry, in every arena that
-//! decodes it. A normalizer lowers the chain into its own arena in one pass;
-//! the chain itself owns no node, borrows no arena, and clones flat.
+//! An arena id is meaningful only in the arena that minted it, while a context
+//! is cloned into whatever normalizer a conversion mints, so a chain of arena
+//! ids would dangle silently. A [`DefinitionEntry`] carries a **content id**
+//! instead — an entry index in the artifact's canonical subterm table — which
+//! is arena-independent by construction, because the table is canonical: the
+//! same content is the same entry, in every arena that decodes it. A normalizer
+//! lowers the chain into its own arena in one pass; the chain itself owns no
+//! node, borrows no arena, and clones flat.
 //!
 //! # Heights are computed in admission order
 //!
@@ -31,18 +28,17 @@
 //! conversion is cheaper to unfold and they never decide which unfoldings are
 //! attempted.
 //!
-//! # The definitional environment is per-scope from the start
+//! # The definitional environment is per-scope
 //!
-//! Transparent ascription forces it: the same atom is manifest inside a sealed
-//! module and opaque outside it, so a single global transparency table is
-//! simply wrong. The environment is a flat, id-addressed forest of scopes whose
-//! parent link always points at a strictly earlier scope, and a lookup walks
-//! outward taking the innermost override.
+//! Transparent ascription makes the same atom manifest inside a sealed module
+//! and opaque outside it, which one global transparency table cannot express.
+//! The environment is a flat, id-addressed forest of scopes whose parent link
+//! always points at a strictly earlier scope, and a lookup walks outward taking
+//! the innermost override.
 //!
-//! The empty environment degenerates to the flat one at no cost — one root
-//! scope, no overrides, one scan that finds nothing and answers with the
-//! declaration's own stance — which is why the shape is paid before the sealing
-//! feature that needs it lands rather than after.
+//! The empty environment costs what a flat table costs — one root scope, no
+//! overrides, one scan that finds nothing and answers with the declaration's
+//! own stance.
 
 use alloc::vec::Vec;
 

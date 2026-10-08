@@ -22,12 +22,10 @@
 //! zone it counted in would be ambiguous. [`Value::Variable`] therefore carries
 //! a [`Zone`] beside its index.
 //!
-//! Nothing at today's vocabulary binds into the linear zone — the formers that
-//! do are the reified first-class stacks, which are deferred features — so the
-//! linear spelling is reachable only through a context built directly. Carrying
-//! the zone now is what keeps the retrofit from costing every occurrence site
-//! later, which is the reason the two-zone shape is kept rather than dropped as
-//! vacuous.
+//! No former in the core vocabulary binds into the linear zone, so the linear
+//! spelling is reachable only through a context built directly. The zone stays
+//! on every occurrence, so a former that binds linearly changes no occurrence
+//! site.
 //!
 //! # Children are ids, and the derived relations are shallow
 //!
