@@ -1,9 +1,8 @@
 //! Routes a driver invocation into the gandr surface pipeline.
 //!
 //! The driver (`gandr-lang`) owns the argument surface; this crate owns what
-//! happens after an invocation is understood. Interaction modes and pipeline
-//! entries arrive here as [`Invocation`] variants and leave as [`Outcome`]
-//! values the driver renders.
+//! happens after an invocation is understood. An invocation enters as an
+//! [`Invocation`] and leaves as an [`Outcome`] the driver renders.
 
 /// One understood driver invocation, ready to route.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,8 +32,8 @@ impl core::fmt::Display for StatusReport
     /// - requires: nothing; the report carries no state to render.
     /// - ensures: writes one sentence and no line terminator, so the driver
     ///   owns the line the message sits on.
-    /// - provides: the placeholder body the driver prints until toolchain
-    ///   management lands.
+    /// - provides: the body of the status line the driver prints on a bare
+    ///   invocation.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
     #[inline]
