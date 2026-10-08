@@ -33,10 +33,10 @@
 //! rather than a second implementation. [`TraceLog`] is the recording side,
 //! and it is what a differential counts its exercised path through.
 //!
-//! The crate is `no_std` and depends only on `core` and `alloc`.
+//! The crate is `no_std` and depends only on `core`, `alloc` and the
+//! specification facade.
 //!
-//! The plan milestone and the obligations this crate discharges are in its
-//! `README.md`.
+//! The papers the crate draws on are in its `README.md`, § References.
 
 #![no_std]
 

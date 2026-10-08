@@ -17,11 +17,10 @@
 //!   It shares no code with the strategy, so a strategy that recorded the wrong
 //!   branch is refused rather than agreed with.
 //!
-//! One consequence of the vocabulary is worth pinning here rather than
-//! discovering later: **the trace records that two occurrences met, not that
-//! they agreed.** A refutation and a proof carry the same final decision, and
-//! the verdict is recomputed by the replay from the terms. So a trace is replay
-//! evidence and never an equality.
+//! One consequence of the vocabulary is pinned here: **the trace records that
+//! two occurrences met, not that they agreed.** A refutation and a proof carry
+//! the same final decision, and the verdict is recomputed by the replay from
+//! the terms. So a trace is replay evidence and never an equality.
 #[cfg(test)]
 mod differential
 {
