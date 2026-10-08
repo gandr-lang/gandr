@@ -1,32 +1,15 @@
-//! The child-reference representation, and why this encoding answers the
-//! question by construction.
+//! Child references name a chunk by digest and an offset within that chunk.
 //!
-//! # The question
+//! # Child representation
 //!
-//! A format whose child references are indices into a table must say what an
-//! index counts from. **Absolute** indices count from the start of the whole
-//! value, so inserting one constructor early renumbers every index after it:
-//! every downstream chunk mentions a moved index, every one changes, and
-//! sharing across two versions of a value collapses to the prefix before the
-//! edit. **Chunk-local** indices count from the start of the chunk carrying
-//! them, with the base carried at each seam, so an edit renumbers only within
-//! its own chunk and the seams absorb the shift.
+//! Constructors nest in place. A cut subtree becomes a child record naming
+//! its chunk at offset zero, so an insertion cannot renumber sibling
+//! references through a shared index table. See the
+//! [byte languages](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#byte-languages).
 //!
-//! # The answer here
-//!
-//! This token stream has no child indices. A constructor's children are
-//! emitted nested, in place, between its open and close records; a cut
-//! subtree is replaced by a child record naming its chunk's digest at offset
-//! zero. There is no table and no numbering, so nothing an early insertion
-//! could renumber: an edit rewrites the chunks on its own path to the root and
-//! leaves every sibling chunk byte-identical, because no sibling's bytes ever
-//! mentioned a position that moved.
-//!
-//! [`crate::cam_commit`] therefore refuses [`ChildIndexBase::ChunkLocal`]
-//! rather than ignoring it — accepting it would let a manifest claim a
-//! representation the chunks do not carry — and the measurement the question
-//! asks for is [`crate::LocalityMeasurement`] taken over an early edit: the
-//! chunks the edit added against the chunks it left shared.
+//! [`crate::cam_commit`] accepts [`ChildIndexBase::Absolute`] and refuses
+//! [`ChildIndexBase::ChunkLocal`], because the encoding carries no relative
+//! index base.
 
 use core::fmt;
 

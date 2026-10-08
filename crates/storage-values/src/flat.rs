@@ -1,12 +1,11 @@
 //! The flat form: one value's canonical token body, with no store and no
 //! seam.
 //!
-//! A consumer that needs a value's canonical bytes before it has a chunk store
-//! — to hash them, sign them or keep them in a record — takes the flat form.
-//! It is the same byte language a chunk body is written in, by the same
-//! writer, so for a value that fits one chunk the flat bytes are exactly the
-//! body [`crate::cam_commit`] frames into that chunk: bytes stored flat today
-//! commit through the chunk DAG later without being re-encoded.
+//! A consumer needing canonical bytes to hash, sign or keep in a record uses
+//! the flat form. It uses the chunk body's byte language and writer, so for a
+//! value that fits one chunk these bytes equal the body
+//! [`crate::cam_commit`] frames. See the
+//! [byte languages](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#byte-languages).
 //!
 //! A flat form carries no child record. It has no store to resolve one
 //! against, so the encoder refuses a value that embeds a committed pointer and

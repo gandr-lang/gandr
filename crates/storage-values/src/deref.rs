@@ -5,7 +5,7 @@
 //! value's own codec from the pointer's offset, the reader splicing child
 //! chunks through the same steps at each seam.
 //!
-//! # The store arrives erased
+//! # Store erasure
 //!
 //! [`cam_deref`] takes `&dyn ChunkStore` because the reader holds one, and a
 //! value's codec must not learn where the value is stored.
@@ -13,11 +13,10 @@
 //! value's encoding reaches the commit path's store, so there is nothing there
 //! to erase.
 //!
-//! # Verification is not validity
+//! # Value validity
 //!
-//! A successful deref proves the bytes are the bytes the pointer names. It
-//! proves nothing about whether the value they decode to is admissible; that
-//! is the value's own concern.
+//! Dereferencing authenticates the bytes named by the pointer. The codec and
+//! consumer decide whether the decoded value is admissible.
 
 use crate::chunk::ChunkStore;
 use crate::error::ValueError;

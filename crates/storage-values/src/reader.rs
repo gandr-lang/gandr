@@ -1,7 +1,7 @@
 //! The token reader: one continuous stream over a body, splicing child chunks
 //! in place and charging every step to one decode budget.
 //!
-//! # Why the reader carries the store
+//! # Store access
 //!
 //! A child record is a hole in the token stream, and filling it needs a fetch.
 //! Handing a decoder a bare byte slice would make the seam visible in the
@@ -15,21 +15,21 @@
 //! [`crate::CanonicalValue::decode_tokens`] and so into every value's codec,
 //! making a value's encoding depend on where it is stored.
 //!
-//! # A descended chunk delivers exactly one subtree
+//! # Child subtrees
 //!
 //! A child record stands for one value. The reader therefore leaves a
 //! descended chunk the moment the subtree it entered closes, and refuses a
 //! chunk that ends before its subtree does — a chunk cannot splice records
 //! into its parent's stream.
 //!
-//! # The seam stack is heap-held
+//! # Seam stack
 //!
 //! A child record can appear at any depth in any chunk, and the decoder
 //! driving the reader may keep its own stack already. Suspended chunks live in
 //! a vector here, so the depth of a chunk DAG is bounded by the decode budget
 //! rather than by the host stack.
 //!
-//! # One total budget
+//! # Decode budget
 //!
 //! Per-record checks bound one record, and they do not bound a DAG that
 //! references one chunk many times: each reference is read again, so the work

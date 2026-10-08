@@ -18,10 +18,10 @@
 //! ```
 //!
 //! Every integer is little-endian at a fixed width, so a digest never inherits
-//! a target's endianness or pointer width; the committed golden in the
-//! contract suite is what makes that a checked property.
+//! a target's endianness or pointer width; the specification suite checks a
+//! committed golden image and digest.
 //!
-//! # A verified chunk is a type
+//! # Verified chunks
 //!
 //! [`VerifiedChunk`] is obtainable only by [`verify_chunk_image`] — which
 //! recomputes the digest and re-reads the frame, the body's records and their

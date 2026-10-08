@@ -1,29 +1,18 @@
-//! The locality bound, and the measurement read against it.
+//! The expected chunk-locality bound and edit measurements.
 //!
-//! # The bound
+//! # The locality bound
 //!
-//! Editing one node at depth $d$ re-cuts the chunks on its path to the root,
-//! because each holds a digest that moved, and the re-cut can spill into
-//! neighbouring siblings. The storage theory this plane follows bounds the
-//! expected number of affected chunks (its Theorem 5.2; the paper is cited in
-//! this crate's `README.md`) by
+//! [`expected_chunk_bound`] computes `2 + ceil(2d / kappa) + ceil(d / cap)`
+//! for edit depth `d` under the committed profile. It rounds each quotient
+//! up to whole chunks. See the
+//! [locality bound and its source](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#the-locality-bound).
 //!
-//! ```text
-//! 2 * (d / kappa + 1) + d / cap
-//! ```
+//! # Edit measurement
 //!
-//! over the committed profile's kappa and token cap. [`expected_chunk_bound`]
-//! states it in whole chunks, rounding each quotient up:
-//! `2 + ceil(2d / kappa) + ceil(d / cap)`.
-//!
-//! # A measurement, not a test of one edit
-//!
-//! The bound is an expectation over the residues, not a worst case: one edit
-//! can exceed it without refuting anything. What confirms or refutes the
-//! implementation is the mean over a corpus of edits, so
-//! [`measure_edit`] records one edit's numbers and the contract suite reads
-//! their mean against the bound. The same observation counts the chunks the
-//! edit left shared, which is the structural-sharing number.
+//! [`measure_edit`] counts chunks added by an edit and chunks left shared.
+//! The bound is an expectation over residues, not a per-edit ceiling; the
+//! locality suite compares corpus means against it. A finite corpus supplies
+//! evidence only for the edits and codecs it exercises.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;

@@ -1,33 +1,29 @@
-//! The storage tier's **value plane**: one value as a typed chunk DAG,
-//! addressed by content pointers, and its flat canonical bytes.
+//! Content-addressed values as typed chunk DAGs or flat canonical token bytes.
 //!
-//! # What the crate is for
+//! [`CanonicalValue`] defines a codec over [`TokenSink`] and [`TokenReader`].
+//! [`cam_commit`] stores a value and returns its [`ValueManifest`];
+//! [`cam_deref`] decodes from a [`ContentPtr`] while the reader splices child
+//! chunks into one stream. [`encode_flat`] and [`decode_flat`] use the same
+//! token language without a store or child pointers.
 //!
-//! The record plane stores sorted keyed records; this plane stores a single
-//! value by the value's own constructors. A value walks itself into a
-//! canonical token stream ([`CanonicalValue`], [`TokenSink`]);
-//! [`cam_commit`] cuts that stream at constructor exits the committed typed
-//! chunker profile selects, frames each cut subtree as a chunk whose domain is
-//! inside its hashed preimage, and names the value by its root chunk's digest
-//! ([`ContentPtr`], [`ValueManifest`]). [`cam_deref`] fetches, verifies and
-//! decodes, the [`TokenReader`] splicing child chunks so a decoder never sees
-//! a seam. Two values sharing a subtree share its chunks, and an edit re-cuts
-//! only the chunks on its path, within the bound [`expected_chunk_bound`]
-//! states.
+//! # Encoding and chunking
 //!
-//! [`encode_flat`] and [`decode_flat`] give one value's canonical token bytes
-//! with no store: for a value that fits one chunk, exactly the body that
-//! chunk frames.
+//! See the [byte languages](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#byte-languages)
+//! and [boundary rules](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#chunk-boundaries-and-residues)
+//! for canonical framing, child references and residue derivation.
 //!
-//! # Failure
+//! # Verification
 //!
-//! Every refusal is a [`ValueError`] naming what was refused. No operation
-//! panics, no count or length wraps, every decode is charged to one total
-//! budget ([`MAX_DECODE_WORK`]), and no operation repairs a chunk, a stream or
-//! an emission it was handed.
+//! [`ValueError`] identifies emission, framing, authentication and codec
+//! failures. [`MAX_DECODE_WORK`] bounds accumulated decode work. See
+//! [verification and decode budgets](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#verification-and-decode-budgets).
 //!
-//! The named ideas and their primary references are in this crate's
-//! `README.md`.
+//! # Locality
+//!
+//! [`expected_chunk_bound`] states an expectation, while [`measure_edit`]
+//! counts affected and shared chunks for one edit. See the
+//! [locality bound](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#the-locality-bound)
+//! and [references](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#references).
 
 #![no_std]
 

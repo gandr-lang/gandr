@@ -7,13 +7,13 @@
 //! naming that chunk in its place. The root chunk is framed last, and its
 //! digest at offset zero is the root pointer.
 //!
-//! # Bottom-up is a correctness property
+//! # Bottom-up commitment
 //!
 //! A child's digest must be fixed before its parent's body can carry it.
 //! Cutting at constructor exit makes the order available: by the time a
 //! subtree closes, everything beneath it is decided.
 //!
-//! # The event and its residue
+//! # Boundary residues
 //!
 //! An event carries the records appended to the body since the previous
 //! event, so each record joins the scanner's pending count once. The residue
@@ -35,11 +35,10 @@
 //! read as a record. Each emitted byte is hashed once, under the constructor
 //! that emitted it, whatever the depth.
 //!
-//! # The outermost close never cuts
+//! # Root framing
 //!
-//! Cutting there would frame the whole value and leave a root chunk holding
-//! nothing but a child record for it: one extra chunk and one extra seam for
-//! nothing the root chunk does not already separate.
+//! The outermost constructor is framed directly as the root chunk. Applying
+//! a cut there would add a pointer-only root and an unnecessary seam.
 
 use alloc::vec::Vec;
 

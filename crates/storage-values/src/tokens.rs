@@ -296,8 +296,8 @@ pub trait TokenSink
 /// A value that can be written to, and read back from, the canonical token
 /// stream.
 ///
-/// The two halves are one contract: decoding what a value emits gives back an
-/// equal value. That equation is what makes a [`ContentPtr`] mean anything.
+/// Decoding what a value emits must return an equal value. This round-trip
+/// law gives a [`ContentPtr`] its meaning across codec calls.
 pub trait CanonicalValue: Sized
 {
     /// Walks this value in preorder, announcing it to `sink`.
