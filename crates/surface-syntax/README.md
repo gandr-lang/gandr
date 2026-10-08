@@ -1,75 +1,57 @@
 # gandr-surface-syntax
 
-The concrete syntax tree of the gandr surface: the closed token vocabulary, the closed node vocabulary, a flat node arena whose children are a contiguous range of arena positions, byte spans, and the two identities every node carries.
+The concrete syntax tree of the gandr surface language: closed token and node vocabularies, byte spans, and a flat level-order arena whose every node carries an arena position and a content digest.
 
-It holds **representation only** — no lexer, no parser, no lowering. Nothing here reads a source except to answer what a span covers. It is `no_std` over `core` and `alloc`, and its one runtime dependency is BLAKE3, which computes the content identity.
+<!-- toc -->
 
-## Pipeline role
+- [Synopsis](#synopsis)
+- [References](#references)
+- [Provided features](#provided-features)
+- [Expected features](#expected-features)
+- [Examples](#examples)
+- [Arena position and content digest](#arena-position-and-content-digest)
+- [Digest preimage](#digest-preimage)
+- [Level-order layout](#level-order-layout)
+- [Builder identity](#builder-identity)
+- [Source text and fragments](#source-text-and-fragments)
+- [Punctuation and grouping](#punctuation-and-grouping)
+- [Attribute placement](#attribute-placement)
+- [Specification attributes](#specification-attributes)
+- [License](#license)
 
-This crate supplies the concrete syntax tree for the minimal parse-and-check slice. It has no in-workspace dependency; its planned consumers are `gandr-surface-parser` and `gandr-surface-lowering`.
+<!-- tocstop -->
 
-| unit clause | where it lives |
-| ----------- | -------------- |
-| the token vocabulary | `src/token.rs` |
-| the closed node-kind enum | `src/kind.rs` |
-| byte spans | `src/span.rs` |
-| the content-derived identity | `src/digest.rs` |
-| the flat arena, children as a range | `src/tree.rs` |
-| staging and the level-order layout | `src/build.rs` |
-| the typed refusal vocabulary | `src/error.rs` |
+## Synopsis
 
-## The two identities, and the distinction is load-bearing
+**What.** The tree a surface parser produces. `TokenKind` and `NodeKind` are the closed lexical and node vocabularies; `ByteSpan` is a half-open byte range of a `SourceText`; `SyntaxTree` is a flat arena laid out in level order, whose node carries its kind, its span, its children as a contiguous range of arena positions, and a `NodeDigest`. `TreeBuilder` stages nodes bottom-up as a parser completes them and finishes them into the arena. The crate holds representation only: it lexes and parses nothing, and reads a source only to answer what a span covers. It is `no_std` over `core` and `alloc`, and its one runtime dependency is BLAKE3.
 
-A node carries an **arena position** and a **content digest**, and they answer different questions.
+**Why.** A lexer and a re-renderer compare token streams, so the vocabulary they compare against lives beside the tree rather than inside either. A consumer that dispatches on forms needs the tree to name them, so each node carries its kind. A position resolves fast inside one tree but moves with every edit earlier in the file; a consumer whose side table outlives one parse needs an identity that depends on content alone.
 
-`NodeIndex` addresses a node inside one tree and nowhere else. It is an offset into that tree's node vector, and the next parse of an edited source lays the same declaration out at a different offset.
+**How.** Children as a contiguous range force level order, which puts every parent before its children: a walk in ascending position order needs no stack, and a cycle is unrepresentable rather than checked for. The digest is computed at staging over the children's digests rather than their positions, so it survives the layout and every edit elsewhere in the file. A staged identity carries the identity of the builder that minted it. Every refusal is a `SyntaxError` naming the offset or staged node it rejected; nothing panics, indexes, or repairs.
 
-`NodeDigest` addresses a node across trees, runs and processes. It is a function of the node's kind, its own source text when its kind carries text, and its children's digests — of nothing else. Spans are not hashed and neither are child positions, so the same declaration parsed from two files, in two processes, on two machines carries one identity.
+## References
 
-Diagnostics and the origin table carry both: the position resolves fast inside the tree in hand, the digest survives the tree. A side table keyed by position is invalidated by an edit anywhere earlier in the file; a side table keyed by digest is invalidated only by an edit to the thing it is about. That is why the attribute side table and any later checkpoint key on the digest alone.
+- Jack O'Connor, Jean-Philippe Aumasson, Samuel Neves and Zooko Wilcox-O'Hearn. "BLAKE3: one function, fast everywhere." Specification, 9 January 2020. <https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf> — the hash whose extendable output is a node digest.
 
-The digest preimage is domain-separated and every variable-width field is preceded by its length at a fixed width, so two sibling texts cannot run together into a third reading. Its pinned form is asserted against an external BLAKE3 golden rather than against a value this crate produced.
+## Provided features
 
-## What it provides
+- `TokenKind`, `TokenSpelling` and `Token`: the closed lexeme classes, their fixed spellings, and one spanned lexeme.
+- `NodeKind`, `KindTag` and `CarriesText`: the closed node forms, each with a pinned digest tag and whether it draws text from the source.
+- `SyntaxTree`, `Node` and `NodeIndex`: the level-order arena with checked lookups, `children`, `positions` and `fragment`.
+- `TreeBuilder` and `StagedId`: bottom-up staging and the layout `TreeBuilder::finish` produces.
+- `NodeDigest` and `NODE_DIGEST_LEN`: the 32-byte content identity, rendered as lowercase hexadecimal.
+- `SourceText`, `SourceFragment`, `ByteSpan`, `ByteOffset` and `ByteLength`: byte-addressed source positions.
+- `SyntaxError`: every refusal, with the offset, span or staged node it names.
 
-- `TokenKind`, twenty-one lexeme classes with their fixed spellings, and `Token`, one spanned lexeme. No trivia class and no end marker: whitespace is skipped by the lexer, and the stream ends by exhaustion, so a tree can re-render a stream equal to the lexer's own.
-- `NodeKind`, eighteen forms with a pinned per-kind digest tag. The node carries its kind, so the lowering above dispatches on forms directly and the read adapter that a form-name-free tree would need never exists.
-- `SyntaxTree`, the arena: nodes in level order, root at position zero, each node's children a contiguous range of strictly higher positions. A walk in ascending position order visits every parent before any of its children with no stack, and a cycle is unrepresentable rather than checked for.
-- `TreeBuilder` and `StagedId`, the bottom-up staging a parser mints into, and the level-order layout it finishes to. Staged identities and arena positions are different types because they are different permutations of the same nodes, and a `StagedId` names the builder that minted it, so a handle offered to a different builder is refused rather than resolving against whatever that builder staged at the same position.
-- `SourceText` and `SourceFragment`, kept apart on purpose. `SourceText` is the offset frame a `ByteSpan` is measured against; a `SourceFragment` is the bytes one span covers and carries no frame of its own, so it has no `end`, no `fragment`, and cannot be handed to a `TreeBuilder` as a source. Each of those would reinterpret absolute offsets against a string starting somewhere else, and each is a compile error rather than a wrong answer.
-- `ByteSpan` over `ByteOffset`, half-open, minted only through a check that refuses an inverted pair, and read against a source through a check that refuses an out-of-range endpoint or one inside a character.
-- Totality. Every refusal is a `SyntaxError` value naming the exact offset or staged node it rejected; nothing panics, indexes, or repairs.
+## Expected features
 
-## Two shape decisions worth stating
+- **Atomic compare-exchange.** Builder identities come from a process-wide atomic counter, so the crate requires `target_has_atomic = "ptr"`. Every hosted target and every embedded target with a compare-exchange instruction qualifies; building for a load/store-only core fails with an explanatory `compile_error!`.
+- **Distinct declarations.** A digest is a content identity, not an occurrence identity: two declarations with identical content have one digest. A consumer keying a table on digests owes the argument that its keys are distinct; in the surface language a declaration's digest folds its name, so a module that refuses a name bound twice supplies it.
+- **The specification facade's `cfg`.** `#[spec(...)]` clauses are checked at runtime only when the whole build graph is compiled with `--cfg anodized_panic`.
 
-**Punctuation is implied; grouping is not.** A token whose presence the parent's kind determines — a signature's colon and semicolon, a lambda's dot — is recovered from the kind rather than stored. A grouping is different: `(x)` and `x` differ in the token stream and in nothing else, so `NodeKind::Grouped` is a node, which is what lets a re-render reproduce the lexer's own stream exactly rather than a re-parenthesized variant of it.
+## Examples
 
-**An attribute block is the module's child, not the declaration's.** Attaching, editing or removing an attribute therefore leaves the decorated declaration's digest unchanged — which is the property the attribute side table, keyed by that digest, depends on.
-
-## The contract attributes
-
-The `# Specification` prose stays the statement of record; a combined `#[spec(...)]` attribute mirrors it where the whole clause is a predicate over one call. Five items carry one:
-
-- `SourceText::fragment` and `SyntaxTree::fragment` — the returned fragment is exactly the byte range the span names, so a body that clamped an endpoint, reordered a pair, or read a different range fails rather than answering plausibly;
-- `ByteSpan::join` — the result's endpoints are the lower start and the higher end, which is the whole selection rather than only the ordering it implies;
-- `SyntaxTree::node` — the one checked lookup the other reads are built on, stated against the layout's own slot;
-- `TreeBuilder::resolve` — the stamp-and-range check stated as an equivalence, so a resolution admitting a foreign stamp or an out-of-range position fails at the one place both are decided.
-
-Thirteen prose-only blocks name their boundary in `provides`. Six are `const fn` items — `NodeKind::tag`, `NodeKind::carries_text`, `TokenKind::spelling`, `ByteSpan::new`, `ByteSpan::length` and `SyntaxTree::from_layout` — which keep their const API without the attribute, because the pinned `anodized` expansion calls a non-const evaluator (`E0015`). The other seven are a law over several calls (`digest_of`'s agreement on equal triples), a claim over a counter's whole issuance history (`BuilderIdCounter::allocate`), a rendering claim about the two implementations beside a type (`NodeDigest`), a property holding only under a precondition the item adopts without checking, where asserting it would turn a documented wrong walk into a panic (`SyntaxTree::children`), the process-wide freshness a new builder's identity carries (`TreeBuilder::new`), a digest fold over the child list one call consumed beside an exactly-one-parent claim over the whole edge list (`TreeBuilder::node`), and a comparison against the staged side the call consumes (`TreeBuilder::finish`).
-
-Existing adequacy hypotheses and witnesses are unchanged; a runtime clause establishes no adequacy claim. `anodized` supplies core-only specification helpers with default features disabled, and the enforcing test lane selects `--cfg anodized_panic` for the whole dependency graph.
-
-## Not provided
-
-- Lexing and parsing. The vocabulary lives here so the producer and a re-renderer can be compared against a table neither of them owns.
-- Trivia retention, error recovery, and partial trees. The slice's parser refuses at the first fault with one span; total marking and the completion ladder arrive with an editor face that needs every error from one pass.
-- Interning, incremental re-parse, and edit application. The digest is the identity such a layer would key on, and it is here; the layer is not.
-
-## Using it
-
-Stage bottom-up, finish into the arena, then walk it in ascending position order.
-
-This example is the doctest on `TreeBuilder`, so it is compiled and run by `cargo test` rather than copied here to rot.
+Stage bottom-up, finish into the arena, then walk it in ascending position order:
 
 ```rust
 use gandr_surface_syntax::ByteOffset;
@@ -112,10 +94,46 @@ fn example() -> Result<(), SyntaxError> {
 }
 ```
 
-## Ideas relied on
+The same example is the doctest on `TreeBuilder`. Run the tests, the doctests, and the tests with specifications enforced:
 
-Flat id-addressed arenas in place of pointer-linked recursive data; level-order layout as the enabling condition for children-as-an-index-range; content addressing with domain separation and length-prefixed preimages; the separation of a positional identity from a content identity, which is what lets a side table survive an edit elsewhere in the file.
+```sh
+cargo nextest run -p gandr-surface-syntax
+cargo test -p gandr-surface-syntax --doc
+RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest run -p gandr-surface-syntax
+```
+
+## Arena position and content digest
+
+`NodeIndex` addresses a node inside one tree and nowhere else: it is an offset into that tree's node vector, and the next parse of an edited source lays the same declaration out elsewhere. `NodeDigest` addresses a node across trees, runs and processes: it is a function of the node's kind, its own text when its kind carries text, and its children's digests, so the same declaration parsed from two files on two machines carries one identity. A side table keyed by position is invalidated by an edit anywhere earlier in the file; one keyed by digest only by an edit to the thing it is about. A diagnostic that carries both resolves fast in the tree in hand and survives it.
+
+## Digest preimage
+
+The preimage is the domain string `gandr.surface-syntax.node.v1`, the kind's pinned tag, the child count, the node's own text when its kind carries text, and the children's digests in order. Spans and child positions are excluded, so moving text leaves its digest unchanged. Every variable-width field is preceded by its length at a fixed width, so `ab` beside `c` and `a` beside `bc` hash differently. The version suffix belongs to the domain: a change to the layout changes every node's identity, and two layouts never compare equal. The pinned form is asserted against an external BLAKE3 golden rather than a value this crate produced.
+
+## Level-order layout
+
+A node names its children as a contiguous range of strictly higher arena positions: two fields per node and no second vector. A post-order arena, which a bottom-up builder produces naturally, cannot give a node's children a contiguous range, because the second child's subtree sits between the first child and the second; level order can. The root is position zero, every child sits above its parent, so an ascending scan visits parents first and an index comparison decides ancestry direction.
+
+## Builder identity
+
+A parser mints bottom-up and the arena is laid out top-down, so a `StagedId` and a `NodeIndex` are different types: they are different permutations of the same nodes, and a `StagedId` stops at `TreeBuilder::finish`. A `StagedId` carries the process-unique identity of its builder, and every entry point checks it before the position, so a handle offered to another builder is refused with `SyntaxError::UnknownStagedNode` rather than resolving against whatever that builder staged at the same position. The identity counter refuses to wrap, with `SyntaxError::BuilderIdExhausted`, and `TreeBuilder` is not `Clone`, because either would restore the aliasing the identity removes. A staged node accepts one parent; a second is refused with `SyntaxError::ChildAlreadyAttached`.
+
+## Source text and fragments
+
+A position is a byte offset, the unit the lexer has and an edit is expressed in; a diagnostic renderer converts to lines once, at display. `ByteSpan::new` refuses an inverted pair, and reading a span against a source refuses an endpoint past the end or inside a character. `SourceText` is the offset frame a span is measured against; `SourceFragment` is the bytes one span covers, with no frame of its own. A fragment has no `end` and no `fragment` and cannot seed a `TreeBuilder`, because each would reinterpret absolute offsets against a string that starts elsewhere; the type split makes each a compile error rather than a wrong answer.
+
+## Punctuation and grouping
+
+The token vocabulary has no trivia class and no end marker: the lexer skips whitespace and the stream ends by exhaustion, so a tree re-renders a stream equal to the lexer's own. A token whose presence the parent's kind determines, such as a signature's colon or a lambda's dot, is recovered from the kind rather than stored. A grouping is a node, `NodeKind::Grouped`, because `(x)` and `x` differ in the token stream and nowhere else. An identifier is `NodeKind::Name` wherever it appears; its parent's kind and its position decide the sort it is read at.
+
+## Attribute placement
+
+An attribute block is a child of the module, in source order, never of the declaration it decorates. Attaching, editing or removing an attribute therefore leaves the declaration's digest unchanged, which is the key a side table of attributes files the declaration under.
+
+## Specification attributes
+
+Each item's `# Specification` prose is the statement of record; a `#[spec(...)]` attribute states a clause verbatim where the whole clause is a predicate over one call, such as `SourceText::fragment` returning exactly the range the span names. The `const fn` items — `NodeKind::tag`, `NodeKind::carries_text`, `TokenKind::spelling`, `ByteSpan::new`, `ByteSpan::length` and `SyntaxTree::from_layout` — keep their `const` API and stay prose, because the `anodized` expansion calls a non-`const` evaluator (`E0015`). A clause that relates several calls, a counter's whole issuance history, or a precondition the item adopts without checking stays prose and names its boundary in `provides`.
 
 ## License
 
-Apache-2.0 WITH LLVM-exception.
+Apache-2.0 WITH LLVM-exception. The licence text is at the repository root.

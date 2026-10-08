@@ -8,12 +8,11 @@
 //!
 //! # No trivia and no end marker
 //!
-//! Whitespace, and any later comment form, are skipped by the lexer rather than
-//! carried as tokens: a tree that does not retain trivia could not re-render a
-//! stream containing it, and the round-trip comparison is the reason the
-//! vocabulary is shared at all. The stream likewise ends by exhaustion rather
-//! than with a marker token, so the tokens of a source are exactly its
-//! significant lexemes.
+//! Whitespace is skipped by the lexer rather than carried as tokens: a tree
+//! that does not retain trivia could not re-render a stream containing it, and
+//! the round-trip comparison is the reason the vocabulary is shared at all.
+//! The stream likewise ends by exhaustion rather than with a marker token, so
+//! the tokens of a source are exactly its significant lexemes.
 //!
 //! # Type heads are identifiers
 //!

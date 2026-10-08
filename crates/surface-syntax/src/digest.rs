@@ -12,12 +12,11 @@
 //! same declaration parsed from two files, in two processes, on two machines,
 //! carries the same digest.
 //!
-//! Diagnostics and the origin table carry both — the position resolves fast
-//! inside the tree in hand, the digest survives the tree. A side table keyed by
-//! a position would be invalidated by an edit anywhere earlier in the file; a
-//! side table keyed by a digest is invalidated only by an edit to the thing it
-//! is about. That is why the attribute side table and any later checkpoint key
-//! on the digest alone.
+//! A diagnostic that carries both resolves fast inside the tree in hand and
+//! survives the tree. A side table keyed by a position is invalidated by an
+//! edit anywhere earlier in the file; a side table keyed by a digest is
+//! invalidated only by an edit to the thing it is about, which is why a table
+//! that outlives one parse keys on the digest alone.
 //!
 //! # What the preimage excludes
 //!
