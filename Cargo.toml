@@ -3,7 +3,6 @@ resolver = "3"
 members = [
   "crates/core-nbe",
   "crates/core-term",
-  "crates/face-driver",
   "crates/kernel-check-memo",
   "crates/kernel-conversion-trace",
   "crates/kernel-core",
@@ -13,6 +12,7 @@ members = [
   "crates/storage-records",
   "crates/storage-values",
   "crates/surface-dispatcher",
+  "crates/surface-driver",
   "crates/surface-syntax",
   "crates/theory-orders",
 ]
@@ -72,7 +72,7 @@ default-features = false
 # - usage: the usage line `--help` and an argument error print
 # - error-context: the context an argument error reports
 # consumers:
-# - face-driver
+# - surface-driver
 [workspace.dependencies.clap]
 version = "4.6.6"
 default-features = false
@@ -125,7 +125,7 @@ path = "crates/storage-records"
 
 # Routes a driver invocation into the surface pipeline.
 # consumers:
-# - face-driver
+# - surface-driver
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
 

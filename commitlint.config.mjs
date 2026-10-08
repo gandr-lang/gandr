@@ -43,7 +43,6 @@ const SCOPES = [
   "core",
   "storage",
   "surface",
-  "face",
   "workflow",
   "ci",
   "config",

@@ -13,8 +13,7 @@ theory    reusable metatheory machinery
 kernel    the certified trusted base and its substrate: levels, the term arena and sharing format, the checking machine
 core      the core language: call-by-push-value syntax, the unified context, normalization by evaluation
 storage   the content-addressed tier: authenticated record and value planes
-surface   syntax, grammar, parsing, lowering, and the pipeline a driver invocation enters
-face      what a human or a tool touches: the driver
+surface   syntax, grammar, parsing, lowering, the pipeline a driver invocation enters, and the driver a human or a tool runs
 workflow  repository tooling and gates
 ```
 
@@ -37,7 +36,7 @@ crates/
 ├── storage-values/            gandr-storage-values            the content-addressed value plane: typed chunk DAG and content pointers
 ├── surface-syntax/            gandr-surface-syntax            the concrete syntax tree
 ├── surface-dispatcher/        gandr-surface-dispatcher        routes a driver invocation into the surface pipeline
-└── face-driver/               gandr-lang                      the `gandr` driver binary
+└── surface-driver/            gandr-lang                      the `gandr` driver binary
 ```
 
 `workflow` has no member: the policy library and the gate binary come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.
