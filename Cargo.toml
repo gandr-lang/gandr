@@ -66,8 +66,8 @@ publish = false
 version = "0.12.16"
 default-features = false
 
-# Executable specifications with a core-only facade. The exact fork revision
-# makes logic/BigInt optional, so the no_std consumers build with defaults off.
+# Executable specifications, including const functions, with a core-only facade.
+# Logic/BigInt is optional, so no_std consumers build with defaults off.
 # Runtime enforcement is selected for the whole build graph with
 # `--cfg anodized_panic`, never inferred from the optimization profile.
 # consumers:
@@ -111,7 +111,7 @@ default-features = false
 # - theory-orders
 [workspace.dependencies.anodized]
 git = "https://github.com/silvanshade/anodized"
-rev = "981bc892c979fd59c46aaaa2dc3075b8184f035f"
+rev = "46ee588e90aed79f2609ff6953ec7f4c2b1d28ae"
 default-features = false
 
 # BLAKE3 hashing for content and node identities.

@@ -30,6 +30,8 @@ cargo build-dist    # the shipped binary: fat LTO, size-optimized std
 
 `cargo build --release` is the everyday optimized build; `cargo build-dist` (`.cargo/config.toml`) is the whole-program one. `cargo nextest run --workspace` runs the tests; `mise run check:tests-enforcing` runs them again with every specification checked at runtime.
 
+The pinned anodized fork supports executable specifications on ordinary and const functions without requiring `std`. `--cfg anodized_panic` enables enforcement for the whole build graph, including compile-time evaluation of const calls; without it, predicates remain type-checked but do not execute.
+
 `mise run ci:act` runs the committed Linux CI workflow in a disposable checkout. Two host-wide slots bound concurrent gates across repositories and worktrees; further invocations wait until a slot frees. Dead holders are reclaimed. Each invocation uses distinct container names. Cached actions run without GitHub fetches; missing actions download on first use.
 
 Completed and interrupted gates remove their containers, networks and volumes. Before starting, each gate reaps resources from abandoned runs whose workflow process is gone; live runs and the shared `act-toolcache` volume remain untouched.

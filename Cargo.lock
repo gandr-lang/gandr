@@ -20,16 +20,16 @@ dependencies = [
 
 [[package]]
 name = "anodized"
-version = "0.6.0"
-source = "git+https://github.com/silvanshade/anodized?rev=981bc892c979fd59c46aaaa2dc3075b8184f035f#981bc892c979fd59c46aaaa2dc3075b8184f035f"
+version = "0.7.0"
+source = "git+https://github.com/silvanshade/anodized?rev=46ee588e90aed79f2609ff6953ec7f4c2b1d28ae#46ee588e90aed79f2609ff6953ec7f4c2b1d28ae"
 dependencies = [
  "anodized-macros",
 ]
 
 [[package]]
 name = "anodized-core"
-version = "0.6.0"
-source = "git+https://github.com/silvanshade/anodized?rev=981bc892c979fd59c46aaaa2dc3075b8184f035f#981bc892c979fd59c46aaaa2dc3075b8184f035f"
+version = "0.7.0"
+source = "git+https://github.com/silvanshade/anodized?rev=46ee588e90aed79f2609ff6953ec7f4c2b1d28ae#46ee588e90aed79f2609ff6953ec7f4c2b1d28ae"
 dependencies = [
  "bitflags",
  "proc-macro2",
@@ -39,8 +39,8 @@ dependencies = [
 
 [[package]]
 name = "anodized-macros"
-version = "0.6.0"
-source = "git+https://github.com/silvanshade/anodized?rev=981bc892c979fd59c46aaaa2dc3075b8184f035f#981bc892c979fd59c46aaaa2dc3075b8184f035f"
+version = "0.7.0"
+source = "git+https://github.com/silvanshade/anodized?rev=46ee588e90aed79f2609ff6953ec7f4c2b1d28ae#46ee588e90aed79f2609ff6953ec7f4c2b1d28ae"
 dependencies = [
  "anodized-core",
  "proc-macro2",
