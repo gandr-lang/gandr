@@ -123,6 +123,7 @@ path = "crates/kernel-conversion-trace"
 # The certified kernel's checking machine, conversion, admission and the
 # replay of conversion traces.
 # consumers:
+# - core-checker
 # - core-nbe (dev)
 [workspace.dependencies.gandr-kernel-core]
 path = "crates/kernel-core"

@@ -25,6 +25,7 @@
 
 use alloc::vec::Vec;
 
+use gandr_core_term::ValueId;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
@@ -47,6 +48,9 @@ use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
 
 /// The judgement's answer for one declaration.
+///
+/// An accepted verdict carries the body it judged, so a consumer re-deriving
+/// the declaration — the kernel bridge — reads everything it needs here.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Verdict
 {
@@ -55,11 +59,19 @@ pub enum Verdict
     {
         /// The declared type.
         declared: FormedValueType,
+        /// The body checked.
+        body: ValueId,
         /// The check's evidence.
         evidence: Checked,
     },
     /// The unsigned body synthesised its type.
-    Synthesised(Synthesised<FormedValueType>),
+    Synthesised
+    {
+        /// The body synthesised.
+        body: ValueId,
+        /// The synthesis's evidence.
+        synthesised: Synthesised<FormedValueType>,
+    },
     /// The body is a hole under a declared type, owed.
     Owed(ObligationEntry),
     /// The declaration was refused.
@@ -159,9 +171,10 @@ impl ModuleReport
 ///   and a body give [`Verdict::Checked`] when the body checks against the
 ///   formed signature; a signature and a hole give [`Verdict::Owed`] with the
 ///   hole's absence; a body alone gives [`Verdict::Synthesised`] when it
-///   synthesises; neither is refused. A formed signature enters the signature
-///   table after the body is judged, whatever the body's verdict; a synthesised
-///   type enters it after synthesis; a refused body alone enters nothing.
+///   synthesises; neither is refused. An accepted verdict carries the body it
+///   judged. A formed signature enters the signature table after the body is
+///   judged, whatever the body's verdict; a synthesised type enters it after
+///   synthesis; a refused body alone enters nothing.
 /// - provides: the one obligation a declaration can owe, carried in its
 ///   verdict, so a caller judging a single declaration needs no ledger.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
@@ -198,13 +211,17 @@ pub fn check_declaration(
         | Maybe::Absent(signature::Absent::Unsigned) => Direction::Synthesise,
     };
     let verdict = match declaration.body() {
-        | Maybe::Present(value) => match direction {
-            | Direction::Synthesise => match synthesise_value(context, value) {
-                | Ok(synthesised) => Verdict::Synthesised(synthesised),
+        | Maybe::Present(body) => match direction {
+            | Direction::Synthesise => match synthesise_value(context, body) {
+                | Ok(synthesised) => Verdict::Synthesised { body, synthesised },
                 | Err(refusal) => Verdict::Refused(refusal),
             },
-            | Direction::Check(declared) => match check_value(context, value, declared) {
-                | Ok(evidence) => Verdict::Checked { declared, evidence },
+            | Direction::Check(declared) => match check_value(context, body, declared) {
+                | Ok(evidence) => Verdict::Checked {
+                    declared,
+                    body,
+                    evidence,
+                },
                 | Err(refusal) => Verdict::Refused(refusal),
             },
         },
@@ -219,11 +236,11 @@ pub fn check_declaration(
         | (
             Direction::Check(declared),
             Verdict::Checked { .. }
-            | Verdict::Synthesised(_)
+            | Verdict::Synthesised { .. }
             | Verdict::Owed(_)
             | Verdict::Refused(_),
         ) => context.record(constant, declared),
-        | (Direction::Synthesise, Verdict::Synthesised(synthesised)) => {
+        | (Direction::Synthesise, Verdict::Synthesised { synthesised, .. }) => {
             context.record(constant, synthesised.produced());
         },
         | (
@@ -369,7 +386,11 @@ mod tests
         let integer = arena.value_type_base(BaseType::Integer);
         let zero = arena.value_literal(integer_literal());
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-        let Verdict::Checked { declared, evidence } = check_declaration(
+        let Verdict::Checked {
+            declared,
+            body,
+            evidence,
+        } = check_declaration(
             &mut context,
             &declaration(At(0), Maybe::Present(integer), Maybe::Present(zero)),
         )
@@ -377,9 +398,9 @@ mod tests
             panic!("a signature and a body check");
         };
         assert_eq!(
-            declared.id(),
-            integer,
-            "the verdict carries the declared type"
+            (declared.id(), body),
+            (integer, zero),
+            "the verdict carries the declared type and the body it checked"
         );
         assert_eq!(
             evidence.conversions(),
@@ -406,7 +427,7 @@ mod tests
             ),
             "the hole in checking position absorbs the declared type and owes it"
         );
-        let Verdict::Synthesised(synthesised) = check_declaration(
+        let Verdict::Synthesised { body, synthesised } = check_declaration(
             &mut context,
             &declaration(At(2), UNSIGNED, Maybe::Present(zero)),
         )
@@ -414,9 +435,9 @@ mod tests
             panic!("a body alone synthesises");
         };
         assert_eq!(
-            synthesised.produced(),
-            context.atom(Atom::Integer),
-            "the unsigned literal synthesises its atom"
+            (body, synthesised.produced()),
+            (zero, context.atom(Atom::Integer)),
+            "the unsigned literal synthesises its atom, and the verdict carries the body"
         );
         assert_eq!(
             check_declaration(&mut context, &declaration(At(3), UNSIGNED, HOLE)),
@@ -439,7 +460,7 @@ mod tests
                     &mut context,
                     &declaration(At(1), UNSIGNED, Maybe::Present(zero))
                 ),
-                Verdict::Synthesised(_)
+                Verdict::Synthesised { .. }
             ),
             "the first admission may take any position"
         );
@@ -516,7 +537,7 @@ mod tests
             ),
             "the text does not have the declared integer type"
         );
-        let Verdict::Synthesised(synthesised) = check_declaration(
+        let Verdict::Synthesised { synthesised, .. } = check_declaration(
             &mut context,
             &declaration(At(1), UNSIGNED, Maybe::Present(earlier)),
         )
@@ -589,7 +610,7 @@ mod tests
         let report = check_module(&mut context, &module);
         let verdicts: Vec<_> = report.judged().iter().map(super::Judged::verdict).collect();
         assert!(
-            matches!(verdicts[2], Verdict::Synthesised(found) if found.produced().id() == thunk_type),
+            matches!(verdicts[2], Verdict::Synthesised { synthesised, .. } if synthesised.produced().id() == thunk_type),
             "a reference synthesises the exact type its declaration supplied"
         );
         assert!(
@@ -662,7 +683,7 @@ mod tests
             "the unsigned hole is refused"
         );
         assert!(
-            matches!(synthesised.verdict(), Verdict::Synthesised(_)),
+            matches!(synthesised.verdict(), Verdict::Synthesised { .. }),
             "and the run goes on past it"
         );
     }

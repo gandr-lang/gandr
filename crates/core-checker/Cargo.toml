@@ -3,7 +3,7 @@ name = "gandr-core-checker"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The core checking judgement: four directed faces, the name-free declaration input, the conversion boundary, the obligation ledger and the refusal vocabulary"
+description = "The core checking judgement: four directed faces, the name-free declaration input, the conversion boundary, the obligation ledger, the refusal vocabulary and the kernel bridge"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -14,10 +14,13 @@ publish.workspace = true
 # The judgement is stated over the core language's own vocabulary and its
 # context, and reads the leaf vocabulary (admission positions, de Bruijn
 # indices, literals and base types) from the term crate that core-term
-# re-uses it from. Nothing here names a surface crate: names, spans and syntax
-# stay above the core.
+# re-uses it from. The kernel bridge erases into that term crate's arena and
+# admits through the kernel's choke point, which re-derives every declaration
+# the judgement accepts. Nothing here names a surface crate: names, spans and
+# syntax stay above the core.
 [dependencies]
 gandr-core-term.workspace = true
+gandr-kernel-core.workspace = true
 gandr-kernel-term.workspace = true
 quenchant-shape.workspace = true
 

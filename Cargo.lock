@@ -167,6 +167,7 @@ name = "gandr-core-checker"
 version = "0.0.0"
 dependencies = [
  "gandr-core-term",
+ "gandr-kernel-core",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "proptest",

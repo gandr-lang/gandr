@@ -2,8 +2,9 @@
 //! fragment of the core language, the name-free declaration input with its
 //! origin token, the checking context wrapped around the core context, type
 //! formation, the conversion module boundary with its declared projection,
-//! the absence-only obligation ledger, and the refusal vocabulary with its
-//! classifier.
+//! the absence-only obligation ledger, the refusal vocabulary with its
+//! classifier, and the kernel bridge that has the kernel re-derive every
+//! declaration the judgement accepted.
 //!
 //! The crate reads core nodes a producer minted and answers, per declaration,
 //! whether its body has its type. There is no surface here: no names, no
@@ -11,7 +12,7 @@
 //! halves each present or absent for a stated reason, and an opaque origin
 //! token the verdict echoes back.
 //!
-//! # Five decisions that interlock
+//! # Six decisions that interlock
 //!
 //! **The former decides the mode.** Leaves and eliminations synthesise,
 //! introductions check, and a dispatch on the direction names both cases, so a
@@ -33,6 +34,12 @@
 //! **One machine, no recursion.** Every face runs one explicit machine of goals
 //! and frames, charged one step per transition against an allowance.
 //!
+//! **The kernel re-derives.** [`bridge::readmit`] erases every accepted
+//! declaration and offers it to the kernel's one checked entry: a body as a
+//! definition, an owed hole as an axiom, a refused declaration as nothing.
+//! The artifact's audit is empty exactly when the ledger is, and gates
+//! nothing.
+//!
 //! # Example
 //!
 //! ```
@@ -42,6 +49,7 @@
 //! use gandr_core_checker::OriginToken;
 //! use gandr_core_checker::Verdict;
 //! use gandr_core_checker::body;
+//! use gandr_core_checker::bridge;
 //! use gandr_core_checker::check_module;
 //! use gandr_core_checker::signature;
 //! use gandr_core_term::CoreArena;
@@ -98,13 +106,26 @@
 //!     "the hole owes its declared type"
 //! );
 //! assert!(
-//!     matches!(copied.verdict(), Verdict::Synthesised(_)),
+//!     matches!(copied.verdict(), Verdict::Synthesised { .. }),
 //!     "a constant synthesises"
 //! );
 //! assert_eq!(
 //!     usize::from(report.ledger().count()),
 //!     1_usize,
 //!     "one hole is owed"
+//! );
+//!
+//! // The kernel defines the two bodies and assumes the hole.
+//! let readmission = bridge::readmit(&arena, &report);
+//! assert_eq!(
+//!     readmission.environment().entries().len(),
+//!     3_usize,
+//!     "every declaration crossed"
+//! );
+//! assert_eq!(
+//!     readmission.audit().axioms(),
+//!     [ConstantIndex::from(1_usize)],
+//!     "the artifact rests on the owed hole alone"
 //! );
 //! ```
 //!
@@ -115,6 +136,7 @@
 
 extern crate alloc;
 
+pub mod bridge;
 mod context;
 mod conversion;
 mod declaration;

@@ -127,7 +127,7 @@ impl<'source> Produced<'source>
         match *self {
             | Self::Judged(Verdict::Refused(refusal)) => Maybe::Present(Refusal::Checking(refusal)),
             | Self::Judged(
-                Verdict::Checked { .. } | Verdict::Synthesised(_) | Verdict::Owed(_),
+                Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Owed(_),
             ) => Maybe::Absent(produced_refusal::Absent::Unrefused),
             | Self::Unlowered(refusal) => Maybe::Present(Refusal::Lowering(refusal)),
             | Self::Guarded(refusal) => Maybe::Present(Refusal::Corpus(refusal)),
@@ -567,9 +567,9 @@ pub fn settle<'source>(
                 let verdict = answer.verdict();
                 let owed = match verdict {
                     | Verdict::Owed(_) => 1_usize,
-                    | Verdict::Checked { .. } | Verdict::Synthesised(_) | Verdict::Refused(_) => {
-                        0_usize
-                    },
+                    | Verdict::Checked { .. }
+                    | Verdict::Synthesised { .. }
+                    | Verdict::Refused(_) => 0_usize,
                 };
                 (Produced::Judged(verdict), ObligationCount::from(owed))
             },
