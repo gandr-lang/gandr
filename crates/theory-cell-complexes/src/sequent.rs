@@ -86,12 +86,12 @@ impl EtaKind
     /// - ensures: [`Polarity::Positive`] for [`EtaKind::Data`],
     ///   [`Polarity::Negative`] for [`EtaKind::Codata`].
     /// - panics: none.
-    /// - executable: none — the instrumentation calls a non-const wrapper;
-    ///   enforcing this predicate would remove the public const interface.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — both kinds are enumerated against both polarities.
     /// - witness: `sequent::tests::each_eta_kind_requires_its_own_polarity`
+    #[spec(ensures: |ret| matches!((self, ret),
+        (Self::Data, Polarity::Positive) | (Self::Codata, Polarity::Negative)))]
     #[inline]
     #[must_use]
     pub const fn required_polarity(self) -> Polarity
@@ -159,13 +159,13 @@ impl CellVariance
     ///   [`CellVariance::Consumer`] for [`Cat::Consumer`]; never
     ///   [`CellVariance::Mixed`], which is the join of two occurrences.
     /// - panics: none.
-    /// - executable: none — the instrumentation calls a non-const wrapper;
-    ///   enforcing this predicate would remove the public const interface.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — both source categories have distinct non-mixed
     ///   variances; swapping or conflating the cases changes the result.
     /// - witness: `sequent::tests::metadata_order_and_growth_include_empty_and_rhs_only_holes`
+    #[spec(ensures: |ret| matches!((cat, ret),
+        (Cat::Producer, Self::Producer) | (Cat::Consumer, Self::Consumer)))]
     #[inline]
     #[must_use]
     pub const fn from_cat(cat: Cat) -> Self
@@ -477,12 +477,16 @@ impl Cell<SequentAlphabet>
     /// - provides: [`eta_requirement::Absent::NotEta`] for every other
     ///   provenance.
     /// - panics: none.
-    /// - executable: none — the instrumentation calls a non-const wrapper;
-    ///   enforcing this predicate would remove the public const interface.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — both η kinds and a non-η provenance are enumerated.
     /// - witness: `sequent::tests::each_eta_kind_requires_its_own_polarity`
+    #[spec(ensures: |ret| matches!((self.provenance(), ret),
+        (CellProvenance::Eta(EtaKind::Data), Maybe::Present(Polarity::Positive))
+        | (CellProvenance::Eta(EtaKind::Codata), Maybe::Present(Polarity::Negative))
+        | (CellProvenance::SurfaceRule | CellProvenance::MuMuTilde
+            | CellProvenance::FrameDefining | CellProvenance::DerivedByCompletion,
+            Maybe::Absent(eta_requirement::Absent::NotEta))))]
     #[inline]
     pub const fn eta_requirement(&self) -> Maybe<Polarity, eta_requirement::Absent>
     {

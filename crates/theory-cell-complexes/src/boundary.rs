@@ -6,6 +6,8 @@
 //! a count needs it. The vocabulary is this crate's alone: an engine above
 //! keeps its own budgets, indices and verdicts.
 
+use anodized::spec;
+
 /// Defines a transparent newtype over one primitive with `From` conversions
 /// both ways.
 macro_rules! wrapper {
@@ -132,14 +134,13 @@ impl PatternSize
     ///   `usize::MAX`. A count of nodes held in memory never reaches that
     ///   bound, so every sum the crate forms is exact.
     /// - panics: none.
-    /// - executable: none — specification instrumentation invokes a non-const
-    ///   helper; this operation must remain callable in constant expressions.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — arbitrary node counts admit zero, ordinary sums and
     ///   the representable/saturated boundary at `usize::MAX`. Exact results
     ///   distinguish wrapping, premature saturation and operand loss.
     /// - witness: `boundary::tests::node_counts_saturate_only_at_the_arithmetic_boundaries`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(rhs.0))]
     #[inline]
     #[must_use]
     pub const fn saturating_add(
@@ -157,14 +158,13 @@ impl PatternSize
     ///   holds at every use: a subtree's count is subtracted from the count of
     ///   a tree containing it. Otherwise zero.
     /// - panics: none.
-    /// - executable: none — specification instrumentation invokes a non-const
-    ///   helper; this operation must remain callable in constant expressions.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — arbitrary node counts admit zero, equal operands and
     ///   either operand larger. Exact differences distinguish wrapping,
     ///   reversed subtraction and a strict guard at equality.
     /// - witness: `boundary::tests::node_counts_saturate_only_at_the_arithmetic_boundaries`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_sub(rhs.0))]
     #[inline]
     #[must_use]
     pub const fn saturating_sub(
