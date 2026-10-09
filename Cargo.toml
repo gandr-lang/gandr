@@ -12,6 +12,7 @@ members = [
   "crates/storage-chunker",
   "crates/storage-records",
   "crates/storage-values",
+  "crates/surface-corpus",
   "crates/surface-dispatcher",
   "crates/surface-driver",
   "crates/surface-grammar",
@@ -88,11 +89,19 @@ version = "4.6.6"
 default-features = false
 features = ["derive", "error-context", "help", "std", "usage"]
 
+# The checking judgement: the name-free declaration input, the verdicts, the
+# obligation ledger and the refusal vocabulary.
+# consumers:
+# - surface-corpus
+[workspace.dependencies.gandr-core-checker]
+path = "crates/core-checker"
+
 # The core call-by-push-value syntax, the one unified context, the definition
 # chain and the per-scope definitional environment.
 # consumers:
 # - core-checker
 # - core-nbe
+# - surface-corpus
 # - surface-lowering
 [workspace.dependencies.gandr-core-term]
 path = "crates/core-term"
@@ -135,6 +144,7 @@ path = "crates/kernel-strata"
 # - core-nbe
 # - core-term
 # - kernel-core
+# - surface-corpus
 # - surface-lowering
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
@@ -162,20 +172,30 @@ path = "crates/surface-dispatcher"
 # The checked precedence-bounded grammar: its mold table, its precedence
 # DAG and the built-in surface the melder pushes over.
 # consumers:
+# - surface-corpus (dev)
 # - surface-lowering
 # - surface-parser
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
 
+# Lowering the surface into the core: resolution, module collection, the
+# attribute side table, the origin table and the refusal classifier.
+# consumers:
+# - surface-corpus
+[workspace.dependencies.gandr-surface-lowering]
+path = "crates/surface-lowering"
+
 # The surface parser: the lossless labeler, the obligation-minimizing molder
 # and the push-machine melder that commit a molded tree.
 # consumers:
+# - surface-corpus (dev)
 # - surface-lowering (dev)
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
 
 # The concrete syntax tree and the grammar-facing mold vocabulary it carries.
 # consumers:
+# - surface-corpus
 # - surface-grammar
 # - surface-lowering
 # - surface-parser
@@ -260,6 +280,7 @@ default-features = false
 # consumers:
 # - core-checker
 # - kernel-core
+# - surface-corpus
 # - surface-lowering
 # - theory-cell-complexes
 # - theory-cell-complexes-tools

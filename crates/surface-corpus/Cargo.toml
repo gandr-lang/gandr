@@ -1,0 +1,35 @@
+[package]
+name = "gandr-surface-corpus"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The gandr expectation language: the checks, owes and refuses schemas, the strict and fixture corpus roots, the settle comparison and the report shape"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["corpus", "gandr", "no-std", "testing", "type-checking"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+
+# The settle comparison reads a lowered module — its declarations and its
+# attribute side table — beside the checker's verdicts for the same module,
+# and reads each attribute payload's literal out of the arena both were
+# written into. Nothing here names the parser or the dispatcher: walking a
+# root and adapting the lowering's declarations to the checker's input are
+# the driver's.
+[dependencies]
+gandr-core-checker.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-syntax.workspace = true
+quenchant-shape.workspace = true
+
+# The suite builds its synthetic modules from source text, through the same
+# parse, lower and check a driver runs; the library never names the parser.
+[dev-dependencies]
+gandr-surface-grammar.workspace = true
+gandr-surface-parser.workspace = true
+
+[lints]
+workspace = true
