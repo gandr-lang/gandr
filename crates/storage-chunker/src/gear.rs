@@ -95,8 +95,6 @@ const GEAR_TABLE_V1: GearTable = gear_table_v1();
 ///   stated as code.
 /// - fails: never.
 /// - panics: none.
-/// - executable: none — the pinned instrument cannot expand in this const
-///   generator; retaining compile-time table construction is required.
 ///
 /// # Adequacy
 /// - hypothesis: L2 agreement against a pinned golden — entries at both ends
@@ -104,6 +102,20 @@ const GEAR_TABLE_V1: GearTable = gear_table_v1();
 ///   first carried as, so a changed seed, increment or mixing constant moves at
 ///   least one.
 /// - witness: `gear::tests::the_v1_table_is_pinned`
+#[anodized::spec(ensures: |ref ret| {
+    let mut entries = ret.0.as_slice();
+    let mut ordinal = 1_u64;
+    let mut equal = true;
+    while let Some((entry, tail)) = entries.split_first() {
+        let state = GEAR_TABLE_V1_SEED.wrapping_add(ordinal.wrapping_mul(SPLITMIX_GAMMA));
+        let first = (state ^ (state >> 30_u32)).wrapping_mul(SPLITMIX_MIX_FIRST);
+        let second = (first ^ (first >> 27_u32)).wrapping_mul(SPLITMIX_MIX_SECOND);
+        equal = equal && *entry == second ^ (second >> 31_u32);
+        ordinal = ordinal.saturating_add(1_u64);
+        entries = tail;
+    }
+    equal
+})]
 const fn gear_table_v1() -> GearTable
 {
     let mut table = [0_u64; GEAR_TABLE_LEN];
@@ -689,14 +701,34 @@ impl ChunkerParams
     ///   choices.
     /// - fails: never — validation lives in the limits and the conversions.
     /// - panics: none.
-    /// - executable: none — the pinned instrument cannot expand in this const
-    ///   constructor without breaking const callers.
     ///
     /// # Adequacy
     /// - hypothesis: L2 on the default profile's exact committed image and L3
     ///   on independent field changes distinguish omission and substitution.
     /// - witness: `tests::commitment::the_default_record_safe_commitment_is_pinned`
     /// - witness: `tests::commitment::each_record_safe_field_moves_the_commitment`
+    #[anodized::spec(ensures: |ret| {
+        let actual_salt = ret.seed_policy.salt();
+        let expected_salt = seed_policy.salt();
+        let mut actual = actual_salt.0.as_slice();
+        let mut expected = expected_salt.0.as_slice();
+        let mut equal = true;
+        while let (Some((left, left_tail)), Some((right, right_tail))) = (actual.split_first(), expected.split_first()) {
+            equal = equal && *left == *right;
+            actual = left_tail;
+            expected = right_tail;
+        }
+        equal && ret.gear_table.discriminator().0 == gear_table.discriminator().0
+            && ret.seed_policy.discriminator().0 == seed_policy.discriminator().0
+            && ret.normalization.discriminator().0 == normalization.discriminator().0
+            && ret.record_boundary_rule.discriminator().0 == record_boundary_rule.discriminator().0
+            && matches!(ret.limits.min_bytes.const_eq(limits.min_bytes), crate::units::ConstEquality::Equal)
+            && matches!(ret.limits.target_bytes.const_eq(limits.target_bytes), crate::units::ConstEquality::Equal)
+            && matches!(ret.limits.max_bytes.const_eq(limits.max_bytes), crate::units::ConstEquality::Equal)
+            && matches!(ret.limits.min_records.const_eq(limits.min_records), crate::units::ConstEquality::Equal)
+            && matches!(ret.limits.target_records.const_eq(limits.target_records), crate::units::ConstEquality::Equal)
+            && matches!(ret.limits.max_records.const_eq(limits.max_records), crate::units::ConstEquality::Equal)
+    })]
     #[inline]
     #[must_use]
     pub const fn new(
