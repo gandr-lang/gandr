@@ -14,6 +14,7 @@ members = [
   "crates/surface-dispatcher",
   "crates/surface-driver",
   "crates/surface-syntax",
+  "crates/theory-graphs",
   "crates/theory-orders",
 ]
 
@@ -129,12 +130,23 @@ path = "crates/storage-records"
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
 
+# Graph storage and algorithms. Reached only through `theory-graphs`, which
+# owns the dependency and exposes none of its types; the grammar's
+# closing-class derivation reads its strongly-connected-component
+# condensation. The choice and its reversal are in that crate's README.
+# consumers:
+# - theory-graphs
+[workspace.dependencies.petgraph]
+version = "0.8.3"
+default-features = false
+
 # Property-based testing with shrinking.
 # features:
 # - std: the test runner, its random source and failure persistence
 # consumers:
 # - kernel-strata (dev)
 # - storage-records (dev)
+# - theory-graphs (dev)
 # - theory-orders (dev)
 [workspace.dependencies.proptest]
 version = "1.11.0"

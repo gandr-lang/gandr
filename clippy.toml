@@ -6,3 +6,10 @@ allow-indexing-slicing-in-tests = true
 allow-panic-in-tests = true
 allow-print-in-tests = true
 allow-unwrap-in-tests = true
+
+# `multiple_crate_versions` stays denied for every split but this one:
+# petgraph 0.8.3 pins `hashbrown` 0.15, while the `indexmap` release it
+# resolves to depends on `hashbrown` 0.17; nothing this workspace owns can
+# unify them. Reversal: remove the entry when a petgraph release carries its
+# `hashbrown` 0.17 bump (petgraph/petgraph#991, on its main branch).
+allowed-duplicate-crates = ["hashbrown"]

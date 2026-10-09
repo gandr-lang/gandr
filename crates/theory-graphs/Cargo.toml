@@ -1,0 +1,28 @@
+[package]
+name = "gandr-theory-graphs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Graph theory for the gandr surface: the operator-precedence DAG, the walk machine, and the graph algorithms they stand on"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "graph", "no-std", "precedence"]
+categories = ["algorithms", "data-structures", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[dependencies]
+petgraph.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
