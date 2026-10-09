@@ -823,11 +823,14 @@ private_intra_doc_links = "allow"
 
 # The compiler-plugin half of the lint wall: specification presence, adequacy
 # grammar, nominal signature boundaries, transparent layout, recursion and
-# ownership cycles. Loaded from the pinned Git source by `mise run check:dylint`;
-# `mise run workflow:install` installs the gate binary from the same revision.
+# ownership cycles, and — allow by default until the workspace opts in — the
+# executable-predicate and adequacy-presence gates, the `Maybe`-shaped enum
+# and the erased-error signature. Loaded from the pinned Git source by
+# `mise run check:dylint`; `mise run workflow:install` installs the gate binary
+# from the same revision.
 [[workspace.metadata.dylint.libraries]]
 git = "https://github.com/gandr-lang/quenchant"
-rev = "111850988c96b7b33ee898f54c017ca645243e7f"
+rev = "e6c8502dd46f5111a3f2e76e1356c8ac42940193"
 pattern = "crates/quenchant-dylints"
 
 # The everyday optimized build. Size-optimized and nothing else, so each crate
