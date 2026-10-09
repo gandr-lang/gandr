@@ -26,6 +26,7 @@ members = [
   "crates/surface-repl",
   "crates/surface-session",
   "crates/surface-syntax",
+  "crates/surface-tui",
   "crates/theory-cell-complexes",
   "crates/theory-cell-complexes-tools",
   "crates/theory-circuit-algebras",
@@ -134,6 +135,7 @@ path = "crates/core-checker"
 # consumers:
 # - surface-repl
 # - surface-session
+# - surface-tui (dev)
 [workspace.dependencies.gandr-core-incremental]
 path = "crates/core-incremental"
 
@@ -211,6 +213,7 @@ path = "crates/kernel-strata"
 # - surface-lowering
 # - surface-repl
 # - surface-session
+# - surface-tui (dev)
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
 
@@ -246,6 +249,7 @@ path = "crates/surface-corpus"
 # - surface-lsp
 # - surface-repl
 # - surface-session (dev)
+# - surface-tui
 [workspace.dependencies.gandr-surface-diagnostics]
 path = "crates/surface-diagnostics"
 
@@ -271,6 +275,7 @@ path = "crates/surface-dispatcher"
 # - surface-parser
 # - surface-repl
 # - surface-session
+# - surface-tui
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
 
@@ -313,6 +318,7 @@ path = "crates/surface-parser"
 # - surface-lsp
 # - surface-render-remote (dev)
 # - surface-repl
+# - surface-tui
 [workspace.dependencies.gandr-surface-render-remote]
 path = "crates/surface-render-remote"
 
@@ -320,6 +326,7 @@ path = "crates/surface-render-remote"
 # meta-commands, the transcript encoder, the batch and line-editor faces.
 # consumers:
 # - surface-driver
+# - surface-tui
 [workspace.dependencies.gandr-surface-repl]
 path = "crates/surface-repl"
 
@@ -341,8 +348,16 @@ path = "crates/surface-session"
 # - surface-parser
 # - surface-repl
 # - surface-session
+# - surface-tui
 [workspace.dependencies.gandr-surface-syntax]
 path = "crates/surface-syntax"
+
+# The terminal face: the read-evaluate loop's transcript, an input pane and a
+# status line, painted full-screen.
+# consumers:
+# - surface-driver
+[workspace.dependencies.gandr-surface-tui]
+path = "crates/surface-tui"
 
 # The cell-shape substrate: command patterns, matching, the reduction order,
 # the cell alphabet and its store.
@@ -484,6 +499,22 @@ default-features = false
 git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"
 default-features = false
+
+# The terminal face's renderer: layout, styled text and widgets, the headless
+# test backend, and the crossterm backend with the terminal setup and key
+# events it re-exports. Defaults off: `all-widgets` adds the calendar and
+# `time`, `layout-cache` an LRU the face's one layout does not need, `macros`
+# a crate the face does not use. The choice, its alternatives, its build cost
+# and its reversal are in the consumer's README.
+# features:
+# - crossterm: the backend `gandr tui` draws through, with raw mode, the
+#   alternate screen and key events
+# consumers:
+# - surface-tui
+[workspace.dependencies.ratatui]
+version = "0.30.2"
+default-features = false
+features = ["crossterm"]
 
 # The line editor of the read-evaluate loop's terminal face: raw-mode input,
 # editing keys and in-memory history. Defaults off: `with-file-history` writes

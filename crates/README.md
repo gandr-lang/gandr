@@ -55,8 +55,9 @@ crates/
 ├── surface-diagnostics/           gandr-surface-diagnostics           renders what a dispatcher step prints: a refusal, an unsettled declaration and a goal as a located source snippet, the ledger lines as text
 ├── surface-session/               gandr-surface-session               the interactive session: each revision lowered, judged, resumed through the incremental checker and checkpointed, with the edit actions from the revision before and the parser's repairs, for the REPL, language server and terminal faces
 ├── surface-lsp/                   gandr-surface-lsp                   the language server: the base protocol over byte streams, diagnostics from the renderer's reports, semantic tokens from the highlighter's roles
-├── surface-repl/                  gandr-surface-repl                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder, the batch and line-editor faces
-└── surface-driver/                gandr-lang                          the `gandr` driver binary: `check`, `test`, `lsp`, `repl` and the exit codes
+├── surface-repl/                  gandr-surface-repl                  the read-evaluate loop: the completeness gate, the session loop and its meta-commands, the transcript encoder and its rows, the batch and line-editor faces
+├── surface-tui/                   gandr-surface-tui                   the terminal face: the loop's transcript, an input pane and a status line full-screen, styled by highlight role and line kind
+└── surface-driver/                gandr-lang                          the `gandr` driver binary: `check`, `test`, `lsp`, `repl`, `tui` and the exit codes
 ```
 
 `workflow` has no member: the policy library and the gate binary come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.

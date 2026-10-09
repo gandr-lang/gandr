@@ -436,7 +436,10 @@ mod cli
     {
         let scratch = Scratch::new(Path::new("unwritable"));
         let source = scratch.file(Path::new("answer.gandr"), Text::from("def answer = 42 ;\n"));
-        for arguments in [vec![], vec![PathBuf::from("check"), source]] {
+        for arguments in [vec![], vec![PathBuf::from("check"), source], vec![
+            PathBuf::from("tui"),
+            PathBuf::from("--smoke"),
+        ]] {
             let (reader, writer) = std::io::pipe().expect("a pipe is made");
             drop(reader);
             let mut command = gandr(&arguments);
@@ -624,6 +627,34 @@ mod cli
             stdout(&batch),
             transcript,
             "`--batch` prints the same transcript"
+        );
+    }
+
+    /// `gandr tui --smoke` runs the terminal face once off-screen, prints its
+    /// one line and exits zero, touching no terminal.
+    #[test]
+    fn the_tui_smoke_face_prints_ready()
+    {
+        let output = ran(gandr(&["tui", "--smoke"]));
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        assert_eq!(stdout(&output), "gandr tui: ready\n", "the smoke line");
+        assert_eq!(stderr(&output), "", "the smoke face notes nothing");
+    }
+
+    /// `gandr tui` without a terminal draws nothing, says why on standard
+    /// error and exits two, rather than painting escapes into a pipe. Standard
+    /// input is closed and standard output captured, so neither is a terminal;
+    /// nothing is written to the driver, which exits without reading.
+    #[test]
+    fn the_tui_needs_a_terminal()
+    {
+        let output = ran(gandr(&["tui"]));
+        assert_eq!(code(&output), Code(2_i32), "{}", stderr(&output));
+        assert_eq!(stdout(&output), "", "nothing is drawn");
+        assert!(
+            stderr(&output).starts_with("gandr: the terminal face needs a terminal"),
+            "{}",
+            stderr(&output)
         );
     }
 }

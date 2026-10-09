@@ -9,13 +9,14 @@
 //!
 //! - `0`: every declaration settled; also `--help`, `--version`, a bare
 //!   invocation, `lsp --capabilities`, a language-server session ended by
-//!   `exit` after `shutdown`, and a read-evaluate loop that reached the end of
-//!   its input or `:quit`.
+//!   `exit` after `shutdown`, a read-evaluate loop that reached the end of its
+//!   input or `:quit`, a terminal face the user left, and `tui --smoke`.
 //! - `1`: at least one declaration is unsettled, or a source was not read as
 //!   its root expects; also a language-server session ended before `shutdown`.
 //! - `2`: an engine fault, an unreadable source or a path naming none, a
 //!   malformed invocation, output the driver could not write, a language-server
-//!   stream that failed, or a read-evaluate loop stopped by a fault.
+//!   stream that failed, a read-evaluate loop or a terminal face stopped by a
+//!   fault, or a terminal face asked for without a terminal.
 
 use std::io::IsTerminal as _;
 use std::io::Write as _;
@@ -109,6 +110,17 @@ enum Command
         #[arg(long)]
         batch: bool,
     },
+    /// Run the read-evaluate loop full-screen: the transcript, an input pane
+    /// and a status line.
+    ///
+    /// Needs a terminal on standard input and output. Exits 0 when the user
+    /// leaves, and 2 when a fault stops the face or no terminal is attached.
+    Tui
+    {
+        /// Run the face once off-screen, print `gandr tui: ready`, and exit.
+        #[arg(long)]
+        smoke: bool,
+    },
 }
 
 /// Which face of the read-evaluate loop to run.
@@ -122,6 +134,16 @@ enum Face
     ByInput,
 }
 
+/// Where the terminal face draws.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Screen
+{
+    /// The process's terminal.
+    Terminal,
+    /// A headless backend, once, for a gate without a terminal.
+    Smoke,
+}
+
 /// Parse the driver's arguments, route the invocation, render the outcome.
 ///
 /// # Specification
@@ -133,9 +155,9 @@ enum Face
 ///   `0`. `check` and `test` walk their paths, print what [`render`] prints,
 ///   and exit `0`, `1` or `2` as the run settled, was unsettled or faulted.
 ///   `lsp` serves and `lsp --capabilities` prints as [`lsp`] and
-///   [`capabilities`] state, and `repl` runs as [`repl`] states. Output the
-///   driver cannot write is noted on standard error, when that is writable, and
-///   exits `2`.
+///   [`capabilities`] state, `repl` runs as [`repl`] states, and `tui` as
+///   [`tui`] states. Output the driver cannot write is noted on standard error,
+///   when that is writable, and exits `2`.
 /// - provides: the exit code as the run's verdict. The postcondition stays
 ///   prose: the exit code and the lines written are effects on the process, not
 ///   a value this call returns to a caller that could observe them. With
@@ -159,6 +181,8 @@ enum Face
 /// - witness: `cli::cli::lsp_capabilities_print_one_line_of_json`
 /// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
 /// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
+/// - witness: `cli::cli::the_tui_smoke_face_prints_ready`
+/// - witness: `cli::cli::the_tui_needs_a_terminal`
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
@@ -187,6 +211,14 @@ fn main() -> ExitCode
         | Some(Command::Lsp { capabilities: true }) => return capabilities(),
         | Some(Command::Repl { batch }) => {
             return repl(if batch { Face::Batch } else { Face::ByInput });
+        },
+        | Some(Command::Tui { smoke }) => {
+            return tui(if smoke {
+                Screen::Smoke
+            }
+            else {
+                Screen::Terminal
+            });
         },
     };
     let mut stdout = std::io::stdout().lock();
@@ -288,6 +320,57 @@ fn repl(face: Face) -> ExitCode
         | Ok(Ended::Completed) => return ExitCode::SUCCESS,
         | Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
         | Err(error) => writeln!(std::io::stderr(), "gandr: cannot write the output: {error}"),
+    };
+    match noted {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+    }
+}
+
+/// Run the terminal face, or its smoke face, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing; the streams come from the process.
+/// - ensures: under [`Screen::Smoke`], the face runs once off-screen and `gandr
+///   tui: ready` is printed on standard output; no terminal is touched. Under
+///   [`Screen::Terminal`], with standard input and output both terminals, the
+///   face takes the terminal until the user leaves and then restores it;
+///   without them nothing is drawn and the missing terminal is noted on
+///   standard error. Either face exits `0` when it completes, and `2` when a
+///   fault stops it, the terminal fails, its output cannot be written or no
+///   terminal is attached, the cause noted on standard error when that is
+///   writable.
+/// - provides: `gandr tui` and `gandr tui --smoke`.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the binary is spawned under `--smoke` and its line and
+///   exit code asserted, under `--smoke` into a closed pipe and its fault
+///   asserted, and without a terminal and its refusal asserted; the terminal
+///   face was exercised by hand on a pseudo-terminal.
+/// - witness: `cli::cli::the_tui_smoke_face_prints_ready`
+/// - witness: `cli::cli::the_tui_needs_a_terminal`
+/// - witness: `cli::cli::unwritable_standard_output_exits_two`
+fn tui(screen: Screen) -> ExitCode
+{
+    let attached = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    let noted = match (screen, attached) {
+        | (Screen::Smoke, _) => match gandr_surface_tui::run_smoke(&mut std::io::stdout().lock()) {
+            | Ok(Ended::Completed) => return ExitCode::SUCCESS,
+            | Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
+            | Err(error) => writeln!(std::io::stderr(), "gandr: cannot write the output: {error}"),
+        },
+        | (Screen::Terminal, false) => writeln!(
+            std::io::stderr(),
+            "gandr: the terminal face needs a terminal on standard input and output; `gandr repl` reads a pipe"
+        ),
+        | (Screen::Terminal, true) => match gandr_surface_tui::run() {
+            | Ok(Ended::Completed) => return ExitCode::SUCCESS,
+            | Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
+            | Err(error) => writeln!(std::io::stderr(), "gandr: the terminal failed: {error}"),
+        },
     };
     match noted {
         // When standard error is unwritable too, the exit code is the one

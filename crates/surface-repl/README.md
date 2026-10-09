@@ -27,7 +27,7 @@ The read-evaluate loop over the interactive session: the completeness gate, the 
 
 **What.** A `SessionLoop` takes lines and answers `LoopEvent`s. A line opening with `:` while no buffer waits is a meta-command — `:type <expression>`, `:load <file>`, `:reset`, `:help`, `:quit` or `:q`; any other line joins the buffer, and once the parser expects no further token the buffer is submitted to a `gandr-surface-session` `Session` as the next chunk of one growing revision. `encode_submission` turns the session's answer into a `gandr-surface-render-remote` `TranscriptBlock`: the echo with its highlight spans, a type line `name : T` per checked declaration the chunk introduced or settled, a goal line per declaration it left owing, the diagnostics renderer's report per refusal, and a warning per parse repair. `run_batch` drives the loop over any reader and writes a plain transcript; `run_interactive` drives it over a terminal through a line editor.
 
-**Why.** The session judges revisions; a person types lines. The loop is what stands between: it decides when a buffer is worth submitting, owns the text the session judges, decides what of a revision is new, and says it in the vocabulary every renderer reads, so the terminal, a later full-screen interface and a pipe show the same lines.
+**Why.** The session judges revisions; a person types lines. The loop is what stands between: it decides when a buffer is worth submitting, owns the text the session judges, decides what of a revision is new, and says it in the vocabulary every renderer reads, so the line editor, the terminal face `gandr tui` and a pipe show the same lines.
 
 **How.** The gate molds the buffer through the parser's push machine and submits when nothing is expected. The loop keeps the accepted text — every chunk kept so far — and submits it with the new chunk after it; the session runs the dispatcher's composition, so its verdicts are `gandr check --goals`'s for that text under the strict root. The encoder reads the step's reports through `gandr-surface-diagnostics`, the settle report's declarations for what changed, and the incremental checker's checkpoints for each declaration's type, which `spell` writes in the surface's syntax. The chunk joins the accepted text only when nothing was refused.
 
@@ -67,7 +67,7 @@ The crate's tests run with `cargo nextest run -p gandr-surface-repl`.
 
 ## A verb of the driver
 
-The loop is reached as `gandr repl`, one verb of the `gandr` binary beside `check`, `test` and `lsp`; bare `gandr` keeps its status report. The prior implementation made bare `gandr` the loop and `gandr <file>` a script run. That surface would change a landed driver witness and read a file name where a verb stands. The choice reverses if bare `gandr` is ruled the loop.
+The loop is reached as `gandr repl`, one verb of the `gandr` binary beside `check`, `test`, `lsp` and `tui`, the loop's full-screen face; bare `gandr` keeps its status report. The prior implementation made bare `gandr` the loop and `gandr <file>` a script run. That surface would change a landed driver witness and read a file name where a verb stands. The choice reverses if bare `gandr` is ruled the loop.
 
 ## The line editor
 

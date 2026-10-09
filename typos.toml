@@ -18,3 +18,5 @@ mis = "mis"
 unparseable = "unparseable"
 # Category-theory vocabulary: the hom family of a category, `Hom(a, b)`.
 hom = "hom"
+# Crate name: the terminal face's renderer, `ratatui`.
+ratatui = "ratatui"

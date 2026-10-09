@@ -1,6 +1,6 @@
 # gandr-lang
 
-The `gandr` binary, the entry point of the gandr language toolchain: `gandr check` and `gandr test` over gandr sources, with the run's verdict as the exit code, `gandr lsp`, the language server, and `gandr repl`, the read-evaluate loop.
+The `gandr` binary, the entry point of the gandr language toolchain: `gandr check` and `gandr test` over gandr sources, with the run's verdict as the exit code, `gandr lsp`, the language server, `gandr repl`, the read-evaluate loop, and `gandr tui`, the same loop full-screen.
 
 <!-- toc -->
 
@@ -16,11 +16,11 @@ The `gandr` binary, the entry point of the gandr language toolchain: `gandr chec
 
 ## Synopsis
 
-**What.** The package `gandr-lang` builds the `gandr` binary. `gandr check <paths>` settles every declaration of every source under the paths given and prints each unsettled one; `gandr test <paths>` runs the same pass and also prints every fixture and every pending source. `gandr lsp` serves `gandr-surface-lsp`'s language server on standard input and output until the client sends `exit`, and `gandr lsp --capabilities` prints what the server advertises. `gandr repl` runs `gandr-surface-repl`'s read-evaluate loop on standard input and output: the line editor on a terminal, a plain transcript when standard input is piped or under `--batch`. A bare `gandr` prints one status line naming the driver version and stating that toolchain management is not implemented.
+**What.** The package `gandr-lang` builds the `gandr` binary. `gandr check <paths>` settles every declaration of every source under the paths given and prints each unsettled one; `gandr test <paths>` runs the same pass and also prints every fixture and every pending source. `gandr lsp` serves `gandr-surface-lsp`'s language server on standard input and output until the client sends `exit`, and `gandr lsp --capabilities` prints what the server advertises. `gandr repl` runs `gandr-surface-repl`'s read-evaluate loop on standard input and output: the line editor on a terminal, a plain transcript when standard input is piped or under `--batch`. `gandr tui` runs the same loop through `gandr-surface-tui`'s terminal face, full-screen, and `gandr tui --smoke` runs that face once off-screen and prints `gandr tui: ready`. A bare `gandr` prints one status line naming the driver version and stating that toolchain management is not implemented.
 
 **Why.** The driver owns the argument surface and the process boundary, and routes everything after that through `gandr-surface-dispatcher`, which composes the pipeline and decides the gate without a process. The registry name `gandr` belongs to an unrelated crate, so the package is `gandr-lang` and the binary is `gandr`.
 
-**How.** `clap` parses the arguments before anything is written. The invocation is dispatched; the driver advances the walk the dispatcher returns, prints each source step's entries as `gandr-surface-diagnostics` renders them, and each fault, then the runner's report and its verdict, through locked handles and fallible `writeln!`, and returns the verdict as its exit code from `main`. `gandr lsp` hands the locked standard streams to `gandr-surface-lsp`'s `serve` and returns how the session ended as its exit code; `gandr repl` hands them to `gandr-surface-repl`'s `run_batch` or `run_interactive` and returns how the loop ended. Witnesses, each spawning the binary: `cli::cli::a_settled_run_exits_zero`, `cli::cli::an_unsettled_run_exits_one`, `cli::cli::an_unreadable_path_exits_two`, `cli::cli::a_malformed_invocation_exits_two`, `cli::cli::unwritable_standard_output_exits_two`, `cli::cli::goals_report_an_obligation_without_failing`, `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`, `cli::cli::help_exits_zero`, `cli::cli::a_bare_invocation_prints_the_status`, `cli::cli::lsp_capabilities_print_one_line_of_json`, `cli::cli::lsp_serves_a_session_over_the_standard_streams`, `cli::cli::a_piped_repl_session_prints_its_transcript`.
+**How.** `clap` parses the arguments before anything is written. The invocation is dispatched; the driver advances the walk the dispatcher returns, prints each source step's entries as `gandr-surface-diagnostics` renders them, and each fault, then the runner's report and its verdict, through locked handles and fallible `writeln!`, and returns the verdict as its exit code from `main`. `gandr lsp` hands the locked standard streams to `gandr-surface-lsp`'s `serve` and returns how the session ended as its exit code; `gandr repl` hands them to `gandr-surface-repl`'s `run_batch` or `run_interactive` and returns how the loop ended; `gandr tui` checks that standard input and output are a terminal, then hands the terminal to `gandr-surface-tui`'s `run`, or standard output to its `run_smoke` under `--smoke`, and returns how the face ended. Witnesses, each spawning the binary: `cli::cli::a_settled_run_exits_zero`, `cli::cli::an_unsettled_run_exits_one`, `cli::cli::an_unreadable_path_exits_two`, `cli::cli::a_malformed_invocation_exits_two`, `cli::cli::unwritable_standard_output_exits_two`, `cli::cli::goals_report_an_obligation_without_failing`, `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`, `cli::cli::help_exits_zero`, `cli::cli::a_bare_invocation_prints_the_status`, `cli::cli::lsp_capabilities_print_one_line_of_json`, `cli::cli::lsp_serves_a_session_over_the_standard_streams`, `cli::cli::a_piped_repl_session_prints_its_transcript`, `cli::cli::the_tui_smoke_face_prints_ready`, `cli::cli::the_tui_needs_a_terminal`.
 
 ## Verbs
 
@@ -33,6 +33,8 @@ The `gandr` binary, the entry point of the gandr language toolchain: `gandr chec
 | `gandr lsp --capabilities` | the `initialize` result as one line of JSON | nothing |
 | `gandr repl` | the line editor's prompt on a terminal; piped, each submission's echo and its lines, as a plain transcript | a fault that stops the loop |
 | `gandr repl --batch` | the plain transcript, even on a terminal | as `repl` |
+| `gandr tui` | the transcript, an input pane and a status line, full-screen on the terminal | a fault that stops the face, a terminal that fails, or no terminal |
+| `gandr tui --smoke` | `gandr tui: ready` | a fault that stops the face |
 
 A path is a source file of any name, or a directory searched for `.gandr` sources. The directories a source sits in decide its root — `strict`, `fixture`, or `fixture/pending` — and a source under none is strict ([membership is location](../surface-dispatcher/README.md#membership-is-location)). A refusal, an unsettled declaration and a goal each print as a located source snippet — the class and message, the path with line and column, the lines the report covers with their marks — followed by a blank line ([what a report shows](../surface-diagnostics/README.md#what-a-report-shows)); a settled fixture, a pending source's refusal and a pending source the lowering reads each print one ledger line, `<path>: <report>`. The driver writes plain text, without colour. Each fault is `gandr: <path>: <fault>` on standard error. Every run closes standard output with the runner's report — the sources read by root, the lowerings, the goals, the exercised table, the ledger size, the declaration and fixture counts, the surviving obligations, the refusals by class, the run's settlement and its seal — and `verdict: settled`, `unsettled` or `faulted`.
 
@@ -40,13 +42,15 @@ A path is a source file of any name, or a directory searched for `.gandr` source
 
 `gandr repl` reads declarations a line at a time and submits each buffer the parser reads as complete, judging it with every declaration kept before it, as `gandr check --goals` judges a strict source; a refused submission is shown and not kept. Each submission prints its echo after `▸`, a `name : T` line per declaration it checked, a `? name : T` line per goal, and each refusal as `gandr check` prints it — in colour only when the line editor runs and standard output is a terminal, plain otherwise. `:type <expression>`, `:load <file>`, `:reset`, `:help` and `:quit` speak to the loop ([the read-evaluate loop](../surface-repl/README.md)). A fault that stops the loop is `gandr: <fault>` on standard error.
 
+`gandr tui` takes the terminal for the same loop: the transcript keeps the lines `gandr repl` prints, coloured by kind with the echo highlighted, above the line being edited; Enter submits, Ctrl-C drops the line and any waiting buffer, and Esc or `:quit` leaves and restores the terminal ([the terminal face](../surface-tui/README.md)). Without a terminal on standard input and output it draws nothing and notes `gandr: the terminal face needs a terminal on standard input and output` on standard error; `gandr tui --smoke` needs none. A fault that stops the face is `gandr: <fault>`, and a terminal that fails `gandr: the terminal failed: <error>`, on standard error.
+
 ## Exit codes
 
 | Code | Meaning |
 | ---- | ------- |
-| `0` | every declaration settled; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, and a read-evaluate loop that reached the end of its input or `:quit` |
+| `0` | every declaration settled; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, a language-server session ended by `exit` after `shutdown`, a read-evaluate loop that reached the end of its input or `:quit`, a terminal face the user left, and `gandr tui --smoke` |
 | `1` | at least one declaration is unsettled, or a source was not read as its root expects; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
-| `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, output the driver could not write, a language-server stream that failed, or a fault that stopped a read-evaluate loop |
+| `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, output the driver could not write, a language-server stream that failed, a fault that stopped a read-evaluate loop or a terminal face, a terminal that failed, or `gandr tui` without a terminal |
 
 A fault outranks an unsettled declaration: a run with both exits `2`. The walk continues past a faulted path, so every fault of a run is printed.
 
@@ -85,6 +89,8 @@ $ printf 'def answer = 42 ;\n:type answer\n' | gandr repl
 answer : Integer
 ▸ :type answer
 : Integer
+$ gandr tui --smoke
+gandr tui: ready
 ```
 
 ## Output the driver cannot write is a fault

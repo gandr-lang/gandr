@@ -1,0 +1,33 @@
+[package]
+name = "gandr-surface-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The gandr terminal face: the read-evaluate loop's transcript, an input pane and a status line, painted full-screen"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "transcript", "tui"]
+categories = ["development-tools"]
+publish.workspace = true
+
+# The face drives the read-evaluate loop, which needs its grammar to start and
+# renders refusals plainly; it paints the loop's transcript rows over the
+# renderer seam's highlight roles and line kinds through ratatui, on the
+# terminal through ratatui's crossterm backend and off it on ratatui's test
+# backend. The loop's lines are offered as syntax source text.
+[dependencies]
+gandr-surface-diagnostics.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-render-remote.workspace = true
+gandr-surface-repl.workspace = true
+gandr-surface-syntax.workspace = true
+ratatui.workspace = true
+
+# The golden spells types through the loop's renderer.
+[dev-dependencies]
+gandr-core-incremental.workspace = true
+gandr-kernel-term.workspace = true
+
+[lints]
+workspace = true
