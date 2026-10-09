@@ -15,8 +15,15 @@
 //! |thunk|check against `U C`|its body checks against `C`|
 //! |force|synthesise|the forced value synthesises `U C`; the force has `C`|
 //! |application|synthesise|the head synthesises `A → C`, the argument checks against `A`; the application has `C`|
+//! |bind|either|the bound computation synthesises `F A`; opens a binder of `A`; the body is judged in the bind's own mode, and the bind has what the body has|
 //! |lambda|check against `A → C`|opens a binder of `A`; the body checks against `C`|
 //! |return|check against `F A`|the value checks against `A`|
+//!
+//! A bind is the one former of either mode: it eliminates the returner its
+//! bound computation synthesises, so that half synthesises, and it hands its
+//! type through from its body, so the body is judged in whichever mode the
+//! bind was asked for. A bound computation that only checks — a bare
+//! `return` — is refused as not synthesisable rather than given a guessed type.
 //!
 //! A synthesising term in checking position synthesises, then its type crosses
 //! the conversion boundary to the expected type; that is the only place a
@@ -251,9 +258,10 @@ pub fn check_value(
 ///   former.
 /// - provides: the conversions the run made, as [`Synthesised::conversions`].
 /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda or a return;
-///   [`CheckRefusal::ShapeMismatch`] for a force of a value of no thunk type or
-///   an application whose head has no arrow type; otherwise any refusal a
-///   reached rule gives.
+///   [`CheckRefusal::ShapeMismatch`] for a force of a value of no thunk type,
+///   an application whose head has no arrow type, or a bind whose bound
+///   computation has no returner type; otherwise any refusal a reached rule
+///   gives.
 /// - panics: none.
 /// - intension: the conversion count is the declared projection of the run's
 ///   crossings of the boundary.
@@ -268,6 +276,8 @@ pub fn check_value(
 ///   elimination shape refusals.
 /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
 /// - witness: `judgement::tests::an_elimination_of_the_wrong_former_is_a_shape_mismatch`
+/// - witness: `judgement::tests::a_bind_synthesises_its_continuations_type`
+/// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
 /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
 /// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
 #[inline]
@@ -298,10 +308,11 @@ pub fn synthesise_comp(
 ///   `expected`; for a synthesising former, exactly when its synthesised type
 ///   converts to `expected`.
 /// - provides: the conversions the run made, as [`Checked::conversions`].
-/// - fails: [`CheckRefusal::ShapeMismatch`] for a lambda against no arrow or a
-///   return against no returner; [`CheckRefusal::TypeMismatch`] for a
-///   synthesising computation whose type does not convert; otherwise any
-///   refusal a reached rule gives.
+/// - fails: [`CheckRefusal::ShapeMismatch`] for a lambda against no arrow, a
+///   return against no returner, or a bind whose bound computation has no
+///   returner type; [`CheckRefusal::TypeMismatch`] for a synthesising
+///   computation whose type does not convert; otherwise any refusal a reached
+///   rule gives.
 /// - panics: none.
 /// - intension: the conversion count is the declared projection of the run's
 ///   crossings of the boundary.
@@ -319,6 +330,8 @@ pub fn synthesise_comp(
 ///   introduction shape refusals and a mismatching application.
 /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
 /// - witness: `judgement::tests::a_mismatched_application_is_refused_at_the_computation_bridge`
+/// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
+/// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
 /// - witness: `judgement::tests::an_introduction_against_the_wrong_former_is_a_shape_mismatch`
 /// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
 /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
@@ -418,6 +431,21 @@ enum Frame
     },
     /// A lambda waits on its body's check, then closes the binder it opened.
     LambdaBody,
+    /// A bind waits on the type its bound computation synthesises, which must
+    /// be a returner; it then opens a binder of the returned type and judges
+    /// its body in the bind's own direction.
+    BindBound
+    {
+        /// The bound computation.
+        bound: ComputationId,
+        /// The body still to judge.
+        body: ComputationId,
+        /// The bind's own direction, which the body takes.
+        direction: Direction<CompTypeId>,
+    },
+    /// A bind waits on its body's judgement, then closes the binder it opened
+    /// and hands the body's result on.
+    BindBody,
     /// A synthesising value in checking position waits on its synthesised type,
     /// which then crosses the value bridge.
     ValueBridge
@@ -736,9 +764,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: a force awaits its value's synthesised type; an application
-    ///   awaits its head's.
+    ///   awaits its head's; a bind awaits its bound computation's.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a lambda or a return;
-    ///   [`CheckRefusal::OutOfFragment`] for a bind or a case.
+    ///   [`CheckRefusal::OutOfFragment`] for a case.
     /// - panics: none.
     fn synthesise_comp(
         &mut self,
@@ -766,7 +794,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Return(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Return(term),
             }),
-            | Computation::Bind(..) => Err(unadmitted_comp(term, UnadmittedFormer::Bind)),
+            | Computation::Bind(bound, body) => Ok(self.bind(bound, body, Direction::Synthesise)),
             | Computation::Case { .. } => Err(unadmitted_comp(term, UnadmittedFormer::Case)),
         }
     }
@@ -777,11 +805,13 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: `expected` is formed.
     /// - ensures: a lambda opens a binder of the arrow's domain and its body
     ///   checks against the codomain; a return's value checks against the
-    ///   returner's result; a synthesising computation synthesises, then
-    ///   crosses the computation bridge to `expected`.
+    ///   returner's result; a bind awaits its bound computation's synthesised
+    ///   type, then checks its body against `expected`; a synthesising
+    ///   computation synthesises, then crosses the computation bridge to
+    ///   `expected`.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a lambda against no arrow
     ///   or a return against no returner; [`CheckRefusal::OutOfFragment`] for a
-    ///   bind or a case.
+    ///   case.
     /// - panics: none.
     ///
     /// # Judgement
@@ -816,9 +846,49 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Synthesise,
                 }))
             },
-            | Computation::Bind(..) => Err(unadmitted_comp(term, UnadmittedFormer::Bind)),
+            | Computation::Bind(bound, body) => {
+                Ok(self.bind(bound, body, Direction::Check(expected)))
+            },
             | Computation::Case { .. } => Err(unadmitted_comp(term, UnadmittedFormer::Case)),
         }
+    }
+
+    /// Start a bind of `bound` into `body`, judged in `direction`.
+    ///
+    /// # Specification
+    /// - requires: `bound` and `body` are the two halves of one bind.
+    /// - ensures: the bound computation's synthesis is the next goal, with the
+    ///   bind's frame awaiting its type and holding the direction the body is
+    ///   judged in.
+    /// - provides: the one rule both computation faces share.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the rule's surfaces are the two directions and the
+    ///   returner test, separated by a bind synthesising its body's type, a
+    ///   bind checked against its body's type, and a bind of an arrow-typed
+    ///   computation, each asserted as the exact type, check or refusal.
+    /// - witness: `judgement::tests::a_bind_synthesises_its_continuations_type`
+    /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
+    /// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
+    fn bind(
+        &mut self,
+        bound: ComputationId,
+        body: ComputationId,
+        direction: Direction<CompTypeId>,
+    ) -> Step
+    {
+        self.frames.push(Frame::BindBound {
+            bound,
+            body,
+            direction,
+        });
+
+        Step::Descend(Goal::Computation {
+            term: bound,
+            direction: Direction::Synthesise,
+        })
     }
 
     /// The body a thunk checks against: the expected type's, when it is a
@@ -913,12 +983,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: `frame` was pushed by a rule of this run.
     /// - ensures: a force has the body of its value's thunk type; an
     ///   application checks its argument against its head's domain, then has
-    ///   the codomain; a lambda closes its binder; a bridge frame crosses its
+    ///   the codomain; a bind opens a binder of its bound computation's
+    ///   returned type and judges its body, then closes the binder and has what
+    ///   the body had; a lambda closes its binder; a bridge frame crosses its
     ///   bridge and the check succeeds.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a forced value of no thunk
-    ///   type or a head of no arrow type; [`CheckRefusal::TypeMismatch`] at a
-    ///   bridge; [`CheckRefusal::MachineInvariant`] when `produced` is not the
-    ///   kind the frame awaits.
+    ///   type, a head of no arrow type, or a bound computation of no returner
+    ///   type; [`CheckRefusal::TypeMismatch`] at a bridge;
+    ///   [`CheckRefusal::MachineInvariant`] when `produced` is not the kind the
+    ///   frame awaits.
     /// - panics: none.
     fn resume(
         &mut self,
@@ -965,6 +1038,34 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | Err(_) => Err(CheckRefusal::MachineInvariant),
                 }
             },
+            | (
+                Frame::BindBound {
+                    bound,
+                    body,
+                    direction,
+                },
+                Produced::CompType(synthesised),
+            ) => match comp_type_view(arena, synthesised)? {
+                | CompTypeView::Returner(result) => {
+                    self.context.binders().open(Zone::Intuitionistic, result);
+                    self.frames.push(Frame::BindBody);
+                    Ok(Step::Descend(Goal::Computation {
+                        term: body,
+                        direction,
+                    }))
+                },
+                | CompTypeView::Arrow { .. } => Err(CheckRefusal::ShapeMismatch {
+                    at: TermNode::Computation(bound),
+                    wanted: ExpectedShape::Returner,
+                    found: TypeNode::Computation(synthesised),
+                }),
+            },
+            | (Frame::BindBody, Produced::CompType(_) | Produced::Checked) => {
+                match self.context.binders().close(Zone::Intuitionistic) {
+                    | Ok(_) => Ok(Step::Ascend(produced)),
+                    | Err(_) => Err(CheckRefusal::MachineInvariant),
+                }
+            },
             | (Frame::ValueBridge { at, expected }, Produced::ValueType(synthesised)) => {
                 value_bridge(arena, at, synthesised, expected, &mut self.conversions)?;
                 Ok(Step::Ascend(Produced::Checked))
@@ -978,13 +1079,14 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Produced::CompType(_) | Produced::Checked,
             )
             | (
-                Frame::ApplicationHead { .. } | Frame::CompBridge { .. },
+                Frame::ApplicationHead { .. } | Frame::CompBridge { .. } | Frame::BindBound { .. },
                 Produced::ValueType(_) | Produced::Checked,
             )
             | (
                 Frame::ApplicationArgument { .. } | Frame::LambdaBody,
                 Produced::ValueType(_) | Produced::CompType(_),
-            ) => Err(CheckRefusal::MachineInvariant),
+            )
+            | (Frame::BindBody, Produced::ValueType(_)) => Err(CheckRefusal::MachineInvariant),
         }
     }
 }
@@ -1213,7 +1315,7 @@ mod tests
         let force = arena.computation_force(function);
         let application = arena.computation_application(force, integer_value);
         let returned = arena.computation_return(integer_value);
-        let bind = arena.computation_bind(returned, returned);
+        let bind = arena.computation_bind(application, force);
         let case = arena.computation_case(unit, returned, returned);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         seed(&mut context, &[thunk_arrow]);
@@ -1242,12 +1344,7 @@ mod tests
                 returns_integer,
                 crossed(1),
             ),
-            (
-                bind,
-                Err(unadmitted_comp(bind, UnadmittedFormer::Bind)),
-                returns_integer,
-                Err(unadmitted_comp(bind, UnadmittedFormer::Bind)),
-            ),
+            (bind, Ok(arrow), arrow, crossed(2)),
             (
                 case,
                 Err(unadmitted_comp(case, UnadmittedFormer::Case)),
@@ -1268,6 +1365,121 @@ mod tests
                 "{term:?} checks by its former's rule"
             );
         }
+    }
+
+    #[test]
+    fn a_bind_synthesises_its_continuations_type()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let returns_integer = arena.comp_type_returner(integer);
+        let returns_string = arena.comp_type_returner(string);
+        let arrow = arena.comp_type_arrow(integer, returns_string);
+        let suspended_integer = arena.value_type_thunk(returns_integer);
+        let suspended_arrow = arena.value_type_thunk(arrow);
+        let produce = arena.value_constant(ConstantIndex::from(0_usize));
+        let consume = arena.value_constant(ConstantIndex::from(1_usize));
+        let bound = arena.computation_force(produce);
+        let head = arena.computation_force(consume);
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let body = arena.computation_application(head, variable);
+        let bind = arena.computation_bind(bound, body);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &[suspended_integer, suspended_arrow]);
+
+        assert_eq!(
+            synthesise_comp(&mut context, bind).map(|found| found.produced().id()),
+            Ok(returns_string),
+            "the bind has its body's type, the bound name typed by the returner it eliminates"
+        );
+        assert_eq!(
+            context.binders().depth(Zone::Intuitionistic),
+            BinderDepth::from(0_usize),
+            "the bind closes the binder it opened"
+        );
+    }
+
+    #[test]
+    fn a_bind_checks_against_the_expected_computation()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let returns_integer = arena.comp_type_returner(integer);
+        let returns_string = arena.comp_type_returner(string);
+        let suspended_integer = arena.value_type_thunk(returns_integer);
+        let produce = arena.value_constant(ConstantIndex::from(0_usize));
+        let bound = arena.computation_force(produce);
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let body = arena.computation_return(variable);
+        let bind = arena.computation_bind(bound, body);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &[suspended_integer]);
+        let expected = form_comp_type(&context, returns_integer).unwrap();
+        let wrong = form_comp_type(&context, returns_string).unwrap();
+
+        assert_eq!(
+            check_comp(&mut context, bind, expected).map(|evidence| evidence.conversions()),
+            Ok(ConversionCount::from(1_usize)),
+            "the body checks against the expected type, under the bound name"
+        );
+        assert_eq!(
+            check_comp(&mut context, bind, wrong).map(|evidence| evidence.conversions()),
+            Err(CheckRefusal::TypeMismatch(Mismatch::Value {
+                at: variable,
+                synthesised: integer,
+                expected: string,
+            })),
+            "the bound name has the type its returner returns, whatever the bind is checked \
+             against"
+        );
+        assert_eq!(
+            synthesise_comp(&mut context, bind).map(|found| found.produced().id()),
+            Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Return(body),
+            }),
+            "a body that only checks leaves the bind with nothing to synthesise"
+        );
+    }
+
+    #[test]
+    fn a_bind_of_a_non_returner_is_a_shape_mismatch()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns_integer = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(integer, returns_integer);
+        let suspended_arrow = arena.value_type_thunk(arrow);
+        let function = arena.value_constant(ConstantIndex::from(0_usize));
+        let bound = arena.computation_force(function);
+        let unit = arena.value_unit();
+        let body = arena.computation_return(unit);
+        let bind = arena.computation_bind(bound, body);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &[suspended_arrow]);
+        let expected = form_comp_type(&context, returns_integer).unwrap();
+        let refusal = CheckRefusal::ShapeMismatch {
+            at: TermNode::Computation(bound),
+            wanted: ExpectedShape::Returner,
+            found: TypeNode::Computation(arrow),
+        };
+
+        assert_eq!(
+            synthesise_comp(&mut context, bind).map(|found| found.produced().id()),
+            Err(refusal),
+            "a bound function returns nothing to bind"
+        );
+        assert_eq!(
+            check_comp(&mut context, bind, expected).map(|evidence| evidence.conversions()),
+            Err(refusal),
+            "the refusal is the bound computation's, whatever the bind is checked against"
+        );
+        assert_eq!(
+            context.binders().depth(Zone::Intuitionistic),
+            BinderDepth::from(0_usize),
+            "a refused bind opened no binder"
+        );
     }
 
     #[test]
@@ -1656,7 +1868,10 @@ mod tests
                             "a synthesising computation checks exactly as it synthesises, then crosses the computation bridge"
                         );
                     },
-                    | Computation::Bind(..) | Computation::Case { .. } => {
+                    | Computation::Bind(..) => {
+                        prop_assert!(false, "the free recipe mints no bind");
+                    },
+                    | Computation::Case { .. } => {
                         prop_assert!(false, "the recipe mints no former outside the fragment");
                     },
                 }

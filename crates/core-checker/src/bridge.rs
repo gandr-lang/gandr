@@ -443,6 +443,7 @@ impl Readmission
 ///   misresolve under any other map; and the rollback, separated by a refusal
 ///   met after part of a body was minted.
 /// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
+/// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
 /// - witness: `bridge::tests::marks_and_holes_are_refused_beside_their_positive_controls`
 /// - witness: `bridge::tests::an_empty_ledger_readmits_an_artifact_resting_on_no_axiom`
 /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
@@ -685,6 +686,22 @@ enum Frame
     {
         /// The return.
         at: ComputationId,
+    },
+    /// A bind, awaiting its bound computation.
+    BindBound
+    {
+        /// The bind.
+        at: ComputationId,
+        /// The body, erased next.
+        body: ComputationId,
+    },
+    /// A bind, awaiting its body.
+    BindBody
+    {
+        /// The bind.
+        at: ComputationId,
+        /// The bound computation's image.
+        bound: gandr_kernel_term::ComputationId,
     },
     /// A thunk type, awaiting its computation type.
     ThunkType
@@ -1001,11 +1018,10 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: as [`Self::descend`]: a lambda, an application, a return and
-    ///   a force open their frames.
+    /// - ensures: as [`Self::descend`]: a lambda, an application, a return, a
+    ///   force and a bind open their frames.
     /// - fails: [`Refusal::Cyclic`] for an open computation;
-    ///   [`Refusal::DanglingNode`]; [`Refusal::OutOfFragment`] for a bind or a
-    ///   case.
+    ///   [`Refusal::DanglingNode`]; [`Refusal::OutOfFragment`] for a case.
     /// - panics: none.
     fn descend_computation(
         &mut self,
@@ -1032,11 +1048,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             ),
             | Computation::Return(value) => (Frame::Return { at }, TermNode::Value(value)),
             | Computation::Force(value) => (Frame::Force { at }, TermNode::Value(value)),
-            | Computation::Bind(..) => {
-                return Err(Refusal::OutOfFragment {
-                    at: node,
-                    former: UnadmittedFormer::Bind,
-                });
+            | Computation::Bind(bound, body) => {
+                (Frame::BindBound { at, body }, TermNode::Computation(bound))
             },
             | Computation::Case { .. } => {
                 return Err(Refusal::OutOfFragment {
@@ -1130,8 +1143,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// # Specification
     /// - requires: `frame` was pushed by this machine.
     /// - ensures: a frame awaiting its last child mints its node over the
-    ///   children's images, records the image and ascends it; an application or
-    ///   an arrow awaiting its first child descends to its second.
+    ///   children's images, records the image and ascends it; an application, a
+    ///   bind or an arrow awaiting its first child descends to its second.
     /// - fails: [`Refusal::MachineInvariant`] when `image` is not of the family
     ///   the frame awaits.
     /// - panics: none.
@@ -1162,6 +1175,13 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             | (Frame::Return { at }, AnyNode::Value(value)) => {
                 Ok(self.erased_computation(at, target.computation_return(value)))
             },
+            | (Frame::BindBound { at, body }, AnyNode::Computation(bound)) => {
+                self.frames.push(Frame::BindBody { at, bound });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Computation(body))))
+            },
+            | (Frame::BindBody { at, bound }, AnyNode::Computation(body)) => {
+                Ok(self.erased_computation(at, target.computation_bind(bound, body)))
+            },
             | (Frame::ThunkType { at }, AnyNode::CompType(body)) => {
                 let erased = target.value_type_thunk(body);
                 self.value_types.insert(at, Image::Erased(erased));
@@ -1180,7 +1200,11 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 Ok(self.erased_comp_type(at, target.comp_type_arrow(domain, codomain)))
             },
             | (
-                Frame::Thunk { .. } | Frame::ApplicationHead { .. } | Frame::Lambda { .. },
+                Frame::Thunk { .. }
+                | Frame::ApplicationHead { .. }
+                | Frame::Lambda { .. }
+                | Frame::BindBound { .. }
+                | Frame::BindBody { .. },
                 AnyNode::Value(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
             | (
@@ -1282,8 +1306,10 @@ mod tests
     use crate::declaration::body;
     use crate::declaration::signature;
     use crate::fixture::Mode;
+    use crate::fixture::Typing;
     use crate::fixture::dangling_value;
     use crate::fixture::dangling_value_type;
+    use crate::fixture::function_recipe;
     use crate::fixture::integer_literal;
     use crate::fixture::numeric_literal;
     use crate::fixture::seed;
@@ -1804,12 +1830,6 @@ mod tests
             (
                 CoreNode::Term(TermNode::Value(arena.value_literal(numeric_literal()))),
                 UnadmittedFormer::NumericLiteral,
-            ),
-            (
-                CoreNode::Term(TermNode::Computation(
-                    arena.computation_bind(returned, returned),
-                )),
-                UnadmittedFormer::Bind,
             ),
             (
                 CoreNode::Term(TermNode::Computation(
@@ -2408,6 +2428,43 @@ mod tests
                 module.push(declaration(At(module.len()), Maybe::Present(suspended), Maybe::Present(thunk)));
             }
             let (report, readmission) = judge_and_readmit(&mut arena, &module);
+            assert_crossed(&report, &readmission)?;
+        }
+
+        #[test]
+        fn every_checked_function_definition_is_readmitted(
+            recipes in proptest::collection::vec(function_recipe(), 1 .. 4),
+        )
+        {
+            // Every constant a statement forces owed first, then every
+            // function declared at its type: the shape a lowered function
+            // tail takes, well or ill typed by the value it returns.
+            let mut arena = CoreArena::new();
+            let mut constants = Vec::new();
+            let functions: Vec<_> = recipes
+                .iter()
+                .map(|recipe| recipe.build(&mut arena, &mut constants))
+                .collect();
+            let mut module = Vec::new();
+            for &declared in &constants {
+                module.push(declaration(At(module.len()), Maybe::Present(declared), HOLE));
+            }
+            for function in &functions {
+                module.push(declaration(
+                    At(module.len()),
+                    Maybe::Present(function.declared),
+                    Maybe::Present(function.body),
+                ));
+            }
+            let (report, readmission) = judge_and_readmit(&mut arena, &module);
+            for (recipe, judged) in recipes.iter().zip(&report.judged()[constants.len()..]) {
+                prop_assert_eq!(
+                    matches!(judged.verdict(), Verdict::Checked { .. }),
+                    recipe.typing() == Typing::WellTyped,
+                    "the checker accepts a function exactly when it is well typed: {:?}",
+                    judged.verdict()
+                );
+            }
             assert_crossed(&report, &readmission)?;
         }
     }

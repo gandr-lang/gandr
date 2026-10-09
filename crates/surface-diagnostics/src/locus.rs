@@ -458,7 +458,6 @@ impl fmt::Display for Former
             | UnadmittedFormer::Injection => "a sum injection",
             | UnadmittedFormer::ValueLift => "an explicit universe lift of a value",
             | UnadmittedFormer::NumericLiteral => "a numeric literal",
-            | UnadmittedFormer::Bind => "a sequencing bind",
             | UnadmittedFormer::Case => "a sum elimination",
             | UnadmittedFormer::NumericAtom => "the numeric base atom",
             | UnadmittedFormer::Product => "the product type",

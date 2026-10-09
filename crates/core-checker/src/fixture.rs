@@ -750,3 +750,210 @@ pub fn typed_recipe() -> impl Strategy<Value = TypedRecipe>
     ];
     proptest::collection::vec(step, 0 .. 20).prop_map(|steps| TypedRecipe { steps })
 }
+
+/// One of the value atoms a generated function's types are built from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AtomType
+{
+    /// The integer atom.
+    Integer,
+    /// The string atom.
+    String,
+    /// The unit type.
+    Unit,
+}
+
+impl AtomType
+{
+    /// The atom's type, minted into `arena`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn mint(
+        self,
+        arena: &mut CoreArena,
+    ) -> ValueTypeId
+    {
+        match self {
+            | Self::Integer => arena.value_type_base(BaseType::Integer),
+            | Self::String => arena.value_type_base(BaseType::String),
+            | Self::Unit => arena.value_type_unit(),
+        }
+    }
+
+    /// A closed value of the atom, minted into `arena`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn inhabitant(
+        self,
+        arena: &mut CoreArena,
+    ) -> ValueId
+    {
+        match self {
+            | Self::Integer => arena.value_literal(integer_literal()),
+            | Self::String => arena.value_literal(text_literal()),
+            | Self::Unit => arena.value_unit(),
+        }
+    }
+}
+
+/// Whether a generated function is well typed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Typing
+{
+    /// The value the body returns has the result type.
+    WellTyped,
+    /// The value the body returns has another type.
+    IllTyped,
+}
+
+/// A generated function definition in the shape a lowering mints for a
+/// function tail: `U (A1 -> … -> An -> F B)` declared, and
+/// `thunk (λ … λ. run x1 <- force k1 ; … ; return v)` defined.
+#[derive(Clone, Debug)]
+pub struct FunctionRecipe
+{
+    /// Each parameter's type, outermost first.
+    parameters: Vec<AtomType>,
+    /// Each statement's returned type; the statement forces a fresh owed
+    /// constant of `U (F T)`.
+    statements: Vec<AtomType>,
+    /// The result type.
+    result: AtomType,
+    /// The binder the body returns, counted round the binders in scope, or an
+    /// inhabitant of the result when none is; chosen without regard to its
+    /// type, so a recipe may be ill typed.
+    returned: Position,
+}
+
+/// What a function recipe minted beside the constants it owes.
+#[derive(Clone, Copy, Debug)]
+pub struct FunctionTerms
+{
+    /// `U (A1 -> … -> An -> F B)`.
+    pub declared: ValueTypeId,
+    /// The thunked lambda chain over the statements.
+    pub body: ValueId,
+}
+
+impl FunctionRecipe
+{
+    /// The types of the binders in scope at the body's last computation,
+    /// outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    fn scope(&self) -> Vec<AtomType>
+    {
+        self.parameters
+            .iter()
+            .chain(&self.statements)
+            .copied()
+            .collect()
+    }
+
+    /// Whether the function the recipe mints is well typed.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn typing(&self) -> Typing
+    {
+        let scope = self.scope();
+        let returned = match scope.len() {
+            | 0 => self.result,
+            | _ => pick(&scope, self.returned),
+        };
+        if returned == self.result {
+            Typing::WellTyped
+        }
+        else {
+            Typing::IllTyped
+        }
+    }
+
+    /// Mint the function into `arena`, declaring each constant its statements
+    /// force at the end of `constants`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub fn build(
+        &self,
+        arena: &mut CoreArena,
+        constants: &mut Vec<ValueTypeId>,
+    ) -> FunctionTerms
+    {
+        let scope = self.scope();
+        let returned = match scope.len().checked_sub(1) {
+            | None => self.result.inhabitant(arena),
+            | Some(innermost) => {
+                let Position(chosen) = self.returned.within(&scope);
+                let index = innermost
+                    .checked_sub(chosen)
+                    .expect("the choice is in scope");
+                arena.value_variable(
+                    Zone::Intuitionistic,
+                    DeBruijnIndex::from(u32::try_from(index).expect("a scope fits an index")),
+                )
+            },
+        };
+        let mut chain = arena.computation_return(returned);
+        let first = constants.len();
+        for &bound in &self.statements {
+            let atom = bound.mint(arena);
+            let returner = arena.comp_type_returner(atom);
+            constants.push(arena.value_type_thunk(returner));
+        }
+        for offset in (0 .. self.statements.len()).rev() {
+            let position = first
+                .checked_add(offset)
+                .expect("a module fits its constants");
+            let forced = arena.value_constant(ConstantIndex::from(position));
+            let bound = arena.computation_force(forced);
+            chain = arena.computation_bind(bound, chain);
+        }
+        for _ in &self.parameters {
+            chain = arena.computation_lambda(chain);
+        }
+        let body = arena.value_thunk(chain);
+        let result = self.result.mint(arena);
+        let mut declared = arena.comp_type_returner(result);
+        for &parameter in self.parameters.iter().rev() {
+            let domain = parameter.mint(arena);
+            declared = arena.comp_type_arrow(domain, declared);
+        }
+        FunctionTerms {
+            declared: arena.value_type_thunk(declared),
+            body,
+        }
+    }
+}
+
+/// Function recipes of up to three parameters and two statements.
+///
+/// # Specification
+/// trivial.
+pub fn function_recipe() -> impl Strategy<Value = FunctionRecipe>
+{
+    let atom = || {
+        prop_oneof![
+            Just(AtomType::Integer),
+            Just(AtomType::String),
+            Just(AtomType::Unit)
+        ]
+    };
+    (
+        proptest::collection::vec(atom(), 0 .. 4),
+        proptest::collection::vec(atom(), 0 .. 3),
+        atom(),
+        0_usize .. 8,
+    )
+        .prop_map(
+            |(parameters, statements, result, returned)| FunctionRecipe {
+                parameters,
+                statements,
+                result,
+                returned: Position(returned),
+            },
+        )
+}

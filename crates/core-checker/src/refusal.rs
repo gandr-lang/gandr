@@ -108,8 +108,6 @@ pub enum UnadmittedFormer
     ValueLift,
     /// A numeric literal.
     NumericLiteral,
-    /// A sequencing bind.
-    Bind,
     /// A sum elimination.
     Case,
     /// The numeric base atom.
