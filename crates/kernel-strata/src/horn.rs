@@ -156,14 +156,13 @@ impl HornOffset
     /// - provides: the sanctioned crossing from the offset domain into the
     ///   shift domain, named per site rather than opened as a conversion.
     /// - panics: none.
-    /// - executable: none — the expansion calls a non-const evaluator and
-    ///   cannot preserve this const-callable cross-domain operation.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — zero, ordinary magnitudes and the u128 ceiling are
     ///   used in shifted addition; exact sums and overflow refusals expose
     ///   altered magnitudes on either cross-domain projection.
     /// - witness: `horn::tests::offset_arithmetic_covers_zero_equality_and_ceiling`
+    #[spec(ensures: |ret| ret.0 == self.0)]
     #[inline]
     #[must_use]
     pub const fn shift_from_zero(self) -> HornShift
@@ -249,14 +248,13 @@ impl HornShift
     /// - provides: the sanctioned crossing from the shift domain into the
     ///   offset domain, named per site rather than opened as a conversion.
     /// - panics: none.
-    /// - executable: none — the expansion calls a non-const evaluator and
-    ///   cannot preserve this const-callable cross-domain operation.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — zero, ordinary magnitudes and the u128 ceiling are
     ///   used in shifted addition; exact sums and overflow refusals expose
     ///   altered magnitudes on either cross-domain projection.
     /// - witness: `horn::tests::offset_arithmetic_covers_zero_equality_and_ceiling`
+    #[spec(ensures: |ret| ret.0 == self.0)]
     #[inline]
     #[must_use]
     pub const fn offset_from_zero(self) -> HornOffset
@@ -744,14 +742,17 @@ impl ModelValue
     /// - provides: the finite projection the admission certificate is computed
     ///   from.
     /// - panics: none.
-    /// - executable: none — the expansion calls a non-const evaluator and
-    ///   cannot preserve this const-callable projection.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a finite boundary and infinity are observed through
     ///   atom coverage and the finite projection; confusing infinity with a
     ///   finite maximum changes the exact membership verdicts.
     /// - witness: `horn::tests::model_coverage_separates_absence_infinity_and_equality`
+    #[spec(ensures: |ret| match (self, ret) {
+        (Self::Finite(expected), Some(actual)) => actual.0 == expected.0,
+        (Self::Infinite, None) => true,
+        _ => false,
+    })]
     #[inline]
     #[must_use]
     pub const fn as_finite(self) -> Option<HornOffset>
@@ -781,8 +782,8 @@ impl ModelValue
     ///   or finite treatment of infinity by exact membership answers.
     /// - witness: `horn::tests::model_coverage_separates_absence_infinity_and_equality`
     #[spec(ensures: |ret| bool::from(ret) == match self {
-        ModelValue::Finite(value) => offset <= value,
-        ModelValue::Infinite => true,
+        Self::Finite(value) => offset <= value,
+        Self::Infinite => true,
     })]
     #[inline]
     #[must_use]
