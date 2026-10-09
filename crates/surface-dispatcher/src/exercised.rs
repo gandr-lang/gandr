@@ -463,6 +463,7 @@ fn lowering_row(
                 FragmentBoundary::Unadmitted | FragmentBoundary::WrongSort | FragmentBoundary::Arity(_),
             ..
         }
+        | LoweringRefusal::GradedBridge { .. }
         | LoweringRefusal::DuplicateSignature { .. }
         | LoweringRefusal::DuplicateDefinition { .. }
         | LoweringRefusal::DuplicateImportAlias { .. }

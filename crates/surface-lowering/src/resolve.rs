@@ -30,6 +30,7 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
 
@@ -56,6 +57,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The chain was walked to its outermost frame without a match.
             Unbound,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a binder carries no written type.
+    pub mod binder_type {
+        /// The binder was written without `: T`.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// A lambda's binder, a statement's, or a parameter written untyped.
+            Untyped,
         }
     }
 }
@@ -344,6 +357,42 @@ struct ScopeFrame<'source>
     name: SurfaceName<'source>,
     /// The frame this one extends.
     parent: Frame,
+    /// The type the binder was written with, as the syntax node holding it.
+    declared: Maybe<NodeIndex, binder_type::Absent>,
+    /// Whether a type position names this binder.
+    mentioned: Mentioned,
+}
+
+/// Whether a type position names a binder, which makes a typed parameter's
+/// arrow dependent.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Mentioned(bool);
+
+impl From<Mentioned> for bool
+{
+    /// Whether the binder is named by a type position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(mentioned: Mentioned) -> Self
+    {
+        mentioned.0
+    }
+}
+
+/// A binder a name resolved to: its de Bruijn index at the use site, the
+/// frame it introduced, and the type it was written with.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Bound
+{
+    /// The number of binders strictly between the use site and the binder.
+    pub index: DeBruijnIndex,
+    /// The frame the binder introduced.
+    pub binder: ScopeId,
+    /// The syntax node of the binder's written type, when it has one.
+    pub declared: Maybe<NodeIndex, binder_type::Absent>,
 }
 
 /// Every binder frame one lowering minted, as a persistent chain.
@@ -372,7 +421,7 @@ impl<'source> Scope<'source>
         Self { frames: Vec::new() }
     }
 
-    /// The frame that extends `parent` with a binder for `name`.
+    /// The frame that extends `parent` with an untyped binder for `name`.
     ///
     /// # Specification
     /// - requires: `parent` was minted by this scope, or is the outermost
@@ -399,8 +448,55 @@ impl<'source> Scope<'source>
         name: SurfaceName<'source>,
     ) -> ScopeId
     {
+        self.push(parent, name, Maybe::Absent(binder_type::Absent::Untyped))
+    }
+
+    /// The frame that extends `parent` with a binder for `name` written with
+    /// the type at `declared`.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::extend`]; `declared` is the syntax node of the
+    ///   binder's written type.
+    /// - ensures: as [`Self::extend`], and a name resolving to the new binder
+    ///   answers `declared` beside its index.
+    /// - provides: the typed binder of a function tail's parameter list, whose
+    ///   written universe a decode reads its sort and level from.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a typed and an untyped binder in one chain, each
+    ///   resolved and its written type asserted present and absent.
+    /// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
+    #[inline]
+    pub fn extend_typed(
+        &mut self,
+        parent: Frame,
+        name: SurfaceName<'source>,
+        declared: NodeIndex,
+    ) -> ScopeId
+    {
+        self.push(parent, name, Maybe::Present(declared))
+    }
+
+    /// Push one binder frame over `parent`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn push(
+        &mut self,
+        parent: Frame,
+        name: SurfaceName<'source>,
+        declared: Maybe<NodeIndex, binder_type::Absent>,
+    ) -> ScopeId
+    {
         let minted = ScopeId(self.frames.len());
-        self.frames.push(ScopeFrame { name, parent });
+        self.frames.push(ScopeFrame {
+            name,
+            parent,
+            declared,
+            mentioned: Mentioned(false),
+        });
 
         minted
     }
@@ -408,21 +504,12 @@ impl<'source> Scope<'source>
     /// The de Bruijn index `name` has in the chain rooted at `frame`.
     ///
     /// # Specification
-    /// - requires: `frame` was minted by this scope, or is the outermost frame;
-    ///   `fuel` holds the lowering's remaining allowance.
-    /// - ensures: on a hit, the number of binders strictly between the use site
-    ///   and the innermost binder of `name` — zero at the innermost binder, so
-    ///   an inner binder shadows an outer one of the same name; the unbound
-    ///   absence when no binder in the chain carries the name.
-    /// - provides: the binder half of term-name resolution, and the only place
-    ///   a surface name becomes a de Bruijn index.
-    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the chain walk outruns
-    ///   the lowering's allowance, which is what bounds an otherwise quadratic
-    ///   walk over a deep binder chain.
-    /// - panics: none. The index narrows with a saturating conversion whose
-    ///   ceiling is unreachable: one step of allowance is spent per frame, so a
-    ///   chain longer than the index width costs more allowance than a budget
-    ///   can hold.
+    /// - requires: as [`Self::resolve`].
+    /// - ensures: the index [`Self::resolve`] answers, without the binder's
+    ///   written type.
+    /// - provides: the binder half of term-name resolution.
+    /// - fails: as [`Self::resolve`].
+    /// - panics: none.
     ///
     /// # Errors
     /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out
@@ -447,6 +534,47 @@ impl<'source> Scope<'source>
         fuel: &mut Fuel,
     ) -> Result<Maybe<DeBruijnIndex, binder::Absent>, LoweringRefusal<'refusal>>
     {
+        Ok(self.resolve(frame, name, fuel)?.map(|bound| bound.index))
+    }
+
+    /// The binder `name` resolves to in the chain rooted at `frame`.
+    ///
+    /// # Specification
+    /// - requires: `frame` was minted by this scope, or is the outermost frame;
+    ///   `fuel` holds the lowering's remaining allowance.
+    /// - ensures: on a hit, the number of binders strictly between the use site
+    ///   and the innermost binder of `name` — zero at the innermost binder, so
+    ///   an inner binder shadows an outer one of the same name — with the type
+    ///   that binder was written with; the unbound absence when no binder in
+    ///   the chain carries the name.
+    /// - provides: the only place a surface name becomes a de Bruijn index.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the chain walk outruns
+    ///   the lowering's allowance, which is what bounds an otherwise quadratic
+    ///   walk over a deep binder chain.
+    /// - panics: none. The index narrows with a saturating conversion whose
+    ///   ceiling is unreachable: one step of allowance is spent per frame, so a
+    ///   chain longer than the index width costs more allowance than a budget
+    ///   can hold.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out
+    /// mid-walk.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::index_of`], whose witnesses walk this
+    ///   chain, and the written type separated by a typed and an untyped
+    ///   binder.
+    /// - witness: `resolve::tests::an_outer_binder_resolves_one_index_further`
+    /// - witness: `resolve::tests::a_chain_walk_past_the_allowance_is_refused`
+    /// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
+    #[inline]
+    pub fn resolve<'refusal>(
+        &self,
+        frame: Frame,
+        name: SurfaceName<'_>,
+        fuel: &mut Fuel,
+    ) -> Result<Maybe<Bound, binder::Absent>, LoweringRefusal<'refusal>>
+    {
         let spelled: &str = name.as_ref();
         let mut current = frame;
         let mut depth = 0_usize;
@@ -459,13 +587,110 @@ impl<'source> Scope<'source>
             if entry.name.as_ref() == spelled {
                 let index = u32::try_from(depth).unwrap_or(u32::MAX);
 
-                return Ok(Maybe::Present(DeBruijnIndex::from(index)));
+                return Ok(Maybe::Present(Bound {
+                    index: DeBruijnIndex::from(index),
+                    binder: ScopeId(position),
+                    declared: entry.declared,
+                }));
             }
             depth = depth.saturating_add(1_usize);
             current = entry.parent;
         }
 
         Ok(Maybe::Absent(binder::Absent::Unbound))
+    }
+
+    /// Record that a type position names the binder that introduced `binder`.
+    ///
+    /// # Specification
+    /// - requires: `binder` was minted by this scope.
+    /// - ensures: [`Self::mentioned`] answers true for `binder` from now on;
+    ///   every other frame is unchanged.
+    /// - provides: the half of the dependent-arrow decision a type position
+    ///   contributes.
+    /// - fails: never; an identity this scope did not mint is ignored.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mentioned and an unmentioned typed binder in one
+    ///   chain, separated by the flag and by the telescope index they leave.
+    /// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
+    #[inline]
+    pub fn mention(
+        &mut self,
+        binder: ScopeId,
+    )
+    {
+        if let Some(entry) = self.frames.get_mut(binder.0) {
+            entry.mentioned = Mentioned(true);
+        }
+    }
+
+    /// Whether a type position names the binder that introduced `binder`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn mentioned(
+        &self,
+        binder: ScopeId,
+    ) -> Mentioned
+    {
+        self.frames
+            .get(binder.0)
+            .map_or(Mentioned(false), |entry| entry.mentioned)
+    }
+
+    /// The de Bruijn index the binder `binder` has from `from` in a telescope:
+    /// the binders strictly between, counting a typed binder only when a type
+    /// position names it.
+    ///
+    /// # Specification
+    /// - requires: `binder` lies on the chain from `from`; every mention has
+    ///   been recorded.
+    /// - ensures: the number of frames strictly between `from`'s innermost
+    ///   frame and `binder` that are untyped or mentioned — a typed binder no
+    ///   type names becomes a plain arrow and binds nothing in the types after
+    ///   it, while every other binder binds.
+    /// - provides: the index a decode in a function tail's signature carries.
+    /// - fails: never; a chain that never reaches `binder` counts to its end.
+    /// - panics: none. The walk follows parent links, which always name an
+    ///   earlier frame, so it ends.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a mentioned typed binder, an unmentioned one and an
+    ///   untyped one between the use site and the binder, each asserted to
+    ///   count or not.
+    /// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
+    #[inline]
+    #[must_use]
+    pub fn telescope_index(
+        &self,
+        from: Frame,
+        binder: ScopeId,
+    ) -> DeBruijnIndex
+    {
+        let mut current = from;
+        let mut depth = 0_u32;
+        while let Frame::Inner(here) = current
+            && here != binder
+        {
+            let Some(entry) = self.frames.get(here.0)
+            else {
+                break;
+            };
+            let binds = match entry.declared {
+                | Maybe::Present(_) => entry.mentioned.0,
+                | Maybe::Absent(_) => true,
+            };
+            if binds {
+                depth = depth.saturating_add(1_u32);
+            }
+            current = entry.parent;
+        }
+
+        DeBruijnIndex::from(depth)
     }
 }
 
@@ -476,8 +701,10 @@ mod tests
     use alloc::string::String;
 
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_surface_syntax::NodeIndex;
     use quenchant_shape::shape::Maybe;
 
+    use super::Bound;
     use super::Frame;
     use super::HeadArity;
     use super::OperandCount;
@@ -486,6 +713,7 @@ mod tests
     use super::TypeAtom;
     use super::TypeFormer;
     use super::binder;
+    use super::binder_type;
     use super::type_atom;
     use super::type_former;
     use super::type_head;
@@ -673,6 +901,72 @@ mod tests
             ),
             Err(LoweringRefusal::BudgetExceeded { budget }),
             "a walk longer than the allowance is an engine fault, not a miss"
+        );
+    }
+
+    #[test]
+    fn a_typed_binder_resolves_with_its_written_type()
+    {
+        let mut scope = Scope::new();
+        let typed = scope.extend_typed(
+            Frame::Outermost,
+            SurfaceName::from("a"),
+            NodeIndex::from(7_usize),
+        );
+        let untyped = scope.extend(Frame::Inner(typed), SurfaceName::from("x"));
+
+        assert_eq!(
+            scope.resolve(Frame::Inner(untyped), SurfaceName::from("a"), &mut tank()),
+            Ok(Maybe::Present(Bound {
+                index: DeBruijnIndex::from(1_u32),
+                binder: typed,
+                declared: Maybe::Present(NodeIndex::from(7_usize)),
+            })),
+            "a typed binder answers the node its type was written at"
+        );
+        assert_eq!(
+            scope.resolve(Frame::Inner(untyped), SurfaceName::from("x"), &mut tank()),
+            Ok(Maybe::Present(Bound {
+                index: DeBruijnIndex::from(0_u32),
+                binder: untyped,
+                declared: Maybe::Absent(binder_type::Absent::Untyped),
+            })),
+            "an untyped binder answers no written type"
+        );
+    }
+
+    #[test]
+    fn only_a_mentioned_typed_binder_counts_in_a_telescope()
+    {
+        let mut scope = Scope::new();
+        let typed = |scope: &mut Scope<'static>, parent: Frame, name: &'static str| {
+            scope.extend_typed(parent, SurfaceName::from(name), NodeIndex::from(1_usize))
+        };
+        let a = typed(&mut scope, Frame::Outermost, "a");
+        let b = typed(&mut scope, Frame::Inner(a), "b");
+        let x = typed(&mut scope, Frame::Inner(b), "x");
+        let y = scope.extend(Frame::Inner(x), SurfaceName::from("y"));
+        scope.mention(a);
+        scope.mention(b);
+
+        assert!(
+            bool::from(scope.mentioned(b)) && !bool::from(scope.mentioned(x)),
+            "the flag is set on the mentioned binder alone"
+        );
+        assert_eq!(
+            scope.telescope_index(Frame::Inner(x), a),
+            DeBruijnIndex::from(1_u32),
+            "a mentioned typed binder between counts"
+        );
+        assert_eq!(
+            scope.telescope_index(Frame::Inner(x), b),
+            DeBruijnIndex::from(0_u32),
+            "an unmentioned typed binder between counts nothing"
+        );
+        assert_eq!(
+            scope.telescope_index(Frame::Inner(y), b),
+            DeBruijnIndex::from(1_u32),
+            "an untyped binder between always counts"
         );
     }
 

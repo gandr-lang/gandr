@@ -162,6 +162,8 @@ pub enum RefusalName
     ShadowedBuiltin,
     /// A form the fragment does not admit, from the lowering or the checker.
     OutOfFragment,
+    /// A bridge graded other than the default the fragment admits.
+    GradedBridge,
     /// A literal whose text is not a lexeme of its kind.
     MalformedLiteral,
     /// A form whose pieces fall short of its rule.
@@ -213,7 +215,7 @@ pub enum RefusalName
 impl RefusalName
 {
     /// Every name of the vocabulary, in declaration order.
-    pub const VOCABULARY: [Self; 30_usize] = [
+    pub const VOCABULARY: [Self; 31_usize] = [
         Self::UnresolvedName,
         Self::UnresolvedTypeHead,
         Self::DuplicateSignature,
@@ -221,6 +223,7 @@ impl RefusalName
         Self::DuplicateImportAlias,
         Self::ShadowedBuiltin,
         Self::OutOfFragment,
+        Self::GradedBridge,
         Self::MalformedLiteral,
         Self::MalformedForm,
         Self::UnknownAttribute,
@@ -275,6 +278,7 @@ impl RefusalName
             | Self::DuplicateImportAlias => "DuplicateImportAlias",
             | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
+            | Self::GradedBridge => "GradedBridge",
             | Self::MalformedLiteral => "MalformedLiteral",
             | Self::MalformedForm => "MalformedForm",
             | Self::UnknownAttribute => "UnknownAttribute",
@@ -432,6 +436,7 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::DuplicateImportAlias { .. } => RefusalName::DuplicateImportAlias,
         | LoweringRefusal::ShadowedBuiltin { .. } => RefusalName::ShadowedBuiltin,
         | LoweringRefusal::OutOfFragment { .. } => RefusalName::OutOfFragment,
+        | LoweringRefusal::GradedBridge { .. } => RefusalName::GradedBridge,
         | LoweringRefusal::MalformedLiteral { .. } => RefusalName::MalformedLiteral,
         | LoweringRefusal::MalformedForm { .. } => RefusalName::MalformedForm,
         | LoweringRefusal::UnknownAttribute { .. } => RefusalName::UnknownAttribute,
@@ -596,6 +601,14 @@ mod tests
                     boundary: FragmentBoundary::Reserved,
                 },
                 "OutOfFragment",
+                FailureClass::Unrepresentable,
+            ),
+            (
+                LoweringRefusal::GradedBridge {
+                    span: empty,
+                    grade: SurfaceName::from("1"),
+                },
+                "GradedBridge",
                 FailureClass::Unrepresentable,
             ),
             (

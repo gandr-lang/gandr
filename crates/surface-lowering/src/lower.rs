@@ -30,19 +30,32 @@
 //! where its result is consumed, and every refusal carries the sort its own
 //! position demanded.
 //!
-//! # Three insertions, by the sort of the position
+//! # Five insertions, by the sort of the position
 //!
 //! Where the source writes a value and the position reads a computation, or
-//! the reverse, the fragment refuses — with three exceptions, each a site the
+//! the reverse, the fragment refuses — with five exceptions, each a site the
 //! grammar's own shape names. An application's head reads a computation, and
 //! a value standing there is forced; a function's result reads a computation
 //! type, and a value type standing there gains a returner; a function's body is
-//! a computation where the declaration takes a value, and is thunked. Each
-//! bridge is decided by the position, never searched for, and its origin is
-//! the syntax node that demanded it, marked inserted, so a reader can be shown
-//! the cast they did not write. Everywhere else the mismatch stays a refusal:
-//! a lambda written where a value belongs is still the author's mistake to
-//! suspend.
+//! a computation where the declaration takes a value, and is thunked; a type
+//! standing where a value is read is quoted into its code; and a name standing
+//! where a type is read, bound at a universe, is decoded out of it. Each
+//! bridge is decided by the position and the name's binder, never searched
+//! for, and its origin is the syntax node that demanded it, marked inserted,
+//! so a reader can be shown the cast they did not write. Everywhere else the
+//! mismatch stays a refusal: a lambda written where a value belongs is still
+//! the author's mistake to suspend.
+//!
+//! # A parameter a type names binds a dependent arrow
+//!
+//! A function's declared type is a chain of arrows, one per parameter, and an
+//! arrow binds its parameter in the codomain only when it is dependent. A
+//! parameter whose name a later parameter's type or the result decodes is
+//! recorded on its binder frame as the classification reads that type, so by
+//! the time the signature is minted each frame knows whether its arrow binds.
+//! A decode's code is the variable counted over the frames between it and its
+//! binder that bind in the type: every frame a lambda binds, and a typed
+//! parameter's only when its arrow is dependent.
 //!
 //! # One order of checks, the same at every form
 //!
@@ -65,16 +78,21 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
+use core::ops::ControlFlow;
 
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_kernel_strata::Level;
+use gandr_kernel_strata::LevelConstant;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
@@ -135,13 +153,16 @@ use crate::namespace::Trie;
 use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::origin::OriginTable;
+use crate::resolve::Bound;
 use crate::resolve::Frame;
 use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
 use crate::resolve::Scope;
+use crate::resolve::ScopeId;
 use crate::resolve::SurfaceName;
 use crate::resolve::TypeAtom;
 use crate::resolve::TypeFormer;
+use crate::resolve::binder_type;
 use crate::resolve::type_atom;
 use crate::resolve::type_former;
 
@@ -316,10 +337,10 @@ enum Reading
 {
     /// Not read: an own tile, layout, or a node under a form that refused.
     Unread,
-    /// Read as a value type.
-    ValueType,
-    /// Read as a computation type.
-    CompType,
+    /// Read as a value type, under the binder frame named here.
+    ValueType(Frame),
+    /// Read as a computation type, under the binder frame named here.
+    CompType(Frame),
     /// Read as a value, under the binder frame named here.
     Value(Frame),
     /// Read as a computation, under the binder frame named here.
@@ -327,9 +348,10 @@ enum Reading
     /// Read as an application's head: a computation under the binder frame
     /// named here, which a value standing here reaches by an inserted force.
     Head(Frame),
-    /// Read as a function's result: a computation type, which a value type
-    /// standing here reaches by an inserted returner.
-    Result,
+    /// Read as a function's result: a computation type under the binder frame
+    /// named here, which a value type standing here reaches by an inserted
+    /// returner.
+    Result(Frame),
     /// Read as a function: the declaration form whose tail is one.
     Function,
 }
@@ -344,8 +366,8 @@ impl Reading
     {
         match self {
             | Self::Unread | Self::Function => FragmentSort::Declaration,
-            | Self::ValueType => FragmentSort::ValueType,
-            | Self::CompType | Self::Result => FragmentSort::CompType,
+            | Self::ValueType(_frame) => FragmentSort::ValueType,
+            | Self::CompType(_frame) | Self::Result(_frame) => FragmentSort::CompType,
             | Self::Value(_frame) => FragmentSort::Value,
             | Self::Computation(_frame) | Self::Head(_frame) => FragmentSort::Computation,
         }
@@ -359,8 +381,28 @@ impl Reading
     {
         match self {
             | Self::Unread | Self::Function => Family::Neither,
-            | Self::ValueType | Self::CompType | Self::Result => Family::Type,
+            | Self::ValueType(_frame) | Self::CompType(_frame) | Self::Result(_frame) => {
+                Family::Type
+            },
             | Self::Value(_frame) | Self::Computation(_frame) | Self::Head(_frame) => Family::Term,
+        }
+    }
+
+    /// The binder frame this reading is under, the outermost for a reading
+    /// that names none.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn frame(self) -> Frame
+    {
+        match self {
+            | Self::Unread | Self::Function => Frame::Outermost,
+            | Self::ValueType(frame)
+            | Self::CompType(frame)
+            | Self::Value(frame)
+            | Self::Computation(frame)
+            | Self::Head(frame)
+            | Self::Result(frame) => frame,
         }
     }
 }
@@ -385,6 +427,7 @@ const fn family_of(former: Former) -> Family
 {
     match former {
         | Former::Name
+        | Former::Constructor
         | Former::Number
         | Former::Text
         | Former::Parenthesized
@@ -394,6 +437,7 @@ const fn family_of(former: Former) -> Family
         | Former::Force
         | Former::Call => Family::Term,
         | Former::TypeHead
+        | Former::Universe
         | Former::TypeApplication
         | Former::ThunkType
         | Former::ReturnerType
@@ -480,8 +524,91 @@ struct Parameter
 {
     /// The binder tile, the origin of the parameter's lambda and arrow.
     binder: NodeIndex,
+    /// The frame the parameter binds, which says whether a type names it.
+    frame: ScopeId,
     /// The parameter's type, when the source wrote one.
     declared: Maybe<NodeIndex, stated::Absent>,
+}
+
+/// A universe as the source wrote it: its sort and its level, each defaulted
+/// when left off.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Universe
+{
+    /// The sort, `+` for the value types and `-` for the computation types.
+    sort: GroundSort,
+    /// The level.
+    level: LevelConstant,
+}
+
+impl Universe
+{
+    /// The universe a bare `Type` names and an unwritten one defaults to:
+    /// the value types at the fuss-free level.
+    const FUSS_FREE: Self = Self {
+        sort: GroundSort::Value,
+        level: LevelConstant::ZERO,
+    };
+}
+
+/// The code a decode reads its type from.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Code
+{
+    /// A binder, named from a use site under the frame `from`, whose index is
+    /// counted in the signature's telescope once every type has been read.
+    Bound
+    {
+        /// The use site's frame.
+        from: Frame,
+        /// The binder's frame.
+        binder: ScopeId,
+    },
+    /// A declaration at this admission position.
+    Constant(ConstantIndex),
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a name resolves to nothing.
+    pub mod named {
+        /// Neither scope carries the name.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No enclosing binder and no earlier declaration is named so.
+            Unresolved,
+        }
+    }
+}
+
+/// What a name resolved to.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Resolved
+{
+    /// An enclosing binder.
+    Binder(Bound),
+    /// A declaration strictly earlier than the name's own.
+    Declaration
+    {
+        /// The declaration's admission position.
+        constant: ConstantIndex,
+        /// The type its signature was written with, when it has one.
+        declared: Maybe<NodeIndex, binder_type::Absent>,
+    },
+}
+
+impl Resolved
+{
+    /// The plan of the value the name stands for in term position.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn term(self) -> Plan
+    {
+        match self {
+            | Self::Binder(bound) => Plan::Variable(bound.index),
+            | Self::Declaration { constant, .. } => Plan::Constant(constant),
+        }
+    }
 }
 
 /// A function tail's reading: `(params) -> T? { … }`.
@@ -512,6 +639,10 @@ enum Plan
     Literal(Literal),
     /// A nullary type atom.
     Atom(TypeAtom),
+    /// A universe.
+    Universe(Universe),
+    /// The type a code denotes, in the universe it was declared at.
+    Decode(Code, Universe),
     /// A type former over its argument.
     Former(TypeFormer, NodeIndex),
     /// An arrow over its domain and codomain.
@@ -693,6 +824,9 @@ struct Lowerer<'run, 'source>
     fuel: Fuel,
     /// The scratch reading of the form being classified.
     pieces: Pieces,
+    /// The scratch reading of a written universe a decode reads its sort and
+    /// level from.
+    scratch: Pieces,
 }
 
 /// Where the mint sweep writes: the arena and the origin table.
@@ -718,9 +852,9 @@ struct Sink<'run>
 ///   declaration's first refusal by arena position; a function tail is a
 ///   definition, and a signature too when it types every parameter and its
 ///   result. Every core node the module minted has an origin recorded, terms
-///   and types alike, the force, thunk and returner the lowering inserted
-///   marked as inserted, and every attribute the module carries is resolved
-///   against the registry and filed under the content identity of the
+///   and types alike, the force, thunk, returner, quote and decode the lowering
+///   inserted marked as inserted, and every attribute the module carries is
+///   resolved against the registry and filed under the content identity of the
 ///   declaration form it decorates. Every import is kept in source order with
 ///   its alias bound in the import scope and no address resolved. Every
 ///   declared name is declared over `outermost` in admission order, tagged with
@@ -767,6 +901,13 @@ struct Sink<'run>
 /// - witness: `lower::tests::the_thunk_and_returner_heads_lower_to_their_formers`
 /// - witness: `lower::tests::an_arrow_lowers_under_a_thunk_type`
 /// - witness: `lower::tests::every_type_atom_lowers_to_its_core_type`
+/// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
+/// - witness: `lower::tests::u_and_f_are_names`
+/// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
+/// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+/// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+/// - witness: `lower::tests::the_producer_does_not_admit_a_graded_bridge`
+/// - witness: `lower::tests::a_graded_bridge_is_refused_by_name`
 /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
 /// - witness: `lower::tests::an_earlier_declaration_resolves_as_a_constant`
 /// - witness: `lower::tests::the_empty_parentheses_lower_to_the_unit_value`
@@ -939,6 +1080,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             recognition,
             fuel,
             pieces: Pieces::new(),
+            scratch: Pieces::new(),
         }
     }
 
@@ -1045,7 +1187,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             if let Maybe::Present(half) = slot.signature
                 && let Operand::Written(operand) = half.operand
             {
-                seeds.push((operand.node, Reading::ValueType));
+                seeds.push((operand.node, Reading::ValueType(Frame::Outermost)));
             }
             if let Maybe::Present(half) = slot.definition {
                 seeds.push(match half.operand {
@@ -1251,9 +1393,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `pieces` is the reading of the form at `site`.
     /// - ensures: a repair refuses the form; a former of the wrong family for
-    ///   the position refuses as the wrong sort; every other former is handed
-    ///   to its own reader, a declaration form to the function reader, the one
-    ///   reading of the family that seeds one.
+    ///   the position refuses as the wrong sort, except a type standing where a
+    ///   value is read, which is quoted; every other former is handed to its
+    ///   own reader, a declaration form to the function reader, the one reading
+    ///   of the family that seeds one.
     /// - provides: the dispatch on the grammar's named kind.
     /// - fails: yields the form's first refusal.
     /// - panics: none.
@@ -1270,12 +1413,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Maybe::Present(repaired) = pieces.repair {
             return Err(site.fault(repaired.span, FormFault::Repaired(repaired.repair)));
         }
-        if family_of(former) != site.reading.family() {
+        let family = family_of(former);
+        let quoted = family == Family::Type && matches!(site.reading, Reading::Value(_));
+        if family != site.reading.family() && !quoted {
             return Err(site.out(FragmentBoundary::WrongSort));
         }
         let cursor = Cursor::new(&pieces.pieces, site.at.span);
         match former {
             | Former::Name => self.name(site),
+            | Former::Constructor => self.constructor(site),
             | Former::Number => self.number(site),
             | Former::Text => self.text(site, pieces),
             | Former::Parenthesized => self.parenthesized(site, cursor),
@@ -1285,6 +1431,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::Force => self.keyed(site, cursor, TileName::FORCE),
             | Former::Call => self.call(site, cursor),
             | Former::TypeHead => self.type_head(site),
+            | Former::Universe => self.universe(site, cursor),
             | Former::TypeApplication => self.type_application(site, cursor),
             | Former::ThunkType | Former::ReturnerType => self.formed_type(site, cursor),
             | Former::ArrowType => self.arrow(site, cursor),
@@ -1303,12 +1450,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the frame the position carries when it reads the produced
-    ///   sort — the outermost frame for the type sorts, which bind nothing. An
-    ///   application's head reads a computation and reaches a value by a force;
-    ///   a function's result reads a computation type and reaches a value type
-    ///   by a returner; the bridge is recorded for the form's node, and every
+    ///   sort. An application's head reads a computation and reaches a value by
+    ///   a force; a function's result reads a computation type and reaches a
+    ///   value type by a returner; a value position reaches a type of either
+    ///   sort by a quote; the bridge is recorded for the form's node, and every
     ///   other match records none.
-    /// - provides: the sort check every former takes, and the two insertions
+    /// - provides: the sort check every former takes, and the three insertions
     ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
     ///   sort no bridge reaches.
@@ -1320,11 +1467,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Adequacy
     /// - hypothesis: L3 — each bridge separated from its bare neighbour: a
     ///   value and a computation at a head, a value type and a computation type
-    ///   at a result, each asserted through the lowered node and its origin's
-    ///   provenance.
+    ///   at a result, a value and a type at a value, each asserted through the
+    ///   lowered node and its origin's provenance.
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
+    /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     fn require(
         &mut self,
         site: Site,
@@ -1333,18 +1481,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let (frame, bridge) = match (site.reading, produced) {
             | (Reading::Value(frame), Produced::Value)
-            | (Reading::Computation(frame) | Reading::Head(frame), Produced::Computation) => {
+            | (Reading::Computation(frame) | Reading::Head(frame), Produced::Computation)
+            | (Reading::ValueType(frame), Produced::ValueType)
+            | (Reading::CompType(frame) | Reading::Result(frame), Produced::CompType) => {
                 (frame, Bridge::Bare)
             },
             | (Reading::Head(frame), Produced::Value) => {
                 (frame, Bridge::Inserted(Insertion::Force))
             },
-            | (Reading::ValueType, Produced::ValueType)
-            | (Reading::CompType | Reading::Result, Produced::CompType) => {
-                (Frame::Outermost, Bridge::Bare)
+            | (Reading::Result(frame), Produced::ValueType) => {
+                (frame, Bridge::Inserted(Insertion::Returner))
             },
-            | (Reading::Result, Produced::ValueType) => {
-                (Frame::Outermost, Bridge::Inserted(Insertion::Returner))
+            | (Reading::Value(frame), Produced::ValueType | Produced::CompType) => {
+                (frame, Bridge::Inserted(Insertion::Quote))
             },
             | _ => return Err(site.out(FragmentBoundary::WrongSort)),
         };
@@ -1353,6 +1502,55 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
 
         Ok(frame)
+    }
+
+    /// What `name`, written at `site` under `frame`, resolves to: the
+    /// innermost binder carrying it, else a declaration strictly earlier than
+    /// the one `site` belongs to.
+    ///
+    /// # Specification
+    /// - requires: `site` is the name's own node.
+    /// - ensures: the binder with its index and its written type, or the
+    ///   earlier declaration with its admission position and its signature's
+    ///   written type; the unresolved absence when neither scope answers.
+    /// - provides: the one resolution term names, capitalised names and type
+    ///   heads share.
+    /// - fails: propagates [`LoweringRefusal::BudgetExceeded`] from the binder
+    ///   walk.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
+    fn resolve_name(
+        &mut self,
+        site: Site,
+        frame: Frame,
+        name: SurfaceName<'source>,
+    ) -> Result<Maybe<Resolved, named::Absent>, LoweringRefusal<'source>>
+    {
+        if let Maybe::Present(bound) = self.scope.resolve(frame, name, &mut self.fuel)? {
+            return Ok(Maybe::Present(Resolved::Binder(bound)));
+        }
+        let target = self.collected.by_name.get(&name).copied();
+        let own = self.collected.owner_of(site.at.node);
+        if let (Some(target), Maybe::Present(own)) = (target, own)
+            && usize::from(target) < usize::from(own)
+            && let Some(entry) = self.collected.slots.get(usize::from(target))
+        {
+            let declared = match entry.signature {
+                | Maybe::Present(half) => match half.operand {
+                    | Operand::Written(written) => Maybe::Present(written.node),
+                    | Operand::Function => Maybe::Absent(binder_type::Absent::Untyped),
+                },
+                | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+            };
+            return Ok(Maybe::Present(Resolved::Declaration {
+                constant: entry.constant,
+                declared,
+            }));
+        }
+
+        Ok(Maybe::Absent(named::Absent::Unresolved))
     }
 
     /// Classify a term name.
@@ -1377,25 +1575,65 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let frame = self.require(site, Produced::Value)?;
         let name = self.name_at(site.at);
-        if let Maybe::Present(index) = self.scope.index_of(frame, name, &mut self.fuel)? {
-            self.plan(site, Plan::Variable(index));
-            return Ok(());
+        match self.resolve_name(site, frame, name)? {
+            | Maybe::Present(resolved) => {
+                self.plan(site, resolved.term());
+                Ok(())
+            },
+            | Maybe::Absent(_) => Err(LoweringRefusal::UnresolvedName {
+                span: site.at.span,
+                name,
+            }),
         }
-        let target = self.collected.by_name.get(&name).copied();
-        let own = self.collected.owner_of(site.at.node);
-        if let (Some(target), Maybe::Present(own)) = (target, own)
-            && usize::from(target) < usize::from(own)
-            && let Some(entry) = self.collected.slots.get(usize::from(target))
-        {
-            let constant = entry.constant;
-            self.plan(site, Plan::Constant(constant));
-            return Ok(());
-        }
+    }
 
-        Err(LoweringRefusal::UnresolvedName {
-            span: site.at.span,
-            name,
-        })
+    /// Classify a capitalised name in term position.
+    ///
+    /// # Specification
+    /// - requires: `site` is a constructor in term position.
+    /// - ensures: a name a binder or an earlier declaration answers stands as
+    ///   the value it resolved to; otherwise a type atom, or `Type` for the
+    ///   value universe at the fuss-free level, stands as a type, which a value
+    ///   position quotes.
+    /// - provides: the term-position spelling of a type, and of a declaration
+    ///   named with a capital.
+    /// - fails: yields the wrong-sort refusal for a resolved name or a type
+    ///   where its position reads neither; a name nothing answers is a
+    ///   constructor, which the fragment does not admit.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The name's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration, a type atom, the universe and an
+    ///   unanswered constructor each written where a value is read, asserted as
+    ///   the exact core node or refusal.
+    /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+    /// - witness: `lower::tests::u_and_f_are_names`
+    /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+    fn constructor(
+        &mut self,
+        site: Site,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let name = self.name_at(site.at);
+        if let Maybe::Present(resolved) = self.resolve_name(site, site.reading.frame(), name)? {
+            let _frame = self.require(site, Produced::Value)?;
+            self.plan(site, resolved.term());
+            return Ok(());
+        }
+        let quoted = match type_atom(name) {
+            | Maybe::Present(atom) => Plan::Atom(atom),
+            | Maybe::Absent(_) if name.as_ref() == TileName::UNIVERSE.as_ref() => {
+                Plan::Universe(Universe::FUSS_FREE)
+            },
+            | Maybe::Absent(_) => return Err(site.out(FragmentBoundary::Unadmitted)),
+        };
+        let _frame = self.require(site, Produced::ValueType)?;
+        self.plan(site, quoted);
+
+        Ok(())
     }
 
     /// Classify a number literal.
@@ -1596,10 +1834,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `site` is a declaration form read as a function, whose tail
     ///   opens on `(`.
     /// - ensures: each parameter binds in a frame extending the one before it,
-    ///   left to right, with its type, when written, read as a value type; the
-    ///   result, when written, is read at the result position; the block is
-    ///   read under the last parameter's frame; the form is planned as the
-    ///   function's declared type and body.
+    ///   left to right, with its type, when written, read as a value type under
+    ///   the frame before it and recorded on the binder; the result, when
+    ///   written, is read at the result position under the last parameter's
+    ///   frame, as the block is; the form is planned as the function's declared
+    ///   type and body.
     /// - provides: the function tail, lowered once at the declaration form for
     ///   both halves it writes.
     /// - fails: yields the unadmitted refusal for a parameter spelled as a type
@@ -1616,6 +1855,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   arena, and the refusals by a type-spelled parameter and a juxtaposed
     ///   parameter type, each asserted as the exact variant.
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+    /// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
     /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
@@ -1666,18 +1906,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
             let declared = match cursor.tile(TileName::COLON) {
                 | Maybe::Present(_) => {
                     let declared = function.one(cursor.operands())?;
-                    self.read(declared.node, Reading::ValueType);
+                    self.read(declared.node, Reading::ValueType(frame));
                     Maybe::Present(declared.node)
                 },
                 | Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
             };
-            self.parameters.push(Parameter {
-                binder: binder.node,
-                declared,
-            });
             let name = self.name_at(binder);
             self.note_binder(binder, name)?;
-            frame = Frame::Inner(self.scope.extend(frame, name));
+            let bound = match declared {
+                | Maybe::Present(written) => self.scope.extend_typed(frame, name, written),
+                | Maybe::Absent(_) => self.scope.extend(frame, name),
+            };
+            self.parameters.push(Parameter {
+                binder: binder.node,
+                frame: bound,
+                declared,
+            });
+            frame = Frame::Inner(bound);
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
                 && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
             {
@@ -1691,7 +1936,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let result = match cursor.tile(TileName::ARROW) {
             | Maybe::Present(_) => {
                 let result = function.one(cursor.operands())?;
-                self.read(result.node, Reading::Result);
+                self.read(result.node, Reading::Result(frame));
                 Maybe::Present(result.node)
             },
             | Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
@@ -2006,22 +2251,63 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: `site` is a primitive type, a type identifier or a type
     ///   variable in type position.
-    /// - ensures: a head standing as a value type resolves against the nullary
-    ///   table and is planned as its atom.
-    /// - provides: the type-head half of resolution.
-    /// - fails: yields the wrong-sort refusal outside value-type position and
-    ///   the unresolved-head refusal for a head no atom answers.
+    /// - ensures: a head a binder or an earlier declaration answers is that
+    ///   code, decoded in the universe its type was written at — the value
+    ///   types at the fuss-free level when it was written at none — and stands
+    ///   at the sort of that universe; a binder so named is recorded as
+    ///   mentioned by a type. Any other head resolves against the nullary table
+    ///   and is planned as its atom.
+    /// - provides: the type-head half of resolution, and the decode of a value
+    ///   name in type position.
+    /// - fails: yields the wrong-sort refusal for a head whose sort does not
+    ///   suit the position and the unresolved-head refusal for a head nothing
+    ///   answers.
     /// - panics: none.
     ///
     /// # Errors
     /// The head's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binder written at the bare universe, a binder
+    ///   written at a sorted and levelled one, a declaration and an atom, each
+    ///   asserted as the exact core type read back out of the arena.
+    /// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
+    /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+    /// - witness: `lower::tests::u_and_f_are_names`
+    /// - witness: `lower::tests::every_type_atom_lowers_to_its_core_type`
     fn type_head(
         &mut self,
         site: Site,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _frame = self.require(site, Produced::ValueType)?;
         let name = self.name_at(site.at);
+        let from = site.reading.frame();
+        if let Maybe::Present(resolved) = self.resolve_name(site, from, name)? {
+            let (code, declared) = match resolved {
+                | Resolved::Binder(bound) => (
+                    Code::Bound {
+                        from,
+                        binder: bound.binder,
+                    },
+                    bound.declared,
+                ),
+                | Resolved::Declaration { constant, declared } => {
+                    (Code::Constant(constant), declared)
+                },
+            };
+            let universe = self.written_universe(declared)?;
+            let produced = match universe.sort {
+                | GroundSort::Value => Produced::ValueType,
+                | GroundSort::Computation => Produced::CompType,
+            };
+            let _frame = self.require(site, produced)?;
+            if let Code::Bound { binder, .. } = code {
+                self.scope.mention(binder);
+            }
+            self.plan(site, Plan::Decode(code, universe));
+            return Ok(());
+        }
+        let _frame = self.require(site, Produced::ValueType)?;
         let Maybe::Present(atom) = type_atom(name)
         else {
             return Err(LoweringRefusal::UnresolvedTypeHead {
@@ -2034,6 +2320,173 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.plan(site, Plan::Atom(atom));
 
         Ok(())
+    }
+
+    /// Classify a universe, `Type[s, l]`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a universe in type position, or in value position
+    ///   where it is quoted.
+    /// - ensures: a universe standing as a value type is planned at the sort
+    ///   and level written, the value sort and the fuss-free level supplied for
+    ///   whichever is left off.
+    /// - provides: the universe former of the fragment.
+    /// - fails: yields the wrong-sort refusal where its position reads no value
+    ///   type, a misplaced-tile fault for a bracket out of shape, and the
+    ///   unadmitted refusal for a level beyond the core's level width.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The universe's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the bare spelling, a sort alone and a sort with a
+    ///   level at each sort, each asserted as the exact core universe.
+    /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
+    fn universe(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _frame = self.require(site, Produced::ValueType)?;
+        let universe = self.universe_of(site, &mut cursor)?;
+
+        self.plan(site, Plan::Universe(universe));
+
+        Ok(())
+    }
+
+    /// The universe a universe form's pieces spell.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the form's `Type` tile.
+    /// - ensures: the sort `+` or `-` and the level numeral written, the value
+    ///   sort and level zero for whichever is left off.
+    /// - provides: the one reading of a universe's spelling, shared by the
+    ///   universe former and the decode that reads a binder's written type.
+    /// - fails: a misplaced-tile fault for a bracket out of shape; the
+    ///   unadmitted refusal for a level numeral wider than a level constant.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The universe's refusal.
+    fn universe_of(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<Universe, LoweringRefusal<'source>>
+    {
+        let _keyword = cursor.tile(TileName::UNIVERSE);
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACKET_OPEN) {
+            exhausted(site, cursor)?;
+            return Ok(Universe::FUSS_FREE);
+        }
+        let sort = match (cursor.tile(TileName::PLUS), cursor.tile(TileName::MINUS)) {
+            | (Maybe::Present(_), _) => GroundSort::Value,
+            | (Maybe::Absent(_), Maybe::Present(_)) => GroundSort::Computation,
+            | (Maybe::Absent(_), Maybe::Absent(_)) => {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            },
+        };
+        let level = match cursor.tile(TileName::COMMA) {
+            | Maybe::Present(_) => {
+                let Maybe::Present(numeral) = cursor.tile(TileName::NUMBER)
+                else {
+                    return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                };
+                let text = self.text_at(numeral);
+                let spelled: &str = text.as_ref();
+                let Ok(level) = spelled.parse::<u64>()
+                else {
+                    let level = Site {
+                        at: numeral,
+                        ..site
+                    };
+                    return Err(level.out(FragmentBoundary::Unadmitted));
+                };
+                LevelConstant::from(level)
+            },
+            | Maybe::Absent(_) => LevelConstant::ZERO,
+        };
+        closed(site, cursor, TileName::BRACKET_CLOSE)?;
+        exhausted(site, cursor)?;
+
+        Ok(Universe { sort, level })
+    }
+
+    /// The universe the type at `declared` was written as, the fuss-free
+    /// default when it is none.
+    ///
+    /// # Specification
+    /// - requires: `declared`, when present, is a node of the tree.
+    /// - ensures: the universe a universe form spells, read through any
+    ///   grouping parentheses around it; [`Universe::FUSS_FREE`] for an absent
+    ///   type, any other form, or a universe out of shape, whose own reading
+    ///   reports it.
+    /// - provides: the sort and level a decode of a binder or a declaration is
+    ///   minted at.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk through the
+    ///   parentheses outruns the allowance.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binder written at a sorted, levelled universe
+    ///   inside a grouping and a declaration signed at one, each observed
+    ///   through the decode it mints.
+    /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+    fn written_universe(
+        &mut self,
+        declared: Maybe<NodeIndex, binder_type::Absent>,
+    ) -> Result<Universe, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(mut position) = declared
+        else {
+            return Ok(Universe::FUSS_FREE);
+        };
+        loop {
+            self.fuel.spend()?;
+            let Some(node) = self.tree.node(position)
+            else {
+                return Ok(Universe::FUSS_FREE);
+            };
+            let Ok(Shape::Form { name, former }) = shape_of(self.pbg, node)
+            else {
+                return Ok(Universe::FUSS_FREE);
+            };
+            let mut scratch = core::mem::take(&mut self.scratch);
+            let read = read_pieces(self.pbg, self.tree, position, &mut scratch);
+            let site = Site {
+                at: Placed::of(position, node),
+                name,
+                reading: Reading::ValueType(Frame::Outermost),
+            };
+            let mut cursor = Cursor::new(&scratch.pieces, site.at.span);
+            let step = match (read, former) {
+                | (Ok(()), Former::Universe) => ControlFlow::Break(
+                    self.universe_of(site, &mut cursor)
+                        .unwrap_or(Universe::FUSS_FREE),
+                ),
+                | (Ok(()), Former::ParenthesizedType) => {
+                    let _open = cursor.tile(TileName::PAREN_OPEN);
+                    match cursor.operands() {
+                        | Run::One(operand) => ControlFlow::Continue(operand.node),
+                        | Run::Empty(_) | Run::Several { .. } => {
+                            ControlFlow::Break(Universe::FUSS_FREE)
+                        },
+                    }
+                },
+                | _ => ControlFlow::Break(Universe::FUSS_FREE),
+            };
+            self.scratch = scratch;
+            match step {
+                | ControlFlow::Continue(operand) => position = operand,
+                | ControlFlow::Break(universe) => return Ok(universe),
+            }
+        }
     }
 
     /// Classify a type head applied to arguments, `Foo(A)`.
@@ -2089,14 +2542,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: `site` is a thunk type or a returner type in type position.
-    /// - ensures: the keyword resolves against the unary table, the form stands
-    ///   at the sort its former produces, reads its one operand at the sort the
-    ///   former takes, and is planned over it.
+    /// - ensures: the keyword resolves against the unary table, a thunk type's
+    ///   grade `[ω]` reads as no grade written, the form stands at the sort its
+    ///   former produces, reads its one operand at the sort the former takes,
+    ///   and is planned over it.
     /// - provides: the keyword spelling of the two type formers.
     /// - fails: yields the unresolved-head refusal for a keyword no former
-    ///   answers, the wrong-sort refusal for a former whose sort does not suit
-    ///   the position, the unadmitted refusal for a grade, and the hole's own
-    ///   refusal.
+    ///   answers, [`LoweringRefusal::GradedBridge`] for a thunk type graded
+    ///   other than `ω`, the unadmitted refusal for a grade on a returner type,
+    ///   the wrong-sort refusal for a former whose sort does not suit the
+    ///   position, and the hole's own refusal.
     /// - panics: none.
     ///
     /// # Errors
@@ -2121,13 +2576,56 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 arity: HeadArity::Unary,
             });
         };
-        if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
-            return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
+        if let Maybe::Present(_) = cursor.tile(TileName::BRACKET_OPEN) {
+            if former != TypeFormer::Thunk {
+                return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
+            }
+            self.grade(site, &mut cursor)?;
         }
         let argument = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
 
         self.apply_former(site, former, argument.node)
+    }
+
+    /// Read a bridge's grade, `[r]`, admitting only the default `ω`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the grade's `[`.
+    /// - ensures: `ω` followed by `]` reads as the bridge with no grade
+    ///   written, the cursor past the `]`.
+    /// - provides: the one grade the core's bridge carries.
+    /// - fails: [`LoweringRefusal::GradedBridge`] for a numeral or a name as
+    ///   the grade, at the grade; a misplaced-tile fault for a grade out of
+    ///   shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The grade's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the default grade, a numeral and a name, each
+    ///   asserted as the lowered bridge or the exact refusal.
+    /// - witness: `lower::tests::a_graded_bridge_is_refused_by_name`
+    fn grade(
+        &self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Maybe::Present(Piece::Tile { label, at }) = cursor.peek()
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        if label == TileName::NUMBER || label == TileName::IDENTIFIER {
+            return Err(LoweringRefusal::GradedBridge {
+                span: at.span,
+                grade: self.name_at(at),
+            });
+        }
+        closed(site, cursor, TileName::OMEGA)?;
+
+        closed(site, cursor, TileName::BRACKET_CLOSE)
     }
 
     /// Plan `former` applied to `argument` at `site`.
@@ -2153,11 +2651,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
         argument: NodeIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let (produced, inner) = match former {
-            | TypeFormer::Thunk => (Produced::ValueType, Reading::CompType),
-            | TypeFormer::Returner => (Produced::CompType, Reading::ValueType),
+        let produced = match former {
+            | TypeFormer::Thunk => Produced::ValueType,
+            | TypeFormer::Returner => Produced::CompType,
         };
-        let _frame = self.require(site, produced)?;
+        let frame = self.require(site, produced)?;
+        let inner = match former {
+            | TypeFormer::Thunk => Reading::CompType(frame),
+            | TypeFormer::Returner => Reading::ValueType(frame),
+        };
         self.read(argument, inner);
 
         self.plan(site, Plan::Former(former, argument));
@@ -2185,13 +2687,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _frame = self.require(site, Produced::CompType)?;
+        let frame = self.require(site, Produced::CompType)?;
         let domain = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::ARROW)?;
         let codomain = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
-        self.read(domain.node, Reading::ValueType);
-        self.read(codomain.node, Reading::CompType);
+        self.read(domain.node, Reading::ValueType(frame));
+        self.read(codomain.node, Reading::CompType(frame));
 
         self.plan(site, Plan::Arrow(domain.node, codomain.node));
 
@@ -2375,7 +2877,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   nodes with its origin recorded; an adopted child's own node for a
     ///   transparent plan; nothing when a child did not lower at the sort the
     ///   plan takes. Every variable is minted in the intuitionistic zone, the
-    ///   only zone the fragment binds into.
+    ///   only zone the fragment binds into; a decode's code carries the written
+    ///   origin and its type the inserted one.
     /// - provides: the per-node half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
@@ -2405,6 +2908,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 Maybe::Present(sink.value(id, origin))
             },
             | Plan::Atom(atom) => Maybe::Present(sink.atom(atom, origin)),
+            | Plan::Universe(universe) => {
+                let id = sink.arena.value_type_universe(
+                    Sort::Ground(universe.sort),
+                    Level::constant(universe.level),
+                );
+                sink.origins.record_value_type(id, origin);
+                Maybe::Present(Lowered::ValueType(id))
+            },
+            | Plan::Decode(code, universe) => {
+                Maybe::Present(self.mint_decode(code, universe, sink, origin))
+            },
             | Plan::Transparent(child) => self.lowered_at(child),
             | Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
             | Plan::Application(head, arguments) => {
@@ -2419,6 +2933,50 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
+    /// Carry out a decode's plan: the code, and the type it denotes.
+    ///
+    /// # Specification
+    /// - requires: every type position has been classified, so every binder a
+    ///   type names is recorded as mentioned.
+    /// - ensures: a binder's code is the variable at its telescope index from
+    ///   the use site and a declaration's the constant, each with the written
+    ///   origin; the type is the decode of that code at the universe's level, a
+    ///   value type for the value sort and a computation type for the
+    ///   computation sort, with the origin marked inserted.
+    /// - provides: the decode half of a value name in type position.
+    /// - fails: never.
+    /// - panics: none.
+    fn mint_decode(
+        &self,
+        code: Code,
+        universe: Universe,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Lowered
+    {
+        let value = match code {
+            | Code::Bound { from, binder } => sink.arena.value_variable(
+                Zone::Intuitionistic,
+                self.scope.telescope_index(from, binder),
+            ),
+            | Code::Constant(constant) => sink.arena.value_constant(constant),
+        };
+        sink.origins.record_value(value, origin);
+        let level = Level::constant(universe.level);
+        let decoded = origin.inserted(Insertion::Decode);
+        match universe.sort {
+            | GroundSort::Value => {
+                let id = sink.arena.value_type_element(value, level);
+                sink.origins.record_value_type(id, decoded);
+                Lowered::ValueType(id)
+            },
+            | GroundSort::Computation => {
+                let id = sink.arena.comp_type_element(value, level);
+                sink.origins.record_comp_type(id, decoded);
+                Lowered::CompType(id)
+            },
+        }
+    }
     /// Carry out a type former's plan.
     ///
     /// # Specification
@@ -2486,6 +3044,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Unit
             | Plan::Literal(_)
             | Plan::Atom(_)
+            | Plan::Universe(_)
+            | Plan::Decode(..)
             | Plan::Former(..)
             | Plan::Transparent(_)
             | Plan::Application(..)
@@ -2590,7 +3150,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   … λ. b)`, one lambda per parameter with the binder tile's origin and
     ///   the thunk marked as inserted at the declaration form, and its declared
     ///   type as `+U (A1 -> … -> An -> C)`, one arrow per parameter with the
-    ///   binder tile's origin and `+U` the declaration form's; a tail missing a
+    ///   binder tile's origin and `+U` the declaration form's, an arrow
+    ///   dependent where a later type names its parameter; a tail missing a
     ///   parameter or result type mints the body alone; nothing is minted when
     ///   the block did not lower.
     /// - provides: the function tail's two halves, from one reading.
@@ -2635,12 +3196,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Mint a function tail's declared type, `+U (A1 -> … -> An -> C)`.
     ///
     /// # Specification
-    /// - requires: `parameters` are the function's own.
-    /// - ensures: the declared type, as [`Self::mint_function`] states it;
-    ///   nothing is minted when a type is unstated or did not lower.
+    /// - requires: `parameters` are the function's own, and every type position
+    ///   has been classified, so every parameter a type names is recorded as
+    ///   mentioned.
+    /// - ensures: the declared type, as [`Self::mint_function`] states it, with
+    ///   each parameter's arrow dependent exactly when a later parameter's type
+    ///   or the result names it, and plain otherwise; nothing is minted when a
+    ///   type is unstated or did not lower.
     /// - provides: the signature half of [`Self::mint_function`].
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a parameter a later type names beside one no type
+    ///   names, each asserted as the exact arrow read back out of the arena.
+    /// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
+    /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     fn mint_signature(
         &self,
         function: &Function,
@@ -2676,7 +3247,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             else {
                 return Maybe::Absent(lowered::Absent::Unminted);
             };
-            let id = sink.arena.comp_type_arrow(domain, declared);
+            let id = if bool::from(self.scope.mentioned(parameter.frame)) {
+                sink.arena.comp_type_pi(domain, declared)
+            }
+            else {
+                sink.arena.comp_type_arrow(domain, declared)
+            };
             sink.origins.record_comp_type(id, binder);
             declared = id;
         }
@@ -3137,10 +3713,11 @@ impl Sink<'_>
     /// # Specification
     /// - requires: `minted` is what the node's own plan minted.
     /// - ensures: a bare node is `minted` unchanged; a forced value is minted
-    ///   as a force over it and a returned value type as a returner over it,
-    ///   each with `origin` marked as the insertion it is; nothing when the
-    ///   node did not lower at the sort its bridge leaves, which the
-    ///   classification makes unreachable.
+    ///   as a force over it, a returned value type as a returner over it, and a
+    ///   quoted type as the quote of it at its own sort, each with `origin`
+    ///   marked as the insertion it is; nothing when the node did not lower at
+    ///   the sort its bridge leaves, which the classification makes
+    ///   unreachable.
     /// - provides: the minting half of the insertions a position's sort
     ///   decides.
     /// - fails: never.
@@ -3167,9 +3744,22 @@ impl Sink<'_>
                 self.origins.record_comp_type(id, inserted);
                 Maybe::Present(Lowered::CompType(id))
             },
-            | (Maybe::Present(_), Insertion::Force | Insertion::Thunk | Insertion::Returner) => {
-                Maybe::Absent(lowered::Absent::OtherSort)
+            | (Maybe::Present(Lowered::ValueType(quoted)), Insertion::Quote) => {
+                let id = self.arena.value_quote(quoted);
+                Maybe::Present(self.value(id, inserted))
             },
+            | (Maybe::Present(Lowered::CompType(quoted)), Insertion::Quote) => {
+                let id = self.arena.value_quote_computation(quoted);
+                Maybe::Present(self.value(id, inserted))
+            },
+            | (
+                Maybe::Present(_),
+                Insertion::Force
+                | Insertion::Thunk
+                | Insertion::Returner
+                | Insertion::Quote
+                | Insertion::Decode,
+            ) => Maybe::Absent(lowered::Absent::OtherSort),
             | (Maybe::Absent(reason), _) => Maybe::Absent(reason),
         }
     }
@@ -3417,11 +4007,11 @@ fn exhausted<'source>(
 /// # Specification
 /// - requires: nothing; the function is total over the former vocabulary.
 /// - ensures: exactly the value-producing formers answer affirmatively — a
-///   name, a number, a string, a parenthesised expression and a thunk — the
-///   reserved tuple among them, since a reserved form is a value the fragment
-///   declines rather than a form of another sort, and keeping the two apart is
-///   what lets an attribute payload written as a computation be reported as a
-///   non-value rather than as a sort error.
+///   name, a capitalised name, a number, a string, a parenthesised expression
+///   and a thunk — the reserved tuple among them, since a reserved form is a
+///   value the fragment declines rather than a form of another sort, and
+///   keeping the two apart is what lets an attribute payload written as a
+///   computation be reported as a non-value rather than as a sort error.
 /// - provides: the guard the attribute payload reading takes.
 /// - fails: never.
 /// - panics: none.
@@ -3435,7 +4025,12 @@ const fn is_value_form(former: Former) -> ValueForm
 {
     ValueForm(matches!(
         former,
-        Former::Name | Former::Number | Former::Text | Former::Parenthesized | Former::Thunk
+        Former::Name
+            | Former::Constructor
+            | Former::Number
+            | Former::Text
+            | Former::Parenthesized
+            | Former::Thunk
     ))
 }
 
@@ -3482,6 +4077,7 @@ fn parse_literal(
                 ))))
             }),
         | Former::Name
+        | Former::Constructor
         | Former::Parenthesized
         | Former::Thunk
         | Former::Lambda
@@ -3489,6 +4085,7 @@ fn parse_literal(
         | Former::Force
         | Former::Call
         | Former::TypeHead
+        | Former::Universe
         | Former::TypeApplication
         | Former::ThunkType
         | Former::ReturnerType
@@ -3568,12 +4165,16 @@ mod tests
     use gandr_core_term::CompType;
     use gandr_core_term::Computation;
     use gandr_core_term::CoreArena;
+    use gandr_core_term::Sort;
     use gandr_core_term::Value;
     use gandr_core_term::ValueType;
     use gandr_core_term::Zone;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_strata::LevelConstant;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::IntegerLiteral;
     use gandr_kernel_term::Literal;
     use gandr_kernel_term::Magnitude;
@@ -3954,6 +4555,322 @@ mod tests
             ],
             "each atom lowers to its own core type"
         );
+    }
+
+    #[test]
+    fn every_universe_spelling_lowers_to_its_universe()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def a : Type ; def b : Type[+] ; def c : Type[-] ; def d : Type[+, 3] ; def e : \
+                 Type[-, 1] ;",
+            ),
+            &mut arena,
+        );
+        let universe = |sort: GroundSort, level: u64| {
+            Some(ValueType::Universe {
+                sort: Sort::Ground(sort),
+                level: Level::constant(LevelConstant::from(level)),
+            })
+        };
+        let lowered: Vec<_> = outcomes(&module)
+            .into_iter()
+            .map(|outcome| arena.value_type(declared_of(outcome)).cloned())
+            .collect();
+
+        assert_eq!(
+            lowered,
+            [
+                universe(GroundSort::Value, 0),
+                universe(GroundSort::Value, 0),
+                universe(GroundSort::Computation, 0),
+                universe(GroundSort::Value, 3),
+                universe(GroundSort::Computation, 1),
+            ],
+            "a universe is the sort and the level written, the value sort and level zero for \
+             whichever is left off"
+        );
+    }
+
+    #[test]
+    fn u_and_f_are_names()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        for (source, name, arity) in [
+            ("def x : U ;", "U", HeadArity::Nullary),
+            ("def x : F ;", "F", HeadArity::Nullary),
+            ("def x : U(Integer) ;", "U", HeadArity::Unary),
+            ("def x : F(Integer) ;", "F", HeadArity::Unary),
+        ] {
+            assert_eq!(
+                refusal(SourceText::from(source)),
+                LoweringRefusal::UnresolvedTypeHead {
+                    span: at(8_usize, 9_usize),
+                    name: SurfaceName::from(name),
+                    arity,
+                },
+                "the bridges are `+U` and `-F`, so `{source}` names a type nothing declares"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bare_type_binder_is_positive_at_the_fuss_free_level()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def id(a : Type, x : a) -> -F a { ret x }"),
+            &mut arena,
+        );
+        let declared = declared_of(outcomes(&module)[0]);
+        let Some(&ValueType::Thunk(suspended)) = arena.value_type(declared)
+        else {
+            panic!("the declared type is a thunk type");
+        };
+        let Some(&CompType::Pi {
+            domain: universe,
+            codomain,
+        }) = arena.comp_type(suspended)
+        else {
+            panic!("`a`, which a later type names, binds a dependent arrow");
+        };
+        let Some(&CompType::Arrow {
+            domain,
+            codomain: result,
+        }) = arena.comp_type(codomain)
+        else {
+            panic!("`x`, which no type names, binds a plain arrow");
+        };
+        let Some(&CompType::Returner(returned)) = arena.comp_type(result)
+        else {
+            panic!("the result is a returner");
+        };
+        let decoded = |id| match arena.value_type(id) {
+            | Some(&ValueType::Element { code, ref target }) => {
+                (arena.value(code).cloned(), Some(target.clone()))
+            },
+            | _ => (None, None),
+        };
+        let fuss_free = Level::constant(LevelConstant::ZERO);
+        let innermost = Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(0_u32),
+        };
+
+        assert_eq!(
+            arena.value_type(universe),
+            Some(&ValueType::Universe {
+                sort: Sort::Ground(GroundSort::Value),
+                level: fuss_free.clone(),
+            }),
+            "a bare `Type` is the value universe at the fuss-free level"
+        );
+        assert_eq!(
+            decoded(domain),
+            (Some(innermost.clone()), Some(fuss_free.clone())),
+            "`x : a` decodes `a` out of the universe it was bound at"
+        );
+        assert_eq!(
+            decoded(returned),
+            (Some(innermost), Some(fuss_free)),
+            "the plain arrow binds nothing, so the result names `a` at the same index"
+        );
+        assert_eq!(
+            module
+                .origins()
+                .value_type(domain)
+                .map(|origin| origin.provenance()),
+            Maybe::Present(Provenance::Inserted(Insertion::Decode)),
+            "the decode is the lowering's, not the source's"
+        );
+    }
+
+    #[test]
+    fn a_decode_reads_the_universe_its_code_was_written_at()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def small : Type[+, 1] ; def n : small ; def k(c : (Type[-, 2]), t : +U c) -> c \
+                 { force t }",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let decoded = |id| match arena.value_type(id) {
+            | Some(&ValueType::Element { code, ref target }) => {
+                (arena.value(code).cloned(), Some(target.clone()))
+            },
+            | _ => (None, None),
+        };
+        assert_eq!(
+            decoded(declared_of(lowered[1])),
+            (
+                Some(Value::Constant(ConstantIndex::from(0_usize))),
+                Some(Level::constant(LevelConstant::from(1_u64)))
+            ),
+            "a declaration signed at a universe decodes at that universe's level"
+        );
+
+        let Some(&ValueType::Thunk(suspended)) = arena.value_type(declared_of(lowered[2]))
+        else {
+            panic!("the declared type is a thunk type");
+        };
+        let Some(&CompType::Pi { codomain, .. }) = arena.comp_type(suspended)
+        else {
+            panic!("`c`, which later types name, binds a dependent arrow");
+        };
+        let Some(&CompType::Arrow {
+            domain,
+            codomain: result,
+        }) = arena.comp_type(codomain)
+        else {
+            panic!("`t`, which no type names, binds a plain arrow");
+        };
+        let Some(&ValueType::Thunk(thunked)) = arena.value_type(domain)
+        else {
+            panic!("`+U c` is a thunk type");
+        };
+        let comp_decoded = |id| match arena.comp_type(id) {
+            | Some(&CompType::Element { code, ref target }) => {
+                (arena.value(code).cloned(), Some(target.clone()))
+            },
+            | _ => (None, None),
+        };
+        let code = (
+            Some(Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+            }),
+            Some(Level::constant(LevelConstant::from(2_u64))),
+        );
+        assert_eq!(
+            comp_decoded(thunked),
+            code,
+            "a binder written at the computation universe, through a grouping, decodes a \
+             computation type at its level"
+        );
+        assert_eq!(
+            comp_decoded(result),
+            code,
+            "and a result naming it is that computation type, with no returner"
+        );
+    }
+
+    #[test]
+    fn a_type_where_a_value_is_read_is_quoted()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def a = Integer ; def b = -F Integer ; def c = Type ; def d = +U (-F Integer) ;",
+            ),
+            &mut arena,
+        );
+        let quoted = |declaration: usize| {
+            let body = body_of(outcomes(&module)[declaration]);
+            let provenance = module
+                .origins()
+                .value(body)
+                .map(|origin| origin.provenance());
+            match arena.value(body) {
+                | Some(&Value::Quote(inner)) => {
+                    (arena.value_type(inner).cloned(), None, provenance)
+                },
+                | Some(&Value::QuoteComputation(inner)) => {
+                    (None, arena.comp_type(inner).cloned(), provenance)
+                },
+                | _ => (None, None, provenance),
+            }
+        };
+        let inserted = Maybe::Present(Provenance::Inserted(Insertion::Quote));
+
+        assert_eq!(
+            quoted(0_usize),
+            (Some(ValueType::Base(BaseType::Integer)), None, inserted),
+            "a type atom where a value is read is its code"
+        );
+        assert!(
+            matches!(quoted(1_usize), (None, Some(CompType::Returner(_)), _)),
+            "a computation type is quoted at its own sort"
+        );
+        assert_eq!(
+            quoted(2_usize).0,
+            Some(ValueType::Universe {
+                sort: Sort::Ground(GroundSort::Value),
+                level: Level::constant(LevelConstant::ZERO),
+            }),
+            "`Type` where a value is read is the code of the fuss-free universe"
+        );
+        assert!(
+            matches!(quoted(3_usize), (Some(ValueType::Thunk(_)), None, _)),
+            "a bridge where a value is read is the code of its thunk type"
+        );
+    }
+
+    #[test]
+    fn the_producer_does_not_admit_a_graded_bridge()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def a : +U[ω] (-F Integer) ; def b : +U (-F Integer) ;"),
+            &mut arena,
+        );
+        let lowered: Vec<_> = outcomes(&module)
+            .into_iter()
+            .map(|outcome| {
+                let Some(&ValueType::Thunk(suspended)) = arena.value_type(declared_of(outcome))
+                else {
+                    panic!("the bridge lowers to the thunk type");
+                };
+                let Some(&CompType::Returner(returned)) = arena.comp_type(suspended)
+                else {
+                    panic!("the bridged computation is the returner");
+                };
+                arena.value_type(returned).cloned()
+            })
+            .collect();
+        assert_eq!(
+            lowered,
+            [
+                Some(ValueType::Base(BaseType::Integer)),
+                Some(ValueType::Base(BaseType::Integer)),
+            ],
+            "the default grade `ω` is the bridge the core carries, the same as none written"
+        );
+        assert!(
+            matches!(
+                refusal(SourceText::from("def c : +U[1] (-F Integer) ;")),
+                LoweringRefusal::GradedBridge { .. }
+            ),
+            "any other grade mints no thunk type"
+        );
+    }
+
+    #[test]
+    fn a_graded_bridge_is_refused_by_name()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        for (source, grade) in [
+            ("def c : +U[1] (-F Integer) ;", "1"),
+            ("def c : +U[r] (-F Integer) ;", "r"),
+        ] {
+            let refused = refusal(SourceText::from(source));
+            assert_eq!(
+                refused,
+                LoweringRefusal::GradedBridge {
+                    span: at(11_usize, 12_usize),
+                    grade: SurfaceName::from(grade),
+                },
+                "`{source}` is refused at its grade, naming it"
+            );
+            assert_eq!(
+                refused.classify(),
+                FailureClass::Unrepresentable,
+                "a grade is a form the fragment does not represent"
+            );
+        }
     }
 
     #[test]
@@ -5505,6 +6422,7 @@ mod tests
     {
         let values = [
             Former::Name,
+            Former::Constructor,
             Former::Number,
             Former::Text,
             Former::Parenthesized,

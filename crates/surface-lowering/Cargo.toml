@@ -13,6 +13,7 @@ publish.workspace = true
 
 [dependencies]
 gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-syntax.workspace = true

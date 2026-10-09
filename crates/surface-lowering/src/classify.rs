@@ -45,9 +45,10 @@ impl LoweringRefusal<'_>
     /// - ensures: the class is a function of the variant alone — two refusals
     ///   of one variant classify alike whatever their spans, names or
     ///   suggestions hold — and every reserved, unadmitted, wrong-sort or
-    ///   wrong-arity form classifies as unrepresentable, the exhausted
-    ///   allowance, the grammar mismatch and the unknown mold as engine faults,
-    ///   and every other refusal as malformed source.
+    ///   wrong-arity form and every graded bridge classifies as
+    ///   unrepresentable, the exhausted allowance, the grammar mismatch and the
+    ///   unknown mold as engine faults, and every other refusal as malformed
+    ///   source.
     /// - provides: the fact a report groups by and a job alarming on the
     ///   fragment's reach counts.
     /// - fails: never.
@@ -79,7 +80,9 @@ impl LoweringRefusal<'_>
             | Self::MissingPayload { .. }
             | Self::NonValuePayload { .. }
             | Self::IllTypedPayload { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } => FailureClass::Unrepresentable,
+            | Self::OutOfFragment { .. } | Self::GradedBridge { .. } => {
+                FailureClass::Unrepresentable
+            },
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::UnknownMold { .. } => FailureClass::EngineFault,
@@ -119,7 +122,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn vocabulary() -> [LoweringRefusal<'static>; 17_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 18_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -205,6 +208,10 @@ mod tests
                 span: empty,
                 name: SurfaceName::from("list"),
             },
+            LoweringRefusal::GradedBridge {
+                span: empty,
+                grade: SurfaceName::from("1"),
+            },
         ]
     }
 
@@ -229,6 +236,7 @@ mod tests
             FailureClass::EngineFault,
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
+            FailureClass::Unrepresentable,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

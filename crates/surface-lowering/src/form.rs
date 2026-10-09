@@ -250,10 +250,19 @@ impl TileName
     pub const INTERPOLATION: Self = Self("${");
     /// The keyword `leta`, opening a statement.
     pub const LETA: Self = Self("leta");
+    /// The sort literal `-` of a universe: the computation types.
+    pub const MINUS: Self = Self("-");
+    /// A numeral written as one of a form's own tiles: a universe's level or a
+    /// bridge's grade.
+    pub const NUMBER: Self = Self("number");
+    /// The default grade `ω` of a bridge.
+    pub const OMEGA: Self = Self("ω");
     /// A parenthesis closer `)`.
     pub const PAREN_CLOSE: Self = Self(")");
     /// A parenthesis opener `(`.
     pub const PAREN_OPEN: Self = Self("(");
+    /// The sort literal `+` of a universe: the value types.
+    pub const PLUS: Self = Self("+");
     /// A double quote opening or closing a string written among a form's own
     /// tiles.
     pub const QUOTE: Self = Self("\"");
@@ -277,6 +286,8 @@ impl TileName
     pub const TYPE_IDENTIFIER: Self = Self("type_identifier");
     /// A type variable written as one of a form's own tiles.
     pub const TYPE_VARIABLE: Self = Self("type_variable");
+    /// The universe keyword `Type`.
+    pub const UNIVERSE: Self = Self("Type");
     /// The unpack keyword `unpack`, opening a statement.
     pub const UNPACK: Self = Self("unpack");
     /// The keyword `val`, opening a statement.
@@ -306,6 +317,9 @@ pub enum Former
 {
     /// An identifier in term position: a variable or an earlier declaration.
     Name,
+    /// A capitalised name in term position: an earlier declaration, or a type
+    /// atom or the universe standing where a value is read, which is quoted.
+    Constructor,
     /// A number literal.
     Number,
     /// A string literal.
@@ -325,6 +339,9 @@ pub enum Former
     Call,
     /// A bare type head: a primitive, a type identifier or a type variable.
     TypeHead,
+    /// The universe `Type[s, l]`, its sort and level each defaulted when left
+    /// off.
+    Universe,
     /// A type head applied to arguments, `Foo(A)`.
     TypeApplication,
     /// The thunk type `+U C`.
@@ -350,8 +367,9 @@ pub enum Former
 impl Former
 {
     /// Every former, in declaration order.
-    pub const ALL: [Self; 20_usize] = [
+    pub const ALL: [Self; 22_usize] = [
         Self::Name,
+        Self::Constructor,
         Self::Number,
         Self::Text,
         Self::Parenthesized,
@@ -361,6 +379,7 @@ impl Former
         Self::Force,
         Self::Call,
         Self::TypeHead,
+        Self::Universe,
         Self::TypeApplication,
         Self::ThunkType,
         Self::ReturnerType,
@@ -375,8 +394,9 @@ impl Former
 }
 
 /// The named kinds the lowering reads, with the former each is read as.
-pub const FORMERS: [(&str, Former); 21_usize] = [
+pub const FORMERS: [(&str, Former); 23_usize] = [
     ("identifier", Former::Name),
+    ("constructor", Former::Constructor),
     ("number", Former::Number),
     ("string", Former::Text),
     ("parenthesized_expression", Former::Parenthesized),
@@ -388,6 +408,7 @@ pub const FORMERS: [(&str, Former); 21_usize] = [
     ("primitive_type", Former::TypeHead),
     ("type_identifier", Former::TypeHead),
     ("type_variable", Former::TypeHead),
+    ("universe_type", Former::Universe),
     ("type_application", Former::TypeApplication),
     ("u_type", Former::ThunkType),
     ("f_type", Former::ReturnerType),
@@ -1377,6 +1398,7 @@ mod tests
     {
         let expected = [
             ("identifier", Former::Name),
+            ("constructor", Former::Constructor),
             ("number", Former::Number),
             ("string", Former::Text),
             ("parenthesized_expression", Former::Parenthesized),
@@ -1388,6 +1410,7 @@ mod tests
             ("primitive_type", Former::TypeHead),
             ("type_identifier", Former::TypeHead),
             ("type_variable", Former::TypeHead),
+            ("universe_type", Former::Universe),
             ("type_application", Former::TypeApplication),
             ("u_type", Former::ThunkType),
             ("f_type", Former::ReturnerType),

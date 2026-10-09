@@ -407,6 +407,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Number => PayloadForm::Integer,
         | Former::Text => PayloadForm::Text,
         | Former::Name
+        | Former::Constructor
         | Former::Parenthesized
         | Former::Thunk
         | Former::Lambda
@@ -414,6 +415,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Force
         | Former::Call
         | Former::TypeHead
+        | Former::Universe
         | Former::TypeApplication
         | Former::ThunkType
         | Former::ReturnerType
@@ -933,6 +935,7 @@ mod tests
                 | Former::Number => PayloadForm::Integer,
                 | Former::Text => PayloadForm::Text,
                 | Former::Name
+                | Former::Constructor
                 | Former::Parenthesized
                 | Former::Thunk
                 | Former::Lambda
@@ -940,6 +943,7 @@ mod tests
                 | Former::Force
                 | Former::Call
                 | Former::TypeHead
+                | Former::Universe
                 | Former::TypeApplication
                 | Former::ThunkType
                 | Former::ReturnerType

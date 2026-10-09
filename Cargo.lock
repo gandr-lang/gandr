@@ -417,6 +417,7 @@ name = "gandr-surface-lowering"
 version = "0.0.0"
 dependencies = [
  "gandr-core-term",
+ "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-surface-grammar",
  "gandr-surface-parser",

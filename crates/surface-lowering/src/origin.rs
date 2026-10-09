@@ -20,12 +20,12 @@
 //!
 //! # An inserted node says so
 //!
-//! The lowering writes three bridges the source did not spell — a force, a
-//! thunk and a returner — at checked sites, by the sort of the position. Each
-//! carries the origin of the syntax node whose position demanded it, marked
-//! [`Provenance::Inserted`] with the [`Insertion`] it is, so a printer or a
-//! diagnostic can show the cast a reader did not write, and every node the
-//! source did write is [`Provenance::Written`].
+//! The lowering writes five bridges the source did not spell — a force, a
+//! thunk, a returner, a quote and a decode — at checked sites, by the sort of
+//! the position. Each carries the origin of the syntax node whose position
+//! demanded it, marked [`Provenance::Inserted`] with the [`Insertion`] it is,
+//! so a printer or a diagnostic can show the cast a reader did not write, and
+//! every node the source did write is [`Provenance::Written`].
 //!
 //! # The token is opaque on purpose
 //!
@@ -59,7 +59,7 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// One of the three bridges the lowering writes at a checked site.
+/// One of the five bridges the lowering writes at a checked site.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Insertion
 {
@@ -70,6 +70,12 @@ pub enum Insertion
     Thunk,
     /// A returner over a value type standing in a function's result position.
     Returner,
+    /// A quote over a type standing where a value is read: the code of the
+    /// type.
+    Quote,
+    /// A decode over a value name standing where a type is read: the type the
+    /// code denotes.
+    Decode,
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.

@@ -173,6 +173,7 @@ impl Annotations
             | LoweringRefusal::UnresolvedTypeHead { .. }
             | LoweringRefusal::ShadowedBuiltin { .. }
             | LoweringRefusal::OutOfFragment { .. }
+            | LoweringRefusal::GradedBridge { .. }
             | LoweringRefusal::MalformedLiteral { .. }
             | LoweringRefusal::MalformedForm { .. }
             | LoweringRefusal::UnknownAttribute { .. }

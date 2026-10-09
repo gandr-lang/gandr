@@ -194,6 +194,7 @@ path = "crates/kernel-core"
 # - core-term
 # - kernel-core
 # - kernel-term
+# - surface-lowering
 [workspace.dependencies.gandr-kernel-strata]
 path = "crates/kernel-strata"
 

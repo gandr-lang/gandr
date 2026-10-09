@@ -266,6 +266,16 @@ pub enum LoweringRefusal<'source>
         boundary: FragmentBoundary,
     },
 
+    /// A thunk type written with a grade other than the default `ω`, which
+    /// the core has no bridge for.
+    GradedBridge
+    {
+        /// The bytes the grade covers.
+        span: ByteSpan,
+        /// The grade as it was written.
+        grade: SurfaceName<'source>,
+    },
+
     /// A literal node whose own text is not a lexeme of its kind.
     MalformedLiteral
     {
@@ -419,6 +429,11 @@ impl fmt::Display for LoweringRefusal<'_>
                 sort,
                 boundary,
             } => write!(f, "{form} at {span}, read as {sort}, {boundary}"),
+            | Self::GradedBridge { span, grade } => write!(
+                f,
+                "the bridge's grade `{grade}` at {span} is not the default `ω`, the only grade \
+                 the fragment admits"
+            ),
             | Self::MalformedLiteral { span, form } => {
                 write!(f, "the text at {span} is not the lexeme of {form}")
             },
@@ -512,6 +527,7 @@ impl LoweringRefusal<'_>
             | Self::DuplicateImportAlias { span, .. }
             | Self::ShadowedBuiltin { span, .. }
             | Self::OutOfFragment { span, .. }
+            | Self::GradedBridge { span, .. }
             | Self::MalformedLiteral { span, .. }
             | Self::MalformedForm { span, .. }
             | Self::UnknownAttribute { span, .. }
@@ -562,7 +578,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn every_variant() -> [LoweringRefusal<'static>; 17_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 18_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -648,6 +664,10 @@ mod tests
                 span: s(28_usize, 29_usize),
                 name: SurfaceName::from("list"),
             },
+            LoweringRefusal::GradedBridge {
+                span: s(30_usize, 31_usize),
+                grade: SurfaceName::from("1"),
+            },
         ]
     }
 
@@ -676,6 +696,7 @@ mod tests
             s(24_usize, 25_usize),
             s(26_usize, 27_usize),
             s(28_usize, 29_usize),
+            s(30_usize, 31_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {
@@ -715,6 +736,8 @@ mod tests
             "the import alias `parse` at 26..27 is already bound by the import at 0..1: an \
              import alias must name one source",
             "`list` at 28..29 shadows a builtin name, which the active policy forbids",
+            "the bridge's grade `1` at 30..31 is not the default `ω`, the only grade the \
+             fragment admits",
         ];
 
         for (refusal, rendering) in every_variant().into_iter().zip(expected) {
