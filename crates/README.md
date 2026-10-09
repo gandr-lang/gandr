@@ -45,6 +45,7 @@ crates/
 ├── storage-chunker/               gandr-storage-chunker               content-defined chunk boundaries and their committed parameters
 ├── storage-records/               gandr-storage-records               the authenticated ordered-record plane
 ├── storage-values/                gandr-storage-values                the content-addressed value plane: typed chunk DAG and content pointers
+├── storage-artifact/              gandr-storage-artifact              kernel artifacts on the record plane: declaration segments as keyed records under a BLAKE3 manifest identity, read back through the kernel's decoder
 ├── surface-syntax/                gandr-surface-syntax                the molded concrete syntax tree and the mold references a grammar and a parser exchange
 ├── surface-render-remote/         gandr-surface-render-remote         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
 ├── surface-layout/                gandr-surface-layout                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine

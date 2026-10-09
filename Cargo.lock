@@ -508,6 +508,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-storage-artifact"
+version = "0.0.0"
+dependencies = [
+ "anodized",
+ "blake3",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "gandr-storage-records",
+ "proptest",
+]
+
+[[package]]
 name = "gandr-storage-chunker"
 version = "0.0.0"
 

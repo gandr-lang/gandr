@@ -11,6 +11,7 @@ members = [
   "crates/kernel-core",
   "crates/kernel-strata",
   "crates/kernel-term",
+  "crates/storage-artifact",
   "crates/storage-chunker",
   "crates/storage-records",
   "crates/storage-values",
@@ -77,6 +78,7 @@ default-features = false
 # - kernel-core
 # - kernel-strata
 # - kernel-term
+# - storage-artifact
 # - storage-records
 # - storage-values
 # - surface-syntax
@@ -89,6 +91,7 @@ default-features = false
 # BLAKE3 hashing for content and node identities.
 # consumers:
 # - core-incremental
+# - storage-artifact
 # - storage-records
 # - storage-values
 # - surface-syntax
@@ -209,6 +212,7 @@ path = "crates/kernel-core"
 # - core-term
 # - kernel-core
 # - kernel-term
+# - storage-artifact (dev)
 # - surface-lowering
 # - surface-pretty
 [workspace.dependencies.gandr-kernel-strata]
@@ -223,6 +227,7 @@ path = "crates/kernel-strata"
 # - core-sequent
 # - core-term
 # - kernel-core
+# - storage-artifact
 # - surface-corpus
 # - surface-dispatcher
 # - surface-lowering
@@ -243,6 +248,7 @@ path = "crates/storage-chunker"
 
 # The authenticated ordered-record plane.
 # consumers:
+# - storage-artifact
 # - storage-values (dev)
 [workspace.dependencies.gandr-storage-records]
 path = "crates/storage-records"
@@ -476,6 +482,7 @@ default-features = false
 # - core-sequent (dev)
 # - kernel-strata (dev)
 # - kernel-term (dev)
+# - storage-artifact (dev)
 # - storage-records (dev)
 # - storage-values (dev)
 # - surface-layout (dev)

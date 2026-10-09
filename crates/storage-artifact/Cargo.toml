@@ -1,0 +1,30 @@
+[package]
+name = "gandr-storage-artifact"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Kernel artifacts on the record plane: one record per declaration segment, under a BLAKE3 manifest identity"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["content-addressing", "gandr", "kernel", "no-std"]
+categories = ["data-structures", "no-std"]
+publish.workspace = true
+
+# The pinned anodized facade supplies core-only specification helpers; BLAKE3
+# is the manifest identity's digest; the kernel's term crate decodes and
+# delimits the artifact; the record plane holds its records.
+[dependencies]
+anodized.workspace = true
+blake3.workspace = true
+gandr-kernel-term.workspace = true
+gandr-storage-records.workspace = true
+
+# The level oracle builds the universe declarations the generated environments
+# range over; proptest generates them.
+[dev-dependencies]
+gandr-kernel-strata.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true
