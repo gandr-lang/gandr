@@ -127,12 +127,15 @@ pub enum ConvexityDischarge
 ///   [`PositionOrder::Incomparable`] at the first differing step, which is
 ///   exactly when the two paths address disjoint subtrees.
 /// - panics: none.
+/// - executable: none — both generic iterators are consumed; an independent
+///   exit check cannot recover their paths without changing the iterator bounds
+///   or buffering the input.
 /// - intension: one pass over the shorter path.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the four outcomes are separated pointwise by an equal
-///   pair, a proper-prefix pair each way, and a pair diverging at a shared
-///   depth.
+/// - hypothesis: L3 — empty and nonempty paths, equal paths, proper prefixes
+///   each way and early divergence have exact relation observations. Dropping a
+///   step, confusing exhaustion and reversing enclosure changes an answer.
 /// - witness: `alphabet::tests::the_path_order_separates_its_four_outcomes`
 #[inline]
 #[must_use]
@@ -277,6 +280,9 @@ pub struct Generalization<A: CellAlphabet>
 /// - ensures: an engine generic over the trait reads every decline as data — an
 ///   absence, a refusal or a negative decision — never a panic.
 /// - panics: none.
+/// - executable: none — this trait states laws of every inhabitant; its
+///   declarations have no bodies. Instrumenting the entire trait changes the
+///   method protocol required of external implementations.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the sequent alphabet's own suite runs through the trait's
@@ -323,6 +329,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - fails: a negative decision when no extension of `subst` does; an
     ///   implementation may leave `subst` partially extended then.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sequent patterns with two hole categories and a
+    ///   constructor clash are observed through replayed substitutions and
+    ///   refusal; this separates dropped bindings from unconditional success.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     fn match_cmd(
         pattern: &Self::Cmd,
         target: &Self::Cmd,
@@ -340,6 +354,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - fails: a negative decision on a clash or an occurs-check failure; an
     ///   implementation may leave `subst` partially extended then.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — renamed-apart sequent terms with compatible holes or
+    ///   clashing heads are observed after substitution on both sides; this
+    ///   separates incomplete unifiers from false success.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     fn unify_cmd(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -371,6 +393,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   [`anti_unification::Absent::Ungeneralizable`] when two members differ
     ///   where the grammar admits no metavariable.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, singleton and differing sequent families are
+    ///   observed by typed refusal and reconstruction under each member arm;
+    ///   lost components and incorrect point bindings are separated.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     fn anti_unify_cmd(
         family: &[&[Self::Cmd]]
     ) -> Maybe<Generalization<Self>, anti_unification::Absent>;
@@ -381,6 +411,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - ensures: every bound metavariable is replaced by its image; unbound
     ///   metavariables stay.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sequent substitutions bind producer and consumer
+    ///   holes or leave either unbound. Exact instantiated terms distinguish
+    ///   missed replacements and accidental replacement of an unbound hole.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     fn apply_subst(
         subst: &Self::Subst,
         cmd: &Self::Cmd,
@@ -394,6 +432,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   no other; a metavariable of `vars` that `subst` leaves unbound stays
     ///   unbound.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sequent substitutions restricted to none, one or all
+    ///   bound variables are observed by their images. Extra bindings, missing
+    ///   requested bindings and rebinding an unbound variable are separated.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     fn restrict_subst(
         subst: &Self::Subst,
         vars: &[Self::Var],
@@ -406,6 +452,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - ensures: one entry per metavariable occurrence, in left-to-right
     ///   order.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ground terms and repeated producer/consumer holes are
+    ///   observed as ordered occurrence vectors; deduplication, category loss
+    ///   and reversal change the result.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn metavariables(cmd: &Self::Cmd) -> Vec<Self::Var>;
 
     /// The term's node count.
@@ -413,6 +467,13 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// # Specification
     /// - ensures: one per node of the term; at least one.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — leaf cuts and nested sequent terms have hand-counted
+    ///   sizes; missing cut, producer or continuation nodes changes the count.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn cmd_size(cmd: &Self::Cmd) -> PatternSize;
 
     /// Every command position of the term — the seams a cell can fire at and
@@ -423,6 +484,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   [`CellAlphabet::subterm_cmd_at`] is present at it; the order is
     ///   deterministic and no position precedes one enclosing it.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — leaf and nested sequent terms expose exactly their
+    ///   root command. A missing root or a noncommand position changes the full
+    ///   position list.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn command_positions(cmd: &Self::Cmd) -> Vec<Self::Pos>;
 
     /// The root position, the seam of a confluence overlap.
@@ -431,6 +500,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - ensures: [`CellAlphabet::subterm_cmd_at`] at the root is the whole
     ///   term.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ground and schematic sequent roots read back their
+    ///   complete terms; returning a child or absence changes the observed
+    ///   term.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn root_position() -> Self::Pos;
 
     /// The position addressing the child-index `path`, read from the root
@@ -446,6 +523,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   exactly as their paths relate under [`path_order`]; a path off a term
     ///   is a position that addresses nothing there.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, child and off-term paths are observed by reads
+    ///   and prefix ordering. Dropped or shifted child indices change the read
+    ///   or relation.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn position_at_path(path: &[PositionStep]) -> Self::Pos;
 
     /// How two positions relate: whether one addresses a subtree containing
@@ -457,6 +542,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   paired with itself; symmetric up to swapping
     ///   [`PositionOrder::Encloses`] and [`PositionOrder::EnclosedBy`].
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal paths, both proper-prefix directions and
+    ///   first-step divergence are distinguished. Reflexivity loss and reversed
+    ///   enclosure change the relation.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn position_order(
         left: &Self::Pos,
         right: &Self::Pos,
@@ -473,6 +566,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   [`ConvexityDischarge::ReCheckRequired`].
     /// - ensures: the answer is stable for a given store.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and nonempty sequent stores retain the
+    ///   grammar-specific discharge. Refusing one state changes the warrant;
+    ///   finite tests cannot prove the acyclicity of every external alphabet.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn convexity_discharge(store: &CellStore<Self>) -> ConvexityDischarge;
 
     /// The command subterm at `pos`.
@@ -483,6 +584,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   the term, [`command_subterm::Absent::NotACommand`] when it addresses a
     ///   subterm that is not a command.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — root, producer/consumer children and off-term sequent
+    ///   positions separate command, noncommand and absent reads. Each exact
+    ///   result rejects a merged refusal class.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn subterm_cmd_at(
         cmd: &Self::Cmd,
         pos: &Self::Pos,
@@ -497,6 +606,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   term; [`CommandSpliceRefusal::NotACommand`] when it addresses a
     ///   subterm a command cannot replace.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — root, producer/consumer children and off-term sequent
+    ///   positions separate replacement from the two typed refusals. Exact
+    ///   terms reject a discarded replacement or changed sibling.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     ///
     /// # Errors
     /// As the failure clause states.
@@ -514,6 +631,16 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   cannot orient — an honest obstruction, never a guessed orientation;
     ///   antisymmetric otherwise.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sequent pairs separated by size, equal-size
+    ///   precedence and missing holes observe strict orientations and
+    ///   obstructions; swapped signs and dropped hole guards change the
+    ///   answers.
+    /// - witness: `order::tests::a_size_difference_orients_when_the_larger_side_dominates`
+    /// - witness: `sequent::tests::frame_cells_and_alphabet_reduction_preserve_structure`
     fn reduction_cmp(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -529,6 +656,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   the pattern shapes kept, so the original faces are recoverable by
     ///   zipping occurrences; an already disjoint cell is returned unchanged.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — intersecting and already disjoint sequent faces
+    ///   observe fresh names and the shared producer/consumer seam; collapsing
+    ///   holes or splitting one seam changes the renamed terms.
+    /// - witness: `sequent::tests::renaming_apart_keeps_a_seam_one_hole`
     fn rename_apart(
         anchor: (&Self::Cmd, &Self::Cmd),
         renamed: (&Self::Cmd, &Self::Cmd),
@@ -543,6 +678,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   across a peak and its join, and the constants are irreducible under
     ///   the alphabet's own cells.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — producer and consumer holes in one sequent term are
+    ///   compared to exact reserved constants; missed grounding or name
+    ///   conflation changes the term.
+    /// - witness: `sequent::tests::skolemization_is_name_stable`
     fn skolemize(cmd: &Self::Cmd) -> Self::Cmd;
 
     /// The hole identity of a metavariable.
@@ -551,6 +694,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - ensures: metavariables denoting one hole across a cell's two faces map
     ///   to equal holes.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal-spelled producer and consumer variables share
+    ///   one hole, while distinct spellings stay distinct; category-sensitive
+    ///   identity or a constant hole changes equality.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn hole_of(var: &Self::Var) -> Self::Hole;
 
     /// Whether `provenance` marks an invertible joinability certificate, as
@@ -560,6 +711,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - ensures: positive exactly for the provenance
     ///   [`CellAlphabet::derived_provenance`] produces.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every sequent provenance is observed at both
+    ///   orientations; only completion provenance is invertible. A reversed or
+    ///   widened certificate guard changes metadata.
+    /// - witness: `sequent::tests::completion_cells_are_invertible_certificates`
     fn completion_certificate(provenance: &Self::Provenance) -> CellInvertibility;
 
     /// The per-cell metadata, derived from the two faces.
@@ -568,6 +727,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - ensures: the metadata a freshly built cell carries; `invertible` is
     ///   carried through as given.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sequent cells with no holes, producer-only,
+    ///   consumer-only and shared holes observe metadata and invertibility;
+    ///   wrong counts, variance or a lost flag change the projections.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn derive_meta(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -581,6 +748,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - ensures: one endpoint per metadata entry whose hole identity equals
     ///   `hole`; empty when the hole does not occur.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — absent, producer-only, consumer-only and shared
+    ///   sequent holes expose exact endpoints and roles; extra endpoints, wrong
+    ///   hole filtering and swapped flow roles change the result.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     fn hole_flow(
         meta: &Self::Meta,
         hole: &Self::Hole,
@@ -593,6 +768,14 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     /// - ensures: a negative permission means the cell must not fire at
     ///   `target`, however well its left-hand side matches.
     /// - panics: none.
+    /// - executable: none — an abstract declaration has no body; trait-wide
+    ///   instrumentation changes the required implementation protocol.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both eta kinds at both cut polarities distinguish
+    ///   permission and refusal; ignoring provenance or reversing the polarity
+    ///   guard changes the decision.
+    /// - witness: `sequent::tests::each_eta_kind_requires_its_own_polarity`
     fn may_fire(
         provenance: &Self::Provenance,
         target: &Self::Cmd,
@@ -643,5 +826,209 @@ mod tests
             path_order(inner, sibling),
             "paths diverging at a shared depth address disjoint subtrees"
         );
+        assert_eq!(PositionOrder::Same, path_order([], []));
+        assert_eq!(PositionOrder::Encloses, path_order([], inner));
+        assert_eq!(PositionOrder::EnclosedBy, path_order(inner, []));
+        assert_eq!(
+            PositionOrder::Incomparable,
+            path_order([0_usize, 1].map(PositionStep::from), inner)
+        );
+    }
+
+    #[test]
+    fn substitution_and_generalization_obey_the_alphabet_laws()
+    {
+        use crate::pattern::CmdPat;
+        use crate::pattern::ConsPat;
+        use crate::pattern::MetaVar;
+        use crate::pattern::ProdPat;
+        use crate::polarity::Polarity;
+        use crate::sequent::SequentAlphabet as A;
+        use crate::subst::Subst;
+
+        let cut = |prod, cons| CmdPat::cut(Polarity::Positive, prod, cons);
+        let pattern = cut(
+            ProdPat::ctor("Succ", [ProdPat::meta("x")]),
+            ConsPat::meta("alpha"),
+        );
+        let target = cut(
+            ProdPat::ctor("Succ", [ProdPat::ctor("Zero", [])]),
+            ConsPat::frame("F", ConsPat::top()),
+        );
+        let vars = [MetaVar::producer("x"), MetaVar::consumer("alpha")];
+        let mut subst = Subst::new();
+        assert!(bool::from(A::match_cmd(&pattern, &target, &mut subst)));
+        assert_eq!(target, A::apply_subst(&subst, &pattern));
+        assert_eq!(
+            pattern,
+            A::apply_subst(&A::restrict_subst(&subst, &[]), &pattern)
+        );
+        assert_eq!(
+            target,
+            A::apply_subst(&A::restrict_subst(&subst, &vars), &pattern)
+        );
+        assert_eq!(
+            cut(
+                ProdPat::ctor("Succ", [ProdPat::ctor("Zero", [])]),
+                ConsPat::meta("alpha")
+            ),
+            A::apply_subst(&A::restrict_subst(&subst, &vars[.. 1]), &pattern)
+        );
+        assert_eq!(
+            pattern,
+            A::apply_subst(
+                &A::restrict_subst(&subst, &[MetaVar::producer("absent")]),
+                &pattern
+            )
+        );
+
+        let left = cut(
+            ProdPat::ctor("Succ", [ProdPat::meta("left")]),
+            ConsPat::top(),
+        );
+        let right = cut(ProdPat::meta("right"), ConsPat::top());
+        let mut unifier = Subst::new();
+        assert!(bool::from(A::unify_cmd(&left, &right, &mut unifier)));
+        assert_eq!(left, A::apply_subst(&unifier, &left));
+        assert_eq!(left, A::apply_subst(&unifier, &right));
+        let zero = cut(ProdPat::ctor("Zero", []), ConsPat::top());
+        let one = cut(ProdPat::ctor("One", []), ConsPat::top());
+        assert!(!bool::from(A::match_cmd(&zero, &one, &mut Subst::new())));
+        assert!(!bool::from(A::unify_cmd(&zero, &one, &mut Subst::new())));
+
+        assert_eq!(
+            Maybe::Absent(anti_unification::Absent::EmptyFamily),
+            A::anti_unify_cmd(&[])
+        );
+        let singleton = [zero.clone()];
+        let Maybe::Present(unchanged) = A::anti_unify_cmd(&[&singleton])
+        else {
+            panic!("a singleton has its exact generalization");
+        };
+        assert_eq!(singleton.as_slice(), unchanged.patterns.as_slice());
+        assert!(unchanged.points.is_empty());
+        let members = [[zero], [one]];
+        let Maybe::Present(generalization) = A::anti_unify_cmd(&[&members[0], &members[1]])
+        else {
+            panic!("distinct producer constants have a generalization");
+        };
+        assert_eq!(1, generalization.patterns.len());
+        assert_eq!(1, generalization.points.len());
+        for (member, expected) in members.iter().enumerate() {
+            let rebuilt = generalization
+                .points
+                .iter()
+                .fold(generalization.patterns[0].clone(), |term, point| {
+                    A::apply_subst(&point.arms[member].binding, &term)
+                });
+            assert_eq!(&expected[0], &rebuilt);
+        }
+    }
+
+    #[test]
+    fn position_and_metadata_observations_obey_the_alphabet_laws()
+    {
+        use crate::pattern::CmdPat;
+        use crate::pattern::ConsPat;
+        use crate::pattern::HoleName;
+        use crate::pattern::MetaVar;
+        use crate::pattern::ProdPat;
+        use crate::pattern::Sym;
+        use crate::polarity::Polarity;
+        use crate::sequent::SequentAlphabet as A;
+        use crate::sequent::frame_defining_cell;
+
+        let cut = |prod, cons| CmdPat::cut(Polarity::Positive, prod, cons);
+        let ground = cut(ProdPat::ctor("Zero", []), ConsPat::top());
+        let nested = cut(
+            ProdPat::ctor("Pair", [ProdPat::meta("x"), ProdPat::meta("x")]),
+            ConsPat::frame("F", ConsPat::meta("alpha")),
+        );
+        assert!(A::metavariables(&ground).is_empty());
+        assert_eq!(
+            alloc::vec![
+                MetaVar::producer("x"),
+                MetaVar::producer("x"),
+                MetaVar::consumer("alpha")
+            ],
+            A::metavariables(&nested)
+        );
+        assert_eq!(PatternSize::from(3_usize), A::cmd_size(&ground));
+        assert_eq!(PatternSize::from(6_usize), A::cmd_size(&nested));
+        let root = A::root_position();
+        let prod = A::position_at_path(&[PositionStep::from(0_usize)]);
+        let cons = A::position_at_path(&[PositionStep::from(1_usize)]);
+        let absent = A::position_at_path(&[PositionStep::from(2_usize)]);
+        assert_eq!(root, A::position_at_path(&[]));
+        assert_eq!(PositionOrder::Same, A::position_order(&root, &root));
+        assert_eq!(PositionOrder::Encloses, A::position_order(&root, &prod));
+        assert_eq!(PositionOrder::EnclosedBy, A::position_order(&cons, &root));
+        assert_eq!(PositionOrder::Incomparable, A::position_order(&prod, &cons));
+        for term in [&ground, &nested] {
+            assert_eq!(alloc::vec![root.clone()], A::command_positions(term));
+            assert_eq!(Maybe::Present(term.clone()), A::subterm_cmd_at(term, &root));
+            assert_eq!(
+                Ok(ground.clone()),
+                A::splice_cmd_at(term, &root, ground.clone())
+            );
+            for pos in [&prod, &cons] {
+                assert_eq!(
+                    Maybe::Absent(command_subterm::Absent::NotACommand),
+                    A::subterm_cmd_at(term, pos)
+                );
+                assert_eq!(
+                    Err(CommandSpliceRefusal::NotACommand),
+                    A::splice_cmd_at(term, pos, ground.clone())
+                );
+            }
+            assert_eq!(
+                Maybe::Absent(command_subterm::Absent::OffTerm),
+                A::subterm_cmd_at(term, &absent)
+            );
+            assert_eq!(
+                Err(CommandSpliceRefusal::OffTerm),
+                A::splice_cmd_at(term, &absent, ground.clone())
+            );
+        }
+        assert_eq!(
+            A::hole_of(&MetaVar::producer("x")),
+            A::hole_of(&MetaVar::consumer("x"))
+        );
+        assert_ne!(
+            A::hole_of(&MetaVar::producer("x")),
+            A::hole_of(&MetaVar::producer("y"))
+        );
+        let mut store = CellStore::new();
+        assert_eq!(
+            ConvexityDischarge::StronglyConnectedOverAcyclicTarget,
+            A::convexity_discharge(&store)
+        );
+        store.insert(frame_defining_cell(&Sym::new("Succ")));
+        assert_eq!(
+            ConvexityDischarge::StronglyConnectedOverAcyclicTarget,
+            A::convexity_discharge(&store)
+        );
+        for (term, expected) in [
+            (ground, alloc::vec![]),
+            (cut(ProdPat::meta("x"), ConsPat::top()), alloc::vec![(
+                MetaVar::producer("x"),
+                SeamRole::Forward
+            )]),
+            (
+                cut(ProdPat::ctor("Zero", []), ConsPat::meta("x")),
+                alloc::vec![(MetaVar::consumer("x"), SeamRole::Backward)],
+            ),
+            (cut(ProdPat::meta("x"), ConsPat::meta("x")), alloc::vec![(
+                MetaVar::producer("x"),
+                SeamRole::Both
+            )]),
+        ] {
+            for invertible in [false, true] {
+                let meta = A::derive_meta(&term, &term, CellInvertibility::from(invertible));
+                assert_eq!(invertible, bool::from(meta.invertible()));
+                assert_eq!(expected, A::hole_flow(&meta, &HoleName::new("x")));
+                assert!(A::hole_flow(&meta, &HoleName::new("missing")).is_empty());
+            }
+        }
     }
 }

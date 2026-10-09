@@ -19,6 +19,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::alphabet::CellAlphabet;
@@ -54,11 +55,15 @@ impl<A: CellAlphabet> Cell<A>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a completion-derived cell reads as an invertible
-    ///   certificate through the metadata the constructor derived.
+    /// - hypothesis: L3 — sequent cells at every provenance retain both faces
+    ///   and tags. Exact metadata observations separate certificate provenance
+    ///   from ordinary cells and distinguish lost faces or incorrect counts.
     /// - witness: `sequent::tests::completion_cells_are_invertible_certificates`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output.meta == A::derive_meta(
+        &output.lhs, &output.rhs, A::completion_certificate(&output.provenance)
+    ))]
     pub fn new(
         lhs: A::Cmd,
         rhs: A::Cmd,
@@ -215,10 +220,20 @@ impl<A: CellAlphabet> CellStore<A>
     ///   replaces it once a store's size is measured to matter.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — inserting one cell twice returns one identifier and
-    ///   leaves one cell.
+    /// - hypothesis: L3 — an empty store, a duplicate and cells differing in
+    ///   each identity component separate reuse from append. Exact identifiers,
+    ///   contents and counts reject false equality, overwriting and
+    ///   duplication.
     /// - witness: `sequent::tests::the_store_dedups_on_structural_identity`
     #[inline]
+    #[spec(
+        captures: [
+            entry_count = self.cells.len(),
+            entry_id = self.cells.iter().position(|held| *held == cell),
+        ],
+        ensures: |output| output.0 == entry_id.unwrap_or(entry_count)
+            && self.cells.len() == entry_count.saturating_add(usize::from(entry_id.is_none())),
+    )]
     pub fn insert(
         &mut self,
         cell: Cell<A>,
@@ -241,10 +256,16 @@ impl<A: CellAlphabet> CellStore<A>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the issued identifier reads back its cell and the
-    ///   next identifier reads as unissued.
+    /// - hypothesis: L3 — empty and populated stores are observed at issued
+    ///   identifiers, the next identifier and `usize::MAX`. Exact cell values
+    ///   and absence reasons reject shifted lookup and a weakened bound.
     /// - witness: `sequent::tests::the_store_dedups_on_structural_identity`
     #[inline]
+    #[spec(ensures: |output| match output {
+        Maybe::Present(cell) => self.cells.iter().enumerate()
+            .any(|(index, held)| index == id.0 && held == cell),
+        Maybe::Absent(_) => id.0 >= self.cells.len(),
+    })]
     pub fn get(
         &self,
         id: CellId,

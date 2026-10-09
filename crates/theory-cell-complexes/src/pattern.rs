@@ -40,6 +40,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::GroundPatternStatus;
@@ -422,8 +423,16 @@ impl ProdPat
     ///   the last argument's table is reused as the new table's buffer, so
     ///   wrapping one argument costs one appended node.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero-, one- and multi-argument producers are observed
+    ///   by their full child sequence and subtree counts. Reversed children,
+    ///   omitted roots and wrong extents change those observations.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| matches!(output.root.head, ProdHead::Ctor(..))
+        && usize::from(output.root.extent) == output.below.len().saturating_add(1))]
     pub fn ctor<S, A>(
         ctor: S,
         args: A,
@@ -459,8 +468,17 @@ impl ProdPat
     /// A one-node table.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a nullary constructor or metavariable head.
+    /// - ensures: an empty descendant table and an extent of one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — producer holes occur as one-node children beside
+    ///   nullary constructors and nested terms. A non-leaf head or wrong extent
+    ///   changes the child count and the hand-counted subtree size.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
+    #[spec(requires: usize::from(head.arity()) == 0, ensures: |output| output.below.is_empty() && output.root.extent == PatternSize::ONE)]
     fn leaf(head: ProdHead) -> Self
     {
         Self {
@@ -504,11 +522,14 @@ impl ProdPat
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the count is pinned exactly on a two-node producer,
-    ///   beside the consumer and command counts it composes into.
+    /// - hypothesis: L3 — leaf, unary and multi-argument producers have exact
+    ///   node counts, beside the larger command they inhabit. Missing roots or
+    ///   stale extents change the count.
     /// - witness: `pattern::tests::the_per_category_sizes_count_their_own_subtree`
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| usize::from(output) == self.below.len().saturating_add(1))]
     pub fn size(&self) -> PatternSize
     {
         self.root.extent
@@ -537,7 +558,15 @@ impl ProdPat
 /// - panics: none.
 /// - intension: one output table sized to the input; the pending child counts
 ///   are a stack, claimed by their parent as it is reached.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a nested producer receives both a larger image and an
+///   unbound leaf in one pass. Exact rebuilt children and sizes reject
+///   recursive image expansion, reversed arguments and stale extents.
+/// - witness: `pattern::tests::producer_instantiation_is_one_pass_and_recounts_ancestors`
 #[inline]
+#[spec(ensures: |output| usize::from(output.root.extent) == output.below.len().saturating_add(1)
+    && (matches!(prod.head(), ProdHead::Meta(_)) || output.to_ref().head() == prod.head()))]
 pub fn instantiate_prod<'image, L>(
     prod: ProdRef<'_>,
     lookup: &L,
@@ -672,6 +701,14 @@ impl<'pattern> ProdRef<'pattern>
     /// - ensures: one item per metavariable leaf, in left-to-right order:
     ///   pre-order visits leaves left to right.
     /// - panics: none.
+    /// - executable: none — instrumentation gives its wrapper closure this
+    ///   impl-Trait return type, which Rust rejects for closures.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ground, repeated and distinct producer holes are
+    ///   observed as the full left-to-right sequence. Lost duplicates and
+    ///   reordered leaves change that sequence.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     pub fn metavars(self) -> impl Iterator<Item = &'pattern MetaVar>
     {
@@ -725,7 +762,15 @@ impl<'pattern> ProdRef<'pattern>
     /// - provides: [`position_read::Absent::OffPattern`] when this node has no
     ///   child `step`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a multi-argument producer is read at its first,
+    ///   interior, last and one-past-last children. Exact child values and
+    ///   table offsets reject reversal and off-by-one bounds.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
+    #[spec(ensures: |output| matches!(output, Maybe::Present(_))
+        == (usize::from(step) < self.root.head.arity().0))]
     fn nth_child(
         self,
         step: PositionStep,
@@ -791,7 +836,20 @@ impl<'pattern> Iterator for ProdArgs<'pattern>
     ///   `extent` nodes ending there. A range shorter than the extents it
     ///   records ends the iteration.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, single and multiple child sequences are
+    ///   consumed through exhaustion; truncated and zero-extent ranges return
+    ///   no child. Exact sequence and remaining counts reject skips and wrong
+    ///   bounds.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
+    #[spec(
+        captures: [remaining = self.remaining.0, nodes = self.rest.len()],
+        ensures: |output| if output.is_some() {
+            self.remaining.0 == remaining.saturating_sub(1) && self.rest.len() < nodes
+        } else { self.remaining.0 == remaining && self.rest.len() == nodes },
+    )]
     fn next(&mut self) -> Option<Self::Item>
     {
         if self.remaining.0 == 0 {
@@ -901,8 +959,17 @@ impl ConsPat
     ///   order, continuing as `ret`; `ret`'s spine is reused as the new spine's
     ///   buffer.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operation with distinct arguments and a framed
+    ///   continuation is observed through ordered children and the terminal.
+    ///   Reversed arguments or a discarded continuation changes a child.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[must_use]
+    #[spec(captures: frames = ret.frames.len(), ensures: |output|
+        output.frames.len() == frames.saturating_add(1)
+        && matches!(output.frames.last(), Some(SpineFrame::Op { .. }))) ]
     pub fn op<S, A>(
         op: S,
         args: A,
@@ -930,8 +997,17 @@ impl ConsPat
     ///   continuing as `ret`; `ret`'s spine is reused as the new spine's
     ///   buffer.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — framing a bare end and an operation preserves the
+    ///   sole continuation child and its end. Dropping or reversing a frame
+    ///   changes the observed subtree.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[must_use]
+    #[spec(captures: frames = ret.frames.len(), ensures: |output|
+        output.frames.len() == frames.saturating_add(1)
+        && matches!(output.frames.last(), Some(SpineFrame::Frame(_))))]
     pub fn frame<S>(
         ctor: S,
         ret: Self,
@@ -981,11 +1057,17 @@ impl ConsPat
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the count is pinned exactly on an operation frame
-    ///   with one argument and a metavariable end.
+    /// - hypothesis: L3 — terminal, bare-hole, framed and operation consumers
+    ///   have exact counts. Omitting an end, frame or argument changes the
+    ///   result.
     /// - witness: `pattern::tests::the_per_category_sizes_count_their_own_subtree`
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| usize::from(output) == self.frames.iter().fold(1_usize, |count, frame| {
+        let args = match *frame { SpineFrame::Op { ref args, .. } => args.as_slice(), SpineFrame::Frame(_) => &[] };
+        args.iter().fold(count.saturating_add(1), |count, arg| count.saturating_add(usize::from(arg.size())))
+    }))]
     pub fn size(&self) -> PatternSize
     {
         self.to_ref().size()
@@ -1036,8 +1118,23 @@ impl<'pattern> ConsRef<'pattern>
     /// - ensures: the outermost frame with its continuation one frame in, or
     ///   the end when no frame remains.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — operation, frame, bare-hole and terminal consumers
+    ///   are observed through their outer view and continuation. Wrong
+    ///   variants, reversed frames and off-by-one suffixes change the
+    ///   observations.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| match output {
+        ConsView::Top => self.frames.is_empty() && matches!(self.end, SpineEnd::Top),
+        ConsView::Meta(var) => self.frames.is_empty() && matches!(self.end, SpineEnd::Meta(held) if held == var),
+        ConsView::Op { ret, .. } => ret.frames.len().saturating_add(1) == self.frames.len()
+            && ret.end == self.end && matches!(self.frames.last(), Some(SpineFrame::Op { .. })),
+        ConsView::Frame { ret, .. } => ret.frames.len().saturating_add(1) == self.frames.len()
+            && ret.end == self.end && matches!(self.frames.last(), Some(SpineFrame::Frame(_))),
+    })]
     pub fn view(self) -> ConsView<'pattern>
     {
         let Some((outer, inner)) = self.frames.split_last()
@@ -1089,8 +1186,18 @@ impl<'pattern> ConsRef<'pattern>
     /// - ensures: each frame counts one plus its arguments' node counts, and
     ///   the end counts one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — terminal, metavariable, framed and multi-argument
+    ///   operation consumers have hand-counted sizes. Missing the end, an
+    ///   argument or a frame changes the count.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| usize::from(output) == self.frames.iter().fold(1_usize, |count, frame| {
+        let args = match *frame { SpineFrame::Op { ref args, .. } => args.as_slice(), SpineFrame::Frame(_) => &[] };
+        args.iter().fold(count.saturating_add(1), |count, arg| count.saturating_add(usize::from(arg.size())))
+    }))]
     pub fn size(self) -> PatternSize
     {
         let mut size = PatternSize::ONE;
@@ -1111,6 +1218,14 @@ impl<'pattern> ConsRef<'pattern>
     /// - ensures: one item per metavariable occurrence, outermost frame first,
     ///   each operation frame's arguments in order, then the end.
     /// - panics: none.
+    /// - executable: none — instrumentation gives its wrapper closure this
+    ///   impl-Trait return type, which Rust rejects for closures.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — terminal and framed ends and operation arguments
+    ///   carry distinct and repeated holes. Exact sequences reject reversal,
+    ///   deduplication and a dropped end.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
     pub fn metavars(self) -> impl Iterator<Item = &'pattern MetaVar>
     {
@@ -1146,7 +1261,18 @@ impl<'pattern> ConsRef<'pattern>
     /// - provides: [`bare_end::Absent::Framed`] when a frame remains,
     ///   [`bare_end::Absent::Terminal`] when the end is `★`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare hole, terminal, framed hole and framed
+    ///   terminal separate the three outcomes. Exact absence reasons reject a
+    ///   weakened frame guard or merged refusals.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
+    #[spec(ensures: |output| match output {
+        Maybe::Present(var) => self.frames.is_empty() && matches!(self.end, SpineEnd::Meta(held) if held == var),
+        Maybe::Absent(bare_end::Absent::Framed) => !self.frames.is_empty(),
+        Maybe::Absent(bare_end::Absent::Terminal) => self.frames.is_empty() && matches!(self.end, SpineEnd::Top),
+    })]
     pub fn bare_meta(self) -> Maybe<&'pattern MetaVar, bare_end::Absent>
     {
         if !self.frames.is_empty() {
@@ -1315,12 +1441,15 @@ impl CmdPat
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the count is pinned exactly on a three-node ground
-    ///   cut, and on a cut against the sum of its two halves.
+    /// - hypothesis: L3 — a three-node leaf cut and a nested cut have
+    ///   hand-counted sizes. Missing the cut or either half changes the
+    ///   observation.
     /// - witness: `pattern::tests::ground_and_size_track_structure`
     /// - witness: `pattern::tests::the_per_category_sizes_count_their_own_subtree`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| usize::from(output) == 1_usize
+        .saturating_add(usize::from(self.prod.size())).saturating_add(usize::from(self.cons.size())))]
     pub fn size(&self) -> PatternSize
     {
         PatternSize::ONE
@@ -1336,11 +1465,14 @@ impl CmdPat
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one pattern with metavariables and one ground cut
-    ///   separate the two answers.
+    /// - hypothesis: L3 — ground cuts and cuts with producer, consumer or both
+    ///   kinds of holes distinguish both answers. Ignoring either half or
+    ///   reversing the guard changes the decision.
     /// - witness: `pattern::tests::ground_and_size_track_structure`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| bool::from(output)
+        == (bool::from(self.prod.is_ground()) && bool::from(self.cons.is_ground())))]
     pub fn is_ground(&self) -> GroundPatternStatus
     {
         GroundPatternStatus::from(self.metavars().next().is_none())
@@ -1353,11 +1485,15 @@ impl CmdPat
     ///   first, then the consumer half outermost frame first, so linearity is
     ///   judged by counting.
     /// - panics: none.
+    /// - executable: none — instrumentation gives its wrapper closure this
+    ///   impl-Trait return type, which Rust rejects for closures.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the order is pinned on one cut carrying a producer,
-    ///   an operation-argument and a return metavariable.
+    /// - hypothesis: L3 — distinct and repeated holes across both halves are
+    ///   observed as exact occurrence sequences. Reversing halves, dropping a
+    ///   return or deduplicating names changes the sequence.
     /// - witness: `pattern::tests::metavars_are_collected_in_order`
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     #[inline]
     pub fn metavars(&self) -> impl Iterator<Item = &MetaVar>
     {
@@ -1436,7 +1572,21 @@ impl NodeRef<'_>
     /// - provides: [`position_read::Absent::OffPattern`] when the node has no
     ///   child `step`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every node category is read at each valid child and
+    ///   one past its arity. Exact child categories and contents reject
+    ///   reordered siblings, a missing continuation and weakened bounds.
+    /// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
     #[inline]
+    #[spec(ensures: |output| matches!(output, Maybe::Present(_)) == (usize::from(step) < match self {
+        Self::Cmd(_) => 2,
+        Self::Prod(prod) => prod.root.head.arity().0,
+        Self::Cons(cons) => cons.frames.last().map_or(0, |frame| match *frame {
+            SpineFrame::Op { ref args, .. } => args.len().saturating_add(1),
+            SpineFrame::Frame(_) => 1,
+        }),
+    }))]
     fn child(
         self,
         step: PositionStep,
@@ -1523,11 +1673,13 @@ impl Pos
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the empty path and a one-step path separate the two
-    ///   answers.
+    /// - hypothesis: L3 — empty and one-step paths observe opposite root
+    ///   decisions. A constant answer or reversed emptiness check is
+    ///   distinguished.
     /// - witness: `pattern::tests::the_root_position_is_the_only_one_that_reports_root`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| bool::from(output) == self.0.is_empty())]
     pub fn is_root(&self) -> PositionRootStatus
     {
         PositionRootStatus::from(self.0.is_empty())
@@ -1574,12 +1726,20 @@ impl Pos
 ///   skips at most the elder siblings of the child it takes.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an operation argument two steps down is read exactly, and
-///   the deep-pattern witness reads the end of a spine many thousands of frames
-///   down.
+/// - hypothesis: L3 — roots of every category, operation arguments and
+///   off-pattern paths have exact subterm or absence observations; deep spines
+///   exercise the iterative boundary. Dropped steps and shifted child indices
+///   change the result.
 /// - witness: `pattern::tests::subterm_and_splice_round_trip`
 /// - witness: `tests::depth::a_deep_pattern_is_matched_ordered_and_dropped_on_a_small_stack`
+/// - witness: `pattern::tests::pattern_children_preserve_order_and_bounds`
 #[inline]
+#[spec(ensures: |output| !pos.steps().is_empty() || match (root, output) {
+    (NodeRef::Prod(left), Maybe::Present(NodeRef::Prod(right))) => left.below == right.below && left.root == right.root,
+    (NodeRef::Cons(left), Maybe::Present(NodeRef::Cons(right))) => left.frames == right.frames && left.end == right.end,
+    (NodeRef::Cmd(left), Maybe::Present(NodeRef::Cmd(right))) => left == right,
+    _ => false,
+})]
 pub fn subterm_at<'pattern>(
     root: NodeRef<'pattern>,
     pos: &Pos,
@@ -1648,14 +1808,25 @@ impl core::error::Error for SpliceRefusal
 /// - [`SpliceRefusal::CategoryMismatch`]: `replacement` cannot fill the slot.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a producer spliced into an operation argument is asserted
-///   exactly, a consumer offered for that slot is refused by its variant, and
-///   the deep-pattern witness splices at the end of a spine many thousands of
-///   frames down.
+/// - hypothesis: L3 — root and nested slots receive smaller, larger and
+///   miscategorized replacements; off-pattern paths refuse before category
+///   checks. Exact siblings, sizes and error variants separate path, extent and
+///   precedence mutations.
 /// - witness: `pattern::tests::subterm_and_splice_round_trip`
 /// - witness: `pattern::tests::a_miscategorized_splice_is_rejected`
 /// - witness: `tests::depth::a_deep_pattern_is_matched_ordered_and_dropped_on_a_small_stack`
+/// - witness: `pattern::tests::splices_preserve_siblings_and_separate_refusals`
 #[inline]
+#[spec(
+    captures: expected = match subterm_at(root, pos) {
+        Maybe::Absent(_) => Err(SpliceRefusal::OffPattern),
+        Maybe::Present(slot) => if matches!((slot, &replacement),
+            (NodeRef::Prod(_), Node::Prod(_)) | (NodeRef::Cons(_), Node::Cons(_)) | (NodeRef::Cmd(_), Node::Cmd(_))) {
+            Ok(())
+        } else { Err(SpliceRefusal::CategoryMismatch) },
+    },
+    ensures: |output| output.as_ref().map(|_| ()).map_err(|error| *error) == expected,
+)]
 pub fn splice_at(
     root: NodeRef<'_>,
     pos: &Pos,
@@ -1695,12 +1866,22 @@ pub fn splice_at(
 /// As [`splice_at`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the round-trip and miscategorized witnesses splice into a
-///   command root; the inhabitant suite of `gandr-theory-cell-complexes-tools`
-///   splices a command back at the root through the alphabet interface.
+/// - hypothesis: L3 — root command replacement and producer/consumer slots are
+///   checked independently of off-pattern and category refusals. Exact retained
+///   halves and polarity distinguish whole-command replacement from a local
+///   splice.
 /// - witness: `pattern::tests::subterm_and_splice_round_trip`
 /// - witness: `pattern::tests::a_miscategorized_splice_is_rejected`
+/// - witness: `pattern::tests::splices_preserve_siblings_and_separate_refusals`
 #[inline]
+#[spec(
+    captures: replacement_is_command = matches!(replacement, Node::Cmd(_)),
+    ensures: |output| if pos.steps().is_empty() {
+        output.is_ok() == replacement_is_command
+    } else {
+        output.as_ref().map_or(true, |result| result.polarity == cmd.polarity)
+    },
+)]
 pub fn splice_cmd(
     cmd: &CmdPat,
     pos: &Pos,
@@ -1734,8 +1915,23 @@ pub fn splice_cmd(
 /// - fails: as [`splice_at`].
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — root and nested producer slots receive larger, smaller
+///   and miscategorized replacements, with off-pattern paths distinguished
+///   first. Exact siblings and ancestor counts reject stale extents and
+///   incorrect refusal precedence.
+/// - witness: `pattern::tests::splices_preserve_siblings_and_separate_refusals`
+///
 /// # Errors
 /// As [`splice_at`].
+#[spec(
+    captures: expected = match descend_prod(prod, steps) {
+        Maybe::Absent(_) => Err(SpliceRefusal::OffPattern),
+        Maybe::Present(_) => if matches!(replacement, Node::Prod(_)) { Ok(()) } else { Err(SpliceRefusal::CategoryMismatch) },
+    },
+    ensures: |output| output.as_ref().map(|_| ()).map_err(|error| *error) == expected
+        && output.as_ref().map_or(true, |result| usize::from(result.root.extent) == result.below.len().saturating_add(1)),
+)]
 fn splice_prod(
     prod: ProdRef<'_>,
     steps: &[PositionStep],
@@ -1811,6 +2007,19 @@ struct BelowIndex(usize);
 /// - provides: [`position_read::Absent::OffPattern`] when a step indexes past a
 ///   node's children.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — root, nested, first/last and off-pattern producer paths
+///   expose exact subterms, offsets and ancestor ranges. Lost path steps,
+///   shifted table ranges and recording the target as its own ancestor change
+///   these observations.
+/// - witness: `pattern::tests::splices_preserve_siblings_and_separate_refusals`
+#[spec(ensures: |output| match output {
+    Maybe::Absent(_) => !steps.is_empty(),
+    Maybe::Present((subtree, start, ref ancestors)) => ancestors.len() == steps.len().saturating_sub(1)
+        && start.0.saturating_add(usize::from(subtree.size())) <= usize::from(prod.size())
+        && ancestors.iter().all(|ancestor| ancestor.0 < prod.below.len()),
+})]
 fn descend_prod<'pattern>(
     prod: ProdRef<'pattern>,
     steps: &[PositionStep],
@@ -1845,8 +2054,20 @@ fn descend_prod<'pattern>(
 /// - fails: as [`splice_at`].
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — terminal and framed consumers accept a root or suffix
+///   replacement, and operation arguments accept producer replacements. Exact
+///   retained frames and both refusal classes separate continuation loss and
+///   incorrect categories.
+/// - witness: `pattern::tests::splices_preserve_siblings_and_separate_refusals`
+///
 /// # Errors
 /// As [`splice_at`].
+#[spec(
+    captures: [replacement_is_consumer = matches!(replacement, Node::Cons(_)), entry_frames = cons.frames.len()],
+    ensures: |output| if steps.is_empty() { output.is_ok() == replacement_is_consumer }
+        else { output.is_err() || entry_frames > 0 },
+)]
 fn splice_cons(
     cons: ConsRef<'_>,
     steps: &[PositionStep],
@@ -1907,8 +2128,17 @@ fn splice_cons(
 ///   requirement does not hold.
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — first and last operation arguments change independently;
+///   missing frames, non-operation frames and out-of-range arguments refuse.
+///   Exact siblings and the spine end reject replacing the wrong slot or
+///   disturbing the continuation.
+/// - witness: `pattern::tests::splices_preserve_siblings_and_separate_refusals`
+///
 /// # Errors
 /// As [`splice_at`].
+#[spec(ensures: |output| output.as_ref().map_or(true, |result|
+    result.frames.len() == cons.frames.len() && &result.end == cons.end))]
 fn splice_op_argument(
     cons: ConsRef<'_>,
     depth: SpineDepth,
@@ -1944,6 +2174,318 @@ struct SpineDepth(usize);
 mod tests
 {
     use super::*;
+
+    #[test]
+    fn pattern_children_preserve_order_and_bounds()
+    {
+        let zero = ProdPat::ctor("Zero", []);
+        let nested = ProdPat::ctor("Succ", [ProdPat::meta("x")]);
+        assert_eq!(PatternSize::from(1_usize), zero.size());
+        assert_eq!(PatternSize::from(2_usize), nested.size());
+        let repeated = ConsPat::op(
+            "outer",
+            [ProdPat::meta("x"), ProdPat::meta("y"), ProdPat::meta("x")],
+            ConsPat::op("inner", [ProdPat::meta("z")], ConsPat::meta("alpha")),
+        );
+        assert_eq!(
+            alloc::vec![
+                MetaVar::producer("x"),
+                MetaVar::producer("y"),
+                MetaVar::producer("x"),
+                MetaVar::producer("z"),
+                MetaVar::consumer("alpha")
+            ],
+            repeated.to_ref().metavars().cloned().collect::<Vec<_>>()
+        );
+        let last = ProdPat::meta("x");
+        let producer = ProdPat::ctor("Triple", [zero.clone(), nested.clone(), last.clone()]);
+        assert_eq!(PatternSize::from(5_usize), producer.size());
+        let mut children = producer.to_ref().children();
+        for (remaining, expected) in [(3, &zero), (2, &nested), (1, &last)] {
+            assert_eq!((remaining, Some(remaining)), children.size_hint());
+            assert_eq!(
+                Some(expected.clone()),
+                children.next().map(ProdRef::to_pattern)
+            );
+        }
+        assert!(children.next().is_none());
+        assert!(children.next().is_none());
+        assert_eq!((0, Some(0)), children.size_hint());
+        for (index, expected, offset) in [(0, &zero, 3), (1, &nested, 1), (2, &last, 0)] {
+            let Maybe::Present((child, actual_offset)) =
+                producer.to_ref().nth_child(PositionStep::from(index))
+            else {
+                panic!("the declared child exists");
+            };
+            assert_eq!(expected, &child.to_pattern());
+            assert_eq!(TableOffset(offset), actual_offset);
+        }
+        for index in [3, usize::MAX] {
+            assert!(matches!(
+                producer.to_ref().nth_child(PositionStep::from(index)),
+                Maybe::Absent(position_read::Absent::OffPattern)
+            ));
+        }
+        assert_eq!(
+            alloc::vec![MetaVar::producer("x"), MetaVar::producer("x")],
+            producer.to_ref().metavars().cloned().collect::<Vec<_>>()
+        );
+        assert!(zero.to_ref().metavars().next().is_none());
+        let terminal = ConsPat::top();
+        let bare = ConsPat::meta("alpha");
+        let framed = ConsPat::frame("F", bare.clone());
+        let operation = ConsPat::op("op", [zero.clone(), nested.clone()], framed.clone());
+        assert_eq!(PatternSize::from(1_usize), terminal.size());
+        assert_eq!(PatternSize::from(1_usize), bare.to_ref().size());
+        assert_eq!(PatternSize::from(2_usize), framed.size());
+        assert_eq!(PatternSize::from(6_usize), operation.to_ref().size());
+        assert_eq!(
+            alloc::vec![MetaVar::producer("x"), MetaVar::consumer("alpha")],
+            operation.to_ref().metavars().cloned().collect::<Vec<_>>()
+        );
+        assert!(terminal.to_ref().metavars().next().is_none());
+        assert_eq!(
+            Maybe::Present(&MetaVar::consumer("alpha")),
+            bare.to_ref().bare_meta()
+        );
+        assert_eq!(
+            Maybe::Absent(bare_end::Absent::Terminal),
+            terminal.to_ref().bare_meta()
+        );
+        for cons in [&framed, &ConsPat::frame("F", ConsPat::top())] {
+            assert_eq!(
+                Maybe::Absent(bare_end::Absent::Framed),
+                cons.to_ref().bare_meta()
+            );
+        }
+        let command = CmdPat::cut(Polarity::Negative, producer.clone(), operation.clone());
+        for (node, expected) in [
+            (Node::Prod(zero.clone()), alloc::vec![]),
+            (Node::Prod(last.clone()), alloc::vec![]),
+            (Node::Prod(nested.clone()), alloc::vec![Node::Prod(
+                last.clone()
+            )]),
+            (Node::Prod(producer.clone()), alloc::vec![
+                Node::Prod(zero.clone()),
+                Node::Prod(nested.clone()),
+                Node::Prod(last)
+            ]),
+            (Node::Cons(terminal), alloc::vec![]),
+            (Node::Cons(bare.clone()), alloc::vec![]),
+            (Node::Cons(framed.clone()), alloc::vec![Node::Cons(bare)]),
+            (Node::Cons(operation.clone()), alloc::vec![
+                Node::Prod(zero),
+                Node::Prod(nested),
+                Node::Cons(framed)
+            ]),
+            (Node::Cmd(command), alloc::vec![
+                Node::Prod(producer),
+                Node::Cons(operation)
+            ]),
+        ] {
+            assert_eq!(
+                Maybe::Present(node.clone()),
+                subterm_at(node.to_ref(), &Pos::root()).map(NodeRef::to_node)
+            );
+            for (index, child) in expected.iter().enumerate() {
+                assert_eq!(
+                    Maybe::Present(child.clone()),
+                    node.to_ref()
+                        .child(PositionStep::from(index))
+                        .map(NodeRef::to_node)
+                );
+            }
+            assert!(matches!(
+                node.to_ref().child(PositionStep::from(expected.len())),
+                Maybe::Absent(position_read::Absent::OffPattern)
+            ));
+        }
+        let invalid = [ProdEntry {
+            head: ProdHead::Meta(MetaVar::producer("bad")),
+            extent: PatternSize::from(0_usize),
+        }];
+        let truncated = [ProdEntry {
+            head: ProdHead::Ctor(Sym::new("Succ"), ArgumentCount(1)),
+            extent: PatternSize::from(2_usize),
+        }];
+        for rest in [&[][..], &invalid[..], &truncated[..]] {
+            let mut args = ProdArgs {
+                rest,
+                remaining: ArgumentCount(1),
+            };
+            assert!(args.next().is_none());
+        }
+    }
+
+    #[test]
+    fn producer_instantiation_is_one_pass_and_recounts_ancestors()
+    {
+        let x = MetaVar::producer("x");
+        let y = MetaVar::producer("y");
+        let prod = ProdPat::ctor("Pair", [
+            ProdPat::meta("x"),
+            ProdPat::ctor("Succ", [ProdPat::meta("free")]),
+        ]);
+        let image = ProdPat::ctor("Pair", [ProdPat::meta("y"), ProdPat::ctor("Zero", [])]);
+        let nested_image = ProdPat::ctor("Never", []);
+        let lookup = |var: &MetaVar| {
+            if *var == x {
+                Maybe::Present(image.to_ref())
+            }
+            else if *var == y {
+                Maybe::Present(nested_image.to_ref())
+            }
+            else {
+                Maybe::Absent(crate::subst::binding::Absent::Unbound)
+            }
+        };
+        let actual = instantiate_prod(prod.to_ref(), &lookup);
+        let expected = ProdPat::ctor("Pair", [
+            image.clone(),
+            ProdPat::ctor("Succ", [ProdPat::meta("free")]),
+        ]);
+        assert_eq!(expected, actual);
+        assert_eq!(PatternSize::from(6_usize), actual.size());
+        assert_eq!(
+            alloc::vec![y.clone(), MetaVar::producer("free")],
+            actual.to_ref().metavars().cloned().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            image,
+            instantiate_prod(ProdPat::meta("x").to_ref(), &lookup)
+        );
+        let untouched = ProdPat::meta("unbound");
+        assert_eq!(untouched, instantiate_prod(untouched.to_ref(), &lookup));
+    }
+
+    #[test]
+    fn splices_preserve_siblings_and_separate_refusals()
+    {
+        let zero = ProdPat::ctor("Zero", []);
+        let one = ProdPat::ctor("One", []);
+        let pair = ProdPat::ctor("Pair", [zero.clone(), one.clone()]);
+        let tree = ProdPat::ctor("Outer", [pair.clone(), ProdPat::meta("sibling")]);
+        let path = [PositionStep::from(0_usize), PositionStep::from(1_usize)];
+        let Maybe::Present((found, offset, ancestors)) = descend_prod(tree.to_ref(), &path)
+        else {
+            panic!("the nested right child exists");
+        };
+        assert_eq!(one, found.to_pattern());
+        assert_eq!(TableOffset(1), offset);
+        assert_eq!(alloc::vec![BelowIndex(3)], ancestors);
+        for replacement in [ProdPat::meta("small"), tree.clone()] {
+            let expected = ProdPat::ctor("Outer", [
+                ProdPat::ctor("Pair", [zero.clone(), replacement.clone()]),
+                ProdPat::meta("sibling"),
+            ]);
+            assert_eq!(
+                Ok(expected.clone()),
+                splice_prod(tree.to_ref(), &path, Node::Prod(replacement.clone()))
+            );
+            assert_eq!(
+                Ok(Node::Prod(expected)),
+                splice_at(
+                    NodeRef::Prod(tree.to_ref()),
+                    &Pos::from_steps(path),
+                    Node::Prod(replacement)
+                )
+            );
+        }
+        let shrunk = ProdPat::ctor("Outer", [zero.clone(), ProdPat::meta("sibling")]);
+        assert_eq!(
+            Ok(shrunk.clone()),
+            splice_prod(
+                tree.to_ref(),
+                &[PositionStep::from(0_usize)],
+                Node::Prod(zero.clone())
+            )
+        );
+        assert_eq!(PatternSize::from(3_usize), shrunk.size());
+        let cons = ConsPat::frame(
+            "Outer",
+            ConsPat::op(
+                "op",
+                [pair.clone(), one.clone()],
+                ConsPat::frame("Inner", ConsPat::meta("alpha")),
+            ),
+        );
+        let suffix_path = [PositionStep::from(0_usize), PositionStep::from(2_usize)];
+        assert_eq!(
+            Ok(ConsPat::frame(
+                "Outer",
+                ConsPat::op("op", [pair.clone(), one.clone()], ConsPat::top())
+            )),
+            splice_cons(cons.to_ref(), &suffix_path, Node::Cons(ConsPat::top()))
+        );
+        for (argument, expected_args) in
+            [(0, [tree.clone(), one.clone()]), (1, [pair, tree.clone()])]
+        {
+            let expected = ConsPat::frame(
+                "Outer",
+                ConsPat::op(
+                    "op",
+                    expected_args,
+                    ConsPat::frame("Inner", ConsPat::meta("alpha")),
+                ),
+            );
+            assert_eq!(
+                Ok(expected),
+                splice_op_argument(
+                    cons.to_ref(),
+                    SpineDepth(1),
+                    PositionStep::from(argument),
+                    &[],
+                    Node::Prod(tree.clone())
+                )
+            );
+        }
+        for (depth, argument) in [(0, 0), (1, 2), (3, 0)] {
+            assert_eq!(
+                Err(SpliceRefusal::OffPattern),
+                splice_op_argument(
+                    cons.to_ref(),
+                    SpineDepth(depth),
+                    PositionStep::from(argument),
+                    &[],
+                    Node::Prod(zero.clone())
+                )
+            );
+        }
+        let command = CmdPat::cut(Polarity::Negative, tree.clone(), cons.clone());
+        let replacement_command = CmdPat::cut(Polarity::Positive, one, ConsPat::top());
+        for root in [Node::Prod(tree), Node::Cons(cons), Node::Cmd(command)] {
+            for replacement in [
+                Node::Prod(zero.clone()),
+                Node::Cons(ConsPat::top()),
+                Node::Cmd(replacement_command.clone()),
+            ] {
+                let same_category = matches!(
+                    (&root, &replacement),
+                    (Node::Prod(_), Node::Prod(_))
+                        | (Node::Cons(_), Node::Cons(_))
+                        | (Node::Cmd(_), Node::Cmd(_))
+                );
+                let expected = if same_category {
+                    Ok(replacement.clone())
+                }
+                else {
+                    Err(SpliceRefusal::CategoryMismatch)
+                };
+                assert_eq!(
+                    expected,
+                    splice_at(root.to_ref(), &Pos::root(), replacement.clone())
+                );
+                assert_eq!(
+                    Err(SpliceRefusal::OffPattern),
+                    splice_at(
+                        root.to_ref(),
+                        &Pos::from_steps([PositionStep::from(usize::MAX)]),
+                        replacement
+                    )
+                );
+            }
+        }
+    }
 
     /// `⟨Succ(m) | add(n; α)⟩`: the Peano successor rule's left-hand side.
     ///
@@ -1991,6 +2533,15 @@ mod tests
             ground.size(),
             "cut + Zero + Top"
         );
+        for (prod, cons) in [
+            (ProdPat::meta("x"), ConsPat::top()),
+            (ProdPat::ctor("Zero", []), ConsPat::meta("alpha")),
+            (ProdPat::meta("x"), ConsPat::meta("alpha")),
+        ] {
+            assert!(!bool::from(
+                CmdPat::cut(Polarity::Negative, prod, cons).is_ground()
+            ));
+        }
     }
 
     #[test]
