@@ -59,6 +59,21 @@ pub enum MemoRecord
 /// Borrowed rather than cloned: the memo owns the entry for as long as the
 /// borrow lives, and an outcome that is expensive to clone is not cloned to be
 /// read.
+///
+/// # Specification
+/// - requires: both borrows come from one recorded memo entry.
+/// - ensures: the carried support and outcome retain that entry's pairing.
+/// - provides: pointwise adoption without cloning the outcome.
+/// - panics: none.
+/// - executable: none — recording history is external to the borrowed pair, and
+///   a data-item predicate does not run at construction.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct recorded supports with distinct outcomes, plus
+///   two colliding supports, distinguish crossed support/outcome pairs and
+///   digest-only selection by exact returned fields.
+/// - witness: `memo::tests::an_ordered_memo_serves_what_it_was_told`
+/// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MemoHit<'memo, Support, Outcome>
 {
@@ -116,14 +131,23 @@ impl<'memo, Support, Outcome> MemoHit<'memo, Support, Outcome>
 ///   [`ContentAgreement::Agree`] against the demanded support — never one
 ///   selected by digest alone.
 /// - provides: the checker's skip-a-repeated-question seam, with storage,
-///   policy, and lifetime outside the checker. This stays prose: a clause on
-///   this trait would turn each declaration into a wrapper over a generated
-///   required method and change what an implementor implements. The recall
-///   claim is a clause on [`OrderedMemo::recall`] instead, where the served
-///   entry is in hand.
+///   policy and lifetime outside the checker.
 /// - fails: only through [`CheckMemo::remember`]; a miss is [`Option::None`],
 ///   not an error.
 /// - panics: none.
+/// - executable: none — the trait has no storage observer, and its attribute
+///   expansion would generate new required methods for every implementor.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the finite shared and unshared workload compares memoized
+///   answers against the same fresh walk on both planes. L3 exact collision,
+///   replacement and inactive-path observations distinguish false hits, stale
+///   outcomes and accounting on the null path. These witnesses cover the
+///   shipped implementations, not arbitrary downstream stores.
+/// - witness: `differential::tests::memoized_and_memoless_agree_answer_for_answer`
+/// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
+/// - witness: `memo::tests::remembering_an_agreeing_support_replaces_rather_than_accumulates`
+/// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
 pub trait CheckMemo<Support, Outcome>
 where
     Support: MemoKey,
@@ -140,13 +164,20 @@ where
     ///   answers `ContentAgreement::Agree` against `support`, and `None`
     ///   otherwise; a digest match alone never serves an entry, and a miss is
     ///   an absence rather than a failure.
-    /// - provides: the skip-a-repeated-question half of the seam, with the
-    ///   served support carried beside its outcome so a consumer checks
-    ///   adoption pointwise. This stays prose: a clause on a trait declaration
-    ///   turns each declaration into a wrapper over a generated required method
-    ///   and changes what an implementor implements; the agreement clause sits
-    ///   on `OrderedMemo::recall`, where the served entry is in hand.
+    /// - provides: the skip-a-repeated-question half of the seam, carrying the
+    ///   recorded support beside its outcome for pointwise adoption.
     /// - panics: none.
+    /// - executable: none — retained entries are implementation-owned; a trait
+    ///   declaration attribute changes the required implementor methods.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — recorded, absent and digest-colliding demands
+    ///   distinguish false hits and missed entries by exact outcomes or
+    ///   absence. The null implementation must still miss after a recording
+    ///   attempt.
+    /// - witness: `memo::tests::an_ordered_memo_serves_what_it_was_told`
+    /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
+    /// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
     fn recall<'memo>(
         &'memo self,
         support: &Support,
@@ -163,16 +194,27 @@ where
     ///   `MemoRecord::Discarded` when nothing was stored, which is what an
     ///   inactive implementation always answers; only the recorded case moves
     ///   an entry count.
-    /// - provides: the record half of the seam. This stays prose for the same
-    ///   reason as `CheckMemo::recall`, and the two shipped implementations
-    ///   carry their own clauses.
+    /// - provides: the record half of the seam.
     /// - fails: the entry accounting refuses another entry, and the memo then
     ///   holds what it held before.
     /// - panics: none.
+    /// - executable: none — storage is implementation-owned, and a declaration
+    ///   attribute changes the required implementor API.
     ///
     /// # Errors
     /// [`MemoError::EntryCountOverflow`] when the entry accounting cannot admit
     /// another entry. The memo then holds what it held before.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — for complete, stable supports, a fresh entry, an
+    ///   agreeing replacement and an inactive store distinguish all three
+    ///   outcomes and counter transitions. A later colliding entry must not
+    ///   overwrite its neighbour. A ceiling-injected census models refusal
+    ///   before storage mutation, abstracting the MAX-entry population.
+    /// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
+    /// - witness: `memo::tests::remembering_an_agreeing_support_replaces_rather_than_accumulates`
+    /// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
+    /// - witness: `memo::tests::ceiling_refuses_insertion_but_allows_replacement`
     fn remember(
         &mut self,
         support: Support,
@@ -185,11 +227,18 @@ where
     /// - requires: nothing.
     /// - ensures: answers how many entries the implementation holds across
     ///   every plane, which is zero for one declaring `MemoActivity::Inactive`.
-    /// - provides: the total half of the entry-count contract a consumer
-    ///   measures collapse against. This stays prose for the same reason as
-    ///   `CheckMemo::recall`, and both shipped implementations carry their own
-    ///   clauses.
+    /// - provides: the total count a consumer measures collapse against.
     /// - panics: none.
+    /// - executable: none — the trait does not hold the implementation's
+    ///   storage; a declaration attribute changes required methods.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, freshly recorded, replaced and discarded
+    ///   entries distinguish a count of supports from attempts or buckets by
+    ///   exact totals, including two supports that share one digest.
+    /// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
+    /// - witness: `memo::tests::remembering_an_agreeing_support_replaces_rather_than_accumulates`
+    /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
     fn entry_count(&self) -> MemoEntryCount;
 
     /// How many entries are held on one plane.
@@ -199,11 +248,19 @@ where
     ///   than being absent.
     /// - ensures: answers how many entries the implementation holds on `plane`,
     ///   never more than the total across planes.
-    /// - provides: the per-plane half of the entry-count contract, so neither
-    ///   of a two-machine consumer's planes hides its collapse behind the
-    ///   other's numbers. This stays prose for the same reason as
-    ///   `CheckMemo::recall`.
+    /// - provides: the per-plane measurement without hiding one plane in
+    ///   another.
     /// - panics: none.
+    /// - executable: none — partitioned storage belongs to the implementation;
+    ///   a declaration attribute changes the required implementor API.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two planes with different entry counts separate a
+    ///   total-count answer from the requested partition; the inactive store
+    ///   and an absent partition must both report zero.
+    /// - witness: `memo::tests::entries_are_accounted_to_their_own_plane`
+    /// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
+    /// - witness: `memo::tests::absent_plane_has_zero_entries`
     fn plane_entry_count(
         &self,
         plane: Support::Plane,
@@ -215,6 +272,20 @@ where
 /// Zero-sized, and every method is a constant, so a consumer instantiated here
 /// compiles to the code it would have had with no memo at all. This is the
 /// differential's fresh side — the same checker, not a second one.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: retains no entries and never serves an outcome.
+/// - provides: the state-free comparison path for a memoized consumer.
+/// - panics: none.
+/// - executable: none — the unit type has no retained state; the operational
+///   obligations are checked on its method implementations.
+///
+/// # Adequacy
+/// - hypothesis: L0 — the unit representation has no field in which to retain a
+///   support or outcome. L3 a record followed by recall and both count
+///   observations distinguishes a retaining or accounting null path.
+/// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NullMemo;
 
@@ -233,7 +304,13 @@ where
     /// - provides: the fresh side of the differential — the same consumer, not
     ///   a second one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — before and after a recording attempt, a demand for
+    ///   that same support must miss, distinguishing a retaining null path.
+    /// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
     #[inline]
+    #[spec(ensures: |ret| ret.is_none())]
     fn recall<'memo>(
         &'memo self,
         _support: &Support,
@@ -251,7 +328,14 @@ where
     /// - provides: the record path that is no path at all.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a valid support/outcome recording must report
+    ///   Discarded, leave both counts zero and still miss on recall. This
+    ///   separates the null path from a retained or merely misreported entry.
+    /// - witness: `memo::tests::the_null_memo_never_answers_and_never_accounts`
     #[inline]
+    #[spec(ensures: |ret| ret == Ok(MemoRecord::Discarded))]
     fn remember(
         &mut self,
         _support: Support,
@@ -310,6 +394,24 @@ struct MemoEntry<Support, Outcome>
 /// positive-fast-path-only discipline as a data structure rather than as a rule
 /// to remember, and it is what lets the key be content-derived, and therefore
 /// arena-free.
+///
+/// # Specification
+/// - requires: supports obey the consumer laws of `MemoKey`.
+/// - ensures: each digest bucket retains one entry per agreeing support; the
+///   census counts entries, partitioned by their support's plane.
+/// - provides: collision-safe reuse with exact incremental accounting.
+/// - panics: none.
+/// - executable: none — the data-item expansion does not check construction;
+///   recall, record and census operations check the observable boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — equal and unequal supports, colliding and distinct
+///   digests, and one versus two planes distinguish replacement, erroneous
+///   digest-only reuse and crossed accounting through exact answers and counts.
+///   Replacing a later collision entry must preserve its neighbour.
+/// - witness: `memo::tests::remembering_an_agreeing_support_replaces_rather_than_accumulates`
+/// - witness: `memo::tests::entries_are_accounted_to_their_own_plane`
+/// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OrderedMemo<Support, Outcome>
 where
@@ -359,7 +461,8 @@ where
     /// - witness: `memo::tests::distinct_supports_take_distinct_entries`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| usize::from(ret) <= usize::from(self.census.total()))]
+    #[spec(ensures: |ret| usize::from(ret) == self.buckets.len()
+        && usize::from(ret) <= usize::from(self.census.total()))]
     pub fn bucket_count(&self) -> MemoBucketCount
     {
         MemoBucketCount::from(self.buckets.len())
@@ -452,20 +555,29 @@ where
     /// another entry; the memo then holds what it held before.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decision surfaces are the fresh-versus-replaced
-    ///   branch and the accounting that rides only the fresh arm, separated by
-    ///   recording one support twice (exactly `Recorded` then `Replaced`, one
-    ///   entry, the later outcome served) against recording two agreeing-free
-    ///   supports (two entries, both served).
-    /// - witness: `memo::tests::an_ordered_memo_serves_what_it_was_told`
+    /// - hypothesis: L3 — on valid memo states, fresh versus agreeing supports
+    ///   distinguish exact Recorded/Replaced results and counter changes. The
+    ///   second colliding entry distinguishes a deciding search from a
+    ///   first-entry overwrite. A ceiling-injected census exposes mutation
+    ///   before refusal on both existing and new digest buckets and permits
+    ///   replacement; this abstracts the unreachable-in-memory population of
+    ///   MAX entries.
     /// - witness: `memo::tests::remembering_an_agreeing_support_replaces_rather_than_accumulates`
-    /// - witness: `memo::tests::distinct_supports_take_distinct_entries`
+    /// - witness: `memo::tests::replacement_inside_a_collision_bucket_preserves_its_neighbour`
+    /// - witness: `memo::tests::ceiling_refuses_insertion_but_allows_replacement`
     #[spec(
-        captures: [entry_count = self.entry_count()],
-        ensures: |ret| if matches!(ret, Ok(MemoRecord::Recorded)) {
-            usize::from(self.entry_count()) == usize::from(entry_count).saturating_add(1)
-        } else {
-            self.entry_count() == entry_count
+        captures: [entry_count = self.entry_count(), entry_buckets = self.buckets.len(),
+            was_held = self.recall(&support).is_some()],
+        ensures: |ret| match ret {
+            Ok(MemoRecord::Recorded) => !was_held
+                && usize::from(entry_count).checked_add(1)
+                    == Some(usize::from(self.entry_count())),
+            Ok(MemoRecord::Replaced) => was_held && self.entry_count() == entry_count
+                && self.buckets.len() == entry_buckets,
+            Ok(MemoRecord::Discarded) => false,
+            Err(MemoError::EntryCountOverflow) => !was_held
+                && usize::from(entry_count) == usize::MAX
+                && self.entry_count() == entry_count && self.buckets.len() == entry_buckets,
         }
     )]
     #[inline]
@@ -512,12 +624,13 @@ where
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the decision surface is which partition is read,
-    ///   separated by two planes holding different numbers of entries, each
-    ///   asserted as an exact count against the total.
+    /// - hypothesis: L3 — two populated planes with different counts and one
+    ///   absent-plane observation distinguish a wrong partition, a total count
+    ///   and a nonzero default through exact counts.
     /// - witness: `memo::tests::entries_are_accounted_to_their_own_plane`
+    /// - witness: `memo::tests::absent_plane_has_zero_entries`
     #[inline]
-    #[spec(ensures: |ret| ret <= self.entry_count())]
+    #[spec(ensures: |ret| ret <= self.entry_count() && ret == self.census.plane(plane))]
     fn plane_entry_count(
         &self,
         plane: Support::Plane,
@@ -531,7 +644,6 @@ where
 mod tests
 {
     use super::CheckMemo;
-    use super::MemoActivity;
     use super::MemoRecord;
     use super::NullMemo;
     use super::OrderedMemo;
@@ -632,6 +744,15 @@ mod tests
         ///   disagreement are exhibited through, since the digest is supplied
         ///   apart from the content.
         /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — same plane/content with differing digests must
+        ///   agree, while changing either content or plane must differ. Both
+        ///   directions of each comparison reject digest-sensitive, asymmetric
+        ///   and plane-blind relations.
+        /// - witness: `memo::tests::support_relation_ignores_digest_but_not_plane`
+        #[anodized::spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
+            == (self.plane == other.plane && self.content == other.content))]
         fn agreement(
             &self,
             other: &Self,
@@ -647,25 +768,11 @@ mod tests
     }
 
     #[test]
-    fn the_two_implementations_declare_opposite_activities()
-    {
-        assert_eq!(
-            MemoActivity::Inactive,
-            <NullMemo as CheckMemo<TestSupport, TestOutcome>>::ACTIVITY,
-            "the null memo declares itself inactive so the consumer's branch is constant"
-        );
-        assert_eq!(
-            MemoActivity::Active,
-            <OrderedMemo<TestSupport, TestOutcome> as CheckMemo<TestSupport, TestOutcome>>::ACTIVITY,
-            "and the ordered memo declares itself active, so the two are distinguishable at compile time"
-        );
-    }
-
-    #[test]
     fn the_null_memo_never_answers_and_never_accounts()
     {
         let support = TestSupport::honest(TestPlane::Term, TestContent(1));
         let mut memo = NullMemo;
+        assert!(CheckMemo::<TestSupport, TestOutcome>::recall(&memo, &support).is_none());
         assert_eq!(
             Ok(MemoRecord::Discarded),
             CheckMemo::remember(&mut memo, support, TestOutcome(9)),
@@ -904,5 +1011,119 @@ mod tests
         );
         assert_eq!(MemoEntryCount::from(2), memo.entry_count());
         assert_eq!(MemoBucketCount::from(2), memo.bucket_count());
+    }
+
+    #[test]
+    fn absent_plane_has_zero_entries()
+    {
+        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let support = TestSupport::honest(TestPlane::Term, TestContent(1));
+        assert_eq!(
+            Ok(MemoRecord::Recorded),
+            memo.remember(support, TestOutcome(9))
+        );
+        assert_eq!(
+            MemoEntryCount::zero(),
+            memo.plane_entry_count(TestPlane::Type)
+        );
+        assert_eq!(
+            MemoEntryCount::from(1),
+            memo.plane_entry_count(TestPlane::Term)
+        );
+    }
+
+    #[test]
+    fn support_relation_ignores_digest_but_not_plane()
+    {
+        let first = TestSupport::honest(TestPlane::Term, TestContent(1));
+        let same = TestSupport {
+            digest: DigestWord::from(99),
+            ..first
+        };
+        let other_content = TestSupport {
+            content: TestContent(2),
+            ..first
+        };
+        let other_plane = TestSupport {
+            plane: TestPlane::Type,
+            ..first
+        };
+        for (other, expected) in [
+            (same, ContentAgreement::Agree),
+            (other_content, ContentAgreement::Differ),
+            (other_plane, ContentAgreement::Differ),
+        ] {
+            assert_eq!(expected, first.agreement(&other));
+            assert_eq!(expected, other.agreement(&first));
+        }
+    }
+
+    #[test]
+    fn replacement_inside_a_collision_bucket_preserves_its_neighbour()
+    {
+        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let first = TestSupport::honest(TestPlane::Term, TestContent(1));
+        let second = TestSupport {
+            content: TestContent(2),
+            ..first
+        };
+        assert_eq!(
+            Ok(MemoRecord::Recorded),
+            memo.remember(first, TestOutcome(9))
+        );
+        assert_eq!(
+            Ok(MemoRecord::Recorded),
+            memo.remember(second, TestOutcome(8))
+        );
+        assert_eq!(
+            Ok(MemoRecord::Replaced),
+            memo.remember(second, TestOutcome(7))
+        );
+        assert_eq!(
+            &TestOutcome(9),
+            memo.recall(&first).expect("first retained").outcome()
+        );
+        assert_eq!(
+            &TestOutcome(7),
+            memo.recall(&second).expect("second replaced").outcome()
+        );
+        assert_eq!(MemoEntryCount::from(2), memo.entry_count());
+        assert_eq!(MemoBucketCount::from(1), memo.bucket_count());
+    }
+
+    #[test]
+    fn ceiling_refuses_insertion_but_allows_replacement()
+    {
+        let mut memo: OrderedMemo<TestSupport, TestOutcome> = OrderedMemo::new();
+        let first = TestSupport::honest(TestPlane::Term, TestContent(1));
+        assert_eq!(
+            Ok(MemoRecord::Recorded),
+            memo.remember(first, TestOutcome(9))
+        );
+        // Abstract the entry population while preserving the census invariant.
+        memo.census = crate::accounting::EntryCensus::at_ceiling_for_test(TestPlane::Term);
+        let before = memo.clone();
+        for demanded in [
+            TestSupport {
+                content: TestContent(2),
+                ..first
+            },
+            TestSupport::honest(TestPlane::Term, TestContent(3)),
+        ] {
+            assert_eq!(
+                Err(crate::accounting::MemoError::EntryCountOverflow),
+                memo.remember(demanded, TestOutcome(8))
+            );
+            assert_eq!(before, memo);
+        }
+        assert_eq!(
+            Ok(MemoRecord::Replaced),
+            memo.remember(first, TestOutcome(7))
+        );
+        assert_eq!(MemoEntryCount::from(usize::MAX), memo.entry_count());
+        assert_eq!(
+            &TestOutcome(7),
+            memo.recall(&first).expect("replacement retained").outcome()
+        );
     }
 }

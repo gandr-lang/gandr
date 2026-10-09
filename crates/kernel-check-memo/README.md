@@ -111,18 +111,15 @@ No enum here is `#[non_exhaustive]`. The workspace does not publish, so the attr
 
 ## Contract attributes
 
-The `# Specification` prose states the item contract; a `#[spec(...)]` attribute mirrors it wherever the clause is a runtime predicate over one call.
+The `# Specification` prose states the obligation; `#[spec(...)]` mirrors clauses that can be checked over one call. Each nontrivial item has a `# Adequacy` hypothesis naming the bounded evidence and the deviations its observer distinguishes.
 
-- `MemoEntryCount::successor` refuses exactly at the ceiling.
-- `EntryCensus::plane` and `OrderedMemo::plane_entry_count` never exceed the total.
-- `OrderedMemo::bucket_count` never exceeds the entry count, so a collision shows as the gap between them.
-- `EntryCensus::record` moves both counts by one on success and neither on failure.
-- `OrderedMemo::recall` serves only an entry that agrees with the demanded support, so no entry selected by digest alone is served.
-- `OrderedMemo::remember` moves the entry count only on a fresh record.
+- Checked arithmetic specifies the exact successor, per-plane lookup and overflow refusal, including unchanged accounting on failure.
+- Ordered storage specifies digest-bucket lookup, support agreement, insertion versus replacement, and unchanged counts on refusal. Collision and ceiling tests also observe retained answers, rather than counts alone.
+- The differential workload specifies its arena topology, framed content identity, folds and census arithmetic. Closed-form counts and ordinary versus memoized runs distinguish missing work from reused work.
 
-Anodized evaluates a postcondition after an early `?` return, so the transactional clauses hold on the refusal path too.
+Anodized evaluates postconditions after early `?` returns, so refusal paths are included. Production predicates capture scalar counts and membership facts, not owned snapshots; additional predicate traversals run only when enforcement is enabled.
 
-`CheckMemo`, `MemoKey` and `MemoKey::agreement` are declarations: a clause there would require the trait itself to carry `#[spec]` and change what an implementor implements. `ContentDigest` is a data item, whose invariant is never checked at construction. Those blocks give the reason in their own `- provides:` line, and what they claim is an obligation on the consumer's own relations.
+A final `- executable: none` clause identifies the remaining data, declaration or external-context obligation. Instrumenting `CheckMemo` or `MemoKey` declarations would change the implementation interface; data-item expansion does not check construction. The bounded witnesses exercise the shipped implementations and fixture relations. They do not certify arbitrary consumer implementations of the semantic agreement laws.
 
 ## License
 
