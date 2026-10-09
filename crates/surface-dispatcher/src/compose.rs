@@ -36,6 +36,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::OriginTable;
 use gandr_surface_parser::MeldError;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
@@ -91,6 +92,11 @@ impl fmt::Display for LoweringCount
 }
 
 /// What one source became.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per source, moved once into its step; the settled variant is the common one, \
+              and boxing it would add an allocation per source to shrink the rare refused one"
+)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Composed<'source>
 {
@@ -107,6 +113,10 @@ pub enum Composed<'source>
         /// declaration the lowering refused at its own form files no half,
         /// so no attribute can be read off it.
         unstatable: Vec<LoweringRefusal<'source>>,
+        /// Every core node the lowering minted, mapped back to the syntax
+        /// that produced it: the table a checker refusal's node is located
+        /// through.
+        origins: OriginTable,
     },
     /// The lowering refused the source as a whole, before any declaration
     /// existed to carry a verdict: a root that is not a list of declarations.
@@ -222,10 +232,11 @@ mod lowering
 ///   exactly one more. A module the lowering reads is adapted to the checker's
 ///   input, judged, offered to the kernel and settled under `root`; the result
 ///   is [`Composed::Settled`] with one report per declared name, the exercised
-///   rows its settled declarations carry, and the refusals of the declarations
-///   refused at their own form, which no expectation can state. A source the
-///   lowering refuses as a whole for a reason of the author's or of the
-///   fragment's is [`Composed::Refused`] with that refusal.
+///   rows its settled declarations carry, the refusals of the declarations
+///   refused at their own form, which no expectation can state, and the
+///   lowering's origin table, moved rather than copied. A source the lowering
+///   refuses as a whole for a reason of the author's or of the fragment's is
+///   [`Composed::Refused`] with that refusal.
 /// - provides: the one verdict set a run gives the source, whichever verb runs
 ///   it.
 /// - fails: [`ComposeFault::Parse`] when the parser cannot commit its tree;
@@ -283,10 +294,12 @@ pub fn compose<'source>(
     readmitted(&arena, &verdicts)?;
     let report = settle(root, &arena, &module, &verdicts).map_err(ComposeFault::Settle)?;
     let exercised = Exercised::of(&arena, &module, &report);
+    let unstatable = unstatable(&module);
     Ok(Composed::Settled {
         report,
         exercised,
-        unstatable: unstatable(&module),
+        unstatable,
+        origins: module.into_origins(),
     })
 }
 

@@ -18,17 +18,16 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use gandr_surface_dispatcher::Composed;
+use gandr_surface_diagnostics::Entry;
+use gandr_surface_diagnostics::RenderStyle;
+use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Outcome;
 use gandr_surface_dispatcher::RunVerdict;
-use gandr_surface_dispatcher::Shown;
-use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
-use gandr_surface_dispatcher::shown;
 use quenchant_shape::shape::Maybe;
 
 /// The exit code of a run with an unsettled declaration.
@@ -185,13 +184,14 @@ fn usage(error: &clap::Error) -> ExitCode
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the status prints one line naming the driver's version. A walk
-///   prints, for each source, the lines its verb shows: a declaration's report
-///   prefixed with its path, as a goal when it is one; a source refused as a
-///   whole where its root expects declarations; a pending source the lowering
-///   reads; under `test`, each pending source with its refusal. Each path the
-///   walk cannot carry through the pipeline is a line on standard error. The
-///   run's report and its verdict close standard output, and the exit code is
-///   the verdict's.
+///   prints, for each source, what `gandr-surface-diagnostics` renders of its
+///   step under the verb: each refusal, unsettled declaration and goal as a
+///   plain source snippet followed by an empty line, and each ledger line — a
+///   settled fixture or a pending source's refusal under `test`, a pending
+///   source the lowering read — prefixed with its path. Each path the walk
+///   cannot carry through the pipeline is a line on standard error. The run's
+///   report and its verdict close standard output, and the exit code is the
+///   verdict's.
 /// - provides: the one renderer both verbs share.
 /// - fails: the first write error on either stream.
 /// - panics: none.
@@ -240,63 +240,14 @@ fn run(
 {
     while let Maybe::Present(step) = walk.step() {
         match step {
-            | Step::Source {
-                path,
-                composed,
-                standing,
-                ..
-            } => {
-                let path = path.display();
-                match (standing, composed) {
-                    | (Standing::Pending, Composed::Refused(refusal)) => {
-                        if verb == Verb::Test {
-                            writeln!(stdout, "{path}: pending: {refusal}")?;
-                        }
-                    },
-                    | (Standing::Pending, Composed::Settled { unstatable, .. }) => {
-                        if verb == Verb::Test {
-                            for refusal in unstatable {
-                                writeln!(stdout, "{path}: pending: {refusal}")?;
-                            }
-                        }
-                    },
-                    | (
-                        Standing::Settled
-                        | Standing::Unsettled
-                        | Standing::Refused
-                        | Standing::Lowered,
-                        Composed::Refused(refusal),
-                    ) => writeln!(
-                        stdout,
-                        "{path}: unsettled: the lowering refused the source as a whole: {refusal} ({})",
-                        refusal.classify()
-                    )?,
-                    | (
-                        Standing::Settled
-                        | Standing::Unsettled
-                        | Standing::Refused
-                        | Standing::Lowered,
-                        Composed::Settled { report, .. },
-                    ) => {
-                        if standing == Standing::Lowered {
-                            writeln!(
-                                stdout,
-                                "{path}: unsettled: a pending source whose every expectation can be stated; \
-                                 it belongs under the fixture root"
-                            )?;
-                        }
-                        for declaration in report.declarations() {
-                            match shown(declaration, verb) {
-                                | Shown::Counted => {},
-                                | Shown::Line => {
-                                    writeln!(stdout, "{path}: {declaration}")?;
-                                },
-                                | Shown::Goal => {
-                                    writeln!(stdout, "{path}: goal: {declaration}")?;
-                                },
-                            }
-                        }
-                    },
+            | Step::Source { .. } => {
+                for entry in entries(&step, verb) {
+                    match entry {
+                        | Entry::Report(report) => {
+                            writeln!(stdout, "{}\n", report.render(RenderStyle::Plain))?;
+                        },
+                        | Entry::Line(line) => writeln!(stdout, "{line}")?,
+                    }
                 }
             },
             | Step::Fault { path, fault } => {

@@ -42,7 +42,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 ## Expected features
 
-- **A renderer.** The caller renders each `Outcome` and each `Step`. `StatusReport`'s `Display` writes one sentence and no line terminator; `RunReport`'s writes its counts one per line, without a trailing terminator.
+- **A renderer.** The caller renders each `Outcome` and each `Step`; `gandr-surface-diagnostics` renders a source step. A `Step::Source` carries the source's text, and `Composed::Settled` the module's origin table, so a renderer can quote the lines a refusal covers and locate a checker refusal at its node's origin without composing the source again. `StatusReport`'s `Display` writes one sentence and no line terminator; `RunReport`'s writes its counts one per line, without a trailing terminator.
 - **A file system.** `Walk::step` lists directories and reads sources; every failure to do so is a `Step::Fault`, never a panic.
 
 ## Examples

@@ -13,6 +13,7 @@ members = [
   "crates/storage-records",
   "crates/storage-values",
   "crates/surface-corpus",
+  "crates/surface-diagnostics",
   "crates/surface-dispatcher",
   "crates/surface-driver",
   "crates/surface-grammar",
@@ -43,6 +44,16 @@ publish = false
 # each enabled feature, `# consumers:`. Defaults are always off; a feature is
 # on only because a build or a test failed without it.
 [workspace.dependencies]
+
+# Source-snippet layout: the backend the diagnostics renderer projects a
+# report into, the one rustc and cargo render through. Defaults off: `std`
+# only gives `anstyle` an `io::Write` sink, and a rendering is a `String`.
+# The choice, its alternatives and its reversal are in the consumer's README.
+# consumers:
+# - surface-diagnostics
+[workspace.dependencies.annotate-snippets]
+version = "0.12.16"
+default-features = false
 
 # Executable specifications with a core-only facade. The exact fork revision
 # makes logic/BigInt optional, so the no_std consumers build with defaults off.
@@ -94,6 +105,7 @@ features = ["derive", "error-context", "help", "std", "usage"]
 # obligation ledger and the refusal vocabulary.
 # consumers:
 # - surface-corpus
+# - surface-diagnostics
 # - surface-dispatcher
 [workspace.dependencies.gandr-core-checker]
 path = "crates/core-checker"
@@ -104,6 +116,7 @@ path = "crates/core-checker"
 # - core-checker
 # - core-nbe
 # - surface-corpus
+# - surface-diagnostics
 # - surface-dispatcher
 # - surface-lowering
 [workspace.dependencies.gandr-core-term]
@@ -170,13 +183,22 @@ path = "crates/storage-records"
 # The expectation language: the expectation schemas, the strict and fixture
 # roots, the settle comparison and the report shape.
 # consumers:
+# - surface-diagnostics
 # - surface-dispatcher
 [workspace.dependencies.gandr-surface-corpus]
 path = "crates/surface-corpus"
 
+# Renders a dispatcher step: refusals, unsettled declarations and goals as
+# source snippets, and the ledger lines a verb prints beside them.
+# consumers:
+# - surface-driver
+[workspace.dependencies.gandr-surface-diagnostics]
+path = "crates/surface-diagnostics"
+
 # Routes a driver invocation into the surface pipeline, and composes that
 # pipeline over the sources a verb walks.
 # consumers:
+# - surface-diagnostics
 # - surface-driver
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
@@ -185,6 +207,7 @@ path = "crates/surface-dispatcher"
 # DAG and the built-in surface the melder pushes over.
 # consumers:
 # - surface-corpus (dev)
+# - surface-diagnostics (dev)
 # - surface-dispatcher
 # - surface-lowering
 # - surface-parser
@@ -195,6 +218,7 @@ path = "crates/surface-grammar"
 # attribute side table, the origin table and the refusal classifier.
 # consumers:
 # - surface-corpus
+# - surface-diagnostics
 # - surface-dispatcher
 [workspace.dependencies.gandr-surface-lowering]
 path = "crates/surface-lowering"
@@ -220,6 +244,7 @@ path = "crates/surface-render-remote"
 # The concrete syntax tree and the grammar-facing mold vocabulary it carries.
 # consumers:
 # - surface-corpus
+# - surface-diagnostics
 # - surface-dispatcher
 # - surface-grammar
 # - surface-lowering
@@ -306,6 +331,7 @@ default-features = false
 # - core-checker
 # - kernel-core
 # - surface-corpus
+# - surface-diagnostics
 # - surface-dispatcher
 # - surface-driver
 # - surface-lowering

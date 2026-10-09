@@ -170,6 +170,21 @@ mod cli
             .collect()
     }
 
+    /// What `output` printed on standard output before the runner's report:
+    /// every report and ledger line of the run.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    fn printed(output: &Output) -> String
+    {
+        let stdout = stdout(output);
+        let (printed, _report) = stdout
+            .split_once("sources: ")
+            .expect("the runner's report closes standard output");
+        printed.to_owned()
+    }
+
     #[test]
     fn a_settled_run_exits_zero()
     {
@@ -181,8 +196,8 @@ mod cli
         let output = ran(gandr(&[Path::new("check"), &source]));
         assert_eq!(code(&output), Code(0_i32), "{}", stdout(&output));
         assert!(
-            lines_of(&output, &source).is_empty(),
-            "a settled declaration has no line"
+            printed(&output).is_empty(),
+            "a settled declaration prints nothing"
         );
         assert!(
             stdout(&output).ends_with("seal: sealed\nverdict: settled\n"),
@@ -203,13 +218,20 @@ mod cli
             let output = ran(gandr(&[Path::new(verb), &source]));
             assert_eq!(code(&output), Code(1_i32), "{verb}: {}", stdout(&output));
             assert_eq!(
-                lines_of(&output, &source),
-                vec![
-                    "unsettled `broken` at 18..40: states checks owing 0; produced refuses UnresolvedName \
-                     (malformed source)"
-                        .to_owned()
-                ],
-                "{verb} prints the unsettled declaration alone"
+                printed(&output),
+                format!(
+                    r"error[UnresolvedName]: no declaration or binder answers `missing` at 31..38
+  ╭▸ {}:2:14
+  │
+2 │ def broken = missing ;
+  │              ━━━━━━━ malformed source
+  │
+  ╰ note: unsettled `broken` states checks owing 0
+
+",
+                    source.display()
+                ),
+                "{verb} prints the unsettled declaration alone, as its snippet"
             );
             assert!(stdout(&output).ends_with("verdict: unsettled\n"), "{verb}");
         }
@@ -228,12 +250,17 @@ mod cli
         let reported = ran(gandr(&[Path::new("check"), Path::new("--goals"), &source]));
         assert_eq!(code(&reported), Code(0_i32), "{}", stdout(&reported));
         assert_eq!(
-            lines_of(&reported, &source),
-            vec![
-                "goal: unsettled `hole` at 0..20: states checks owing 0; produced checks owing 1; surviving \
-                 obligations: 1 undeclared, 0 unproduced"
-                    .to_owned()
-            ],
+            printed(&reported),
+            format!(
+                r"goal: `hole` states checks owing 0; produced checks owing 1
+  ╭▸ {}:1:1
+  │
+1 │ def hole : Integer ;
+  ╰╴━━━━━━━━━━━━━━━━━━━━ surviving obligations: 1 undeclared, 0 unproduced
+
+",
+                source.display()
+            ),
             "the obligation is printed as a goal"
         );
 
@@ -336,7 +363,9 @@ mod cli
                 "a fault outranks an unsettled declaration"
             );
             assert_eq!(
-                lines_of(&output, &broken).len(),
+                printed(&output)
+                    .matches(&format!("╭▸ {}:", broken.display()))
+                    .count(),
                 1_usize,
                 "the walk continued past the fault and read every other path"
             );

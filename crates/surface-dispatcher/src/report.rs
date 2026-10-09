@@ -709,6 +709,7 @@ def broken = missing ;"#,
                 .expect("the verdicts are the module's"),
             exercised: Exercised::default(),
             unstatable: Vec::new(),
+            origins: module.into_origins(),
         };
         let mut engine = RunReport::default();
         engine.read(SourceRoot::Fixture, &composed, Standing::Settled);

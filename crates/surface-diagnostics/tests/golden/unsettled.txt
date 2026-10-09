@@ -1,0 +1,5 @@
+error: `answer` states refuses UnresolvedName; produced checks owing 0
+  ╭▸ unsettled.gandr:1:1
+  │
+1 │ @[ refuses("UnresolvedName") ] def answer = 42 ;
+  ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ unproduced refusal

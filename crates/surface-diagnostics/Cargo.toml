@@ -1,0 +1,34 @@
+[package]
+name = "gandr-surface-diagnostics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Renders a gandr dispatcher step: refusals, unsettled declarations and goals as source snippets"
+repository.workspace = true
+license.workspace = true
+keywords = ["diagnostics", "gandr", "language"]
+categories = ["development-tools"]
+publish.workspace = true
+
+# The renderer reads the step's own vocabulary: the dispatcher's step and
+# verb, the settle comparison's declaration report and refusal names, the
+# lowering's refusals and origin table, the checker's refusals and the failure
+# classes beneath them, and the source text spans are measured against. The
+# snippet backend stays behind the crate's API.
+[dependencies]
+annotate-snippets.workspace = true
+gandr-core-checker.workspace = true
+gandr-core-term.workspace = true
+gandr-surface-corpus.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-syntax.workspace = true
+quenchant-shape.workspace = true
+
+# The suite composes sources through the dispatcher's composition, which takes
+# the built-in grammar.
+[dev-dependencies]
+gandr-surface-grammar.workspace = true
+
+[lints]
+workspace = true

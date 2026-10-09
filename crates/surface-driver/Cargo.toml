@@ -23,6 +23,7 @@ path = "src/main.rs"
 
 [dependencies]
 clap.workspace = true
+gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true
 quenchant-shape.workspace = true
 tracing = { workspace = true, optional = true }

@@ -48,6 +48,7 @@ crates/
 ├── surface-lowering/              gandr-surface-lowering              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
 ├── surface-corpus/                gandr-surface-corpus                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
 ├── surface-dispatcher/            gandr-surface-dispatcher            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
+├── surface-diagnostics/           gandr-surface-diagnostics           renders what a dispatcher step prints: a refusal, an unsettled declaration and a goal as a located source snippet, the ledger lines as text
 └── surface-driver/                gandr-lang                          the `gandr` driver binary: `check`, `test` and the exit codes
 ```
 

@@ -20,7 +20,7 @@ The `gandr` binary, the entry point of the gandr language toolchain: `gandr chec
 
 **Why.** The driver owns the argument surface and the process boundary, and routes everything after that through `gandr-surface-dispatcher`, which composes the pipeline and decides the gate without a process. The registry name `gandr` belongs to an unrelated crate, so the package is `gandr-lang` and the binary is `gandr`.
 
-**How.** `clap` parses the arguments before anything is written. The invocation is dispatched; the driver advances the walk the dispatcher returns, prints each source's lines and each fault, then the runner's report and its verdict, through locked handles and fallible `writeln!`, and returns the verdict as its exit code from `main`. Witnesses, each spawning the binary: `cli::cli::a_settled_run_exits_zero`, `cli::cli::an_unsettled_run_exits_one`, `cli::cli::an_unreadable_path_exits_two`, `cli::cli::a_malformed_invocation_exits_two`, `cli::cli::unwritable_standard_output_exits_two`, `cli::cli::goals_report_an_obligation_without_failing`, `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`, `cli::cli::help_exits_zero`, `cli::cli::a_bare_invocation_prints_the_status`.
+**How.** `clap` parses the arguments before anything is written. The invocation is dispatched; the driver advances the walk the dispatcher returns, prints each source step's entries as `gandr-surface-diagnostics` renders them, and each fault, then the runner's report and its verdict, through locked handles and fallible `writeln!`, and returns the verdict as its exit code from `main`. Witnesses, each spawning the binary: `cli::cli::a_settled_run_exits_zero`, `cli::cli::an_unsettled_run_exits_one`, `cli::cli::an_unreadable_path_exits_two`, `cli::cli::a_malformed_invocation_exits_two`, `cli::cli::unwritable_standard_output_exits_two`, `cli::cli::goals_report_an_obligation_without_failing`, `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`, `cli::cli::help_exits_zero`, `cli::cli::a_bare_invocation_prints_the_status`.
 
 ## Verbs
 
@@ -30,7 +30,7 @@ The `gandr` binary, the entry point of the gandr language toolchain: `gandr chec
 | `gandr check --goals <paths>` | as `check`, a declaration unsettled by its obligations alone marked `goal:` | any unsettled declaration but those |
 | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
 
-A path is a source file of any name, or a directory searched for `.gandr` sources. The directories a source sits in decide its root — `strict`, `fixture`, or `fixture/pending` — and a source under none is strict ([membership is location](../surface-dispatcher/README.md#membership-is-location)). Each source line is `<path>: <report>`; each fault is `gandr: <path>: <fault>` on standard error. Every run closes standard output with the runner's report — the sources read by root, the lowerings, the goals, the exercised table, the ledger size, the declaration and fixture counts, the surviving obligations, the refusals by class, the run's settlement and its seal — and `verdict: settled`, `unsettled` or `faulted`.
+A path is a source file of any name, or a directory searched for `.gandr` sources. The directories a source sits in decide its root — `strict`, `fixture`, or `fixture/pending` — and a source under none is strict ([membership is location](../surface-dispatcher/README.md#membership-is-location)). A refusal, an unsettled declaration and a goal each print as a located source snippet — the class and message, the path with line and column, the lines the report covers with their marks — followed by a blank line ([what a report shows](../surface-diagnostics/README.md#what-a-report-shows)); a settled fixture, a pending source's refusal and a pending source the lowering reads each print one ledger line, `<path>: <report>`. The driver writes plain text, without colour. Each fault is `gandr: <path>: <fault>` on standard error. Every run closes standard output with the runner's report — the sources read by root, the lowerings, the goals, the exercised table, the ledger size, the declaration and fixture counts, the surviving obligations, the refusals by class, the run's settlement and its seal — and `verdict: settled`, `unsettled` or `faulted`.
 
 ## Exit codes
 
@@ -59,7 +59,15 @@ run: settled
 seal: sealed
 verdict: settled
 $ gandr check broken.gandr
-broken.gandr: unsettled `broken` at 0..22: states checks owing 0; produced refuses UnresolvedName (malformed source)
+error[UnresolvedName]: no declaration or binder answers `missing` at 13..20
+  ╭▸ broken.gandr:1:14
+  │
+1 │ def broken = missing ;
+  │              ━━━━━━━ malformed source
+  │
+  ╰ note: unsettled `broken` states checks owing 0
+
+sources: 1 read (1 strict, 0 fixture, 0 pending), 0 refused as a whole, 0 no longer pending, 0 faulted
 …
 verdict: unsettled
 $ echo $?

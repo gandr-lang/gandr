@@ -1240,6 +1240,18 @@ impl<'source> LoweredModule<'source>
         &self.origins
     }
 
+    /// The origin table, the module given up: what a consumer keeps once the
+    /// declarations and attributes have been read.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_origins(self) -> OriginTable
+    {
+        self.origins
+    }
+
     /// How many names the module declares.
     ///
     /// # Specification

@@ -104,6 +104,11 @@ impl core::fmt::Display for SourceFault<'_>
 }
 
 /// One step of a walk.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per path, consumed by its caller before the next; a source is the common step, \
+              and boxing it would add an allocation per source to shrink the rare fault"
+)]
 #[derive(Debug)]
 pub enum Step<'walk>
 {
@@ -115,6 +120,9 @@ pub enum Step<'walk>
         path: &'walk Path,
         /// The root the source sits under.
         root: SourceRoot,
+        /// The source's text, which every span of `composed` is measured
+        /// against.
+        text: SourceText<'walk>,
         /// What the source became.
         composed: Composed<'walk>,
         /// How it stands against its root.
@@ -232,7 +240,8 @@ impl Walk
     ///   following no symbolic link; any other path is read as one source,
     ///   whatever its name. Each source is classified by its canonical path,
     ///   read, and composed once, and its step names it by the path the walk
-    ///   reached it through. A path that cannot be listed or read is a
+    ///   reached it through and carries the text its spans are measured
+    ///   against. A path that cannot be listed or read is a
     ///   [`SourceFault::Unreadable`] step, and a path that yields no source and
     ///   no fault a [`SourceFault::NoSource`] step after its last entry. Every
     ///   step is counted in [`Walk::report`] before it is returned.
@@ -387,6 +396,7 @@ impl Walk
                 Step::Source {
                     path: &self.path,
                     root,
+                    text: SourceText::from(self.text.as_str()),
                     composed,
                     standing,
                 }
