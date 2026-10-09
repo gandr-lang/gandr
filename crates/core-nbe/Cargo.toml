@@ -20,6 +20,12 @@ anodized.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+tracing = { workspace = true, optional = true }
+
+[features]
+default = []
+# Evaluation/readback boundary diagnostics; no subscriber or std dependency.
+tracing = ["dep:tracing"]
 
 [lints]
 workspace = true

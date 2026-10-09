@@ -26,7 +26,9 @@ struct Cli;
 ///   argument surface parses before anything is written — which is a property
 ///   of the run rather than a predicate over one entry state and one returned
 ///   value, and the status line is an effect on standard output rather than an
-///   observation this call can make.
+///   observation this call can make. With `tracing`, a thread-local subscriber
+///   reports dispatch spans and successful output completion to standard error
+///   after argument parsing.
 /// - fails: returns the write or flush error when standard output is closed,
 ///   full, or otherwise unwritable; the runtime reports it and exits nonzero.
 /// - panics: none. The status line goes through a locked handle and the
@@ -41,10 +43,21 @@ struct Cli;
 fn main() -> Result<(), std::io::Error>
 {
     let _cli = <Cli as clap::Parser>::parse();
+    #[cfg(feature = "tracing")]
+    let _subscriber = tracing::subscriber::set_default(
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+            .finish(),
+    );
+    #[cfg(feature = "tracing")]
+    let _span = tracing::info_span!("driver").entered();
     let outcome = gandr_surface_dispatcher::dispatch(gandr_surface_dispatcher::Invocation::Status);
     let gandr_surface_dispatcher::Outcome::Status(report) = outcome;
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "gandr {} — {report}", env!("CARGO_PKG_VERSION"))?;
     stdout.flush()?;
+    #[cfg(feature = "tracing")]
+    tracing::info!("status output flushed");
     Ok(())
 }

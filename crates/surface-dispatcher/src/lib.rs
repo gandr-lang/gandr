@@ -52,14 +52,11 @@ impl core::fmt::Display for StatusReport
 ///
 /// # Specification
 /// - requires: nothing; every [`Invocation`] variant routes.
-/// - ensures: each variant maps to exactly one [`Outcome`] variant; routing
-///   performs no I/O and touches no process state.
-/// - provides: the outcome the driver renders. The postcondition stays prose.
-///   Its effect half — no I/O, no process state touched — is not a predicate
-///   over values, and `anodized`'s effect qualifiers are parsed declarations
-///   rather than checks. Its routing half is a one-variant match whose whole
-///   input domain the witness below enumerates, so a runtime clause would
-///   restate an exhaustive enumeration.
+/// - ensures: each variant maps to exactly one [`Outcome`] variant. Routing
+///   performs no I/O of its own; the optional `tracing` feature reports a span
+///   to the caller's subscriber.
+/// - provides: the outcome the driver renders. Every invocation is enumerated
+///   by the witness below.
 /// - fails: never; routing is total over the invocation vocabulary.
 /// - panics: none.
 ///
@@ -67,6 +64,7 @@ impl core::fmt::Display for StatusReport
 /// - hypothesis: L3 only — the decision surface is a one-variant match,
 ///   enumerated exhaustively with the exact outcome asserted.
 /// - witness: `tests::status_routes_to_the_status_report`
+#[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 #[inline]
 #[must_use]
 pub fn dispatch(invocation: Invocation) -> Outcome

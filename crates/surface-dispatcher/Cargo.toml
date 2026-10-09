@@ -10,5 +10,13 @@ keywords = ["gandr", "language", "toolchain"]
 categories = ["development-tools"]
 publish.workspace = true
 
+[dependencies]
+tracing = { workspace = true, optional = true }
+
+[features]
+default = []
+# Invocation boundary diagnostics through the caller-owned subscriber.
+tracing = ["dep:tracing"]
+
 [lints]
 workspace = true

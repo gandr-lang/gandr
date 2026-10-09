@@ -1066,6 +1066,7 @@ fn head_term(
 /// - witness: `readback::tests::one_budget_bounds_the_readback_and_the_evaluations_it_drives`
 /// - witness: `readback_terms::readback_terms::an_unreduced_term_reads_back_as_the_id_it_was_evaluated_from`
 /// - witness: `deep_readback::deep_readback::a_deep_value_reads_back_inside_a_small_stack`
+#[cfg_attr(feature = "tracing", tracing::instrument(skip_all, fields(fuel = u32::from(fuel), unfolding = matches!(mode, ReadbackMode::Unfolding))))]
 #[inline]
 #[spec(ensures: |ret| ret.is_err()
     || ret.as_ref().is_ok_and(|term| core.value(*term).is_some()))]
@@ -1137,6 +1138,7 @@ pub fn readback_value(
 /// - witness: `readback_terms::readback_terms::a_case_that_fires_normalizes_to_the_branch_it_took`
 /// - witness: `readback_terms::readback_terms::a_stuck_elimination_normalizes_to_the_spine_written_out_by_hand`
 /// - witness: `deep_readback::deep_readback::a_deep_computation_reads_back_inside_a_small_stack`
+#[cfg_attr(feature = "tracing", tracing::instrument(skip_all, fields(fuel = u32::from(fuel), unfolding = matches!(mode, ReadbackMode::Unfolding))))]
 #[inline]
 #[spec(ensures: |ret| ret.is_err()
     || ret.as_ref().is_ok_and(|term| core.computation(*term).is_some()))]
@@ -1282,6 +1284,8 @@ fn run(
     while let Some(task) = machine.tasks.pop() {
         let Some(remaining) = u32::from(machine.fuel).checked_sub(1_u32)
         else {
+            #[cfg(feature = "tracing")]
+            tracing::warn!("readback fuel exhausted");
             return Err(ReadbackFault::OutOfFuel);
         };
         machine.fuel = Fuel::from(remaining);

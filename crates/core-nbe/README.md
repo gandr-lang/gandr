@@ -3,12 +3,12 @@
 Normalization by evaluation for the core language: the glued value domain, the per-run arena that owns it, its two policy parameters, and the evaluation and readback machines.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
+- [Optional tracing](#optional-tracing)
 - [Term face and unfolding face](#term-face-and-unfolding-face)
 - [Neutrals and spines](#neutrals-and-spines)
 - [Closure spaces](#closure-spaces)
@@ -20,7 +20,6 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - [Source sharing](#source-sharing)
 - [Specification attributes](#specification-attributes)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -102,6 +101,21 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest
 ```
 
 The deep evaluation, deep readback and teardown suites run inside a thread with a deliberately small stack, so a machine or a destructor that recursed per node fails them rather than fitting on a large host stack. The pinned-term suite compares each readback against an expected term written out by hand.
+
+## Optional tracing
+
+Enable `tracing` to observe evaluation and readback boundaries. The feature preserves `no_std` and activates no subscriber or output backend. Fuel checks and semantic errors remain ordinary code, independent of instrumentation.
+
+| Boundary | Level | Fields |
+| -------- | ----- | ------ |
+| `eval_value`, `eval_computation` | INFO | Initial `fuel` |
+| `eval_comp_within` | DEBUG | Initial `fuel`, including evaluations driven by readback |
+| `readback_value`, `readback_computation` | INFO | Initial `fuel` and `unfolding` mode |
+| Evaluation or readback fuel exhaustion | WARN | A fixed message inside the active span |
+
+The caller owns filtering, the subscriber and the output destination. [`tracing::instrument`](https://docs.rs/tracing-attributes/0.1.31/tracing_attributes/attr.instrument.html) uses `skip_all`: no arguments, terms, environments, arena contents or result payloads are recorded, and no argument gains a `Debug` bound. Existing `Debug` implementations remain unconditional. These are diagnostic spans, not the conversion decision vocabulary or a replay certificate.
+
+The choice is `tracing` 0.1.44 with only `attributes`, optional and off by default. Its structured spans retain the relation between readback and nested evaluation without an async runtime. Flat `log` events lose that nesting; a custom observer would duplicate a standard diagnostics interface. Revisit for a security advisory affecting the selected version, loss of maintenance, or a consumer requiring a different diagnostic model. The feature does not change scheduling, duplication or reduction decisions.
 
 ## Term face and unfolding face
 

@@ -161,6 +161,28 @@ git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"
 default-features = false
 
+# Optional structured diagnostics, with no runtime or output backend.
+# features:
+# - attributes: skip-all boundary spans without argument Debug bounds
+# consumers:
+# - core-nbe
+# - surface-dispatcher
+# - surface-driver (also enables std for its scoped subscriber)
+[workspace.dependencies.tracing]
+version = "0.1.44"
+default-features = false
+features = ["attributes"]
+
+# Application-owned stderr formatting, without a log bridge or filter parser.
+# features:
+# - fmt: scoped driver output, including its registry and std requirements
+# consumers:
+# - surface-driver
+[workspace.dependencies.tracing-subscriber]
+version = "0.3.23"
+default-features = false
+features = ["fmt"]
+
 # The lint wall. Every group is denied at priority -1 so an individual `allow`
 # below it wins; every allow states the class it exempts. A lint leaves this
 # wall only with the reason recorded beside it.

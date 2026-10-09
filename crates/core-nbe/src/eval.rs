@@ -854,6 +854,7 @@ fn extend_spine(
 /// - witness: `eval::tests::a_substituted_child_costs_the_composite_its_face`
 /// - witness: `eval::tests::a_manifest_definition_carries_its_body_unforced`
 /// - witness: `eval::tests::a_term_from_another_arena_is_refused`
+#[cfg_attr(feature = "tracing", tracing::instrument(skip_all, fields(fuel = u32::from(fuel))))]
 #[inline]
 #[spec(ensures: |ret| ret.is_err()
     || ret.as_ref().is_ok_and(|value| domain.value(*value).is_some()))]
@@ -909,6 +910,7 @@ pub fn eval_value(
 /// - witness: `eval::tests::a_case_picks_the_branch_the_injection_names`
 /// - witness: `eval::tests::a_loop_declines_on_fuel_rather_than_diverging`
 /// - witness: `eval::tests::an_application_reports_its_arguments_fault_first`
+#[cfg_attr(feature = "tracing", tracing::instrument(skip_all, fields(fuel = u32::from(fuel))))]
 #[inline]
 #[spec(ensures: |ret| ret.is_err()
     || ret.as_ref().is_ok_and(|produced| domain.computation(*produced).is_some()))]
@@ -955,6 +957,7 @@ pub fn eval_computation(
 ///   is what answers it, and a remainder asserted as an exact step count rather
 ///   than as "some fuel is left".
 /// - witness: `eval::tests::an_evaluation_in_a_supplied_environment_reports_its_remainder`
+#[cfg_attr(feature = "tracing", tracing::instrument(level = "debug", skip_all, fields(fuel = u32::from(fuel))))]
 #[spec(ensures: |ret| ret.is_err()
     || ret.as_ref().is_ok_and(|pair| {
         domain.computation(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)
@@ -1010,6 +1013,8 @@ fn run(
     while let Some(task) = machine.tasks.pop() {
         let Some(remaining) = u32::from(machine.fuel).checked_sub(1_u32)
         else {
+            #[cfg(feature = "tracing")]
+            tracing::warn!("evaluation fuel exhausted");
             return Err(EvalFault::OutOfFuel);
         };
         machine.fuel = Fuel(remaining);
