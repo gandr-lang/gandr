@@ -36,8 +36,16 @@ impl From<ObligClassIndex> for u8
     /// Narrow the index to a byte; every class index fits in one.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the byte is exactly the dense severity index.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all eight severity classes retain their exact rank
+    ///   through the host and wire observers; shifted or truncated ranks
+    ///   differ.
+    /// - witness: `oblig::tests::index_matches_ord_rank`
     #[inline]
+    #[anodized::spec(ensures: |ret| usize::from(ret) == index.0)]
     fn from(index: ObligClassIndex) -> Self
     {
         Self::try_from(usize::from(index)).unwrap_or(0)
@@ -88,8 +96,17 @@ impl From<ObligationCount> for usize
     /// Widen the count to a host count, saturating on a narrower host.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the host count equals the wire count when representable,
+    ///   otherwise it saturates at the host maximum.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one and the wire ceiling distinguish exact
+    ///   conversion from shifted counts and wrapping at a narrower host
+    ///   boundary.
+    /// - witness: `oblig::tests::counts_convert_at_zero_and_the_wire_ceiling`
     #[inline]
+    #[anodized::spec(ensures: |ret| ret == Self::try_from(count.0).unwrap_or(Self::MAX))]
     fn from(count: ObligationCount) -> Self
     {
         Self::try_from(u32::from(count)).unwrap_or(Self::MAX)
@@ -145,6 +162,8 @@ impl From<DeltaEmptyStatus> for bool
 ///   query surface exposes.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — this type has no call boundary; the class, recording
+///   and comparison operations carry its executable obligations.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the pinned severity ladder distinguishes every adjacent
@@ -191,6 +210,7 @@ impl Oblig
     /// - witness: `oblig::tests::index_matches_ord_rank`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.0 == match self { Self::MissingMeld => 0, Self::MissingTile => 1, Self::IncompleteTile => 2, Self::UnmoldedTok => 3, Self::InconMeld => 4, Self::ExtraMeld => 5, Self::ReservedKeyword => 6, Self::AmbiguousPrec => 7 })]
     pub const fn index(self) -> ObligClassIndex
     {
         ObligClassIndex(match self {
@@ -215,11 +235,13 @@ impl Oblig
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — a constant projection; contents are witnessed by the
-    ///   ladder test.
+    /// - hypothesis: L3 — every class is pinned in the eight-row severity
+    ///   table; adjacent comparisons and exact enumeration distinguish
+    ///   reordered, duplicated or omitted classes.
     /// - witness: `oblig::tests::severity_ladder_is_low_to_high`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| matches!(ret, [Self::MissingMeld, Self::MissingTile, Self::IncompleteTile, Self::UnmoldedTok, Self::InconMeld, Self::ExtraMeld, Self::ReservedKeyword, Self::AmbiguousPrec]))]
     pub const fn all() -> [Self; OBLIG_CLASS_COUNT]
     {
         [
@@ -246,6 +268,8 @@ impl Oblig
 ///   consumers can render statement-local diagnostics.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — this type has no call boundary; the class, recording
+///   and comparison operations carry its executable obligations.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — one instance observes exact class and span preservation.
@@ -271,11 +295,13 @@ impl ObligationInstance
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — a direct field initialization; retention is witnessed
-    ///   where the melder emits instances.
+    /// - hypothesis: L3 — a conflicting pair of operators emits the exact class
+    ///   and smallest responsible span; changing either constructor field
+    ///   alters this consumer-visible diagnostic.
     /// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.class.index().0 == class.index().0)]
     pub const fn new(
         class: Oblig,
         span: ByteSpan,
@@ -305,8 +331,17 @@ impl From<ClassCount> for ObligationNet
     /// Take a class's net change: inserted minus removed.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the signed net is inserted minus removed, without overflow
+    ///   for any pair of 32-bit counts.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — removal-only, insertion-only and cancelling counts at
+    ///   the wire ceiling distinguish sign reversal, narrowing and lost removal
+    ///   through the delta ordering observed by candidate minimization.
+    /// - witness: `oblig::tests::net_precedes_gross_and_is_signed`
     #[inline]
+    #[anodized::spec(ensures: |ret| ret.0 == i64::from(count.inserted.0).saturating_sub(i64::from(count.removed.0)))]
     fn from(count: ClassCount) -> Self
     {
         Self(i64::wrapping_sub(
@@ -338,6 +373,8 @@ impl From<ClassCount> for ObligationNet
 ///   without materializing candidate obligation sets.
 /// - fails: never; per-class counts saturate at `u32::MAX`.
 /// - panics: none.
+/// - executable: none — this type has no call boundary; its recording and
+///   comparison operations carry the executable obligations.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — high-severity-dominance, net-before-gross, and
@@ -366,11 +403,12 @@ impl Delta
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — the zero delta; behavior is witnessed by the order
-    ///   tests that compare against it.
-    /// - witness: `oblig::tests::minimization_never_prefers_ambiguous_prec`
+    /// - hypothesis: L3 — empty and removal-only deltas distinguish zero from
+    ///   nonzero changes; every class is checked at zero before saturation.
+    /// - witness: `oblig::tests::recording_saturates_each_class_without_cross_talk`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| { let mut remaining: &[ClassCount] = &ret.counts; let mut zero = true; while let Some((count, rest)) = remaining.split_first() { zero = zero && count.removed.0 == 0 && count.inserted.0 == 0; remaining = rest; } zero })]
     pub const fn empty() -> Self
     {
         Self {
@@ -394,10 +432,18 @@ impl Delta
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — recording into distinct classes shifts the order at
-    ///   exactly the recorded class.
-    /// - witness: `oblig::tests::higher_severity_class_dominates_the_order`
+    /// - hypothesis: L3 — every class is recorded at zero, one below the
+    ///   ceiling, the ceiling and past it. Exact inserted counts and unchanged
+    ///   other classes detect wrapping, wrong slots and lost removal counts.
+    /// - witness: `oblig::tests::recording_saturates_each_class_without_cross_talk`
     #[inline]
+    #[anodized::spec(captures: before = self.counts,
+        ensures: self.counts.iter().zip(before).enumerate().all(|(index, (after, before))| {
+            if index == usize::from(class.index()) {
+                after.removed.0 == before.removed.0.saturating_add(removed.0)
+                    && after.inserted.0 == before.inserted.0.saturating_add(inserted.0)
+            } else { *after == before }
+        }))]
     pub fn record(
         &mut self,
         class: Oblig,
@@ -425,10 +471,15 @@ impl Delta
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — a thin wrapper over [`Delta::record`]; behavior is
-    ///   witnessed there.
-    /// - witness: `oblig::tests::insert_is_record_of_one_inserted`
+    /// - hypothesis: L3 — repeated unit insertion reaches and stays at the wire
+    ///   ceiling while retaining removals; exact counts distinguish wrapping,
+    ///   double increments and mutations of other classes.
+    /// - witness: `oblig::tests::recording_saturates_each_class_without_cross_talk`
     #[inline]
+    #[anodized::spec(captures: before = self.counts.get(usize::from(class.index())).copied(),
+        ensures: self.counts.get(usize::from(class.index())).zip(before).is_some_and(|(after, before)| {
+            after.removed == before.removed && after.inserted.0 == before.inserted.0.saturating_add(1)
+        }))]
     pub fn insert(
         &mut self,
         class: Oblig,
@@ -447,10 +498,12 @@ impl Delta
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — a projection; witnessed by the recording tests.
-    /// - witness: `oblig::tests::insert_is_record_of_one_inserted`
+    /// - hypothesis: L3 — each class is observed before and after saturation;
+    ///   zero in every untouched class detects a wrong-slot projection.
+    /// - witness: `oblig::tests::recording_saturates_each_class_without_cross_talk`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| self.counts.get(usize::from(class.index())).is_some_and(|count| ret == count.inserted))]
     pub fn inserted(
         &self,
         class: Oblig,
@@ -471,11 +524,12 @@ impl Delta
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the empty delta and any non-empty delta separate the
-    ///   predicate.
-    /// - witness: `oblig::tests::empty_delta_is_empty`
+    /// - hypothesis: L3 — zero, insertion-only, removal-only and cancelling
+    ///   deltas distinguish empty state from zero net change.
+    /// - witness: `oblig::tests::net_precedes_gross_and_is_signed`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| bool::from(ret) == self.counts.iter().all(|count| count.removed.0 == 0 && count.inserted.0 == 0))]
     pub fn is_empty(&self) -> DeltaEmptyStatus
     {
         DeltaEmptyStatus::from(self.counts.iter().all(|count| {
@@ -489,8 +543,20 @@ impl Ord for Delta
     /// Compare two deltas by net-then-gross, folded from highest severity down.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the first differing severity, from highest to lowest,
+    ///   decides; signed net precedes gross insertion count within that class.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — high versus low classes, negative and positive nets,
+    ///   equal-net gross ties and equal deltas are observed as strict order or
+    ///   equality; reversed severity, unsigned subtraction and gross-first
+    ///   folds change those candidate rankings.
+    /// - witness: `oblig::tests::higher_severity_class_dominates_the_order`
+    /// - witness: `oblig::tests::equal_net_breaks_ties_on_gross_inserted`
+    /// - witness: `oblig::tests::net_precedes_gross_and_is_signed`
     #[inline]
+    #[anodized::spec(ensures: |ret| ret == self.counts.iter().rev().map(|count| (i64::from(count.inserted.0).saturating_sub(i64::from(count.removed.0)), count.inserted)).cmp(other.counts.iter().rev().map(|count| (i64::from(count.inserted.0).saturating_sub(i64::from(count.removed.0)), count.inserted))))]
     fn cmp(
         &self,
         other: &Self,
@@ -540,10 +606,100 @@ mod tests
     use super::ObligationCount;
 
     #[test]
+    fn counts_convert_at_zero_and_the_wire_ceiling()
+    {
+        for value in [0_u32, 1, u32::MAX] {
+            assert_eq!(
+                usize::from(ObligationCount::from(value)),
+                usize::try_from(value).unwrap_or(usize::MAX)
+            );
+        }
+    }
+
+    #[test]
+    fn recording_saturates_each_class_without_cross_talk()
+    {
+        for class in Oblig::all() {
+            let mut delta = Delta::empty();
+            assert!(bool::from(delta.is_empty()));
+            let below = ObligationCount::from(u32::MAX.saturating_sub(1));
+            delta.record(class, below, below);
+            delta.insert(class);
+            delta.insert(class);
+            assert_eq!(delta.inserted(class), ObligationCount::from(u32::MAX));
+            assert_eq!(
+                delta
+                    .counts
+                    .get(usize::from(class.index()))
+                    .map(|count| count.removed),
+                Some(below)
+            );
+            delta.record(class, ObligationCount::from(2), ObligationCount::from(2));
+            for (index, count) in delta.counts.iter().enumerate() {
+                let expected = if index == usize::from(class.index()) {
+                    u32::MAX
+                }
+                else {
+                    0
+                };
+                assert_eq!(count.removed, ObligationCount::from(expected));
+                assert_eq!(count.inserted, ObligationCount::from(expected));
+            }
+        }
+    }
+
+    #[test]
+    fn net_precedes_gross_and_is_signed()
+    {
+        for class in Oblig::all() {
+            let mut removed = Delta::empty();
+            removed.record(
+                class,
+                ObligationCount::from(u32::MAX),
+                ObligationCount::ZERO,
+            );
+            let mut inserted = Delta::empty();
+            inserted.record(
+                class,
+                ObligationCount::ZERO,
+                ObligationCount::from(u32::MAX),
+            );
+            let mut cancelled = Delta::empty();
+            cancelled.record(
+                class,
+                ObligationCount::from(u32::MAX),
+                ObligationCount::from(u32::MAX),
+            );
+            assert!(removed < Delta::empty());
+            assert!(Delta::empty() < cancelled);
+            assert!(cancelled < inserted);
+            assert!(!bool::from(removed.is_empty()));
+            assert!(!bool::from(cancelled.is_empty()));
+            assert_eq!(cancelled.cmp(&cancelled), core::cmp::Ordering::Equal);
+            assert_eq!(
+                removed.partial_cmp(&inserted),
+                Some(core::cmp::Ordering::Less)
+            );
+            let mut net_minus_one = Delta::empty();
+            net_minus_one.record(class, ObligationCount::from(11), ObligationCount::from(10));
+            assert!(net_minus_one < Delta::empty());
+        }
+    }
+
+    #[test]
     fn severity_ladder_is_low_to_high()
     {
         let ladder = Oblig::all();
-        assert_eq!(OBLIG_CLASS_COUNT, ladder.len());
+        assert_eq!(ladder, [
+            Oblig::MissingMeld,
+            Oblig::MissingTile,
+            Oblig::IncompleteTile,
+            Oblig::UnmoldedTok,
+            Oblig::InconMeld,
+            Oblig::ExtraMeld,
+            Oblig::ReservedKeyword,
+            Oblig::AmbiguousPrec
+        ]);
         for pair in ladder.windows(2) {
             if let &[lower, higher] = pair {
                 assert!(
@@ -570,6 +726,7 @@ mod tests
         let ladder = Oblig::all();
         for (rank, class) in ladder.into_iter().enumerate() {
             assert_eq!(usize::from(class.index()), rank);
+            assert_eq!(usize::from(u8::from(class.index())), rank);
         }
     }
 

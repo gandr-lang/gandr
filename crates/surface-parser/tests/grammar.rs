@@ -153,10 +153,24 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
 /// Parse `source` under the built-in grammar and require a clean reading.
 ///
 /// # Specification
-/// - panics: when the reading carries an obligation, naming `case`.
+/// - ensures: successful return means the parse has no obligations.
+/// - fails: propagates the original typed melder error.
+/// - panics: when the reading carries an obligation, naming case.
 ///
 /// # Errors
 /// The melder's refusal at commit, which a whole source never meets.
+///
+/// # Adequacy
+/// - hypothesis: L3 — clean type-operator chains, recursion markers and
+///   universe forms exercise the discarded parse result through its clean
+///   assertion. Mixed set operators additionally distinguish the
+///   required-parenthesis refusal. These valid sources do not force an internal
+///   melder error; the predicate guards its concrete identity if it occurs.
+/// - witness: `tests::grammar::right_associative_type_operator_chains_parse_cleanly`
+/// - witness: `tests::grammar::recursion_marker_instantiations_parse_cleanly`
+/// - witness: `tests::grammar::mixed_set_type_operators_require_parentheses`
+/// - witness: `tests::grammar::every_universe_spelling_reads_cleanly`
+#[anodized::spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.downcast_ref::<gandr_surface_parser::MeldError>().is_some(), |&()| true))]
 fn assert_parses_clean(
     case: CaseName,
     source: SourceText<'_>,

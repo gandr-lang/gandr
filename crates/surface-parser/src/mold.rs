@@ -228,6 +228,19 @@ impl From<bool> for CandidateRank
 }
 
 /// Local candidate minimization key.
+///
+/// # Specification
+/// - ensures: compares obligation delta before form continuation, expected sort
+///   and operand continuation, in that order; lower ranks win.
+/// - panics: none.
+/// - executable: none — derived ordering has no handwritten invocation boundary
+///   on this record; candidate scoring supplies executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — adjacent priority levels disagree in paired keys;
+///   comparisons expose the winning criterion. Swapping fields or reversing any
+///   rank changes a pair even when all lower-priority ranks disagree.
+/// - witness: `mold::tests::candidate_key_priorities_are_lexicographic`
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct CandidateKey
 {
@@ -323,12 +336,17 @@ const KEYWORDS: &[&str] = &[
 /// - fails: never.
 /// - panics: none.
 ///
+///
 /// # Adequacy
-/// - hypothesis: L3 — a keyword word, a bare identifier, and a punctuation
-///   lexeme distinguish the label menus.
+/// - hypothesis: L3 — every lexeme menu, reserved and ordinary words, and
+///   canonical versus dialect shell openers expose exact label sequences.
+///   Dropping a generic alternative, widening a keyword or losing the source
+///   spelling changes the menu.
 /// - witness: `mold::tests::keyword_and_identifier_share_a_word_menu`
+/// - witness: `mold::tests::literal_and_shell_menus_are_exact`
 #[inline]
 #[must_use]
+#[anodized::spec(ensures: |ret| ret.is_empty() == matches!(lexeme, Lexeme::Space | Lexeme::Unknown) && ret.len() <= MAX_LABELS && (!matches!(lexeme, Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Punct) || ret.first().is_some_and(|label| label.0 == text.0)))]
 pub fn candidate_labels<'text>(
     lexeme: Lexeme,
     text: TokenText<'text>,
@@ -433,6 +451,14 @@ const UPPER_KEYWORDS: &[&str] = &[
 /// - provides: bounded lexical lookahead for shared-prefix mold choices.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — adjacent significant tokens, intervening spaces, a
+///   trailing space run and an exhausted or host-ceiling cursor expose the
+///   first successor. Returning the current token or skipping a significant
+///   token changes its position and class.
+/// - witness: `mold::tests::lookahead_skips_only_space_and_never_the_current_token`
+#[anodized::spec(ensures: |ret| ret == tokens.iter().copied().enumerate().skip(index.0.saturating_add(1)).find(|&(_, token)| token.lexeme != Lexeme::Space).map(|(position, token)| (TokenIndex::from(position), token)))]
 fn next_significant(
     tokens: &[Token],
     index: TokenIndex,
@@ -463,6 +489,8 @@ fn next_significant(
 /// - provides: the deterministic labeler→melder bridge.
 /// - fails: never; the melder push is total.
 /// - panics: none.
+/// - executable: none — this state carrier has no invocation boundary;
+///   candidate operations carry its executable menu invariants.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the minimum-key choice, the tie-break, and the
@@ -496,12 +524,16 @@ impl<'pbg> Molder<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L1 — direct initialization; behavior is witnessed by the
-    ///   determinism test.
-    /// - witness: `mold::tests::molding_is_deterministic_across_runs`
+    /// - hypothesis: L3 — a fresh molder resolves the first and last declared
+    ///   labels and rejects an absent label before any token is gathered. Dirty
+    ///   buffers, an unsorted label index or omitted endpoints change the
+    ///   queries.
+    /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.candidates.is_empty() && ret.marks.is_empty() && ret.labels.iter().zip(ret.labels.iter().skip(1)).all(|(left, right)| left.as_ref() < right.as_ref()))]
     pub fn new(pbg: &'pbg Pbg) -> Self
     {
         let labels = pbg
@@ -520,7 +552,17 @@ impl<'pbg> Molder<'pbg>
     /// Take a pooled mark filled with `state`'s current snapshot.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns a snapshot of the current melder, overwriting a
+    ///   reused pool slot.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and reused mark pools surround an obligation-
+    ///   bearing push; rolling back reproduces exact checkpoint bytes.
+    ///   Returning a stale mark or leaking dry-run source, slope or obligations
+    ///   changes them.
+    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
+    #[anodized::spec(ensures: |ret| bool::from(state.delta_since(&ret).is_empty()))]
     fn take_mark(
         &mut self,
         state: &MeldState<'_>,
@@ -546,7 +588,16 @@ impl<'pbg> Molder<'pbg>
     /// Resolve a candidate label spelling to this grammar's static tile label.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns the declared label with exactly this spelling, or
+    ///   none when absent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — first and last declared spellings and an absent
+    ///   neighbor expose the optional label. Off-by-one binary-search bounds or
+    ///   a spurious fallback label change the answer.
+    /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
+    #[anodized::spec(ensures: |ret| ret == self.labels.iter().copied().find(|candidate| candidate.as_ref() == label.0))]
     fn candidate_label(
         &self,
         label: CandidateLabel<'_>,
@@ -573,11 +624,15 @@ impl<'pbg> Molder<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a single-candidate punctuation token and a wide-menu
-    ///   identifier distinguish the count.
+    /// - hypothesis: L3 — a wide identifier menu, narrow punctuation, space and
+    ///   unknown tokens expose exact canonical-union cardinality. Duplicate
+    ///   candidates or retaining the preceding token menu changes the count.
     /// - witness: `mold::tests::identifier_menu_is_wide`
+    /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     #[inline]
+    #[anodized::spec(ensures: |ret| ret.0 == self.candidates.len() && self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     pub fn candidate_count(
         &mut self,
         token: Token,
@@ -609,12 +664,17 @@ impl<'pbg> Molder<'pbg>
     ///   `mark`/`rollback_to` transaction; the first strict delta improvement
     ///   wins, so equal deltas keep the smaller `MoldId`.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — the minimum choice, the tie-break, the unmolded path,
-    ///   and cross-run determinism are each observed.
-    /// - witness: `mold::tests::molding_is_deterministic_across_runs`
+    /// - hypothesis: L3 — source-valid tokens include complete and bare holes,
+    ///   ordinary atoms, unknown bytes and layout. Committed structure and
+    ///   exact checkpoint bytes expose premature hole closure, unmolded-path
+    ///   loss and a non-no-op space.
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
+    /// - witness: `mold::tests::unmoldable_token_takes_the_unmolded_path`
+    /// - witness: `mold::tests::space_and_empty_stream_are_exact_noops`
     #[inline]
+    #[anodized::spec(requires: <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some())]
     pub fn mold(
         &mut self,
         state: &mut MeldState<'_>,
@@ -660,13 +720,17 @@ impl<'pbg> Molder<'pbg>
     /// - intension: each token is molded by [`choose`](Self::choose) against
     ///   the live slope, in a single left-to-right pass with no backtracking.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — the corpus sources (zero obligations across every
-    ///   form variant), determinism, and the totality proptest each exercise
-    ///   it.
+    /// - hypothesis: L3 — empty input, interleaved trivia, malformed input and
+    ///   complete grammar forms expose exact source reconstruction and repair
+    ///   classes. Dropped space, extra pushes or a different candidate decision
+    ///   changes the tree or obligations.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
-    /// - witness: `mold::tests::molding_is_deterministic_across_runs`
+    /// - witness: `mold::tests::space_and_empty_stream_are_exact_noops`
+    /// - witness: `parse::tests::parse_is_lossless_and_hash_stable`
     #[inline]
+    #[anodized::spec(requires: tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()))]
     pub fn mold_stream(
         &mut self,
         state: &mut MeldState<'_>,
@@ -707,8 +771,19 @@ impl<'pbg> Molder<'pbg>
     /// `hole_name` word stays open so the name attaches.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the token bounds identify its exact source fragment.
+    /// - ensures: settles shadowing holes only when the incoming label cannot
+    ///   continue them.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — source-valid tokens include complete and bare holes,
+    ///   ordinary atoms, unknown bytes and layout. Committed structure and
+    ///   exact checkpoint bytes expose premature hole closure, unmolded-path
+    ///   loss and a non-no-op space.
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[inline]
+    #[anodized::spec(requires: source.as_ref().get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some())]
     fn settle_shadowing<'src>(
         &self,
         state: &mut MeldState<'_>,
@@ -739,7 +814,17 @@ impl<'pbg> Molder<'pbg>
     /// Push the molder's choice, or the unmolded path when there is none.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: pushes the selected mold; an absent choice preserves text
+    ///   through an unmolded-token obligation.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a valid atom and an absent candidate expose the
+    ///   committed text and unmolded obligation. Treating absence as no-op or
+    ///   using a real fallback mold changes those observations.
+    /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
+    /// - witness: `mold::tests::unmoldable_token_takes_the_unmolded_path`
+    #[anodized::spec(ensures: |_| choice.is_some() || state.obligations().last().is_some_and(|obligation| obligation.class == crate::Oblig::UnmoldedTok))]
     fn push_choice(
         state: &mut MeldState<'_>,
         choice: Option<MoldId>,
@@ -772,7 +857,20 @@ impl<'pbg> Molder<'pbg>
     /// would on the full menu.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the token bounds identify its exact source fragment.
+    /// - ensures: gathers the applicable menu in ascending order without
+    ///   duplicate molds.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — duplicate labels, empty and absent menus, fresh
+    ///   versus declared candidates and a reserved word in name versus type
+    ///   position expose the canonical candidate union and committed form.
+    ///   Duplicate or unsorted entries, stale menus and an unconditional
+    ///   fallback change them.
+    /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
+    /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
+    #[anodized::spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather<'src>(
         &mut self,
         state: &MeldState<'_>,
@@ -818,14 +916,16 @@ impl<'pbg> Molder<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — the fallback fires exactly at the reservation's
-    ///   inadmissible slot (`sign Unknown` molds its name as `type_identifier`)
-    ///   and stays out where the reserved tile molds (`def x : Unknown;` keeps
-    ///   the primitive-type atom); a non-reserved word never reaches it (the
-    ///   corpus gate).
+    /// - hypothesis: L3 — duplicate labels, empty and absent menus, fresh
+    ///   versus declared candidates and a reserved word in name versus type
+    ///   position expose the canonical candidate union and committed form.
+    ///   Duplicate or unsorted entries, stale menus and an unconditional
+    ///   fallback change them.
+    /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
-    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[anodized::spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather_reserved_fallback<'src>(
         &mut self,
         state: &MeldState<'_>,
@@ -868,7 +968,20 @@ impl<'pbg> Molder<'pbg>
     /// declared menu ([`CandidateMenu::Declared`]).
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the token bounds identify its exact source fragment.
+    /// - ensures: gathers the applicable menu in ascending order without
+    ///   duplicate molds.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — duplicate labels, empty and absent menus, fresh
+    ///   versus declared candidates and a reserved word in name versus type
+    ///   position expose the canonical candidate union and committed form.
+    ///   Duplicate or unsorted entries, stale menus and an unconditional
+    ///   fallback change them.
+    /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
+    /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
+    #[anodized::spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather_menu<'src>(
         &mut self,
         token: Token,
@@ -899,6 +1012,16 @@ impl<'pbg> Molder<'pbg>
     ///   [`Self::gather_reserved_fallback`].
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — duplicate labels, empty and absent menus, fresh
+    ///   versus declared candidates and a reserved word in name versus type
+    ///   position expose the canonical candidate union and committed form.
+    ///   Duplicate or unsorted entries, stale menus and an unconditional
+    ///   fallback change them.
+    /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
+    /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
+    #[anodized::spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather_labels(
         &mut self,
         labels: &[CandidateLabel<'_>],
@@ -940,7 +1063,17 @@ impl<'pbg> Molder<'pbg>
     /// grammar, not `self`, leaving `self.candidates` free to push into.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends exactly matching grammar successors, retaining the
+    ///   existing prefix.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an open form, matching and absent labels and a
+    ///   preexisting candidate expose the exact appended adjacency set.
+    ///   Dropping the prefix, crossing to another form or ignoring the label
+    ///   changes it.
+    /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
+    #[anodized::spec(captures: before = self.candidates.len(), ensures: |_| self.candidates.get(before ..).is_some_and(|tail| tail.iter().all(|right| self.pbg.adjacencies().binary_search(&(open, *right)).is_ok() && self.pbg.mold(*right).is_ok_and(|def| labels.iter().any(|label| label.0 == def.label)))))]
     fn push_form_successors(
         &mut self,
         labels: &[CandidateLabel<'_>],
@@ -988,7 +1121,18 @@ impl<'pbg> Molder<'pbg>
     /// process-invariant tie-break.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: computes the streaming candidate key without completion
+    ///   penalties and restores the melder exactly.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a live state with prior obligations is dry-run
+    ///   through a valid and invalid mold, using fresh and reused marks.
+    ///   Checkpoint bytes before and after expose source, slope, cache or
+    ///   obligation leakage; streaming and completion deltas distinguish their
+    ///   scoring boundaries.
+    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
+    #[anodized::spec(captures: before = (state.admissibility_frontier(), state.obligations().len()), ensures: |_| state.admissibility_frontier() == before.0 && state.obligations().len() == before.1)]
     fn key(
         &mut self,
         state: &mut MeldState<'_>,
@@ -1034,7 +1178,18 @@ impl<'pbg> Molder<'pbg>
     /// candidates the window cannot.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: computes the completion obligation penalty and restores the
+    ///   melder exactly.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a live state with prior obligations is dry-run
+    ///   through a valid and invalid mold, using fresh and reused marks.
+    ///   Checkpoint bytes before and after expose source, slope, cache or
+    ///   obligation leakage; streaming and completion deltas distinguish their
+    ///   scoring boundaries.
+    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
+    #[anodized::spec(captures: before = (state.admissibility_frontier(), state.obligations().len()), ensures: |_| state.admissibility_frontier() == before.0 && state.obligations().len() == before.1)]
     fn completion(
         &mut self,
         state: &mut MeldState<'_>,
@@ -1067,7 +1222,19 @@ impl<'pbg> Molder<'pbg>
     /// stand-in for the lookahead the single-token path cannot run.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the candidate menu is canonical and belongs to this grammar.
+    /// - ensures: selects a menu member, minimizing admissible key then
+    ///   completion then identity; an empty menu yields none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, sole and ambiguous menus, including a
+    ///   no-admissible fallback, expose the selected mold and final repairs.
+    ///   Dropped candidates, choosing outside the menu or changing priority
+    ///   changes those observations; dry-run state is compared byte-for-byte.
+    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
+    /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
+    #[anodized::spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), ensures: |ret| ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
     fn choose(
         &mut self,
         state: &mut MeldState<'_>,
@@ -1175,6 +1342,14 @@ impl<'pbg> Molder<'pbg>
     /// - provides: batch-only disambiguation for the direct circuit binder.
     /// - fails: never; missing lookahead rejects the direct reading.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — direct binder prefixes and expression heads following
+    ///   the same parenthesis, including missing lookahead, expose the selected
+    ///   grammar form. Admitting an otherwise forbidden mold or confusing a
+    ///   colon-bearing binder with a call changes the committed structure.
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[anodized::spec(ensures: |ret| !bool::from(ret) || bool::from(state.admits_at(mold, frontier)))]
     fn direct_rule_binder_admits(
         &self,
         state: &MeldState<'_>,
@@ -1254,7 +1429,19 @@ impl<'pbg> Molder<'pbg>
     /// directly.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: candidates are canonical for the current token.
+    /// - ensures: returns no choice for an absent token or empty menu;
+    ///   otherwise selects a grammar mold by bounded lookahead.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — complete shared-prefix families, exhausted input and
+    ///   an empty menu expose selection and absence. Losing a tied opener or
+    ///   looking beyond the bounded window changes the committed form; dry-run
+    ///   mutations change the checkpoint bytes.
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
+    #[anodized::spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some()), ensures: |ret| ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
     fn choose_stream<'src>(
         &mut self,
         state: &mut MeldState<'_>,
@@ -1356,7 +1543,18 @@ impl<'pbg> Molder<'pbg>
     /// form completes.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: start is within the token stream or its end sentinel.
+    /// - ensures: molds at most eight non-space tokens and records
+    ///   preceding/intervening trivia, leaving the following token untouched.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty suffix and nine significant tokens separated
+    ///   by spaces expose the exact committed prefix. Counting spaces against
+    ///   the window, using seven or nine tokens, or consuming trailing trivia
+    ///   after the eighth token changes the preserved source.
+    /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
+    #[anodized::spec(requires: start.0 <= tokens.len())]
     fn mold_window<'src>(
         &mut self,
         state: &mut MeldState<'_>,
@@ -1427,6 +1625,317 @@ mod tests
         root_digest: Option<NodeDigest>,
         /// How many obligations the run buffered.
         obligations: MoldObligationCount,
+    }
+
+    #[test]
+    fn candidate_key_priorities_are_lexicographic()
+    {
+        let mut worse_delta = crate::Delta::empty();
+        worse_delta.insert(crate::Oblig::UnmoldedTok);
+        let low = super::CandidateRank::from(false);
+        let high = super::CandidateRank::from(true);
+        let keys = [
+            super::CandidateKey {
+                delta: crate::Delta::empty(),
+                continuation: high,
+                sort: high,
+                operand_continuation: high,
+            },
+            super::CandidateKey {
+                delta: worse_delta,
+                continuation: low,
+                sort: low,
+                operand_continuation: low,
+            },
+        ];
+        assert!(keys.first().unwrap() < keys.last().unwrap());
+        let first = super::CandidateKey {
+            delta: crate::Delta::empty(),
+            continuation: low,
+            sort: high,
+            operand_continuation: high,
+        };
+        assert!(
+            first
+                < super::CandidateKey {
+                    continuation: high,
+                    sort: low,
+                    operand_continuation: low,
+                    ..first
+                }
+        );
+        let second = super::CandidateKey { sort: low, ..first };
+        assert!(
+            second
+                < super::CandidateKey {
+                    operand_continuation: low,
+                    ..first
+                }
+        );
+        let third = super::CandidateKey {
+            operand_continuation: low,
+            ..second
+        };
+        assert!(third < second);
+    }
+
+    #[test]
+    fn literal_and_shell_menus_are_exact()
+    {
+        let cases: &[(Lexeme, &str, &[&str])] = &[
+            (Lexeme::Number, "1", &["number"]),
+            (Lexeme::TypedNumber, "1u32", &["typed_number"]),
+            (Lexeme::Character, "'a'", &["character"]),
+            (Lexeme::Quote, "\"", &["\""]),
+            (Lexeme::StringFragment, "x", &[
+                "string_fragment",
+                "double_string_fragment",
+            ]),
+            (Lexeme::EscapeSequence, "\\n", &["escape_sequence"]),
+            (Lexeme::ShellWord, "word", &["shell_word"]),
+            (Lexeme::EnvAssign, "A=b", &["environment_assignment"]),
+            (Lexeme::SingleQuotedContent, "a", &["single_quoted_content"]),
+            (Lexeme::VariableName, "A", &["variable_name"]),
+            (Lexeme::SubshellOpen, "[", &["subshell_open"]),
+            (Lexeme::SubshellClose, "]", &["subshell_close"]),
+            (Lexeme::FileDescriptor, "2", &["file_descriptor"]),
+            (Lexeme::Punct, "#!sh{", &["#!sh{", "#!{"]),
+            (Lexeme::Punct, "$!py{", &[
+                "$!py{",
+                "command_substitution_start",
+            ]),
+            (Lexeme::Punct, "#!{", &["#!{", "#!{"]),
+            (Lexeme::Space, " ", &[]),
+            (Lexeme::Unknown, "~", &[]),
+        ];
+        for &(lexeme, text, expected) in cases {
+            assert!(
+                candidate_labels(lexeme, TokenText::from(text))
+                    .iter()
+                    .map(|label| <&str>::from(*label))
+                    .eq(expected.iter().copied()),
+                "{lexeme:?}: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn lookahead_skips_only_space_and_never_the_current_token()
+    {
+        let tokens = label(SourceFragment::from("a  b ~  "));
+        for (origin, expected) in [
+            (0_usize, Some(2_usize)),
+            (1, Some(2)),
+            (2, Some(4)),
+            (4, None),
+            (5, None),
+            (usize::MAX, None),
+        ] {
+            let next = super::next_significant(&tokens, super::TokenIndex::from(origin));
+            assert_eq!(next.map(|(position, _)| usize::from(position)), expected);
+            assert_eq!(
+                next.map(|(_, token)| token),
+                expected.and_then(|index| tokens.get(index).copied())
+            );
+        }
+        assert_eq!(
+            super::next_significant(&[], super::TokenIndex::from(0_usize)),
+            None
+        );
+    }
+
+    #[test]
+    fn candidate_gathering_is_a_canonical_union() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built()?;
+        let mut molder = Molder::new(&pbg);
+        assert!(molder.candidates.is_empty());
+        assert!(molder.marks.is_empty());
+        for (declared, _) in pbg.candidate_counts() {
+            assert_eq!(
+                molder.candidate_label(CandidateLabel::from(declared.0)),
+                Some(declared)
+            );
+        }
+        assert_eq!(
+            molder.candidate_label(CandidateLabel::from("absent-label-for-witness")),
+            None
+        );
+        let token = *label(SourceFragment::from("xyz")).first().unwrap();
+        let expected: alloc::collections::BTreeSet<_> =
+            ["xyz", "identifier", "type_variable", "hole_name"]
+                .into_iter()
+                .flat_map(|name| {
+                    pbg.candidates(gandr_surface_grammar::TileLabel(name))
+                        .iter()
+                        .copied()
+                })
+                .collect();
+        assert_eq!(
+            molder.candidate_count(token, SourceText::from("xyz")),
+            CandidateCount(expected.len())
+        );
+        assert!(
+            molder
+                .candidates
+                .iter()
+                .copied()
+                .eq(expected.iter().copied())
+        );
+        molder.gather_labels(
+            &[
+                CandidateLabel::from("identifier"),
+                CandidateLabel::from("identifier"),
+                CandidateLabel::from("absent-label-for-witness"),
+            ],
+            None,
+            super::CandidateMenu::Declared,
+        );
+        assert!(
+            molder
+                .candidates
+                .iter()
+                .copied()
+                .eq(expected.iter().copied())
+        );
+        for source in [" ", "~"] {
+            let token = *label(SourceFragment::from(source)).first().unwrap();
+            assert_eq!(
+                molder.candidate_count(token, SourceText::from(source)),
+                CandidateCount(0)
+            );
+            assert_eq!(
+                molder.choose(&mut MeldState::new(&pbg), TokenText::from(source)),
+                None
+            );
+        }
+        let &(open, successor) = pbg.adjacencies().first().unwrap();
+        let label = pbg.mold(successor)?.label;
+        molder.candidates = vec![open];
+        molder.push_form_successors(&[CandidateLabel::from(label)], open);
+        let expected: alloc::vec::Vec<_> = core::iter::once(open)
+            .chain(pbg.adjacencies().iter().filter_map(|&(left, right)| {
+                (left == open && pbg.mold(right).is_ok_and(|def| def.label == label))
+                    .then_some(right)
+            }))
+            .collect();
+        assert_eq!(molder.candidates, expected);
+        let before = molder.candidates.clone();
+        molder.push_form_successors(&[CandidateLabel::from("absent-label-for-witness")], open);
+        assert_eq!(molder.candidates, before);
+        Ok(())
+    }
+
+    #[test]
+    fn pooled_marks_and_dry_runs_restore_exact_state() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built()?;
+        let mut molder = Molder::new(&pbg);
+        let mut state = MeldState::new(&pbg);
+        let invalid = gandr_surface_syntax::MoldId::from(u32::MAX);
+        state.push(&crate::MoldedTile::new(invalid, crate::TileText::from("~")));
+        for _ in 0_u8 .. 2_u8 {
+            let before = state.checkpoint().to_bytes();
+            let mark = molder.take_mark(&state);
+            assert_eq!(mark, state.mark());
+            state.push(&crate::MoldedTile::new(invalid, crate::TileText::from("!")));
+            state.rollback_to(&mark);
+            assert_eq!(state.checkpoint().to_bytes(), before);
+            molder.put_mark(mark);
+        }
+        let before = state.checkpoint().to_bytes();
+        let key = molder.key(
+            &mut state,
+            invalid,
+            TokenText::from("!"),
+            gandr_surface_grammar::Sort::Expression,
+        );
+        assert_eq!(
+            usize::from(key.delta.inserted(crate::Oblig::UnmoldedTok)),
+            1
+        );
+        assert_eq!(state.checkpoint().to_bytes(), before);
+        let _completion = molder.completion(&mut state, invalid, TokenText::from("!"));
+        assert_eq!(state.checkpoint().to_bytes(), before);
+        let candidate = *pbg
+            .candidates(gandr_surface_grammar::TileLabel("identifier"))
+            .first()
+            .unwrap();
+        molder.candidates = vec![candidate];
+        assert_eq!(
+            molder.choose(&mut state, TokenText::from("x")),
+            Some(candidate)
+        );
+        assert_eq!(state.checkpoint().to_bytes(), before);
+        Ok(())
+    }
+
+    #[test]
+    fn space_and_empty_stream_are_exact_noops() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built()?;
+        let mut molder = Molder::new(&pbg);
+        let mut state = MeldState::new(&pbg);
+        state.push(&crate::MoldedTile::new(
+            gandr_surface_syntax::MoldId::from(u32::MAX),
+            crate::TileText::from("~"),
+        ));
+        let before = state.checkpoint().to_bytes();
+        let space = *label(SourceFragment::from(" ")).first().unwrap();
+        molder.mold(&mut state, space, SourceText::from(" "));
+        assert_eq!(state.checkpoint().to_bytes(), before);
+        molder.mold_stream(&mut state, &[], SourceText::from(""));
+        assert_eq!(state.checkpoint().to_bytes(), before);
+        Ok(())
+    }
+
+    #[test]
+    fn lookahead_window_stops_after_eight_significant_tokens() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built()?;
+        let mut molder = Molder::new(&pbg);
+        let source = SourceFragment::from("1 2 3 4 5 6 7 8 9");
+        let tokens = label(source);
+        let mut state = MeldState::new(&pbg);
+        molder.mold_window(
+            &mut state,
+            &tokens,
+            super::TokenIndex::from(0_usize),
+            &source,
+        );
+        let tree = state.commit(SourceText::from("1 2 3 4 5 6 7 8"))?;
+        assert_eq!(crate::testing::reconstruct(&tree), "1 2 3 4 5 6 7 8");
+        let mut state = MeldState::new(&pbg);
+        molder.mold_window(
+            &mut state,
+            &tokens,
+            super::TokenIndex::from(tokens.len()),
+            &source,
+        );
+        assert_eq!(
+            state.checkpoint().to_bytes(),
+            MeldState::new(&pbg).checkpoint().to_bytes()
+        );
+        assert_eq!(
+            molder.choose_stream(
+                &mut state,
+                &tokens,
+                super::TokenIndex::from(tokens.len()),
+                &source
+            ),
+            None
+        );
+        molder.candidates.clear();
+        assert_eq!(
+            molder.choose_stream(
+                &mut state,
+                &tokens,
+                super::TokenIndex::from(0_usize),
+                &source
+            ),
+            None
+        );
+        Ok(())
     }
 
     #[test]
@@ -1513,12 +2022,20 @@ mod tests
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the grammar passes every construction check.
+    /// - ensures: the checked grammar declares definitions, returns and
+    ///   grouping.
     /// - fails: the grammar builder refuses the declaration.
     /// - panics: none.
     ///
     /// # Errors
     /// The builder's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the checked built-in grammar accepts an identifier
+    ///   without repair; a missing atom or invalid declaration changes the
+    ///   result.
+    /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
+    #[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["def", "ret", "(", ")"].into_iter().all(|label| !pbg.candidates(gandr_surface_grammar::TileLabel(label)).is_empty())))]
     fn built() -> Result<Pbg, Box<dyn Error>>
     {
         let pbg = built_in()?;
@@ -1588,8 +2105,16 @@ mod tests
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: layout is recorded so the committed tree spans `src`.
+    /// - ensures: layout is recorded so the committed tree spans `src`, and
+    ///   successful output contains its root digest.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — complete forms, calls and list literals expose digest
+    ///   and obligation pairs across repeated independent runs; unstable
+    ///   candidate order or missing layout changes them.
+    /// - witness: `mold::tests::molding_is_deterministic_across_runs`
+    #[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |hash| hash.root_digest.is_some()))]
     fn mold_and_hash(
         pbg: &Pbg,
         src: SourceText<'_>,
