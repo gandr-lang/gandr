@@ -321,6 +321,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-coherent-resolutions"
+version = "0.0.0"
+dependencies = [
+ "gandr-theory-cell-complexes",
+ "gandr-theory-cell-complexes-tools",
+ "proptest",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-theory-graphs"
 version = "0.0.0"
 dependencies = [

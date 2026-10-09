@@ -1,0 +1,30 @@
+[package]
+name = "gandr-theory-coherent-resolutions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Coherent resolution of gandr's cell rewriting systems: firing under the alphabet's discipline, budgeted normalization, the multi-sum overlap enumerator, replayable coherence certificates, and budgeted Knuth-Bendix and Squier completion"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["completion", "gandr", "no-std", "rewriting"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[dependencies]
+gandr-theory-cell-complexes.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+gandr-theory-cell-complexes-tools.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

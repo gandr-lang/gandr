@@ -26,6 +26,7 @@ crates/
 ├── theory-cell-complexes/         gandr-theory-cell-complexes         command patterns, matching, the reduction order, the cell alphabet and store
 ├── theory-cell-complexes-tools/   gandr-theory-cell-complexes-tools   the toy alphabet and the adversary frame engine suites test against (dev only)
 ├── theory-circuit-algebras/       gandr-theory-circuit-algebras       the diagram view, the spine reading of a command pattern, embedding matching with its convexity check, the diagram normal form
+├── theory-coherent-resolutions/   gandr-theory-coherent-resolutions   firing, critical pairs, replayable coherence certificates, budgeted completion
 ├── theory-graphs/                 gandr-theory-graphs                 the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-orders/                 gandr-theory-orders                 order maintenance with constant-time comparison
 ├── kernel-strata/                 gandr-kernel-strata                 the universe-level oracle with checkable order evidence

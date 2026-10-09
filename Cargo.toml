@@ -19,6 +19,7 @@ members = [
   "crates/theory-cell-complexes",
   "crates/theory-cell-complexes-tools",
   "crates/theory-circuit-algebras",
+  "crates/theory-coherent-resolutions",
   "crates/theory-graphs",
   "crates/theory-orders",
 ]
@@ -169,8 +170,16 @@ path = "crates/surface-syntax"
 # consumers:
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras
+# - theory-coherent-resolutions
 [workspace.dependencies.gandr-theory-cell-complexes]
 path = "crates/theory-cell-complexes"
+
+# The toy alphabet and the adversary frame, for engine suites; a
+# dev-dependency only, which its workspace test checks.
+# consumers:
+# - theory-coherent-resolutions (dev)
+[workspace.dependencies.gandr-theory-cell-complexes-tools]
+path = "crates/theory-cell-complexes-tools"
 
 # The precedence DAG, the walk machine, and the graph algorithms they read.
 # consumers:
@@ -198,6 +207,7 @@ default-features = false
 # - surface-parser (dev)
 # - theory-cell-complexes (dev)
 # - theory-circuit-algebras (dev)
+# - theory-coherent-resolutions (dev)
 # - theory-graphs (dev)
 # - theory-orders (dev)
 [workspace.dependencies.proptest]
@@ -223,6 +233,7 @@ default-features = false
 # - theory-cell-complexes
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras
+# - theory-coherent-resolutions
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"
