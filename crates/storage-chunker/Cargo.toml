@@ -18,9 +18,12 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
-# No dependencies, by design: the chunker decides boundaries over bytes and
-# events a caller supplies, and hashes nothing itself.
+# The chunker decides boundaries over caller-supplied bytes and events;
+# it hashes nothing itself.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 
 [lints]
 workspace = true

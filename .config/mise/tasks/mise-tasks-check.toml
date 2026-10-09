@@ -37,11 +37,6 @@ env.CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "dylint-link"
 env.CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "dylint-link"
 env.CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "dylint-link"
 env.CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = "dylint-link"
-# `specification_present` is force-warned over the workspace's deny(warnings):
-# its findings are open specification debt, reported on every run, while every
-# other policy lint keeps its deny level. Reversal: the specification sweep
-# clears the open sites, and this line leaves with the last of them.
-env.DYLINT_RUSTFLAGS = "--force-warn specification_present"
 env.CARGO_ENCODED_RUSTFLAGS = "{% if env.CARGO_ENCODED_RUSTFLAGS is defined %}{% set flags = env.CARGO_ENCODED_RUSTFLAGS %}{% else %}{% set flags = env.RUSTFLAGS | default(value='') | trim | regex_replace(pattern='\\\\s+', rep='\u001f') %}{% endif %}{{ flags }}{% if flags %}\u001f{% endif %}--cfg=quenchant_compiler_policy"
 run = "cargo dylint --lib quenchant_dylints --no-deps -- --workspace --all-targets"
 

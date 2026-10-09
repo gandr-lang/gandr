@@ -13,7 +13,7 @@ Content-defined chunk boundaries over canonical records or typed boundary events
 
 ## Synopsis
 
-**What.** `gandr-storage-chunker` decides where a stream of canonical units is cut and reports each cut's reason. It provides a record-safe Gear scanner and a typed scanner over caller-reported boundary events. The crate is dependency-free and uses `core` and `alloc` under `no_std`.
+**What.** `gandr-storage-chunker` decides where a stream of canonical units is cut and reports each cut's reason. It provides a record-safe Gear scanner and a typed scanner over caller-reported boundary events. The crate uses `core` and `alloc` under `no_std`; the anodized facade supplies executable specification checks.
 
 **Why.** Position-based cuts shift after an insertion, changing the identity of otherwise unchanged chunks. Content-defined cuts let boundaries resynchronize after an edit, enabling storage consumers to share unchanged chunks. Explicit parameter commitments let a root bind the rule that produced its partition.
 

@@ -18,7 +18,10 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-syntax.workspace = true
 gandr-theory-graphs.workspace = true

@@ -20,7 +20,10 @@ path = "tests/lib.rs"
 
 # The highlighter classifies into the renderer seam's role vocabulary and
 # emits its spans; the seam is a leaf, so the edge pulls in no pipeline crate.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-surface-render-remote.workspace = true
 gandr-surface-syntax.workspace = true
 gandr-theory-graphs.workspace = true

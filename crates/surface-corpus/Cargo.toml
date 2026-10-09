@@ -17,7 +17,10 @@ publish.workspace = true
 # written into. Nothing here names the parser or the dispatcher: walking a
 # root and adapting the lowering's declarations to the checker's input are
 # the driver's.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-term.workspace = true
