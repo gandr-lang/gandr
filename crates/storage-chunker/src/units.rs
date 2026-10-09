@@ -10,6 +10,19 @@ use core::fmt;
 use crate::error::ArithmeticOperation;
 use crate::error::ChunkerError;
 
+/// Equality observed without invoking a non-const trait method.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConstEquality
+{
+    /// Both represented values agree.
+    Equal,
+    /// The represented values differ.
+    Unequal,
+}
+
 /// Declares a transparent wrapper over one primitive, with the exact
 /// conversions in both directions and the primitive's rendering.
 macro_rules! semantic_integer {
@@ -118,6 +131,23 @@ semantic_integer! {
 
 impl ByteCount
 {
+    /// Compare quantities during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> ConstEquality
+    {
+        if self.0 == other.0 {
+            ConstEquality::Equal
+        }
+        else {
+            ConstEquality::Unequal
+        }
+    }
+
     /// The empty byte count.
     pub const ZERO: Self = Self(0_u64);
 
@@ -155,6 +185,23 @@ impl ByteCount
 
 impl BytePosition
 {
+    /// Compare quantities during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> ConstEquality
+    {
+        if self.0 == other.0 {
+            ConstEquality::Equal
+        }
+        else {
+            ConstEquality::Unequal
+        }
+    }
+
     /// The start of a byte stream.
     pub const ZERO: Self = Self(0_u64);
 
@@ -225,6 +272,23 @@ impl BytePosition
 
 impl RecordCount
 {
+    /// Compare quantities during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> ConstEquality
+    {
+        if self.0 == other.0 {
+            ConstEquality::Equal
+        }
+        else {
+            ConstEquality::Unequal
+        }
+    }
+
     /// The empty record count.
     pub const ZERO: Self = Self(0_u32);
 
@@ -325,6 +389,23 @@ impl RecordPosition
 
 impl TokenCount
 {
+    /// Compare quantities during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> ConstEquality
+    {
+        if self.0 == other.0 {
+            ConstEquality::Equal
+        }
+        else {
+            ConstEquality::Unequal
+        }
+    }
+
     /// No tokens.
     pub const ZERO: Self = Self(0_u64);
 
@@ -351,12 +432,32 @@ impl TokenCount
     /// - witness: `units::tests::token_addition_saturates_only_past_the_width`
     #[anodized::spec(ensures: |ret| ret.0 == self.0.saturating_add(other.0))]
     #[must_use]
-    pub(crate) fn saturating_plus(
+    pub(crate) const fn saturating_plus(
         self,
         other: Self,
     ) -> Self
     {
         Self(self.0.saturating_add(other.0))
+    }
+}
+
+impl BoundaryResidue
+{
+    /// Compare quantities during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> ConstEquality
+    {
+        if self.0 == other.0 {
+            ConstEquality::Equal
+        }
+        else {
+            ConstEquality::Unequal
+        }
     }
 }
 

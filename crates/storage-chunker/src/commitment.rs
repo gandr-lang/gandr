@@ -72,8 +72,6 @@ impl AlgorithmVersion
     /// - provides: the value [`TryFrom<u16>`] reads back.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the pinned runtime instrument cannot expand in
-    ///   const functions without breaking const callers.
     ///
     /// # Adequacy
     /// - hypothesis: L3 exhausts every raw sixteen-bit value, observing the
@@ -82,6 +80,7 @@ impl AlgorithmVersion
     /// - witness: `tests::commitment::raw_discriminators_round_trip_and_refuse_by_field`
     /// - witness: `tests::commitment::the_typed_commitment_is_pinned`
     /// - witness: `tests::commitment::the_default_record_safe_commitment_is_pinned`
+    #[anodized::spec(ensures: |ret| ret.0 == match self { Self::FastCdc2020 => 1_u16, Self::TypedCdc => 2_u16 })]
     #[inline]
     #[must_use]
     pub const fn discriminator(self) -> RawDiscriminator

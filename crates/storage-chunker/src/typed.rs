@@ -351,8 +351,6 @@ impl BoundaryEvent
     /// - provides: the scanner's one input.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — incremental counts refer to the caller's traversal;
-    ///   the pinned instrument also cannot expand in this const constructor.
     ///
     /// # Adequacy
     /// - hypothesis: L3 on ordered incremental events below, at and above the
@@ -360,6 +358,7 @@ impl BoundaryEvent
     ///   counts distinguish swapped fields and cumulative double counting.
     /// - witness: `tests::typed::the_cap_and_the_predicate_cut_at_their_boundaries`
     /// - witness: `tests::typed::zero_token_events_still_observe_the_residue`
+    #[anodized::spec(ensures: |ret| matches!(ret.tokens.const_eq(tokens), crate::units::ConstEquality::Equal) && matches!(ret.residue.const_eq(residue), crate::units::ConstEquality::Equal))]
     #[inline]
     #[must_use]
     pub const fn new(
