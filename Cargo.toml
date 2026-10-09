@@ -241,6 +241,7 @@ path = "crates/kernel-term"
 # Kernel artifacts on the record plane, under a manifest identity, read back
 # through the kernel's decoder.
 # consumers:
+# - surface-corpus (dev)
 # - surface-session
 [workspace.dependencies.gandr-storage-artifact]
 path = "crates/storage-artifact"
@@ -257,6 +258,7 @@ path = "crates/storage-chunker"
 # consumers:
 # - storage-artifact
 # - storage-values (dev)
+# - surface-corpus (dev)
 # - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-storage-records]

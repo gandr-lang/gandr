@@ -27,7 +27,11 @@ quenchant-shape.workspace = true
 
 # The suite builds its synthetic modules from source text, through the same
 # parse, lower and check a driver runs; the library never names the parser.
+# The kernel export suite commits each corpus source's kernel artifact as
+# records and reads it back through the record plane.
 [dev-dependencies]
+gandr-storage-artifact.workspace = true
+gandr-storage-records.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-parser.workspace = true
 

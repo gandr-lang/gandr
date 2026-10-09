@@ -551,6 +551,8 @@ dependencies = [
  "gandr-core-checker",
  "gandr-core-term",
  "gandr-kernel-term",
+ "gandr-storage-artifact",
+ "gandr-storage-records",
  "gandr-surface-grammar",
  "gandr-surface-lowering",
  "gandr-surface-parser",
