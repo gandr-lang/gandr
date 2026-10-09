@@ -145,9 +145,10 @@ impl<A: CellAlphabet> Tracelet<A>
     /// they reach the join.
     ///
     /// # Specification
-    /// - ensures: positive exactly when, with the peak's and the join's
-    ///   metavariables skolemized to constants, every recorded step of both
-    ///   paths fires in order and both land on the skolemized join.
+    /// - ensures: [`replay_from_peak`] over the overlap's peak, the join and
+    ///   the two recorded paths: positive exactly when, with the peak's and the
+    ///   join's metavariables skolemized to constants, every recorded step of
+    ///   both paths fires in order and both land on the skolemized join.
     /// - ensures: a recorded [`CellId`] resolves as an insertion-order index
     ///   into `store`, never by cell content: clones and append-only extensions
     ///   of the store keep the verdict, a permutation may change it.
@@ -170,12 +171,12 @@ impl<A: CellAlphabet> Tracelet<A>
         store: &CellStore<A>,
     ) -> TraceletReplay
     {
-        let peak = A::skolemize(&self.overlap.peak);
-        let target = A::skolemize(&self.joins_at);
-        let ran_a = run_path(store, peak.clone(), &self.path_a, &mut Discard);
-        let ran_b = run_path(store, peak, &self.path_b, &mut Discard);
-        TraceletReplay::from(
-            bool::from(reached(&ran_a, &target)) && bool::from(reached(&ran_b, &target)),
+        replay_from_peak(
+            store,
+            &self.overlap.peak,
+            &self.joins_at,
+            &self.path_a,
+            &self.path_b,
         )
     }
 
@@ -217,6 +218,54 @@ impl<A: CellAlphabet> Tracelet<A>
             joins_at: A::skolemize(&self.joins_at),
         }
     }
+}
+
+/// Replay two recorded paths from one peak against one join: the replay every
+/// certificate check is, with the boundary supplied rather than read from an
+/// [`Overlap`].
+///
+/// A boundary need not be a critical pair. Two adjacent applications commuted
+/// past each other start at one peak and must reach one join, and no
+/// enumerator found an overlap there; this is the replay that checks them, and
+/// [`Tracelet::replay`] is this replay on a certificate's overlap peak.
+///
+/// # Specification
+/// - ensures: positive exactly when, with `peak` and `joins_at` skolemized to
+///   constants, every step of `path_a` and of `path_b` fires in order from the
+///   skolemized peak and both land on the skolemized `joins_at`.
+/// - ensures: negative when a step names an identifier `store` did not issue,
+///   when a step's cell does not fire at its position, or when a path lands on
+///   another term.
+/// - ensures: a recorded [`CellId`] resolves as an insertion-order index into
+///   `store`, never by cell content.
+/// - panics: none.
+/// - intension: retains no step.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one recorded path pair, replayed from its peak, is
+///   separated by the join alone: positive against the join both paths reach,
+///   negative against a retargeted join, and negative when one path is
+///   truncated so it stops short of the join.
+/// - witness: `tracelet::tests::replay_from_peak_separates_a_reached_join_from_a_missed_one`
+#[inline]
+#[must_use]
+pub fn replay_from_peak<A>(
+    store: &CellStore<A>,
+    peak: &A::Cmd,
+    joins_at: &A::Cmd,
+    path_a: &[CellApp<A>],
+    path_b: &[CellApp<A>],
+) -> TraceletReplay
+where
+    A: CellAlphabet,
+{
+    let peak = A::skolemize(peak);
+    let target = A::skolemize(joins_at);
+    let ran_a = run_path(store, peak.clone(), path_a, &mut Discard);
+    let ran_b = run_path(store, peak, path_b, &mut Discard);
+    TraceletReplay::from(
+        bool::from(reached(&ran_a, &target)) && bool::from(reached(&ran_b, &target)),
+    )
 }
 
 /// Whether two certificates are replay-equivalent: the definition of when two
@@ -697,6 +746,63 @@ mod tests
         assert!(
             !bool::from(replay_equivalent(&broken, &broken, &store)),
             "a certificate that does not replay is not replay-equivalent, even to itself"
+        );
+    }
+
+    #[test]
+    fn replay_from_peak_separates_a_reached_join_from_a_missed_one()
+    {
+        // The boundary is supplied, not read from an overlap: the same path
+        // pair from the same peak is positive against the join it reaches and
+        // negative against any other.
+        let (store, tracelet) = fused_fixture();
+        let peak = &tracelet.overlap.peak;
+        assert!(
+            bool::from(replay_from_peak(
+                &store,
+                peak,
+                &tracelet.joins_at,
+                &tracelet.path_a,
+                &tracelet.path_b,
+            )),
+            "both paths reach the recorded join"
+        );
+        let retargeted = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Zero", []),
+            ConsPat::top(),
+        );
+        assert!(
+            !bool::from(replay_from_peak(
+                &store,
+                peak,
+                &retargeted,
+                &tracelet.path_a,
+                &tracelet.path_b,
+            )),
+            "the same pair misses a retargeted join"
+        );
+        let (first_step, _) = tracelet.path_a.split_at(1);
+        assert!(
+            !bool::from(replay_from_peak(
+                &store,
+                peak,
+                &tracelet.joins_at,
+                first_step,
+                &tracelet.path_b,
+            )),
+            "a path stopping one step short misses the join"
+        );
+        assert_eq!(
+            tracelet.replay(&store),
+            replay_from_peak(
+                &store,
+                peak,
+                &tracelet.joins_at,
+                &tracelet.path_a,
+                &tracelet.path_b,
+            ),
+            "the certificate's replay is the peak-rooted replay of its boundary"
         );
     }
 }

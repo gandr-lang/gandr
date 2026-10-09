@@ -73,3 +73,4 @@ pub use crate::tracelet::confluence_join;
 pub use crate::tracelet::confluence_tracelet;
 pub use crate::tracelet::derive_fused;
 pub use crate::tracelet::replay_equivalent;
+pub use crate::tracelet::replay_from_peak;
