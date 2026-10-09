@@ -115,7 +115,7 @@ Each form here has a reader that lands with it or next:
 | Form | Reader |
 | ---- | ------ |
 | `HlRole`, `HlSpan`, `ByteOffset`, `ByteRange` | the mold highlighter in `gandr-surface-grammar`, which classifies each tile by its mold; then the language server's semantic tokens, the read-evaluate loop's echo and the terminal face's paint |
-| `DiagCard`, `DiagnosticCode`, `DiagnosticMessage` | the session report that maps refusals onto codes, and the language server's diagnostics once they carry that report's codes |
+| `DiagCard`, `DiagnosticCode`, `DiagnosticMessage` | the read-evaluate loop's parse-repair cards under `W0012`; the session report that maps refusals onto codes, and the language server's diagnostics once they carry that report's codes |
 | `TranscriptBlock`, `OutKind` | the read-evaluate loop's transcript encoder and the terminal face that draws it |
 | `SourceText`, `Pos`, `pos_of_byte`, `byte_of_pos` | a renderer that addresses rows and columns: the terminal face's cursor, the language server's ranges |
 | `LineIndex`, `Utf16Pos`, `Utf16Column` | the language server's diagnostic ranges, related locations and semantic tokens |

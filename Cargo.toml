@@ -23,6 +23,7 @@ members = [
   "crates/surface-lsp",
   "crates/surface-parser",
   "crates/surface-render-remote",
+  "crates/surface-repl",
   "crates/surface-session",
   "crates/surface-syntax",
   "crates/theory-cell-complexes",
@@ -131,6 +132,7 @@ path = "crates/core-checker"
 # Incremental checking over the core judgement: the item seam, validated
 # resume, content-addressed checkpoints and the synthesis stream.
 # consumers:
+# - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-core-incremental]
 path = "crates/core-incremental"
@@ -203,6 +205,7 @@ path = "crates/kernel-strata"
 # - kernel-core
 # - surface-corpus
 # - surface-lowering
+# - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
@@ -227,6 +230,7 @@ path = "crates/storage-records"
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-lsp
+# - surface-repl
 # - surface-session (dev)
 [workspace.dependencies.gandr-surface-corpus]
 path = "crates/surface-corpus"
@@ -236,6 +240,7 @@ path = "crates/surface-corpus"
 # consumers:
 # - surface-driver
 # - surface-lsp
+# - surface-repl
 # - surface-session (dev)
 [workspace.dependencies.gandr-surface-diagnostics]
 path = "crates/surface-diagnostics"
@@ -246,6 +251,7 @@ path = "crates/surface-diagnostics"
 # - surface-diagnostics
 # - surface-driver
 # - surface-lsp
+# - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
@@ -259,6 +265,7 @@ path = "crates/surface-dispatcher"
 # - surface-lowering
 # - surface-lsp
 # - surface-parser
+# - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
@@ -288,6 +295,7 @@ path = "crates/surface-lsp"
 # - surface-grammar (dev)
 # - surface-lowering (dev)
 # - surface-lsp
+# - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
@@ -300,8 +308,23 @@ path = "crates/surface-parser"
 # - surface-grammar
 # - surface-lsp
 # - surface-render-remote (dev)
+# - surface-repl
 [workspace.dependencies.gandr-surface-render-remote]
 path = "crates/surface-render-remote"
+
+# The read-evaluate loop: the completeness gate, the session loop and its
+# meta-commands, the transcript encoder, the batch and line-editor faces.
+# consumers:
+# - surface-driver
+[workspace.dependencies.gandr-surface-repl]
+path = "crates/surface-repl"
+
+# The interactive session: each revision lowered, judged, resumed through the
+# incremental checker and checkpointed.
+# consumers:
+# - surface-repl
+[workspace.dependencies.gandr-surface-session]
+path = "crates/surface-session"
 
 # The concrete syntax tree and the grammar-facing mold vocabulary it carries.
 # consumers:
@@ -312,6 +335,7 @@ path = "crates/surface-render-remote"
 # - surface-lowering
 # - surface-lsp
 # - surface-parser
+# - surface-repl
 # - surface-session
 [workspace.dependencies.gandr-surface-syntax]
 path = "crates/surface-syntax"
@@ -441,6 +465,7 @@ default-features = false
 # - surface-driver
 # - surface-lowering
 # - surface-lsp
+# - surface-repl
 # - surface-session
 # - theory-cell-complexes
 # - theory-cell-complexes-tools
@@ -452,6 +477,17 @@ default-features = false
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"
+default-features = false
+
+# The line editor of the read-evaluate loop's terminal face: raw-mode input,
+# editing keys and in-memory history. Defaults off: `with-file-history` writes
+# plaintext history, `with-dirs` locates it, `custom-bindings` adds a keymap
+# trie the face does not use. The choice, its alternatives and its reversal
+# are in the consumer's README.
+# consumers:
+# - surface-repl
+[workspace.dependencies.rustyline]
+version = "18.0.1"
 default-features = false
 
 # The serialization framework the render-bus wire image and the language

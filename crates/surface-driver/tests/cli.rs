@@ -545,4 +545,85 @@ mod cli
             stderr(&output)
         );
     }
+
+    /// The finished run of `gandr` with `arguments` and `input` on standard
+    /// input, its output captured.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    fn piped<Argument>(
+        arguments: &[Argument],
+        input: Text<'_>,
+    ) -> Output
+    where
+        Argument: AsRef<std::ffi::OsStr>,
+    {
+        let mut child = gandr(arguments)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("the driver starts");
+        child
+            .stdin
+            .take()
+            .expect("standard input is piped")
+            .write_all(input.0.as_bytes())
+            .expect("the session is written");
+        child.wait_with_output().expect("the driver runs")
+    }
+
+    /// A piped session prints its plain transcript: each echo, the loaded
+    /// declaration's type spelled as its source wrote it, the type a probe
+    /// answers, and a refusal as the diagnostics renderer writes it; it exits
+    /// zero, and `--batch` prints the same transcript.
+    #[test]
+    fn a_piped_repl_session_prints_its_transcript()
+    {
+        let scratch = Scratch::new(Path::new("repl"));
+        let source = scratch.file(
+            Path::new("answer.gandr"),
+            Text::from("def answer : Integer ;\ndef answer = 42 ;\n"),
+        );
+        let session = format!(
+            ":load {}\n:type answer\ndef broken = missing ;\n:q\ndef unread = 1 ;\n",
+            source.display()
+        );
+        let output = piped(&["repl"], Text::from(session.as_str()));
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        assert_eq!(stderr(&output), "", "a refusal is no fault");
+        let transcript = stdout(&output);
+        let printed: Vec<&str> = transcript.lines().collect();
+        assert_eq!(
+            printed.get(.. 5),
+            Some(
+                &[
+                    format!("▸ :load {}", source.display()).as_str(),
+                    "answer : Integer",
+                    "▸ :type answer",
+                    ": Integer",
+                    "▸ def broken = missing ;",
+                ][..]
+            ),
+            "{transcript}"
+        );
+        assert!(
+            printed
+                .get(5)
+                .is_some_and(|line| line.starts_with("error[UnresolvedName]: ")),
+            "{transcript}"
+        );
+        assert!(
+            !transcript.contains("unread"),
+            "nothing after `:q` is read: {transcript}"
+        );
+        let batch = piped(&["repl", "--batch"], Text::from(session.as_str()));
+        assert_eq!(code(&batch), Code(0_i32), "{}", stderr(&batch));
+        assert_eq!(
+            stdout(&batch),
+            transcript,
+            "`--batch` prints the same transcript"
+        );
+    }
 }

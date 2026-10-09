@@ -8,20 +8,23 @@
 //! # Exit codes
 //!
 //! - `0`: every declaration settled; also `--help`, `--version`, a bare
-//!   invocation, `lsp --capabilities`, and a language-server session ended by
-//!   `exit` after `shutdown`.
+//!   invocation, `lsp --capabilities`, a language-server session ended by
+//!   `exit` after `shutdown`, and a read-evaluate loop that reached the end of
+//!   its input or `:quit`.
 //! - `1`: at least one declaration is unsettled, or a source was not read as
 //!   its root expects; also a language-server session ended before `shutdown`.
 //! - `2`: an engine fault, an unreadable source or a path naming none, a
-//!   malformed invocation, output the driver could not write, or a
-//!   language-server stream that failed.
+//!   malformed invocation, output the driver could not write, a language-server
+//!   stream that failed, or a read-evaluate loop stopped by a fault.
 
+use std::io::IsTerminal as _;
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use gandr_surface_diagnostics::Entry;
 use gandr_surface_diagnostics::RenderStyle;
+use gandr_surface_diagnostics::TerminalCapability;
 use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Invocation;
@@ -32,6 +35,7 @@ use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
 use gandr_surface_lsp::Capabilities;
 use gandr_surface_lsp::Served;
+use gandr_surface_repl::Ended;
 use quenchant_shape::shape::Maybe;
 
 /// The exit code of a run with an unsettled declaration.
@@ -94,6 +98,28 @@ enum Command
         #[arg(long)]
         capabilities: bool,
     },
+    /// Run the read-evaluate loop over standard input and output.
+    ///
+    /// On a terminal, lines are edited with history kept for the session;
+    /// piped, each line is read in turn and a plain transcript printed. Exits
+    /// 0 at the end of input or `:quit`, and 2 when a fault stops the loop.
+    Repl
+    {
+        /// Print the plain transcript even when standard input is a terminal.
+        #[arg(long)]
+        batch: bool,
+    },
+}
+
+/// Which face of the read-evaluate loop to run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Face
+{
+    /// The plain transcript, whatever standard input is.
+    Batch,
+    /// The line editor when standard input is a terminal, the plain transcript
+    /// otherwise.
+    ByInput,
 }
 
 /// Parse the driver's arguments, route the invocation, render the outcome.
@@ -107,8 +133,9 @@ enum Command
 ///   `0`. `check` and `test` walk their paths, print what [`render`] prints,
 ///   and exit `0`, `1` or `2` as the run settled, was unsettled or faulted.
 ///   `lsp` serves and `lsp --capabilities` prints as [`lsp`] and
-///   [`capabilities`] state. Output the driver cannot write is noted on
-///   standard error, when that is writable, and exits `2`.
+///   [`capabilities`] state, and `repl` runs as [`repl`] states. Output the
+///   driver cannot write is noted on standard error, when that is writable, and
+///   exits `2`.
 /// - provides: the exit code as the run's verdict. The postcondition stays
 ///   prose: the exit code and the lines written are effects on the process, not
 ///   a value this call returns to a caller that could observe them. With
@@ -131,6 +158,7 @@ enum Command
 /// - witness: `cli::cli::a_bare_invocation_prints_the_status`
 /// - witness: `cli::cli::lsp_capabilities_print_one_line_of_json`
 /// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
+/// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
@@ -157,6 +185,9 @@ fn main() -> ExitCode
             capabilities: false,
         }) => return lsp(),
         | Some(Command::Lsp { capabilities: true }) => return capabilities(),
+        | Some(Command::Repl { batch }) => {
+            return repl(if batch { Face::Batch } else { Face::ByInput });
+        },
     };
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
@@ -216,6 +247,52 @@ fn lsp() -> ExitCode
                 | Ok(()) | Err(_) => ExitCode::from(FAULTED),
             }
         },
+    }
+}
+
+/// Run the read-evaluate loop on the standard streams, and choose the exit
+/// code.
+///
+/// # Specification
+/// - requires: nothing; the streams come from the process.
+/// - ensures: under [`Face::Batch`], or when standard input is not a terminal,
+///   every line of standard input is offered to the loop and its plain
+///   transcript written to standard output; otherwise the line editor reads the
+///   terminal, and refusals are coloured when standard output is a terminal
+///   too. The loop exits `0` when its input ends or the user quits, and `2`
+///   when a fault stops it or its output cannot be written, the fault noted on
+///   standard error when that is writable.
+/// - provides: `gandr repl`.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the binary is spawned with a session piped on standard
+///   input, and its transcript and exit code asserted; the terminal face was
+///   exercised by hand on a pseudo-terminal.
+/// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
+fn repl(face: Face) -> ExitCode
+{
+    let input = std::io::stdin();
+    let mut output = std::io::stdout().lock();
+    let ended = match (face, input.is_terminal()) {
+        | (Face::Batch, _) | (Face::ByInput, false) => {
+            gandr_surface_repl::run_batch(input.lock(), &mut output, RenderStyle::Plain)
+        },
+        | (Face::ByInput, true) => {
+            let style = RenderStyle::for_terminal(TerminalCapability::from(output.is_terminal()));
+            gandr_surface_repl::run_interactive(&mut output, style)
+        },
+    };
+    let noted = match ended {
+        | Ok(Ended::Completed) => return ExitCode::SUCCESS,
+        | Ok(Ended::Faulted(fault)) => writeln!(std::io::stderr(), "gandr: {fault}"),
+        | Err(error) => writeln!(std::io::stderr(), "gandr: cannot write the output: {error}"),
+    };
+    match noted {
+        // When standard error is unwritable too, the exit code is the one
+        // channel left.
+        | Ok(()) | Err(_) => ExitCode::from(FAULTED),
     }
 }
 
