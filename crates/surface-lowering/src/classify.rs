@@ -9,9 +9,11 @@
 //! represent is a different fact from an author-written form that is simply
 //! wrong, and only the first says anything about the fragment's reach.
 //!
-//! The classifier is a `const` function, exhaustive and wildcard-free, and it
-//! is blind to its payload: a classification cannot vary with a span or a name,
-//! and a refusal added without a class does not compile.
+//! The classes are `gandr-core-term`'s, shared with every other producer of
+//! refusals in the core pipeline; the classifier below is this crate's own. It
+//! is a `const` function, exhaustive and wildcard-free, and it is blind to its
+//! payload: a classification cannot vary with a span or a name, and a refusal
+//! added without a class does not compile.
 //!
 //! # The absence class has no inhabitant here, and that is the point
 //!
@@ -30,45 +32,9 @@
 //! the source: the caller handed the lowering a tree and a grammar that do not
 //! belong together, which is a fault of the run, never of the text.
 
-use core::fmt;
+pub use gandr_core_term::FailureClass;
 
 use crate::error::LoweringRefusal;
-
-/// Whose fact a refusal records.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum FailureClass
-{
-    /// The author has not supplied it yet: reportable as a ledger entry, and
-    /// the only class that may become an obligation.
-    UserAbsence,
-    /// The lowering cannot represent what the author wrote.
-    Unrepresentable,
-    /// The author wrote it and it is wrong.
-    MalformedSource,
-    /// The lowering failed for reasons of its own or its caller's.
-    EngineFault,
-}
-
-impl fmt::Display for FailureClass
-{
-    /// Writes the class's name.
-    ///
-    /// # Specification
-    /// trivial.
-    #[inline]
-    fn fmt(
-        &self,
-        f: &mut fmt::Formatter<'_>,
-    ) -> fmt::Result
-    {
-        match *self {
-            | Self::UserAbsence => f.write_str("user absence"),
-            | Self::Unrepresentable => f.write_str("unrepresentable"),
-            | Self::MalformedSource => f.write_str("malformed source"),
-            | Self::EngineFault => f.write_str("engine fault"),
-        }
-    }
-}
 
 impl LoweringRefusal<'_>
 {

@@ -11,6 +11,8 @@
 //!   subterm-table entry index, and its unfolding height.
 //! - [`DefinitionalEnvironment`] decides, scope by scope, whether a definition
 //!   is manifest.
+//! - [`FailureClass`] is the four-class vocabulary every refusal of the core
+//!   pipeline answers to, whichever crate produced it.
 //!
 //! The crate holds syntax and contexts; evaluation and readback live in
 //! `gandr-core-nbe`, which consumes this vocabulary. The design is stated in
@@ -23,6 +25,7 @@ extern crate alloc;
 mod arena;
 mod context;
 mod definition;
+mod failure;
 mod syntax;
 
 pub use crate::arena::ArenaWatermark;
@@ -42,6 +45,7 @@ pub use crate::definition::DefinitionHeight;
 pub use crate::definition::DefinitionalEnvironment;
 pub use crate::definition::ScopeId;
 pub use crate::definition::Transparency;
+pub use crate::failure::FailureClass;
 pub use crate::syntax::CompType;
 pub use crate::syntax::Computation;
 pub use crate::syntax::Value;

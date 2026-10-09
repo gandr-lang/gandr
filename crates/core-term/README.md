@@ -15,6 +15,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - [Definition heights](#definition-heights)
 - [Per-scope transparency](#per-scope-transparency)
 - [Arena ownership](#arena-ownership)
+- [One failure vocabulary](#one-failure-vocabulary)
 - [Specification attributes](#specification-attributes)
 - [License](#license)
 
@@ -22,7 +23,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 ## Synopsis
 
-**What.** The core language between the surface syntax and the kernel, and the one context its typing rules read. Values and computations on the term side, value types and computation types on the type side, are nodes of an append-only `CoreArena` addressed by four typed `u32` ids. `Context` is the two-zone typing context `Γ; Σ`: flat, de Bruijn, id-addressed and name-free. `DefinitionChain` records each definition's body and unfolding height; `DefinitionalEnvironment` decides, scope by scope, whether a definition is manifest. The crate holds syntax and contexts; evaluation and readback live in `gandr-core-nbe`. It is `no_std` over `core` and `alloc`.
+**What.** The core language between the surface syntax and the kernel, and the one context its typing rules read. Values and computations on the term side, value types and computation types on the type side, are nodes of an append-only `CoreArena` addressed by four typed `u32` ids. `Context` is the two-zone typing context `Γ; Σ`: flat, de Bruijn, id-addressed and name-free. `DefinitionChain` records each definition's body and unfolding height; `DefinitionalEnvironment` decides, scope by scope, whether a definition is manifest. `FailureClass` is the four-class vocabulary every refusal of the core pipeline is classified into. The crate holds syntax and contexts; evaluation and readback live in `gandr-core-nbe`. It is `no_std` over `core` and `alloc`.
 
 **Why.** An elaborator, a normalizer and a checker each go under binders, type occurrences and unfold definitions, and separate spellings of the context drift. One flat representation gives every rule one place to read a binder, and cloning it copies two flat vectors, so a conversion or a normalizer takes one by value. The core language needs formers the kernel does not represent, so its node enums are its own; its leaf vocabulary is the kernel's, so a core term erases to a kernel term by remapping ids.
 
@@ -40,6 +41,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - `Context`: `open`, `close`, `occurrence`, `declared`, `linear_use` and `depth` over `Zone::Intuitionistic` and `Zone::Linear`, refusing with `ContextError`.
 - `DefinitionChain`, `DefinitionEntry` and `DefinitionHeight`: `define`, `entry` and `entries`, refusing with `DefinitionError`.
 - `DefinitionalEnvironment`, `ScopeId` and `Transparency`: `root`, `open_scope`, `state` and `transparency`.
+- `FailureClass`: `UserAbsence`, `Unrepresentable`, `MalformedSource` and `EngineFault`, the classes a lowering refusal and a checking refusal are each classified into by their own crate's classifier.
 
 ## Expected features
 
@@ -131,6 +133,10 @@ Transparent ascription makes the same atom manifest inside a sealed module and o
 ## Arena ownership
 
 An id is minted only by a `CoreArena` constructor over already-allocated children, so a child id always resolves and, within its family, is strictly less than its parent's. The four families index independently; acyclicity across them rests on minting order, since a constructor cannot name a node that does not exist yet. Lookups return `Option`, because a `u32` id can name no node. `CoreArena::watermark` snapshots the four family lengths and `CoreArena::truncate_to` restores them, so a pass's intermediates allocate past a mark and drop in one step. The arena offers constructors and lookups only; each walk over its edges belongs to the consumer that needs it.
+
+## One failure vocabulary
+
+`FailureClass` lives here because this is the lowest crate both the lowering and the checker depend on: each classifies its own refusals with its own `const`, wildcard-free match, and a report groups both under one enum without either crate naming the other. The type carries no behaviour beyond its name; which refusal falls in which class is decided by the crate that owns the refusal. The alternative was a copy of the enum in each producer, kept equal by convention, which is two vocabularies a report would have to reconcile. Reversal: a producer whose failures need a class the others do not have, at which point that class is argued here rather than added in the producer.
 
 ## Specification attributes
 
