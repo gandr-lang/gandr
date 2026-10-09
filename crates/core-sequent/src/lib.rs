@@ -23,6 +23,8 @@
 //!   [`Definitions`], to an [`Outcome`] within a [`StepCount`] budget, and
 //!   reads a halted value back as a core term.
 //! - [`stats`], [`origin_histogram`] and [`dump`] inspect a focused arena.
+//! - [`reify_command`] reifies a ground cell pattern into the IL over a
+//!   [`ConstructorResolver`].
 //!
 //! The crate is `no_std` and depends on `core`, `alloc`, the core language's
 //! syntax, the kernel's leaf vocabularies and the cell substrate's
@@ -34,6 +36,7 @@
 extern crate alloc;
 
 mod boundary;
+mod bridge;
 mod check;
 mod focus;
 mod il;
@@ -50,6 +53,9 @@ pub use crate::boundary::FrameSerial;
 pub use crate::boundary::NodeCount;
 pub use crate::boundary::ProducerArity;
 pub use crate::boundary::StepCount;
+pub use crate::bridge::ConstructorResolver;
+pub use crate::bridge::ReifyRefusal;
+pub use crate::bridge::reify_command;
 pub use crate::check::ArityHead;
 pub use crate::check::CheckRefusal;
 pub use crate::check::FreeSet;

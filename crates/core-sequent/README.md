@@ -16,6 +16,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - [The typed-IL check](#the-typed-il-check)
 - [The machine runs over marks, not copies](#the-machine-runs-over-marks-not-copies)
 - [Readback refuses rather than approximates](#readback-refuses-rather-than-approximates)
+- [The bridge from cells](#the-bridge-from-cells)
 - [The polarity is the cell substrate's](#the-polarity-is-the-cell-substrates)
 - [Two regions](#two-regions)
 - [The store owns the cell protocol](#the-store-owns-the-cell-protocol)
@@ -55,6 +56,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `Machine::run` with `Definitions`, `Definition`, `StepCount`, `Outcome`, `Stuck` and `MachineFault`: the L machine over the store, halting with a value, stopping stuck by name, or faulting out of steps; transparent constants unfold once per machine, opaque ones are carried as themselves. Witnesses: `machine::tests::ret_is_a_terminal_value`, `machine::tests::bind_threads_a_value`, `machine::tests::force_runs_a_thunk_body`, `machine::tests::case_selects_the_matching_arm`, `machine::tests::application_binds_the_argument`, `machine::tests::a_shared_thunk_is_forced_once`, `machine::tests::constants_unfold_once_and_opaque_ones_stay_opaque`, `machine::tests::the_step_budget_bounds_a_run`.
 - `Machine::read_back` and `Machine::read_back_value` with `ReadbackRefusal`: a terminal as `return v` or the function it is, thunks and functions closed over their captured environments, a suspended capture refused with the core arena at its mark. Witnesses: `machine::tests::a_function_terminal_reads_back_closed_over_its_environment`, `machine::tests::a_thunk_reads_back_closed_over_its_environment`, `machine::tests::a_suspended_capture_has_no_reading`.
 - `stats`, `Stats`, `origin_histogram` and `dump`: an arena's population, its commands counted by the core former each came from, and a root's rendering with both. Witness: `inspect::tests::stats_and_dump_report_a_terminal_cut`.
+- `reify_command` with `ConstructorResolver` and `ReifyRefusal`: a ground cell pattern reified node for node, a return-side frame as its `μ̃` definiens, a metavariable, an unresolved symbol, an arity mismatch and an operation frame refused with the arena at its mark. Witnesses: `bridge::tests::a_frozen_cut_reifies_to_the_command_il`, `bridge::tests::a_return_frame_reifies_to_a_mu_tilde`, `bridge::tests::an_operation_frame_is_the_opaque_boundary`, `bridge::tests::a_refused_reification_leaves_the_arena_at_its_mark`.
 
 ## Expected features
 
@@ -185,6 +187,12 @@ The earlier implementation of this design kept the same walkable frame stack, bu
 `Machine::read_back` reads a positive terminal as `return v` and a copattern object as the function it is; a literal reads as itself, a constructed value over its fields, an opaque constant as the constant, and a thunk or a function as its suspended command decoded by the unfocusing walk with its captured environment's readbacks substituted. Values are read in increasing address order, since every value the machine allocates names only earlier ones, so the readback is a loop. A value with no core reading — a suspended `μ`, a copattern object standing as a value — is refused by name with the core arena at its mark.
 
 The earlier implementation of this design fell back to a placeholder of the right kind when its readback failed, so a differential could pass on a value it had not read. The alternative was that fallback, rejected because a readback that cannot fail makes a differential that cannot fail. The choice does not reverse.
+
+## The bridge from cells
+
+A cell's patterns name constructors by symbol, because the rewriting stack ranges over declared data the IL's `ConstructorTag` does not name; a `ConstructorResolver` the caller supplies says which symbols are which tags. `reify_command` lowers a ground `⟨p |ε c⟩` node for node over it: a constructor application to a constructor producer at the arity its tag declares, `★` to `★`, and a return-side frame `K⁻(c)` to its definiens `μ̃x. ⟨K(x0) |+ c⟩`, so a reified command runs on the machine like a focused one. An operation frame is the opaque boundary of the host and fusion fragment and has no IL node; it, a metavariable, an unresolved symbol and an arity mismatch are refused by name, and a refused reification leaves the arena at its mark.
+
+The bridge lives here rather than with the cells, because the core tier depends on the theory tier and not the other way. The earlier implementation of this design kept it with the cells, answered `None` for every refusal, named each frame's binder from a counter, and shipped a resolver for the constructors it had. The alternative was a resolver built into this crate, which would fix a symbol table the declared-data route has yet to define. The choice reverses when that route gives constructors names the cells and the IL share, at which point the resolver is derived rather than supplied.
 
 ## The polarity is the cell substrate's
 
