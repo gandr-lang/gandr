@@ -11,6 +11,9 @@
 //!   it across trees, runs and processes.
 //! - [`SourceText`], [`ByteSpan`] and [`SourceFragment`] are byte-addressed
 //!   source positions; [`SyntaxError`] is every refusal.
+//! - [`MoldId`], [`GroutSort`], [`GrammarFingerprint`] and [`ClosingClass`] are
+//!   the grammar-facing references a molded tree carries; the grammar owns the
+//!   tables they index.
 //!
 //! The crate holds **representation only**: it lexes and parses nothing, and
 //! reads a source only to answer what a span covers. Its one target
@@ -33,6 +36,7 @@ mod build;
 mod digest;
 mod error;
 mod kind;
+mod mold;
 mod span;
 mod token;
 mod tree;
@@ -45,6 +49,11 @@ pub use crate::error::SyntaxError;
 pub use crate::kind::CarriesText;
 pub use crate::kind::KindTag;
 pub use crate::kind::NodeKind;
+pub use crate::mold::ClosingClass;
+pub use crate::mold::DelimSpelling;
+pub use crate::mold::GrammarFingerprint;
+pub use crate::mold::GroutSort;
+pub use crate::mold::MoldId;
 pub use crate::span::ByteLength;
 pub use crate::span::ByteOffset;
 pub use crate::span::ByteSpan;

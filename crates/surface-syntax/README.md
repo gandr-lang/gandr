@@ -16,6 +16,7 @@ The concrete syntax tree of the gandr surface language: closed token and node vo
 - [Source text and fragments](#source-text-and-fragments)
 - [Punctuation and grouping](#punctuation-and-grouping)
 - [Attribute placement](#attribute-placement)
+- [Grammar references](#grammar-references)
 - [Specification attributes](#specification-attributes)
 - [License](#license)
 
@@ -23,7 +24,7 @@ The concrete syntax tree of the gandr surface language: closed token and node vo
 
 ## Synopsis
 
-**What.** The tree a surface parser produces. `TokenKind` and `NodeKind` are the closed lexical and node vocabularies; `ByteSpan` is a half-open byte range of a `SourceText`; `SyntaxTree` is a flat arena laid out in level order, whose node carries its kind, its span, its children as a contiguous range of arena positions, and a `NodeDigest`. `TreeBuilder` stages nodes bottom-up as a parser completes them and finishes them into the arena. The crate holds representation only: it lexes and parses nothing, and reads a source only to answer what a span covers. It is `no_std` over `core` and `alloc`, and its one runtime dependency is BLAKE3.
+**What.** The tree a surface parser produces. `TokenKind` and `NodeKind` are the closed lexical and node vocabularies; `ByteSpan` is a half-open byte range of a `SourceText`; `SyntaxTree` is a flat arena laid out in level order, whose node carries its kind, its span, its children as a contiguous range of arena positions, and a `NodeDigest`. `TreeBuilder` stages nodes bottom-up as a parser completes them and finishes them into the arena. `MoldId`, `GroutSort`, `GrammarFingerprint` and `ClosingClass` are the references into a grammar's tables that a grammar and a parser exchange. The crate holds representation only: it lexes and parses nothing, and reads a source only to answer what a span covers. It is `no_std` over `core` and `alloc`, and its one runtime dependency is BLAKE3.
 
 **Why.** A lexer and a re-renderer compare token streams, so the vocabulary they compare against lives beside the tree rather than inside either. A consumer that dispatches on forms needs the tree to name them, so each node carries its kind. A position resolves fast inside one tree but moves with every edit earlier in the file; a consumer whose side table outlives one parse needs an identity that depends on content alone.
 
@@ -42,6 +43,7 @@ The concrete syntax tree of the gandr surface language: closed token and node vo
 - `NodeDigest` and `NODE_DIGEST_LEN`: the 32-byte content identity, rendered as lowercase hexadecimal.
 - `SourceText`, `SourceFragment`, `ByteSpan`, `ByteOffset` and `ByteLength`: byte-addressed source positions.
 - `SyntaxError`: every refusal, with the offset, span or staged node it names.
+- `MoldId`, `GroutSort`, `GrammarFingerprint`, `ClosingClass` and `DelimSpelling`: the references a grammar and a parser exchange — a mold's position in its grammar's table, the sort a hole stands for, the fingerprint naming the table, and the bracket family a delimiter opens or closes. Witnesses: `mold::tests::openers_and_closers_pair_by_family`, `mold::tests::a_host_index_past_the_id_width_is_refused`.
 
 ## Expected features
 
@@ -129,6 +131,10 @@ The token vocabulary has no trivia class and no end marker: the lexer skips whit
 ## Attribute placement
 
 An attribute block is a child of the module, in source order, never of the declaration it decorates. Attaching, editing or removing an attribute therefore leaves the declaration's digest unchanged, which is the key a side table of attributes files the declaration under.
+
+## Grammar references
+
+The grammar owns its mold table; this crate defines only the references into it, below both the grammar and the parser that name them, so the grammar depends on no parser and the tree on no grammar. A `MoldId` is a 32-bit position in the table of the grammar a `GrammarFingerprint` names, and means nothing under another: a consumer holding ids from two grammars compares fingerprints, never ids. A `GroutSort` is a sort tag, decoded by the grammar that assigned it. `ClosingClass` has three families — parentheses, brackets and braces, the record opener `#{` among the braces — and a closer answers its own family only.
 
 ## Specification attributes
 
