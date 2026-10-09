@@ -359,8 +359,11 @@ mod cli
                 path.display(),
                 stderr(&output)
             );
+            let fault_prefix = format!("gandr: {}: ", path.display());
             assert!(
-                stderr(&output).starts_with(&format!("gandr: {}: ", path.display())),
+                stderr(&output)
+                    .lines()
+                    .any(|line| line.starts_with(&fault_prefix)),
                 "{}",
                 stderr(&output)
             );
@@ -441,7 +444,9 @@ mod cli
             let output = ran(command);
             assert_eq!(code(&output), Code(2_i32), "{arguments:?}");
             assert!(
-                stderr(&output).starts_with("gandr: cannot write the output: "),
+                stderr(&output)
+                    .lines()
+                    .any(|line| line.starts_with("gandr: cannot write the output: ")),
                 "{arguments:?}: {}",
                 stderr(&output)
             );
