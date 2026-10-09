@@ -1,0 +1,31 @@
+[package]
+name = "gandr-theory-deep-inference"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The identity relations on gandr's rewriting derivations: earned shift equivalence, the causal event order and its canonical schedule, the certificate normal form as a sound fast path below replay, the causal web and its refinement judgment, the atomic-flow projection, and the polarized footprint test"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["deep-inference", "gandr", "no-std", "rewriting"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[dependencies]
+gandr-theory-cell-complexes.workspace = true
+gandr-theory-coherent-resolutions.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+gandr-theory-cell-complexes-tools.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true
