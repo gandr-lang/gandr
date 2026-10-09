@@ -12,6 +12,7 @@
 //! path absorption the induced value is defined and β-compatible, so the
 //! invariant is sufficient, not merely necessary.
 
+use anodized::spec;
 use gandr_theory_levitation::FreeTerm;
 use quenchant_shape::shape::Maybe;
 
@@ -110,7 +111,17 @@ fn refl(start: FreeTerm) -> LooseInstance
 ///
 /// # Specification
 /// - requires: some path is non-empty.
+/// - ensures: the result is non-empty.
 /// - panics: otherwise, a fixture error.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a reflexive prefix followed by paths of different lengths
+///   exposes the first nonempty result; empty and all-reflexive corpora panic.
+///   These observations reject choosing the last path, keeping a reflexive
+///   prefix or silently manufacturing a path; rewrite validity belongs to the
+///   enumerator.
+/// - witness: `tests::vdc_dictionary::law5_units::first_nonempty_preserves_enumeration_order_and_refuses_empty_corpora`
+#[spec(requires: paths.iter().any(|path| !path.0.is_empty()), ensures: |ref path| !path.0.is_empty())]
 fn first_non_empty(paths: Vec<RewritePath>) -> RewritePath
 {
     paths
@@ -268,4 +279,17 @@ fn path_formation_is_real_and_deterministic()
         enumerate_paths(&start, cells, RewriteDepth::from(3_usize)),
         "path enumeration is deterministic"
     );
+}
+
+#[test]
+fn first_nonempty_preserves_enumeration_order_and_refuses_empty_corpora()
+{
+    let desc = nat_desc();
+    let start = FreeTerm::op("plus", [succ(zero()), zero()]);
+    let paths = enumerate_paths(&start, &desc.rules, RewriteDepth::from(2_usize));
+    let expected = paths.get(1).expect("the one-step reduction exists").clone();
+    assert_eq!(expected.0.len(), 1);
+    assert_eq!(first_non_empty(paths), expected);
+    assert!(std::panic::catch_unwind(|| first_non_empty(Vec::new())).is_err());
+    assert!(std::panic::catch_unwind(|| first_non_empty(vec![(Vec::new(), zero())])).is_err());
 }

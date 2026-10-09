@@ -7,6 +7,7 @@
 
 use alloc::sync::Arc;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::support::NumeralCount;
@@ -21,6 +22,7 @@ use crate::vdc_dictionary::fixtures::unary_relation;
 use crate::vdc_dictionary::fixtures::var;
 use crate::vdc_dictionary::harness::Cell;
 use crate::vdc_dictionary::harness::CellKind;
+use crate::vdc_dictionary::harness::CellView;
 use crate::vdc_dictionary::harness::cells_equal;
 use crate::vdc_dictionary::harness::graft;
 use crate::vdc_dictionary::harness::replay;
@@ -30,7 +32,26 @@ use crate::vdc_dictionary::harness::replay_compose;
 ///
 /// # Specification
 /// - requires: the shapes are supported symbolically.
+/// - ensures: identity grafts preserve their other operand; a linear graft has
+///   the inner domain and outer codomain.
 /// - panics: otherwise, a test-author error.
+///
+/// # Adequacy
+/// - hypothesis: L3 — supported unit and linear grafts expose replay equality
+///   to staged composition; unsupported pairing shapes panic. These
+///   observations reject lost units, reversed composition or silent refusal;
+///   general symbolic grafting is outside this helper.
+/// - witness: `tests::vdc_dictionary::law2_cells::grafting_is_unital_up_to_replay`
+/// - witness: `tests::vdc_dictionary::law2_cells::symbolic_graft_agrees_with_replay_composition`
+/// - witness: `tests::vdc_dictionary::law2_cells::unsupported_shapes_decline_symbolically_but_replay_composes`
+#[spec(ensures: |ref cell| if matches!(outer.kind.view(), CellView::Ident) && inners.len() == 1 {
+    Some(cell) == inners.first()
+} else if !inners.is_empty() && inners.iter().all(|inner| matches!(inner.kind.view(), CellView::Ident)) {
+    cell == outer
+} else {
+    inners.len() == 1 && inners.first().is_some_and(|inner|
+        cell.dom.eq(&inner.dom) && cell.cod.eq(&outer.cod))
+})]
 fn grafted(
     outer: &Cell,
     inners: &[Cell],
@@ -145,6 +166,7 @@ fn unsupported_shapes_decline_symbolically_but_replay_composes()
         matches!(graft(&pair, core::slice::from_ref(&b)), Maybe::Absent(_)),
         "grafting into a pairing outer is unsupported symbolically"
     );
+    assert!(std::panic::catch_unwind(|| grafted(&pair, core::slice::from_ref(&b))).is_err());
     // Replay-level composition is always available.
     let staged = replay_compose(&pair, &[&b], &[vec![gen_x(nat(NumeralCount::from(
         0_usize,
