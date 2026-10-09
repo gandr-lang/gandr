@@ -34,6 +34,12 @@
 //! Each overlay is measured inside the same small stack, its five quantities
 //! asserted exactly, and its expansion size compared with the erased term's
 //! size walked as a tree: the nodes the unshared pipeline visits.
+//!
+//! # The overlay evaluator is the erased pipeline
+//!
+//! Each overlay is evaluated a second time through the overlay evaluator and
+//! read back, and the core arena, the domain arena and the rebuilt term are
+//! compared, node for node, with erasure followed by the unshared pipeline.
 
 /// The expansion oracle, shared with the measure's suite.
 #[cfg(test)]
@@ -67,6 +73,8 @@ mod deep_readback
     use gandr_core_nbe::erase_computation;
     use gandr_core_nbe::erase_value;
     use gandr_core_nbe::eval_computation;
+    use gandr_core_nbe::eval_overlay_computation;
+    use gandr_core_nbe::eval_overlay_value;
     use gandr_core_nbe::eval_value;
     use gandr_core_nbe::readback_computation;
     use gandr_core_nbe::readback_value;
@@ -473,6 +481,96 @@ mod deep_readback
         assert!(
             compared.is_ok(),
             "validation, erasure, evaluation and readback all keep their depth on the heap"
+        );
+    }
+
+    #[test]
+    fn erase_and_clone_overlay_evaluation_is_the_erased_pipeline()
+    {
+        let compared = std::thread::Builder::new()
+            .stack_size(SMALL_STACK_BYTES)
+            .spawn(|| {
+                let chain = LoweredChain::new();
+                let environment = DefinitionalEnvironment::new();
+                let definitions = Definitions::new(&chain, &environment, environment.root());
+
+                let (overlay, root) = shared_value_chain();
+                let mut erased = CoreArena::new();
+                let erased_root = erase_value(&overlay, root, &mut erased)
+                    .expect("the shared leaf validates and erases");
+                let (reference_domain, reference_rebuilt) =
+                    read_back_value(&mut erased, erased_root);
+                let mut core = CoreArena::new();
+                let mut domain = DomainArena::new();
+                let (value, _remaining) = eval_overlay_value(
+                    &overlay,
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    ample(),
+                    root,
+                )
+                .expect("the shared leaf evaluates through the overlay");
+                let rebuilt = readback_value(
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    ReadbackMode::Unfolding,
+                    ample(),
+                    value,
+                )
+                .expect("and reads back");
+                assert!(
+                    erased == core,
+                    "the value chain's core arena is erasure's and its readback's"
+                );
+                assert!(
+                    reference_domain == domain,
+                    "and its domain arena the unshared pipeline's"
+                );
+                assert_eq!(reference_rebuilt, rebuilt);
+
+                let (overlay, root) = grafted_suspension_chain();
+                let mut erased = CoreArena::new();
+                let erased_root = erase_computation(&overlay, root, &mut erased)
+                    .expect("the grafted chain validates and erases");
+                let (reference_domain, reference_rebuilt) =
+                    read_back_computation(&mut erased, erased_root);
+                let mut core = CoreArena::new();
+                let mut domain = DomainArena::new();
+                let (head, _remaining) = eval_overlay_computation(
+                    &overlay,
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    ample(),
+                    root,
+                )
+                .expect("the outermost returner has a weak head through the overlay");
+                let rebuilt = readback_computation(
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    ReadbackMode::Unfolding,
+                    ample(),
+                    head,
+                )
+                .expect("and the chain of suspensions reads back");
+                assert!(
+                    erased == core,
+                    "the suspension chain's core arena is erasure's and its readback's"
+                );
+                assert!(
+                    reference_domain == domain,
+                    "and its domain arena the unshared pipeline's"
+                );
+                assert_eq!(reference_rebuilt, rebuilt);
+            })
+            .expect("the small-stack thread starts")
+            .join();
+        assert!(
+            compared.is_ok(),
+            "erasure, evaluation through the overlay and readback keep their depth on the heap"
         );
     }
 

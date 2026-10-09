@@ -27,6 +27,13 @@
 //! Each overlay is measured inside the same small stack, its five quantities
 //! asserted exactly, and its expansion size compared with the erased term's
 //! size walked as a tree: the nodes the unshared pipeline visits.
+//!
+//! # The overlay evaluator is the erased pipeline
+//!
+//! Each overlay is evaluated a second time through the overlay evaluator, and
+//! the core arena it erased into, the domain arena it filled and the result it
+//! reached are compared, node for node, with erasure followed by the unshared
+//! pipeline: the reference every sharing stance is compared against.
 
 /// The expansion oracle, shared with the measure's suite.
 #[cfg(test)]
@@ -63,6 +70,8 @@ mod deep_evaluation
     use gandr_core_nbe::erase_computation;
     use gandr_core_nbe::erase_value;
     use gandr_core_nbe::eval_computation;
+    use gandr_core_nbe::eval_overlay_computation;
+    use gandr_core_nbe::eval_overlay_value;
     use gandr_core_nbe::eval_value;
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
@@ -594,6 +603,100 @@ mod deep_evaluation
         assert!(
             compared.is_ok(),
             "validation, erasure and evaluation all keep their depth on the heap"
+        );
+    }
+
+    #[test]
+    fn erase_and_clone_overlay_evaluation_is_the_erased_pipeline()
+    {
+        let compared = std::thread::Builder::new()
+            .stack_size(SMALL_STACK_BYTES)
+            .spawn(|| {
+                let chain = LoweredChain::new();
+                let environment = DefinitionalEnvironment::new();
+                let definitions = Definitions::new(&chain, &environment, environment.root());
+
+                let (overlay, root) = shared_value_chain();
+                let mut erased = CoreArena::new();
+                let erased_root = erase_value(&overlay, root, &mut erased)
+                    .expect("the shared leaf validates and erases");
+                let (reference_domain, reference_value) = evaluated_value(&erased, erased_root);
+                let mut core = CoreArena::new();
+                let mut domain = DomainArena::new();
+                let (value, _remaining) = eval_overlay_value(
+                    &overlay,
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    ample(),
+                    root,
+                )
+                .expect("the shared leaf evaluates through the overlay");
+                assert!(erased == core, "the value chain's core arena is erasure's");
+                assert!(
+                    reference_domain == domain,
+                    "and its domain arena the unshared pipeline's"
+                );
+                assert_eq!(reference_value, value);
+
+                let (overlay, root) = shared_curried_application();
+                let mut erased = CoreArena::new();
+                let erased_root = erase_computation(&overlay, root, &mut erased)
+                    .expect("the shared argument validates and erases");
+                let (reference_domain, reference_head) =
+                    evaluated_computation(&erased, erased_root, ample());
+                let mut core = CoreArena::new();
+                let mut domain = DomainArena::new();
+                let (head, _remaining) = eval_overlay_computation(
+                    &overlay,
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    ample(),
+                    root,
+                )
+                .expect("the shared argument evaluates through the overlay");
+                assert!(
+                    erased == core,
+                    "the curried application's core arena is erasure's"
+                );
+                assert!(
+                    reference_domain == domain,
+                    "and its domain arena the unshared pipeline's"
+                );
+                assert_eq!(reference_head, head);
+
+                let (mut erased, overlay, root) = shared_bind_chain();
+                let mut core = erased.clone();
+                let erased_root = erase_computation(&overlay, root, &mut erased)
+                    .expect("the shared continuation validates and erases");
+                let (reference_domain, reference_head) =
+                    evaluated_computation(&erased, erased_root, ample());
+                let mut domain = DomainArena::new();
+                let (head, _remaining) = eval_overlay_computation(
+                    &overlay,
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    ample(),
+                    root,
+                )
+                .expect("the shared continuation evaluates through the overlay");
+                assert!(
+                    erased == core,
+                    "the bind chain's core arena is erasure's, the opaque base included"
+                );
+                assert!(
+                    reference_domain == domain,
+                    "and its domain arena the unshared pipeline's"
+                );
+                assert_eq!(reference_head, head);
+            })
+            .expect("the small-stack thread starts")
+            .join();
+        assert!(
+            compared.is_ok(),
+            "erasure and evaluation through the overlay keep their depth on the heap"
         );
     }
 

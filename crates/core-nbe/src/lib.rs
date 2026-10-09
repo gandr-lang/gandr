@@ -27,6 +27,9 @@
 //!   siblings erase it, with no policy, back to the unshared core term, and
 //!   [`SharingMeasure::of`] measures one root of it — its shares, occurrences,
 //!   share depth, node count and expansion size — in one heap walk.
+//! - [`eval_overlay_value`] and [`eval_overlay_computation`] evaluate an
+//!   overlay root by erasing it and running the unshared machine over the
+//!   erasure: the reference every sharing stance is compared against.
 //!
 //! The design, and what a caller must guarantee, is stated in this crate's
 //! `README.md`, § Synopsis and § Expected features, and in the sections they
@@ -46,6 +49,7 @@ mod guard;
 mod machine;
 mod measure;
 mod overlay;
+mod overlay_eval;
 mod policy;
 mod readback;
 mod resharing;
@@ -138,6 +142,9 @@ pub use crate::overlay::erase_comp_type;
 pub use crate::overlay::erase_computation;
 pub use crate::overlay::erase_value;
 pub use crate::overlay::erase_value_type;
+pub use crate::overlay_eval::OverlayEvalFault;
+pub use crate::overlay_eval::eval_overlay_computation;
+pub use crate::overlay_eval::eval_overlay_value;
 pub use crate::policy::Copied;
 pub use crate::policy::DuplicationPolicy;
 pub use crate::policy::DuplicationStance;
