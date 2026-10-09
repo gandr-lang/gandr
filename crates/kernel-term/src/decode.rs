@@ -91,6 +91,7 @@ use crate::tags;
 use crate::term::ConstantIndex;
 use crate::term::DeBruijnIndex;
 use crate::term::Side;
+use crate::types::GroundSort;
 use crate::wire::ArtifactImage;
 use crate::wire::ByteCount;
 use crate::wire::ByteOffset;
@@ -1149,7 +1150,14 @@ fn decode_entry(
         ),
         | tags::NODE_VT_UNIVERSE => {
             let level = decode_level(reader)?;
-            let id = table.arena.value_type_universe(level);
+            let id = table.arena.value_type_universe(GroundSort::Value, level);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
+        | tags::NODE_VT_COMPUTATION_UNIVERSE => {
+            let level = decode_level(reader)?;
+            let id = table
+                .arena
+                .value_type_universe(GroundSort::Computation, level);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
         | tags::NODE_VT_ABSTRACT => {
@@ -1208,6 +1216,12 @@ fn decode_entry(
             let id = table.arena.comp_type_pi(domain, codomain);
             (DecodedNode::CompType(id), Family::CompType)
         },
+        | tags::NODE_CT_ELEMENT => {
+            let target = decode_level(reader)?;
+            let code = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.comp_type_element(code, target);
+            (DecodedNode::CompType(id), Family::CompType)
+        },
         | tags::NODE_V_VARIABLE => {
             let index = reader.read_u32()?;
             let id = table
@@ -1249,6 +1263,16 @@ fn decode_entry(
             let target = decode_level(reader)?;
             let body = read_value(reader, table, this, &mut children)?;
             let id = table.arena.value_lift(target, body);
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_V_QUOTE => {
+            let quoted = read_value_type(reader, table, this, &mut children)?;
+            let id = table.arena.value_quote(quoted);
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_V_QUOTE_COMPUTATION => {
+            let quoted = read_comp_type(reader, table, this, &mut children)?;
+            let id = table.arena.value_quote_computation(quoted);
             (DecodedNode::Value(id), Family::Value)
         },
         | tags::NODE_C_LAMBDA => {

@@ -699,6 +699,10 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(body));
                         },
                         | Value::Thunk(body) => tasks.push(ReachTask::OpenComp(body)),
+                        | Value::Quote(quoted) => tasks.push(ReachTask::OpenValueType(quoted)),
+                        | Value::QuoteComputation(quoted) => {
+                            tasks.push(ReachTask::OpenCompType(quoted));
+                        },
                     }
                 },
                 | ReachTask::CloseValue(id) => {
@@ -756,7 +760,7 @@ impl LooseDepths
                     match *node {
                         | ValueType::Base(_)
                         | ValueType::Unit
-                        | ValueType::Universe(_)
+                        | ValueType::Universe { .. }
                         | ValueType::Abstract(_) => {},
                         | ValueType::Product(first, second) | ValueType::Sum(first, second) => {
                             tasks.push(ReachTask::OpenValueType(first));
@@ -793,6 +797,9 @@ impl LooseDepths
                         | CompType::Pi { domain, codomain } => {
                             tasks.push(ReachTask::OpenValueType(domain));
                             tasks.push(ReachTask::OpenCompType(codomain));
+                        },
+                        | CompType::Element { code, .. } => {
+                            tasks.push(ReachTask::OpenValue(code));
                         },
                     }
                 },
@@ -912,7 +919,7 @@ impl LooseDepths
         match *node {
             | ValueType::Base(_)
             | ValueType::Unit
-            | ValueType::Universe(_)
+            | ValueType::Universe { .. }
             | ValueType::Abstract(_) => LooseDepth(0),
             | ValueType::Product(first, second) | ValueType::Sum(first, second) => self
                 .cached_value_type(first)
@@ -932,8 +939,9 @@ impl LooseDepths
     /// # Specification
     /// - requires: this node's children already have their reaches cached.
     /// - ensures: the join of domain and codomain reaches, with the dependent
-    ///   arrow's codomain read one binder further out than it computed, and the
-    ///   widest reach where the node could not be read.
+    ///   arrow's codomain read one binder further out than it computed, the
+    ///   code's own reach for a computation decode, and the widest reach where
+    ///   the node could not be read.
     /// - provides: the computation-type arm of the recurrence, and the one
     ///   binding former on the negative side.
     /// - fails: never.
@@ -956,6 +964,7 @@ impl LooseDepths
             | CompType::Pi { domain, codomain } => self
                 .cached_value_type(domain)
                 .join(self.cached_comp_type(codomain).under_binder()),
+            | CompType::Element { code, .. } => self.cached_value(code),
         }
     }
 
@@ -968,8 +977,9 @@ impl LooseDepths
     /// # Specification
     /// - requires: this node's children already have their reaches cached.
     /// - ensures: one more than a variable's own index, zero for a closed
-    ///   former, and the join of the children's reaches otherwise; the widest
-    ///   reach where the node could not be read. No value former binds.
+    ///   former, the quoted type's reach for a quote, and the join of the
+    ///   children's reaches otherwise; the widest reach where the node could
+    ///   not be read. No value former binds.
     /// - provides: the value arm of the recurrence, and the base case that
     ///   makes an index a reach.
     /// - fails: never.
@@ -998,6 +1008,8 @@ impl LooseDepths
             },
             | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
             | Value::Thunk(body) => self.cached_comp(body),
+            | Value::Quote(quoted) => self.cached_value_type(quoted),
+            | Value::QuoteComputation(quoted) => self.cached_comp_type(quoted),
         }
     }
 
@@ -1058,6 +1070,7 @@ mod tests
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::TermArena;
 
     use super::LooseDepth;
@@ -1229,7 +1242,7 @@ mod tests
         let code = arena.value_variable(DeBruijnIndex::from(2_u32));
         let element = arena.value_type_element(code, zero.clone());
         let returner = arena.comp_type_returner(element);
-        let universe = arena.value_type_universe(zero);
+        let universe = arena.value_type_universe(GroundSort::Value, zero);
         let dependent = arena.comp_type_pi(universe, returner);
         let mut reaches = LooseDepths::new();
         assert_eq!(

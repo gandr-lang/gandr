@@ -50,6 +50,7 @@ use crate::term::DeBruijnIndex;
 use crate::term::Side;
 use crate::term::Value;
 use crate::types::CompType;
+use crate::types::GroundSort;
 use crate::types::ValueType;
 
 /// The id of a [`Value`] node in a [`TermArena`].
@@ -676,6 +677,42 @@ impl TermArena
         self.alloc_value(Value::Lift { target, body })
     }
 
+    /// Mint the code of an already-allocated value type.
+    ///
+    /// # Specification
+    /// - requires: `quoted` resolves in this arena's value-type family.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling.
+    /// - provides: the quote `⌜A⌝`; its universe level is formation's to read.
+    ///   The child crosses families, so the two ids share no allocation order.
+    /// - panics: none.
+    #[inline]
+    pub fn value_quote(
+        &mut self,
+        quoted: ValueTypeId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Quote(quoted))
+    }
+
+    /// Mint the code of an already-allocated computation type.
+    ///
+    /// # Specification
+    /// - requires: `quoted` resolves in this arena's computation-type family.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling.
+    /// - provides: the quote `⌜C⌝` of a computation type, which is a value like
+    ///   every code.
+    /// - panics: none.
+    #[inline]
+    pub fn value_quote_computation(
+        &mut self,
+        quoted: CompTypeId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::QuoteComputation(quoted))
+    }
+
     // Computation constructors.
 
     /// Mint a lambda over an already-allocated computation body.
@@ -908,7 +945,7 @@ impl TermArena
         self.alloc_value_type(ValueType::Thunk(body))
     }
 
-    /// Mint a universe value type at a canonical level.
+    /// Mint the universe of one ground sort at a canonical level.
     ///
     /// # Specification
     /// - requires: `level` is a canonical level; the arena stores it as given.
@@ -916,15 +953,16 @@ impl TermArena
     ///   before the push, saturated at the `u32` ceiling; while that length
     ///   fits `u32` the id names the appended node and is greater than every
     ///   value-type id currently live in this arena.
-    /// - provides: the universe type at that level.
+    /// - provides: the universe of `sort` at that level.
     /// - panics: none.
     #[inline]
     pub fn value_type_universe(
         &mut self,
+        sort: GroundSort,
         level: Level,
     ) -> ValueTypeId
     {
-        self.alloc_value_type(ValueType::Universe(level))
+        self.alloc_value_type(ValueType::Universe { sort, level })
     }
 
     /// Mint a reference to a sealed abstract type by its declaration's
@@ -953,22 +991,35 @@ impl TermArena
         self.alloc_value_type(ValueType::Abstract(atom))
     }
 
-    /// Mint the type a code denotes, over an already-allocated code value.
+    /// Mint the type a code denotes, over an already-allocated code value,
+    /// decoding a value quote on mint.
     ///
     /// Minting checks neither the code nor the level: that the code inhabits
-    /// `Universe target` is a typing fact, so a mismatched pair is a rejection
-    /// at the choke point rather than an unrepresentable node here.
+    /// the value universe at `target` is a typing fact, so a mismatched pair is
+    /// a rejection at the choke point rather than an unrepresentable node
+    /// here. A code that is a quote is the one exception, because `El ⌜A⌝` is
+    /// `A` by the decoding rule: the quoted type is returned and nothing is
+    /// minted, whatever level was written, since the quoted type carries its
+    /// own.
     ///
     /// # Specification
     /// - requires: `code` resolves in this arena's value family; whether it
-    ///   inhabits `Universe target` is checked at the choke point.
-    /// - ensures: appends the node and returns the value-type family's length
-    ///   before the push, saturated at the `u32` ceiling; while that length
-    ///   fits `u32` the id names the appended node and is greater than every
-    ///   value-type id currently live in this arena.
-    /// - provides: the type a code denotes. The child crosses families, so the
-    ///   two ids share no allocation order and none is claimed.
+    ///   inhabits the value universe at `target` is checked at the choke point.
+    /// - ensures: when `code` is a value quote `⌜A⌝`, returns `A` and mints
+    ///   nothing; otherwise appends the node and returns the value-type
+    ///   family's length before the push, saturated at the `u32` ceiling; while
+    ///   that length fits `u32` the id names the appended node and is greater
+    ///   than every value-type id currently live in this arena.
+    /// - provides: the type a code denotes, with its β-rule fired at the one
+    ///   place a decode is made, so no arena ever holds the redex. The child
+    ///   crosses families, so the two ids share no allocation order and none is
+    ///   claimed.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decoding arm and the minting arm, separated by a
+    ///   value quote and by a computation quote, which decodes nothing here.
+    /// - witness: `arena::tests::a_decoded_quote_is_the_quoted_type`
     #[inline]
     pub fn value_type_element(
         &mut self,
@@ -976,6 +1027,9 @@ impl TermArena
         target: Level,
     ) -> ValueTypeId
     {
+        if let Some(&Value::Quote(quoted)) = self.value(code) {
+            return quoted;
+        }
         self.alloc_value_type(ValueType::Element { code, target })
     }
 
@@ -1073,6 +1127,39 @@ impl TermArena
         self.alloc_comp_type(CompType::Pi { domain, codomain })
     }
 
+    /// Mint the computation type a code denotes, decoding a computation quote
+    /// on mint.
+    ///
+    /// # Specification
+    /// - requires: `code` resolves in this arena's value family; whether it
+    ///   inhabits the computation universe at `target` is checked at the choke
+    ///   point.
+    /// - ensures: when `code` is a computation quote `⌜C⌝`, returns `C` and
+    ///   mints nothing; otherwise appends the decode and returns the
+    ///   computation-type family's length before the push, saturated at the
+    ///   `u32` ceiling.
+    /// - provides: the computation decode, with its β-rule fired at the one
+    ///   place a decode is made, so no arena ever holds the redex.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decoding arm and the minting arm, separated by a
+    ///   computation quote and by a value quote, which is a different family
+    ///   and decodes nothing.
+    /// - witness: `arena::tests::a_decoded_quote_is_the_quoted_type`
+    #[inline]
+    pub fn comp_type_element(
+        &mut self,
+        code: ValueId,
+        target: Level,
+    ) -> CompTypeId
+    {
+        if let Some(&Value::QuoteComputation(quoted)) = self.value(code) {
+            return quoted;
+        }
+        self.alloc_comp_type(CompType::Element { code, target })
+    }
+
     /// The immediate child references of `node`, in the order the format writes
     /// them.
     ///
@@ -1106,6 +1193,8 @@ impl TermArena
             Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) =>
                 ret.as_slice() == [AnyNode::Value(body)],
             Some(&Value::Thunk(body)) => ret.as_slice() == [AnyNode::Computation(body)],
+            Some(&Value::Quote(quoted)) => ret.as_slice() == [AnyNode::ValueType(quoted)],
+            Some(&Value::QuoteComputation(quoted)) => ret.as_slice() == [AnyNode::CompType(quoted)],
         },
         AnyNode::Computation(id) => match self.computation(id) {
             None => ret.is_empty(),
@@ -1124,7 +1213,7 @@ impl TermArena
                 ],
         },
         AnyNode::ValueType(id) => match self.value_type(id) {
-            Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe(_) | &ValueType::Abstract(_))
+            Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_))
             | None => ret.is_empty(),
             Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)) =>
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
@@ -1137,6 +1226,7 @@ impl TermArena
             Some(&CompType::Returner(result)) => ret.as_slice() == [AnyNode::ValueType(result)],
             Some(&CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain }) =>
                 ret.as_slice() == [AnyNode::ValueType(domain), AnyNode::CompType(codomain)],
+            Some(&CompType::Element { code, .. }) => ret.as_slice() == [AnyNode::Value(code)],
         },
     })]
     pub(crate) fn children_of(
@@ -1159,6 +1249,10 @@ impl TermArena
                     children.push(AnyNode::Value(body));
                 },
                 | Some(&Value::Thunk(body)) => children.push(AnyNode::Computation(body)),
+                | Some(&Value::Quote(quoted)) => children.push(AnyNode::ValueType(quoted)),
+                | Some(&Value::QuoteComputation(quoted)) => {
+                    children.push(AnyNode::CompType(quoted));
+                },
             },
             | AnyNode::Computation(id) => match self.computation(id) {
                 | None => {},
@@ -1188,7 +1282,7 @@ impl TermArena
                 | Some(
                     &ValueType::Base(_)
                     | &ValueType::Unit
-                    | &ValueType::Universe(_)
+                    | &ValueType::Universe { .. }
                     | &ValueType::Abstract(_),
                 )
                 | None => {},
@@ -1211,6 +1305,7 @@ impl TermArena
                     children.push(AnyNode::ValueType(domain));
                     children.push(AnyNode::CompType(codomain));
                 },
+                | Some(&CompType::Element { code, .. }) => children.push(AnyNode::Value(code)),
             },
         }
         children
@@ -1316,6 +1411,35 @@ mod tests
             ArenaWatermark::default(),
             arena.watermark(),
             "an empty arena sits at the admission floor"
+        );
+    }
+
+    #[test]
+    fn a_decoded_quote_is_the_quoted_type()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let quote = arena.value_quote(unit);
+        let level = gandr_kernel_strata::Level::zero();
+        assert_eq!(
+            unit,
+            arena.value_type_element(quote, level.clone()),
+            "a value decode of a value quote is the quoted type itself"
+        );
+        let returner = arena.comp_type_returner(unit);
+        let quoted = arena.value_quote_computation(returner);
+        assert_eq!(
+            returner,
+            arena.comp_type_element(quoted, level.clone()),
+            "and a computation decode of a computation quote is the quoted computation type"
+        );
+        let crossed = arena.comp_type_element(quote, level);
+        assert!(
+            matches!(
+                arena.comp_type(crossed),
+                Some(&super::CompType::Element { code, .. }) if code == quote
+            ),
+            "while a decode across the families is minted as written, for the checker to refuse"
         );
     }
 }

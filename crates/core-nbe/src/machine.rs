@@ -2763,14 +2763,19 @@ mod tests
     use alloc::collections::BTreeSet;
     use alloc::vec::Vec;
 
+    use gandr_core_term::CompType;
+    use gandr_core_term::CompTypeId;
     use gandr_core_term::Computation;
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
     use gandr_core_term::DefinitionChain;
     use gandr_core_term::DefinitionalEnvironment;
+    use gandr_core_term::Sort;
     use gandr_core_term::Transparency;
     use gandr_core_term::Value;
     use gandr_core_term::ValueId;
+    use gandr_core_term::ValueType;
+    use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
     use gandr_kernel_check_memo::CheckMemo;
     use gandr_kernel_check_memo::NullMemo;
@@ -3681,7 +3686,8 @@ mod tests
         results.pop().expect("the walk leaves the top")
     }
 
-    /// The kernel's copy of a world's terms, each core node translated once.
+    /// The kernel's copy of a world's terms and the types their codes quote,
+    /// each core node translated once.
     #[derive(Default)]
     struct Kernel
     {
@@ -3691,6 +3697,10 @@ mod tests
         values: BTreeMap<ValueId, gandr_kernel_term::ValueId>,
         /// The kernel node of every core computation translated.
         computations: BTreeMap<ComputationId, gandr_kernel_term::ComputationId>,
+        /// The kernel node of every core value type translated.
+        value_types: BTreeMap<ValueTypeId, gandr_kernel_term::ValueTypeId>,
+        /// The kernel node of every core computation type translated.
+        comp_types: BTreeMap<CompTypeId, gandr_kernel_term::CompTypeId>,
     }
 
     /// A core node awaiting translation.
@@ -3701,6 +3711,10 @@ mod tests
         Value(ValueId),
         /// A computation.
         Computation(ComputationId),
+        /// A value type.
+        ValueType(ValueTypeId),
+        /// A computation type.
+        CompType(CompTypeId),
     }
 
     /// Whether a core node has its kernel copy yet.
@@ -3804,6 +3818,8 @@ mod tests
             let made = match node {
                 | Node::Value(value) => self.values.contains_key(&value),
                 | Node::Computation(computation) => self.computations.contains_key(&computation),
+                | Node::ValueType(value_type) => self.value_types.contains_key(&value_type),
+                | Node::CompType(comp_type) => self.comp_types.contains_key(&comp_type),
             };
             if made {
                 Translated::Made
@@ -3836,12 +3852,12 @@ mod tests
                             Vec::from([Node::Value(body)])
                         },
                         | &Value::Thunk(body) => Vec::from([Node::Computation(body)]),
+                        | &Value::Quote(quoted) => Vec::from([Node::ValueType(quoted)]),
+                        | &Value::QuoteComputation(quoted) => Vec::from([Node::CompType(quoted)]),
                         | &(Value::Variable { .. }
                         | Value::Constant(_)
                         | Value::Unit
-                        | Value::Literal(_)
-                        | Value::Quote(_)
-                        | Value::QuoteComputation(_)) => Vec::new(),
+                        | Value::Literal(_)) => Vec::new(),
                     }
                 },
                 | Node::Computation(computation) => {
@@ -3868,6 +3884,33 @@ mod tests
                             Node::Computation(on_left),
                             Node::Computation(on_right),
                         ]),
+                    }
+                },
+                | Node::ValueType(value_type) => {
+                    match *core
+                        .value_type(value_type)
+                        .expect("a fixture type resolves")
+                    {
+                        | ValueType::Product(first, second) | ValueType::Sum(first, second) => {
+                            Vec::from([Node::ValueType(first), Node::ValueType(second)])
+                        },
+                        | ValueType::Thunk(body) => Vec::from([Node::CompType(body)]),
+                        | ValueType::Lift { inner, .. } => Vec::from([Node::ValueType(inner)]),
+                        | ValueType::Element { code, .. } => Vec::from([Node::Value(code)]),
+                        | ValueType::Base(_)
+                        | ValueType::Unit
+                        | ValueType::Universe { .. }
+                        | ValueType::Abstract(_) => Vec::new(),
+                    }
+                },
+                | Node::CompType(comp_type) => {
+                    match *core.comp_type(comp_type).expect("a fixture type resolves") {
+                        | CompType::Returner(result) => Vec::from([Node::ValueType(result)]),
+                        | CompType::Arrow { domain, codomain }
+                        | CompType::Pi { domain, codomain } => {
+                            Vec::from([Node::ValueType(domain), Node::CompType(codomain)])
+                        },
+                        | CompType::Element { code, .. } => Vec::from([Node::Value(code)]),
                     }
                 },
             }
@@ -3921,8 +3964,13 @@ mod tests
                             let body = computation(self, body);
                             self.arena.value_thunk(body)
                         },
-                        | &(Value::Quote(_) | Value::QuoteComputation(_)) => {
-                            panic!("the kernel copy of a quote arrives with the kernel's quotes")
+                        | &Value::Quote(quoted) => {
+                            let quoted = *self.value_types.get(&quoted).expect("children first");
+                            self.arena.value_quote(quoted)
+                        },
+                        | &Value::QuoteComputation(quoted) => {
+                            let quoted = *self.comp_types.get(&quoted).expect("children first");
+                            self.arena.value_quote_computation(quoted)
                         },
                         | &Value::Lift { ref target, body } => {
                             let body = value(self, body);
@@ -3968,6 +4016,79 @@ mod tests
                         },
                     };
                     self.computations.insert(id, copy);
+                },
+                | Node::ValueType(id) => {
+                    let value_type = |kernel: &Self, id: ValueTypeId| {
+                        *kernel.value_types.get(&id).expect("children first")
+                    };
+                    let comp_type = |kernel: &Self, id: CompTypeId| {
+                        *kernel.comp_types.get(&id).expect("children first")
+                    };
+                    let copy = match *core.value_type(id).expect("a fixture type resolves") {
+                        | ValueType::Base(base) => self.arena.value_type_base(base),
+                        | ValueType::Unit => self.arena.value_type_unit(),
+                        | ValueType::Product(first, second) => {
+                            let (first, second) =
+                                (value_type(self, first), value_type(self, second));
+                            self.arena.value_type_product(first, second)
+                        },
+                        | ValueType::Sum(first, second) => {
+                            let (first, second) =
+                                (value_type(self, first), value_type(self, second));
+                            self.arena.value_type_sum(first, second)
+                        },
+                        | ValueType::Thunk(body) => {
+                            let body = comp_type(self, body);
+                            self.arena.value_type_thunk(body)
+                        },
+                        | ValueType::Universe {
+                            sort: Sort::Ground(sort),
+                            ref level,
+                        } => self.arena.value_type_universe(sort, level.clone()),
+                        | ValueType::Universe {
+                            sort: Sort::Parameter(_),
+                            ..
+                        } => panic!("no fixture quotes a sort-polymorphic universe"),
+                        | ValueType::Lift { inner, ref target } => {
+                            let inner = value_type(self, inner);
+                            self.arena.value_type_lift(inner, target.clone())
+                        },
+                        | ValueType::Element { code, ref target } => {
+                            let code = value(self, code);
+                            self.arena.value_type_element(code, target.clone())
+                        },
+                        | ValueType::Abstract(atom) => self.arena.value_type_abstract(atom),
+                    };
+                    self.value_types.insert(id, copy);
+                },
+                | Node::CompType(id) => {
+                    let value_type = |kernel: &Self, id: ValueTypeId| {
+                        *kernel.value_types.get(&id).expect("children first")
+                    };
+                    let comp_type = |kernel: &Self, id: CompTypeId| {
+                        *kernel.comp_types.get(&id).expect("children first")
+                    };
+                    let copy = match *core.comp_type(id).expect("a fixture type resolves") {
+                        | CompType::Returner(result) => {
+                            let result = value_type(self, result);
+                            self.arena.comp_type_returner(result)
+                        },
+                        | CompType::Arrow { domain, codomain } => {
+                            let (domain, codomain) =
+                                (value_type(self, domain), comp_type(self, codomain));
+                            self.arena.comp_type_arrow(domain, codomain)
+                        },
+                        | CompType::Pi { domain, codomain } => {
+                            let (domain, codomain) =
+                                (value_type(self, domain), comp_type(self, codomain));
+                            self.arena.comp_type_pi(domain, codomain)
+                        },
+                        | CompType::Element { code, ref target } => {
+                            let code = value(self, code);
+                            self.arena.comp_type_element(code, target.clone())
+                        },
+                    };
+                    self.comp_types.insert(id, copy);
                 },
             }
         }
@@ -4306,7 +4427,8 @@ mod tests
         let other = core.value_quote(integer);
         let world = World::new(core, &[(Name::Zero, body)]);
 
-        let (verdict, decisions) = world.traced(Sides::Values(reference, written));
+        let alike = Sides::Values(reference, written);
+        let (verdict, decisions) = world.traced(alike);
         assert_eq!(MachineVerdict::Convertible, verdict);
         assert!(
             matches!(decisions.as_slice(), &[
@@ -4317,8 +4439,14 @@ mod tests
             "the constant unfolds to a code, and two codes of one type close as shared: \
              {decisions:?}"
         );
+        assert_eq!(
+            KernelVerdict::Convertible,
+            world.replayed(alike, verdict, &decisions),
+            "and the kernel replays the unfolding and the closing over its own quotes"
+        );
 
-        let (verdict, decisions) = world.traced(Sides::Values(reference, other));
+        let apart = Sides::Values(reference, other);
+        let (verdict, decisions) = world.traced(apart);
         assert_eq!(
             MachineVerdict::NotConvertible,
             verdict,
@@ -4330,6 +4458,11 @@ mod tests
                 Some(&ConversionDecision::ComparedShared { .. })
             ),
             "by a shared comparison the kernel separates on its own terms: {decisions:?}"
+        );
+        assert_eq!(
+            KernelVerdict::NotConvertible,
+            world.replayed(apart, verdict, &decisions),
+            "which the kernel's replay confirms"
         );
     }
 
@@ -4349,16 +4482,30 @@ mod tests
         let written = core.value_quote(plain);
         let world = World::new(core, &[(Name::Zero, body)]);
 
+        let undecided = Sides::Values(flexible, written);
+        let (verdict, decisions) = world.traced(undecided);
         assert_eq!(
             MachineVerdict::Declined(DeclineReason::UndecidedCodes),
-            world.traced(Sides::Values(flexible, written)).0,
+            verdict,
             "the decode names a constant with a body, which could unfold to the very code \
              it is compared against, and nothing reduces inside a type at this rung"
         );
         assert_eq!(
+            certified(verdict),
+            world.replayed(undecided, verdict, &decisions),
+            "and the kernel declines with it: {decisions:?}"
+        );
+        let apart = Sides::Values(rigid, written);
+        let (verdict, decisions) = world.traced(apart);
+        assert_eq!(
             MachineVerdict::NotConvertible,
-            world.traced(Sides::Values(rigid, written)).0,
+            verdict,
             "while a decode of a constant with no body cannot, so the codes are apart"
+        );
+        assert_eq!(
+            KernelVerdict::NotConvertible,
+            world.replayed(apart, verdict, &decisions),
+            "and the kernel separates them on its own reading of rigidity: {decisions:?}"
         );
     }
 

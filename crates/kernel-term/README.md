@@ -13,6 +13,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - [Amplification budgets](#amplification-budgets)
 - [Admission watermark](#admission-watermark)
 - [Rejection vocabulary](#rejection-vocabulary)
+- [Universe families and quotes](#universe-families-and-quotes)
 - [Tag numbering and versioning](#tag-numbering-and-versioning)
 - [Sharing and compression](#sharing-and-compression)
 - [Specification attributes](#specification-attributes)
@@ -115,15 +116,25 @@ A decode failure is a format failure and never a typing failure. `DecodeError` i
 
 `ReservedKind` names the declaration kinds a module layer would export (`ModuleSig`, `ModuleDef`, `FunctorDef`); they are reserved together so graduating one into the kernel never renumbers a shipped format, and a live kind such as the abstract type has no variant. `ReservedSlot` names the slots and sections that must be empty, and the minted-atom table, the one live member, refused when the declarations decoded beside it refute it.
 
+## Universe families and quotes
+
+**Choice.** Universes come in two families, one per ground sort: `ValueType::Universe { sort, level }` with `GroundSort::Value` classifies value types at `level` and with `GroundSort::Computation` classifies computation types at `level`. Both are value types one level up — a code is a value whatever family it decodes into. A code is a quote, `Value::Quote` of a value type or `Value::QuoteComputation` of a computation type, and a type is read off a code by the decoding former of its family, `ValueType::Element` or `CompType::Element`.
+
+**Decode on mint.** `TermArena::value_type_element` over a value quote returns the quoted type and mints nothing, and `comp_type_element` does the same over a computation quote. The decoding rule `El ⌜A⌝ = A` therefore fires at the one place a decode is made, so no arena holds the redex, and no artifact either: a table writing a decode over a quote reads back as the quoted type, and the re-encoding check refuses it as non-canonical. A decode across the families — a computation decode of a value quote — is minted as written, for the checker to refuse as a type mismatch. The alternative, a decode node the checker reduces, would put a redex in front of every conversion and every walk; the reversal condition is a decoding rule that needs a context to fire, which a constructor cannot see.
+
+**Alternatives.** One universe over both sorts was rejected because a value type and a computation type are different kinds of thing in call-by-push-value, and a single universe would need a sort test at every decode. A sort parameter on the universe is the surface's business: no sort parameter reaches this crate, so `GroundSort` has exactly the two ground sorts.
+
 ## Tag numbering and versioning
 
 The tag space is one disjoint enumeration over the four families:
 
 | region | tags | holds |
 | ------ | ---- | ----- |
-| frozen block | `0x00–0x19` | every former this crate mints, contiguous from zero through the universe-decoding former |
-| growth room | `0x1A–0x1F` | the core vocabulary's next formers |
+| frozen block | `0x00–0x1D` | every former this crate mints, contiguous from zero through the two quotes |
+| growth room | `0x1E–0x1F` | the core vocabulary's next formers |
 | sharing block | `0x20–0x27` | a stored sharing plane: one former per family, plus four held slots for an explicit weakening form |
+
+The universe families took four tags from the growth room, in family order: `NODE_VT_COMPUTATION_UNIVERSE` (`0x1A`), `NODE_CT_ELEMENT` (`0x1B`), `NODE_V_QUOTE` (`0x1C`) and `NODE_V_QUOTE_COMPUTATION` (`0x1D`). `NODE_VT_UNIVERSE` keeps its byte and now names the value universe alone. The sort is a tag rather than an inline byte on `NODE_VT_UNIVERSE` for the reason the dependent arrow is a tag rather than a flag on the arrow: a payload byte that changes what a node means is a field-shape change, which bumps `FORMAT_VERSION`, where a fresh tag in the growth room holds it.
 
 The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core grows through the growth room and resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
 

@@ -35,6 +35,7 @@ mod acceptance
     use gandr_kernel_term::Declaration;
     use gandr_kernel_term::DeclarationBuilder;
     use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelParamCount;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::Side;
@@ -1118,7 +1119,7 @@ mod acceptance
         // `axiom _ : Lift (Universe 0) 2` admits: `Universe 0` forms at level 1,
         // and 1 is strictly below 2.
         let stage_axiom = |arena: &mut TermArena| {
-            let inner = arena.value_type_universe(level(LevelConstant::from(0)));
+            let inner = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
             let declared = arena.value_type_lift(inner, level(LevelConstant::from(2)));
             (declared, inner)
         };
@@ -1166,7 +1167,7 @@ mod acceptance
             let mut builder = DeclarationBuilder::new(&mut arena);
             let inner = builder
                 .arena()
-                .value_type_universe(level(LevelConstant::from(0)));
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
             let declared = builder
                 .arena()
                 .value_type_lift(inner, level(LevelConstant::from(2)));
@@ -1354,7 +1355,7 @@ mod acceptance
     fn dependent_identity(arena: &mut TermArena) -> (ValueTypeId, ValueId)
     {
         let zero = level(LevelConstant::from(0));
-        let universe = arena.value_type_universe(zero.clone());
+        let universe = arena.value_type_universe(GroundSort::Value, zero.clone());
         let outer_code = arena.value_variable(DeBruijnIndex::from(0_u32));
         let domain = arena.value_type_element(outer_code, zero.clone());
         let inner_code = arena.value_variable(DeBruijnIndex::from(1_u32));

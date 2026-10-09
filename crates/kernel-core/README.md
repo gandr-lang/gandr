@@ -16,6 +16,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Staging order and admission](#staging-order-and-admission)
 - [Sharing-aware conversion](#sharing-aware-conversion)
 - [Dependent arrow and rewrites](#dependent-arrow-and-rewrites)
+- [Universe families, codes and the lift](#universe-families-codes-and-the-lift)
 - [Conversion replay](#conversion-replay)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
@@ -36,7 +37,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 - **Admission.** `Environment` with `stage`, `add_decl`, `add_decl_unchecked`, `abandon` and `audit`; `StagedDeclaration`, `CheckedId`, `AdmittedDeclaration` and `AxiomReport`. The arena is truncated on both verdicts: to content-end on success, to the declaration's content-start on rejection, clamped at the admission floor.
 - **The checking machine.** `check_declaration`, the default path with a fresh memo, and `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`. Checking is bidirectional and annotation-free.
-- **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope and a sealed atom's kind.
+- **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope, a sealed atom's kind, and the code a decode of either family owes.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
 - **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, unfolding only what `Unfoldings` defines and stopping at a `ReplayBudget`, answering a `KernelVerdict` — certified convertible, certified not convertible, or declined with a `ReplayDecline`, whose `ReplayRefusal` names the `TracePosition` that did not replay.
 - **The content key.** `ContentTable`, `encode_support`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, canonical support encodings and their digests.
@@ -184,7 +185,15 @@ The dependent arrow forms at the join of its children like the non-dependent one
 
 Two sites in the checker consume them: a variable synthesis raises its context slot past the binders between the slot and the use site, and an application at a dependent head instantiates the codomain at its argument. Those two faces — shifting a value type, instantiating a computation type — are the public rewrite surface; the other four family faces are crate-visible. A type carrying no code rewrites to itself and the walk hands back the node it was given, so the common case costs nothing and the sharing a decode preserved survives.
 
-**The audit follows codes.** A declaration's type reaches another declaration two ways — a sealed atom names one directly, and a code names one through the term language — and the trust report would miss the second if it followed only the first. The sealing-provenance set does not follow codes: it asks which sealed atoms a projection rebound, and widening it would make the gate more permissive on the one surface whose job is to be falsifiable.
+**The audit follows codes.** A declaration's type reaches another declaration two ways — a sealed atom names one directly, and a code names one through the term language — and the trust report would miss the second if it followed only the first. A quote crosses back, so the one walk behind both sets follows a value into the type it quotes as well as a type into the code it decodes. The sealing-provenance set does not follow codes: it asks which sealed atoms a projection rebound, and widening it would make the gate more permissive on the one surface whose job is to be falsifiable.
+
+## Universe families, codes and the lift
+
+**Two universes, one rule.** The universe of value types and the universe of computation types each form one level above the level they carry, as value types: a code is a value whichever family it decodes into. A sealed atom's kind must be the value universe, because an atom is a value type. A quote synthesizes the universe of its family at its quoted type's own level, by calling the formation walk directly, as the lift's frame does; the computation decode owes its code against the computation universe exactly as the value decode owes its code against the value universe, through the same deferred obligation.
+
+**No cumulativity; the lift is written.** A code inhabits exactly the universe at its type's level, so a code bound for a larger universe reaches the kernel as the quote of an explicit `Lift`, and the formation walk's strictness check on that lift is the kernel's smallness check. The producer decides smallness at the site it checks and writes the lift at readmission; the kernel trusts neither the decision nor the level. The alternative, a cumulative universe rule in conversion or in checking, would make conversion directional and put subtyping into the trusted base; the reversal condition is a measured cost of the written lifts that a subsumption rule would remove.
+
+**Codes compare by their quoted types.** Structural conversion compares two quotes by the types they quote, and the replay closes a comparison of two codes as the untrusted engine's shared comparison does: α-equal codes convert, codes whose quoted types hold nothing that could still unfold are apart, and any other pair is refused rather than guessed at. Rigidity reads through quoted types and the codes they decode, so the engine's verdict of apart is one the kernel reaches in its own terms.
 
 ## Conversion replay
 

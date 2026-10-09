@@ -34,8 +34,8 @@
 //!
 //! | region        | tags        | holds                                                                |
 //! | ------------- | ----------- | -------------------------------------------------------------------- |
-//! | frozen block  | `0x00–0x19` | every former this crate mints, contiguous from zero                  |
-//! | growth room   | `0x1A–0x1F` | held for the core vocabulary, contiguous continuation of the block   |
+//! | frozen block  | `0x00–0x1D` | every former this crate mints, contiguous from zero                  |
+//! | growth room   | `0x1E–0x1F` | held for the core vocabulary, contiguous continuation of the block   |
 //! | sharing block | `0x20–0x27` | the stored sharing plane: one former per family, plus held weakening |
 //!
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
@@ -44,7 +44,16 @@
 //! [`NODE_VT_ELEMENT`] is the universe-decoding former, and it is the one tag
 //! whose child crosses from a type to a *term*: everything the dependent arrow
 //! can say depends on a type being able to mention a value, and this is the
-//! former that lets it.
+//! former that lets it. [`NODE_CT_ELEMENT`] is its computation-family twin.
+//!
+//! The universe families took four tags from the growth room at once, one
+//! family at a time: the computation universe [`NODE_VT_COMPUTATION_UNIVERSE`]
+//! among the value types, the computation decode [`NODE_CT_ELEMENT`] among the
+//! computation types, and the two quotes [`NODE_V_QUOTE`] and
+//! [`NODE_V_QUOTE_COMPUTATION`] among the values. The sort of a universe is a
+//! tag rather than an inline byte on [`NODE_VT_UNIVERSE`] for the reason the
+//! dependent arrow is: a payload byte that changes what the node means is a
+//! field-shape change, which bumps the version, where a fresh tag holds it.
 //!
 //! The sharing block is **reserved and unassigned**: four per-family sharing
 //! formers so polarity stays recoverable from the tag alone, and four held
@@ -125,7 +134,7 @@ pub const RELATION_EQ: WireTag = WireTag(1);
 pub const NODE_VT_BASE: WireTag = WireTag(0x00);
 /// Node tag: the value-type unit.
 pub const NODE_VT_UNIT: WireTag = WireTag(0x01);
-/// Node tag: the universe former, with an inline level.
+/// Node tag: the universe of value types, with an inline level.
 pub const NODE_VT_UNIVERSE: WireTag = WireTag(0x02);
 /// Node tag: the product former, over two value types.
 pub const NODE_VT_PRODUCT: WireTag = WireTag(0x03);
@@ -180,6 +189,15 @@ pub const NODE_CT_PI: WireTag = WireTag(0x18);
 /// Node tag: the universe-decoding former, with an inline level and one value
 /// child: the code the type is read off.
 pub const NODE_VT_ELEMENT: WireTag = WireTag(0x19);
+/// Node tag: the universe of computation types, with an inline level.
+pub const NODE_VT_COMPUTATION_UNIVERSE: WireTag = WireTag(0x1A);
+/// Node tag: the computation-decoding former, with an inline level and one
+/// value child: the code the computation type is read off.
+pub const NODE_CT_ELEMENT: WireTag = WireTag(0x1B);
+/// Node tag: the code of a value type, over one value type.
+pub const NODE_V_QUOTE: WireTag = WireTag(0x1C);
+/// Node tag: the code of a computation type, over one computation type.
+pub const NODE_V_QUOTE_COMPUTATION: WireTag = WireTag(0x1D);
 
 /// Reserved node tag: the stored sharing plane's value-family sharing former.
 pub const NODE_SHARE_VALUE: WireTag = WireTag(0x20);
@@ -381,7 +399,7 @@ const fn bounded_alias(
 /// own child relation, and its rows are pinned against the encoder's wire
 /// images by the round-trip suites, so a row that drifts from the code is a
 /// test failure rather than a comment that quietly went stale.
-pub const NODE_TAG_TABLE: [NodeTagDescription; 26] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 30] = [
     row(
         NODE_VT_BASE,
         ChildArity(0),
@@ -414,6 +432,10 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 26] = [
     bounded_alias(NODE_VT_ABSTRACT, TokenCount(2)),
     unbounded(NODE_CT_PI, ChildArity(2)),
     unbounded(NODE_VT_ELEMENT, ChildArity(1)),
+    unbounded(NODE_VT_COMPUTATION_UNIVERSE, ChildArity(0)),
+    unbounded(NODE_CT_ELEMENT, ChildArity(1)),
+    unbounded(NODE_V_QUOTE, ChildArity(1)),
+    unbounded(NODE_V_QUOTE_COMPUTATION, ChildArity(1)),
 ];
 
 #[cfg(test)]
@@ -438,6 +460,7 @@ mod tests
     use crate::term::ConstantIndex;
     use crate::term::DeBruijnIndex;
     use crate::term::Side;
+    use crate::types::GroundSort;
     use crate::wire::WireTag;
 
     /// One node of every former, in the tag table's order, in a fresh arena.
@@ -457,7 +480,7 @@ mod tests
         let level = gandr_kernel_strata::Level::zero();
         let base = arena.value_type_base(BaseType::Integer);
         let unit_type = arena.value_type_unit();
-        let universe = arena.value_type_universe(level.clone());
+        let universe = arena.value_type_universe(GroundSort::Value, level.clone());
         let product = arena.value_type_product(base, unit_type);
         let sum = arena.value_type_sum(base, unit_type);
         let returner = arena.comp_type_returner(unit_type);
@@ -483,7 +506,12 @@ mod tests
         let case = arena.computation_case(unit, ret, ret);
         let atom = arena.value_type_abstract(ConstantIndex::from(0));
         let pi = arena.comp_type_pi(unit_type, returner);
-        let element = arena.value_type_element(unit, level);
+        let element = arena.value_type_element(unit, level.clone());
+        let computation_universe =
+            arena.value_type_universe(GroundSort::Computation, level.clone());
+        let comp_element = arena.comp_type_element(unit, level);
+        let quote = arena.value_quote(unit_type);
+        let quote_computation = arena.value_quote_computation(returner);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(unit_type),
@@ -511,6 +539,10 @@ mod tests
             AnyNode::ValueType(atom),
             AnyNode::CompType(pi),
             AnyNode::ValueType(element),
+            AnyNode::ValueType(computation_universe),
+            AnyNode::CompType(comp_element),
+            AnyNode::Value(quote),
+            AnyNode::Value(quote_computation),
         ];
         (arena, nodes)
     }
@@ -539,7 +571,7 @@ mod tests
     fn the_tag_table_is_a_contiguous_frozen_block()
     {
         let tags: Vec<WireTag> = NODE_TAG_TABLE.iter().map(|row| row.tag).collect();
-        let expected: Vec<WireTag> = (0_u8 .. 26).map(WireTag::from).collect();
+        let expected: Vec<WireTag> = (0_u8 .. 30).map(WireTag::from).collect();
         assert_eq!(expected, tags, "the node tags are contiguous from zero");
     }
 

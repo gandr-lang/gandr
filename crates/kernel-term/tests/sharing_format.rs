@@ -24,6 +24,7 @@ mod sharing_format
     use gandr_kernel_term::ExpandedWork;
     use gandr_kernel_term::FORMAT_VERSION;
     use gandr_kernel_term::FormatVersion;
+    use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::MAX_ARTIFACT_EXPANDED_WORK;
     use gandr_kernel_term::MAX_DECODED_LEVEL_OFFSET;
@@ -954,7 +955,7 @@ mod sharing_format
     {
         let mut arena = TermArena::new();
         let level = gandr_kernel_strata::Level::zero();
-        let universe = arena.value_type_universe(level.clone());
+        let universe = arena.value_type_universe(GroundSort::Value, level.clone());
         let code = arena.value_variable(DeBruijnIndex::from(0_u32));
         let element = arena.value_type_element(code, level);
         let returner = arena.comp_type_returner(element);
@@ -1149,6 +1150,33 @@ mod sharing_format
             Err(non_canonical()),
             decode(ArtifactImage::from(bytes.as_ref())),
             "an entry no declaration root reaches re-encodes away"
+        );
+    }
+
+    /// The decoding rule fires on the wire too: a table that writes a decode
+    /// over a quote reads back as the quoted type, so its re-encoding drops
+    /// both entries and the artifact is not canonical. The redex is no more
+    /// representable in bytes than in an arena.
+    #[test]
+    fn a_decode_of_a_quote_is_refused_as_non_canonical()
+    {
+        let mut quote = Bytes::new();
+        quote.byte(RawByte(0x1C));
+        quote.varint(WireValue(0));
+        let mut element = Bytes::new();
+        element.byte(RawByte(0x19));
+        element.varint(WireValue(0));
+        element.varint(WireValue(0));
+        element.varint(WireValue(1));
+        let entries = vec![entry_unit_type(), quote, element];
+        let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
+            entries,
+            TableIndex(2),
+        )]);
+        assert_eq!(
+            Err(non_canonical()),
+            decode(ArtifactImage::from(bytes.as_ref())),
+            "a decoded quote is the quoted type, which the table wrote twice over"
         );
     }
 
@@ -1356,7 +1384,7 @@ mod sharing_format
             remaining = remaining.saturating_sub(1);
         }
         let mut arena = TermArena::new();
-        let declared = arena.value_type_universe(level);
+        let declared = arena.value_type_universe(GroundSort::Value, level);
         let builder = DeclarationBuilder::new(&mut arena);
         let declaration = builder.axiom(LevelSignature::monomorphic(), declared);
         let declarations = vec![MarkedDeclaration::new(AdmissionMark::Checked, declaration)];
@@ -1505,7 +1533,7 @@ mod sharing_format
         // refuses any other unassigned byte — the reservation is a numbering claim,
         // never a parse.
         let unassigned = [
-            RawByte(0x1A),
+            RawByte(0x1E),
             RawByte(u8::from(SHARING_BLOCK_FIRST)),
             RawByte(u8::from(SHARING_BLOCK_LAST)),
         ];
@@ -1639,7 +1667,7 @@ mod sharing_format
     fn sealed_artifact() -> EncodedArtifact
     {
         let mut arena = TermArena::new();
-        let kind = arena.value_type_universe(gandr_kernel_strata::Level::zero());
+        let kind = arena.value_type_universe(GroundSort::Value, gandr_kernel_strata::Level::zero());
         let builder = DeclarationBuilder::new(&mut arena);
         let atom = builder.abstract_type(LevelSignature::monomorphic(), kind);
         let declared = arena.value_type_unit();
@@ -1791,7 +1819,8 @@ mod sharing_format
     fn a_universe_artifact_round_trips_byte_identically()
     {
         let mut arena = TermArena::new();
-        let declared = arena.value_type_universe(gandr_kernel_strata::Level::zero());
+        let declared =
+            arena.value_type_universe(GroundSort::Value, gandr_kernel_strata::Level::zero());
         let builder = DeclarationBuilder::new(&mut arena);
         let declaration = builder.axiom(LevelSignature::monomorphic(), declared);
         let declarations = vec![MarkedDeclaration::new(AdmissionMark::Checked, declaration)];

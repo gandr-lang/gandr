@@ -956,7 +956,9 @@ fn carried_occurrence(
         | Value::Pair(..)
         | Value::Injection(..)
         | Value::Thunk(_)
-        | Value::Lift { .. } => Maybe::Absent(carrying::Absent::DifferentOccurrence),
+        | Value::Lift { .. }
+        | Value::Quote(_)
+        | Value::QuoteComputation(_) => Maybe::Absent(carrying::Absent::DifferentOccurrence),
     }
 }
 
@@ -1029,6 +1031,18 @@ fn push_rewrite_children(
                     rewrite,
                 ));
             },
+            // The term-to-type edge: a quoted type is rewritten at the depth
+            // its quote stands at, the converse of the decoding edge below.
+            | Some(&Value::Quote(quoted)) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(quoted),
+                    depth,
+                    rewrite,
+                ));
+            },
+            | Some(&Value::QuoteComputation(quoted)) => {
+                tasks.push(RewriteTask::Open(AnyNode::CompType(quoted), depth, rewrite));
+            },
         },
         | AnyNode::Computation(id) => match arena.computation(id) {
             | None => {},
@@ -1084,7 +1098,7 @@ fn push_rewrite_children(
             | Some(
                 &ValueType::Base(_)
                 | &ValueType::Unit
-                | &ValueType::Universe(_)
+                | &ValueType::Universe { .. }
                 | &ValueType::Abstract(_),
             )
             | None => {},
@@ -1141,6 +1155,9 @@ fn push_rewrite_children(
                     depth,
                     rewrite,
                 ));
+            },
+            | Some(&CompType::Element { code, .. }) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(code), depth, rewrite));
             },
         },
     }
@@ -1273,6 +1290,24 @@ fn close_value(
             }
             else {
                 arena.value_thunk(rewritten)
+            }
+        },
+        | Value::Quote(quoted) => {
+            let rewritten = popped(results, AnyNode::ValueType(quoted)).value_type_or(quoted);
+            if rewritten == quoted {
+                id
+            }
+            else {
+                arena.value_quote(rewritten)
+            }
+        },
+        | Value::QuoteComputation(quoted) => {
+            let rewritten = popped(results, AnyNode::CompType(quoted)).comp_type_or(quoted);
+            if rewritten == quoted {
+                id
+            }
+            else {
+                arena.value_quote_computation(rewritten)
             }
         },
     }
@@ -1459,7 +1494,7 @@ fn close_value_type(
     match node {
         | ValueType::Base(_)
         | ValueType::Unit
-        | ValueType::Universe(_)
+        | ValueType::Universe { .. }
         | ValueType::Abstract(_) => id,
         | ValueType::Element { code, target } => {
             let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
@@ -1565,6 +1600,17 @@ fn close_comp_type(
             }
             else {
                 arena.comp_type_pi(rewritten_domain, rewritten_codomain)
+            }
+        },
+        // As at the value decode: a substituted quote fires the decoding rule
+        // in the constructor, so the rewrite never leaves the redex behind.
+        | CompType::Element { code, target } => {
+            let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
+            if rewritten == code {
+                id
+            }
+            else {
+                arena.comp_type_element(rewritten, target)
             }
         },
     }

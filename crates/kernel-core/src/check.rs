@@ -60,7 +60,7 @@
 //! | recursive arm                          | goal push                    | frames                                              |
 //! | -------------------------------------- | ---------------------------- | --------------------------------------------------- |
 //! | `value_type_level` Base / Unit         | leaf, level zero             | —                                                   |
-//! | `value_type_level` Universe            | leaf, scope then successor   | —                                                   |
+//! | `value_type_level` Universe, any sort  | leaf, scope then successor   | —                                                   |
 //! | `value_type_level` Abstract            | leaf, kind lookup            | —                                                   |
 //! | `value_type_level` Element             | leaf, level read, code owed  | —                                                   |
 //! | `value_type_level` Product / Sum       | `ValueLevel(first)`          | `MaxSecondValue`, then `MaxWith`                    |
@@ -69,12 +69,14 @@
 //! | `comp_type_level` Returner             | `ValueLevel(result)`         | — (the level passes through)                        |
 //! | `comp_type_level` Arrow                | `ValueLevel(domain)`         | `MaxSecondComp`, then `MaxWith`                     |
 //! | `comp_type_level` Pi                   | `ValueLevel(domain)`         | `MaxSecondCompUnder`, `ScopeExit`, then `MaxWith`   |
+//! | `comp_type_level` Element              | leaf, level read, code owed  | —                                                   |
 //! | `synth_value` Var                      | leaf, slot lookup then shift | —                                                   |
 //! | `synth_value` Const / Unit / Lit       | leaf, resolve or mint        | —                                                   |
 //! | `synth_value` Pair                     | `SynthValue(first)`          | `SynthPairFirst`, then `SynthPairSecond`            |
 //! | `synth_value` Thunk                    | `SynthComp(body)`            | `SynthThunk`                                        |
 //! | `synth_value` Lift                     | `SynthValue(body)`           | `SynthLift`                                         |
 //! | `synth_value` Injection                | leaf, not inferable          | —                                                   |
+//! | `synth_value` Quote, either family     | leaf, formation then universe | —                                                  |
 //! | `check_value` Injection                | `CheckValue(body, summand)`  | —                                                   |
 //! | `check_value` Pair                     | `CheckValue(first, first_t)` | `CheckPairSecond`                                   |
 //! | `check_value` Thunk                    | `CheckComp(body, codomain)`  | —                                                   |
@@ -92,13 +94,15 @@
 //! | `check_comp` Case                      | `SynthValue(scrutinee)`      | `CheckCaseScrutinee` / `AfterLeft`, `ScopeExit`     |
 //! | `check_comp` synth fallthrough         | `SynthComp(computation)`     | `ConvertComp`                                       |
 //!
-//! **The `Element` row is the one arm that answers without descending.** It
-//! reads the level off the node and records the code obligation; it pushes no
-//! goal and holds no frame, because the code is a *term* and the formation walk
-//! decides no term. The obligation leaves this table and re-enters it at
-//! [`drain_code_obligations`], which starts a fresh `CheckValue` goal against
-//! the universe the node named — one loop below the two machines rather than a
-//! step inside either.
+//! **The two `Element` rows are the arms that answer without descending.** Each
+//! reads the level off the node and records the code obligation with the sort
+//! of universe it owes; it pushes no goal and holds no frame, because the code
+//! is a *term* and the formation walk decides no term. The obligation leaves
+//! this table and re-enters it at [`drain_code_obligations`], which starts a
+//! fresh `CheckValue` goal against the universe the node named — one loop
+//! below the two machines rather than a step inside either. The `Quote` row is
+//! the converse crossing: a term whose type is a formation answer, so it calls
+//! the formation walk directly, as the lift's frame does.
 //!
 //! # The memo is the default path on **both** machines
 //!
@@ -129,6 +133,7 @@ use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationContent;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::TableEntryCount;
 use gandr_kernel_term::TermArena;
@@ -338,7 +343,9 @@ struct CodeObligation
 {
     /// The code whose type is owed.
     code: ValueId,
-    /// The universe it must inhabit.
+    /// The family of the universe it must inhabit.
+    sort: GroundSort,
+    /// The level of the universe it must inhabit.
     level: Level,
     /// The typing context the code stands in, outermost first.
     context: Vec<ValueTypeId>,
@@ -394,8 +401,10 @@ enum TypeLevelFrame
 /// - ensures: `Ok(level)` — the type's universe level — exactly when every
 ///   embedded level is in scope, every lift strictly raises, every sealed atom
 ///   resolves to an admitted abstract-type declaration, and no successor
-///   overflows; a bare universe at `l` forms at `l + 1`. The walk is iterative
-///   over an explicit heap frame stack, so it is total on any type depth.
+///   overflows; a bare universe of either sort at `l` forms at `l + 1`, and a
+///   decode of either family forms at the level it carries and owes its code.
+///   The walk is iterative over an explicit heap frame stack, so it is total on
+///   any type depth.
 /// - provides: type formation for the declared type and for the machine's lift
 ///   synthesis, with the memo consulted on **this** plane so the type half's
 ///   collapse is real rather than assumed. Formation remains prose-only: the
@@ -412,14 +421,16 @@ enum TypeLevelFrame
 ///
 /// # Adequacy
 /// - hypothesis: L2/L3 — the composite level is pinned by the join over one
-///   type of every former; the L3 residues are the universe successor, the
-///   arrow join, the lift-strictness boundary and the atom lookup, each pinned
-///   by a unit golden or its negative.
+///   type of every former; the L3 residues are the universe successor at both
+///   sorts, the arrow join, the lift-strictness boundary, the decode obligation
+///   of either family and the atom lookup, each pinned by a unit golden or its
+///   negative.
 /// - witness: `check::tests::a_universe_forms_one_level_up`
 /// - witness: `check::tests::a_lift_requires_a_strictly_higher_target`
 /// - witness: `check::tests::an_arrow_forms_at_the_join_of_its_children`
 /// - witness: `check::tests::a_dependent_arrow_forms_checks_and_eliminates_like_an_arrow`
 /// - witness: `check::tests::a_dependent_identity_checks_through_its_codes`
+/// - witness: `check::tests::a_computation_decode_owes_its_code_to_the_computation_universe`
 /// - witness: `check::tests::an_abstract_type_forms_at_its_declared_universe`
 fn type_level<M>(
     arena: &TermArena,
@@ -475,7 +486,10 @@ where
                     let value_type = arena.value_type(id).ok_or(KernelError::ArenaFault)?;
                     match *value_type {
                         | ValueType::Base(_) | ValueType::Unit => Level::zero(),
-                        | ValueType::Universe(ref level) => {
+                        // A universe of either sort forms one level above the
+                        // level it carries, in the universe of value types:
+                        // a code is a value whatever family it decodes into.
+                        | ValueType::Universe { ref level, .. } => {
                             judgement.levels.check_level_scope(level)?;
                             level.succ()?
                         },
@@ -496,6 +510,7 @@ where
                             judgement.levels.check_level_scope(target)?;
                             owed.push(CodeObligation {
                                 code,
+                                sort: GroundSort::Value,
                                 level: target.clone(),
                                 context: context.clone(),
                             });
@@ -542,6 +557,19 @@ where
                             frames.push(TypeLevelFrame::MaxSecondCompUnder(domain, codomain));
                             goal = TypeLevelGoal::Value(domain);
                             continue 'expand;
+                        },
+                        // The computation decode is the value decode's twin: the
+                        // level is read off the node and the code is owed
+                        // against the computation universe at that level.
+                        | CompType::Element { code, ref target } => {
+                            judgement.levels.check_level_scope(target)?;
+                            owed.push(CodeObligation {
+                                code,
+                                sort: GroundSort::Computation,
+                                level: target.clone(),
+                                context: context.clone(),
+                            });
+                            target.clone()
                         },
                     }
                 },
@@ -608,16 +636,18 @@ where
 ///   entries.get(usize::from(atom)).map(AdmittedDeclaration::content) {
 ///   Some(&DeclarationContent::AbstractType { kind }) =>
 ///   arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node {
-///   ValueType::Universe(ref level) => ret.as_ref().is_ok_and(|actual| actual
-///   == level), _ => ret.is_err() }), _ => ret.is_err() }` — success carries
-///   the declared universe level exactly when `atom` names an admitted abstract
-///   type whose kind resolves to a universe.
+///   ValueType::Universe { sort: GroundSort::Value, ref level } =>
+///   ret.as_ref().is_ok_and(|actual| actual == level), _ => ret.is_err() }), _
+///   => ret.is_err() }` — success carries the declared universe level exactly
+///   when `atom` names an admitted abstract type whose kind resolves to a
+///   universe of value types.
 /// - provides: the atom's formation level.
 /// - fails: [`KernelError::NotAnAbstractType`] for an out-of-range position, a
 ///   forward reference, or a definition or axiom at that position;
 ///   [`KernelError::AbstractTypeKindNotUniverse`] when the kind is not a
-///   universe, which admission pins and which is therefore surfaced rather than
-///   trusted; [`KernelError::ArenaFault`] on an unreadable kind.
+///   universe of value types, which admission pins and which is therefore
+///   surfaced rather than trusted; [`KernelError::ArenaFault`] on an unreadable
+///   kind.
 /// - panics: none.
 ///
 /// # Errors
@@ -630,7 +660,7 @@ where
 /// - witness: `check::tests::an_abstract_type_forms_at_its_declared_universe`
 /// - witness: `check::tests::an_atom_naming_a_definition_is_not_an_abstract_type`
 /// - witness: `check::tests::a_forward_atom_reference_is_not_an_abstract_type`
-#[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe(ref level) => ret.as_ref().is_ok_and(|actual| actual == level), _ => ret.is_err() }), _ => ret.is_err() })]
+#[spec(ensures: |ret| match entries.get(usize::from(atom)).map(AdmittedDeclaration::content) { Some(&DeclarationContent::AbstractType { kind }) => arena.value_type(kind).map_or_else(|| ret.is_err(), |node| match *node { ValueType::Universe { sort: GroundSort::Value, ref level } => ret.as_ref().is_ok_and(|actual| actual == level), _ => ret.is_err() }), _ => ret.is_err() })]
 fn abstract_atom_level(
     arena: &TermArena,
     entries: &[AdmittedDeclaration],
@@ -646,7 +676,14 @@ fn abstract_atom_level(
     };
     let kind_node = arena.value_type(kind).ok_or(KernelError::ArenaFault)?;
     match *kind_node {
-        | ValueType::Universe(ref level) => Ok(level.clone()),
+        | ValueType::Universe {
+            sort: GroundSort::Value,
+            ref level,
+        } => Ok(level.clone()),
+        | ValueType::Universe {
+            sort: GroundSort::Computation,
+            ..
+        }
         | ValueType::Base(_)
         | ValueType::Unit
         | ValueType::Product(..)
@@ -1210,6 +1247,43 @@ where
                             form: NonInferableForm::Injection,
                         });
                     },
+                    // A code synthesizes the universe its quoted type forms
+                    // in, and of the family the type belongs to. Formation is
+                    // the one question asked, so the arm calls the formation
+                    // walk directly, as the lift's frame does, and descends no
+                    // further itself.
+                    | Value::Quote(quoted) => {
+                        let level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(quoted),
+                            context.clone(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        Produced::ValueType(arena.value_type_universe(GroundSort::Value, level))
+                    },
+                    | Value::QuoteComputation(quoted) => {
+                        let level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Comp(quoted),
+                            context.clone(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        Produced::ValueType(
+                            arena.value_type_universe(GroundSort::Computation, level),
+                        )
+                    },
                 },
                 | Goal::CheckValue(id, expected) => match read_value(arena, id)? {
                     | Value::Injection(side, body) => match arena.value_type(expected) {
@@ -1260,7 +1334,9 @@ where
                     | Value::Constant(_)
                     | Value::Unit
                     | Value::Literal(_)
-                    | Value::Lift { .. } => {
+                    | Value::Lift { .. }
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_) => {
                         frames.push(Frame::ConvertValue(expected));
                         goal = Goal::SynthValue(id);
                         continue 'expand;
@@ -1817,13 +1893,21 @@ where
         },
         | DeclarationContent::Axiom { .. } => Ok(()),
         // A sealed atom's whole admission obligation is that its kind is a
-        // universe. There is no body to check and no inhabitant claimed, so the
-        // kernel takes on nothing further — the property the atom route was
-        // chosen for.
+        // universe of value types — the atom is a value type, so a computation
+        // universe is no kind for it. There is no body to check and no
+        // inhabitant claimed, so the kernel takes on nothing further — the
+        // property the atom route was chosen for.
         | DeclarationContent::AbstractType { kind } => {
             let kind_node = arena.value_type(kind).ok_or(KernelError::ArenaFault)?;
             match *kind_node {
-                | ValueType::Universe(_) => Ok(()),
+                | ValueType::Universe {
+                    sort: GroundSort::Value,
+                    ..
+                } => Ok(()),
+                | ValueType::Universe {
+                    sort: GroundSort::Computation,
+                    ..
+                }
                 | ValueType::Base(_)
                 | ValueType::Unit
                 | ValueType::Product(..)
@@ -1919,7 +2003,7 @@ where
             arith::Int::from(drained),
             arith::Int::from(1_usize),
         ));
-        let universe = arena.value_type_universe(obligation.level);
+        let universe = arena.value_type_universe(obligation.sort, obligation.level);
         let _checked = run(
             arena,
             judgement,
@@ -1950,6 +2034,7 @@ mod tests
     use gandr_kernel_term::ComputationId;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelParamCount;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::Side;
@@ -2401,11 +2486,18 @@ mod tests
     fn a_universe_forms_one_level_up()
     {
         let mut arena = TermArena::new();
-        let universe = arena.value_type_universe(level(LevelConstant::from(3)));
+        let universe = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(3)));
         assert_eq!(
             Ok(level(LevelConstant::from(4))),
             value_level(&arena, universe),
             "the universe at l forms at l + 1"
+        );
+        let computation =
+            arena.value_type_universe(GroundSort::Computation, level(LevelConstant::from(3)));
+        assert_eq!(
+            Ok(level(LevelConstant::from(4))),
+            value_level(&arena, computation),
+            "and so does the computation universe, itself a value type"
         );
         let unit = arena.value_type_unit();
         assert_eq!(
@@ -2419,7 +2511,7 @@ mod tests
     fn a_lift_requires_a_strictly_higher_target()
     {
         let mut arena = TermArena::new();
-        let universe = arena.value_type_universe(level(LevelConstant::from(1)));
+        let universe = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
         let raised = arena.value_type_lift(universe, level(LevelConstant::from(5)));
         assert_eq!(
             Ok(level(LevelConstant::from(5))),
@@ -2448,8 +2540,8 @@ mod tests
     fn an_arrow_forms_at_the_join_of_its_children()
     {
         let mut arena = TermArena::new();
-        let low = arena.value_type_universe(level(LevelConstant::from(1)));
-        let high = arena.value_type_universe(level(LevelConstant::from(4)));
+        let low = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
+        let high = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(4)));
         let returner = arena.comp_type_returner(high);
         let arrow = arena.comp_type_arrow(low, returner);
         let thunk = arena.value_type_thunk(arrow);
@@ -2470,8 +2562,8 @@ mod tests
     fn a_dependent_arrow_forms_checks_and_eliminates_like_an_arrow()
     {
         let mut arena = TermArena::new();
-        let low = arena.value_type_universe(level(LevelConstant::from(1)));
-        let high = arena.value_type_universe(level(LevelConstant::from(4)));
+        let low = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
+        let high = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(4)));
         let returner = arena.comp_type_returner(high);
         let dependent = arena.comp_type_pi(low, returner);
         let thunk = arena.value_type_thunk(dependent);
@@ -2532,7 +2624,7 @@ mod tests
             let mut staging = environment.stage();
             let kind = staging
                 .arena()
-                .value_type_universe(level(LevelConstant::from(2)));
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(2)));
             staging.abstract_type(LevelSignature::monomorphic(), kind)
         };
         let _admitted = environment
@@ -2542,7 +2634,7 @@ mod tests
             let mut staging = environment.stage();
             let declared = staging
                 .arena()
-                .value_type_universe(level(LevelConstant::from(9)));
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(9)));
             let _inner = staging
                 .arena()
                 .value_type_abstract(ConstantIndex::from(0_usize));
@@ -2675,7 +2767,7 @@ mod tests
             let mut staging = environment.stage();
             let zero = level(LevelConstant::from(0));
             let mint = staging.arena();
-            let universe = mint.value_type_universe(zero.clone());
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
             let outer_code = mint.value_variable(DeBruijnIndex::from(0_u32));
             let domain = mint.value_type_element(outer_code, zero.clone());
             let inner_code = mint.value_variable(DeBruijnIndex::from(1_u32));
@@ -2725,6 +2817,154 @@ mod tests
         );
     }
 
+    /// A computation decode owes its code to the computation universe, so the
+    /// same telescope over the value universe is refused, and a value quote
+    /// read as a computation type is minted as written and refused there.
+    #[test]
+    fn a_computation_decode_owes_its_code_to_the_computation_universe()
+    {
+        let decode_over = |environment: &mut Environment, sort: GroundSort| {
+            let mut staging = environment.stage();
+            let zero = level(LevelConstant::from(0));
+            let mint = staging.arena();
+            let universe = mint.value_type_universe(sort, zero.clone());
+            let code = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let decoded = mint.comp_type_element(code, zero);
+            let dependent = mint.comp_type_pi(universe, decoded);
+            let declared = mint.value_type_thunk(dependent);
+            staging.axiom(LevelSignature::monomorphic(), declared)
+        };
+        let mut environment = Environment::new();
+        let admitted = decode_over(&mut environment, GroundSort::Computation);
+        assert_eq!(
+            Ok(()),
+            environment.add_decl(admitted).map(|_admitted| ()),
+            "a binder of the computation universe decodes to a computation type"
+        );
+        let refused = decode_over(&mut environment, GroundSort::Value);
+        assert!(
+            matches!(
+                environment.add_decl(refused),
+                Err(KernelError::ValueTypeMismatch(_))
+            ),
+            "while a binder of the value universe is a code of the other family"
+        );
+        let crossed = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let unit = mint.value_type_unit();
+            let quote = mint.value_quote(unit);
+            let decoded = mint.comp_type_element(quote, level(LevelConstant::from(0)));
+            let declared = mint.value_type_thunk(decoded);
+            staging.axiom(LevelSignature::monomorphic(), declared)
+        };
+        assert!(
+            matches!(
+                environment.add_decl(crossed),
+                Err(KernelError::ValueTypeMismatch(_))
+            ),
+            "and a value quote decoded as a computation type is not decoded on mint but refused"
+        );
+    }
+
+    #[test]
+    fn a_quote_synthesizes_the_universe_of_its_family()
+    {
+        let mut arena = TermArena::new();
+        let zero = level(LevelConstant::from(0));
+        let unit = arena.value_type_unit();
+        let quote = arena.value_quote(unit);
+        let produced = synth_value(&mut arena, Vec::new(), quote).expect("a quote synthesizes");
+        assert_eq!(
+            Some(&ValueType::Universe {
+                sort: GroundSort::Value,
+                level: zero.clone(),
+            }),
+            arena.value_type(produced.value_type().expect("a value type")),
+            "a value type's code inhabits the value universe at the type's own level"
+        );
+        let returner = arena.comp_type_returner(unit);
+        let quoted = arena.value_quote_computation(returner);
+        let produced = synth_value(&mut arena, Vec::new(), quoted).expect("a quote synthesizes");
+        assert_eq!(
+            Some(&ValueType::Universe {
+                sort: GroundSort::Computation,
+                level: zero.clone(),
+            }),
+            arena.value_type(produced.value_type().expect("a value type")),
+            "a computation type's code inhabits the computation universe"
+        );
+        let universe = arena.value_type_universe(GroundSort::Computation, zero);
+        let quoted_universe = arena.value_quote(universe);
+        let produced =
+            synth_value(&mut arena, Vec::new(), quoted_universe).expect("a quote synthesizes");
+        assert_eq!(
+            Some(&ValueType::Universe {
+                sort: GroundSort::Value,
+                level: level(LevelConstant::from(1)),
+            }),
+            arena.value_type(produced.value_type().expect("a value type")),
+            "and a universe of either sort is a value type one level up"
+        );
+    }
+
+    /// The kernel half of smallness: a code inhabits exactly the universe at
+    /// its type's level, so a code bound for a larger universe arrives as the
+    /// quote of an explicit lift, and the lift's strictness is the kernel's
+    /// own check.
+    #[test]
+    fn a_smaller_code_checks_at_a_larger_universe_only_through_a_lift()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let quote = arena.value_quote(unit);
+        let one = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), quote, one),
+                Err(KernelError::ValueTypeMismatch(_))
+            ),
+            "the kernel has no cumulativity, so a bare code does not check one level up"
+        );
+        let lifted = arena.value_type_lift(unit, level(LevelConstant::from(1)));
+        let lifted_quote = arena.value_quote(lifted);
+        assert_eq!(
+            Ok(Produced::Checked),
+            check_value(&mut arena, Vec::new(), lifted_quote, one),
+            "while the code of its lift does"
+        );
+        let zero = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+        let sunk = arena.value_type_lift(unit, level(LevelConstant::from(0)));
+        let sunk_quote = arena.value_quote(sunk);
+        assert!(
+            matches!(
+                check_value(&mut arena, Vec::new(), sunk_quote, zero),
+                Err(KernelError::UniverseViolation(_))
+            ),
+            "and a lift that does not strictly raise is refused inside the quote"
+        );
+    }
+
+    #[test]
+    fn a_computation_universe_is_no_kind_for_an_abstract_type()
+    {
+        let mut environment = Environment::new();
+        let atom = {
+            let mut staging = environment.stage();
+            let kind = staging
+                .arena()
+                .value_type_universe(GroundSort::Computation, level(LevelConstant::from(0)));
+            staging.abstract_type(LevelSignature::monomorphic(), kind)
+        };
+        assert!(
+            matches!(
+                environment.add_decl(atom),
+                Err(KernelError::AbstractTypeKindNotUniverse { .. })
+            ),
+            "a sealed atom is a value type, so only the value universe classifies it"
+        );
+    }
+
     /// Instantiating a dependent codomain at an argument is observable because
     /// a codomain can mention its binder: applying the polymorphic identity's
     /// type to a code produces the arrow over *that* code.
@@ -2733,7 +2973,7 @@ mod tests
     {
         let mut arena = TermArena::new();
         let zero = level(LevelConstant::from(0));
-        let universe = arena.value_type_universe(zero.clone());
+        let universe = arena.value_type_universe(GroundSort::Value, zero.clone());
         let bound_code = arena.value_variable(DeBruijnIndex::from(0_u32));
         let bound_element = arena.value_type_element(bound_code, zero.clone());
         let returner = arena.comp_type_returner(bound_element);
@@ -2746,7 +2986,7 @@ mod tests
         let head_variable = arena.value_variable(DeBruijnIndex::from(0_u32));
         let head = arena.computation_force(head_variable);
         let application = arena.computation_application(head, argument);
-        let outer_universe = arena.value_type_universe(zero);
+        let outer_universe = arena.value_type_universe(GroundSort::Value, zero);
         let produced = synth_comp(&mut arena, vec![outer_universe, head_thunk], application)
             .expect("the dependent application synthesizes");
         let synthesized = produced.comp_type().expect("a computation type");
@@ -2806,7 +3046,7 @@ mod tests
             let mut staging = environment.stage();
             let kind = staging
                 .arena()
-                .value_type_universe(level(LevelConstant::from(0)));
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
             staging.abstract_type(LevelSignature::monomorphic(), kind)
         };
         let _admitted = environment.add_decl(atom).expect("an atom admits");
@@ -2835,7 +3075,7 @@ mod tests
             let mut staging = environment.stage();
             let kind = staging
                 .arena()
-                .value_type_universe(level(LevelConstant::from(0)));
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
             staging.abstract_type(LevelSignature::monomorphic(), kind)
         };
         let _admitted = environment.add_decl(atom).expect("an atom admits");

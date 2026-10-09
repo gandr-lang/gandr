@@ -31,8 +31,10 @@
 
 use gandr_kernel_strata::Level;
 
+use crate::arena::CompTypeId;
 use crate::arena::ComputationId;
 use crate::arena::ValueId;
+use crate::arena::ValueTypeId;
 use crate::base::Literal;
 
 /// A bound value variable, as a de Bruijn index counting binders outward: `0`
@@ -148,6 +150,12 @@ pub enum Value
         /// The value being lifted.
         body: ValueId,
     },
+    /// The code of a value type: `⌜A⌝`, an inhabitant of the value universe at
+    /// `A`'s level.
+    Quote(ValueTypeId),
+    /// The code of a computation type: `⌜C⌝`, an inhabitant of the
+    /// computation universe at `C`'s level.
+    QuoteComputation(CompTypeId),
 }
 
 /// A computation: the negative fragment of the term vocabulary.

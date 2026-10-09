@@ -411,10 +411,11 @@ fn converge(
                         stack.push(ConversionGoal::CompType(one_body, other_body));
                     },
                     // Both sides are pinned to the universe former by the
-                    // pattern, and the former carries exactly one field, so the
-                    // node comparison delegated to here *is* the canonical level
-                    // comparison — no other child is reachable through this arm.
-                    | (one @ &ValueType::Universe(_), other @ &ValueType::Universe(_)) => {
+                    // pattern, and the former carries a sort and a level and no
+                    // child, so the node comparison delegated to here *is* the
+                    // sort comparison and the canonical level comparison — no
+                    // other child is reachable through this arm.
+                    | (one @ &ValueType::Universe { .. }, other @ &ValueType::Universe { .. }) => {
                         if one != other {
                             return Convertibility::Distinct;
                         }
@@ -466,7 +467,7 @@ fn converge(
                         | &ValueType::Product(..)
                         | &ValueType::Sum(..)
                         | &ValueType::Thunk(_)
-                        | &ValueType::Universe(_)
+                        | &ValueType::Universe { .. }
                         | &ValueType::Abstract(_)
                         | &ValueType::Element { .. }
                         | &ValueType::Lift { .. },
@@ -517,7 +518,25 @@ fn converge(
                         stack.push(ConversionGoal::CompType(one_codomain, other_codomain));
                     },
                     | (
-                        &CompType::Returner(_) | &CompType::Arrow { .. } | &CompType::Pi { .. },
+                        &CompType::Element {
+                            code: one_code,
+                            target: ref one_target,
+                        },
+                        &CompType::Element {
+                            code: other_code,
+                            target: ref other_target,
+                        },
+                    ) => {
+                        if one_target != other_target {
+                            return Convertibility::Distinct;
+                        }
+                        stack.push(ConversionGoal::Value(one_code, other_code));
+                    },
+                    | (
+                        &CompType::Returner(_)
+                        | &CompType::Arrow { .. }
+                        | &CompType::Pi { .. }
+                        | &CompType::Element { .. },
                         _,
                     ) => {
                         return Convertibility::Distinct;
@@ -591,6 +610,16 @@ fn converge(
                         }
                         stack.push(ConversionGoal::Value(one_body, other_body));
                     },
+                    // Two codes convert when the types they quote do: a quote
+                    // is a value whose one child is a type, so the walk steps
+                    // from the value family into the type families here, the
+                    // converse of the decoding arms above.
+                    | (&Value::Quote(one), &Value::Quote(other)) => {
+                        stack.push(ConversionGoal::ValueType(one, other));
+                    },
+                    | (&Value::QuoteComputation(one), &Value::QuoteComputation(other)) => {
+                        stack.push(ConversionGoal::CompType(one, other));
+                    },
                     | (
                         &Value::Variable(_)
                         | &Value::Constant(_)
@@ -599,7 +628,9 @@ fn converge(
                         | &Value::Pair(..)
                         | &Value::Injection(..)
                         | &Value::Thunk(_)
-                        | &Value::Lift { .. },
+                        | &Value::Lift { .. }
+                        | &Value::Quote(_)
+                        | &Value::QuoteComputation(_),
                         _,
                     ) => return Convertibility::Distinct,
                 }
@@ -674,6 +705,7 @@ mod tests
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::Side;
     use gandr_kernel_term::TermArena;
 
@@ -777,9 +809,9 @@ mod tests
     fn universes_convert_by_canonical_level()
     {
         let mut arena = TermArena::new();
-        let zero = arena.value_type_universe(level(LevelConstant::from(0)));
-        let also_zero = arena.value_type_universe(level(LevelConstant::from(0)));
-        let one = arena.value_type_universe(level(LevelConstant::from(1)));
+        let zero = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+        let also_zero = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
+        let one = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
         assert_eq!(
             Convertibility::Convertible,
             convertible_value_types(&arena, zero, also_zero),

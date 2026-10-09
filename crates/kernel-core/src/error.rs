@@ -50,7 +50,7 @@ pub enum ValueTypeHead
     Sum,
     /// A thunk type.
     Thunk,
-    /// A universe.
+    /// A universe, of either ground sort; the digest tells the sorts apart.
     Universe,
     /// An explicit lift.
     Lift,
@@ -79,7 +79,7 @@ impl ValueTypeHead
             | ValueType::Product(..) => Self::Product,
             | ValueType::Sum(..) => Self::Sum,
             | ValueType::Thunk(_) => Self::Thunk,
-            | ValueType::Universe(_) => Self::Universe,
+            | ValueType::Universe { .. } => Self::Universe,
             | ValueType::Lift { .. } => Self::Lift,
             | ValueType::Abstract(_) => Self::Abstract,
         }
@@ -96,6 +96,8 @@ pub enum CompTypeHead
     Arrow,
     /// A dependent function type.
     Pi,
+    /// A computation type read off a code.
+    Element,
     /// The reference resolved to nothing.
     Unreadable,
 }
@@ -114,6 +116,7 @@ impl CompTypeHead
             | CompType::Returner(_) => Self::Returner,
             | CompType::Arrow { .. } => Self::Arrow,
             | CompType::Pi { .. } => Self::Pi,
+            | CompType::Element { .. } => Self::Element,
         }
     }
 }

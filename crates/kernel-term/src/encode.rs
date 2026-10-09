@@ -66,6 +66,7 @@ use crate::term::ConstantIndex;
 use crate::term::Side;
 use crate::term::Value;
 use crate::types::CompType;
+use crate::types::GroundSort;
 use crate::types::ValueType;
 use crate::wire::ArtifactImage;
 use crate::wire::ArtifactText;
@@ -447,7 +448,10 @@ fn intern(
         AnyNode::ValueType(id) => match arena.value_type(id) {
             None | Some(&ValueType::Unit) => tags::NODE_VT_UNIT,
             Some(&ValueType::Base(_)) => tags::NODE_VT_BASE,
-            Some(&ValueType::Universe(_)) => tags::NODE_VT_UNIVERSE,
+            Some(&ValueType::Universe { sort: GroundSort::Value, .. }) => tags::NODE_VT_UNIVERSE,
+            Some(&ValueType::Universe { sort: GroundSort::Computation, .. }) => {
+                tags::NODE_VT_COMPUTATION_UNIVERSE
+            },
             Some(&ValueType::Abstract(_)) => tags::NODE_VT_ABSTRACT,
             Some(&ValueType::Product(..)) => tags::NODE_VT_PRODUCT,
             Some(&ValueType::Sum(..)) => tags::NODE_VT_SUM,
@@ -459,6 +463,7 @@ fn intern(
             None | Some(&CompType::Returner(_)) => tags::NODE_CT_RETURNER,
             Some(&CompType::Arrow { .. }) => tags::NODE_CT_ARROW,
             Some(&CompType::Pi { .. }) => tags::NODE_CT_PI,
+            Some(&CompType::Element { .. }) => tags::NODE_CT_ELEMENT,
         },
         AnyNode::Value(id) => match arena.value(id) {
             None | Some(&Value::Unit) => tags::NODE_V_UNIT,
@@ -469,6 +474,8 @@ fn intern(
             Some(&Value::Injection(..)) => tags::NODE_V_INJECTION,
             Some(&Value::Thunk(_)) => tags::NODE_V_THUNK,
             Some(&Value::Lift { .. }) => tags::NODE_V_LIFT,
+            Some(&Value::Quote(_)) => tags::NODE_V_QUOTE,
+            Some(&Value::QuoteComputation(_)) => tags::NODE_V_QUOTE_COMPUTATION,
         },
         AnyNode::Computation(id) => match arena.computation(id) {
             None | Some(&Computation::Return(_)) => tags::NODE_C_RETURN,
@@ -495,8 +502,18 @@ fn encode_entry(
                     out.put_tag(base_type_tag(base));
                 },
                 | ValueType::Unit => out.put_tag(tags::NODE_VT_UNIT),
-                | ValueType::Universe(ref level) => {
+                | ValueType::Universe {
+                    sort: GroundSort::Value,
+                    ref level,
+                } => {
                     out.put_tag(tags::NODE_VT_UNIVERSE);
+                    encode_level(&mut out, level);
+                },
+                | ValueType::Universe {
+                    sort: GroundSort::Computation,
+                    ref level,
+                } => {
+                    out.put_tag(tags::NODE_VT_COMPUTATION_UNIVERSE);
                     encode_level(&mut out, level);
                 },
                 | ValueType::Abstract(atom) => {
@@ -520,6 +537,10 @@ fn encode_entry(
             | Some(&CompType::Returner(_)) | None => out.put_tag(tags::NODE_CT_RETURNER),
             | Some(&CompType::Arrow { .. }) => out.put_tag(tags::NODE_CT_ARROW),
             | Some(&CompType::Pi { .. }) => out.put_tag(tags::NODE_CT_PI),
+            | Some(&CompType::Element { ref target, .. }) => {
+                out.put_tag(tags::NODE_CT_ELEMENT);
+                encode_level(&mut out, target);
+            },
         },
         | AnyNode::Value(id) => match arena.value(id) {
             | None => out.put_tag(tags::NODE_V_UNIT),
@@ -547,6 +568,8 @@ fn encode_entry(
                     out.put_tag(tags::NODE_V_LIFT);
                     encode_level(&mut out, target);
                 },
+                | Value::Quote(_) => out.put_tag(tags::NODE_V_QUOTE),
+                | Value::QuoteComputation(_) => out.put_tag(tags::NODE_V_QUOTE_COMPUTATION),
             },
         },
         | AnyNode::Computation(id) => match arena.computation(id) {

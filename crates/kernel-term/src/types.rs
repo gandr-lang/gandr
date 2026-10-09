@@ -98,10 +98,19 @@ pub enum ValueType
     Sum(ValueTypeId, ValueTypeId),
     /// The thunk type `U C` of a computation type `C`.
     Thunk(CompTypeId),
-    /// The universe former at a canonical level `l`. Its own level is `l + 1`,
-    /// so the universe rule is one call into the strict-order predicate of the
-    /// level oracle.
-    Universe(Level),
+    /// The universe of one ground sort at a canonical level `l`: the codes of
+    /// the value types at `l` when `sort` is [`GroundSort::Value`], of the
+    /// computation types at `l` when it is [`GroundSort::Computation`]. Either
+    /// way it is a value type — a code is a value — and its own level is
+    /// `l + 1`, so the universe rule is one call into the strict-order
+    /// predicate of the level oracle.
+    Universe
+    {
+        /// The sort of the types whose codes it holds.
+        sort: GroundSort,
+        /// The level of those types.
+        level: Level,
+    },
     /// An explicit lift of a value type into a strictly higher universe: the
     /// inner type relocated to `target`, valid when the inner type's level is
     /// strictly below it. There is no implicit cumulativity.
@@ -176,5 +185,20 @@ pub enum CompType
         domain: ValueTypeId,
         /// The computation-type codomain, under the domain's binder.
         codomain: CompTypeId,
+    },
+    /// The computation type a code denotes: `El⁻ l v`, where `v` is a value of
+    /// type `Universe⁻ l`.
+    ///
+    /// The computation-family twin of [`ValueType::Element`], carrying its
+    /// level for the same reason: formation reads the level off the node and
+    /// owes the code's check rather than deciding it.
+    Element
+    {
+        /// The code: a value whose type is the computation universe at
+        /// `target`.
+        code: ValueId,
+        /// The universe the code is read out of, which is this type's own
+        /// level.
+        target: Level,
     },
 }

@@ -73,11 +73,10 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::ArenaWatermark;
 use gandr_kernel_term::CompType;
-use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
-use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::Declaration;
 use gandr_kernel_term::DeclarationBuilder;
@@ -1023,7 +1022,11 @@ impl Environment
     {
         let mut direct = audited_type_constants(&self.arena, content.declared_id());
         if let DeclarationContent::Def { body, .. } = *content {
-            direct.append(&mut collect_constants(&self.arena, body));
+            direct.append(&mut collect_reachable(
+                &self.arena,
+                AnyNode::Value(body),
+                CodeEdges::Follow,
+            ));
         }
         let mut rested = BTreeSet::new();
         for referenced in direct {
@@ -1041,97 +1044,7 @@ impl Environment
     }
 }
 
-/// The constant references a value body mentions.
-///
-/// # Specification
-/// - requires: nothing — an unreadable id contributes nothing, fail-closed.
-/// - ensures: exactly the set of positions reachable in the term.
-/// - provides: the term half of the audit graph's direct edges. Exact
-///   reachability remains prose-only: no independent reachable-position
-///   predicate exists without duplicating this graph traversal.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Termination
-/// - reason: the walk is a loop over explicit worklists, not recursion.
-/// - measure: the number of reachable nodes not yet in the seen sets, which
-///   strictly falls at every step, since a node already seen is skipped.
-/// - boundedness: the arena is finite and children have strictly smaller ids.
-/// - input recursion: none.
-fn collect_constants(
-    arena: &TermArena,
-    root: ValueId,
-) -> BTreeSet<ConstantIndex>
-{
-    let mut found = BTreeSet::new();
-    // Each arena node is expanded once. The walk computes the *set* of
-    // reachable constants, so re-walking a shared subtree can only re-derive
-    // what is already recorded — and without the seen sets the walk
-    // tree-expands the graph, which is exponential in sharing depth.
-    let mut seen_values = BTreeSet::new();
-    let mut seen_computations = BTreeSet::new();
-    let mut values: Vec<ValueId> = Vec::new();
-    let mut computations: Vec<ComputationId> = Vec::new();
-    values.push(root);
-    loop {
-        while let Some(id) = values.pop() {
-            if !seen_values.insert(id) {
-                continue;
-            }
-            let Some(value) = arena.value(id)
-            else {
-                continue;
-            };
-            match *value {
-                | Value::Constant(index) => {
-                    let _fresh = found.insert(index);
-                },
-                | Value::Variable(_) | Value::Unit | Value::Literal(_) => {},
-                | Value::Pair(first, second) => {
-                    values.push(first);
-                    values.push(second);
-                },
-                | Value::Injection(_, body) | Value::Lift { body, .. } => values.push(body),
-                | Value::Thunk(body) => computations.push(body),
-            }
-        }
-        let Some(id) = computations.pop()
-        else {
-            break;
-        };
-        if !seen_computations.insert(id) {
-            continue;
-        }
-        let Some(computation) = arena.computation(id)
-        else {
-            continue;
-        };
-        match *computation {
-            | Computation::Lambda(body) => computations.push(body),
-            | Computation::Application(head, argument) => {
-                computations.push(head);
-                values.push(argument);
-            },
-            | Computation::Return(value) | Computation::Force(value) => values.push(value),
-            | Computation::Bind(bound, body) => {
-                computations.push(bound);
-                computations.push(body);
-            },
-            | Computation::Case {
-                scrutinee,
-                on_left,
-                on_right,
-            } => {
-                values.push(scrutinee);
-                computations.push(on_left);
-                computations.push(on_right);
-            },
-        }
-    }
-    found
-}
-
-/// Whether a type walk follows the codes the types it meets are read off.
+/// Whether a walk follows the codes the types it meets are read off.
 ///
 /// **The two consumers of this walk want two different sets, and conflating
 /// them is wrong in both directions.** The audit graph asks what a declaration
@@ -1145,104 +1058,133 @@ enum CodeEdges
 {
     /// Follow a code into the term language and union the constants it names.
     Follow,
-    /// Stop at the universe-decoding former.
+    /// Stop at the decoding formers of both type families.
     Stop,
 }
 
-/// The constant references a value type mentions.
+/// The constant references reachable from one node: the constants its values
+/// name and the sealed atoms its types name.
 ///
-/// The type graph reaches a declaration two ways. A sealed atom names one
-/// directly, and it is the type language's own reference form. A code names one
-/// through the term language, because the universe-decoding former carries a
-/// value and a value can be a constant. `codes` chooses whether the second is
-/// followed; see [`CodeEdges`] for why that is a choice rather than a setting.
+/// The graph crosses families both ways. A type reaches a value through a
+/// decoding former, which carries a code, and a value reaches a type through a
+/// quote, which carries one. `codes` chooses whether the first crossing is
+/// taken; see [`CodeEdges`] for why that is a choice rather than a setting. The
+/// second is always taken, because a quote is reached only from a value and so
+/// only once a code edge has been followed or the walk began at a value.
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id contributes nothing, fail-closed.
-/// - ensures: exactly the set of positions reachable in the type: the sealed
-///   atoms always, and under [`CodeEdges::Follow`] the constants its codes name
-///   as well.
-/// - provides: the type half of the audit graph's direct edges, and the
+/// - ensures: exactly the set of positions reachable from `root`: every
+///   constant and every sealed atom, where under [`CodeEdges::Stop`] the walk
+///   does not cross from a decoding former into its code.
+/// - provides: both halves of the audit graph's direct edges, and the
 ///   projection set the sealing-provenance gate is checked against. Exact
 ///   reachability and the code-edge policy remain prose-only: an independent
-///   predicate would duplicate the type and term graph traversals.
+///   predicate would duplicate this traversal.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Termination
-/// - reason: the walk is a loop over explicit worklists, not recursion.
-/// - measure: the number of reachable nodes not yet in the seen sets, which
-///   strictly falls at every step. The code pass runs after the type walk has
-///   finished, over a set the type walk fixed, and each code is walked once.
-/// - boundedness: the arena is finite and children have strictly smaller ids.
-/// - input recursion: none — a code walk cannot reach a type, because no value
-///   former embeds one.
-fn collect_type_constants(
+/// - reason: the walk is a loop over one explicit worklist, not recursion.
+/// - measure: the number of reachable nodes not yet in the seen set, which
+///   strictly falls at every step, since a node already seen is skipped.
+/// - boundedness: the arena is finite and children have strictly smaller ids
+///   within a family; a crossing reaches a node the seen set bounds as well.
+/// - input recursion: none.
+fn collect_reachable(
     arena: &TermArena,
-    root: ValueTypeId,
+    root: AnyNode,
     codes: CodeEdges,
 ) -> BTreeSet<ConstantIndex>
 {
     let mut found = BTreeSet::new();
-    let mut reached_codes: BTreeSet<ValueId> = BTreeSet::new();
-    let mut seen_value_types = BTreeSet::new();
-    let mut seen_comp_types = BTreeSet::new();
-    let mut value_types: Vec<ValueTypeId> = Vec::new();
-    let mut comp_types: Vec<CompTypeId> = Vec::new();
-    value_types.push(root);
-    loop {
-        while let Some(id) = value_types.pop() {
-            if !seen_value_types.insert(id) {
-                continue;
-            }
-            let Some(value_type) = arena.value_type(id)
-            else {
-                continue;
-            };
-            match *value_type {
-                | ValueType::Abstract(index) => {
+    // Each arena node is expanded once. The walk computes the *set* of
+    // reachable constants, so re-walking a shared subtree can only re-derive
+    // what is already recorded — and without the seen set the walk
+    // tree-expands the graph, which is exponential in sharing depth.
+    let mut seen: BTreeSet<AnyNode> = BTreeSet::new();
+    let mut pending: Vec<AnyNode> = Vec::new();
+    pending.push(root);
+    let follow = matches!(codes, CodeEdges::Follow);
+    while let Some(node) = pending.pop() {
+        if !seen.insert(node) {
+            continue;
+        }
+        match node {
+            | AnyNode::Value(id) => match arena.value(id) {
+                | Some(&Value::Constant(index)) => {
                     let _fresh = found.insert(index);
                 },
-                // No sealed atom can hide under a code — a code is a value and
-                // no value former embeds a type — but a *constant* can, and the
-                // audit graph is about constants. The code is recorded here and
-                // walked after the type walk finishes, so the two worklists stay
-                // separate and neither can grow the other.
-                | ValueType::Element { code, .. } => {
-                    if matches!(codes, CodeEdges::Follow) {
-                        let _fresh = reached_codes.insert(code);
+                | Some(&Value::Variable(_) | &Value::Unit | &Value::Literal(_)) | None => {},
+                | Some(&Value::Pair(first, second)) => {
+                    pending.push(AnyNode::Value(first));
+                    pending.push(AnyNode::Value(second));
+                },
+                | Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) => {
+                    pending.push(AnyNode::Value(body));
+                },
+                | Some(&Value::Thunk(body)) => pending.push(AnyNode::Computation(body)),
+                | Some(&Value::Quote(quoted)) => pending.push(AnyNode::ValueType(quoted)),
+                | Some(&Value::QuoteComputation(quoted)) => pending.push(AnyNode::CompType(quoted)),
+            },
+            | AnyNode::Computation(id) => match arena.computation(id) {
+                | Some(&Computation::Lambda(body)) => pending.push(AnyNode::Computation(body)),
+                | Some(&Computation::Application(head, argument)) => {
+                    pending.push(AnyNode::Computation(head));
+                    pending.push(AnyNode::Value(argument));
+                },
+                | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+                    pending.push(AnyNode::Value(value));
+                },
+                | Some(&Computation::Bind(bound, body)) => {
+                    pending.push(AnyNode::Computation(bound));
+                    pending.push(AnyNode::Computation(body));
+                },
+                | Some(&Computation::Case {
+                    scrutinee,
+                    on_left,
+                    on_right,
+                }) => {
+                    pending.push(AnyNode::Value(scrutinee));
+                    pending.push(AnyNode::Computation(on_left));
+                    pending.push(AnyNode::Computation(on_right));
+                },
+                | None => {},
+            },
+            | AnyNode::ValueType(id) => match arena.value_type(id) {
+                | Some(&ValueType::Abstract(index)) => {
+                    let _fresh = found.insert(index);
+                },
+                | Some(&ValueType::Element { code, .. }) => {
+                    if follow {
+                        pending.push(AnyNode::Value(code));
                     }
                 },
-                | ValueType::Base(_) | ValueType::Unit | ValueType::Universe(_) => {},
-                | ValueType::Product(first, second) | ValueType::Sum(first, second) => {
-                    value_types.push(first);
-                    value_types.push(second);
+                | Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. })
+                | None => {},
+                | Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)) => {
+                    pending.push(AnyNode::ValueType(first));
+                    pending.push(AnyNode::ValueType(second));
                 },
-                | ValueType::Lift { inner, .. } => value_types.push(inner),
-                | ValueType::Thunk(body) => comp_types.push(body),
-            }
-        }
-        let Some(id) = comp_types.pop()
-        else {
-            break;
-        };
-        if !seen_comp_types.insert(id) {
-            continue;
-        }
-        let Some(comp_type) = arena.comp_type(id)
-        else {
-            continue;
-        };
-        match *comp_type {
-            | CompType::Returner(result) => value_types.push(result),
-            | CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => {
-                value_types.push(domain);
-                comp_types.push(codomain);
+                | Some(&ValueType::Lift { inner, .. }) => pending.push(AnyNode::ValueType(inner)),
+                | Some(&ValueType::Thunk(body)) => pending.push(AnyNode::CompType(body)),
+            },
+            | AnyNode::CompType(id) => match arena.comp_type(id) {
+                | Some(&CompType::Returner(result)) => pending.push(AnyNode::ValueType(result)),
+                | Some(
+                    &CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain },
+                ) => {
+                    pending.push(AnyNode::ValueType(domain));
+                    pending.push(AnyNode::CompType(codomain));
+                },
+                | Some(&CompType::Element { code, .. }) => {
+                    if follow {
+                        pending.push(AnyNode::Value(code));
+                    }
+                },
+                | None => {},
             },
         }
-    }
-    for code in reached_codes {
-        found.append(&mut collect_constants(arena, code));
     }
     found
 }
@@ -1258,7 +1200,7 @@ fn audited_type_constants(
     root: ValueTypeId,
 ) -> BTreeSet<ConstantIndex>
 {
-    collect_type_constants(arena, root, CodeEdges::Follow)
+    collect_reachable(arena, AnyNode::ValueType(root), CodeEdges::Follow)
 }
 
 /// The atoms a value type projects onto: every sealed atom reachable from it.
@@ -1286,7 +1228,7 @@ pub(crate) fn projected_atoms(
     root: ValueTypeId,
 ) -> BTreeSet<ConstantIndex>
 {
-    collect_type_constants(arena, root, CodeEdges::Stop)
+    collect_reachable(arena, AnyNode::ValueType(root), CodeEdges::Stop)
 }
 
 #[cfg(test)]
@@ -1300,6 +1242,7 @@ mod tests
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::Literal;
     use gandr_kernel_term::StringLiteral;
@@ -1544,7 +1487,9 @@ mod tests
         let zero = level(LevelConstant::from(0));
         let atom = {
             let mut staging = environment.stage();
-            let declared = staging.arena().value_type_universe(zero.clone());
+            let declared = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, zero.clone());
             staging.axiom(LevelSignature::monomorphic(), declared)
         };
         let atom = environment.add_decl(atom).expect("the code axiom admits");
@@ -1605,7 +1550,9 @@ mod tests
         let zero = level(LevelConstant::from(0));
         let atom = {
             let mut staging = environment.stage();
-            let declared = staging.arena().value_type_universe(zero.clone());
+            let declared = staging
+                .arena()
+                .value_type_universe(GroundSort::Value, zero.clone());
             staging.axiom(LevelSignature::monomorphic(), declared)
         };
         let atom = environment.add_decl(atom).expect("the code axiom admits");
@@ -1694,7 +1641,7 @@ mod tests
             let mut staging = environment.stage();
             let kind = staging
                 .arena()
-                .value_type_universe(level(LevelConstant::from(0)));
+                .value_type_universe(GroundSort::Value, level(LevelConstant::from(0)));
             staging.abstract_type(LevelSignature::monomorphic(), kind)
         };
         let atom = environment.add_decl(atom).expect("an atom admits");

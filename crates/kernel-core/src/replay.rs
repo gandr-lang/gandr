@@ -68,6 +68,8 @@ use core::iter::Peekable;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::ConversionSide;
+use gandr_kernel_term::AnyNode;
+use gandr_kernel_term::CompType;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::ConstantIndex;
@@ -76,6 +78,7 @@ use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueType;
 
 use crate::conv::Convertibility;
 use crate::conv::equal_computations;
@@ -1159,7 +1162,9 @@ where
                 | Value::Literal(_)
                 | Value::Pair(..)
                 | Value::Injection(..)
-                | Value::Lift { .. }),
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)),
             )
             | None => Err(unreadable()),
         }
@@ -1276,9 +1281,9 @@ where
     /// # Specification
     /// - requires: nothing.
     /// - ensures: two formers of one kind decompose child by child, or close on
-    ///   their payloads; two returners, two lambdas, and two neutrals with one
-    ///   head and agreeing spines decompose; every other pair is a refuting
-    ///   leaf.
+    ///   their payloads; two codes close on α-equality or rigid separation; two
+    ///   returners, two lambdas, and two neutrals with one head and agreeing
+    ///   spines decompose; every other pair is a refuting leaf.
     /// - provides: the leaf and decomposition rules.
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling former.
     /// - panics: none.
@@ -1372,6 +1377,28 @@ where
             ) if left_target == right_target => {
                 Structure::of(Vec::from([Premise::values(left_body, right_body)]))
             },
+            // A code's children are types, which no value premise can carry,
+            // so a pair of codes closes here as the shared comparison would:
+            // α-equal codes convert, rigid α-distinct codes are apart, and a
+            // pair neither settles is refused rather than guessed at.
+            | (&Value::Quote(_), &Value::Quote(_))
+            | (&Value::QuoteComputation(_), &Value::QuoteComputation(_)) => {
+                if equal_values(self.arena, left, right) == Convertibility::Convertible {
+                    Structure::Leaf(Expect::Convertible)
+                }
+                else if matches!(
+                    (
+                        self.rigidity(Term::Value(left)),
+                        self.rigidity(Term::Value(right))
+                    ),
+                    (Rigidity::Rigid, Rigidity::Rigid)
+                ) {
+                    Structure::Leaf(Expect::NotConvertible)
+                }
+                else {
+                    return Err(unreadable());
+                }
+            },
             | (
                 &(Value::Variable(_)
                 | Value::Constant(_)
@@ -1380,7 +1407,9 @@ where
                 | Value::Pair(..)
                 | Value::Injection(..)
                 | Value::Thunk(_)
-                | Value::Lift { .. }),
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)),
                 _,
             ) => Structure::Leaf(Expect::NotConvertible),
         };
@@ -1428,8 +1457,9 @@ where
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Rigidity::Rigid`] exactly when `term` holds no thunk, no
-    ///   lambda, no bind or case, and no constant with a body, and resolves
-    ///   throughout.
+    ///   lambda, no bind or case, and no constant with a body — through the
+    ///   types its quotes hold and the codes those types decode as well — and
+    ///   resolves throughout.
     /// - provides: the separation half of [`Self::compared`].
     /// - fails: never — a dangling id is flexible.
     /// - panics: none.
@@ -1438,36 +1468,45 @@ where
     /// - reason: the `while let Some(next) = work.pop()` loop over an explicit
     ///   worklist, not recursion.
     /// - measure: the multiset of arena positions on the worklist: a node is
-    ///   replaced by its children, which the arena minted before it.
+    ///   replaced by its children, which the arena minted before it within a
+    ///   family; a crossing between families is to a node the quote or the
+    ///   decode holds, and the arena is finite and acyclic across them.
     fn rigidity(
         &self,
         term: Term,
     ) -> Rigidity
     {
-        let mut work = Vec::from([term]);
+        let mut work = Vec::from([match term {
+            | Term::Value(value) => AnyNode::Value(value),
+            | Term::Computation(computation) => AnyNode::Computation(computation),
+        }]);
         while let Some(next) = work.pop() {
             match next {
-                | Term::Value(value) => match self.arena.value(value) {
+                | AnyNode::Value(value) => match self.arena.value(value) {
                     | Some(&(Value::Unit | Value::Literal(_) | Value::Variable(_))) => {},
                     | Some(&Value::Pair(first, second)) => {
-                        work.extend([Term::Value(first), Term::Value(second)]);
+                        work.extend([AnyNode::Value(first), AnyNode::Value(second)]);
                     },
                     | Some(&(Value::Injection(_, body) | Value::Lift { body, .. })) => {
-                        work.push(Term::Value(body));
+                        work.push(AnyNode::Value(body));
                     },
                     | Some(&Value::Constant(constant)) => {
                         if self.unfoldings.unfolding(constant) != Unfoldable::Opaque {
                             return Rigidity::Flexible;
                         }
                     },
+                    | Some(&Value::Quote(quoted)) => work.push(AnyNode::ValueType(quoted)),
+                    | Some(&Value::QuoteComputation(quoted)) => {
+                        work.push(AnyNode::CompType(quoted));
+                    },
                     | Some(&Value::Thunk(_)) | None => return Rigidity::Flexible,
                 },
-                | Term::Computation(computation) => match self.arena.computation(computation) {
+                | AnyNode::Computation(computation) => match self.arena.computation(computation) {
                     | Some(&(Computation::Return(value) | Computation::Force(value))) => {
-                        work.push(Term::Value(value));
+                        work.push(AnyNode::Value(value));
                     },
                     | Some(&Computation::Application(head, argument)) => {
-                        work.extend([Term::Computation(head), Term::Value(argument)]);
+                        work.extend([AnyNode::Computation(head), AnyNode::Value(argument)]);
                     },
                     | Some(
                         &(Computation::Lambda(_)
@@ -1477,6 +1516,33 @@ where
                     | None => {
                         return Rigidity::Flexible;
                     },
+                },
+                | AnyNode::ValueType(value_type) => match self.arena.value_type(value_type) {
+                    | Some(
+                        &(ValueType::Base(_)
+                        | ValueType::Unit
+                        | ValueType::Universe { .. }
+                        | ValueType::Abstract(_)),
+                    ) => {},
+                    | Some(
+                        &(ValueType::Product(first, second) | ValueType::Sum(first, second)),
+                    ) => {
+                        work.extend([AnyNode::ValueType(first), AnyNode::ValueType(second)]);
+                    },
+                    | Some(&ValueType::Thunk(body)) => work.push(AnyNode::CompType(body)),
+                    | Some(&ValueType::Lift { inner, .. }) => work.push(AnyNode::ValueType(inner)),
+                    | Some(&ValueType::Element { code, .. }) => work.push(AnyNode::Value(code)),
+                    | None => return Rigidity::Flexible,
+                },
+                | AnyNode::CompType(comp_type) => match self.arena.comp_type(comp_type) {
+                    | Some(&CompType::Returner(result)) => work.push(AnyNode::ValueType(result)),
+                    | Some(
+                        &(CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain }),
+                    ) => {
+                        work.extend([AnyNode::ValueType(domain), AnyNode::CompType(codomain)]);
+                    },
+                    | Some(&CompType::Element { code, .. }) => work.push(AnyNode::Value(code)),
+                    | None => return Rigidity::Flexible,
                 },
             }
         }
@@ -1526,7 +1592,9 @@ where
                         | Value::Literal(_)
                         | Value::Pair(..)
                         | Value::Injection(..)
-                        | Value::Lift { .. }),
+                        | Value::Lift { .. }
+                        | Value::Quote(_)
+                        | Value::QuoteComputation(_)),
                     ) => Ok(Shape::Former),
                     | None => Err(unreadable()),
                 };
@@ -1601,7 +1669,9 @@ where
                 | Value::Pair(..)
                 | Value::Injection(..)
                 | Value::Thunk(_)
-                | Value::Lift { .. }),
+                | Value::Lift { .. }
+                | Value::Quote(_)
+                | Value::QuoteComputation(_)),
             )
             | None => Err(unreadable()),
         }

@@ -72,6 +72,7 @@ use gandr_kernel_term::CompType;
 use gandr_kernel_term::CompTypeId;
 use gandr_kernel_term::Computation;
 use gandr_kernel_term::ComputationId;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
@@ -753,6 +754,14 @@ impl ContentTable
                 put_level(record, target);
                 record.put_content(self.content_of(AnyNode::Value(body)));
             },
+            | Value::Quote(quoted) => {
+                record.put_tag(gandr_kernel_term::NODE_V_QUOTE);
+                record.put_content(self.content_of(AnyNode::ValueType(quoted)));
+            },
+            | Value::QuoteComputation(quoted) => {
+                record.put_tag(gandr_kernel_term::NODE_V_QUOTE_COMPUTATION);
+                record.put_content(self.content_of(AnyNode::CompType(quoted)));
+            },
         }
     }
 
@@ -829,8 +838,18 @@ impl ContentTable
                 record.put_tag(base_tag(base));
             },
             | ValueType::Unit => record.put_tag(gandr_kernel_term::NODE_VT_UNIT),
-            | ValueType::Universe(ref level) => {
+            | ValueType::Universe {
+                sort: GroundSort::Value,
+                ref level,
+            } => {
                 record.put_tag(gandr_kernel_term::NODE_VT_UNIVERSE);
+                put_level(record, level);
+            },
+            | ValueType::Universe {
+                sort: GroundSort::Computation,
+                ref level,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_VT_COMPUTATION_UNIVERSE);
                 put_level(record, level);
             },
             | ValueType::Product(first, second) => {
@@ -902,6 +921,11 @@ impl ContentTable
                 record.put_content(self.content_of(AnyNode::ValueType(domain)));
                 record.put_content(self.content_of(AnyNode::CompType(codomain)));
             },
+            | CompType::Element { code, ref target } => {
+                record.put_tag(gandr_kernel_term::NODE_CT_ELEMENT);
+                put_level(record, target);
+                record.put_content(self.content_of(AnyNode::Value(code)));
+            },
         }
     }
 }
@@ -936,6 +960,12 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Value(body)));
             },
             | Some(&Value::Thunk(body)) => tasks.push(EncodeTask::Open(AnyNode::Computation(body))),
+            | Some(&Value::Quote(quoted)) => {
+                tasks.push(EncodeTask::Open(AnyNode::ValueType(quoted)));
+            },
+            | Some(&Value::QuoteComputation(quoted)) => {
+                tasks.push(EncodeTask::Open(AnyNode::CompType(quoted)));
+            },
         },
         | AnyNode::Computation(id) => match arena.computation(id) {
             | None => {},
@@ -968,7 +998,7 @@ fn push_children(
             | Some(
                 &ValueType::Base(_)
                 | &ValueType::Unit
-                | &ValueType::Universe(_)
+                | &ValueType::Universe { .. }
                 | &ValueType::Abstract(_),
             ) => {},
             | Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)) => {
@@ -993,6 +1023,9 @@ fn push_children(
             | Some(&CompType::Arrow { domain, codomain } | &CompType::Pi { domain, codomain }) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(domain)));
                 tasks.push(EncodeTask::Open(AnyNode::CompType(codomain)));
+            },
+            | Some(&CompType::Element { code, .. }) => {
+                tasks.push(EncodeTask::Open(AnyNode::Value(code)));
             },
         },
     }
