@@ -46,6 +46,15 @@
 //! sixty-fourth link's pair, the first whose size passes a 64-bit counter:
 //! the walk descends the whole chain on the heap before it meets the
 //! overflow coming back up.
+//!
+//! # The deep overlay duplicates under the spinal stance
+//!
+//! The copying stance is priced by that measure and refused before minting.
+//! The spinal stance keeps every share, since no leg is an abstraction: its
+//! duplicate erases to the hand-built chain node for node, it evaluates within
+//! a budget the reference pipeline exhausts — each leg evaluated once and
+//! remembered — and the overlay holding both copies is released inside the
+//! same small stack.
 
 /// The expansion oracle, shared with the measure's suite.
 #[cfg(test)]
@@ -58,14 +67,22 @@ mod unfolding;
 mod teardown
 {
     use gandr_core_nbe::Bound;
+    use gandr_core_nbe::Definitions;
     use gandr_core_nbe::DomainArena;
     use gandr_core_nbe::DomainValueId;
+    use gandr_core_nbe::DuplicationFault;
+    use gandr_core_nbe::DuplicationPolicy;
+    use gandr_core_nbe::DuplicationStance;
     use gandr_core_nbe::Elimination;
     use gandr_core_nbe::Environment;
+    use gandr_core_nbe::EvalFault;
+    use gandr_core_nbe::Fuel;
+    use gandr_core_nbe::LoweredChain;
     use gandr_core_nbe::MeasureFault;
     use gandr_core_nbe::MeasuredQuantity;
     use gandr_core_nbe::NeutralHead;
     use gandr_core_nbe::Overlay;
+    use gandr_core_nbe::OverlayEvalFault;
     use gandr_core_nbe::OverlayId;
     use gandr_core_nbe::OverlayValueId;
     use gandr_core_nbe::OverlayValueTypeId;
@@ -77,17 +94,22 @@ mod teardown
     use gandr_core_nbe::Sharing;
     use gandr_core_nbe::SharingMeasure;
     use gandr_core_nbe::TermFace;
+    use gandr_core_nbe::TracedDuplication;
     use gandr_core_nbe::Unfolding;
     use gandr_core_nbe::ValueGraft;
     use gandr_core_nbe::ValueNode;
     use gandr_core_nbe::ValueTypeGraft;
     use gandr_core_nbe::ValueTypeNode;
+    use gandr_core_nbe::duplicate_value;
     use gandr_core_nbe::erase_value;
     use gandr_core_nbe::erase_value_type;
+    use gandr_core_nbe::eval_overlay_value;
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
+    use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::ValueId;
     use gandr_core_term::ValueTypeId;
+    use gandr_kernel_conversion_trace::TraceLog;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::ConstantIndex;
 
@@ -365,6 +387,98 @@ mod teardown
             compared.is_ok(),
             "erasure and the release of all three arenas fit a stack too small for a \
              recursive walk"
+        );
+    }
+
+    #[test]
+    fn a_spinal_deep_overlay_duplicates_and_tears_down_inside_a_small_stack()
+    {
+        let compared = std::thread::Builder::new()
+            .stack_size(SMALL_STACK_BYTES)
+            .spawn(|| {
+                let (reference, reference_top, reference_lifted) = unshared_chain();
+                let (mut overlay, top, lifted) = deep_overlay();
+                let core = CoreArena::new();
+
+                let mark = overlay.watermark();
+                assert!(
+                    matches!(
+                        duplicate_value(&mut overlay, &core, DuplicationPolicy::default(), top),
+                        Err(DuplicationFault::Measure(MeasureFault::Overflow { .. }))
+                    ),
+                    "the copying stance is priced by the measure, which refuses the chain"
+                );
+                assert_eq!(mark, overlay.watermark(), "and nothing is minted");
+
+                let mut log = TraceLog::new();
+                let spinal = TracedDuplication::install(DuplicationStance::Spinal, &mut log)
+                    .expect("a recording sink carries the spinal stance");
+                let kept = spinal
+                    .duplicate_value(&mut overlay, &core, top)
+                    .expect("the spinal stance keeps every share");
+                let mut erased = CoreArena::new();
+                let erased_top = erase_value(&overlay, kept, &mut erased)
+                    .expect("the duplicate validates and erases");
+                let erased_lifted = erase_value_type(&overlay, lifted, &mut erased)
+                    .expect("the chain of lifts validates and erases");
+                assert!(
+                    reference == erased,
+                    "the duplicate kept each share, so it erases to the hand-built DAG node \
+                     for node"
+                );
+                assert_eq!(
+                    (reference_top, reference_lifted),
+                    (erased_top, erased_lifted)
+                );
+
+                let chain = LoweredChain::new();
+                let environment = DefinitionalEnvironment::new();
+                let definitions = Definitions::new(&chain, &environment, environment.root());
+                let budget = Fuel::from(1_000_000_u32);
+                let mut copied_core = CoreArena::new();
+                let mut copied_domain = DomainArena::new();
+                assert_eq!(
+                    Err(OverlayEvalFault::Evaluation(EvalFault::OutOfFuel)),
+                    eval_overlay_value(
+                        &overlay,
+                        &mut copied_core,
+                        &mut copied_domain,
+                        definitions,
+                        budget,
+                        top,
+                    )
+                    .map(|_| ()),
+                    "the reference pipeline walks the expansion and exhausts the budget"
+                );
+                let mut shared_core = CoreArena::new();
+                let mut shared_domain = DomainArena::new();
+                let shared = spinal.eval_overlay_value(
+                    &mut overlay,
+                    &mut shared_core,
+                    &mut shared_domain,
+                    definitions,
+                    budget,
+                    top,
+                );
+                assert!(
+                    shared.is_ok(),
+                    "the spinal run remembers each leg and fits the same budget: {shared:?}"
+                );
+
+                overlay.truncate_to(OverlayWatermark::default());
+                assert!(overlay.value(kept).is_none() && overlay.value(top).is_none());
+                drop(overlay);
+                drop(shared_domain);
+                drop(shared_core);
+                drop(erased);
+                drop(reference);
+            })
+            .expect("the small-stack thread starts")
+            .join();
+        assert!(
+            compared.is_ok(),
+            "duplication, erasure, evaluation and the release of every arena fit a stack too \
+             small for a recursive walk"
         );
     }
 

@@ -47,17 +47,26 @@
 //! *head's* body, and forcing it means unfolding the head and re-applying the
 //! spine, which stays well defined however long the spine grows.
 //!
-//! # Source sharing is expanded, not preserved
+//! # Source sharing is expanded unless the policy handed a leg over
 //!
 //! A core term is a DAG, and this machine walks it as a tree: a node reached
 //! twice is evaluated twice. That is the cost the duplication policy and the
-//! memo seam exist to remove, and removing it here — with an ad-hoc cache keyed
-//! on the source node — would put a sharing decision inside the evaluator
-//! rather than behind the parameter that is supposed to own it.
+//! memo seam exist to remove, and removing it with an ad-hoc cache keyed on the
+//! source node would put a sharing decision inside the evaluator rather than
+//! behind the parameter that is supposed to own it.
+//!
+//! So the machine shares only what it is handed. The overlay evaluator's
+//! spinal run hands it the legs the duplication walk kept shared, each with its
+//! free indices. The first evaluation of a leg in one **configuration** — one
+//! binding at each of its free indices, in both zones — is remembered by one
+//! more task once its weak head is on the stack, and every later occurrence
+//! read in that configuration takes the remembered head at the cost of the
+//! step that popped it. A leg read in another configuration is evaluated
+//! again. An unshared run is handed no leg and pays nothing for the seam.
 //!
 //! The consequence is stated rather than left to be discovered: a term whose
-//! sharing is deep costs its **expansion**, and the fuel budget is what bounds
-//! that rather than a promise that it will not happen.
+//! sharing is deep and not handed over costs its **expansion**, and the fuel
+//! budget is what bounds that rather than a promise that it will not happen.
 //!
 //! # Fuel, because β alone diverges
 //!
@@ -106,6 +115,8 @@ use crate::domain::LiftTarget;
 use crate::domain::NeutralHead;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
+use crate::free::CoreTerm;
+use crate::free::Free;
 
 /// The number of machine steps an evaluation may take.
 ///
@@ -509,6 +520,53 @@ enum Task
         /// The right branch.
         on_right: CompClosureId,
     },
+    /// Remember the weak head on the stack as the evaluation of a pending
+    /// configuration.
+    Remember(PendingId),
+}
+
+/// The index of one configuration whose evaluation is under way.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct PendingId(usize);
+
+/// One shared leg read in one environment: its core term, and the bindings at
+/// its free indices, intuitionistic ones first, each zone ascending.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Configuration
+{
+    /// The leg's core term.
+    term: CoreTerm,
+    /// The bindings its free indices resolve to.
+    entries: Vec<DomainValueId>,
+}
+
+/// What the machine shares by configuration: the legs it was handed with their
+/// free indices, the weak heads already remembered, and the configurations
+/// under way.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct LegSharing
+{
+    /// The shared legs, each with its free indices; empty for an unshared run.
+    legs: BTreeMap<CoreTerm, Free>,
+    /// The weak head of each configuration evaluated so far.
+    remembered: BTreeMap<Configuration, Glued>,
+    /// The configurations whose evaluation is under way, each taken once its
+    /// weak head is remembered.
+    pending: Vec<Option<Configuration>>,
+}
+
+/// What recalling a configuration found.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Recall
+{
+    /// The term is no shared leg: evaluate it.
+    Unshared,
+    /// The configuration is new: evaluate it, a task remembering its weak
+    /// head pushed beneath.
+    Pending,
+    /// The configuration was evaluated already, to this weak head.
+    Remembered(Glued),
 }
 
 /// The running machine: the task stack, the two result stacks, and the
@@ -527,6 +585,8 @@ struct Machine<'run>
     definitions: Definitions<'run>,
     /// Steps left.
     fuel: Fuel,
+    /// The legs shared by configuration, and what sharing them has remembered.
+    sharing: LegSharing,
 }
 
 impl<'run> Machine<'run>
@@ -555,6 +615,7 @@ impl<'run> Machine<'run>
             envs: Vec::from([Environment::new()]),
             definitions,
             fuel,
+            sharing: LegSharing::default(),
         }
     }
 
@@ -743,6 +804,115 @@ impl<'run> Machine<'run>
     fn pop_comp(&mut self) -> Result<DomainCompId, EvalFault>
     {
         self.comps.pop().ok_or(EvalFault::MachineInvariant)
+    }
+
+    /// Recall `term` read in `env`, when it is a shared leg.
+    ///
+    /// # Specification
+    /// - requires: nothing — an id this machine does not hold is admissible
+    ///   input.
+    /// - ensures: [`Recall::Unshared`] when `term` is no leg this run shares,
+    ///   or when a free index of it resolves to nothing in `env`, which the
+    ///   evaluation then refuses by name; [`Recall::Remembered`] with the weak
+    ///   head a configuration of equal bindings at every free index was
+    ///   evaluated to; and otherwise [`Recall::Pending`], having pushed the
+    ///   task that remembers the weak head the evaluation about to start
+    ///   leaves.
+    /// - provides: the closed-configuration rule: one evaluation serves every
+    ///   occurrence of a leg that reads its free indices in one environment.
+    /// - fails: [`EvalFault::MachineInvariant`] when `env` names no held
+    ///   environment.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EvalFault::MachineInvariant`] — `env` names no held environment.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are leg membership and the
+    ///   bindings at the free indices, separated by a rib whose evaluation is
+    ///   shared across two applications of one closure, a subterm under an
+    ///   inner binder applied to one value at both copies, and a leg whose free
+    ///   index names a different binder at its two occurrences, each read off
+    ///   the evaluator's step count.
+    /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+    /// - witness:
+    ///   `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
+    /// - witness:
+    ///   `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+    fn recall(
+        &mut self,
+        term: CoreTerm,
+        env: EnvId,
+    ) -> Result<Recall, EvalFault>
+    {
+        let Some(free) = self.sharing.legs.get(&term)
+        else {
+            return Ok(Recall::Unshared);
+        };
+        let environment = self.envs.get(env.0).ok_or(EvalFault::MachineInvariant)?;
+        let zones = [
+            (Zone::Intuitionistic, free.intuitionistic()),
+            (Zone::Linear, free.linear()),
+        ];
+        let mut entries = Vec::new();
+        for (zone, indices) in zones {
+            for &index in indices.counts() {
+                let Some(bound) = environment.lookup(zone, index)
+                else {
+                    return Ok(Recall::Unshared);
+                };
+                entries.push(bound);
+            }
+        }
+        let configuration = Configuration { term, entries };
+        if let Some(&remembered) = self.sharing.remembered.get(&configuration) {
+            return Ok(Recall::Remembered(remembered));
+        }
+        let pending = PendingId(self.sharing.pending.len());
+        self.sharing.pending.push(Some(configuration));
+        self.tasks.push(Task::Remember(pending));
+        Ok(Recall::Pending)
+    }
+
+    /// Remember the weak head on the stack as `pending`'s evaluation.
+    ///
+    /// # Specification
+    /// - requires: the topmost result of the configuration's polarity is the
+    ///   weak head its evaluation left.
+    /// - ensures: the configuration is remembered at that weak head and taken
+    ///   off the pending list; the result stays on the stack for the frame that
+    ///   consumes it.
+    /// - provides: the recording half of the closed-configuration rule.
+    /// - fails: [`EvalFault::MachineInvariant`] when `pending` names no
+    ///   configuration under way or no result of its polarity is on the stack.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EvalFault::MachineInvariant`] — the configuration or its result is
+    ///   missing.
+    fn remember(
+        &mut self,
+        pending: PendingId,
+    ) -> Result<(), EvalFault>
+    {
+        let Some(configuration) = self
+            .sharing
+            .pending
+            .get_mut(pending.0)
+            .and_then(Option::take)
+        else {
+            return Err(EvalFault::MachineInvariant);
+        };
+        let produced = match configuration.term {
+            | CoreTerm::Value(_) => self.values.last().copied().map(Glued::Value),
+            | CoreTerm::Computation(_) => self.comps.last().copied().map(Glued::Computation),
+        };
+        let Some(produced) = produced
+        else {
+            return Err(EvalFault::MachineInvariant);
+        };
+        self.sharing.remembered.insert(configuration, produced);
+        Ok(())
     }
 }
 
@@ -1171,6 +1341,77 @@ pub fn eval_comp_within(
     Ok((produced, machine.fuel))
 }
 
+/// Evaluate a closed core term to weak head in the empty environment, sharing
+/// each leg of `legs` across the occurrences that read it in one
+/// configuration.
+///
+/// # Specification
+/// - requires: `root` resolves in `core` and is closed; each leg of `legs` is a
+///   term of `core` paired with exactly its free indices.
+/// - ensures: on success the weak head of `root`, paired with the fuel left
+///   over — one unit per task the run popped. A leg met in a configuration
+///   already evaluated is not evaluated again: the occurrence costs the one
+///   step that popped it, and the first evaluation of each configuration one
+///   step more, for the task that remembers it.
+/// - provides: the machine behind the overlay evaluator's sharing run. The
+///   clause states that the produced head resolves in `domain`, in the polarity
+///   of `root`, and that the remainder does not exceed `fuel`; which
+///   evaluations were shared is a count no exit state carries, and the
+///   witnesses below read it off the step count.
+/// - fails: every variant of [`EvalFault`].
+/// - panics: none.
+///
+/// # Errors
+/// Every variant of [`EvalFault`]; see its documentation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surfaces are the leg table and the
+///   configuration key, separated by a rib shared across two applications of
+///   one closure, a subterm under an inner binder read under one binding at
+///   both copies, and a leg whose free index names a different binder at its
+///   two occurrences, each read off the step count against the unshared run.
+/// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+/// - witness:
+///   `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
+/// - witness:
+///   `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+#[spec(ensures: |ret| ret.is_err()
+    || ret.as_ref().is_ok_and(|pair| {
+        u32::from(pair.1) <= u32::from(fuel)
+            && match (root, pair.0) {
+                | (CoreTerm::Value(_), Glued::Value(value)) => domain.value(value).is_some(),
+                | (CoreTerm::Computation(_), Glued::Computation(comp)) => {
+                    domain.computation(comp).is_some()
+                },
+                | (CoreTerm::Value(_), Glued::Computation(_))
+                | (CoreTerm::Computation(_), Glued::Value(_)) => false,
+            }
+    }))]
+pub fn eval_sharing(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    fuel: Fuel,
+    root: CoreTerm,
+    legs: BTreeMap<CoreTerm, Free>,
+) -> Result<(Glued, Fuel), EvalFault>
+{
+    let mut machine = Machine::new(definitions, fuel);
+    machine.sharing.legs = legs;
+    let env = Machine::root_env();
+    machine.tasks.push(match root {
+        | CoreTerm::Value(term) => Task::Value { term, env },
+        | CoreTerm::Computation(term) => Task::Comp { term, env },
+    });
+    run(core, domain, &mut machine)?;
+    let produced = match root {
+        | CoreTerm::Value(_) => machine.pop_value().map(Glued::Value),
+        | CoreTerm::Computation(_) => machine.pop_comp().map(Glued::Computation),
+    };
+    let produced = produced?;
+    Ok((produced, machine.fuel))
+}
+
 /// How far one slice of a resumable evaluation got.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Progress
@@ -1503,8 +1744,30 @@ fn step(
 ) -> Result<(), EvalFault>
 {
     match task {
-        | Task::Value { term, env } => step_value(core, domain, machine, term, env),
-        | Task::Comp { term, env } => step_comp(core, domain, machine, term, env),
+        | Task::Value { term, env } => {
+            let recalled = machine.recall(CoreTerm::Value(term), env)?;
+            match recalled {
+                | Recall::Remembered(Glued::Value(remembered)) => {
+                    machine.values.push(remembered);
+                    Ok(())
+                },
+                | Recall::Remembered(Glued::Computation(_)) => Err(EvalFault::MachineInvariant),
+                | Recall::Unshared | Recall::Pending => {
+                    step_value(core, domain, machine, term, env)
+                },
+            }
+        },
+        | Task::Comp { term, env } => {
+            let recalled = machine.recall(CoreTerm::Computation(term), env)?;
+            match recalled {
+                | Recall::Remembered(Glued::Computation(remembered)) => {
+                    machine.comps.push(remembered);
+                    Ok(())
+                },
+                | Recall::Remembered(Glued::Value(_)) => Err(EvalFault::MachineInvariant),
+                | Recall::Unshared | Recall::Pending => step_comp(core, domain, machine, term, env),
+            }
+        },
         | Task::Pair { term } => {
             let second = machine.pop_value()?;
             let first = machine.pop_value()?;
@@ -1565,6 +1828,7 @@ fn step(
         | Task::CaseClosures { on_left, on_right } => {
             step_case_closures(domain, machine, on_left, on_right)
         },
+        | Task::Remember(pending) => machine.remember(pending),
     }
 }
 

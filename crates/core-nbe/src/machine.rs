@@ -2744,6 +2744,7 @@ fn deeper(level: BinderLevel) -> Result<BinderLevel, ConversionFault>
 mod tests
 {
     use alloc::collections::BTreeMap;
+    use alloc::collections::BTreeSet;
     use alloc::vec::Vec;
 
     use gandr_core_term::Computation;
@@ -2794,11 +2795,27 @@ mod tests
     use crate::eval::LoweredChain;
     use crate::eval::eval_computation;
     use crate::eval::eval_value;
+    use crate::free::CoreTerm;
+    use crate::measure::ShareCount;
+    use crate::measure::SharingMeasure;
+    use crate::overlay::Bound;
+    use crate::overlay::CompGraft;
+    use crate::overlay::CompNode;
+    use crate::overlay::Overlay;
+    use crate::overlay::OverlayId;
+    use crate::overlay::ShareArity;
+    use crate::overlay::ShareDistance;
+    use crate::overlay::SharePosition;
+    use crate::overlay::Sharing;
+    use crate::overlay::ValueGraft;
+    use crate::overlay::ValueNode;
+    use crate::policy::DuplicationStance;
     use crate::policy::GranularityPolicy;
     use crate::policy::SchedulingPolicy;
     use crate::policy::SchedulingStance;
     use crate::resharing::GoalSupport;
     use crate::resharing::ResharingMemo;
+    use crate::traced::TracedDuplication;
 
     /// A pair of core terms of one polarity, to be evaluated and compared.
     #[derive(Clone, Copy, Debug)]
@@ -3097,6 +3114,545 @@ mod tests
                 ReplayBudget::DEFAULT,
             )
         }
+
+        /// Lift each side into an overlay sharing every node it reaches along
+        /// two edges, evaluate both under the spinal stance into a fresh
+        /// domain over a copy of the world's arena, and decide them under
+        /// `settings` through the installation's recording sink.
+        ///
+        /// # Specification
+        /// - requires: both sides are closed.
+        /// - ensures: the machine's report and the decisions the bound sink
+        ///   recorded, in order.
+        /// - provides: the spinal run every certification test replays.
+        /// - panics: when installation, evaluation or the machine refuses,
+        ///   which no fixture provokes.
+        fn spinal(
+            &self,
+            settings: MachineSettings,
+            sides: Sides,
+        ) -> (MachineReport, Vec<ConversionDecision<TraceNode>>)
+        {
+            let definitions =
+                Definitions::new(&self.chain, &self.environment, self.environment.root());
+            let mut core = self.core.clone();
+            let mut domain = DomainArena::new();
+            let fuel = Fuel::from(4_096_u32);
+            let mut log = TraceLog::new();
+            let report = {
+                let mut spinal = TracedDuplication::install(DuplicationStance::Spinal, &mut log)
+                    .expect("a recording sink carries the spinal stance");
+                let problem = match sides {
+                    | Sides::Values(left, right) => {
+                        let [left, right] = [left, right].map(|side| {
+                            let (mut overlay, root) = lifted(&self.core, CoreTerm::Value(side));
+                            let OverlayId::Value(root) = root
+                            else {
+                                panic!("a value lifts to a value");
+                            };
+                            spinal
+                                .eval_overlay_value(
+                                    &mut overlay,
+                                    &mut core,
+                                    &mut domain,
+                                    definitions,
+                                    fuel,
+                                    root,
+                                )
+                                .expect("the side evaluates under the spinal stance")
+                                .0
+                        });
+                        Problem::values(left, right)
+                    },
+                    | Sides::Computations(left, right) => {
+                        let [left, right] = [left, right].map(|side| {
+                            let (mut overlay, root) =
+                                lifted(&self.core, CoreTerm::Computation(side));
+                            let OverlayId::Computation(root) = root
+                            else {
+                                panic!("a computation lifts to a computation");
+                            };
+                            spinal
+                                .eval_overlay_computation(
+                                    &mut overlay,
+                                    &mut core,
+                                    &mut domain,
+                                    definitions,
+                                    fuel,
+                                    root,
+                                )
+                                .expect("the side evaluates under the spinal stance")
+                                .0
+                        });
+                        Problem::computations(left, right)
+                    },
+                };
+                spinal
+                    .decide::<ResharingMemo>(&core, &mut domain, definitions, settings, problem)
+                    .expect("the machine answers every fixture")
+            };
+            (report, log.decisions().copied().collect())
+        }
+
+        /// The shares each side's lifted overlay holds.
+        ///
+        /// # Specification
+        /// - requires: both sides lie in this world's arena.
+        /// - ensures: the share count of the left side's lifted overlay, then
+        ///   the right side's.
+        /// - provides: the check that a certification test exercised sharing.
+        /// - panics: when a lifted overlay does not measure, which a fixture
+        ///   this small never provokes.
+        fn shares(
+            &self,
+            sides: Sides,
+        ) -> [ShareCount; 2]
+        {
+            let roots = match sides {
+                | Sides::Values(left, right) => [CoreTerm::Value(left), CoreTerm::Value(right)],
+                | Sides::Computations(left, right) => {
+                    [CoreTerm::Computation(left), CoreTerm::Computation(right)]
+                },
+            };
+            roots.map(|side| {
+                let (overlay, root) = lifted(&self.core, side);
+                SharingMeasure::of(&overlay, root)
+                    .expect("a lifted side measures")
+                    .shares()
+            })
+        }
+    }
+
+    /// A share's place in a lifted overlay's nest, outermost first; read as a
+    /// count, the shares around a lifted leg or body.
+    #[repr(transparent)]
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    struct Nest(usize);
+
+    /// One step of a walk over a core term.
+    #[derive(Clone, Copy, Debug)]
+    enum Lifting
+    {
+        /// Visit a node, or queue its children.
+        Enter(CoreTerm),
+        /// Finish a node once its children are done.
+        Exit(CoreTerm),
+    }
+
+    /// The children of the core node `node`, left to right.
+    ///
+    /// # Specification
+    /// - requires: `node` resolves in `core`.
+    /// - ensures: each child the former names, in the order erasure mints them.
+    /// - provides: the one reading of a core former the lifting walks share.
+    /// - panics: when `node` does not resolve, which the requirement excludes.
+    fn core_children(
+        core: &CoreArena,
+        node: CoreTerm,
+    ) -> Vec<CoreTerm>
+    {
+        match node {
+            | CoreTerm::Value(id) => match *core.value(id).expect("a reached value resolves") {
+                | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
+                    Vec::new()
+                },
+                | Value::Pair(first, second) => {
+                    Vec::from([CoreTerm::Value(first), CoreTerm::Value(second)])
+                },
+                | Value::Injection(_, body) | Value::Lift { body, .. } => {
+                    Vec::from([CoreTerm::Value(body)])
+                },
+                | Value::Thunk(body) => Vec::from([CoreTerm::Computation(body)]),
+            },
+            | CoreTerm::Computation(id) => {
+                match *core
+                    .computation(id)
+                    .expect("a reached computation resolves")
+                {
+                    | Computation::Lambda(body) => Vec::from([CoreTerm::Computation(body)]),
+                    | Computation::Application(head, argument) => {
+                        Vec::from([CoreTerm::Computation(head), CoreTerm::Value(argument)])
+                    },
+                    | Computation::Return(value) | Computation::Force(value) => {
+                        Vec::from([CoreTerm::Value(value)])
+                    },
+                    | Computation::Bind(bound, body) => {
+                        Vec::from([CoreTerm::Computation(bound), CoreTerm::Computation(body)])
+                    },
+                    | Computation::Case {
+                        scrutinee,
+                        on_left,
+                        on_right,
+                    } => Vec::from([
+                        CoreTerm::Value(scrutinee),
+                        CoreTerm::Computation(on_left),
+                        CoreTerm::Computation(on_right),
+                    ]),
+                }
+            },
+        }
+    }
+
+    /// Each node `root` reaches in `core`, mapped to the first node of equal
+    /// structure the walk completed.
+    ///
+    /// # Specification
+    /// - requires: `root` resolves in `core`.
+    /// - ensures: a representative per reached node, equal to it as a tree,
+    ///   with two nodes of equal tree sharing one.
+    /// - provides: the hash-consing the lifter shares repeated subterms by.
+    /// - panics: when a reached node does not resolve.
+    fn canonical(
+        core: &CoreArena,
+        root: CoreTerm,
+    ) -> BTreeMap<CoreTerm, CoreTerm>
+    {
+        let mut canon: BTreeMap<CoreTerm, CoreTerm> = BTreeMap::new();
+        let mut values: Vec<(Value, CoreTerm)> = Vec::new();
+        let mut computations: Vec<(Computation, CoreTerm)> = Vec::new();
+        let mut walk = Vec::from([Lifting::Enter(root)]);
+        while let Some(step) = walk.pop() {
+            match step {
+                | Lifting::Enter(node) => {
+                    if canon.contains_key(&node) {
+                        continue;
+                    }
+                    walk.push(Lifting::Exit(node));
+                    for child in core_children(core, node).into_iter().rev() {
+                        walk.push(Lifting::Enter(child));
+                    }
+                },
+                | Lifting::Exit(node) => {
+                    if canon.contains_key(&node) {
+                        continue;
+                    }
+                    let value = |id: ValueId| match canon[&CoreTerm::Value(id)] {
+                        | CoreTerm::Value(id) => id,
+                        | CoreTerm::Computation(_) => panic!("a value is represented by a value"),
+                    };
+                    let computation = |id: ComputationId| match canon[&CoreTerm::Computation(id)] {
+                        | CoreTerm::Computation(id) => id,
+                        | CoreTerm::Value(_) => {
+                            panic!("a computation is represented by a computation")
+                        },
+                    };
+                    let representative = match node {
+                        | CoreTerm::Value(id) => {
+                            let key =
+                                match core.value(id).expect("a reached value resolves").clone() {
+                                    | Value::Pair(first, second) => {
+                                        Value::Pair(value(first), value(second))
+                                    },
+                                    | Value::Injection(side, body) => {
+                                        Value::Injection(side, value(body))
+                                    },
+                                    | Value::Thunk(body) => Value::Thunk(computation(body)),
+                                    | Value::Lift { target, body } => Value::Lift {
+                                        target,
+                                        body: value(body),
+                                    },
+                                    | leaf @ (Value::Variable { .. }
+                                    | Value::Constant(_)
+                                    | Value::Unit
+                                    | Value::Literal(_)) => leaf,
+                                };
+                            match values.iter().find(|entry| entry.0 == key) {
+                                | Some(&(_, representative)) => representative,
+                                | None => {
+                                    values.push((key, node));
+                                    node
+                                },
+                            }
+                        },
+                        | CoreTerm::Computation(id) => {
+                            let key = match *core
+                                .computation(id)
+                                .expect("a reached computation resolves")
+                            {
+                                | Computation::Lambda(body) => {
+                                    Computation::Lambda(computation(body))
+                                },
+                                | Computation::Application(head, argument) => {
+                                    Computation::Application(computation(head), value(argument))
+                                },
+                                | Computation::Return(returned) => {
+                                    Computation::Return(value(returned))
+                                },
+                                | Computation::Force(forced) => Computation::Force(value(forced)),
+                                | Computation::Bind(bound, body) => {
+                                    Computation::Bind(computation(bound), computation(body))
+                                },
+                                | Computation::Case {
+                                    scrutinee,
+                                    on_left,
+                                    on_right,
+                                } => Computation::Case {
+                                    scrutinee: value(scrutinee),
+                                    on_left: computation(on_left),
+                                    on_right: computation(on_right),
+                                },
+                            };
+                            match computations.iter().find(|entry| entry.0 == key) {
+                                | Some(&(_, representative)) => representative,
+                                | None => {
+                                    computations.push((key, node));
+                                    node
+                                },
+                            }
+                        },
+                    };
+                    canon.insert(node, representative);
+                },
+            }
+        }
+        canon
+    }
+
+    /// The children of `node`, each read through `canon`.
+    ///
+    /// # Specification
+    /// - requires: `canon` maps every child of `node`.
+    /// - ensures: the representatives of `node`'s children, left to right.
+    /// - provides: the children the lifting walks descend into.
+    /// - panics: when a child is unmapped, which the requirement excludes.
+    fn canonical_children(
+        core: &CoreArena,
+        canon: &BTreeMap<CoreTerm, CoreTerm>,
+        node: CoreTerm,
+    ) -> Vec<CoreTerm>
+    {
+        core_children(core, node)
+            .into_iter()
+            .map(|child| canon[&child])
+            .collect()
+    }
+
+    /// The core term `root` of `core` as an overlay: every former grafted,
+    /// subterms of equal tree read as one node, and each node the term
+    /// reaches along two or more edges shared, the shares nested at the root
+    /// in the order their nodes complete, the first outermost.
+    ///
+    /// # Specification
+    /// - requires: `root` resolves in `core`.
+    /// - ensures: an overlay that validates from the returned root and erases
+    ///   to a term equal to `root` as a tree; a node reached once is grafted
+    ///   where it stands.
+    /// - provides: the spinal side of every certification test.
+    /// - panics: when a mint is refused, which no fixture provokes.
+    fn lifted(
+        core: &CoreArena,
+        root: CoreTerm,
+    ) -> (Overlay, OverlayId)
+    {
+        let canon = canonical(core, root);
+        let root = canon[&root];
+        let mut edges: BTreeMap<CoreTerm, u32> = BTreeMap::new();
+        let mut seen = BTreeSet::new();
+        let mut completed = Vec::new();
+        let mut walk = Vec::from([Lifting::Enter(root)]);
+        while let Some(step) = walk.pop() {
+            match step {
+                | Lifting::Enter(node) => {
+                    if !seen.insert(node) {
+                        continue;
+                    }
+                    walk.push(Lifting::Exit(node));
+                    for child in canonical_children(core, &canon, node).into_iter().rev() {
+                        let reached = edges.entry(child).or_default();
+                        *reached = reached.saturating_add(1);
+                        walk.push(Lifting::Enter(child));
+                    }
+                },
+                | Lifting::Exit(node) => completed.push(node),
+            }
+        }
+        let shared: Vec<CoreTerm> = completed
+            .into_iter()
+            .filter(|node| edges.get(node).copied().unwrap_or(0) >= 2)
+            .collect();
+        let index: BTreeMap<CoreTerm, Nest> = shared
+            .iter()
+            .enumerate()
+            .map(|(share, &node)| (node, Nest(share)))
+            .collect();
+        let mut overlay = Overlay::new();
+        let mut taken = Vec::from_iter(shared.iter().map(|_| SharePosition::from(0_u32)));
+        let mut legs = Vec::new();
+        for (depth, &leg) in shared.iter().enumerate() {
+            legs.push(lifted_under(
+                &mut overlay,
+                core,
+                &canon,
+                leg,
+                Nest(depth),
+                &index,
+                &mut taken,
+            ));
+        }
+        let mut built = lifted_under(
+            &mut overlay,
+            core,
+            &canon,
+            root,
+            Nest(shared.len()),
+            &index,
+            &mut taken,
+        );
+        for (share, &leg) in legs.iter().enumerate().rev() {
+            let arity = ShareArity::from(u32::from(taken[share]));
+            built = match built {
+                | OverlayId::Value(body) => OverlayId::Value(
+                    overlay
+                        .mint_value(ValueNode::Shared(Sharing { arity, leg, body }))
+                        .expect("the leg and the body resolve"),
+                ),
+                | OverlayId::Computation(body) => OverlayId::Computation(
+                    overlay
+                        .mint_computation(CompNode::Shared(Sharing { arity, leg, body }))
+                        .expect("the leg and the body resolve"),
+                ),
+                | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+                    panic!("a core term lifts to an evaluation node")
+                },
+            };
+        }
+        (overlay, built)
+    }
+
+    /// Graft `top` under `depth` shares, each shared node below it an
+    /// occurrence of its share numbered in the order occurrences are minted.
+    ///
+    /// # Specification
+    /// - requires: every shared node `top` reaches has a share index below
+    ///   `depth`.
+    /// - ensures: the grafted node; `taken` counts each share's occurrences
+    ///   minted so far, left to right, which is preorder.
+    /// - provides: the one minting walk [`lifted`] runs per leg and for the
+    ///   body.
+    /// - panics: when a mint is refused, which no fixture provokes.
+    fn lifted_under(
+        overlay: &mut Overlay,
+        core: &CoreArena,
+        canon: &BTreeMap<CoreTerm, CoreTerm>,
+        top: CoreTerm,
+        depth: Nest,
+        index: &BTreeMap<CoreTerm, Nest>,
+        taken: &mut [SharePosition],
+    ) -> OverlayId
+    {
+        let mut results: Vec<OverlayId> = Vec::new();
+        let mut walk = Vec::from([Lifting::Enter(top)]);
+        while let Some(step) = walk.pop() {
+            match step {
+                | Lifting::Enter(node) => {
+                    if node != top
+                        && let Some(&Nest(share)) = index.get(&node)
+                    {
+                        let distance = depth
+                            .0
+                            .checked_sub(1)
+                            .and_then(|innermost| innermost.checked_sub(share))
+                            .and_then(|distance| u32::try_from(distance).ok())
+                            .expect("a shared node below lies in an outer share");
+                        let bound = Bound {
+                            distance: ShareDistance::from(distance),
+                            position: taken[share],
+                        };
+                        taken[share] =
+                            SharePosition::from(u32::from(taken[share]).saturating_add(1));
+                        results.push(match node {
+                            | CoreTerm::Value(_) => OverlayId::Value(
+                                overlay
+                                    .mint_value(ValueNode::Bound(bound))
+                                    .expect("an occurrence names no child"),
+                            ),
+                            | CoreTerm::Computation(_) => OverlayId::Computation(
+                                overlay
+                                    .mint_computation(CompNode::Bound(bound))
+                                    .expect("an occurrence names no child"),
+                            ),
+                        });
+                        continue;
+                    }
+                    walk.push(Lifting::Exit(node));
+                    for child in canonical_children(core, canon, node).into_iter().rev() {
+                        walk.push(Lifting::Enter(child));
+                    }
+                },
+                | Lifting::Exit(node) => {
+                    let count = core_children(core, node).len();
+                    let split = results
+                        .len()
+                        .checked_sub(count)
+                        .expect("a node's children are on the stack");
+                    let children = results.split_off(split);
+                    let value = |at: usize| match children[at] {
+                        | OverlayId::Value(id) => id,
+                        | other => panic!("a value child: {other:?}"),
+                    };
+                    let computation = |at: usize| match children[at] {
+                        | OverlayId::Computation(id) => id,
+                        | other => panic!("a computation child: {other:?}"),
+                    };
+                    let made = match node {
+                        | CoreTerm::Value(id) => {
+                            let graft = match *core.value(id).expect("a reached value resolves") {
+                                | Value::Variable { zone, index } => {
+                                    ValueGraft::Variable { zone, index }
+                                },
+                                | Value::Constant(constant) => ValueGraft::Constant(constant),
+                                | Value::Unit => ValueGraft::Unit,
+                                | Value::Literal(ref literal) => {
+                                    ValueGraft::Literal(literal.clone())
+                                },
+                                | Value::Pair(..) => ValueGraft::Pair(value(0), value(1)),
+                                | Value::Injection(side, _) => {
+                                    ValueGraft::Injection(side, value(0))
+                                },
+                                | Value::Thunk(_) => ValueGraft::Thunk(computation(0)),
+                                | Value::Lift { ref target, .. } => ValueGraft::Lift {
+                                    target: target.clone(),
+                                    body: value(0),
+                                },
+                            };
+                            OverlayId::Value(
+                                overlay
+                                    .mint_value(ValueNode::Grafted(graft))
+                                    .expect("the children resolve"),
+                            )
+                        },
+                        | CoreTerm::Computation(id) => {
+                            let graft = match *core
+                                .computation(id)
+                                .expect("a reached computation resolves")
+                            {
+                                | Computation::Lambda(_) => CompGraft::Lambda(computation(0)),
+                                | Computation::Application(..) => {
+                                    CompGraft::Application(computation(0), value(1))
+                                },
+                                | Computation::Return(_) => CompGraft::Return(value(0)),
+                                | Computation::Force(_) => CompGraft::Force(value(0)),
+                                | Computation::Bind(..) => {
+                                    CompGraft::Bind(computation(0), computation(1))
+                                },
+                                | Computation::Case { .. } => CompGraft::Case {
+                                    scrutinee: value(0),
+                                    on_left: computation(1),
+                                    on_right: computation(2),
+                                },
+                            };
+                            OverlayId::Computation(
+                                overlay
+                                    .mint_computation(CompNode::Grafted(graft))
+                                    .expect("the children resolve"),
+                            )
+                        },
+                    };
+                    results.push(made);
+                },
+            }
+        }
+        results.pop().expect("the walk leaves the top")
     }
 
     /// The kernel's copy of a world's terms, each core node translated once.
@@ -4399,6 +4955,50 @@ mod tests
     }
 
     #[test]
+    fn the_kernel_certifies_every_spinal_catalogue_and_ladder_trace()
+    {
+        let (world, cases) = catalogue();
+        let mut sharing = 0_usize;
+        for (sides, expected) in cases {
+            let (report, decisions) = world.spinal(MachineSettings::default(), sides);
+            assert_eq!(expected, report.verdict(), "{sides:?}");
+            assert_eq!(
+                certified(report.verdict()),
+                world.replayed(sides, report.verdict(), &decisions),
+                "{sides:?}: {decisions:?}"
+            );
+            if world
+                .shares(sides)
+                .iter()
+                .any(|&count| u64::from(count) > 0)
+            {
+                sharing = sharing.saturating_add(1);
+            }
+        }
+        let (world, rungs) = ladders();
+        for sides in rungs {
+            let (report, decisions) = world.spinal(MachineSettings::default(), sides);
+            assert_eq!(MachineVerdict::Convertible, report.verdict(), "{sides:?}");
+            assert_eq!(
+                KernelVerdict::Convertible,
+                world.replayed(sides, report.verdict(), &decisions),
+                "{sides:?}: {decisions:?}"
+            );
+            if world
+                .shares(sides)
+                .iter()
+                .any(|&count| u64::from(count) > 0)
+            {
+                sharing = sharing.saturating_add(1);
+            }
+        }
+        assert!(
+            sharing > 0,
+            "some fixture reaches a node twice, so the spinal runs evaluate a shared leg"
+        );
+    }
+
+    #[test]
     fn a_trace_naming_the_wrong_branch_is_refused()
     {
         let (world, cases) = catalogue();
@@ -4518,6 +5118,85 @@ mod tests
             "the weighted schedule spends the budget on the divergence"
         );
         let decisions: Vec<_> = log.decisions().copied().collect();
+        assert!(
+            decisions.is_empty(),
+            "a decline emits no derivation: {decisions:?}"
+        );
+        assert_eq!(
+            KernelVerdict::Declined(ReplayDecline::EngineDeclined),
+            world.replayed(sides, starved.verdict(), &decisions),
+            "and the kernel declines with it, never reading the decline as a refutation"
+        );
+    }
+
+    /// The unlucky schedule of
+    /// [`an_unlucky_schedule_declines_and_the_kernel_with_it`],
+    /// its sides evaluated under the spinal stance: the right side's unit is
+    /// reached three times and shared.
+    #[test]
+    fn an_unlucky_spinal_schedule_declines_and_the_kernel_with_it()
+    {
+        let mut core = CoreArena::new();
+        let occurrence = innermost(&mut core);
+        let self_applied = call(&mut core, occurrence, &[occurrence]);
+        let lambda = core.computation_lambda(self_applied);
+        let omega = core.value_thunk(lambda);
+        let looping = call(&mut core, omega, &[omega]);
+        let diverging = core.value_thunk(looping);
+        let mut bodies = Vec::new();
+        let runaway = next_constant(&mut bodies, diverging);
+        let unit = core.value_unit();
+        let mut deep = next_constant(&mut bodies, unit);
+        for _height in 0_u32 .. 15_u32 {
+            let below = core.value_constant(deep);
+            deep = next_constant(&mut bodies, below);
+        }
+        let runaway = core.value_constant(runaway);
+        let forced = core.computation_force(runaway);
+        let started = core.value_thunk(forced);
+        let returned = core.computation_return(unit);
+        let settled = core.value_thunk(returned);
+        let deep = core.value_constant(deep);
+        let units = core.value_pair(unit, unit);
+        let left = core.value_pair(started, deep);
+        let right = core.value_pair(settled, units);
+        let world = World::stacked(core, &bodies);
+        let sides = Sides::Values(left, right);
+        assert!(
+            world
+                .shares(sides)
+                .iter()
+                .any(|&count| u64::from(count) > 0),
+            "the right side reaches its unit three times"
+        );
+
+        let budget = StepBudget::from(2_000_u64);
+        let under = |stance| {
+            MachineSettings::new(
+                SchedulingPolicy::new(stance),
+                GranularityPolicy::default(),
+                budget,
+            )
+        };
+        let (fair, decisions) = world.spinal(under(SchedulingStance::UniformFair), sides);
+        assert_eq!(
+            MachineVerdict::NotConvertible,
+            fair.verdict(),
+            "the fair schedule reaches the refutation in {} steps",
+            u64::from(fair.steps())
+        );
+        assert_eq!(
+            KernelVerdict::NotConvertible,
+            world.replayed(sides, fair.verdict(), &decisions),
+            "{decisions:?}"
+        );
+
+        let (starved, decisions) = world.spinal(under(SchedulingStance::HeightWeighted), sides);
+        assert_eq!(
+            MachineVerdict::Declined(DeclineReason::Budget),
+            starved.verdict(),
+            "the weighted schedule spends the budget on the divergence"
+        );
         assert!(
             decisions.is_empty(),
             "a decline emits no derivation: {decisions:?}"

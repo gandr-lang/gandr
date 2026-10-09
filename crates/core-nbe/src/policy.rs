@@ -31,14 +31,20 @@
 //! The erase-and-clone stance is the baseline and the reference every other
 //! stance replays against. The spinal stance is representable here — the
 //! parameter's shape has to admit it or the parameter buys nothing — and it is
-//! **refused at installation**: it installs only behind a certification trace
-//! that checks it by replay, and this crate takes no such trace. Installing an
+//! **refused at installation** by [`DuplicationPolicy::new`], which takes no
+//! certification trace. It installs only through
+//! [`TracedDuplication::install`], bound to a trace sink that retains every
+//! decision, which then owns every evaluation and conversion decided under it,
+//! so each verdict carries the derivation the kernel replays. Installing an
 //! uncertified strategy is precisely the inversion the trace-before-strategy
-//! ordering forbids, so the refusal is the ordering made mechanical rather
-//! than a note in a design document.
+//! ordering forbids, so the refusal is the ordering made mechanical rather than
+//! a note in a design document.
 
 use anodized::spec;
 use gandr_core_term::DefinitionHeight;
+
+#[cfg(doc)]
+use crate::traced::TracedDuplication;
 
 /// A process's share of the scheduler's attention.
 ///
@@ -231,6 +237,14 @@ pub enum PolicyRefusal
         /// The stance that was refused.
         stance: GranularityStance,
     },
+    /// The stance was bound to a trace sink that retains nothing, so no
+    /// verdict decided under it would carry the derivation the kernel
+    /// replays.
+    Untraced
+    {
+        /// The stance that was refused.
+        stance: DuplicationStance,
+    },
 }
 
 /// The duplication policy: which part of a shared value a duplication copies.
@@ -285,13 +299,31 @@ impl DuplicationPolicy
         }
     }
 
+    /// Install a stance for a caller bound to a recording trace sink.
+    ///
+    /// # Specification
+    /// - requires: the caller holds a sink that retains every decision and
+    ///   routes every conversion decided under the policy into it;
+    ///   [`TracedDuplication::install`] is the one caller, and checks it.
+    /// - ensures: a policy at `stance`.
+    /// - provides: the installation behind the certifying gate, unreachable
+    ///   from outside the crate.
+    /// - fails: never.
+    /// - panics: none.
+    #[inline]
+    #[must_use]
+    pub(crate) const fn bound_to_trace(stance: DuplicationStance) -> Self
+    {
+        Self { stance }
+    }
+
     /// The installed stance.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the installed stance, which is
-    ///   [`DuplicationStance::EraseAndClone`] for every policy that exists,
-    ///   since [`DuplicationPolicy::new`] refuses the other.
+    ///   [`DuplicationStance::EraseAndClone`] for every policy
+    ///   [`DuplicationPolicy::new`] installs, since it refuses the other.
     /// - provides: the stance a duplication walk over the sharing overlay
     ///   consults, so the overlay itself decides nothing.
     /// - fails: never.

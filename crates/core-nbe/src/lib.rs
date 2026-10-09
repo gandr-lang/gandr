@@ -30,6 +30,14 @@
 //! - [`eval_overlay_value`] and [`eval_overlay_computation`] evaluate an
 //!   overlay root by erasing it and running the unshared machine over the
 //!   erasure: the reference every sharing stance is compared against.
+//! - [`duplicate_value`] and [`duplicate_computation`] rebuild an overlay root
+//!   under a [`DuplicationPolicy`] in one heap walk: copied shares are inlined,
+//!   shared ones kept, and under the spinal stance an abstraction's share is
+//!   distributed over its ribs; the output erases to the input's tree.
+//! - [`TracedDuplication`] installs a duplication stance bound to the trace
+//!   sink every conversion decided under it records into, the one route by
+//!   which the spinal stance reaches evaluation; its evaluator shares each
+//!   rib's evaluation across the occurrences that read it in one configuration.
 //!
 //! The design, and what a caller must guarantee, is stated in this crate's
 //! `README.md`, § Synopsis and § Expected features, and in the sections they
@@ -44,7 +52,9 @@ mod closure;
 mod conv;
 mod derivation;
 mod domain;
+mod duplicate;
 mod eval;
+mod free;
 mod guard;
 mod machine;
 mod measure;
@@ -54,6 +64,7 @@ mod policy;
 mod readback;
 mod resharing;
 mod rules;
+mod traced;
 
 pub use crate::arena::CompClosureId;
 pub use crate::arena::DomainArena;
@@ -87,6 +98,9 @@ pub use crate::domain::Neutral;
 pub use crate::domain::NeutralHead;
 pub use crate::domain::TermFace;
 pub use crate::domain::Unfolding;
+pub use crate::duplicate::DuplicationFault;
+pub use crate::duplicate::duplicate_computation;
+pub use crate::duplicate::duplicate_value;
 pub use crate::eval::Definitions;
 pub use crate::eval::EvalFault;
 pub use crate::eval::Fuel;
@@ -165,3 +179,4 @@ pub use crate::resharing::ResharingMemo;
 pub use crate::resharing::ResharingPlane;
 pub use crate::resharing::SupportEdges;
 pub use crate::resharing::SupportSides;
+pub use crate::traced::TracedDuplication;

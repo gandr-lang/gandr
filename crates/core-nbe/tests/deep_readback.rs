@@ -40,11 +40,22 @@
 //! Each overlay is evaluated a second time through the overlay evaluator and
 //! read back, and the core arena, the domain arena and the rebuilt term are
 //! compared, node for node, with erasure followed by the unshared pipeline.
+//!
+//! # The spinal overlay evaluator reads back as the erased pipeline
+//!
+//! Each overlay is evaluated once more under the spinal stance, installed
+//! bound to a recording sink, and read back; the rebuilt term is compared, as
+//! a tree, with the reference's.
 
 /// The expansion oracle, shared with the measure's suite.
 #[cfg(test)]
 #[path = "support/unfolding.rs"]
 mod unfolding;
+
+/// The tree oracle, shared with the duplication suite.
+#[cfg(test)]
+#[path = "support/trees.rs"]
+mod trees;
 
 /// The deep-readback cases, in a `cfg(test)` module so the crate's lint wall
 /// reads them as test code rather than as shipping code.
@@ -56,6 +67,7 @@ mod deep_readback
     use gandr_core_nbe::CompNode;
     use gandr_core_nbe::Definitions;
     use gandr_core_nbe::DomainArena;
+    use gandr_core_nbe::DuplicationStance;
     use gandr_core_nbe::Fuel;
     use gandr_core_nbe::LoweredChain;
     use gandr_core_nbe::Overlay;
@@ -68,6 +80,7 @@ mod deep_readback
     use gandr_core_nbe::SharePosition;
     use gandr_core_nbe::Sharing;
     use gandr_core_nbe::SharingMeasure;
+    use gandr_core_nbe::TracedDuplication;
     use gandr_core_nbe::ValueGraft;
     use gandr_core_nbe::ValueNode;
     use gandr_core_nbe::erase_computation;
@@ -84,7 +97,11 @@ mod deep_readback
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::Value;
     use gandr_core_term::ValueId;
+    use gandr_kernel_conversion_trace::TraceLog;
 
+    use crate::trees::Term;
+    use crate::trees::Trees;
+    use crate::trees::same_tree;
     use crate::unfolding::CoreNode;
     use crate::unfolding::Quantities;
     use crate::unfolding::Unfolded;
@@ -326,6 +343,76 @@ mod deep_readback
         )
         .expect("and the chain of suspensions reads back");
         (domain, rebuilt)
+    }
+
+    /// Evaluate the overlay root `root` under the spinal stance, erasing into a
+    /// fresh arena, and read the result back there.
+    ///
+    /// # Specification
+    /// - requires: `root` stands for a closed term with no opaque node.
+    /// - ensures: the arena the run erased and read back into, and the result
+    ///   read back; the overlay is as it was.
+    /// - provides: the spinal side of each readback differential.
+    /// - panics: when installation, evaluation or readback refuses, which no
+    ///   deep case under an ample budget provokes.
+    fn spinal_read_back(
+        overlay: &mut Overlay,
+        root: OverlayId,
+    ) -> (CoreArena, Term)
+    {
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut core = CoreArena::new();
+        let mut domain = DomainArena::new();
+        let mut log = TraceLog::new();
+        let spinal = TracedDuplication::install(DuplicationStance::Spinal, &mut log)
+            .expect("a recording sink carries the spinal stance");
+        let read = match root {
+            | OverlayId::Value(id) => {
+                let (value, _remaining) = spinal
+                    .eval_overlay_value(overlay, &mut core, &mut domain, definitions, ample(), id)
+                    .expect("the spinal run evaluates the root");
+                Term::Value(
+                    readback_value(
+                        &mut core,
+                        &mut domain,
+                        definitions,
+                        ReadbackMode::Unfolding,
+                        ample(),
+                        value,
+                    )
+                    .expect("a closed value reads back"),
+                )
+            },
+            | OverlayId::Computation(id) => {
+                let (head, _remaining) = spinal
+                    .eval_overlay_computation(
+                        overlay,
+                        &mut core,
+                        &mut domain,
+                        definitions,
+                        ample(),
+                        id,
+                    )
+                    .expect("the spinal run evaluates the root");
+                Term::Computation(
+                    readback_computation(
+                        &mut core,
+                        &mut domain,
+                        definitions,
+                        ReadbackMode::Unfolding,
+                        ample(),
+                        head,
+                    )
+                    .expect("a closed weak head reads back"),
+                )
+            },
+            | OverlayId::ValueType(_) | OverlayId::CompType(_) => {
+                panic!("the deep cases are evaluation roots")
+            },
+        };
+        (core, read)
     }
 
     #[test]
@@ -571,6 +658,58 @@ mod deep_readback
         assert!(
             compared.is_ok(),
             "erasure, evaluation through the overlay and readback keep their depth on the heap"
+        );
+    }
+
+    #[test]
+    fn a_spinal_value_chain_reads_back_as_the_erased_one()
+    {
+        let compared = std::thread::Builder::new()
+            .stack_size(SMALL_STACK_BYTES)
+            .spawn(|| {
+                let (mut overlay, root) = shared_value_chain();
+                let mut erased = CoreArena::new();
+                let erased_root = erase_value(&overlay, root, &mut erased)
+                    .expect("the shared leaf validates and erases");
+                let (_domain, expected) = read_back_value(&mut erased, erased_root);
+                let (spinal, read) = spinal_read_back(&mut overlay, OverlayId::Value(root));
+                assert_eq!(
+                    Trees::Same,
+                    same_tree(&spinal, read, &erased, Term::Value(expected)),
+                    "the spinal run reads the value chain back as the reference does"
+                );
+            })
+            .expect("the small-stack thread starts")
+            .join();
+        assert!(
+            compared.is_ok(),
+            "duplication, erasure, shared evaluation and readback keep their depth on the heap"
+        );
+    }
+
+    #[test]
+    fn a_spinal_suspension_chain_reads_back_as_the_erased_one()
+    {
+        let compared = std::thread::Builder::new()
+            .stack_size(SMALL_STACK_BYTES)
+            .spawn(|| {
+                let (mut overlay, root) = grafted_suspension_chain();
+                let mut erased = CoreArena::new();
+                let erased_root = erase_computation(&overlay, root, &mut erased)
+                    .expect("the grafted chain validates and erases");
+                let (_domain, expected) = read_back_computation(&mut erased, erased_root);
+                let (spinal, read) = spinal_read_back(&mut overlay, OverlayId::Computation(root));
+                assert_eq!(
+                    Trees::Same,
+                    same_tree(&spinal, read, &erased, Term::Computation(expected)),
+                    "the spinal run reads the suspension chain back as the reference does"
+                );
+            })
+            .expect("the small-stack thread starts")
+            .join();
+        assert!(
+            compared.is_ok(),
+            "duplication, erasure, shared evaluation and readback keep their depth on the heap"
         );
     }
 

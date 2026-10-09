@@ -1726,6 +1726,99 @@ fn erase(
     core: &mut CoreArena,
 ) -> Result<CoreId, EraseFault>
 {
+    let erased = erase_keeping(overlay, root, core, Keeping::Nothing)?;
+    Ok(erased.root())
+}
+
+/// What an erasure keeps beside its root.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Keeping
+{
+    /// Nothing: the root alone.
+    Nothing,
+    /// Every share's erased leg, in the order the legs were erased.
+    Legs,
+}
+
+/// An erased root, and every share's erased leg when the erasure kept them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Erased
+{
+    /// The core node the root stands for.
+    root: CoreId,
+    /// Each share's erased leg, once per share, in erasure order; empty unless
+    /// the legs were kept.
+    legs: Vec<CoreId>,
+}
+
+impl Erased
+{
+    /// The core node the root stands for.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn root(&self) -> CoreId
+    {
+        self.root
+    }
+
+    /// Each share's erased leg, once per share, in erasure order.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn legs(&self) -> &[CoreId]
+    {
+        &self.legs
+    }
+}
+
+/// Validate, then erase, keeping every share's erased leg beside the root.
+///
+/// # Specification
+/// - requires: `core` is the arena the overlay's opaque nodes name.
+/// - ensures: on success, the root as [`erase_value`] erases it, and the core
+///   node each reachable share's leg erased to, once per share, in the order
+///   the legs were erased; on refusal `core` is at its entry watermark.
+/// - provides: the core ids the overlay evaluator hands the machine as the legs
+///   it shares, minted by the one erasure every stance is measured against.
+/// - fails: as [`erase_value`] fails.
+/// - panics: none.
+///
+/// # Errors
+/// - [`EraseFault::Refused`] — the overlay does not validate from `root`.
+/// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
+/// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
+pub fn erase_with_legs(
+    overlay: &Overlay,
+    root: OverlayId,
+    core: &mut CoreArena,
+) -> Result<Erased, EraseFault>
+{
+    erase_keeping(overlay, root, core, Keeping::Legs)
+}
+
+/// Validate, then erase, keeping what `keeping` names, and restoring the core
+/// arena on refusal.
+///
+/// # Specification
+/// - requires: `core` is the arena the overlay's opaque nodes name.
+/// - ensures: the core node `root` stands for with the legs `keeping` asks for,
+///   or a refusal with `core` at its entry watermark.
+/// - provides: the one gate every erasure entry shares.
+/// - fails: as [`erase_value`] fails.
+/// - panics: none.
+///
+/// # Errors
+/// - [`EraseFault::Refused`] — the overlay does not validate from `root`.
+/// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
+/// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
+fn erase_keeping(
+    overlay: &Overlay,
+    root: OverlayId,
+    core: &mut CoreArena,
+    keeping: Keeping,
+) -> Result<Erased, EraseFault>
+{
     overlay.validate(root).map_err(EraseFault::Refused)?;
     let mark = core.watermark();
     let mut erasure = Erasure {
@@ -1734,12 +1827,20 @@ fn erase(
         steps: Vec::from([Step::Enter(root)]),
         legs: Vec::new(),
         results: Vec::new(),
+        keeping,
+        kept: Vec::new(),
     };
     let outcome = erasure.run();
-    if outcome.is_err() {
-        erasure.core.truncate_to(mark);
+    match outcome {
+        | Ok(root) => Ok(Erased {
+            root,
+            legs: erasure.kept,
+        }),
+        | Err(fault) => {
+            erasure.core.truncate_to(mark);
+            Err(fault)
+        },
     }
-    outcome
 }
 
 /// One pending step of the erasure walk.
@@ -1770,6 +1871,10 @@ struct Erasure<'run>
     legs: Vec<CoreId>,
     /// The erased nodes awaiting their parent.
     results: Vec<CoreId>,
+    /// What the walk keeps beside its root.
+    keeping: Keeping,
+    /// Every share's erased leg, in erasure order, when the walk keeps them.
+    kept: Vec<CoreId>,
 }
 
 impl Erasure<'_>
@@ -1800,6 +1905,9 @@ impl Erasure<'_>
                     else {
                         return Err(EraseFault::MachineInvariant);
                     };
+                    if self.keeping == Keeping::Legs {
+                        self.kept.push(leg);
+                    }
                     self.legs.push(leg);
                 },
                 | Step::Unbind => {
