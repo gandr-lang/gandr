@@ -25,7 +25,10 @@ path = "tests/lib.rs"
 # carries item identity across revisions; BLAKE3 is the digest family the
 # storage tier addresses content with, used here directly because this layer
 # sits below storage. The file backend needs `std`.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 blake3.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-term.workspace = true

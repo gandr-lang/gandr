@@ -15,7 +15,10 @@ publish.workspace = true
 # reports, the grammar's highlighter over the parser's tree, and the renderer
 # seam's UTF-16 projection. The wire is JSON, decoded and encoded through
 # serde; a `file` URI's path is percent-decoded.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-surface-corpus.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true

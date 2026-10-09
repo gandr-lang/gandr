@@ -22,7 +22,10 @@ path = "tests/lib.rs"
 # core syntax, its literals, indices and injection sides from the kernel's
 # term crate, its lift levels from the level oracle, and its cut polarity from
 # the cell substrate, so a cell pattern's polarity reaches a command unchanged.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
