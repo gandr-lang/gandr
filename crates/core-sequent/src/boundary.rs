@@ -201,6 +201,11 @@ count_wrapper! {
     pub struct FrameSerial;
 }
 
+count_wrapper! {
+    /// A number of machine transitions: the budget a run may spend.
+    pub struct StepCount;
+}
+
 impl ProducerArity
 {
     /// No producer children.

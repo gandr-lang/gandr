@@ -14,6 +14,8 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - [Focusing names only what is not a tail](#focusing-names-only-what-is-not-a-tail)
 - [Unfocusing is the left inverse](#unfocusing-is-the-left-inverse)
 - [The typed-IL check](#the-typed-il-check)
+- [The machine runs over marks, not copies](#the-machine-runs-over-marks-not-copies)
+- [Readback refuses rather than approximates](#readback-refuses-rather-than-approximates)
 - [The polarity is the cell substrate's](#the-polarity-is-the-cell-substrates)
 - [Two regions](#two-regions)
 - [The store owns the cell protocol](#the-store-owns-the-cell-protocol)
@@ -23,7 +25,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 
 ## Synopsis
 
-**What.** `CommandArena` holds the three node families of a polarized sequent calculus — producers, consumers and commands — over the core language's vocabulary: a command `⟨p |ε c⟩` cuts a producer against a consumer at a polarity, constructor and destructor heads (`ConstructorTag`, `DestructorTag`) declare their own arities, and variables and covariables are de Bruijn indices. `focus_computation` and `focus_value` translate a core term into that IL and `unfocus_command` and `unfocus_value` read it back; `check_command` holds a command to the IL's typing discipline. `Store` is the two-region store an environment machine over that IL runs in: an append-only heap of values, memo cells and environment chains, and a walkable region of continuation frames addressed by marks.
+**What.** `CommandArena` holds the three node families of a polarized sequent calculus — producers, consumers and commands — over the core language's vocabulary: a command `⟨p |ε c⟩` cuts a producer against a consumer at a polarity, constructor and destructor heads (`ConstructorTag`, `DestructorTag`) declare their own arities, and variables and covariables are de Bruijn indices. `focus_computation` and `focus_value` translate a core term into that IL and `unfocus_command` and `unfocus_value` read it back; `check_command` holds a command to the IL's typing discipline. `Store` is the two-region store an environment machine over that IL runs in: an append-only heap of values, memo cells and environment chains, and a walkable region of continuation frames addressed by marks. `Machine` is that environment machine for the pure fragment: it runs a command to a value under a step budget, unfolding constants from `Definitions`, and reads the value back as a core term.
 
 **Why.** A call-by-push-value term has its evaluation order implicit in its syntax; a command makes it explicit, as a cut whose two sides say what is sent where. That is the form an abstract machine steps without a search for the next redex, the form a cell rule from the rewriting stack already speaks, and the form whose frames an effect handler will later need to walk. Fixing the IL and the store first fixes the contract every later piece — focusing, the machine, the bridge from cells — is written against.
 
@@ -50,12 +52,16 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `unfocus_command` and `unfocus_value`: the left inverse of focusing, refusing IL outside its image by name with `UnfocusRefusal` and leaving the core arena at its mark. Witnesses: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`, `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`, `unfocus::tests::an_escaping_covariable_is_refused_and_rolled_back`, `unfocus::tests::a_capture_standing_as_a_value_is_outside_the_image`.
 - `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, and the free variables and covariables of a command. Witnesses: `check::tests::terminal_cut_is_wellformed`, `check::tests::scope_tracks_binders`, `check::tests::dangling_reference_is_rejected`, `check::tests::non_value_argument_is_rejected`, `check::tests::polarity_mismatch_is_rejected`, `check::tests::constructor_arity_is_checked`, `check::tests::constructor_consumer_arity_is_checked`, `check::tests::destructor_consumer_arity_is_checked`, `check::tests::consumer_arity_follows_the_head_not_a_constant`, `check::tests::a_head_answered_twice_is_rejected`.
 - `render_command`, `render_producer` and `render_consumer`: the IL's notation, binders shown with their indices. Witnesses: `pretty::tests::renders_terminal_cut`, `pretty::tests::renders_lambda_cocase`, `pretty::tests::renders_structural_heads`.
+- `Machine::run` with `Definitions`, `Definition`, `StepCount`, `Outcome`, `Stuck` and `MachineFault`: the L machine over the store, halting with a value, stopping stuck by name, or faulting out of steps; transparent constants unfold once per machine, opaque ones are carried as themselves. Witnesses: `machine::tests::ret_is_a_terminal_value`, `machine::tests::bind_threads_a_value`, `machine::tests::force_runs_a_thunk_body`, `machine::tests::case_selects_the_matching_arm`, `machine::tests::application_binds_the_argument`, `machine::tests::a_shared_thunk_is_forced_once`, `machine::tests::constants_unfold_once_and_opaque_ones_stay_opaque`, `machine::tests::the_step_budget_bounds_a_run`.
+- `Machine::read_back` and `Machine::read_back_value` with `ReadbackRefusal`: a terminal as `return v` or the function it is, thunks and functions closed over their captured environments, a suspended capture refused with the core arena at its mark. Witnesses: `machine::tests::a_function_terminal_reads_back_closed_over_its_environment`, `machine::tests::a_thunk_reads_back_closed_over_its_environment`, `machine::tests::a_suspended_capture_has_no_reading`.
+- `stats`, `Stats`, `origin_histogram` and `dump`: an arena's population, its commands counted by the core former each came from, and a root's rendering with both. Witness: `inspect::tests::stats_and_dump_report_a_terminal_cut`.
 
 ## Expected features
 
 - **Addresses from the same arena or store.** An address is a position in one arena or store; one from another resolves to an unrelated node or to nothing. Lookups fail closed on a dangling address, and nothing checks provenance beyond that.
 - **Truncation by the minting party.** `CommandArena::truncate_to` drops nodes, not references to them; the caller that takes a mark is the one that may truncate to it, after dropping every address minted since.
 - **Well-typed input to focusing.** Focusing translates the formers it is given and refuses only a dangling id or a full arena; it does not type-check. Totality and closedness of the image are stated for closed terms the core's checker accepts, and an ill-typed term focuses to whatever its formers say.
+- **Checked input to the machine.** `Machine::run` expects a command `check_command` accepts closed. On anything else it stops `Stuck` at the first node it cannot step, which is a diagnosis, not a verdict on the program. A machine's store grows across its runs; a caller that needs a bounded heap runs a fresh machine.
 
 ## Examples
 
@@ -157,6 +163,28 @@ The walk is a loop over an explicit task stack, and its one implementation serve
 `check_command` walks a command and every node below it and refuses, by name, an address the arena does not hold; a constructor or destructor whose producer or consumer children contradict the counts its head declares; a match or copattern object answering one head twice; a `μ` standing where only a value may; and a cut whose producer or consumer observes the other polarity. Constructors, literals, thunks, matches and force frames are positive, copattern objects and application frames negative, and variables, constants, `μ`, covariables, `μ̃` and `★` take the cut's polarity. On success it answers the command's free variables and covariables, counted from the command, so a caller asks for a closed command by asking for an empty `FreeSet`.
 
 The arena is acyclic by construction, so the walk is a loop with no depth limit. The earlier implementation of this design recursed with a depth guard against cyclic input, checked a cut's polarity on the producer side alone, and admitted a head answered twice. The alternative was a full two-sided type check, which needs the source types the IL does not carry; the check covers what is decidable from a command alone. The choice reverses if the IL comes to carry types.
+
+## The machine runs over marks, not copies
+
+`Machine::run` is a loop over one control state — run a cut, deliver a value to a consumer, return a value to a mark, pop the top frame — each iteration one transition against the caller's `StepCount`:
+
+```text
+run ⟨μα.s |ε c⟩ ρ      load c, bind α to its mark, run s      (not at ε = − against a μ̃)
+run ⟨p |ε c⟩ ρ         evaluate p, deliver it to c
+deliver v α            return v to α's mark       deliver v ★        return v to the base
+deliver v μ̃x.s         run s with x bound to v    deliver v case     run v's arm, fields bound
+deliver v D(ā; c)      load c, observe v by D     return v m         shrink to m, pop
+```
+
+Loading a consumer pushes the frames it denotes: a chain of destructor frames over a covariable or `★` first shrinks the region to that base, and one over a `μ̃` or a match pushes onto the current top. A covariable binds the mark of the continuation it names, so returning through it is a shrink to that mark, and a mark whose frame has since been popped and replaced is refused as stale by the store. Forcing a thunk follows its cell: a forced cell returns its cached value, an opened one pushes an update frame under the body's return point, a re-entrant one runs the body inline. A `μ` against a `μ̃` at a negative cut is suspended and bound, the call-by-name side of the critical pair; everywhere else the `μ` runs first. Producers evaluate within a transition — a constructor over its evaluated fields, a thunk with a fresh cell, a copattern object or a `μ` closed over the environment — and a constant unfolds its definition once per machine, a cycle among definitions stopping the run as `Stuck::CyclicConstant`.
+
+The earlier implementation of this design kept the same walkable frame stack, but a covariable captured a copy of a slice of it, values were reference-counted trees, and the step budget was one shared constant. Here a covariable is a mark into the one region, values and environments are addresses into the append-only heap, and the budget is the caller's. The alternatives were the copied slices, which cost a copy per capture and give every captured continuation its own frames to keep consistent, and continuations as heap closures, which the section on the two regions rejects. The choice reverses when a multi-shot continuation, which a mark into one region cannot resume twice, enters the language with effects and control.
+
+## Readback refuses rather than approximates
+
+`Machine::read_back` reads a positive terminal as `return v` and a copattern object as the function it is; a literal reads as itself, a constructed value over its fields, an opaque constant as the constant, and a thunk or a function as its suspended command decoded by the unfocusing walk with its captured environment's readbacks substituted. Values are read in increasing address order, since every value the machine allocates names only earlier ones, so the readback is a loop. A value with no core reading — a suspended `μ`, a copattern object standing as a value — is refused by name with the core arena at its mark.
+
+The earlier implementation of this design fell back to a placeholder of the right kind when its readback failed, so a differential could pass on a value it had not read. The alternative was that fallback, rejected because a readback that cannot fail makes a differential that cannot fail. The choice does not reverse.
 
 ## The polarity is the cell substrate's
 

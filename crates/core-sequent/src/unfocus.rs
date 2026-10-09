@@ -132,7 +132,7 @@ pub fn unfocus_command(
     core: &mut CoreArena,
 ) -> Result<ComputationId, UnfocusRefusal>
 {
-    let decoded = decode(arena, Root::Command(command, Depth::ROOT), core, &[])?;
+    let decoded = decode(arena, Root::Command(command), core, &[])?;
     match decoded {
         | Decoded::Computation(computation) => Ok(computation),
         | Decoded::Value(_) => Err(UnfocusRefusal::DecodeInvariant),
@@ -162,7 +162,7 @@ pub fn unfocus_value(
     core: &mut CoreArena,
 ) -> Result<ValueId, UnfocusRefusal>
 {
-    let decoded = decode(arena, Root::Value(producer, Depth::ROOT), core, &[])?;
+    let decoded = decode(arena, Root::Value(producer), core, &[])?;
     match decoded {
         | Decoded::Value(value) => Ok(value),
         | Decoded::Computation(_) => Err(UnfocusRefusal::DecodeInvariant),
@@ -171,7 +171,7 @@ pub fn unfocus_value(
 
 /// The binder depths a node is decoded under.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Depth
+struct Depth
 {
     /// Producer binders opened since the decoded root.
     producers: u32,
@@ -183,7 +183,7 @@ pub struct Depth
 impl Depth
 {
     /// The root of a decoding: no binder opened, `★` the return point.
-    pub const ROOT: Self = Self {
+    const ROOT: Self = Self {
         producers: 0,
         covariables: 0,
     };
@@ -229,10 +229,14 @@ impl Depth
 #[derive(Clone, Copy, Debug)]
 pub enum Root
 {
-    /// A command, read as a computation.
-    Command(CommandId, Depth),
+    /// A command, read as a computation returning to `★`.
+    Command(CommandId),
     /// A producer, read as a value.
-    Value(ProducerId, Depth),
+    Value(ProducerId),
+    /// A thunk's suspended command, read as the thunk.
+    ThunkBody(CommandId),
+    /// A copattern object of one `apply` arm, read as the function it is.
+    Function(ProducerId),
 }
 
 /// What a decoding produced.
@@ -252,7 +256,8 @@ pub enum Decoded
 /// - requires: every id in `closing` is a closed value of `core`.
 /// - ensures: on success the decoded term; a producer variable of the
 ///   intuitionistic zone counting `k` past the binders opened since the root
-///   reads `closing[k]` where present and stays a variable otherwise.
+///   reads `closing[k]` where present, and counting past the closing it stays a
+///   variable, shifted down past the `closing.len()` bindings substituted.
 /// - provides: the one walk both the public inverse and the machine's readback
 ///   run.
 /// - fails: as [`unfocus_command`]; `core` is then exactly as on entry.
@@ -354,8 +359,14 @@ impl Unfocusing<'_>
     ) -> Result<Decoded, UnfocusRefusal>
     {
         match root {
-            | Root::Command(command, depth) => self.tasks.push(Task::Command(command, depth)),
-            | Root::Value(producer, depth) => self.tasks.push(Task::Value(producer, depth)),
+            | Root::Command(command) => self.tasks.push(Task::Command(command, Depth::ROOT)),
+            | Root::Value(producer) => self.tasks.push(Task::Value(producer, Depth::ROOT)),
+            | Root::ThunkBody(body) => {
+                self.tasks.push(Task::Thunk);
+                self.tasks
+                    .push(Task::Command(body, Depth::ROOT.under_covariable()));
+            },
+            | Root::Function(producer) => self.function_head(producer, Depth::ROOT)?,
         }
         while let Some(task) = self.tasks.pop() {
             self.step(task)?;
@@ -534,8 +545,9 @@ impl Unfocusing<'_>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: an intuitionistic variable counting `k` past `depth`'s
-    ///   producer binders reads `closing[k]` where present; every other
-    ///   variable is rebuilt as itself.
+    ///   producer binders reads `closing[k]` where present and is rebuilt
+    ///   `closing.len()` lower past it; every other variable is rebuilt as
+    ///   itself.
     /// - provides: the closing substitution, fused into the walk.
     /// - fails: never.
     /// - panics: none.
@@ -546,15 +558,23 @@ impl Unfocusing<'_>
         depth: Depth,
     )
     {
-        let closed = match zone {
-            | Zone::Intuitionistic => u32::from(index)
-                .checked_sub(depth.producers)
-                .and_then(|past| usize::try_from(past).ok())
-                .and_then(|past| self.closing.get(past))
-                .copied(),
+        let past = match zone {
+            | Zone::Intuitionistic => u32::from(index).checked_sub(depth.producers),
             | Zone::Linear => None,
         };
-        let value = closed.unwrap_or_else(|| self.core.value_variable(zone, index));
+        let closed = past
+            .and_then(|past| usize::try_from(past).ok())
+            .and_then(|past| self.closing.get(past))
+            .copied();
+        let value = match (closed, past) {
+            | (Some(closed), _) => closed,
+            | (None, Some(_)) => {
+                let substituted = u32::try_from(self.closing.len()).unwrap_or(u32::MAX);
+                let shifted = u32::from(index).saturating_sub(substituted);
+                self.core.value_variable(zone, DeBruijnIndex::from(shifted))
+            },
+            | (None, None) => self.core.value_variable(zone, index),
+        };
         self.values.push(value);
     }
 

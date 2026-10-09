@@ -780,6 +780,38 @@ impl Store
         }
     }
 
+    /// The values an environment's producer chain binds, innermost first.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the `i`-th item is what [`Self::lookup_value`] reads at index
+    ///   `i`; the walk ends past the chain or at a dangling link.
+    /// - provides: the closing substitution a readback builds from a captured
+    ///   environment, in one pass rather than one lookup per index.
+    /// - fails: never; a dangling link ends the walk.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::bind_value`].
+    /// - witness: `store::tests::environments_bind_innermost_first`
+    #[inline]
+    pub fn bound_values(
+        &self,
+        environment: Environment,
+    ) -> impl Iterator<Item = HeapValueId>
+    {
+        let mut scope = environment.values;
+        core::iter::from_fn(move || {
+            let ValueScope::Innermost(id) = scope
+            else {
+                return None;
+            };
+            let binding = id.read_in(&self.value_bindings)?;
+            scope = binding.outer;
+            Some(binding.value)
+        })
+    }
+
     /// Push a frame under a fresh serial.
     ///
     /// # Specification
@@ -1143,6 +1175,11 @@ mod tests
             Some(second),
             store.lookup_value(marked, index(0)),
             "the producer chain is unchanged"
+        );
+        assert_eq!(
+            alloc::vec![second, first],
+            store.bound_values(marked).collect::<alloc::vec::Vec<_>>(),
+            "the walk reads the chain innermost first, as the lookups do"
         );
     }
 }

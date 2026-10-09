@@ -19,6 +19,10 @@
 //! - [`Store`] is the machine's two-region store: the heap region of
 //!   [`HeapValue`]s, memo cells and environment chains, and the walkable frame
 //!   region of [`Frame`]s addressed by [`ContinuationMark`]s.
+//! - [`Machine`] runs a command over the store, unfolding constants from
+//!   [`Definitions`], to an [`Outcome`] within a [`StepCount`] budget, and
+//!   reads a halted value back as a core term.
+//! - [`stats`], [`origin_histogram`] and [`dump`] inspect a focused arena.
 //!
 //! The crate is `no_std` and depends on `core`, `alloc`, the core language's
 //! syntax, the kernel's leaf vocabularies and the cell substrate's
@@ -33,7 +37,10 @@ mod boundary;
 mod check;
 mod focus;
 mod il;
+mod inspect;
+mod machine;
 mod pretty;
+mod readback;
 mod store;
 mod unfocus;
 
@@ -42,6 +49,7 @@ pub use crate::boundary::FrameHeight;
 pub use crate::boundary::FrameSerial;
 pub use crate::boundary::NodeCount;
 pub use crate::boundary::ProducerArity;
+pub use crate::boundary::StepCount;
 pub use crate::check::ArityHead;
 pub use crate::check::CheckRefusal;
 pub use crate::check::FreeSet;
@@ -67,9 +75,20 @@ pub use crate::il::PatternArm;
 pub use crate::il::ProducerId;
 pub use crate::il::ProducerNode;
 pub use crate::il::SequentWatermark;
+pub use crate::inspect::Stats;
+pub use crate::inspect::dump;
+pub use crate::inspect::origin_histogram;
+pub use crate::inspect::stats;
+pub use crate::machine::Definition;
+pub use crate::machine::Definitions;
+pub use crate::machine::Machine;
+pub use crate::machine::MachineFault;
+pub use crate::machine::Outcome;
+pub use crate::machine::Stuck;
 pub use crate::pretty::render_command;
 pub use crate::pretty::render_consumer;
 pub use crate::pretty::render_producer;
+pub use crate::readback::ReadbackRefusal;
 pub use crate::store::CellId;
 pub use crate::store::ContinuationMark;
 pub use crate::store::CovalueBindingId;
