@@ -53,6 +53,7 @@ use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 wrapper! {
@@ -107,6 +108,16 @@ impl WireCount
     /// - ensures: [`Declaration::Declared`] exactly when `wire`'s index is
     ///   below the count.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — valid, first-past and empty wire sets are observed
+    ///   through typed incidence and construction refusals. Inverting the
+    ///   comparison or admitting the first absent wire changes these outcomes;
+    ///   the count is the declared domain.
+    /// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
+    /// - witness: `interface::tests::the_wiring_refuses_an_out_of_range_generator_wire`
+    /// - witness: `interface::tests::empty_and_isolated_interfaces_preserve_boundary_roles`
+    #[spec(ensures: |answer| (answer == Declaration::Declared) == (wire.0 < self.0))]
     #[inline]
     fn declares(
         self,
@@ -534,6 +545,18 @@ impl PartialBijection
     /// - provides: [`wire_image::Absent::Unmapped`] when `source` is not in the
     ///   map's domain.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fresh pair, conflicts and unmapped sources expose
+    ///   exact forward and reverse answers. Wrong keys, stale inverse entries
+    ///   or invented images differ; only publicly constructed partial
+    ///   bijections are admitted.
+    /// - witness: `interface::tests::a_partial_bijection_stays_injective`
+    /// - witness: `interface::tests::restriction_and_conflict_precedence_preserve_the_map`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(image) => self.forward.get(&source) == Some(&image) && self.backward.get(&image) == Some(&source),
+        Maybe::Absent(wire_image::Absent::Unmapped) => !self.forward.contains_key(&source),
+    })]
     #[inline]
     pub fn image_of(
         &self,
@@ -552,6 +575,18 @@ impl PartialBijection
     /// - provides: [`wire_preimage::Absent::Unreached`] when `image` is not in
     ///   the map's range.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mapped, unreached and refused images expose the exact
+    ///   inverse source. Swapping the two maps or retaining a refused pair
+    ///   changes the answer; the invariant is limited to publicly constructed
+    ///   bijections.
+    /// - witness: `interface::tests::a_partial_bijection_stays_injective`
+    /// - witness: `interface::tests::restriction_and_conflict_precedence_preserve_the_map`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(source) => self.backward.get(&image) == Some(&source) && self.forward.get(&source) == Some(&image),
+        Maybe::Absent(wire_preimage::Absent::Unreached) => !self.backward.contains_key(&image),
+    })]
     #[inline]
     pub fn preimage_of(
         &self,
@@ -594,12 +629,19 @@ impl PartialBijection
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — the restriction is the seam a search issues, and the
-    ///   certificate reader re-derives it from the wire map and compares; a
-    ///   restriction that kept a non-port pair or dropped a mapped port is
-    ///   refused as a forged seam on a search's own certificates.
+    /// - hypothesis: L3 — reordered, repeated, unmapped and empty port lists
+    ///   expose an independently pinned restricted pair set and its inverse.
+    ///   Dropping mapped ports, keeping nonports, duplicating entries or
+    ///   omitting the reverse map changes those observations; no invalid
+    ///   private map representation is admitted.
     /// - witness: `matching::tests::an_embedding_carries_its_seam_as_a_pair_of_partial_bijections`
     /// - witness: `matching::tests::the_searches_certificates_verify_against_their_own_diagrams`
+    /// - witness: `interface::tests::restriction_and_conflict_precedence_preserve_the_map`
+    #[spec(ensures: |ref restricted|
+        restricted.forward.len() == self.forward.keys().filter(|wire| ports.contains(wire)).count()
+        && restricted.forward.iter().all(|entry| ports.contains(entry.0) && self.forward.get(entry.0) == Some(entry.1))
+        && restricted.backward.len() == restricted.forward.len()
+        && restricted.forward.iter().all(|entry| restricted.backward.get(entry.1) == Some(entry.0)))]
     #[inline]
     #[must_use]
     pub fn restricted_to(
@@ -637,6 +679,27 @@ impl PartialBijection
     ///   source and a re-used image separate the four outcomes, each refusal
     ///   asserted with its payload and the map asserted unchanged after both.
     /// - witness: `interface::tests::a_partial_bijection_stays_injective`
+    /// - witness: `interface::tests::restriction_and_conflict_precedence_preserve_the_map`
+    #[spec(captures: [
+        prior_image = self.forward.get(&source).copied(),
+        prior_source = self.backward.get(&image).copied(),
+        prior_count = self.forward.len(),
+    ], ensures: |ref result| {
+        let consistent = self.forward.len() == self.backward.len()
+            && self.forward.iter().all(|entry| self.backward.get(entry.1) == Some(entry.0));
+        consistent && match *result {
+            Ok(()) => (prior_image == Some(image) || (prior_image.is_none() && prior_source.is_none()))
+                && self.forward.get(&source) == Some(&image)
+                && self.backward.get(&image) == Some(&source)
+                && self.forward.len() == prior_count.saturating_add(usize::from(prior_image.is_none())),
+            Err(BijectionClash::SourceBound { source: rejected, bound }) => rejected == source
+                && prior_image == Some(bound) && bound != image
+                && self.forward.get(&source) == Some(&bound) && self.forward.len() == prior_count,
+            Err(BijectionClash::ImageBound { image: rejected, bound }) => rejected == image
+                && prior_image.is_none() && prior_source == Some(bound)
+                && self.backward.get(&image) == Some(&bound) && self.forward.len() == prior_count,
+        }
+    })]
     #[inline]
     pub fn extend(
         &mut self,
@@ -968,6 +1031,33 @@ impl Wiring
     /// - witness: `interface::tests::the_wiring_refuses_an_undeclared_open_input`
     /// - witness: `interface::tests::the_wiring_refuses_a_self_looping_generator`
     /// - witness: `interface::tests::the_wiring_refuses_a_directed_cycle`
+    /// - witness: `interface::tests::empty_and_isolated_interfaces_preserve_boundary_roles`
+    #[spec(captures: [generator_count = generators.len(), input_count = boundary.inputs.len(), output_count = boundary.outputs.len()],
+    ensures: |ref result| match *result {
+        Ok(ref wiring) => wiring.wires == wires && wiring.generators.len() == generator_count
+            && wiring.boundary.inputs.len() == input_count && wiring.boundary.outputs.len() == output_count
+            && wiring.producer.len() == wiring.generators.iter().map(|generator| generator.targets.len()).sum::<usize>()
+            && wiring.consumer.len() == wiring.generators.iter().map(|generator| generator.sources.len()).sum::<usize>()
+            && wiring.generators.iter().enumerate().all(|entry|
+                entry.1.sources.iter().all(|wire| wire.0 < wires.0 && wiring.consumer.get(wire) == Some(&Edge(entry.0)))
+                && entry.1.targets.iter().all(|wire| wire.0 < wires.0 && wiring.producer.get(wire) == Some(&Edge(entry.0))))
+            && wiring.boundary.inputs.iter().enumerate().all(|entry| entry.1.0 < wires.0
+                && !wiring.producer.contains_key(entry.1) && !wiring.boundary.inputs.iter().take(entry.0).any(|prior| prior == entry.1))
+            && wiring.boundary.outputs.iter().enumerate().all(|entry| entry.1.0 < wires.0
+                && !wiring.consumer.contains_key(entry.1) && !wiring.boundary.outputs.iter().take(entry.0).any(|prior| prior == entry.1))
+            && (0..wires.0).all(|index| {
+                let wire = Wire(index);
+                wiring.producer.contains_key(&wire) != wiring.boundary.inputs.contains(&wire)
+                    && wiring.consumer.contains_key(&wire) != wiring.boundary.outputs.contains(&wire)
+            }),
+        Err(WiringObstruction::UnknownWire { wire, at }) => wire.0 >= wires.0 && at.0 < generator_count,
+        Err(WiringObstruction::UnknownBoundaryWire { wire }) => wire.0 >= wires.0,
+        Err(WiringObstruction::FanIn { wire, first, second } | WiringObstruction::FanOut { wire, first, second }) =>
+            wire.0 < wires.0 && first <= second && second.0 < generator_count,
+        Err(WiringObstruction::RepeatedBoundaryPort { wire } | WiringObstruction::UndeclaredInput { wire } | WiringObstruction::UndeclaredOutput { wire }) => wire.0 < wires.0,
+        Err(WiringObstruction::BoundaryInputIsProduced { wire, by } | WiringObstruction::BoundaryOutputIsConsumed { wire, by }) => wire.0 < wires.0 && by.0 < generator_count,
+        Err(WiringObstruction::DirectedCycle { through }) => through.0 < generator_count,
+    })]
     #[inline]
     pub fn assemble(
         wires: WireCount,
@@ -1063,6 +1153,18 @@ impl Wiring
     /// - provides: [`generator_lookup::Absent::OutOfRange`] when `edge` is at
     ///   or past the generator count.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — valid generator positions are observed through the
+    ///   spine reading, and the first absent position has a typed refusal.
+    ///   Returning another generator or misclassifying absence changes the
+    ///   observation; the backing wiring is validated.
+    /// - witness: `interface::spine::tests::a_spine_reads_as_its_generators_and_ports`
+    /// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(generator) => self.generators.get(edge.0).is_some_and(|expected| core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(generator))),
+        Maybe::Absent(generator_lookup::Absent::OutOfRange) => edge.0 >= self.generators.len(),
+    })]
     #[inline]
     pub fn generator(
         &self,
@@ -1121,6 +1223,11 @@ impl Wiring
     /// - hypothesis: L3 — a produced wire, an input port and a wire past the
     ///   count separate the three answers.
     /// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(edge) => self.generators.get(edge.0).is_some_and(|generator| generator.targets.contains(&wire)),
+        Maybe::Absent(wire_producer::Absent::BoundaryInput) => wire.0 < self.wires.0 && self.boundary.inputs.contains(&wire),
+        Maybe::Absent(wire_producer::Absent::OutOfRange) => wire.0 >= self.wires.0,
+    })]
     #[inline]
     pub fn producer_of(
         &self,
@@ -1149,6 +1256,11 @@ impl Wiring
     /// - hypothesis: L3 — a consumed wire, an output port and a wire past the
     ///   count separate the three answers.
     /// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(edge) => self.generators.get(edge.0).is_some_and(|generator| generator.sources.contains(&wire)),
+        Maybe::Absent(wire_consumer::Absent::BoundaryOutput) => wire.0 < self.wires.0 && self.boundary.outputs.contains(&wire),
+        Maybe::Absent(wire_consumer::Absent::OutOfRange) => wire.0 >= self.wires.0,
+    })]
     #[inline]
     pub fn consumer_of(
         &self,
@@ -1191,6 +1303,25 @@ impl Wiring
     /// - witness: `interface::tests::the_components_partition_the_generators`
     /// - witness: `interface::tests::a_component_joins_through_a_shared_wire_in_both_directions`
     /// - witness: `interface::tests::a_port_free_generator_is_its_own_component`
+    /// - witness: `interface::tests::empty_and_isolated_interfaces_preserve_boundary_roles`
+    #[spec(ensures: |ref components| {
+        let mut start = 0;
+        let mut previous_first = None;
+        components.members.len() == self.generators.len()
+            && components.ends.last().copied().unwrap_or(0) == components.members.len()
+            && (0..self.generators.len()).all(|index| components.members.iter().filter(|edge| edge.0 == index).count() == 1)
+            && components.ends.iter().all(|end| {
+                let Some(run) = components.members.get(start..*end) else { return false; };
+                start = *end;
+                let Some(first) = run.first() else { return false; };
+                let ordered = previous_first.is_none_or(|previous| previous < *first)
+                    && run.is_sorted_by(|left, right| left < right);
+                previous_first = Some(*first);
+                ordered && run.iter().all(|edge| self.generators.get(edge.0).is_some_and(|generator|
+                    generator.sources.iter().all(|wire| self.producer.get(wire).is_none_or(|neighbour| run.contains(neighbour)))
+                    && generator.targets.iter().all(|wire| self.consumer.get(wire).is_none_or(|neighbour| run.contains(neighbour)))))
+            })
+    })]
     #[inline]
     #[must_use]
     pub fn components(&self) -> Components
@@ -1256,6 +1387,16 @@ enum Placement
 ///   call. A position outside `placed` reports [`Placement::Placed`], so a walk
 ///   never pushes it.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a fresh, repeated and first-past placement exposes the
+///   old verdict and complete resulting slice. Reversing the verdict, changing
+///   another slot or accepting a foreign position differs; only placement state
+///   is observed, not traversal policy.
+/// - witness: `interface::tests::placement_preserves_neighbours_and_refuses_foreign_positions`
+#[spec(captures: [prior = placed.get(edge.0).copied()], ensures: |answer|
+    answer == prior.unwrap_or(Placement::Placed)
+        && placed.get(edge.0).is_none_or(|slot| *slot == Placement::Placed))]
 fn place(
     placed: &mut [Placement],
     edge: Edge,
@@ -1311,6 +1452,21 @@ impl Components
     /// - provides: [`component_lookup::Absent::OutOfRange`] when `component` is
     ///   at or past the count.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered multi-member and singleton runs, an empty
+    ///   partition and the first absent component expose exact slices and typed
+    ///   refusal. Off-by-one cuts, reordered members and invented empty runs
+    ///   differ; the partition originates from a wiring.
+    /// - witness: `interface::tests::the_components_partition_the_generators`
+    /// - witness: `interface::tests::empty_and_isolated_interfaces_preserve_boundary_roles`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Present(members) => self.ends.get(component.0).is_some_and(|end| {
+            let start = component.0.checked_sub(1).and_then(|previous| self.ends.get(previous).copied()).unwrap_or(0);
+            self.members.get(start..*end).is_some_and(|expected| core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(members)))
+        }),
+        Maybe::Absent(component_lookup::Absent::OutOfRange) => component.0 >= self.ends.len(),
+    })]
     #[inline]
     pub fn members(
         &self,
@@ -1350,6 +1506,29 @@ impl Components
 ///
 /// # Errors
 /// [`WiringObstruction::DirectedCycle`] when a directed cycle exists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — monogamous incidence maps for acyclic diagrams, a
+///   self-loop, a two-generator cycle and a downstream-first cycle expose
+///   success or the exact on-cycle edge. Reversing incidence, missing a cycle
+///   or blaming its downstream reader differs; the wiring constructor
+///   establishes the incidence domain.
+/// - witness: `interface::tests::an_assembled_wiring_answers_its_incidence`
+/// - witness: `interface::tests::the_wiring_refuses_a_self_looping_generator`
+/// - witness: `interface::tests::the_wiring_refuses_a_directed_cycle`
+#[spec(requires:
+    producer.len() == generators.iter().map(|generator| generator.targets.len()).sum::<usize>()
+    && consumer.len() == generators.iter().map(|generator| generator.sources.len()).sum::<usize>()
+    && generators.iter().enumerate().all(|entry|
+        entry.1.sources.iter().all(|wire| consumer.get(wire) == Some(&Edge(entry.0)))
+        && entry.1.targets.iter().all(|wire| producer.get(wire) == Some(&Edge(entry.0)))),
+    ensures: |ref result| match *result {
+        Ok(()) => true,
+        Err(WiringObstruction::DirectedCycle { through }) => generators.get(through.0).is_some_and(|generator|
+            generator.sources.iter().any(|wire| producer.contains_key(wire))
+                && generator.targets.iter().any(|wire| consumer.contains_key(wire))),
+        Err(_) => false,
+    })]
 fn check_acyclic(
     generators: &[Generator],
     producer: &BTreeMap<Wire, Edge>,
@@ -2003,6 +2182,95 @@ mod tests
             Maybe::Absent(wire_preimage::Absent::Unreached),
             map.preimage_of(Wire::from(8)),
             "and the refused image unreached"
+        );
+    }
+
+    #[test]
+    fn restriction_and_conflict_precedence_preserve_the_map()
+    {
+        let mut map = PartialBijection::new();
+        for (source, image) in [(2, 20), (5, 50), (8, 80)] {
+            map.extend(Wire(source), Wire(image))
+                .expect("distinct pairs");
+        }
+        let restricted = map.restricted_to(&[Wire(8), Wire(2), Wire(8), Wire(99)]);
+        assert_eq!(restricted.pairs().collect::<Vec<_>>(), [
+            (Wire(2), Wire(20)),
+            (Wire(8), Wire(80))
+        ]);
+        assert_eq!(restricted.preimage_of(Wire(20)), Maybe::Present(Wire(2)));
+        assert_eq!(restricted.preimage_of(Wire(80)), Maybe::Present(Wire(8)));
+        assert_eq!(
+            restricted.preimage_of(Wire(50)),
+            Maybe::Absent(wire_preimage::Absent::Unreached)
+        );
+        assert_eq!(map.restricted_to(&[]), PartialBijection::new());
+        let before = map.clone();
+        assert_eq!(
+            map.extend(Wire(2), Wire(80)),
+            Err(BijectionClash::SourceBound {
+                source: Wire(2),
+                bound: Wire(20)
+            })
+        );
+        assert_eq!(map, before);
+        assert_eq!(
+            map.extend(Wire(99), Wire(80)),
+            Err(BijectionClash::ImageBound {
+                image: Wire(80),
+                bound: Wire(8)
+            })
+        );
+        assert_eq!(map, before);
+    }
+
+    #[test]
+    fn placement_preserves_neighbours_and_refuses_foreign_positions()
+    {
+        let mut placed = [Placement::Unplaced, Placement::Unplaced, Placement::Placed];
+        assert_eq!(place(&mut placed, Edge(1)), Placement::Unplaced);
+        assert_eq!(placed, [
+            Placement::Unplaced,
+            Placement::Placed,
+            Placement::Placed
+        ]);
+        assert_eq!(place(&mut placed, Edge(1)), Placement::Placed);
+        assert_eq!(place(&mut placed, Edge(3)), Placement::Placed);
+        assert_eq!(placed, [
+            Placement::Unplaced,
+            Placement::Placed,
+            Placement::Placed
+        ]);
+    }
+
+    #[test]
+    fn empty_and_isolated_interfaces_preserve_boundary_roles()
+    {
+        let empty = Wiring::assemble(WireCount(0), Vec::new(), Interface::new([], []))
+            .expect("empty diagram");
+        assert_eq!(empty.components().count(), ComponentCount(0));
+        assert_eq!(
+            empty.components().members(ComponentIndex(0)),
+            Maybe::Absent(component_lookup::Absent::OutOfRange)
+        );
+        assert_eq!(
+            empty.producer_of(Wire(0)),
+            Maybe::Absent(wire_producer::Absent::OutOfRange)
+        );
+        let isolated = Wiring::assemble(
+            WireCount(1),
+            Vec::new(),
+            Interface::new([Wire(0)], [Wire(0)]),
+        )
+        .expect("isolated wire is both boundaries");
+        assert_eq!(isolated.components().count(), ComponentCount(0));
+        assert_eq!(
+            isolated.producer_of(Wire(0)),
+            Maybe::Absent(wire_producer::Absent::BoundaryInput)
+        );
+        assert_eq!(
+            isolated.consumer_of(Wire(0)),
+            Maybe::Absent(wire_consumer::Absent::BoundaryOutput)
         );
     }
 }
