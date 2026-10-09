@@ -99,7 +99,7 @@ Each nontrivial item has a `# Adequacy` hypothesis naming its input domain, obse
 
 The predicates run under `--cfg anodized_panic`; normal builds do not repeat their checking traversals. Admission and replay check the portions of their postconditions available from retained data rather than taking owned snapshots of consumed inputs. Least-model identity and termination remain mathematical obligations, with termination stated in `- intension:` clauses.
 
-Explicit `- executable: none` clauses explain the remaining boundaries: const-callable projections cannot use the expansion's non-const evaluator; opaque iterators cannot be consumed by a postcondition; a strategy's full support concerns future draws; and data-item invariants are not checked at construction or relate the value to external operands. Their adequacy witnesses still apply.
+Const-compatible predicates check cross-domain shifts, finite-model projection and strictness without removing compile-time availability. Explicit `- executable: none` clauses explain the remaining boundaries: opaque iterators cannot be consumed by a postcondition; a strategy's full support concerns future draws; and data-item invariants are not checked at construction or relate the value to external operands. Their adequacy witnesses still apply.
 
 ## Differential suites
 
