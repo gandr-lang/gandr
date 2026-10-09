@@ -284,6 +284,7 @@ impl Derivations
     ///   code with this emission and refuses a trace that does not follow.
     /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
     /// - witness: `machine::tests::recording_does_not_move_the_verdict`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     // economy: a derivation shared by two parents is emitted once per parent,
     // so a proof whose sharing is a deep DAG emits its expansion. The replay
     // reads a tree, so the expansion is what it needs; upgrade path: a

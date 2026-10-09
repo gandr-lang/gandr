@@ -1,6 +1,6 @@
 # gandr-kernel-core
 
-The certified kernel's judgements: the defunctionalized checking machine, type formation, conversion, the admission choke point, and the check memo wired as the default path on both machines.
+The certified kernel's judgements: the defunctionalized checking machine, type formation, conversion, the admission choke point, the check memo wired as the default path on both machines, and the sequential replay of an untrusted engine's conversion trace.
 
 <!-- toc -->
 
@@ -16,6 +16,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Staging order and admission](#staging-order-and-admission)
 - [Sharing-aware conversion](#sharing-aware-conversion)
 - [Dependent arrow and rewrites](#dependent-arrow-and-rewrites)
+- [Conversion replay](#conversion-replay)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
@@ -25,7 +26,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 ## Synopsis
 
-**What.** `Environment` admits declarations through one checked choke point, `add_decl`, and one warned bypass, `add_decl_unchecked`; `audit` reports what an admitted declaration transitively rests on. Beneath the choke point sit a bidirectional checking machine, a type-formation walk that computes a type's universe level, and structural conversion. Representation, the sharing format and the decode budgets belong to `gandr-kernel-term`, the universe algebra to `gandr-kernel-strata`, and the memo's storage to `gandr-kernel-check-memo`; this crate is what re-derives an obligation.
+**What.** `Environment` admits declarations through one checked choke point, `add_decl`, and one warned bypass, `add_decl_unchecked`; `audit` reports what an admitted declaration transitively rests on. Beneath the choke point sit a bidirectional checking machine, a type-formation walk that computes a type's universe level, and structural conversion. Beside it, `replay` rechecks a term-conversion verdict an untrusted engine reached, decision by decision, from the trace that engine recorded. Representation, the sharing format and the decode budgets belong to `gandr-kernel-term`, the universe algebra to `gandr-kernel-strata`, the memo's storage to `gandr-kernel-check-memo`, and the decision vocabulary to `gandr-kernel-conversion-trace`; this crate is what re-derives an obligation.
 
 **Why.** The kernel grants a producer no credence: every declaration is re-checked before admission, including one a decoder built from untrusted bytes. Such a term can be arbitrarily deep and heavily shared, so the checker must be total on adversarial depth and must not pay for a shared subterm once per occurrence.
 
@@ -37,6 +38,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **The checking machine.** `check_declaration`, the default path with a fresh memo, and `check_declaration_with_memo`, the opt-in entry that returns a verdict and never a `CheckedId`. Checking is bidirectional and annotation-free.
 - **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope and a sealed atom's kind.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
+- **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, unfolding only what `Unfoldings` defines and stopping at a `ReplayBudget`, answering a `KernelVerdict` — certified convertible, certified not convertible, or declined with a `ReplayDecline`, whose `ReplayRefusal` names the `TracePosition` that did not replay.
 - **The content key.** `ContentTable`, `encode_support`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, canonical support encodings and their digests.
 - **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
 - **Accounting.** `ExpansionCensus`: goal expansions and memo recalls per plane, the observation every measurement here is asserted through.
@@ -46,6 +48,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 - **Staging discipline.** A producer resolves every staged declaration by admitting, bypassing or abandoning it. A staged declaration left unresolved keeps its content in the arena and blocks the admission of every declaration staged before it (see [Staging order and admission](#staging-order-and-admission)).
 - **A vouched bypass.** `add_decl_unchecked` performs no checking: the caller vouches for the declaration, a wrong one can make the kernel prove anything, and `audit` reports every declaration that rests on it.
+- **A trace in the kernel's terms.** A replay's caller translates its sides and the bodies it allows unfolding into the replay's arena, maps each trace identifier to the constant it names or `ReplayNode::Other`, and maps its engine's verdict to an `EngineClaim`. A body is a closed value; a constant given none is opaque.
 - **Reduced codes.** Conversion fires no reduction, so two codes convert only when they are structurally equal. A producer hands the kernel reduced codes to avoid a refusal.
 - **`--cfg anodized_panic` for enforcement.** Built with this `cfg` across the whole dependency graph, the `#[spec]` attributes check their clauses at runtime and panic on a violation. The enforcing test lane sets it.
 
@@ -183,9 +186,21 @@ Two sites in the checker consume them: a variable synthesis raises its context s
 
 **The audit follows codes.** A declaration's type reaches another declaration two ways — a sealed atom names one directly, and a code names one through the term language — and the trust report would miss the second if it followed only the first. The sealing-provenance set does not follow codes: it asks which sealed atoms a projection rebound, and widening it would make the gate more permissive on the one surface whose job is to be falsifiable.
 
+## Conversion replay
+
+Term conversion with δ-, β- and η-rules is proof search, and a concurrent search is too large to trust. Courant and Leroy (§9 of "A Lazy, Concurrent Convertibility Checker", POPL 2026, `doi:10.1145/3776695`) instrument their checker to emit a trace of its decisions and recheck the trace sequentially. `replay` is that recheck: the engine's search stays outside the trusted base, and what the kernel trusts is a loop that fires every step itself and reads the trace only where a rule leaves a choice.
+
+**Choice.** Every goal carries the verdict its derivation owes. Both sides are put in weak head form by the reductions that need no choice — β, a forced thunk, a returner met by a bind, an injection met by a case — and then exactly one rule row applies. A `ComparedShared` closes the goal when the sides are α-equal, or rigid and α-distinct, rigid meaning nothing inside can reduce. A defined head takes a δ-decision: `Unfold` with the reduction naming its side, after an optional `Postpone` naming the other side's head, or `Freeze`, or `ConstShortcut` over two applications of one constant. A thunk against a thunk or a neutral takes two `Force`s, and a lambda against a neutral takes `EtaExpand` on the neutral side. Every other goal is structural and reads no decision: a leaf decides it, a convertibility derivation pushes all its premises, and a refutation reads the `NegativeSubgoal` naming the one premise it rests on. Under a refutation, `Freeze` and `ConstShortcut` are refused outright: a frozen pair or a shortcut that fails proves nothing about the unfolded terms, so only the unfolding branch refutes. A `ComparedShared` met at a decomposable goal closes that goal when it can and otherwise passes to the first premise; the engine emits an agreeing decomposition it settled equal as that one closing, so the two readings coincide.
+
+**Three verdicts.** The replay certifies convertible or not convertible only when the trace replays as a derivation of the engine's claim, every decision used and none left over. Everything else declines: the engine's own decline, a budget the replay ran out of, or a refusal naming where the trace stopped applying. A schedule that starved the engine of the turns its answer needed is such a decline, and the kernel has no search of its own to recover it with. A decline is never read as a refutation, so a wrong or unlucky engine costs completeness and never soundness. Every step is charged to the budget, which bounds a long trace and a term that reduces forever alike, and the reducts the replay mints are truncated away before it returns.
+
+**Alternatives.** Running the engine's search inside the kernel would certify by trusting the search. Trusting the engine's verdict would certify nothing. Replaying a refuted decomposition without its negative subgoal means trying every premise, which is search. Memoizing replayed sub-derivations would let a trace refer back to a shared one; the engine emits a derivation shared by two parents once under each, so the trace is the derivation's expansion as a tree and the replay needs no table.
+
+**Reversal.** A back-reference decision, with a replay-side table keyed on the goal it names, replaces the expansion once a measured trace of a deeply shared proof outgrows the replay budget. A closing the kernel cannot reproduce, because the engine's structural equality and the kernel's α-equality disagree on a pair, shows up as a refusal on an engine trace and moves the tie-break into the vocabulary.
+
 ## Sharing and persistence
 
-The crate holds no interning table of decoded values that conversion consults, no content-keyed memo on the conversion path, and no persistence. The sharing a decode hands over is the sharing the checker sees, and identity equality is conversion's only sharing-aware step. Conversion over this vocabulary performs no search, so it records no conversion trace.
+The crate holds no interning table of decoded values that conversion consults, no content-keyed memo on the conversion path, and no persistence. The sharing a decode hands over is the sharing the checker sees, and identity equality is conversion's only sharing-aware step. The kernel's own type conversion performs no search, so it records no conversion trace; the replay is where the kernel reads one.
 
 The one place the kernel creates sharing is the rewrite memo, and it is fenced: it shares only among nodes the kernel itself minted past the admission watermark, and nothing decides on that sharing, because conversion's identity fast path is positive-only.
 

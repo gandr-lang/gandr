@@ -26,6 +26,10 @@ gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 tracing = { workspace = true, optional = true }
 
+# The end-to-end tests replay the machine's traces through the kernel.
+[dev-dependencies]
+gandr-kernel-core.workspace = true
+
 [features]
 default = []
 # Evaluation/readback boundary diagnostics; no subscriber or std dependency.

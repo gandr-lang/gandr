@@ -51,8 +51,10 @@
 //! the sharing the checker sees, and id equality is conversion's only
 //! sharing-aware step. The one place the kernel creates sharing is the rewrite
 //! memo, among nodes it minted past the admission watermark, and nothing
-//! decides on that sharing. Conversion over this vocabulary performs no search,
-//! so it records no conversion trace.
+//! decides on that sharing. The kernel's own type conversion performs no
+//! search, so it records no conversion trace; [`replay()`] is where the kernel
+//! reads one, rechecking an untrusted engine's term-conversion verdict decision
+//! by decision.
 //!
 //! The crate's measurements, mutation findings and admission rules are in its
 //! `README.md`.
@@ -68,6 +70,7 @@ pub mod encoding;
 pub mod env;
 pub mod error;
 pub mod levels;
+pub mod replay;
 pub mod rewrite;
 pub mod support;
 mod witness;
@@ -116,6 +119,17 @@ pub use crate::error::ValueTypeHead;
 pub use crate::error::ValueTypeMismatch;
 pub use crate::error::ValueTypeWitness;
 pub use crate::levels::LevelContext;
+pub use crate::replay::EngineClaim;
+pub use crate::replay::KernelVerdict;
+pub use crate::replay::ReplayBudget;
+pub use crate::replay::ReplayDecline;
+pub use crate::replay::ReplayNode;
+pub use crate::replay::ReplayRefusal;
+pub use crate::replay::ReplaySides;
+pub use crate::replay::TracePosition;
+pub use crate::replay::Unfoldable;
+pub use crate::replay::Unfoldings;
+pub use crate::replay::replay;
 pub use crate::rewrite::BinderDepth;
 pub use crate::rewrite::RewriteMemo;
 pub use crate::rewrite::RewriteOutcome;

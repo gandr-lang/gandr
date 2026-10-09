@@ -588,15 +588,7 @@ where
 /// - hypothesis: L3 — as [`shift_value_type`]; the residue is the three binding
 ///   formers, whose bound positions each step the depth in by one.
 /// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
-// No production caller yet: the checker reaches the shifting machine through
-// its value-type face and the substitution machine through its computation-type
-// face, and the other four faces exist because the machines are defined over all
-// four families rather than because a call site wanted them. The expectation is
-// scoped to the non-test build so it lapses — loudly — the moment one is wired.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "family face awaiting its first production caller")
-)]
+#[inline]
 #[must_use]
 pub(crate) fn shift_computation<M>(
     arena: &mut TermArena,
@@ -735,6 +727,40 @@ where
 {
     let rewrite = Rewrite::Substitute { replacement };
     run_rewrite(arena, table, memo, rewrite, AnyNode::Value(subject)).value_or(subject)
+}
+
+/// The computation `subject` with its innermost binder instantiated at
+/// `replacement`; see [`substitute_comp_type`].
+///
+/// # Specification
+/// - requires: as [`substitute_comp_type`].
+/// - ensures: as [`substitute_comp_type`], over the computation family.
+/// - provides: the computation half of the substitution machine: the β-step a
+///   conversion replay fires when a lambda meets an argument, a returner meets
+///   a bind, or an injection meets a case. The inherited binder, session, and
+///   rewrite clauses remain prose-only for the same reason as
+///   [`substitute_comp_type`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`substitute_comp_type`]; the residue is the entry,
+///   carried by the replay's reduction witnesses.
+/// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
+#[inline]
+#[must_use]
+pub(crate) fn substitute_computation<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    subject: ComputationId,
+    replacement: ValueId,
+) -> ComputationId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let rewrite = Rewrite::Substitute { replacement };
+    run_rewrite(arena, table, memo, rewrite, AnyNode::Computation(subject)).computation_or(subject)
 }
 
 /// Drive one rewrite to completion over an explicit task stack and an explicit

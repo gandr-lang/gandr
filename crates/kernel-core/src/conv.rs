@@ -176,6 +176,58 @@ pub fn convertible_comp_types(
     converge(arena, ConversionGoal::CompType(left, right))
 }
 
+/// Decide structural equality of two values in one arena, without reducing.
+///
+/// # Specification
+/// - requires: nothing — an unreadable id is admissible input and fails closed.
+/// - ensures: [`Convertibility::Convertible`] exactly when the two are α-equal,
+///   descending into every computation they carry; no reduction and no
+///   unfolding fires.
+/// - provides: the closing check a conversion replay applies where a trace says
+///   two nodes met.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the walk is the one the type entries run, whose term arms
+///   are separated former by former; the residue is the entry, carried by the
+///   replay's closing witnesses.
+/// - witness: `conv::tests::code_comparison_separates_every_term_former_without_reducing`
+/// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+#[inline]
+#[must_use]
+pub(crate) fn equal_values(
+    arena: &TermArena,
+    left: ValueId,
+    right: ValueId,
+) -> Convertibility
+{
+    converge(arena, ConversionGoal::Value(left, right))
+}
+
+/// Decide structural equality of two computations; see [`equal_values`].
+///
+/// # Specification
+/// - requires: as [`equal_values`].
+/// - ensures: as [`equal_values`], over the computation family.
+/// - provides: as [`equal_values`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`equal_values`].
+/// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+#[inline]
+#[must_use]
+pub(crate) fn equal_computations(
+    arena: &TermArena,
+    left: ComputationId,
+    right: ComputationId,
+) -> Convertibility
+{
+    converge(arena, ConversionGoal::Computation(left, right))
+}
+
 /// Convert a synthesized value type against an expected one, building the
 /// mismatch on divergence.
 ///

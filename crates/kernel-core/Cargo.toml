@@ -3,7 +3,7 @@ name = "gandr-kernel-core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The kernel's defunctionalized checking machine, structural conversion, admission choke point, and the content-keyed check memo wired as the default path"
+description = "The kernel's defunctionalized checking machine, structural conversion, admission choke point, the content-keyed check memo wired as the default path, and the sequential replay of conversion traces"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -13,11 +13,13 @@ publish.workspace = true
 
 # The certified trusted base uses kernel crates and core/alloc. Pinned
 # arithmetic and absence types add no runtime allocation or std dependency.
-# The anodized facade supplies core-only specification helpers; logic/BigInt
-# stays disabled. Dev-dependencies are outside shipped trust.
+# The conversion-decision seam is the vocabulary the replay reads an engine's
+# trace in. The anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled. Dev-dependencies are outside shipped trust.
 [dependencies]
 anodized.workspace = true
 gandr-kernel-check-memo.workspace = true
+gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 quenchant-arith.workspace = true

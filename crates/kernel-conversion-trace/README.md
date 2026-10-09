@@ -42,7 +42,7 @@ The conversion-decision seam between an untrusted convertibility engine and the 
 
 ## Expected features
 
-- **A strategy and a replay.** The consumer supplies the convertibility engine that records into a sink and the sequential rechecker that consumes a `TraceLog`. In this workspace the engine is `gandr-core-nbe`'s conversion machine, which emits its winning derivation through `TraceSink<TraceNode>` in preorder. The crate's tests carry a miniature of each as the two sides of their differential.
+- **A strategy and a replay.** The consumer supplies the convertibility engine that records into a sink and the sequential rechecker that consumes a `TraceLog`. In this workspace the engine is `gandr-core-nbe`'s conversion machine, which emits its winning derivation through `TraceSink<TraceNode>` in preorder, and the rechecker is `gandr-kernel-core`'s `replay`, which reads the decisions with their identifiers mapped to the constants they name. The crate's tests carry a miniature of each as the two sides of their differential.
 - **An identifier space.** Every `Id` is meaningful in the consumer's own arena or value space, and the consumer keeps a trace within the scope in which its identifiers resolve.
 - **A lifetime.** A trace is a session artifact whose lifetime is the consumer's. Nothing persists, and a trace is no serialization contract.
 - **`--cfg anodized_panic` for enforcement.** Built with this `cfg` across the whole dependency graph, the `#[spec]` attributes check their clauses at runtime and panic on a violation. The enforcing test lane sets it.

@@ -517,7 +517,8 @@ impl MachineReport
 ///   built for this run alone, and a hit waits on the process already comparing
 ///   the same sides at the same level; the report counts the support edges the
 ///   memo's entries hold, zero for the null memo. A recording `sink` receives
-///   the winning derivation in preorder, and nothing for a decline; the null
+///   the winning derivation in preorder — the trace the kernel's sequential
+///   replay re-derives the verdict from — and nothing for a decline; the null
 ///   sink receives nothing, and the report counts zero derivations kept.
 /// - provides: step 4 of the conversion pipeline: the search the first three
 ///   steps defer to.
@@ -541,7 +542,9 @@ impl MachineReport
 ///   separated by a conversion answered through it, both verdicts and both
 ///   declines are exercised, recording is pinned against the null sink and the
 ///   live memo against the null memo verdict for verdict, and re-sharing is
-///   pinned by exact process and edge counts.
+///   pinned by exact process and edge counts. Every recorded derivation is
+///   replayed by the kernel to the same verdict, a tampered one is refused, and
+///   a decline under a starving schedule stays a decline through the kernel.
 /// - witness: `machine::tests::the_search_free_steps_answer_before_any_process`
 /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
@@ -552,6 +555,9 @@ impl MachineReport
 /// - witness: `machine::tests::the_sink_off_run_keeps_no_derivation`
 /// - witness: `machine::tests::the_memo_never_moves_a_verdict`
 /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+/// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+/// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+/// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
 #[inline]
 pub fn decide<S, M>(
     core: &CoreArena,
@@ -2737,13 +2743,16 @@ fn deeper(level: BinderLevel) -> Result<BinderLevel, ConversionFault>
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeMap;
     use alloc::vec::Vec;
 
+    use gandr_core_term::Computation;
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
     use gandr_core_term::DefinitionChain;
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::Transparency;
+    use gandr_core_term::Value;
     use gandr_core_term::ValueId;
     use gandr_core_term::Zone;
     use gandr_kernel_check_memo::CheckMemo;
@@ -2754,9 +2763,21 @@ mod tests
     use gandr_kernel_conversion_trace::SubgoalPosition;
     use gandr_kernel_conversion_trace::TraceLog;
     use gandr_kernel_conversion_trace::TraceSink;
+    use gandr_kernel_core::EngineClaim;
+    use gandr_kernel_core::KernelVerdict;
+    use gandr_kernel_core::ReplayBudget;
+    use gandr_kernel_core::ReplayDecline;
+    use gandr_kernel_core::ReplayNode;
+    use gandr_kernel_core::ReplayRefusal;
+    use gandr_kernel_core::ReplaySides;
+    use gandr_kernel_core::TracePosition;
+    use gandr_kernel_core::Unfoldable;
+    use gandr_kernel_core::Unfoldings;
+    use gandr_kernel_core::replay;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GlobalIndex;
+    use gandr_kernel_term::TermArena;
 
     use super::DeclineReason;
     use super::MachineReport;
@@ -2775,6 +2796,7 @@ mod tests
     use crate::eval::eval_value;
     use crate::policy::GranularityPolicy;
     use crate::policy::SchedulingPolicy;
+    use crate::policy::SchedulingStance;
     use crate::resharing::GoalSupport;
     use crate::resharing::ResharingMemo;
 
@@ -2797,6 +2819,19 @@ mod tests
         chain: LoweredChain,
         /// The definitional environment, which seals nothing.
         environment: DefinitionalEnvironment,
+        /// Every constant's body, at its admission position.
+        bodies: Vec<ValueId>,
+    }
+
+    /// Which earlier definitions a fixture's definition declares it mentions.
+    #[derive(Clone, Copy, Debug)]
+    enum Mentions
+    {
+        /// None: every definition sits at height one.
+        Nothing,
+        /// The one admitted just before it: constant `n` sits at height `n +
+        /// 1`.
+        Previous,
     }
 
     impl World
@@ -2838,13 +2873,55 @@ mod tests
             bodies: &[(GlobalIndex, ValueId)],
         ) -> Self
         {
+            Self::chained(core, bodies, Mentions::Nothing)
+        }
+
+        /// Admit one manifest definition per `(entry, body)` as
+        /// [`World::admit`] does, but with each definition declaring a
+        /// mention of the one before it, so constant `n` sits at height
+        /// `n + 1`.
+        ///
+        /// # Specification
+        /// - requires: as [`World::admit`].
+        /// - ensures: as [`World::admit`], with the heights rising by one per
+        ///   position.
+        /// - provides: the fixture whose heights a weighted schedule reads.
+        /// - panics: as [`World::admit`].
+        fn stacked(
+            core: CoreArena,
+            bodies: &[(GlobalIndex, ValueId)],
+        ) -> Self
+        {
+            Self::chained(core, bodies, Mentions::Previous)
+        }
+
+        /// Admit one manifest definition per `(entry, body)`, each declaring
+        /// the mentions `mentions` names.
+        ///
+        /// # Specification
+        /// - requires: as [`World::admit`].
+        /// - ensures: as [`World::admit`], at the heights the mentions give.
+        /// - provides: the one admission both fixtures share.
+        /// - panics: as [`World::admit`].
+        fn chained(
+            core: CoreArena,
+            bodies: &[(GlobalIndex, ValueId)],
+            mentions: Mentions,
+        ) -> Self
+        {
             let mut chain = DefinitionChain::new();
             for (position, &(entry, _)) in bodies.iter().enumerate() {
+                let previous = match (mentions, position.checked_sub(1)) {
+                    | (Mentions::Previous, Some(previous)) => {
+                        Vec::from([ConstantIndex::from(previous)])
+                    },
+                    | (Mentions::Nothing, _) | (Mentions::Previous, None) => Vec::new(),
+                };
                 let defined = chain.define(
                     ConstantIndex::from(position),
                     entry,
                     Transparency::Manifest,
-                    &[],
+                    &previous,
                 );
                 assert!(defined.is_ok(), "fixtures admit constants in order");
             }
@@ -2861,6 +2938,7 @@ mod tests
                 core,
                 chain,
                 environment: DefinitionalEnvironment::new(),
+                bodies: bodies.iter().map(|&(_, body)| body).collect(),
             }
         }
 
@@ -2971,6 +3049,403 @@ mod tests
             let mut log = TraceLog::new();
             let report = self.run(sides, &mut log);
             (report.verdict(), log.decisions().copied().collect())
+        }
+
+        /// Replay `decisions` for `sides` in the kernel, against the claim
+        /// `verdict` makes.
+        ///
+        /// # Specification
+        /// - requires: `sides` lie in this world's arena.
+        /// - ensures: the kernel's verdict over a translation of the world's
+        ///   terms and bodies, every admitted constant unfoldable and every
+        ///   other one opaque.
+        /// - provides: the end-to-end check every replay test runs.
+        /// - panics: as [`Kernel::translate`].
+        fn replayed(
+            &self,
+            sides: Sides,
+            verdict: MachineVerdict,
+            decisions: &[ConversionDecision<TraceNode>],
+        ) -> KernelVerdict
+        {
+            let mut kernel = Kernel::default();
+            let mut bodies = Vec::new();
+            for &body in &self.bodies {
+                bodies.push(Unfoldable::Body(kernel.value(&self.core, body)));
+            }
+            let sides = match sides {
+                | Sides::Values(left, right) => ReplaySides::Values(
+                    kernel.value(&self.core, left),
+                    kernel.value(&self.core, right),
+                ),
+                | Sides::Computations(left, right) => ReplaySides::Computations(
+                    kernel.computation(&self.core, left),
+                    kernel.computation(&self.core, right),
+                ),
+            };
+            let claim = match verdict {
+                | MachineVerdict::Convertible => EngineClaim::Convertible,
+                | MachineVerdict::NotConvertible => EngineClaim::NotConvertible,
+                | MachineVerdict::Declined(_) => EngineClaim::Declined,
+            };
+            replay(
+                &mut kernel.arena,
+                &Unfoldings::new(bodies),
+                sides,
+                claim,
+                decisions.iter().map(|&decision| kernel_decision(decision)),
+                ReplayBudget::DEFAULT,
+            )
+        }
+    }
+
+    /// The kernel's copy of a world's terms, each core node translated once.
+    #[derive(Default)]
+    struct Kernel
+    {
+        /// The kernel's terms.
+        arena: TermArena,
+        /// The kernel node of every core value translated.
+        values: BTreeMap<ValueId, gandr_kernel_term::ValueId>,
+        /// The kernel node of every core computation translated.
+        computations: BTreeMap<ComputationId, gandr_kernel_term::ComputationId>,
+    }
+
+    /// A core node awaiting translation.
+    #[derive(Clone, Copy, Debug)]
+    enum Node
+    {
+        /// A value.
+        Value(ValueId),
+        /// A computation.
+        Computation(ComputationId),
+    }
+
+    /// Whether a core node has its kernel copy yet.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Translated
+    {
+        /// The copy exists.
+        Made,
+        /// The copy is still to be minted.
+        Missing,
+    }
+
+    impl Kernel
+    {
+        /// The kernel copy of the core value `value`.
+        ///
+        /// # Specification
+        /// - requires: as [`Kernel::translate`].
+        /// - ensures: the kernel node `value` translates to.
+        /// - provides: a side's or a body's translation.
+        /// - panics: as [`Kernel::translate`].
+        fn value(
+            &mut self,
+            core: &CoreArena,
+            value: ValueId,
+        ) -> gandr_kernel_term::ValueId
+        {
+            self.translate(core, Node::Value(value));
+            *self.values.get(&value).expect("the value was translated")
+        }
+
+        /// The kernel copy of the core computation `computation`.
+        ///
+        /// # Specification
+        /// - requires: as [`Kernel::translate`].
+        /// - ensures: the kernel node `computation` translates to.
+        /// - provides: a side's translation.
+        /// - panics: as [`Kernel::translate`].
+        fn computation(
+            &mut self,
+            core: &CoreArena,
+            computation: ComputationId,
+        ) -> gandr_kernel_term::ComputationId
+        {
+            self.translate(core, Node::Computation(computation));
+            *self
+                .computations
+                .get(&computation)
+                .expect("the computation was translated")
+        }
+
+        /// Translate `root` and everything beneath it, children first.
+        ///
+        /// # Specification
+        /// - requires: every node beneath `root` resolves, and every variable
+        ///   is intuitionistic.
+        /// - ensures: `root` and every node beneath it have a kernel copy of
+        ///   the same shape, constants at the same positions.
+        /// - provides: the one translation the replay tests share.
+        /// - panics: on a dangling node or a linear variable, which no fixture
+        ///   builds.
+        ///
+        /// # Termination
+        /// - reason: the `while let Some(&node) = stack.last()` loop over an
+        ///   explicit stack, not recursion.
+        /// - measure: the reachable nodes without a copy, then the stack's
+        ///   length: a node is pushed only while it has no copy, beneath a
+        ///   parent minted after it, and popped once it has one.
+        fn translate(
+            &mut self,
+            core: &CoreArena,
+            root: Node,
+        )
+        {
+            let mut stack = Vec::from([root]);
+            while let Some(&node) = stack.last() {
+                let pending: Vec<Node> = self
+                    .children(core, node)
+                    .into_iter()
+                    .filter(|&child| self.translated(child) == Translated::Missing)
+                    .collect();
+                if pending.is_empty() {
+                    stack.pop();
+                    self.build(core, node);
+                }
+                else {
+                    stack.extend(pending);
+                }
+            }
+        }
+
+        /// Whether `node` has a kernel copy.
+        ///
+        /// # Specification
+        /// trivial.
+        fn translated(
+            &self,
+            node: Node,
+        ) -> Translated
+        {
+            let made = match node {
+                | Node::Value(value) => self.values.contains_key(&value),
+                | Node::Computation(computation) => self.computations.contains_key(&computation),
+            };
+            if made {
+                Translated::Made
+            }
+            else {
+                Translated::Missing
+            }
+        }
+
+        /// The nodes `node` is built from.
+        ///
+        /// # Specification
+        /// trivial.
+        fn children(
+            &self,
+            core: &CoreArena,
+            node: Node,
+        ) -> Vec<Node>
+        {
+            if self.translated(node) == Translated::Made {
+                return Vec::new();
+            }
+            match node {
+                | Node::Value(value) => {
+                    match core.value(value).expect("a fixture value resolves") {
+                        | &Value::Pair(first, second) => {
+                            Vec::from([Node::Value(first), Node::Value(second)])
+                        },
+                        | &(Value::Injection(_, body) | Value::Lift { body, .. }) => {
+                            Vec::from([Node::Value(body)])
+                        },
+                        | &Value::Thunk(body) => Vec::from([Node::Computation(body)]),
+                        | &(Value::Variable { .. }
+                        | Value::Constant(_)
+                        | Value::Unit
+                        | Value::Literal(_)) => Vec::new(),
+                    }
+                },
+                | Node::Computation(computation) => {
+                    match core
+                        .computation(computation)
+                        .expect("a fixture computation resolves")
+                    {
+                        | &Computation::Lambda(body) => Vec::from([Node::Computation(body)]),
+                        | &Computation::Application(head, argument) => {
+                            Vec::from([Node::Computation(head), Node::Value(argument)])
+                        },
+                        | &(Computation::Return(value) | Computation::Force(value)) => {
+                            Vec::from([Node::Value(value)])
+                        },
+                        | &Computation::Bind(bound, body) => {
+                            Vec::from([Node::Computation(bound), Node::Computation(body)])
+                        },
+                        | &Computation::Case {
+                            scrutinee,
+                            on_left,
+                            on_right,
+                        } => Vec::from([
+                            Node::Value(scrutinee),
+                            Node::Computation(on_left),
+                            Node::Computation(on_right),
+                        ]),
+                    }
+                },
+            }
+        }
+
+        /// Mint the kernel copy of `node`, whose children have theirs.
+        ///
+        /// # Specification
+        /// trivial.
+        fn build(
+            &mut self,
+            core: &CoreArena,
+            node: Node,
+        )
+        {
+            if self.translated(node) == Translated::Made {
+                return;
+            }
+            let value =
+                |kernel: &Self, value: ValueId| *kernel.values.get(&value).expect("children first");
+            let computation = |kernel: &Self, computation: ComputationId| {
+                *kernel
+                    .computations
+                    .get(&computation)
+                    .expect("children first")
+            };
+            match node {
+                | Node::Value(id) => {
+                    let copy = match core.value(id).expect("a fixture value resolves") {
+                        | &Value::Variable {
+                            zone: Zone::Intuitionistic,
+                            index,
+                        } => self.arena.value_variable(index),
+                        | &Value::Variable {
+                            zone: Zone::Linear, ..
+                        } => {
+                            panic!("the kernel's terms have no linear zone")
+                        },
+                        | &Value::Constant(constant) => self.arena.value_constant(constant),
+                        | &Value::Unit => self.arena.value_unit(),
+                        | &Value::Literal(ref literal) => self.arena.value_literal(literal.clone()),
+                        | &Value::Pair(first, second) => {
+                            let (first, second) = (value(self, first), value(self, second));
+                            self.arena.value_pair(first, second)
+                        },
+                        | &Value::Injection(side, body) => {
+                            let body = value(self, body);
+                            self.arena.value_injection(side, body)
+                        },
+                        | &Value::Thunk(body) => {
+                            let body = computation(self, body);
+                            self.arena.value_thunk(body)
+                        },
+                        | &Value::Lift { ref target, body } => {
+                            let body = value(self, body);
+                            self.arena.value_lift(target.clone(), body)
+                        },
+                    };
+                    self.values.insert(id, copy);
+                },
+                | Node::Computation(id) => {
+                    let copy = match *core
+                        .computation(id)
+                        .expect("a fixture computation resolves")
+                    {
+                        | Computation::Lambda(body) => {
+                            let body = computation(self, body);
+                            self.arena.computation_lambda(body)
+                        },
+                        | Computation::Application(head, argument) => {
+                            let (head, argument) = (computation(self, head), value(self, argument));
+                            self.arena.computation_application(head, argument)
+                        },
+                        | Computation::Return(returned) => {
+                            let returned = value(self, returned);
+                            self.arena.computation_return(returned)
+                        },
+                        | Computation::Bind(bound, body) => {
+                            let (bound, body) = (computation(self, bound), computation(self, body));
+                            self.arena.computation_bind(bound, body)
+                        },
+                        | Computation::Force(forced) => {
+                            let forced = value(self, forced);
+                            self.arena.computation_force(forced)
+                        },
+                        | Computation::Case {
+                            scrutinee,
+                            on_left,
+                            on_right,
+                        } => {
+                            let scrutinee = value(self, scrutinee);
+                            let (on_left, on_right) =
+                                (computation(self, on_left), computation(self, on_right));
+                            self.arena.computation_case(scrutinee, on_left, on_right)
+                        },
+                    };
+                    self.computations.insert(id, copy);
+                },
+            }
+        }
+    }
+
+    /// The decision the kernel reads for the machine's `decision`: a constant
+    /// keeps its position, and every other node is opaque to the replay.
+    ///
+    /// # Specification
+    /// trivial.
+    fn kernel_decision(decision: ConversionDecision<TraceNode>) -> ConversionDecision<ReplayNode>
+    {
+        let node = |node: TraceNode| match node {
+            | TraceNode::Constant(constant) => ReplayNode::Constant(constant),
+            | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
+        };
+        match decision {
+            | ConversionDecision::ReduceLeft { redex } => {
+                ConversionDecision::ReduceLeft { redex: node(redex) }
+            },
+            | ConversionDecision::ReduceRight { redex } => {
+                ConversionDecision::ReduceRight { redex: node(redex) }
+            },
+            | ConversionDecision::ConstShortcut { constant } => ConversionDecision::ConstShortcut {
+                constant: node(constant),
+            },
+            | ConversionDecision::Unfold { constant } => ConversionDecision::Unfold {
+                constant: node(constant),
+            },
+            | ConversionDecision::Postpone { constant } => ConversionDecision::Postpone {
+                constant: node(constant),
+            },
+            | ConversionDecision::Freeze { constant, side } => ConversionDecision::Freeze {
+                constant: node(constant),
+                side,
+            },
+            | ConversionDecision::EtaExpand { side, variable } => ConversionDecision::EtaExpand {
+                side,
+                variable: node(variable),
+            },
+            | ConversionDecision::Force { thunk } => {
+                ConversionDecision::Force { thunk: node(thunk) }
+            },
+            | ConversionDecision::ComparedShared { left, right } => {
+                ConversionDecision::ComparedShared {
+                    left: node(left),
+                    right: node(right),
+                }
+            },
+            | ConversionDecision::NegativeSubgoal { position } => {
+                ConversionDecision::NegativeSubgoal { position }
+            },
+        }
+    }
+
+    /// The certified kernel verdict a machine verdict corresponds to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn certified(verdict: MachineVerdict) -> KernelVerdict
+    {
+        match verdict {
+            | MachineVerdict::Convertible => KernelVerdict::Convertible,
+            | MachineVerdict::NotConvertible => KernelVerdict::NotConvertible,
+            | MachineVerdict::Declined(_) => KernelVerdict::Declined(ReplayDecline::EngineDeclined),
         }
     }
 
@@ -3896,5 +4371,161 @@ mod tests
                 "{sides:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_kernel_certifies_every_catalogue_and_ladder_trace()
+    {
+        let (world, cases) = catalogue();
+        for (sides, expected) in cases {
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(expected, verdict, "{sides:?}");
+            assert_eq!(
+                certified(verdict),
+                world.replayed(sides, verdict, &decisions),
+                "{sides:?}: {decisions:?}"
+            );
+        }
+        let (world, rungs) = ladders();
+        for sides in rungs {
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(MachineVerdict::Convertible, verdict, "{sides:?}");
+            assert_eq!(
+                KernelVerdict::Convertible,
+                world.replayed(sides, verdict, &decisions),
+                "{sides:?}: {decisions:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_trace_naming_the_wrong_branch_is_refused()
+    {
+        let (world, cases) = catalogue();
+        for (sides, _) in cases {
+            let (verdict, decisions) = world.traced(sides);
+            let opposite = match verdict {
+                | MachineVerdict::Convertible => MachineVerdict::NotConvertible,
+                | MachineVerdict::NotConvertible => MachineVerdict::Convertible,
+                | MachineVerdict::Declined(reason) => MachineVerdict::Declined(reason),
+            };
+            assert!(
+                matches!(
+                    world.replayed(sides, opposite, &decisions),
+                    KernelVerdict::Declined(ReplayDecline::Refused(_))
+                ),
+                "a derivation of one verdict never replays as the other: {sides:?}"
+            );
+        }
+
+        let mut core = CoreArena::new();
+        let first = core.value_unit();
+        let second = core.value_unit();
+        let zero = core.value_constant(Name::Zero.constant());
+        let one = core.value_constant(Name::One.constant());
+        let world = World::new(core, &[(Name::Zero, first), (Name::One, second)]);
+        let sides = Sides::Values(zero, one);
+        let (verdict, mut decisions) = world.traced(sides);
+        let Some(last) = decisions.last_mut()
+        else {
+            panic!("two defined heads unfold before they meet");
+        };
+        assert_eq!(
+            ConversionDecision::ReduceRight {
+                redex: named(Name::One)
+            },
+            *last
+        );
+        *last = ConversionDecision::ReduceLeft {
+            redex: named(Name::One),
+        };
+        assert_eq!(
+            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::from(4_usize),
+            })),
+            world.replayed(sides, verdict, &decisions),
+            "the right side's unfolding read on the left, where the head is already unit"
+        );
+    }
+
+    /// The pair's first components diverge — the left one forces a
+    /// definition that runs Ω, at height one — and its second components
+    /// refute after sixteen forced unfoldings down a chain whose head starts
+    /// at height seventeen. A fair schedule gives the refutation every other
+    /// turn and answers well inside the budget; the height-weighted schedule
+    /// gives the shallow divergence the turns, so the same budget runs out
+    /// first. The machine's decline is the kernel's: it has no search of its
+    /// own, so it replays nothing and certifies nothing, while the fair run's
+    /// trace replays without ever entering the divergence.
+    #[test]
+    fn an_unlucky_schedule_declines_and_the_kernel_with_it()
+    {
+        let mut core = CoreArena::new();
+        let occurrence = innermost(&mut core);
+        let self_applied = call(&mut core, occurrence, &[occurrence]);
+        let lambda = core.computation_lambda(self_applied);
+        let omega = core.value_thunk(lambda);
+        let looping = call(&mut core, omega, &[omega]);
+        let diverging = core.value_thunk(looping);
+        let mut bodies = Vec::new();
+        let runaway = next_constant(&mut bodies, diverging);
+        let unit = core.value_unit();
+        let mut deep = next_constant(&mut bodies, unit);
+        for _height in 0_u32 .. 15_u32 {
+            let below = core.value_constant(deep);
+            deep = next_constant(&mut bodies, below);
+        }
+        let runaway = core.value_constant(runaway);
+        let forced = core.computation_force(runaway);
+        let started = core.value_thunk(forced);
+        let returned = core.computation_return(unit);
+        let settled = core.value_thunk(returned);
+        let deep = core.value_constant(deep);
+        let units = core.value_pair(unit, unit);
+        let left = core.value_pair(started, deep);
+        let right = core.value_pair(settled, units);
+        let world = World::stacked(core, &bodies);
+        let sides = Sides::Values(left, right);
+
+        let budget = StepBudget::from(2_000_u64);
+        let under = |stance| {
+            MachineSettings::new(
+                SchedulingPolicy::new(stance),
+                GranularityPolicy::default(),
+                budget,
+            )
+        };
+        let mut log = TraceLog::new();
+        let fair = world.run_under(under(SchedulingStance::UniformFair), sides, &mut log);
+        assert_eq!(
+            MachineVerdict::NotConvertible,
+            fair.verdict(),
+            "the fair schedule reaches the refutation in {} steps",
+            u64::from(fair.steps())
+        );
+        let decisions: Vec<_> = log.decisions().copied().collect();
+        assert_eq!(
+            KernelVerdict::NotConvertible,
+            world.replayed(sides, fair.verdict(), &decisions),
+            "{decisions:?}"
+        );
+
+        let mut log = TraceLog::new();
+        let starved = world.run_under(under(SchedulingStance::HeightWeighted), sides, &mut log);
+        assert_eq!(
+            MachineVerdict::Declined(DeclineReason::Budget),
+            starved.verdict(),
+            "the weighted schedule spends the budget on the divergence"
+        );
+        let decisions: Vec<_> = log.decisions().copied().collect();
+        assert!(
+            decisions.is_empty(),
+            "a decline emits no derivation: {decisions:?}"
+        );
+        assert_eq!(
+            KernelVerdict::Declined(ReplayDecline::EngineDeclined),
+            world.replayed(sides, starved.verdict(), &decisions),
+            "and the kernel declines with it, never reading the decline as a refutation"
+        );
     }
 }
