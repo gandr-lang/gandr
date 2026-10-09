@@ -1,0 +1,20 @@
+@[ refuses("LevelMismatch") ]
+def too_big : Type ;
+def too_big = Type ;
+
+@[ refuses("SortMismatch") ]
+def wrong_sort : Type[-] ;
+def wrong_sort = Integer ;
+
+@[ refuses("GradedBridge") ]
+def graded : Type ;
+def graded = +U[1] (-F Integer) ;
+
+def id(a : Type, x : a) -> -F a { ret x }
+
+def chosen : +U (-F Type) ;
+def chosen = thunk { ret Integer } ;
+
+@[ refuses("TypeMismatch") ]
+def escaped : +U (Integer -> -F Integer) ;
+def escaped = thunk { run t <- force chosen ; id(t) } ;

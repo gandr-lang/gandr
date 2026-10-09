@@ -1,0 +1,36 @@
+def small : Type ;
+def small = Integer ;
+
+def effect : Type[-] ;
+def effect = -F Integer ;
+
+def suspended : Type ;
+def suspended = +U (-F Integer) ;
+
+def universe : Type[+, 1] ;
+def universe = Type ;
+
+def widened : Type[+, 1] ;
+def widened = String ;
+
+def five : small ;
+def five = 5 ;
+
+def id(a : Type, x : a) -> -F a { ret x }
+
+def at_integer : +U (-F Integer) ;
+def at_integer = thunk { id(Integer, five) } ;
+
+def at_string : +U (-F String) ;
+def at_string = thunk { id(String, "text") } ;
+
+def at_small : +U (-F small) ;
+def at_small = thunk { id(small, five) } ;
+
+def perform(c : Type[-], t : +U c) -> c { force t }
+
+def performed : +U (-F Integer) ;
+def performed = thunk { perform(effect, thunk { ret 42 }) } ;
+
+def quoted : +U (-F Integer) ;
+def quoted = thunk { perform(-F Integer, thunk { ret 7 }) } ;

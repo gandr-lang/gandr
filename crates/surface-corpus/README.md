@@ -176,14 +176,17 @@ The language's sources live beside the library that settles them, under the two 
 
 | Directory | Holds | Expectations |
 | --------- | ----- | ------------ |
-| `strict/` | sources in the slice fragment: signatures and definitions, literals and the unit value, thunks, lambdas, returns, forces and applications | none: every declaration checks, owing nothing |
+| `strict/` | sources in the fragment: signatures and definitions, literals and the unit value, thunks, lambdas, returns, forces and applications; under `classifier/`, both universes, quotes, a code constant unfolding and a polymorphic function at several instances; under `pathological/`, the dependent instantiations whose codomains could capture | none: every declaration checks, owing nothing |
 | `fixture/fragment/` | one source per refusal the fragment's checker and lowering can raise at a declaration, and one owed signature | `refuses` or `owes` on each declaration |
+| `fixture/classifier/` | the universe families' refusals: a level too large, a sort mismatch, a graded bridge, and a bind whose body's type needs its binder | `refuses` on each refused declaration |
 | `fixture/model/`, `fixture/pathological/`, `fixture/surface/` | the language's earlier sources whose declarations the lowering reads, each verdict stated | `refuses` or `checks` on each declaration |
 | `fixture/pending/` | the language's earlier sources the fragment does not yet cover | none: membership by location ([below](#the-pending-set)) |
 
 The earlier sources are the language's own surface programs: the model programs, the pathological cases and the surface families, kept in their own subdirectories with their commentary removed. The parser reads every source here as its zero-obligation gate, and the highlighter's role golden in `gandr-surface-grammar` mirrors every source: a source added, moved between roots or removed is followed by `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-grammar`, which rewrites the golden to match.
 
 No count is pinned. The runner's report says how many sources each root holds, how many declarations settled, the ledger size and the seal, and its tests assert that each root holds declarations and that every row of the fragment's exercised table is carried. Adding a source changes a count and reddens no root; a source that stops settling reddens its root.
+
+A bind written in a block is always checked, because a block stands only in a thunk, a lambda or a function's tail, and each of those is checked against its declared type. The expected type is read outside the binder, so a body whose type needs the binder fails to convert with it and the fixture states `TypeMismatch`; the checker's `DependentBind` names the same mistake only where a bind synthesises its type, which no surface form reaches yet. The alternative was spelling the fixture around a synthesising bind, which the surface has no form for. The fixture's expectation changes to `DependentBind` when an ascription or a synthesising block lets a bind's type come from its body.
 
 ## The pending set
 
