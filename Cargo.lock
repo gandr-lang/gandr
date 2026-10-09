@@ -168,6 +168,7 @@ version = "0.0.0"
 dependencies = [
  "anodized",
  "gandr-core-term",
+ "gandr-kernel-conversion-trace",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "tracing",

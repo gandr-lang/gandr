@@ -65,6 +65,12 @@ use crate::arena::NeutralId;
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct BinderLevel(u32);
 
+impl BinderLevel
+{
+    /// The outermost level: the first binder opened from the empty context.
+    pub const FLOOR: Self = Self(0_u32);
+}
+
 impl From<u32> for BinderLevel
 {
     /// Read a `u32` as a binder level.

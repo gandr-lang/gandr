@@ -3,7 +3,7 @@ name = "gandr-core-nbe"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The glued value domain with its per-run arena and policy parameters, weak-head evaluation, readback, the search-free conversion steps, and the sharing overlay with its erasure"
+description = "The glued value domain with its per-run arena and policy parameters, weak-head evaluation, readback, the search-free conversion steps, the lazy concurrent conversion machine, and the sharing overlay with its erasure"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
@@ -12,12 +12,14 @@ categories = ["data-structures"]
 publish.workspace = true
 
 # The domain and its evaluator are built over the core language's syntax and
-# context, and read levels and the leaf vocabularies through them.
+# context, and read levels and the leaf vocabularies through them. The
+# conversion machine emits its derivation through the kernel's decision seam.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled in this no_std library.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 tracing = { workspace = true, optional = true }

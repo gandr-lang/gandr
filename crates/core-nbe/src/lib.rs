@@ -1,21 +1,24 @@
 //! Normalization by evaluation for the core language: the **glued value
-//! domain**, the per-run arena that owns it, its two policy parameters, the
-//! machine that evaluates a core term to weak head, and the machine that reads
-//! one back.
+//! domain**, the per-run arena that owns it, its policy parameters, the
+//! machine that evaluates a core term to weak head, the machine that reads one
+//! back, and the machine that decides conversion.
 //!
 //! - [`DomainArena`] owns every glued node one run produces. A node carries a
 //!   [`TermFace`], and a neutral carries an [`Unfolding`] beside its neutral
 //!   form.
 //! - [`ValueClosure`] and [`CompClosure`] suspend a body over a two-zone
 //!   [`Environment`].
-//! - [`SchedulingPolicy`] and [`DuplicationPolicy`] are the parameters the
-//!   domain is written against.
+//! - [`SchedulingPolicy`], [`DuplicationPolicy`] and [`GranularityPolicy`] are
+//!   the parameters the domain and its conversion machine are written against.
 //! - [`eval_value`] and [`eval_computation`] evaluate to weak head;
 //!   [`readback_value`] and [`readback_computation`] read back under a
 //!   [`ReadbackMode`].
 //! - [`convert_values`] and [`convert_computations`] run the conversion steps
 //!   that need no search — identity, the [`Guard`] every node is minted with,
 //!   and structural comparison — answering a [`Settlement`].
+//! - [`decide`] runs step 4, the lazy concurrent search over goals and
+//!   evaluation channels, answering a [`MachineVerdict`] and emitting its
+//!   winning derivation through a trace sink.
 //! - [`Overlay`] holds sharing syntax over the core language in four flat
 //!   families, minted only over children it holds and checked by
 //!   [`Overlay::validate`] over a heap worklist; [`erase_value`] and its
@@ -32,12 +35,15 @@ extern crate alloc;
 mod arena;
 mod closure;
 mod conv;
+mod derivation;
 mod domain;
 mod eval;
 mod guard;
+mod machine;
 mod overlay;
 mod policy;
 mod readback;
+mod rules;
 
 pub use crate::arena::CompClosureId;
 pub use crate::arena::DomainArena;
@@ -57,6 +63,7 @@ pub use crate::conv::Deferral;
 pub use crate::conv::Settlement;
 pub use crate::conv::convert_computations;
 pub use crate::conv::convert_values;
+pub use crate::derivation::DerivationCount;
 pub use crate::domain::BinderLevel;
 pub use crate::domain::CompTermFace;
 pub use crate::domain::DomainComp;
@@ -79,6 +86,13 @@ pub use crate::eval::eval_value;
 pub use crate::guard::ContentHash;
 pub use crate::guard::Guard;
 pub use crate::guard::GuardAnswer;
+pub use crate::machine::MachineReport;
+pub use crate::machine::MachineSettings;
+pub use crate::machine::MachineVerdict;
+pub use crate::machine::Problem;
+pub use crate::machine::ProcessCount;
+pub use crate::machine::TraceNode;
+pub use crate::machine::decide;
 pub use crate::overlay::Bound;
 pub use crate::overlay::CompGraft;
 pub use crate::overlay::CompNode;
@@ -110,6 +124,8 @@ pub use crate::overlay::erase_value_type;
 pub use crate::policy::Copied;
 pub use crate::policy::DuplicationPolicy;
 pub use crate::policy::DuplicationStance;
+pub use crate::policy::GranularityPolicy;
+pub use crate::policy::GranularityStance;
 pub use crate::policy::PolicyRefusal;
 pub use crate::policy::SchedulingPolicy;
 pub use crate::policy::SchedulingStance;

@@ -412,6 +412,7 @@ mod tests
     use super::TraceSink;
     use crate::decision::ConversionDecision;
     use crate::decision::ConversionSide;
+    use crate::decision::SubgoalPosition;
 
     /// An identifier standing in for a consumer's own node identifier.
     #[repr(transparent)]
@@ -486,7 +487,7 @@ mod tests
     }
 
     #[test]
-    fn the_nine_decision_kinds_are_distinct_values()
+    fn the_ten_decision_kinds_are_distinct_values()
     {
         let kinds = [
             ConversionDecision::ReduceLeft { redex: TestId(0) },
@@ -513,15 +514,19 @@ mod tests
                 left: TestId(0),
                 right: TestId(0),
             },
+            ConversionDecision::NegativeSubgoal {
+                position: SubgoalPosition::from(0_u32),
+            },
         ];
         let mut log: TraceLog<TestId> = TraceLog::new();
         for decision in kinds {
             log.record(decision);
         }
         assert_eq!(
-            DecisionCount::from(9),
+            DecisionCount::from(10),
             log.recorded_count(),
-            "the eight rows of the decision table name nine kinds, since unfold and postpone share a row"
+            "the eight rows of the decision table name nine kinds, since unfold and postpone share a row, and \
+             a refutation's negative subgoal is the tenth"
         );
         // Every kind carries the same identifier, so any two that compared equal
         // would be indistinguishable to a replay reading the trace.

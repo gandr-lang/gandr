@@ -34,6 +34,57 @@ pub enum ConversionSide
     Right,
 }
 
+/// Where one subgoal stands in a decomposition, counted from zero.
+///
+/// Both consumers enumerate a former's subgoals in one order — a spine's
+/// eliminations innermost first, a case's left branch before its right, a
+/// pair's first component before its second — so a position names the same
+/// subgoal on either side of the seam without either sharing an identifier.
+///
+/// # Specification
+/// - requires: the consumers agree on the enumeration order stated above.
+/// - ensures: the carried count is the subgoal's position in that order.
+/// - provides: the premise a refutation names, which is what keeps a replay of
+///   a refuted decomposition search-free. This stays prose: a data-item
+///   `#[spec]` states an invariant of one value, which the pinned expansion
+///   never checks at construction, and the ordering is an obligation on both
+///   consumers.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L0 — a newtype over a count; the residue is that two positions
+///   are distinct decisions, pinned by the decision-kind witness.
+/// - witness: `sink::tests::the_ten_decision_kinds_are_distinct_values`
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SubgoalPosition(u32);
+
+impl From<u32> for SubgoalPosition
+{
+    /// The subgoal at `position`, counted from zero.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: u32) -> Self
+    {
+        Self(position)
+    }
+}
+
+impl From<SubgoalPosition> for u32
+{
+    /// The count a position carries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: SubgoalPosition) -> Self
+    {
+        position.0
+    }
+}
+
 /// One decision made by a conversion strategy.
 ///
 /// The identifier type is owned by the consumer. In the untrusted engine it
@@ -72,12 +123,12 @@ pub enum ConversionSide
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the decision surface is which branch a decision names,
-///   and the disagreement class is finite: the nine kinds are enumerated
+///   and the disagreement class is finite: the ten kinds are enumerated
 ///   exhaustively and every pair is asserted to compare unequal while carrying
 ///   identical identifiers, so a vocabulary that collapsed two branches into
 ///   one is separated. The L2 rung above it is the replay, which refuses a
 ///   trace naming the wrong branch rather than agreeing with it.
-/// - witness: `sink::tests::the_nine_decision_kinds_are_distinct_values`
+/// - witness: `sink::tests::the_ten_decision_kinds_are_distinct_values`
 /// - witness: `differential::differential::a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with`
 /// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -143,5 +194,13 @@ pub enum ConversionDecision<Id>
         left: Id,
         /// The right consumer-owned node identifier.
         right: Id,
+    },
+    /// A decomposition was refuted by one of its subgoals: the single
+    /// negative premise of the rule separating two applications of one rigid
+    /// head, and of every former compared child by child.
+    NegativeSubgoal
+    {
+        /// Which subgoal, in the order [`SubgoalPosition`] states.
+        position: SubgoalPosition,
     },
 }

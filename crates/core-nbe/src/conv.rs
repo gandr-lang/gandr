@@ -55,6 +55,7 @@ use crate::domain::DomainValue;
 use crate::domain::Elimination;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
+use crate::eval::EvalFault;
 use crate::guard::Guard;
 use crate::guard::GuardAnswer;
 
@@ -136,6 +137,17 @@ pub enum ConversionFault
         /// The core id the domain literal carried.
         literal: ValueId,
     },
+    /// A goal paired a value with a computation: an ill-typed input, which
+    /// this crate does not re-derive types to exclude.
+    Polarity,
+    /// An evaluation the conversion machine drove was refused, in the
+    /// evaluator's own vocabulary.
+    Evaluation(EvalFault),
+    /// The conversion machine's own bookkeeping disagreed with itself: a
+    /// process named another the machine does not hold. Unreachable while
+    /// the machine's own pushes are the only source of ids; reported rather
+    /// than asserted, so a miscount surfaces as a refusal.
+    MachineInvariant,
 }
 
 /// What a mismatch at a pair means where the pair stands.
@@ -165,7 +177,7 @@ enum Goal
 
 /// What steps 1 and 2 say about a pair.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-enum Early
+pub enum Early
 {
     /// Step 1 answered: one node, or one source term.
     Identical,
@@ -236,7 +248,7 @@ struct Walk<'run>
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — a side does not resolve.
-fn early_values(
+pub fn early_values(
     domain: &DomainArena,
     left: DomainValueId,
     right: DomainValueId,
@@ -275,7 +287,7 @@ fn early_values(
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — a side does not resolve.
-fn early_comps(
+pub fn early_comps(
     domain: &DomainArena,
     left: DomainCompId,
     right: DomainCompId,

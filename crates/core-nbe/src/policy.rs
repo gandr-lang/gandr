@@ -1,10 +1,12 @@
-//! The two policy parameters the value domain is written against: the
-//! scheduling policy and the duplication policy.
+//! The three policy parameters the value domain and its conversion machine
+//! are written against: the scheduling policy, the duplication policy and the
+//! channel-granularity policy.
 //!
-//! Both are parameters of the domain rather than constants inside it, because
-//! fixing either costs the domain's shape: a scheduler that hardcodes one share
-//! is rewritten rather than reconfigured, and a duplication rule baked into the
-//! value representation is not a rule that can be replaced.
+//! Each is a parameter rather than a constant, because fixing one costs the
+//! shape of what it governs: a scheduler that hardcodes one share is rewritten
+//! rather than reconfigured, a duplication rule baked into the value
+//! representation is not a rule that can be replaced, and a machine minting
+//! channels at one fixed grain moves to a finer one only by a rewrite.
 //!
 //! # A share never forecloses a proof
 //!
@@ -222,6 +224,13 @@ pub enum PolicyRefusal
         /// The stance that was refused.
         stance: DuplicationStance,
     },
+    /// The granularity stance installs only behind a certification trace,
+    /// for the same reason as the gated duplication stance.
+    GranularityGated
+    {
+        /// The stance that was refused.
+        stance: GranularityStance,
+    },
 }
 
 /// The duplication policy: which part of a shared value a duplication copies.
@@ -336,6 +345,92 @@ impl DuplicationPolicy
     }
 }
 
+/// Where a conversion run mints its evaluation channels.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum GranularityStance
+{
+    /// One channel per distinct subterm-table entry a definition body names:
+    /// two unfoldings of one body share one evaluation of it, whichever
+    /// definitions name it. The default, and the skeleton every finer stance
+    /// replays against.
+    #[default]
+    Skeleton,
+    /// Channels minted along spines as well, so a partial application shared
+    /// by two unfoldings is evaluated once. Representable so the parameter
+    /// admits it, and gated: it changes which evaluations are shared, so it
+    /// installs only behind the conversion trace that certifies it by replay.
+    Spinal,
+}
+
+/// The channel-granularity policy: how finely a conversion run shares the
+/// evaluations its processes demand.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct GranularityPolicy
+{
+    /// The installed stance.
+    stance: GranularityStance,
+}
+
+impl GranularityPolicy
+{
+    /// Install a stance.
+    ///
+    /// # Specification
+    /// - requires: nothing — every stance is admissible input, and the gated
+    ///   one is refused rather than unrepresentable.
+    /// - ensures: on success a policy at `stance`.
+    /// - provides: the installation point the transcription is built against
+    ///   from the start, so the finer stance arrives as a policy move rather
+    ///   than a rewrite of the machine.
+    /// - fails: [`PolicyRefusal::GranularityGated`] for the spinal stance,
+    ///   naming the stance it refused.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`PolicyRefusal::GranularityGated`] — the stance needs a certification
+    ///   trace, and installation takes none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surface is the gate, separated by
+    ///   installing the skeleton stance and the gated one, each asserted by
+    ///   variant, with the refusal asserted to name the stance it refused.
+    /// - witness: `policy::tests::the_finer_granularity_stance_is_gated`
+    #[inline]
+    #[spec(ensures: |ret| match stance {
+        | GranularityStance::Skeleton => {
+            ret.as_ref().is_ok_and(|policy| policy.stance() == stance)
+        },
+        | GranularityStance::Spinal => {
+            matches!(ret, Err(PolicyRefusal::GranularityGated { stance: refused }) if refused == stance)
+        },
+    })]
+    pub fn new(stance: GranularityStance) -> Result<Self, PolicyRefusal>
+    {
+        match stance {
+            | GranularityStance::Skeleton => Ok(Self { stance }),
+            | GranularityStance::Spinal => Err(PolicyRefusal::GranularityGated { stance }),
+        }
+    }
+
+    /// The installed stance.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the installed stance, which is
+    ///   [`GranularityStance::Skeleton`] for every policy that exists, since
+    ///   [`GranularityPolicy::new`] refuses the other.
+    /// - provides: the stance the machine's channel minting consults.
+    /// - fails: never.
+    /// - panics: none.
+    #[inline]
+    #[must_use]
+    pub fn stance(&self) -> GranularityStance
+    {
+        self.stance
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -344,6 +439,8 @@ mod tests
     use super::Copied;
     use super::DuplicationPolicy;
     use super::DuplicationStance;
+    use super::GranularityPolicy;
+    use super::GranularityStance;
     use super::PolicyRefusal;
     use super::SchedulingPolicy;
     use super::SchedulingStance;
@@ -433,6 +530,27 @@ mod tests
             }),
             DuplicationPolicy::new(DuplicationStance::Spinal),
             "the finer stance is representable and refused: the gate is the ordering, mechanized"
+        );
+    }
+
+    #[test]
+    fn the_finer_granularity_stance_is_gated()
+    {
+        assert_eq!(
+            Ok(GranularityStance::Skeleton),
+            GranularityPolicy::new(GranularityStance::Skeleton).map(|policy| policy.stance()),
+            "one channel per subterm-table entry installs and is the default"
+        );
+        assert_eq!(
+            GranularityStance::Skeleton,
+            GranularityPolicy::default().stance()
+        );
+        assert_eq!(
+            Err(PolicyRefusal::GranularityGated {
+                stance: GranularityStance::Spinal,
+            }),
+            GranularityPolicy::new(GranularityStance::Spinal),
+            "minting along spines is representable and refused until a trace certifies it"
         );
     }
 

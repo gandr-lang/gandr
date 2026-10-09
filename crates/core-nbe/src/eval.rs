@@ -77,6 +77,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionChain;
 use gandr_core_term::DefinitionEntry;
+use gandr_core_term::DefinitionHeight;
 use gandr_core_term::DefinitionalEnvironment;
 use gandr_core_term::ScopeId;
 use gandr_core_term::Transparency;
@@ -88,6 +89,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GlobalIndex;
 use gandr_kernel_term::Side;
 
+use crate::arena::CompClosureId;
 use crate::arena::DomainArena;
 use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
@@ -99,6 +101,7 @@ use crate::domain::CompTermFace;
 use crate::domain::DomainComp;
 use crate::domain::DomainValue;
 use crate::domain::Elimination;
+use crate::domain::Glued;
 use crate::domain::LiftTarget;
 use crate::domain::NeutralHead;
 use crate::domain::TermFace;
@@ -342,6 +345,27 @@ impl<'run> Definitions<'run>
         self.chain.bodies()
     }
 
+    /// The definitional height of `constant`, or the floor when the chain
+    /// holds no body for it.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unknown constant is admissible input.
+    /// - ensures: the height the chain recorded for `constant`, and
+    ///   [`DefinitionHeight`]'s floor for a position with no body.
+    /// - provides: the input the scheduling policy's share reads.
+    /// - fails: never.
+    /// - panics: none.
+    pub(crate) fn height(
+        &self,
+        constant: ConstantIndex,
+    ) -> DefinitionHeight
+    {
+        self.chain
+            .chain()
+            .entry(constant)
+            .map_or_else(DefinitionHeight::default, DefinitionEntry::height)
+    }
+
     /// The unfolding face a neutral headed by `constant` carries here.
     ///
     /// # Specification
@@ -469,6 +493,21 @@ enum Task
         on_right: ComputationId,
         /// The environment the branches are read in.
         env: EnvId,
+    },
+    /// Push a domain value the machine already holds onto the value stack:
+    /// the operand a re-applied spine's application frame consumes.
+    Supply(DomainValueId),
+    /// Sequence into an already-captured continuation once the bound
+    /// computation has a weak head: a spine's bind, re-applied.
+    BindClosure(CompClosureId),
+    /// Choose between two already-captured branches once the scrutinee has a
+    /// value: a spine's case, re-applied.
+    CaseClosures
+    {
+        /// The left branch.
+        on_left: CompClosureId,
+        /// The right branch.
+        on_right: CompClosureId,
     },
 }
 
@@ -910,7 +949,7 @@ fn composite_comp_face(
         | Err(_) => entry_form.is_none(),
     },
 )]
-fn extend_spine(
+pub(crate) fn extend_spine(
     domain: &mut DomainArena,
     neutral: NeutralId,
     elimination: Elimination,
@@ -1132,6 +1171,259 @@ pub fn eval_comp_within(
     Ok((produced, machine.fuel))
 }
 
+/// How far one slice of a resumable evaluation got.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Progress
+{
+    /// The evaluation reached its weak head.
+    Finished(Glued),
+    /// The slice ran out with work still on the task stack.
+    Paused,
+}
+
+/// Which result stack an evaluation's answer lands on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Answer
+{
+    /// A value: a definition body.
+    Value,
+    /// A weak-head computation: an entered closure or a re-applied spine.
+    Computation,
+}
+
+/// What a slice of the machine's loop ended on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SliceEnd
+{
+    /// The task stack emptied.
+    Drained,
+    /// The slice's budget ran out before the task stack emptied.
+    Spent,
+}
+
+/// An evaluation that runs in slices, its machine kept between them.
+///
+/// The conversion machine interleaves evaluations with comparisons, so an
+/// evaluation cannot run to its end in one call: a diverging one would hold
+/// the scheduler. This keeps the task stack, the result stacks and the
+/// environments across slices, so a resumed evaluation continues where it
+/// stopped rather than restarting.
+pub struct Evaluation<'run>
+{
+    /// The machine, with whatever the last slice left on its stacks.
+    machine: Machine<'run>,
+    /// Which stack the answer lands on.
+    answer: Answer,
+}
+
+impl<'run> Evaluation<'run>
+{
+    /// An evaluation of a closed definition body.
+    ///
+    /// # Specification
+    /// - requires: `body` is closed and resolves in the core arena the slices
+    ///   will read.
+    /// - ensures: an evaluation whose first slice starts at `body` in the empty
+    ///   environment and whose answer is a value.
+    /// - provides: the channel a skeleton-granularity run mints once per
+    ///   distinct body entry.
+    /// - fails: never.
+    /// - panics: none.
+    pub(crate) fn body(
+        definitions: Definitions<'run>,
+        body: ValueId,
+    ) -> Self
+    {
+        let mut machine = Machine::new(definitions, Fuel(0_u32));
+        let env = Machine::root_env();
+        machine.tasks.push(Task::Value { term: body, env });
+        Self {
+            machine,
+            answer: Answer::Value,
+        }
+    }
+
+    /// An evaluation re-applying `spine` to `head`, innermost elimination
+    /// first.
+    ///
+    /// # Specification
+    /// - requires: `spine` is non-empty and its first elimination eliminates a
+    ///   value — a force or a case — as every neutral's spine does.
+    /// - ensures: an evaluation whose answer is the weak head of `head` under
+    ///   `spine`'s eliminations, in order.
+    /// - provides: the unfolding of a neutral whose head's body is `head`: the
+    ///   body stands where the head stood and the spine runs again.
+    /// - fails: never here; an ill-shaped spine is refused by the slice that
+    ///   reaches it.
+    /// - panics: none.
+    pub(crate) fn eliminate(
+        definitions: Definitions<'run>,
+        head: DomainValueId,
+        spine: &[Elimination],
+    ) -> Self
+    {
+        let mut machine = Machine::new(definitions, Fuel(0_u32));
+        for elimination in spine.iter().rev() {
+            match *elimination {
+                | Elimination::Apply(argument) => {
+                    machine.tasks.push(Task::Apply);
+                    machine.tasks.push(Task::Supply(argument));
+                },
+                | Elimination::Force => machine.tasks.push(Task::Force),
+                | Elimination::Bind(body) => machine.tasks.push(Task::BindClosure(body)),
+                | Elimination::Case { on_left, on_right } => {
+                    machine.tasks.push(Task::CaseClosures { on_left, on_right });
+                },
+            }
+        }
+        machine.values.push(head);
+        Self {
+            machine,
+            answer: Answer::Computation,
+        }
+    }
+
+    /// An evaluation of a closure's body, in its environment extended by
+    /// `bound` when one is given.
+    ///
+    /// # Specification
+    /// - requires: `closure` resolves in `domain`.
+    /// - ensures: an evaluation whose answer is the weak head of the closure's
+    ///   body, read in its captured environment with `bound` as the innermost
+    ///   intuitionistic binding when it is [`Bound::Variable`].
+    /// - provides: the two closure channels: entering a thunk, and opening a
+    ///   binder under a fresh variable.
+    /// - fails: [`EvalFault::Domain`] when `closure` does not resolve.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EvalFault::Domain`] — `closure` names no closure of `domain`.
+    pub(crate) fn enter(
+        definitions: Definitions<'run>,
+        domain: &DomainArena,
+        closure: CompClosureId,
+        bound: Bound,
+    ) -> Result<Self, EvalFault>
+    {
+        let held = domain
+            .comp_closure(closure)
+            .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+        let mut environment = held.environment().clone();
+        if let Bound::Variable(variable) = bound {
+            environment.extend(Zone::Intuitionistic, variable);
+        }
+        let term = held.body();
+        let mut machine = Machine::new(definitions, Fuel(0_u32));
+        let env = machine.hold_env(environment);
+        machine.tasks.push(Task::Comp { term, env });
+        Ok(Self {
+            machine,
+            answer: Answer::Computation,
+        })
+    }
+
+    /// Run one slice of at most `slice` steps.
+    ///
+    /// # Specification
+    /// - requires: `core` and `domain` are the arenas every earlier slice of
+    ///   this evaluation read and minted into.
+    /// - ensures: [`Progress::Finished`] with the answer when the task stack
+    ///   emptied within the slice, [`Progress::Paused`] otherwise, paired with
+    ///   the steps the slice spent, which never exceed `slice`. No task is lost
+    ///   at a pause: the budget is checked before a task is popped.
+    /// - provides: the resumable step a conversion's evaluation channel takes
+    ///   once per scheduler turn.
+    /// - fails: every variant of [`EvalFault`] except [`EvalFault::OutOfFuel`],
+    ///   which a pause replaces.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Every variant of [`EvalFault`] a step raises; see its documentation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are the pause and the finish,
+    ///   separated by a body evaluated in one ample slice against the same body
+    ///   driven to its answer through slices of one step each, which must
+    ///   agree.
+    /// - witness: `eval::tests::a_sliced_evaluation_agrees_with_an_unsliced_one`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |pair| u32::from(pair.1) <= u32::from(slice)))]
+    pub(crate) fn resume(
+        &mut self,
+        core: &CoreArena,
+        domain: &mut DomainArena,
+        slice: Fuel,
+    ) -> Result<(Progress, Fuel), EvalFault>
+    {
+        self.machine.fuel = slice;
+        let end = run_slice(core, domain, &mut self.machine)?;
+        let spent = Fuel(u32::from(slice).saturating_sub(u32::from(self.machine.fuel)));
+        match end {
+            | SliceEnd::Spent => Ok((Progress::Paused, spent)),
+            | SliceEnd::Drained => {
+                let answer = match self.answer {
+                    | Answer::Value => Glued::Value(self.machine.pop_value()?),
+                    | Answer::Computation => Glued::Computation(self.machine.pop_comp()?),
+                };
+                Ok((Progress::Finished(answer), spent))
+            },
+        }
+    }
+}
+
+/// What a closure is entered with.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Bound
+{
+    /// Nothing: the closure's own environment, as forcing a thunk reads it.
+    Nothing,
+    /// A variable bound innermost, as opening a binder reads it.
+    Variable(DomainValueId),
+}
+
+/// Drive the machine until its task stack empties or its slice runs out.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`SliceEnd::Drained`] when the task stack is empty, having spent
+///   one unit of fuel per task popped; [`SliceEnd::Spent`] when the fuel ran
+///   out first, with every unpopped task still on the stack.
+/// - provides: the pausable loop under [`Evaluation::resume`], which differs
+///   from [`run`] only in checking the budget before it pops.
+/// - fails: every variant of [`EvalFault`] a step raises.
+/// - panics: none.
+///
+/// # Errors
+/// Every variant of [`EvalFault`] a step raises.
+///
+/// # Termination
+/// - reason: a loop, not recursion.
+/// - measure: the machine's fuel, which falls by one per iteration that pops.
+/// - boundedness: the loop ends when the fuel is zero or the task stack is
+///   empty, whichever is first.
+/// - input recursion: none.
+fn run_slice(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+) -> Result<SliceEnd, EvalFault>
+{
+    loop {
+        if machine.tasks.is_empty() {
+            return Ok(SliceEnd::Drained);
+        }
+        let Some(remaining) = u32::from(machine.fuel).checked_sub(1_u32)
+        else {
+            return Ok(SliceEnd::Spent);
+        };
+        let Some(task) = machine.tasks.pop()
+        else {
+            return Ok(SliceEnd::Drained);
+        };
+        machine.fuel = Fuel(remaining);
+        step(core, domain, machine, task)?;
+    }
+}
+
 /// Drive the machine until its task stack empties or its fuel runs out.
 ///
 /// # Specification
@@ -1263,6 +1555,14 @@ fn step(
             on_right,
             env,
         } => step_case(domain, machine, on_left, on_right, env),
+        | Task::Supply(value) => {
+            machine.values.push(value);
+            Ok(())
+        },
+        | Task::BindClosure(body) => step_bind_closure(domain, machine, body),
+        | Task::CaseClosures { on_left, on_right } => {
+            step_case_closures(domain, machine, on_left, on_right)
+        },
     }
 }
 
@@ -1772,6 +2072,119 @@ fn step_case(
     }
 }
 
+/// Sequence into an already-captured continuation once the bound computation
+/// has a weak head.
+///
+/// # Specification
+/// - requires: one computation result on the stack.
+/// - ensures: a returner pushes the continuation's body with the returned value
+///   bound innermost in its own environment; a neutral grows its spine by the
+///   same bind, the closure reused rather than re-captured.
+/// - provides: [`step_bind`] for a continuation a spine already captured, which
+///   is how an unfolding re-applies a stuck bind.
+/// - fails: [`EvalFault::BoundNonReturner`] when the bound computation is a
+///   lambda, [`EvalFault::Domain`] when a node does not resolve.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surface is the three-way match, separated by
+///   an unfolded body that returns into the bind and one that stays stuck.
+/// - witness: `eval::tests::a_reapplied_spine_fires_once_the_head_unfolds`
+fn step_bind_closure(
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    body: CompClosureId,
+) -> Result<(), EvalFault>
+{
+    let bound = machine.pop_comp()?;
+    let Some(node) = domain.computation(bound)
+    else {
+        return Err(EvalFault::Domain(DomainFault::Dangling));
+    };
+    match *node {
+        | DomainComp::Return { value, .. } => {
+            let closure = domain
+                .comp_closure(body)
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+            let term = closure.body();
+            let mut extended = closure.environment().clone();
+            extended.extend(Zone::Intuitionistic, value);
+            let env = machine.hold_env(extended);
+            machine.tasks.push(Task::Comp { term, env });
+            Ok(())
+        },
+        | DomainComp::Neutral { neutral, .. } => {
+            let grown = extend_spine(domain, neutral, Elimination::Bind(body))?;
+            machine
+                .comps
+                .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+            Ok(())
+        },
+        | DomainComp::Lambda { .. } => Err(EvalFault::BoundNonReturner),
+    }
+}
+
+/// Choose between two already-captured branches once the scrutinee has a
+/// value.
+///
+/// # Specification
+/// - requires: one value result on the stack.
+/// - ensures: an injection pushes the named branch's body with the injected
+///   value bound innermost in that branch's own environment; a neutral grows
+///   its spine by the same case, both closures reused.
+/// - provides: [`step_case`] for branches a spine already captured, which is
+///   how an unfolding re-applies a stuck case.
+/// - fails: [`EvalFault::CasedNonInjection`] for any other value,
+///   [`EvalFault::Domain`] when a node does not resolve.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surface is the three-way match and the side
+///   selection, separated by an unfolded scrutinee injecting on the right.
+/// - witness: `eval::tests::a_reapplied_spine_fires_once_the_head_unfolds`
+fn step_case_closures(
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    on_left: CompClosureId,
+    on_right: CompClosureId,
+) -> Result<(), EvalFault>
+{
+    let scrutinee = machine.pop_value()?;
+    let Some(node) = domain.value(scrutinee)
+    else {
+        return Err(EvalFault::Domain(DomainFault::Dangling));
+    };
+    match *node {
+        | DomainValue::Injection { side, body, .. } => {
+            let chosen = match side {
+                | Side::Left => on_left,
+                | Side::Right => on_right,
+            };
+            let closure = domain
+                .comp_closure(chosen)
+                .ok_or(EvalFault::Domain(DomainFault::Dangling))?;
+            let term = closure.body();
+            let mut extended = closure.environment().clone();
+            extended.extend(Zone::Intuitionistic, body);
+            let env = machine.hold_env(extended);
+            machine.tasks.push(Task::Comp { term, env });
+            Ok(())
+        },
+        | DomainValue::Neutral { neutral, .. } => {
+            let grown = extend_spine(domain, neutral, Elimination::Case { on_left, on_right })?;
+            machine
+                .comps
+                .push(domain.comp_neutral(grown, CompTermFace::Reduced));
+            Ok(())
+        },
+        | DomainValue::Unit { .. }
+        | DomainValue::Literal { .. }
+        | DomainValue::Pair { .. }
+        | DomainValue::Thunk { .. }
+        | DomainValue::Lift { .. } => Err(EvalFault::CasedNonInjection),
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -1795,20 +2208,26 @@ mod tests
     use gandr_kernel_term::Side;
     use gandr_kernel_term::Sign;
 
+    use super::Bound;
     use super::Definitions;
     use super::EvalFault;
+    use super::Evaluation;
     use super::Fuel;
     use super::LoweredChain;
+    use super::Progress;
     use super::eval_comp_within;
     use super::eval_computation;
     use super::eval_value;
     use super::face_of;
     use crate::arena::DomainArena;
     use crate::closure::Environment;
+    use crate::conv::Settlement;
+    use crate::conv::convert_computations;
     use crate::domain::CompTermFace;
     use crate::domain::DomainComp;
     use crate::domain::DomainValue;
     use crate::domain::Elimination;
+    use crate::domain::Glued;
     use crate::domain::LevelEntry;
     use crate::domain::NeutralHead;
     use crate::domain::TermFace;
@@ -2639,5 +3058,143 @@ mod tests
             "the first refusal is the answer, unchanged, and no partly lowered chain \
              escapes"
         );
+    }
+
+    #[test]
+    fn a_sliced_evaluation_agrees_with_an_unsliced_one()
+    {
+        let mut core = CoreArena::new();
+        let argument = core.value_unit();
+        let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
+        let doubled = core.value_pair(occurrence, occurrence);
+        let returned = core.computation_return(doubled);
+        let lambda = core.computation_lambda(returned);
+        let redex = core.computation_application(lambda, argument);
+        let delayed = core.value_thunk(redex);
+
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let unsliced = eval_computation(&core, &mut domain, definitions, ample(), redex)
+            .expect("a closed redex evaluates");
+        let suspended = eval_value(&core, &mut domain, definitions, ample(), delayed)
+            .expect("a thunk evaluates to its closure");
+        let Some(&DomainValue::Thunk { body, .. }) = domain.value(suspended)
+        else {
+            panic!("a thunk evaluates to a thunk");
+        };
+
+        let mut sliced = Evaluation::enter(definitions, &domain, body, Bound::Nothing)
+            .expect("the closure resolves");
+        let mut slices = 0_u32;
+        let answer = loop {
+            let (progress, spent) = sliced
+                .resume(&core, &mut domain, Fuel::from(1_u32))
+                .expect("no slice of a closed redex is refused");
+            assert!(
+                u32::from(spent) <= 1_u32,
+                "a slice never outspends its budget"
+            );
+            slices = slices.saturating_add(1_u32);
+            if let Progress::Finished(answer) = progress {
+                break answer;
+            }
+        };
+
+        assert!(
+            slices > 2_u32,
+            "the redex takes several steps, so one-step slices paused between them"
+        );
+        let Glued::Computation(sliced) = answer
+        else {
+            panic!("an entered closure answers a computation");
+        };
+        assert_ne!(unsliced, sliced, "two runs minted two nodes");
+        assert_eq!(
+            Ok(Settlement::StructurallyEqual),
+            convert_computations(&core, &domain, unsliced, sliced),
+            "and the paused run reached the weak head the uninterrupted one did"
+        );
+    }
+
+    #[test]
+    fn a_reapplied_spine_fires_once_the_head_unfolds()
+    {
+        let mut core = CoreArena::new();
+        let function = ConstantIndex::from(0_usize);
+        let injected = ConstantIndex::from(1_usize);
+        let unit = core.value_unit();
+        let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
+        let identity = core.computation_return(occurrence);
+        let lambda = core.computation_lambda(identity);
+        let function_body = core.value_thunk(lambda);
+        let injected_body = core.value_injection(Side::Left, unit);
+
+        let function_reference = core.value_constant(function);
+        let forced = core.computation_force(function_reference);
+        let applied = core.computation_application(forced, unit);
+        let passed_on = core.computation_return(occurrence);
+        let bound = core.computation_bind(applied, passed_on);
+        let injected_reference = core.value_constant(injected);
+        let on_left = core.computation_return(occurrence);
+        let on_right = core.computation_return(unit);
+        let cased = core.computation_case(injected_reference, on_left, on_right);
+
+        let mut chain = DefinitionChain::new();
+        for (constant, body) in [(function, 0_u32), (injected, 1_u32)] {
+            let defined = chain.define(
+                constant,
+                GlobalIndex::from(body),
+                Transparency::Manifest,
+                &[],
+            );
+            assert!(defined.is_ok());
+        }
+        let Ok(chain) = LoweredChain::lower(chain, |entry| {
+            Ok::<_, Infallible>(if entry.constant() == function {
+                function_body
+            }
+            else {
+                injected_body
+            })
+        });
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+
+        for (stuck, head_body) in [(bound, function_body), (cased, injected_body)] {
+            let evaluated = eval_computation(&core, &mut domain, definitions, ample(), stuck)
+                .expect("an eliminator over an unforced constant gets stuck");
+            let Some(&DomainComp::Neutral { neutral, .. }) = domain.computation(evaluated)
+            else {
+                panic!("the constant is not unfolded by evaluation, so the computation is stuck");
+            };
+            let spine = Vec::from(
+                domain
+                    .neutral(neutral)
+                    .expect("the neutral resolves")
+                    .spine(),
+            );
+            let head = eval_value(&core, &mut domain, definitions, ample(), head_body)
+                .expect("a definition body evaluates");
+
+            let mut reapplied = Evaluation::eliminate(definitions, head, &spine);
+            let (progress, _spent) = reapplied
+                .resume(&core, &mut domain, ample())
+                .expect("every elimination fits the unfolded head");
+            let Progress::Finished(Glued::Computation(answer)) = progress
+            else {
+                panic!("an ample slice reaches the weak head, a computation");
+            };
+            let Some(&DomainComp::Return { value, .. }) = domain.computation(answer)
+            else {
+                panic!("every spine here ends in a returner once its head unfolds");
+            };
+            assert!(
+                matches!(domain.value(value), Some(&DomainValue::Unit { .. })),
+                "the force, the application, the bind and the case each fired on the \
+                 unfolded head in order"
+            );
+        }
     }
 }

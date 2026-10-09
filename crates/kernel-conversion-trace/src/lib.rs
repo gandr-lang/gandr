@@ -47,6 +47,7 @@ pub mod sink;
 
 pub use crate::decision::ConversionDecision;
 pub use crate::decision::ConversionSide;
+pub use crate::decision::SubgoalPosition;
 pub use crate::sink::DecisionCount;
 pub use crate::sink::NullSink;
 pub use crate::sink::SinkActivity;

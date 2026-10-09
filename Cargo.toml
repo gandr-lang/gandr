@@ -96,6 +96,12 @@ path = "crates/core-term"
 [workspace.dependencies.gandr-kernel-check-memo]
 path = "crates/kernel-check-memo"
 
+# The conversion-decision seam between the untrusted engine and the kernel.
+# consumers:
+# - core-nbe
+[workspace.dependencies.gandr-kernel-conversion-trace]
+path = "crates/kernel-conversion-trace"
+
 # The certified kernel's universe-level oracle.
 # consumers:
 # - core-nbe
