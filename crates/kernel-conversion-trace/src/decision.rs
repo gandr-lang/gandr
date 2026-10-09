@@ -11,18 +11,16 @@
 /// - requires: nothing; both sides are always inhabited.
 /// - ensures: the two sides are distinct values, so a decision carrying a side
 ///   separates the leg it acted on from the other one.
-/// - provides: the side component of every one-sided decision, which is what
-///   makes replay search-free at a two-sided choice point. This stays prose: a
-///   data-item `#[spec]` states an invariant of one value, which the pinned
-///   expansion never checks at construction, and distinctness relates the two
-///   variants to each other.
+/// - provides: the side component that makes a one-sided choice replayable.
 /// - panics: none.
+/// - executable: none — distinct variants are fixed by the enum representation;
+///   their meaning relates a decision to the consumer's external comparison.
 ///
 /// # Adequacy
-/// - hypothesis: L0 — the two legs are separate variants rather than a flag, so
-///   a strategy cannot omit the side; the residue is that the variants must not
-///   compare equal, pinned pointwise by a pair of recorded decisions differing
-///   only in their side.
+/// - hypothesis: L0 — the enum distinguishes the two sides. L3 — a mixed
+///   recorded sequence preserves side-specific payloads, and replay refuses a
+///   reduction moved to the empty side. These observers separate side loss and
+///   side reversal for the bounded fixtures, not arbitrary consumer arenas.
 /// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
 /// - witness: `differential::differential::a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -44,17 +42,17 @@ pub enum ConversionSide
 /// # Specification
 /// - requires: the consumers agree on the enumeration order stated above.
 /// - ensures: the carried count is the subgoal's position in that order.
-/// - provides: the premise a refutation names, which is what keeps a replay of
-///   a refuted decomposition search-free. This stays prose: a data-item
-///   `#[spec]` states an invariant of one value, which the pinned expansion
-///   never checks at construction, and the ordering is an obligation on both
-///   consumers.
+/// - provides: the premise a refutation names, keeping its replay search-free.
 /// - panics: none.
+/// - executable: none — the consumer's decomposition and enumeration order are
+///   external to the carried position.
 ///
 /// # Adequacy
-/// - hypothesis: L0 — a newtype over a count; the residue is that two positions
-///   are distinct decisions, pinned by the decision-kind witness.
-/// - witness: `sink::tests::the_ten_decision_kinds_are_distinct_values`
+/// - hypothesis: L3 — a recorded sequence carries positions zero, one and the
+///   u32 ceiling without collapsing or narrowing them. Exact replay inputs
+///   distinguish lost positions; interpreting a position in an arbitrary
+///   decomposition remains the consumer's obligation.
+/// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SubgoalPosition(u32);
@@ -114,21 +112,19 @@ impl From<SubgoalPosition> for u32
 ///   those identifiers resolve.
 /// - ensures: a decision records the branch taken, so a replay reading the
 ///   sequence in order never chooses.
-/// - provides: the seam that makes the engine untrusted — the engine searches,
-///   the kernel replays what it found. This stays prose: the requirement is an
-///   obligation on the consumer's identifier space, which no value carries, and
-///   a data-item `#[spec]` states an invariant of one value that the pinned
-///   expansion never checks at construction.
+/// - provides: the seam where an untrusted engine records its search choices
+///   and a kernel replays them.
 /// - panics: none.
+/// - executable: none — identifier resolution and branch validity depend on the
+///   consumer's external arena and comparison state.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is which branch a decision names,
-///   and the disagreement class is finite: the ten kinds are enumerated
-///   exhaustively and every pair is asserted to compare unequal while carrying
-///   identical identifiers, so a vocabulary that collapsed two branches into
-///   one is separated. The L2 rung above it is the replay, which refuses a
-///   trace naming the wrong branch rather than agreeing with it.
-/// - witness: `sink::tests::the_ten_decision_kinds_are_distinct_values`
+/// - hypothesis: L0 — distinct variants retain the branch vocabulary. L3 — the
+///   mixed trace includes every kind, side changes, position boundaries and a
+///   repeated decision; exact storage distinguishes loss, duplication,
+///   deduplication and reordering. L2 — replay recomputes the verdict and
+///   refuses malformed branches on the bounded layered-term workload.
+/// - witness: `sink::tests::a_trace_log_retains_every_decision_in_order`
 /// - witness: `differential::differential::a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with`
 /// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

@@ -13,7 +13,7 @@ The conversion-decision seam between an untrusted convertibility engine and the 
 - [Static dispatch](#static-dispatch)
 - [Traces and equality](#traces-and-equality)
 - [Exhaustive matching](#exhaustive-matching)
-- [Contract attributes](#contract-attributes)
+- [Specification attributes](#specification-attributes)
 - [License](#license)
 
 <!-- tocstop -->
@@ -78,11 +78,13 @@ A trace records that two occurrences met, not that they agreed. A refutation and
 
 No enum here is `#[non_exhaustive]`. The workspace does not publish, so the attribute would protect no external consumer while forcing a wildcard arm at every match and defeating exhaustiveness exactly where a new variant should break every consumer.
 
-## Contract attributes
+## Specification attributes
 
-The `# Specification` prose is the statement of record; a `#[spec(...)]` attribute mirrors it wherever the clause is a runtime predicate over one call. Both shipped sinks carry them: `NullSink::record` keeps the count at zero and `NullSink::recorded_count` answers zero, while `TraceLog::record` grows the log by exactly one and `TraceLog::recorded_count` answers the number of decisions held. A null sink given storage, or a recording sink given a dropping append, breaks one of them.
+The `# Specification` prose states the obligation; `#[spec(...)]` checks the clauses expressible over one call. Both shipped sinks have exact count predicates: the null sink remains at zero, an append grows the log by one, and the count reports the held sequence's length. These predicates capture scalar counts, not owned snapshots.
 
-The other blocks state what no attribute can check, and each says so in its own `- provides:` line. `SinkActivity`, `ConversionSide`, `ConversionDecision`, `NullSink` and `TraceLog` are data items, where a `#[spec]` invariant is never checked at construction. `TraceSink` and its three methods are declarations: a clause on one would require the trait itself to carry `#[spec]` and change what an implementor implements. `TraceLog::decisions` returns `impl Iterator`, which a closure-form postcondition cannot name.
+Each nontrivial item has a bounded `# Adequacy` hypothesis. The storage witnesses cover every decision kind, side-specific payloads, position boundaries, repeated events and non-Copy identifiers through exact iteration and counts. The layered-term workload checks atom-derived verdicts and closing decisions; malformed traces exercise each refusal guard and error precedence. Reusing a populated log checks that a new refutation appends without clearing its prefix. These observations do not measure optimizer elimination of decision construction.
+
+A final `- executable: none` clause names the remaining boundary: external arenas or event histories, data construction that invokes no predicate, trait instrumentation that would change required implementor methods, unsupported associated constants, or the opaque iterator return type. The witnesses certify the shipped implementations on their stated domains, not arbitrary consumers or traces.
 
 ## License
 
