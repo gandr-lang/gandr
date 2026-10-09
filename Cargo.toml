@@ -13,6 +13,7 @@ members = [
   "crates/storage-values",
   "crates/surface-dispatcher",
   "crates/surface-driver",
+  "crates/surface-grammar",
   "crates/surface-syntax",
   "crates/theory-graphs",
   "crates/theory-orders",
@@ -129,6 +130,18 @@ path = "crates/storage-records"
 # - surface-driver
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
+
+# The concrete syntax tree and the grammar-facing mold vocabulary it carries.
+# consumers:
+# - surface-grammar
+[workspace.dependencies.gandr-surface-syntax]
+path = "crates/surface-syntax"
+
+# The precedence DAG, the walk machine, and the graph algorithms they read.
+# consumers:
+# - surface-grammar
+[workspace.dependencies.gandr-theory-graphs]
+path = "crates/theory-graphs"
 
 # Graph storage and algorithms. Reached only through `theory-graphs`, which
 # owns the dependency and exposes none of its types; the grammar's

@@ -1,0 +1,26 @@
+[package]
+name = "gandr-surface-grammar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The checked precedence-bounded grammar of the gandr surface: rules over a precedence DAG, three build-time gates, the mold table, the walk index, and the built-in surface"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "grammar", "no-std", "parsing", "precedence"]
+categories = ["no-std", "parser-implementations"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[dependencies]
+gandr-surface-syntax.workspace = true
+gandr-theory-graphs.workspace = true
+
+[lints]
+workspace = true

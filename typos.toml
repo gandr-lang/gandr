@@ -16,3 +16,5 @@ mis = "mis"
 # Decoder-error vocabulary: material that cannot be parsed at all, as distinct
 # from material that parses to something refused.
 unparseable = "unparseable"
+# Category-theory vocabulary: the hom family of a category, `Hom(a, b)`.
+hom = "hom"

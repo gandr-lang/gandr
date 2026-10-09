@@ -266,6 +266,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-surface-grammar"
+version = "0.0.0"
+dependencies = [
+ "gandr-surface-syntax",
+ "gandr-theory-graphs",
+]
+
+[[package]]
 name = "gandr-surface-syntax"
 version = "0.0.0"
 dependencies = [
