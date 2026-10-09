@@ -573,6 +573,7 @@ mod tests
     use gandr_surface_lowering::DeclarationCount;
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::lower_module;
+    use gandr_surface_lowering::namespace::Recognition;
     use gandr_surface_parser::parse;
     use gandr_surface_syntax::SourceText;
 
@@ -698,8 +699,14 @@ def broken = missing ;"#,
         let source = SourceText::from(r#"@[ refuses("BudgetExceeded") ] def a = 1 ;"#);
         let tree = parse(&grammar, source).expect("parses").into_tree();
         let mut arena = CoreArena::new();
-        let module = lower_module(&grammar, &tree, &mut arena, LoweringBudget::DEFAULT)
-            .expect("the module lowers");
+        let module = lower_module(
+            &grammar,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .expect("the module lowers");
         let verdicts = check_module(
             &mut CheckingContext::new(&mut arena, CheckBudget::from(0_usize)),
             &adapt(&module),

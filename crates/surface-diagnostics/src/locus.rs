@@ -164,12 +164,14 @@ impl Annotations
         let first = match refusal {
             | LoweringRefusal::DuplicateSignature { first, .. }
             | LoweringRefusal::DuplicateDefinition { first, .. }
+            | LoweringRefusal::DuplicateImportAlias { first, .. }
             | LoweringRefusal::DuplicateAttribute { first, .. } => Maybe::Present(Annotation {
                 span: first,
                 label: Label::First,
             }),
             | LoweringRefusal::UnresolvedName { .. }
             | LoweringRefusal::UnresolvedTypeHead { .. }
+            | LoweringRefusal::ShadowedBuiltin { .. }
             | LoweringRefusal::OutOfFragment { .. }
             | LoweringRefusal::MalformedLiteral { .. }
             | LoweringRefusal::MalformedForm { .. }

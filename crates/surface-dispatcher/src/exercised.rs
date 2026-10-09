@@ -461,6 +461,8 @@ fn lowering_row(
         }
         | LoweringRefusal::DuplicateSignature { .. }
         | LoweringRefusal::DuplicateDefinition { .. }
+        | LoweringRefusal::DuplicateImportAlias { .. }
+        | LoweringRefusal::ShadowedBuiltin { .. }
         | LoweringRefusal::MalformedLiteral { .. }
         | LoweringRefusal::MalformedForm { .. }
         | LoweringRefusal::UnknownAttribute { .. }

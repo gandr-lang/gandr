@@ -195,11 +195,13 @@ mod lowering
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::lower_module;
+    use gandr_surface_lowering::namespace::Recognition;
     use gandr_surface_syntax::SyntaxTree;
 
     use super::LoweringCount;
 
-    /// Lower `tree` into `arena`, counting the lowering in `lowerings`.
+    /// Lower `tree` into `arena` against the empty outermost scope, counting
+    /// the lowering in `lowerings`.
     ///
     /// # Specification
     /// - requires: `tree` was molded under `grammar`.
@@ -219,7 +221,13 @@ mod lowering
     ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
     {
         *lowerings = LoweringCount(lowerings.0.saturating_add(1_usize));
-        lower_module(grammar, tree, arena, LoweringBudget::DEFAULT)
+        lower_module(
+            grammar,
+            tree,
+            arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
     }
 }
 
@@ -453,6 +461,7 @@ mod tests
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
     use gandr_surface_lowering::lower_module;
+    use gandr_surface_lowering::namespace::Recognition;
     use gandr_surface_parser::parse;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
@@ -692,8 +701,14 @@ def h = 1 ;"#,
         let source = SourceText::from("def f(x: Integer) { ret x }");
         let tree = parse(&grammar, source).expect("parses").into_tree();
         let mut arena = CoreArena::new();
-        let module = lower_module(&grammar, &tree, &mut arena, LoweringBudget::DEFAULT)
-            .expect("the module lowers");
+        let module = lower_module(
+            &grammar,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .expect("the module lowers");
         assert!(
             matches!(
                 module.declarations()[0].outcome(),
@@ -717,8 +732,14 @@ def h = 1 ;"#,
         );
         let tree = parse(&grammar, source).expect("parses").into_tree();
         let mut arena = CoreArena::new();
-        let module = lower_module(&grammar, &tree, &mut arena, LoweringBudget::DEFAULT)
-            .expect("the module lowers");
+        let module = lower_module(
+            &grammar,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .expect("the module lowers");
         let declarations = adapt(&module);
         let [ref done, ref owed, ref bare, _, ref last] = *module.declarations()
         else {
@@ -776,8 +797,14 @@ def h = 1 ;"#,
         );
         let tree = parse(&grammar, source).expect("parses").into_tree();
         let mut arena = CoreArena::new();
-        let module = lower_module(&grammar, &tree, &mut arena, LoweringBudget::DEFAULT)
-            .expect("the module lowers");
+        let module = lower_module(
+            &grammar,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .expect("the module lowers");
         let verdicts = check_module(
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
             &adapt(&module),

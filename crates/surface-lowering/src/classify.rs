@@ -70,6 +70,8 @@ impl LoweringRefusal<'_>
             | Self::UnresolvedTypeHead { .. }
             | Self::DuplicateSignature { .. }
             | Self::DuplicateDefinition { .. }
+            | Self::DuplicateImportAlias { .. }
+            | Self::ShadowedBuiltin { .. }
             | Self::MalformedLiteral { .. }
             | Self::MalformedForm { .. }
             | Self::UnknownAttribute { .. }
@@ -117,7 +119,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn vocabulary() -> [LoweringRefusal<'static>; 15_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 17_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -194,6 +196,15 @@ mod tests
                 span: empty,
                 mold: MoldId::from(0_u32),
             },
+            LoweringRefusal::DuplicateImportAlias {
+                span: empty,
+                alias: SurfaceName::from("parse"),
+                first: empty,
+            },
+            LoweringRefusal::ShadowedBuiltin {
+                span: empty,
+                name: SurfaceName::from("list"),
+            },
         ]
     }
 
@@ -216,6 +227,8 @@ mod tests
             FailureClass::EngineFault,
             FailureClass::EngineFault,
             FailureClass::EngineFault,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

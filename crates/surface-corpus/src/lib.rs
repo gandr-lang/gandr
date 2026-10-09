@@ -51,6 +51,7 @@
 //! use gandr_surface_lowering::DeclarationOutcome;
 //! use gandr_surface_lowering::LoweringBudget;
 //! use gandr_surface_lowering::lower_module;
+//! use gandr_surface_lowering::namespace::Recognition;
 //! use gandr_surface_parser::parse;
 //! use gandr_surface_syntax::SourceText;
 //! use quenchant_shape::shape::Maybe;
@@ -62,7 +63,13 @@
 //! let pbg = built_in()?;
 //! let tree = parse(&pbg, source)?.into_tree();
 //! let mut arena = CoreArena::new();
-//! let module = lower_module(&pbg, &tree, &mut arena, LoweringBudget::DEFAULT)?;
+//! let module = lower_module(
+//!     &pbg,
+//!     &tree,
+//!     &mut arena,
+//!     LoweringBudget::DEFAULT,
+//!     Recognition::default(),
+//! )?;
 //!
 //! // The driver's adaptation: every declaration the lowering did not refuse.
 //! let declarations: Vec<Declaration> = module

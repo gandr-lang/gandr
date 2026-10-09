@@ -24,6 +24,7 @@ use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::RegisteredAttribute;
 use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::lower_module;
+use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
@@ -60,8 +61,14 @@ pub fn checked(source: SourceText<'_>) -> Checked<'_>
     );
     let tree = parsed.into_tree();
     let mut arena = CoreArena::new();
-    let module = lower_module(&pbg, &tree, &mut arena, LoweringBudget::DEFAULT)
-        .expect("the lowering reads the module");
+    let module = lower_module(
+        &pbg,
+        &tree,
+        &mut arena,
+        LoweringBudget::DEFAULT,
+        Recognition::default(),
+    )
+    .expect("the lowering reads the module");
     let declarations = declarations(&module);
     let verdicts = check_module(
         &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),

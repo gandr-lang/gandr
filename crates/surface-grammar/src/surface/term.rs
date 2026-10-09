@@ -252,14 +252,13 @@ fn declarations(
     ));
     out.push(codata);
 
-    // --- module declaration (checked-PBG surface and lowering) ---------------
-    // `module M { def ... }` and `module M : #{ field: Type, ... } { def ... }`.
-    // The shared `module type_identifier` opener owns one mold; the optional
-    // `:` is the sole discriminator for the transparent record-type ascription
-    // branch. The outer body admits the non-recursive def/signature family plus
-    // one lowercase nested module whose body is definition-only. Lowering
-    // resolves signatures, rejects duplicate members, preserves source order,
-    // and completes the final record.
+    // --- module declaration ----------------------------------------------------
+    // `module M { … }`, optionally ascribed against a `#{ … }` signature, `:`
+    // transparently or `:>` opaquely (`module_ascription_tail`). The shared
+    // `module type_identifier` opener owns one mold. The body is a repetition
+    // of `Sort::ModuleMember` holes: a definition, an attributed definition, or
+    // a nested module of either name case with its own optional ascription,
+    // whose body is the same repetition, so nesting depth is unbounded.
     out.push(r(
         RuleName("module_declaration"),
         Provenance("module_declaration"),
@@ -277,9 +276,7 @@ fn declarations(
 
     // --- module `import` -------------------------------
     // `import "URI" as name ;`. The URI is a plain string literal, so a new
-    // scheme needs no grammar change. A module and signature declaration
-    // family is not part of this surface: its block spelling (`{ … }` against
-    // `sig … end`) is unresolved, so only the import form is here.
+    // scheme needs no grammar change.
     out.push(r(
         RuleName("import_declaration"),
         Provenance("import_declaration"),

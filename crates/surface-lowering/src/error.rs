@@ -47,6 +47,7 @@ use crate::attribute::RegisteredAttribute;
 use crate::attribute::suggestion;
 use crate::form::FormName;
 use crate::form::Repair;
+use crate::import::ONE_SOURCE;
 use crate::lower::LoweringBudget;
 use crate::resolve::HeadArity;
 use crate::resolve::OperandCount;
@@ -231,6 +232,27 @@ pub enum LoweringRefusal<'source>
         first: ByteSpan,
     },
 
+    /// A second import binding an alias an earlier import already binds.
+    DuplicateImportAlias
+    {
+        /// The bytes the second import covers.
+        span: ByteSpan,
+        /// The alias imported twice.
+        alias: SurfaceName<'source>,
+        /// The bytes the first import covers.
+        first: ByteSpan,
+    },
+
+    /// A declared name or a binder over a builtin, under the policy that
+    /// forbids shadowing one.
+    ShadowedBuiltin
+    {
+        /// The bytes of the name that shadows.
+        span: ByteSpan,
+        /// The name as it was written.
+        name: SurfaceName<'source>,
+    },
+
     /// A form the fragment does not admit where it was written.
     OutOfFragment
     {
@@ -382,6 +404,15 @@ impl fmt::Display for LoweringRefusal<'_>
                     "`{name}` already has a definition at {first}; a second at {span}"
                 )
             },
+            | Self::DuplicateImportAlias { span, alias, first } => write!(
+                f,
+                "the import alias `{alias}` at {span} is already bound by the import at {first}: \
+                 {ONE_SOURCE}"
+            ),
+            | Self::ShadowedBuiltin { span, name } => write!(
+                f,
+                "`{name}` at {span} shadows a builtin name, which the active policy forbids"
+            ),
             | Self::OutOfFragment {
                 span,
                 form,
@@ -478,6 +509,8 @@ impl LoweringRefusal<'_>
             | Self::UnresolvedTypeHead { span, .. }
             | Self::DuplicateSignature { span, .. }
             | Self::DuplicateDefinition { span, .. }
+            | Self::DuplicateImportAlias { span, .. }
+            | Self::ShadowedBuiltin { span, .. }
             | Self::OutOfFragment { span, .. }
             | Self::MalformedLiteral { span, .. }
             | Self::MalformedForm { span, .. }
@@ -529,7 +562,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn every_variant() -> [LoweringRefusal<'static>; 15_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 17_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -606,6 +639,15 @@ mod tests
                 span: s(24_usize, 25_usize),
                 mold: MoldId::from(9_u32),
             },
+            LoweringRefusal::DuplicateImportAlias {
+                span: s(26_usize, 27_usize),
+                alias: SurfaceName::from("parse"),
+                first: s(0_usize, 1_usize),
+            },
+            LoweringRefusal::ShadowedBuiltin {
+                span: s(28_usize, 29_usize),
+                name: SurfaceName::from("list"),
+            },
         ]
     }
 
@@ -632,6 +674,8 @@ mod tests
             run,
             run,
             s(24_usize, 25_usize),
+            s(26_usize, 27_usize),
+            s(28_usize, 29_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {
@@ -668,6 +712,9 @@ mod tests
             "the tree was molded under grammar 0x0000000000000001, not the grammar \
              0x0000000000000002 it was lowered with",
             "the mold 9 at 24..25 is not in the grammar's table",
+            "the import alias `parse` at 26..27 is already bound by the import at 0..1: an \
+             import alias must name one source",
+            "`list` at 28..29 shadows a builtin name, which the active policy forbids",
         ];
 
         for (refusal, rendering) in every_variant().into_iter().zip(expected) {

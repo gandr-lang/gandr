@@ -114,6 +114,7 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::import::ModuleImports;
 use crate::module::Collected;
 use crate::module::DeclarationOutcome;
 use crate::module::DeclarationParts;
@@ -124,6 +125,13 @@ use crate::module::Operand;
 use crate::module::Payload;
 use crate::module::WrittenAttribute;
 use crate::module::collect;
+use crate::namespace::Binding;
+use crate::namespace::NamePath;
+use crate::namespace::Recognition;
+use crate::namespace::RecognitionSite;
+use crate::namespace::Recognized;
+use crate::namespace::Segment;
+use crate::namespace::Trie;
 use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::origin::OriginTable;
@@ -392,7 +400,9 @@ const fn family_of(former: Former) -> Family
         | Former::ArrowType
         | Former::ProductType
         | Former::ParenthesizedType => Family::Type,
-        | Former::Declaration | Former::AttributeBlock | Former::Unadmitted => Family::Neither,
+        | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Unadmitted => {
+            Family::Neither
+        },
     }
 }
 
@@ -676,6 +686,9 @@ struct Lowerer<'run, 'source>
     /// The binder frames the lambdas, the parameters and the statements
     /// extended.
     scope: Scope<'source>,
+    /// The outermost scope every declared name is declared in and every
+    /// binder is reported against.
+    recognition: Recognition,
     /// The remaining allowance.
     fuel: Fuel,
     /// The scratch reading of the form being classified.
@@ -691,12 +704,13 @@ struct Sink<'run>
     origins: &'run mut OriginTable,
 }
 
-/// Lower one module into `arena`.
+/// Lower one module into `arena`, declaring its names over `outermost`.
 ///
 /// # Specification
 /// - requires: `tree` was molded under `pbg` over the source being lowered;
 ///   `arena` is the arena the lowered module's ids are read against; `budget`
-///   bounds the work.
+///   bounds the work; `outermost` holds the seed tables and the shadow policy
+///   the module's names are declared against.
 /// - ensures: one declaration per distinct declared name, in admission order,
 ///   each carrying its admission position, the content identity of each of its
 ///   declaration forms, an origin token, and what its declarations amount to —
@@ -707,25 +721,34 @@ struct Sink<'run>
 ///   and types alike, the force, thunk and returner the lowering inserted
 ///   marked as inserted, and every attribute the module carries is resolved
 ///   against the registry and filed under the content identity of the
-///   declaration form it decorates.
+///   declaration form it decorates. Every import is kept in source order with
+///   its alias bound in the import scope and no address resolved. Every
+///   declared name is declared over `outermost` in admission order, tagged with
+///   its name's bytes, and every lambda, parameter and `run` binder is reported
+///   against it; the outermost scope is returned with the module.
 /// - provides: the whole surface-to-core step, in one pass over one tree with
 ///   one strictness and one verdict per name.
 /// - fails: [`LoweringRefusal::GrammarMismatch`] when the tree was molded under
 ///   another grammar; [`LoweringRefusal::OutOfFragment`] and
 ///   [`LoweringRefusal::MalformedForm`] when the module's own shape is wrong —
-///   a root that is not a module, a root child that is not a declaration, a
-///   declaration with no name, or an attribute block decorating nothing;
+///   a root that is not a module, a root child that is neither a declaration
+///   nor an import, a declaration with no name, an import out of shape, or an
+///   attribute block decorating nothing;
+///   [`LoweringRefusal::DuplicateImportAlias`] when two imports bind one alias;
 ///   [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold; and
 ///   [`LoweringRefusal::BudgetExceeded`] when the work outruns `budget`. A
-///   refusal inside a declaration is carried by that declaration instead, so
-///   one bad declaration does not hide the rest of the module.
+///   refusal inside a declaration is carried by that declaration instead —
+///   [`LoweringRefusal::ShadowedBuiltin`], a declared name or a binder over a
+///   builtin under the reject policy, included — so one bad declaration does
+///   not hide the rest of the module.
 /// - panics: none. Every tree lookup is checked and a position the tree does
 ///   not hold contributes nothing.
 ///
 /// # Errors
 /// [`LoweringRefusal::GrammarMismatch`] for a tree of another grammar,
-/// [`LoweringRefusal::OutOfFragment`] and [`LoweringRefusal::MalformedForm`]
-/// for a module whose own shape is not a list of declarations,
+/// [`LoweringRefusal::OutOfFragment`], [`LoweringRefusal::MalformedForm`] and
+/// [`LoweringRefusal::DuplicateImportAlias`] for a module whose own shape is
+/// not a list of declarations and well-formed imports,
 /// [`LoweringRefusal::UnknownMold`] for a foreign mold, and
 /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
 ///
@@ -790,12 +813,21 @@ struct Sink<'run>
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
 /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
 /// - witness: `lower::tests::a_module_past_the_allowance_is_refused`
+/// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
+/// - witness: `namespace::namespace::source_import_without_alias_becomes_a_refusal`
+/// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
+/// - witness: `recognition::recognition::a_shadowed_builtin_is_reported_as_a_warning`
+/// - witness: `recognition::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
+/// - witness: `recognition::recognition::user_shadowing_is_the_only_observable_delta`
+/// - witness: `recognition::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
 #[inline]
 pub fn lower_module<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
     arena: &mut CoreArena,
     budget: LoweringBudget,
+    outermost: Recognition,
 ) -> Result<LoweredModule<'source>, LoweringRefusal<'source>>
 {
     if tree.grammar() != pbg.fingerprint() {
@@ -804,14 +836,22 @@ pub fn lower_module<'source>(
             grammar: pbg.fingerprint(),
         });
     }
-    let empty = LoweredModule::new(Vec::new(), AttributeTable::new(), OriginTable::new());
+    let empty = |outermost| {
+        LoweredModule::new(
+            Vec::new(),
+            AttributeTable::new(),
+            OriginTable::new(),
+            ModuleImports::new(),
+            outermost,
+        )
+    };
     let Some(root) = tree.node(tree.root())
     else {
-        return Ok(empty);
+        return Ok(empty(outermost));
     };
     match shape_of(pbg, root)? {
         | Shape::Root => {},
-        | Shape::Layout => return Ok(empty),
+        | Shape::Layout => return Ok(empty(outermost)),
         | Shape::Form { name, .. } => {
             return Err(LoweringRefusal::OutOfFragment {
                 span: root.span(),
@@ -830,7 +870,8 @@ pub fn lower_module<'source>(
     }
     let mut fuel = Fuel::new(budget);
     let collected = collect(pbg, tree, &mut fuel)?;
-    let mut lowerer = Lowerer::new(pbg, tree, collected, fuel);
+    let mut lowerer = Lowerer::new(pbg, tree, collected, fuel, outermost);
+    lowerer.declare();
     lowerer.seed()?;
     lowerer.classify()?;
     let mut origins = OriginTable::new();
@@ -841,8 +882,19 @@ pub fn lower_module<'source>(
     let mut attributes = AttributeTable::new();
     lowerer.attribute(&mut attributes)?;
     let declarations = lowerer.assemble(&mut origins);
+    let Lowerer {
+        collected,
+        recognition,
+        ..
+    } = lowerer;
 
-    Ok(LoweredModule::new(declarations, attributes, origins))
+    Ok(LoweredModule::new(
+        declarations,
+        attributes,
+        origins,
+        collected.imports,
+        recognition,
+    ))
 }
 
 impl<'run, 'source> Lowerer<'run, 'source>
@@ -856,6 +908,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         tree: &'run SyntaxTree<'source>,
         collected: Collected<'source>,
         fuel: Fuel,
+        recognition: Recognition,
     ) -> Self
     {
         let count = usize::from(tree.node_count());
@@ -883,8 +936,87 @@ impl<'run, 'source> Lowerer<'run, 'source>
             statements: Vec::new(),
             parameters: Vec::new(),
             scope: Scope::new(),
+            recognition,
             fuel,
             pieces: Pieces::new(),
+        }
+    }
+
+    /// Declare every declared name over the outermost scope, in admission
+    /// order.
+    ///
+    /// # Specification
+    /// - requires: the collection pass has run.
+    /// - ensures: each name is declared as a definition tagged with its name
+    ///   tile's bytes, displacing the builtin subtree it lands on; a
+    ///   declaration the shadow policy refuses holds
+    ///   [`LoweringRefusal::ShadowedBuiltin`] at its name, offered at its
+    ///   declaration form, and the scope keeps the builtin.
+    /// - provides: the outermost half of the module's names.
+    /// - fails: never; a refusal is carried by its declaration.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration over a builtin under each policy and
+    ///   over nothing, asserted as the exact record, outcome and resolution.
+    /// - witness: `recognition::recognition::a_shadowed_builtin_is_reported_as_a_warning`
+    /// - witness: `recognition::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
+    /// - witness: `recognition::recognition::user_shadowing_is_the_only_observable_delta`
+    fn declare(&mut self)
+    {
+        for slot in &mut self.collected.slots {
+            let site = slot.named.span;
+            let mut subtree = Trie::empty();
+            let _fresh = subtree.insert(
+                &NamePath::root(),
+                Binding::new(Recognized::Definition, RecognitionSite::Source(site)),
+            );
+            let declared =
+                self.recognition
+                    .declare(Segment::from(slot.name.as_ref()), subtree, site);
+            if let Err(_refused) = declared {
+                slot.refuse(slot.introduced_by.node, LoweringRefusal::ShadowedBuiltin {
+                    span: site,
+                    name: slot.name,
+                });
+            }
+        }
+    }
+
+    /// Report the binder `binder`, spelling `name`, against the outermost
+    /// scope.
+    ///
+    /// # Specification
+    /// - requires: `binder` is a lambda, parameter or `run` binder.
+    /// - ensures: a binder over a builtin root is recorded under
+    ///   warn-and-allow; the outermost scope is never changed.
+    /// - provides: the binder half of the outermost report.
+    /// - fails: [`LoweringRefusal::ShadowedBuiltin`] at the binder for a
+    ///   builtin root under the reject policy.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::ShadowedBuiltin`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda binder over a builtin under each policy,
+    ///   asserted as the exact record and outcome.
+    /// - witness: `recognition::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
+    fn note_binder(
+        &mut self,
+        binder: Placed,
+        name: SurfaceName<'source>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let noted = self
+            .recognition
+            .note_binder(Segment::from(name.as_ref()), binder.span);
+        match noted {
+            | Ok(()) => Ok(()),
+            | Err(_refused) => Err(LoweringRefusal::ShadowedBuiltin {
+                span: binder.span,
+                name,
+            }),
         }
     }
 
@@ -1159,7 +1291,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::ProductType => Err(site.out(FragmentBoundary::Reserved)),
             | Former::ParenthesizedType => self.parenthesized_type(site, cursor),
             | Former::Declaration => self.function(site, cursor),
-            | Former::AttributeBlock | Former::Unadmitted => {
+            | Former::AttributeBlock | Former::Import | Former::Unadmitted => {
                 Err(site.out(FragmentBoundary::WrongSort))
             },
         }
@@ -1449,6 +1581,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let binder = parameter(site, &mut cursor)?;
         let name = self.name_at(binder);
+        self.note_binder(binder, name)?;
         let extended = self.scope.extend(frame, name);
         let body = self.block(site, &mut cursor, Frame::Inner(extended))?;
 
@@ -1543,6 +1676,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 declared,
             });
             let name = self.name_at(binder);
+            self.note_binder(binder, name)?;
             frame = Frame::Inner(self.scope.extend(frame, name));
             if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
                 && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
@@ -1725,6 +1859,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let bound = statement.one(cursor.operands())?;
         closed(statement, cursor, TileName::SEMICOLON)?;
         let name = self.binder_name(statement, binder)?;
+        self.note_binder(binder, name)?;
         self.read(bound.node, Reading::Computation(frame));
         self.statements.push(Statement {
             run: run.node,
@@ -3362,17 +3497,19 @@ fn parse_literal(
         | Former::ParenthesizedType
         | Former::Declaration
         | Former::AttributeBlock
+        | Former::Import
         | Former::Unadmitted => return Maybe::Absent(literal::Absent::NotALiteral),
     };
 
     found.map_or(Maybe::Absent(literal::Absent::Malformed), Maybe::Present)
 }
 
-/// Decode the escapes of a string literal's content.
+/// Decode the escapes of a string literal's or an import address's content.
 ///
 /// # Specification
 /// trivial.
-fn decode_escapes(content: SourceFragment<'_>) -> String
+#[inline]
+pub fn decode_escapes(content: SourceFragment<'_>) -> String
 {
     let spelled: &str = content.as_ref();
     let mut decoded = String::with_capacity(spelled.len());
@@ -3483,6 +3620,7 @@ mod tests
     use crate::module::DeclarationOutcome;
     use crate::module::LoweredDeclaration;
     use crate::module::LoweredModule;
+    use crate::namespace::Recognition;
     use crate::origin::Insertion;
     use crate::origin::OriginCount;
     use crate::origin::Provenance;
@@ -3503,7 +3641,14 @@ mod tests
         let pbg = grammar();
         let tree = parsed(&pbg, source);
 
-        lower_module(&pbg, &tree, arena, LoweringBudget::DEFAULT).unwrap()
+        lower_module(
+            &pbg,
+            &tree,
+            arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .unwrap()
     }
 
     /// What each declaration of `module` amounts to, in admission order.
@@ -3529,7 +3674,14 @@ mod tests
     ) -> LoweringRefusal<'source>
     {
         let mut arena = CoreArena::new();
-        let module = lower_module(pbg, tree, &mut arena, LoweringBudget::DEFAULT).unwrap();
+        let module = lower_module(
+            pbg,
+            tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .unwrap();
         let Some(DeclarationOutcome::Refused(refusal)) = outcomes(&module).first().copied()
         else {
             panic!("the first declaration is refused");
@@ -4816,7 +4968,13 @@ mod tests
         let mut arena = CoreArena::new();
 
         assert_eq!(
-            lower_module(&pbg, &tree, &mut arena, LoweringBudget::DEFAULT),
+            lower_module(
+                &pbg,
+                &tree,
+                &mut arena,
+                LoweringBudget::DEFAULT,
+                Recognition::default()
+            ),
             Err(LoweringRefusal::OutOfFragment {
                 span: at(0_usize, 11_usize),
                 form: FormName::DECLARATION,
@@ -4841,7 +4999,14 @@ mod tests
         );
         let tree = made.module(at(0_usize, 1_usize), &[name]);
         let mut arena = CoreArena::new();
-        let refused = lower_module(&pbg, &tree, &mut arena, LoweringBudget::DEFAULT).unwrap_err();
+        let refused = lower_module(
+            &pbg,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .unwrap_err();
 
         assert_eq!(
             refused,
@@ -4873,7 +5038,14 @@ mod tests
         let stray = made.raw(NodeLabel::Tile(foreign), at(0_usize, 1_usize), &[]);
         let tree = made.module(at(0_usize, 1_usize), &[stray]);
         let mut arena = CoreArena::new();
-        let refused = lower_module(&pbg, &tree, &mut arena, LoweringBudget::DEFAULT).unwrap_err();
+        let refused = lower_module(
+            &pbg,
+            &tree,
+            &mut arena,
+            LoweringBudget::DEFAULT,
+            Recognition::default(),
+        )
+        .unwrap_err();
 
         assert_eq!(
             refused,
@@ -5267,7 +5439,8 @@ mod tests
         let tree = parsed(&pbg, SourceText::from("def a = 3 ;"));
         let mut arena = CoreArena::new();
         let budget = LoweringBudget::from(1_usize);
-        let refused = lower_module(&pbg, &tree, &mut arena, budget).unwrap_err();
+        let refused =
+            lower_module(&pbg, &tree, &mut arena, budget, Recognition::default()).unwrap_err();
 
         assert_eq!(
             refused,

@@ -48,10 +48,17 @@
 //! traversal accident, so two runs over one source report the same refusal. A
 //! fault in the declaration form's own tiles is offered at the declaration
 //! node itself, so it outranks every refusal from inside its operands. A fault
-//! in the module's own shape — a root child that is not a declaration, or a
-//! declaration with no name to file a refusal under — refuses the module.
+//! in the module's own shape — a root child that is not a declaration or an
+//! import, an import out of shape, two imports of one alias, or a declaration
+//! with no name to file a refusal under — refuses the module.
+//!
+//! # Imports are collected beside the declarations
+//!
+//! `import "URI" as name ;` is kept in source order and its alias bound in the
+//! module's import scope as it is read; no address is resolved.
 
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use gandr_core_term::ValueId;
@@ -61,6 +68,7 @@ use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
@@ -80,7 +88,14 @@ use crate::form::Shape;
 use crate::form::TileName;
 use crate::form::read_pieces;
 use crate::form::shape_of;
+use crate::import::ImportDeclaration;
+use crate::import::ImportIndex;
+use crate::import::ImportUri;
+use crate::import::ModuleImports;
 use crate::lower::Fuel;
+use crate::lower::decode_escapes;
+use crate::namespace::Recognition;
+use crate::namespace::Scope;
 use crate::origin::OriginTable;
 use crate::origin::OriginToken;
 use crate::resolve::SurfaceName;
@@ -242,6 +257,8 @@ pub struct DeclarationSlot<'source>
     pub constant: ConstantIndex,
     /// The declaration form that introduced the name.
     pub introduced_by: Placed,
+    /// The name tile of that form.
+    pub named: Placed,
     /// This name's signature, when it has one.
     pub signature: Maybe<Half, declaration_half::Absent>,
     /// This name's definition, when it has one.
@@ -307,7 +324,7 @@ impl<'source> DeclarationSlot<'source>
 pub struct SlotRefused(pub bool);
 
 /// A module's declarations as the collection pass found them, with the slot
-/// every declaration form belongs to.
+/// every declaration form belongs to, and its imports.
 #[derive(Clone, Debug)]
 pub struct Collected<'source>
 {
@@ -317,6 +334,8 @@ pub struct Collected<'source>
     pub owner: Vec<Maybe<SlotIndex, slot_owner::Absent>>,
     /// Each declared name's slot, for the term-name resolution table.
     pub by_name: BTreeMap<SurfaceName<'source>, SlotIndex>,
+    /// The imports, in source order, with their aliases bound.
+    pub imports: ModuleImports<'source>,
 }
 
 impl<'source> Collected<'source>
@@ -468,32 +487,37 @@ struct Collector<'run, 'source>
 ///   for one name leaves the slot's first refusal set and the first occurrence
 ///   intact. A fault in a declaration form's own tiles — a repair, an empty or
 ///   overfull hole, a tile out of place, a tail the fragment does not admit —
-///   is offered to the declaration's slot at the declaration form itself.
+///   is offered to the declaration's slot at the declaration form itself. Each
+///   import is kept in source order with its address decoded and its alias
+///   bound in the import scope.
 /// - provides: the admission order every later pass resolves names against.
-/// - fails: [`LoweringRefusal::MalformedForm`] when the root holds a repair or
-///   a declaration has no name to file a refusal under;
-///   [`LoweringRefusal::OutOfFragment`] when a root child is not a declaration
-///   — an attribute block decorating nothing included — or when a declaration's
-///   name is a form rather than an identifier; [`LoweringRefusal::UnknownMold`]
-///   for a mold the grammar does not hold; [`LoweringRefusal::BudgetExceeded`]
-///   when the walk outruns the allowance.
+/// - fails: [`LoweringRefusal::MalformedForm`] when the root holds a repair, a
+///   declaration has no name to file a refusal under, or an import is out of
+///   shape; [`LoweringRefusal::DuplicateImportAlias`] when two imports bind one
+///   alias; [`LoweringRefusal::OutOfFragment`] when a root child is neither a
+///   declaration nor an import — an attribute block decorating nothing included
+///   — or when a declaration's name is a form rather than an identifier;
+///   [`LoweringRefusal::UnknownMold`] for a mold the grammar does not hold;
+///   [`LoweringRefusal::BudgetExceeded`] when the walk outruns the allowance.
 /// - panics: none. A position the tree does not hold contributes nothing.
 ///
 /// # Errors
-/// [`LoweringRefusal::MalformedForm`] and [`LoweringRefusal::OutOfFragment`]
-/// for a module whose own children are not declarations,
+/// [`LoweringRefusal::MalformedForm`], [`LoweringRefusal::OutOfFragment`] and
+/// [`LoweringRefusal::DuplicateImportAlias`] for a module whose own children
+/// are not declarations and well-formed imports,
 /// [`LoweringRefusal::UnknownMold`] for a foreign mold, and
 /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the decision surfaces (the child kind, the name tile, the
-///   slot lookup, the tail tile, the hole run, the attribute reading) separated
-///   by a signature and definition in each order, a signature and definition
-///   separated by an unrelated declaration, a second signature, a second
-///   definition, a stray module child, a declaration missing its body, a
-///   declaration whose name is not a name, a trailing attribute block and two
-///   stacked attribute blocks, each asserted as an exact slot list or an exact
-///   refusal variant.
+///   slot lookup, the tail tile, the hole run, the attribute reading, the
+///   import tiles) separated by a signature and definition in each order, a
+///   signature and definition separated by an unrelated declaration, a second
+///   signature, a second definition, a stray module child, a declaration
+///   missing its body, a declaration whose name is not a name, a trailing
+///   attribute block, two stacked attribute blocks, two imports, an import with
+///   no alias and two imports of one alias, each asserted as an exact slot
+///   list, import list or refusal variant.
 /// - witness: `module::tests::a_signature_pairs_with_its_definition`
 /// - witness: `module::tests::a_definition_pairs_with_a_later_signature`
 /// - witness: `module::tests::a_second_signature_is_refused`
@@ -503,6 +527,9 @@ struct Collector<'run, 'source>
 /// - witness: `module::tests::a_declaration_whose_name_is_not_a_name_refuses_the_module`
 /// - witness: `module::tests::a_trailing_attribute_block_refuses_the_module`
 /// - witness: `module::tests::an_attribute_block_decorates_the_declaration_after_it`
+/// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `namespace::namespace::source_import_without_alias_becomes_a_refusal`
+/// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
 #[inline]
 pub fn collect<'source>(
     pbg: &Pbg,
@@ -522,6 +549,7 @@ pub fn collect<'source>(
             slots: Vec::new(),
             owner,
             by_name: BTreeMap::new(),
+            imports: ModuleImports::new(),
         },
         pieces: Pieces::new(),
     };
@@ -548,12 +576,13 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Specification
     /// - requires: `child` is a written child of the root.
-    /// - ensures: a declaration form is collected into its slot; every other
-    ///   form refuses the module as a form of the wrong sort.
+    /// - ensures: a declaration form is collected into its slot and an import
+    ///   into the import list; every other form refuses the module as a form of
+    ///   the wrong sort.
     /// - provides: the module-shape half of [`collect`].
-    /// - fails: [`LoweringRefusal::OutOfFragment`] for a child that is not a
-    ///   declaration, and every module-level fault [`Self::declaration`]
-    ///   raises.
+    /// - fails: [`LoweringRefusal::OutOfFragment`] for a child that is neither
+    ///   a declaration nor an import, and every module-level fault
+    ///   [`Self::declaration`] and [`Self::import`] raise.
     /// - panics: none.
     ///
     /// # Errors
@@ -572,6 +601,11 @@ impl<'source> Collector<'_, 'source>
                 former: Former::Declaration,
                 ..
             } => self.declaration(child),
+            | Shape::Form {
+                former: Former::Import,
+                name,
+                ..
+            } => self.import(child, name),
             | Shape::Form { name, .. } => Err(LoweringRefusal::OutOfFragment {
                 span: child.span,
                 form: name,
@@ -610,6 +644,123 @@ impl<'source> Collector<'_, 'source>
         self.pieces = pieces;
 
         outcome
+    }
+
+    /// Collect one import, `import "URI" as name ;`, of form `form`.
+    ///
+    /// # Specification
+    /// - requires: `import` is an import form named `form`.
+    /// - ensures: the import's address — the text between its quotes with its
+    ///   escapes decoded — its alias and its bytes are kept after every earlier
+    ///   import, and its alias is bound in the import scope.
+    /// - provides: the import half of [`collect`].
+    /// - fails: [`LoweringRefusal::MalformedForm`] for a repair or a tile out
+    ///   of place — an import with no alias included — and
+    ///   [`LoweringRefusal::DuplicateImportAlias`] for an alias an earlier
+    ///   import binds.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`],
+    /// [`LoweringRefusal::DuplicateImportAlias`] and
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two imports, an escaped address, an import with no
+    ///   alias and two imports of one alias, each asserted as the exact import
+    ///   list or refusal over the parsed source.
+    /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+    /// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
+    /// - witness: `namespace::namespace::source_import_without_alias_becomes_a_refusal`
+    /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
+    fn import(
+        &mut self,
+        import: Placed,
+        form: FormName,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut pieces = core::mem::take(&mut self.pieces);
+        read_pieces(self.pbg, self.tree, import.node, &mut pieces)?;
+        let outcome = self.read_import(import, form, &pieces);
+        self.pieces = pieces;
+        let declaration = outcome?;
+
+        self.collected.imports.bind(declaration)
+    }
+
+    /// Read one import form's pieces.
+    ///
+    /// # Specification
+    /// - requires: `pieces` is the reading of the import `import`.
+    /// - ensures: the declaration the tiles `import " … " as name ;` spell, in
+    ///   that order with nothing after them.
+    /// - provides: the reading half of [`Self::import`].
+    /// - fails: [`LoweringRefusal::MalformedForm`] naming `form` for a repair
+    ///   or a tile out of place.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`].
+    fn read_import(
+        &self,
+        import: Placed,
+        form: FormName,
+        pieces: &Pieces,
+    ) -> Result<ImportDeclaration<'source>, LoweringRefusal<'source>>
+    {
+        if let Maybe::Present(repaired) = pieces.repair {
+            return Err(LoweringRefusal::MalformedForm {
+                span: repaired.span,
+                form,
+                fault: FormFault::Repaired(repaired.repair),
+            });
+        }
+        let out_of_place = |cursor: &Cursor<'_>| LoweringRefusal::MalformedForm {
+            span: cursor.here(),
+            form,
+            fault: FormFault::MisplacedTile,
+        };
+        let mut cursor = Cursor::new(&pieces.pieces, import.span);
+        for opening in [TileName::IMPORT, TileName::QUOTE] {
+            if let Maybe::Absent(_) = cursor.tile(opening) {
+                return Err(out_of_place(&cursor));
+            }
+        }
+        let mut written = String::new();
+        loop {
+            let piece = match cursor.tile(TileName::STRING_FRAGMENT) {
+                | Maybe::Present(fragment) => fragment,
+                | Maybe::Absent(_) => match cursor.tile(TileName::ESCAPE_SEQUENCE) {
+                    | Maybe::Present(escape) => escape,
+                    | Maybe::Absent(_) => break,
+                },
+            };
+            if let Some(text) = self.tree.fragment(piece.node) {
+                written.push_str(text.as_ref());
+            }
+        }
+        for closing in [TileName::QUOTE, TileName::AS] {
+            if let Maybe::Absent(_) = cursor.tile(closing) {
+                return Err(out_of_place(&cursor));
+            }
+        }
+        let Maybe::Present(alias) = cursor.tile(TileName::IDENTIFIER)
+        else {
+            return Err(out_of_place(&cursor));
+        };
+        if let Maybe::Absent(_) = cursor.tile(TileName::SEMICOLON) {
+            return Err(out_of_place(&cursor));
+        }
+        if let Maybe::Present(_) = cursor.peek() {
+            return Err(out_of_place(&cursor));
+        }
+        let uri = ImportUri::from(decode_escapes(SourceFragment::from(written.as_str())));
+
+        Ok(ImportDeclaration::new(
+            uri,
+            self.name_of(alias),
+            import.span,
+        ))
     }
 
     /// Read one declaration form's pieces into its slot.
@@ -652,7 +803,7 @@ impl<'source> Collector<'_, 'source>
             return Err(self.unnamed(pieces, declaration, &header));
         };
         let name = self.name_of(named);
-        let slot = self.admit(name, declaration);
+        let slot = self.admit(name, declaration, named);
         self.collected.own(declaration.node, slot);
         let tail = if let Maybe::Present(repaired) = pieces.repair {
             Tail::Refused(LoweringRefusal::MalformedForm {
@@ -909,7 +1060,8 @@ impl<'source> Collector<'_, 'source>
     }
 
     /// The slot `name` occupies, creating it at the next admission position
-    /// when this is the name's first declaration.
+    /// when this is the name's first declaration, written by the tile `named`
+    /// of the form `declaration`.
     ///
     /// # Specification
     /// - requires: the collection's slots and name table describe the same
@@ -924,6 +1076,7 @@ impl<'source> Collector<'_, 'source>
         &mut self,
         name: SurfaceName<'source>,
         declaration: Placed,
+        named: Placed,
     ) -> SlotIndex
     {
         if let Some(&existing) = self.collected.by_name.get(&name) {
@@ -934,6 +1087,7 @@ impl<'source> Collector<'_, 'source>
             name,
             constant: ConstantIndex::from(minted.0),
             introduced_by: declaration,
+            named,
             signature: Maybe::Absent(declaration_half::Absent::Unwritten),
             definition: Maybe::Absent(declaration_half::Absent::Unwritten),
             attributes: Vec::new(),
@@ -1274,7 +1428,8 @@ impl<'source> LoweredDeclaration<'source>
     }
 }
 
-/// One module, lowered: its declarations, its attributes, and its origins.
+/// One module, lowered: its declarations, its attributes, its origins, its
+/// imports, and the outermost scope its names were declared in.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoweredModule<'source>
 {
@@ -1284,6 +1439,10 @@ pub struct LoweredModule<'source>
     attributes: AttributeTable,
     /// Every minted core node's origin, and the declarations' own.
     origins: OriginTable,
+    /// The imports, in source order, with their aliases bound.
+    imports: ModuleImports<'source>,
+    /// The outermost scope, with every declared name declared in it.
+    recognition: Recognition,
 }
 
 impl<'source> LoweredModule<'source>
@@ -1298,13 +1457,54 @@ impl<'source> LoweredModule<'source>
         declarations: Vec<LoweredDeclaration<'source>>,
         attributes: AttributeTable,
         origins: OriginTable,
+        imports: ModuleImports<'source>,
+        recognition: Recognition,
     ) -> Self
     {
         Self {
             declarations,
             attributes,
             origins,
+            imports,
+            recognition,
         }
+    }
+
+    /// The imports, in source order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn imports(&self) -> &[ImportDeclaration<'source>]
+    {
+        self.imports.declarations()
+    }
+
+    /// The scope the imports' aliases are bound in: each alias resolves to
+    /// its import's position, tagged with the import's bytes, and the export
+    /// is empty.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn import_scope(&self) -> &Scope<ImportIndex, ByteSpan>
+    {
+        self.imports.scope()
+    }
+
+    /// The outermost scope after the module: the seed tables it was lowered
+    /// against, every declared name declared over them, and the builtins the
+    /// source shadowed.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn recognition(&self) -> &Recognition
+    {
+        &self.recognition
     }
 
     /// The declarations, in admission order.
@@ -1672,6 +1872,7 @@ mod tests
             name: SurfaceName::from("x"),
             constant: ConstantIndex::from(0_usize),
             introduced_by: introduced,
+            named: introduced,
             signature: Maybe::<Half, _>::Absent(declaration_half::Absent::Unwritten),
             definition: Maybe::Absent(declaration_half::Absent::Unwritten),
             attributes: Vec::new(),

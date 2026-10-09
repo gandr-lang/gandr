@@ -209,6 +209,8 @@ impl TileName
     pub const ACQUIRE: Self = Self("acquire");
     /// The arrow `->` of a function type and of a function's result.
     pub const ARROW: Self = Self("->");
+    /// The alias keyword `as` of an import.
+    pub const AS: Self = Self("as");
     /// The attribute-block opener `@[`.
     pub const ATTRIBUTES: Self = Self("@[");
     /// The bang `!` marking a shared fork.
@@ -238,8 +240,12 @@ impl TileName
     pub const FORK: Self = Self("fork");
     /// The equals sign `=` opening a definition tail.
     pub const EQUALS: Self = Self("=");
+    /// An escape sequence inside a string's own tiles.
+    pub const ESCAPE_SEQUENCE: Self = Self("escape_sequence");
     /// An identifier written as one of a form's own tiles.
     pub const IDENTIFIER: Self = Self("identifier");
+    /// The import keyword `import`.
+    pub const IMPORT: Self = Self("import");
     /// The interpolation opener `${`.
     pub const INTERPOLATION: Self = Self("${");
     /// The keyword `leta`, opening a statement.
@@ -248,6 +254,9 @@ impl TileName
     pub const PAREN_CLOSE: Self = Self(")");
     /// A parenthesis opener `(`.
     pub const PAREN_OPEN: Self = Self("(");
+    /// A double quote opening or closing a string written among a form's own
+    /// tiles.
+    pub const QUOTE: Self = Self("\"");
     /// The recursion keyword `rec`.
     pub const REC: Self = Self("rec");
     /// The receive keyword `recv`, opening a statement.
@@ -260,6 +269,8 @@ impl TileName
     pub const RUN: Self = Self("run");
     /// The semicolon `;` closing a declaration or a statement.
     pub const SEMICOLON: Self = Self(";");
+    /// A run of plain text inside a string's own tiles.
+    pub const STRING_FRAGMENT: Self = Self("string_fragment");
     /// The thunk keyword `thunk`.
     pub const THUNK: Self = Self("thunk");
     /// A type identifier written as one of a form's own tiles.
@@ -330,6 +341,8 @@ pub enum Former
     Declaration,
     /// An attribute block standing on its own, decorating nothing.
     AttributeBlock,
+    /// The import `import "URI" as name ;`.
+    Import,
     /// Every other kind: a form the fragment does not admit.
     Unadmitted,
 }
@@ -337,7 +350,7 @@ pub enum Former
 impl Former
 {
     /// Every former, in declaration order.
-    pub const ALL: [Self; 19_usize] = [
+    pub const ALL: [Self; 20_usize] = [
         Self::Name,
         Self::Number,
         Self::Text,
@@ -356,12 +369,13 @@ impl Former
         Self::ParenthesizedType,
         Self::Declaration,
         Self::AttributeBlock,
+        Self::Import,
         Self::Unadmitted,
     ];
 }
 
 /// The named kinds the lowering reads, with the former each is read as.
-pub const FORMERS: [(&str, Former); 20_usize] = [
+pub const FORMERS: [(&str, Former); 21_usize] = [
     ("identifier", Former::Name),
     ("number", Former::Number),
     ("string", Former::Text),
@@ -382,6 +396,7 @@ pub const FORMERS: [(&str, Former); 20_usize] = [
     ("parenthesized_type", Former::ParenthesizedType),
     ("def_value", Former::Declaration),
     ("attribute_block", Former::AttributeBlock),
+    ("import_declaration", Former::Import),
 ];
 
 /// The former a form of named kind `kind` is read as.
@@ -1381,6 +1396,7 @@ mod tests
             ("parenthesized_type", Former::ParenthesizedType),
             ("def_value", Former::Declaration),
             ("attribute_block", Former::AttributeBlock),
+            ("import_declaration", Former::Import),
         ];
         for (kind, former) in expected {
             assert_eq!(

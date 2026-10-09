@@ -422,6 +422,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::ParenthesizedType
         | Former::Declaration
         | Former::AttributeBlock
+        | Former::Import
         | Former::Unadmitted => PayloadForm::OtherValue,
     }
 }
@@ -947,6 +948,7 @@ mod tests
                 | Former::ParenthesizedType
                 | Former::Declaration
                 | Former::AttributeBlock
+                | Former::Import
                 | Former::Unadmitted => PayloadForm::OtherValue,
             };
             assert_eq!(

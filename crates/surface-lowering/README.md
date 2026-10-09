@@ -13,6 +13,8 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - [Repairs are refused where they stand](#repairs-are-refused-where-they-stand)
 - [Names resolve through tables with no fallthrough](#names-resolve-through-tables-with-no-fallthrough)
 - [A module is collected by name and resolved by position](#a-module-is-collected-by-name-and-resolved-by-position)
+- [The namespace engine](#the-namespace-engine)
+- [Imports bind an alias and resolve nothing](#imports-bind-an-alias-and-resolve-nothing)
 - [A form's sort is decided by its own form](#a-forms-sort-is-decided-by-its-own-form)
 - [A function tail is a thunked chain of lambdas](#a-function-tail-is-a-thunked-chain-of-lambdas)
 - [A block binds each statement over the next](#a-block-binds-each-statement-over-the-next)
@@ -30,7 +32,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 ## Synopsis
 
-**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration` carrying its admission position, the content identity of its signature and definition forms, an origin token, and a `DeclarationOutcome`: a completed signature and definition, an uncompleted signature, a bodiless definition, or the declaration's `LoweringRefusal`. The module's attributes are resolved against a closed `AttributeRegistry` into an `AttributeTable` keyed by declaration content identity, and every minted core node's syntax origin is recorded in an `OriginTable`. `FailureClass` sorts every refusal into the class a consumer acts on.
+**What.** `lower_module` reads a `gandr-surface-syntax` tree molded under a `gandr-surface-grammar` grammar and mints its declarations into a `gandr-core-term` arena. Each declared name becomes one `LoweredDeclaration` carrying its admission position, the content identity of its signature and definition forms, an origin token, and a `DeclarationOutcome`: a completed signature and definition, an uncompleted signature, a bodiless definition, or the declaration's `LoweringRefusal`. The module's attributes are resolved against a closed `AttributeRegistry` into an `AttributeTable` keyed by declaration content identity, and every minted core node's syntax origin is recorded in an `OriginTable`. Imports are kept and their aliases bound by the `namespace` engine, and every declared name is declared over an outermost `Recognition` scope. `FailureClass` sorts every refusal into the class a consumer acts on.
 
 **Why.** A checker reads core terms, a diagnostic reads source spans, and an obligation ledger reads which declarations are still owed. The lowering is the one place all three are decided together: what the source means in the core fragment, where each core node came from, and whether a declaration that failed to lower failed because the author erred, because the fragment cannot represent it, or because the engine was misused — so no failure the engine refuses is mistaken for an obligation the author owes.
 
@@ -42,6 +44,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - N. G. de Bruijn. "Lambda calculus notation with nameless dummies." _Indagationes Mathematicae_ 75(5) (1972). <https://doi.org/10.1016/1385-7258(72)90034-0> — the binder indices a lambda's parameter lowers to.
 - David Moon, Andrew Blinn, Thomas J. Porter and Cyrus Omar. "Syntactic Completions with Material Obligations." _Proceedings of the ACM on Programming Languages_ 9, OOPSLA2 (2025). <https://doi.org/10.1145/3763182>, arXiv:2508.16848 — molds, grout and the minted closing tiles a repaired tree carries, which the lowering reads and refuses.
 - V. I. Levenshtein. "Binary codes capable of correcting deletions, insertions, and reversals." _Soviet Physics Doklady_ 10(8) (1966) — the edit distance that bounds an unknown attribute's suggestion.
+- RedPRL. _yuujinchou_ 5.2.0. <https://github.com/RedPRL/yuujinchou> — the namespace design: tries of hierarchical names, the modifier language, the not-found, shadow and hook events a handler settles, and scopes with sections.
 
 ## Provided features
 
@@ -55,6 +58,8 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `AttributeRegistry`, `AttributeSchema`, `RegisteredAttribute`, `EditDistance`, `PayloadForm`, `PayloadVerdict`, `payload_form`, `payload_verdict`, `AttributeEntry`, `AttributeTable` and `AttributedCount`: the closed registry, its five diagnostics and the side table, filed for refused declarations too. Witnesses: `attribute::tests::every_registered_attribute_answers_its_schema`, `attribute::tests::a_near_misspelling_suggests_its_attribute`, `attribute::tests::the_payload_verdict_table_is_pinned`, `lower::tests::an_attribute_is_filed_under_its_declaration_digest`, `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`, `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`.
 - `Origin`, `OriginTable`, `OriginToken` and `OriginCount`: the origin of every minted node and every declaration. Witnesses: `origin::tests::each_family_answers_its_own_recorded_origins`, `lower::tests::every_minted_node_has_an_origin`, `lower::tests::a_grouping_lowers_to_what_it_wraps`.
 - `Provenance` and `Insertion`: whether a minted node was written by the author or inserted by the lowering, and which bridge an insertion is. Witnesses: `lower::tests::a_value_head_is_forced_and_marked_inserted`, `lower::tests::an_author_written_force_is_not_marked_inserted`, `lower::tests::a_positive_result_gains_a_returner_once`, `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`.
+- `namespace`: `Trie`, `Modifier`, `Scope`, the events and their handlers, and `Recognition` with its ordered `SeedTable`s and `ShadowPolicy`. Witnesses: `namespace::namespace::a_deep_patch_merges_instead_of_capturing`, `namespace::namespace::a_sections_closing_modifier_chooses_what_it_passes_on`, `namespace::namespace::every_namespace_walk_is_iterative`, `recognition::recognition::a_path_is_governed_by_its_deepest_resolved_prefix`, `recognition::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`.
+- `ImportDeclaration`, `ImportIndex`, `ImportUri` and `ModuleImports`: imports kept in source order with their aliases bound. Witnesses: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`, `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`.
 
 ## Expected features
 
@@ -72,6 +77,7 @@ use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::DeclarationOutcome;
 use gandr_surface_lowering::LoweringBudget;
 use gandr_surface_lowering::lower_module;
+use gandr_surface_lowering::namespace::Recognition;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 
@@ -79,7 +85,7 @@ fn main() -> Result<(), Box<dyn core::error::Error>> {
     let pbg = built_in()?;
     let tree = parse(&pbg, SourceText::from("def x : Integer ; def x = 3 ;"))?.into_tree();
     let mut arena = CoreArena::new();
-    let module = lower_module(&pbg, &tree, &mut arena, LoweringBudget::DEFAULT)?;
+    let module = lower_module(&pbg, &tree, &mut arena, LoweringBudget::DEFAULT, Recognition::default())?;
 
     let [declaration] = module.declarations() else {
         unreachable!("one name is declared");
@@ -111,7 +117,19 @@ The alternative was a primitive term table answering `unit`. It was dropped beca
 
 ## A module is collected by name and resolved by position
 
-A signature pairs with its definition wherever the two sit in the module, so the signature-then-definition form stays spellable; a second signature or definition for one name is refused naming the first. References resolve by admission position — the position of the declaration that introduced the name — so a declaration's own body and every later declaration are out of its scope, and self-reference and mutual reference are refused as unresolved names. A module whose own shape is wrong — a root that is not a module, a root child that is not a declaration, a declaration with no name, an attribute block decorating nothing — refuses the whole run, because nothing can be filed without the name.
+A signature pairs with its definition wherever the two sit in the module, so the signature-then-definition form stays spellable; a second signature or definition for one name is refused naming the first. References resolve by admission position — the position of the declaration that introduced the name — so a declaration's own body and every later declaration are out of its scope, and self-reference and mutual reference are refused as unresolved names. A module whose own shape is wrong — a root that is not a module, a root child that is neither a declaration nor an import, a declaration with no name, an import out of shape, two imports of one alias, an attribute block decorating nothing — refuses the whole run, because nothing can be filed without the name.
+
+## The namespace engine
+
+`namespace` follows yuujinchou: a trie from hierarchical names to bindings held in one arena, a modifier language that rewrites one, the not-found, shadow and hook events a handler settles, scopes with sections, and `Recognition`, the outermost scope lowering declares names over. Its own page, [docs/namespace.md](docs/namespace.md), states [namespaces, modifiers and scopes](docs/namespace.md#namespaces-modifiers-and-scopes), [the arena trie and its walks](docs/namespace.md#an-arena-trie-and-no-recursion), [the outermost scope](docs/namespace.md#the-outermost-scope), and the [tests held](docs/namespace.md#held-tests) until their readers exist.
+
+The alternatives were a crate of its own and the dispatcher. It sits here because the lowering is its one reader: imports and outermost names are decided during lowering. Reversal: a second reader of scope state outside lowering, a session or a language server, moves it to its own crate.
+
+## Imports bind an alias and resolve nothing
+
+`import "URI" as name ;` is kept in source order as an `ImportDeclaration` — the address with its escapes decoded, the alias, the bytes — and its alias bound in the module's import scope: the import's one root binding, its position, run through `alias_as` (`renaming . name`) and imported, so the visible namespace answers each alias and the export stays empty. The import policy refuses every shadow, so a second import of one alias refuses the module as `DuplicateImportAlias`, naming the first; an import out of shape, a missing alias included, is `MalformedForm`. No address is resolved and an alias is not a term name. Reversal: when module resolution lands, the address resolves to an export namespace and the import runs its modifier over that instead of a root binding.
+
+An import without an alias and a second import of one alias were once noted as holes, with the lowering going on past them. Here both refuse, because the module's import scope cannot be filed with an alias missing or bound twice, and their tests say so: `source_import_without_alias_becomes_a_refusal` and `duplicate_source_import_alias_becomes_a_refusal`.
 
 ## A form's sort is decided by its own form
 

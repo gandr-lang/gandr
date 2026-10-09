@@ -156,6 +156,10 @@ pub enum RefusalName
     DuplicateSignature,
     /// A second definition for one name.
     DuplicateDefinition,
+    /// A second import of one alias.
+    DuplicateImportAlias,
+    /// A declared name or binder over a builtin, under the reject policy.
+    ShadowedBuiltin,
     /// A form the fragment does not admit, from the lowering or the checker.
     OutOfFragment,
     /// A literal whose text is not a lexeme of its kind.
@@ -201,11 +205,13 @@ pub enum RefusalName
 impl RefusalName
 {
     /// Every name of the vocabulary, in declaration order.
-    pub const VOCABULARY: [Self; 24_usize] = [
+    pub const VOCABULARY: [Self; 26_usize] = [
         Self::UnresolvedName,
         Self::UnresolvedTypeHead,
         Self::DuplicateSignature,
         Self::DuplicateDefinition,
+        Self::DuplicateImportAlias,
+        Self::ShadowedBuiltin,
         Self::OutOfFragment,
         Self::MalformedLiteral,
         Self::MalformedForm,
@@ -254,6 +260,8 @@ impl RefusalName
             | Self::UnresolvedTypeHead => "UnresolvedTypeHead",
             | Self::DuplicateSignature => "DuplicateSignature",
             | Self::DuplicateDefinition => "DuplicateDefinition",
+            | Self::DuplicateImportAlias => "DuplicateImportAlias",
+            | Self::ShadowedBuiltin => "ShadowedBuiltin",
             | Self::OutOfFragment => "OutOfFragment",
             | Self::MalformedLiteral => "MalformedLiteral",
             | Self::MalformedForm => "MalformedForm",
@@ -405,6 +413,8 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::UnresolvedTypeHead { .. } => RefusalName::UnresolvedTypeHead,
         | LoweringRefusal::DuplicateSignature { .. } => RefusalName::DuplicateSignature,
         | LoweringRefusal::DuplicateDefinition { .. } => RefusalName::DuplicateDefinition,
+        | LoweringRefusal::DuplicateImportAlias { .. } => RefusalName::DuplicateImportAlias,
+        | LoweringRefusal::ShadowedBuiltin { .. } => RefusalName::ShadowedBuiltin,
         | LoweringRefusal::OutOfFragment { .. } => RefusalName::OutOfFragment,
         | LoweringRefusal::MalformedLiteral { .. } => RefusalName::MalformedLiteral,
         | LoweringRefusal::MalformedForm { .. } => RefusalName::MalformedForm,
@@ -537,6 +547,23 @@ mod tests
                     first: empty,
                 },
                 "DuplicateDefinition",
+                FailureClass::MalformedSource,
+            ),
+            (
+                LoweringRefusal::DuplicateImportAlias {
+                    span: empty,
+                    alias: SurfaceName::from("parse"),
+                    first: empty,
+                },
+                "DuplicateImportAlias",
+                FailureClass::MalformedSource,
+            ),
+            (
+                LoweringRefusal::ShadowedBuiltin {
+                    span: empty,
+                    name: SurfaceName::from("list"),
+                },
+                "ShadowedBuiltin",
                 FailureClass::MalformedSource,
             ),
             (

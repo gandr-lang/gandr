@@ -2,8 +2,9 @@
 //! term-name resolution tables, the module collection pass that pairs
 //! signatures with definitions, the reserved-form decline, the attribute
 //! registry with its five diagnostics and its side table, the origin table
-//! over terms and types alike, and the failure classifier every refusal
-//! answers to.
+//! over terms and types alike, the failure classifier every refusal answers
+//! to, and the [`namespace`] engine the module's imports and outermost names
+//! are bound by.
 //!
 //! The crate reads the molded tree the parser builds and writes a core arena.
 //! There is no lexer here, no parser, and no checker: the tree arrives built,
@@ -17,7 +18,7 @@
 //! where the source wrote no term, a closing delimiter the source never wrote —
 //! is reported where it stands rather than lowered around.
 //!
-//! # Five decisions that interlock
+//! # Six decisions that interlock
 //!
 //! **Names resolve through tables with no fallthrough.** `Unit`, `Integer`,
 //! `String`, `U` and `F` answer from a type-head table indexed by arity, and a
@@ -45,6 +46,11 @@
 //! travels as an opaque token a checker echoes back, which keeps spans and
 //! names out of the core.
 //!
+//! **Imports bind an alias and resolve nothing.** `import "URI" as name ;` is
+//! kept in source order and its alias bound in the module's import scope by
+//! the namespace engine's `alias_as`; the address waits for the pass that
+//! resolves it.
+//!
 //! # Two sweeps, no recursion
 //!
 //! The tree is laid out in level order, so ascending position order visits
@@ -61,13 +67,20 @@
 //! use gandr_surface_lowering::DeclarationOutcome;
 //! use gandr_surface_lowering::LoweringBudget;
 //! use gandr_surface_lowering::lower_module;
+//! use gandr_surface_lowering::namespace::Recognition;
 //! use gandr_surface_parser::parse;
 //! use gandr_surface_syntax::SourceText;
 //!
 //! let pbg = built_in()?;
 //! let tree = parse(&pbg, SourceText::from("def x : Integer ; def x = 3 ;"))?.into_tree();
 //! let mut arena = CoreArena::new();
-//! let module = lower_module(&pbg, &tree, &mut arena, LoweringBudget::DEFAULT)?;
+//! let module = lower_module(
+//!     &pbg,
+//!     &tree,
+//!     &mut arena,
+//!     LoweringBudget::DEFAULT,
+//!     Recognition::default(),
+//! )?;
 //!
 //! let [declaration] = module.declarations()
 //! else {
@@ -93,8 +106,10 @@ mod error;
 #[cfg(test)]
 mod fixture;
 mod form;
+mod import;
 mod lower;
 mod module;
+pub mod namespace;
 mod origin;
 mod resolve;
 
@@ -118,6 +133,10 @@ pub use crate::form::FormName;
 pub use crate::form::Former;
 pub use crate::form::Repair;
 pub use crate::form::former_of;
+pub use crate::import::ImportDeclaration;
+pub use crate::import::ImportIndex;
+pub use crate::import::ImportUri;
+pub use crate::import::ModuleImports;
 pub use crate::lower::Fuel;
 pub use crate::lower::LoweringBudget;
 pub use crate::lower::lower_module;
