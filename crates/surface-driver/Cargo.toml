@@ -21,7 +21,10 @@ publish.workspace = true
 name = "gandr"
 path = "src/main.rs"
 
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 clap.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true

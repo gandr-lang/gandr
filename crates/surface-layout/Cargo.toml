@@ -13,7 +13,10 @@ publish.workspace = true
 
 # A lookup that finds nothing says why through the shape crate's named
 # absence.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 quenchant-shape.workspace = true
 
 # The algebra suite generates text leaves and parenthesizations.

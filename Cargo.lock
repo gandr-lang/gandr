@@ -402,6 +402,7 @@ dependencies = [
 name = "gandr-core-incremental"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "blake3",
  "gandr-core-checker",
  "gandr-core-term",
@@ -431,6 +432,7 @@ dependencies = [
 name = "gandr-core-sequent"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-core-nbe",
  "gandr-core-term",
  "gandr-kernel-strata",
@@ -499,6 +501,7 @@ dependencies = [
 name = "gandr-lang"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "clap",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
@@ -525,6 +528,9 @@ dependencies = [
 [[package]]
 name = "gandr-storage-chunker"
 version = "0.0.0"
+dependencies = [
+ "anodized",
+]
 
 [[package]]
 name = "gandr-storage-records"
@@ -551,6 +557,7 @@ dependencies = [
 name = "gandr-surface-corpus"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-core-checker",
  "gandr-core-term",
  "gandr-kernel-term",
@@ -568,6 +575,7 @@ name = "gandr-surface-diagnostics"
 version = "0.0.0"
 dependencies = [
  "annotate-snippets",
+ "anodized",
  "gandr-core-checker",
  "gandr-core-term",
  "gandr-surface-corpus",
@@ -582,6 +590,7 @@ dependencies = [
 name = "gandr-surface-dispatcher"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-core-checker",
  "gandr-core-sequent",
  "gandr-core-term",
@@ -599,6 +608,7 @@ dependencies = [
 name = "gandr-surface-grammar"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "expect-test",
  "gandr-surface-parser",
  "gandr-surface-render-remote",
@@ -610,6 +620,7 @@ dependencies = [
 name = "gandr-surface-layout"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "proptest",
  "quenchant-shape",
 ]
@@ -634,6 +645,7 @@ dependencies = [
 name = "gandr-surface-lsp"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
@@ -651,6 +663,7 @@ dependencies = [
 name = "gandr-surface-parser"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-surface-grammar",
  "gandr-surface-syntax",
  "gandr-theory-graphs",
@@ -661,6 +674,7 @@ dependencies = [
 name = "gandr-surface-pretty"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "expect-test",
  "gandr-core-nbe",
  "gandr-core-term",
@@ -674,6 +688,7 @@ dependencies = [
 name = "gandr-surface-render-remote"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-surface-render-remote",
  "serde",
  "serde_json",
@@ -683,6 +698,7 @@ dependencies = [
 name = "gandr-surface-repl"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-core-incremental",
  "gandr-kernel-term",
  "gandr-storage-records",
@@ -703,6 +719,7 @@ dependencies = [
 name = "gandr-surface-session"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-core-checker",
  "gandr-core-incremental",
  "gandr-core-term",
@@ -732,6 +749,7 @@ dependencies = [
 name = "gandr-surface-tui"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-core-incremental",
  "gandr-kernel-term",
  "gandr-surface-diagnostics",
@@ -746,6 +764,7 @@ dependencies = [
 name = "gandr-theory-cell-complexes"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "proptest",
  "quenchant-shape",
 ]
@@ -754,6 +773,7 @@ dependencies = [
 name = "gandr-theory-cell-complexes-tools"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-theory-cell-complexes",
  "quenchant-shape",
 ]
@@ -762,6 +782,7 @@ dependencies = [
 name = "gandr-theory-circuit-algebras"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-theory-cell-complexes",
  "proptest",
  "quenchant-shape",
@@ -771,6 +792,7 @@ dependencies = [
 name = "gandr-theory-coherent-resolutions"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
  "proptest",
@@ -781,6 +803,7 @@ dependencies = [
 name = "gandr-theory-computads"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
  "gandr-theory-coherent-resolutions",
@@ -793,6 +816,7 @@ dependencies = [
 name = "gandr-theory-deep-inference"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
  "gandr-theory-coherent-resolutions",
@@ -804,6 +828,7 @@ dependencies = [
 name = "gandr-theory-graphs"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "petgraph",
  "proptest",
 ]
@@ -812,6 +837,7 @@ dependencies = [
 name = "gandr-theory-levitation"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "proptest",
  "quenchant-shape",
 ]

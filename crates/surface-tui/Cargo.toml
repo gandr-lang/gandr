@@ -16,7 +16,10 @@ publish.workspace = true
 # renderer seam's highlight roles and line kinds through ratatui, on the
 # terminal through ratatui's crossterm backend and off it on ratatui's test
 # backend. The loop's lines are offered as syntax source text.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-render-remote.workspace = true
