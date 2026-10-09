@@ -8,6 +8,7 @@ use core::fmt;
 
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_grammar::Pbg;
@@ -135,16 +136,18 @@ fn backend() -> BackendArtifact
     BackendArtifact::from(concat!("gandr-surface-repl ", env!("CARGO_PKG_VERSION")).as_bytes())
 }
 
-/// A session over the strict root, kept in memory.
+/// A session over the strict root, its checkpoints and kernel records kept in
+/// memory.
 ///
 /// # Specification
 /// trivial.
-fn fresh(grammar: Pbg) -> Session<MemoryCheckpointStore>
+fn fresh(grammar: Pbg) -> Session<MemoryCheckpointStore, InMemoryBlockStore>
 {
     Session::new(
         grammar,
         SourceRoot::Strict,
         MemoryCheckpointStore::default(),
+        InMemoryBlockStore::default(),
         backend(),
     )
 }
@@ -175,7 +178,7 @@ fn answer(
 pub struct SessionLoop
 {
     /// The session every chunk is submitted to.
-    session: Session<MemoryCheckpointStore>,
+    session: Session<MemoryCheckpointStore, InMemoryBlockStore>,
     /// The role table the echo is highlighted with.
     roles: RoleTable,
     /// Every chunk kept so far.

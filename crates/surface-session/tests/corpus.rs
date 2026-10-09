@@ -1,6 +1,7 @@
 //! The corpus agreement suite: every source of both corpus roots, submitted
 //! whole to a fresh session, reports exactly the step `gandr check`'s walk
-//! yields for it.
+//! yields for it, and its kernel checkpoint reads back as the decoding of the
+//! kernel artifact that step carries.
 //!
 //! The walk is the batch pipeline the driver runs; the session reaches the
 //! same composition through the dispatcher's two halves with the incremental
@@ -9,11 +10,16 @@
 //! reddening anything.
 
 use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_kernel_term::decode;
+use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_corpus::CorpusRoot;
+use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Walk;
+use gandr_surface_session::KernelCheckpoint;
 use gandr_surface_session::Session;
+use gandr_surface_session::resumed;
 use quenchant_shape::shape::Maybe;
 
 use crate::common::backend;
@@ -60,12 +66,29 @@ fn every_source_submits_as_the_walk_composes_it()
             grammar.clone(),
             root,
             MemoryCheckpointStore::default(),
+            InMemoryBlockStore::default(),
             backend(),
         );
         let submission = match session.submit(text) {
             | Ok(submission) => submission,
             | Err(fault) => panic!("{}: the session faulted: {fault}", path.display()),
         };
+        match (submission.composed(), submission.kernel()) {
+            | (
+                &Composed::Settled { ref kernel, .. },
+                Maybe::Present(&KernelCheckpoint::Stored(ref manifest)),
+            ) => assert_eq!(
+                Ok(decode(kernel.as_image()).expect("the kernel's own export decodes")),
+                session.read_kernel(manifest),
+                "{}: the kernel checkpoint reads back as the export",
+                path.display()
+            ),
+            | (&Composed::Refused(_), Maybe::Absent(resumed::Absent::RefusedWhole)) => {},
+            | (_, checkpoint) => panic!(
+                "{}: the kernel checkpoint does not match the composition: {checkpoint:?}",
+                path.display()
+            ),
+        }
         let Step::Source {
             path: submitted_path,
             root: submitted_root,

@@ -1,5 +1,6 @@
 //! Checkpoints across sessions: written by one, restored by the next, and a
-//! store's failure reported rather than raised.
+//! store's failure reported rather than raised; the kernel checkpoint read
+//! back through the kernel's decoder, and refused there when its bytes are.
 
 use std::path::Path;
 use std::path::PathBuf;
@@ -14,9 +15,23 @@ use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemSource as _;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_core_incremental::stored;
+use gandr_kernel_term::DecodeError;
+use gandr_kernel_term::MalformedSite;
+use gandr_kernel_term::decode;
+use gandr_storage_artifact::ArtifactError;
+use gandr_storage_artifact::ArtifactManifest;
+use gandr_storage_artifact::ArtifactRecordSet;
+use gandr_storage_artifact::ManifestImage;
+use gandr_storage_artifact::SegmentBytes;
+use gandr_storage_artifact::build;
+use gandr_storage_records::InMemoryBlockStore;
+use gandr_storage_records::RecordTreeError;
+use gandr_storage_records::TreeParams;
+use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_lowering::namespace::DottedName;
 use gandr_surface_lowering::namespace::NamePath;
+use gandr_surface_session::KernelCheckpoint;
 use gandr_surface_session::Persistence;
 use gandr_surface_session::Revision;
 use gandr_surface_session::Session;
@@ -133,7 +148,13 @@ fn a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote()
     let scratch = Scratch::new(Label("reopen"));
     {
         let store = FileCheckpointStore::open(scratch.path()).expect("the directory opens");
-        let mut writer = Session::new(grammar(), SourceRoot::Strict, store, backend());
+        let mut writer = Session::new(
+            grammar(),
+            SourceRoot::Strict,
+            store,
+            InMemoryBlockStore::default(),
+            backend(),
+        );
         let written = writer.submit(SourceText::from(WRITTEN)).expect("submits");
         assert!(
             matches!(written.resumed(), Maybe::Present(resumed) if resumed.persistence() == Persistence::Stored),
@@ -146,6 +167,7 @@ fn a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote()
         grammar(),
         SourceRoot::Strict,
         store,
+        InMemoryBlockStore::default(),
         backend(),
         SourceText::from(WRITTEN),
     )
@@ -190,6 +212,7 @@ fn a_store_holding_nothing_reopens_fresh()
         grammar(),
         SourceRoot::Strict,
         MemoryCheckpointStore::default(),
+        InMemoryBlockStore::default(),
         backend(),
         SourceText::from(WRITTEN),
     )
@@ -210,6 +233,7 @@ fn a_store_holding_nothing_reopens_fresh()
         grammar(),
         SourceRoot::Strict,
         session.into_store(),
+        InMemoryBlockStore::default(),
         BackendArtifact::from(b"another checker".as_slice()),
         SourceText::from(WRITTEN),
     )
@@ -224,6 +248,7 @@ fn a_store_holding_nothing_reopens_fresh()
         grammar(),
         SourceRoot::Strict,
         other.into_session().into_store(),
+        InMemoryBlockStore::default(),
         backend(),
         SourceText::from("def a = 1 ;\nret a"),
     )
@@ -238,7 +263,13 @@ fn a_store_holding_nothing_reopens_fresh()
 #[test]
 fn a_store_failure_is_reported_and_the_session_still_resumes()
 {
-    let mut session = Session::new(grammar(), SourceRoot::Strict, Refusing, backend());
+    let mut session = Session::new(
+        grammar(),
+        SourceRoot::Strict,
+        Refusing,
+        InMemoryBlockStore::default(),
+        backend(),
+    );
     let first = session.submit(SourceText::from(WRITTEN)).expect("submits");
     assert!(
         matches!(first.resumed(), Maybe::Present(resumed) if resumed.persistence() == Persistence::Failed(CheckpointStoreError::Io)),
@@ -253,5 +284,144 @@ fn a_store_failure_is_reported_and_the_session_still_resumes()
         usize::from(session.lowerings()),
         2_usize,
         "one lowering per submission"
+    );
+}
+
+#[test]
+fn a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder()
+{
+    let mut writer = Session::new(
+        grammar(),
+        SourceRoot::Strict,
+        MemoryCheckpointStore::default(),
+        InMemoryBlockStore::default(),
+        backend(),
+    );
+    let written = writer.submit(SourceText::from(WRITTEN)).expect("submits");
+    let Composed::Settled { ref kernel, .. } = *written.composed()
+    else {
+        panic!("the revision settles");
+    };
+    let Maybe::Present(checkpoint) = written.kernel()
+    else {
+        panic!("an accepted revision carries a kernel checkpoint");
+    };
+    let KernelCheckpoint::Stored(ref manifest) = *checkpoint
+    else {
+        panic!("the memory block store holds the kernel checkpoint: {checkpoint:?}");
+    };
+    let exported = decode(kernel.as_image()).expect("the kernel's own export decodes");
+    let names: Vec<Vec<&str>> = exported
+        .declarations()
+        .iter()
+        .map(|marked| {
+            marked
+                .declaration()
+                .name()
+                .segments()
+                .iter()
+                .map(AsRef::as_ref)
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        vec![vec!["a"], vec!["b"]],
+        names,
+        "both definitions crossed into the kernel"
+    );
+    // The manifest leaves the session as bytes, as a caller persists it.
+    let carried = manifest.encode();
+    let blocks = writer.blocks().clone();
+    let store = writer.into_store();
+
+    let reopened = Session::reopen(
+        grammar(),
+        SourceRoot::Strict,
+        store,
+        blocks,
+        backend(),
+        SourceText::from(WRITTEN),
+    )
+    .expect("reopens")
+    .into_session();
+    let manifest = ArtifactManifest::decode(ManifestImage::from(carried.as_ref()))
+        .expect("the manifest decodes");
+    assert_eq!(
+        Ok(exported),
+        reopened.read_kernel(&manifest),
+        "the reopened session reads the checkpoint back as the export's decoding"
+    );
+
+    let elsewhere = Session::new(
+        grammar(),
+        SourceRoot::Strict,
+        MemoryCheckpointStore::default(),
+        InMemoryBlockStore::default(),
+        backend(),
+    );
+    assert!(
+        matches!(
+            elsewhere.read_kernel(&manifest),
+            Err(ArtifactError::Records {
+                refusal: RecordTreeError::UnknownNode { .. }
+            })
+        ),
+        "a block store that never held the checkpoint reads nothing for it"
+    );
+}
+
+#[test]
+fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
+{
+    let mut writer = Session::new(
+        grammar(),
+        SourceRoot::Strict,
+        MemoryCheckpointStore::default(),
+        InMemoryBlockStore::default(),
+        backend(),
+    );
+    let written = writer.submit(SourceText::from(WRITTEN)).expect("submits");
+    let Composed::Settled { ref kernel, .. } = *written.composed()
+    else {
+        panic!("the revision settles");
+    };
+    // The genuine records under a header whose magic is broken: a writer that
+    // mints a manifest over bytes the kernel refuses.
+    let genuine = ArtifactRecordSet::from_artifact(kernel.as_image()).expect("the export cuts");
+    let mut header = genuine.header().as_ref().to_vec();
+    let magic = header.first_mut().expect("the header opens with its magic");
+    *magic ^= 0xFF;
+    let forged = ArtifactRecordSet::from_records(
+        SegmentBytes::from(header.as_slice()),
+        genuine.records().to_vec(),
+    )
+    .expect("the keys are the genuine ones");
+    let mut blocks = writer.blocks().clone();
+    let minted =
+        build(&forged, TreeParams::current(), &mut blocks).expect("a writer commits any set");
+    let carried = ArtifactManifest::decode(ManifestImage::from(minted.encode().as_ref()))
+        .expect("the manifest decodes");
+    assert_eq!(
+        minted.identity(),
+        carried.identity(),
+        "the carried manifest reproduces the minted identity"
+    );
+
+    let reader = Session::new(
+        grammar(),
+        SourceRoot::Strict,
+        MemoryCheckpointStore::default(),
+        blocks,
+        backend(),
+    );
+    assert_eq!(
+        Err(ArtifactError::Kernel {
+            refusal: DecodeError::Malformed {
+                site: MalformedSite::Header,
+            },
+        }),
+        reader.read_kernel(&carried),
+        "the tree is held and seals under the matching identity, and the kernel's decoder refuses \
+         its bytes"
     );
 }

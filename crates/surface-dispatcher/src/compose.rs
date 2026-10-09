@@ -13,7 +13,8 @@
 //! After the checker judges a module, the kernel is offered every declaration
 //! it accepted. A declaration the kernel does not re-derive is a disagreement
 //! between the two checkers — an engine fault, never a verdict about the
-//! author's source.
+//! author's source. What crossed is exported once, as the kernel artifact a
+//! settled composition carries, each declaration under its structured name.
 
 use core::fmt;
 
@@ -28,6 +29,7 @@ use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
 use gandr_core_term::CoreArena;
 use gandr_core_term::FailureClass;
+use gandr_kernel_term::EncodedArtifact;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_corpus::SettleFault;
 use gandr_surface_corpus::SettleReport;
@@ -119,6 +121,9 @@ pub enum Composed<'source>
         /// that produced it: the table a checker refusal's node is located
         /// through.
         origins: OriginTable,
+        /// The kernel artifact of every declaration that crossed into the
+        /// kernel, in kernel admission order, each under its structured name.
+        kernel: EncodedArtifact,
         /// The module's declarations focused into the command IL, ready to
         /// run any of them.
         program: Program<'source>,
@@ -363,7 +368,9 @@ pub fn lower_source<'source>(
 ///   [`Composed::Settled`] with one report per declared name, the exercised
 ///   rows its settled declarations carry, the refusals of the declarations
 ///   refused at their own form, which no expectation can state, the lowering's
-///   origin table, moved rather than copied, and the program.
+///   origin table, moved rather than copied, the kernel artifact of every
+///   declaration that crossed, under the module's structured names, and the
+///   program.
 /// - provides: the verdict set [`compose()`] gives a module the lowering read.
 /// - fails: [`ComposeFault::Readmission`] for a declaration the checker
 ///   accepted that the kernel does not re-derive; [`ComposeFault::Settle`] when
@@ -377,10 +384,12 @@ pub fn lower_source<'source>(
 /// # Adequacy
 /// - hypothesis: L2 — sources with every verdict kind are judged and each
 ///   declaration asserted at its exact stated and produced verdicts, the kernel
-///   acting as the external oracle on every acceptance.
+///   acting as the external oracle on every acceptance; the kernel artifact is
+///   decoded and asserted at the exact names of the declarations that crossed.
 /// - witness: `compose::tests::a_module_settles_every_declaration_once`
 /// - witness: `compose::tests::the_root_decides_what_an_expectation_means`
 /// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
+/// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
 #[inline]
 pub fn judge_module(
     root: CorpusRoot,
@@ -393,7 +402,8 @@ pub fn judge_module(
         &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
         &declarations,
     );
-    readmitted(&arena, &verdicts)?;
+    let readmission = readmitted(&arena, &verdicts)?;
+    let kernel = readmission.export(module.structured_names());
     let mut program = Program::new(&arena, &module, &verdicts);
     let report =
         settle(root, &arena, &module, &verdicts, &mut program).map_err(ComposeFault::Settle)?;
@@ -404,6 +414,7 @@ pub fn judge_module(
         exercised,
         unstatable,
         origins: module.into_origins(),
+        kernel,
         program,
     })
 }
@@ -542,11 +553,12 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 ///
 /// # Specification
 /// - requires: `verdicts` was judged over `arena`.
-/// - ensures: succeeds when every accepted declaration crossed as a definition
-///   or an axiom; a refused declaration crosses as its mark, and a declaration
-///   withheld because it names a refused one carries that one's reason, so
-///   neither is a disagreement.
-/// - provides: the kernel's repetition of every acceptance a run reports.
+/// - ensures: succeeds with the readmission when every accepted declaration
+///   crossed as a definition or an axiom; a refused declaration crosses as its
+///   mark, and a declaration withheld because it names a refused one carries
+///   that one's reason, so neither is a disagreement.
+/// - provides: the kernel's repetition of every acceptance a run reports, and
+///   the environment the run's kernel artifact is exported from.
 /// - fails: [`ComposeFault::Readmission`] with the first declaration the kernel
 ///   rejected or the bridge refused for any reason but a withheld constant.
 /// - panics: none.
@@ -563,9 +575,10 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 fn readmitted(
     arena: &CoreArena,
     verdicts: &ModuleReport,
-) -> Result<(), ComposeFault<'static>>
+) -> Result<bridge::Readmission, ComposeFault<'static>>
 {
-    for readmitted in bridge::readmit(arena, verdicts).readmitted() {
+    let readmission = bridge::readmit(arena, verdicts);
+    for readmitted in readmission.readmitted() {
         match *readmitted.outcome() {
             | bridge::Outcome::Defined { .. }
             | bridge::Outcome::Assumed { .. }
@@ -584,7 +597,7 @@ fn readmitted(
             },
         }
     }
-    Ok(())
+    Ok(readmission)
 }
 
 #[cfg(test)]
@@ -599,6 +612,7 @@ mod tests
     use gandr_core_checker::signature;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
+    use gandr_kernel_term::decode;
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_corpus::Outcome;
     use gandr_surface_corpus::Produced;
@@ -1032,6 +1046,44 @@ def h = 1 ;"#,
                 bridge::Outcome::Refused(bridge::Refusal::DanglingNode { .. })
             ),
             "the bridge refused its dangling ids"
+        );
+    }
+
+    #[test]
+    fn the_kernel_artifact_holds_what_crossed_under_its_names()
+    {
+        let grammar = grammar();
+        let mut lowerings = LoweringCount::default();
+        let Ok(Composed::Settled { kernel, .. }) = compose(
+            &grammar,
+            CorpusRoot::Fixture,
+            SourceText::from(
+                r#"def a : Integer ; def a = 1 ; @[ owes(1) ] def later : Integer ; def w : Integer ; def w = "text" ; def r = w ;"#,
+            ),
+            &mut lowerings,
+        )
+        else {
+            panic!("the module settles");
+        };
+        let decoded = decode(kernel.as_image()).expect("the kernel's own export decodes");
+        let names: Vec<Vec<&str>> = decoded
+            .declarations()
+            .iter()
+            .map(|marked| {
+                marked
+                    .declaration()
+                    .name()
+                    .segments()
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .collect()
+            })
+            .collect();
+        assert_eq!(
+            vec![vec!["a"], vec!["later"]],
+            names,
+            "the definition and the owed axiom cross under their names; the refused declaration \
+             and the one withheld for naming it do not"
         );
     }
 }

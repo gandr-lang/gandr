@@ -136,10 +136,15 @@
 #![no_std]
 
 extern crate alloc;
+// The kernel export suite lists the corpus directories.
+#[cfg(test)]
+extern crate std;
 
 mod expectation;
 #[cfg(test)]
 mod fixture;
+#[cfg(test)]
+mod kernel_export;
 mod refusal;
 mod report;
 mod root;

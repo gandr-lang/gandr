@@ -13,6 +13,7 @@ mod sharing_format
 {
     use gandr_kernel_term::AdmissionMark;
     use gandr_kernel_term::ArtifactImage;
+    use gandr_kernel_term::ByteOffset;
     use gandr_kernel_term::CompType;
     use gandr_kernel_term::Computation;
     use gandr_kernel_term::ConstantIndex;
@@ -1065,6 +1066,54 @@ mod sharing_format
             TableEntryCount::from(0),
             artifact.metrics().table_entries(),
             "the empty artifact has an empty table"
+        );
+    }
+
+    /// The decoder reports each segment's end where the hand-built bytes put
+    /// it: the header's after the declaration count, and each declaration's
+    /// after its last slot, sharing across the segments notwithstanding.
+    #[test]
+    fn each_segment_ends_where_its_bytes_end()
+    {
+        let header = raw_artifact(current_version(), &[], &[]);
+        let empty = decode(ArtifactImage::from(header.as_ref())).expect("the bare header decodes");
+        assert_eq!(
+            ByteOffset::from(header.0.len()),
+            empty.segments().header_end(),
+            "a bare header ends at the image's end"
+        );
+        assert!(
+            empty.segments().declaration_ends().is_empty(),
+            "a bare header has no declaration segment"
+        );
+
+        // The axiom's declared type is the definition's entry zero, so its own
+        // segment introduces no entry and its bytes still delimit it.
+        let definition = RawDeclaration::definition(
+            vec![entry_unit_type(), entry_unit()],
+            TableIndex(0),
+            TableIndex(1),
+        );
+        let axiom = RawDeclaration::axiom(Vec::new(), TableIndex(0));
+        let first_end = header.0.len().saturating_add(definition.bytes().0.len());
+        let second_end = first_end.saturating_add(axiom.bytes().0.len());
+        let bytes = raw_artifact(current_version(), &[], &[definition, axiom]);
+        let artifact =
+            decode(ArtifactImage::from(bytes.as_ref())).expect("the two segments decode");
+        assert_eq!(
+            ByteOffset::from(header.0.len()),
+            artifact.segments().header_end(),
+            "the header ends after the declaration count"
+        );
+        assert_eq!(
+            [ByteOffset::from(first_end), ByteOffset::from(second_end)].as_slice(),
+            artifact.segments().declaration_ends(),
+            "each declaration ends after its own last slot"
+        );
+        assert_eq!(
+            bytes.0.len(),
+            second_end,
+            "the last segment ends at the image's end"
         );
     }
 
