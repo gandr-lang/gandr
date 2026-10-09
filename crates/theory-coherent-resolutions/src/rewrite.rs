@@ -17,6 +17,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
@@ -118,12 +119,19 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — a frame-defining cell reduces a sequent configuration in
 ///   one step to a normal form, a zero budget reports the pending redex without
 ///   firing it, and the same loop drives the toy alphabet through two cells to
-///   a normal form below the root.
+///   a normal form below the root. Zero, exact and excess budgets separate a
+///   pending redex from a normal form; changed step counts, premature
+///   exhaustion and lost contractions change those observations.
 /// - witness: `rewrite::tests::a_frame_defining_cell_fires_at_the_root`
 /// - witness: `rewrite::tests::a_budget_of_zero_reports_a_pending_redex`
 /// - witness: `tests::second_inhabitant::the_normalizer_runs_over_the_toy_alphabet`
+/// - witness: `rewrite::tests::normalization_and_first_redex_respect_both_orders`
 #[inline]
 #[must_use]
+#[spec(ensures: |output| output.path.len() <= usize::from(budget)
+    && (!bool::from(output.exhausted) || output.path.len() == usize::from(budget))
+    && (!output.path.is_empty() || output.normal == *term)
+    && bool::from(output.exhausted) == matches!(apply_once(store, &output.normal), Maybe::Present(_)))]
 pub fn normalize<A>(
     store: &CellStore<A>,
     term: &A::Cmd,
@@ -171,10 +179,26 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — the frame-defining cell is found at the root of a sequent
 ///   configuration, and a normal form is told from a spent budget by this
-///   search.
+///   search. Competing root cells and a later root match above an earlier child
+///   match separate cell order from position order; swapping either priority
+///   changes the chosen application.
 /// - witness: `rewrite::tests::a_frame_defining_cell_fires_at_the_root`
 /// - witness: `rewrite::tests::a_budget_of_zero_reports_a_pending_redex`
+/// - witness: `rewrite::tests::normalization_and_first_redex_respect_both_orders`
 #[inline]
+#[spec(ensures: |output| {
+    let positions = A::command_positions(term);
+    match output {
+        Maybe::Present(ref rewrite) => positions.contains(&rewrite.step.at) && match store.get(rewrite.step.cell) {
+            Maybe::Present(cell) => match rewrite_at(cell, term, &rewrite.step.at) {
+                Maybe::Present(expected) => expected == rewrite.result,
+                Maybe::Absent(_) => false,
+            },
+            Maybe::Absent(_) => false,
+        },
+        Maybe::Absent(redex_search::Absent::NormalForm) => positions.iter().all(|pos| store.iter().all(|(_, cell)| matches!(rewrite_at(cell, term, pos), Maybe::Absent(_)))),
+    }
+})]
 pub fn apply_once<A>(
     store: &CellStore<A>,
     term: &A::Cmd,
@@ -211,11 +235,31 @@ where
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a data η cell matching a negative cut is refused there, a
-///   codata η cell fires at it, and the frame-defining cell fires at a root.
+///   codata η cell fires at it, and the frame-defining cell fires at a root. An
+///   off-term path, a failed match and a refused splice retain distinct
+///   reasons. Failure precedence and any recorded step after refusal change the
+///   observation.
 /// - witness: `rewrite::tests::an_eta_cell_is_rejected_at_the_wrong_polarity`
 /// - witness: `rewrite::tests::a_frame_defining_cell_fires_at_the_root`
 /// - witness: `tests::differential::eta_at_the_wrong_polarity_is_rejected`
+/// - witness: `rewrite::tests::refusal_boundaries_do_not_record_a_step`
 #[inline]
+#[spec(ensures: |output| match A::subterm_cmd_at(term, pos) {
+    Maybe::Absent(reason) => output == Maybe::Absent(firing::Absent::NoCommand(reason)),
+    Maybe::Present(ref redex) => if bool::from(A::may_fire(&cell.provenance(), redex)) {
+        let mut subst = A::Subst::default();
+        if bool::from(A::match_cmd(cell.lhs(), redex, &mut subst)) {
+            match A::splice_cmd_at(term, pos, A::apply_subst(&subst, cell.rhs())) {
+                Ok(expected) => output == Maybe::Present(expected),
+                Err(reason) => output == Maybe::Absent(firing::Absent::SpliceRefused(reason)),
+            }
+        } else {
+            output == Maybe::Absent(firing::Absent::NoMatch)
+        }
+    } else {
+        output == Maybe::Absent(firing::Absent::Refused)
+    },
+})]
 pub fn rewrite_at<A>(
     cell: &Cell<A>,
     term: &A::Cmd,
@@ -257,6 +301,140 @@ mod tests
     use gandr_theory_cell_complexes::frame_defining_cell;
 
     use super::*;
+
+    #[test]
+    fn normalization_and_first_redex_respect_both_orders()
+    {
+        use gandr_theory_cell_complexes_tools::Toy;
+        use gandr_theory_cell_complexes_tools::ToyAlphabet;
+        use gandr_theory_cell_complexes_tools::toy_cell;
+        let root = ToyAlphabet::root_position();
+        let mut store = CellStore::new();
+        let peel = store.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::var("x")));
+        let two = Toy::succ(Toy::succ(Toy::zero()));
+        for (budget, expected, steps, exhausted) in [
+            (0_usize, two.clone(), 0_usize, true),
+            (1, Toy::succ(Toy::zero()), 1, true),
+            (2, Toy::zero(), 2, false),
+            (3, Toy::zero(), 2, false),
+        ] {
+            let result = normalize(&store, &two, NormalizationBudget::from(budget));
+            assert_eq!(expected, result.normal);
+            assert_eq!(exhausted, bool::from(result.exhausted));
+            assert_eq!(
+                alloc::vec![CellApp { cell: peel, at: root.clone() }; steps],
+                result.path
+            );
+        }
+        let normal = normalize(&store, &Toy::zero(), NormalizationBudget::from(0_usize));
+        assert_eq!(Toy::zero(), normal.normal);
+        assert!(normal.path.is_empty());
+        assert!(!bool::from(normal.exhausted));
+        let root_rule = store.insert(toy_cell(
+            Toy::add(Toy::var("x"), Toy::var("y")),
+            Toy::var("x"),
+        ));
+        let term = Toy::add(Toy::succ(Toy::zero()), two.clone());
+        assert_eq!(
+            Maybe::Present(Rewrite {
+                step: CellApp {
+                    cell: root_rule,
+                    at: root.clone()
+                },
+                result: Toy::succ(Toy::zero())
+            }),
+            apply_once(&store, &term)
+        );
+        let mut competing = CellStore::new();
+        let first = competing.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::zero()));
+        competing.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::var("x")));
+        assert_eq!(
+            Maybe::Present(Rewrite {
+                step: CellApp {
+                    cell: first,
+                    at: root.clone()
+                },
+                result: Toy::zero()
+            }),
+            apply_once(&competing, &two)
+        );
+        let mut looping = CellStore::new();
+        let loop_id = looping.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::succ(Toy::var("x"))));
+        let bounded = normalize(&looping, &two, NormalizationBudget::from(2_usize));
+        assert_eq!(two, bounded.normal);
+        assert!(bool::from(bounded.exhausted));
+        assert_eq!(
+            alloc::vec![CellApp { cell: loop_id, at: root }; 2],
+            bounded.path
+        );
+    }
+
+    /// Rejects the final splice after a successful read and match.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    struct RefusingSplice;
+
+    impl gandr_theory_cell_complexes_tools::AlphabetLie for RefusingSplice
+    {
+        /// Refuses every otherwise valid splice to expose the firing boundary.
+        ///
+        /// # Specification
+        /// - fails: always returns the non-command refusal.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — valid matching, mismatching and off-term inputs
+        ///   separate the splice refusal from earlier failures. A refused
+        ///   splice never becomes a normalization step.
+        /// - witness: `rewrite::tests::refusal_boundaries_do_not_record_a_step`
+        #[spec(ensures: |output| matches!(output, Err(gandr_theory_cell_complexes::CommandSpliceRefusal::NotACommand)))]
+        fn splice_cmd_at(
+            _cmd: &gandr_theory_cell_complexes_tools::Toy,
+            _pos: &gandr_theory_cell_complexes_tools::ToyPos,
+            _replacement: gandr_theory_cell_complexes_tools::Toy,
+        ) -> Result<
+            gandr_theory_cell_complexes_tools::Toy,
+            gandr_theory_cell_complexes::CommandSpliceRefusal,
+        >
+        {
+            Err(gandr_theory_cell_complexes::CommandSpliceRefusal::NotACommand)
+        }
+    }
+
+    #[test]
+    fn refusal_boundaries_do_not_record_a_step()
+    {
+        use gandr_theory_cell_complexes::CommandSpliceRefusal;
+        use gandr_theory_cell_complexes::PositionStep;
+        use gandr_theory_cell_complexes::command_subterm;
+        use gandr_theory_cell_complexes_tools::Lying;
+        use gandr_theory_cell_complexes_tools::Toy;
+        use gandr_theory_cell_complexes_tools::ToyAlphabet;
+        use gandr_theory_cell_complexes_tools::lying_cell;
+        let cell = lying_cell::<RefusingSplice>(Toy::succ(Toy::var("x")), Toy::var("x"));
+        let root = ToyAlphabet::root_position();
+        let redex = Toy::succ(Toy::zero());
+        assert_eq!(
+            Maybe::Absent(firing::Absent::SpliceRefused(
+                CommandSpliceRefusal::NotACommand
+            )),
+            rewrite_at(&cell, &redex, &root)
+        );
+        assert_eq!(
+            Maybe::Absent(firing::Absent::NoMatch),
+            rewrite_at(&cell, &Toy::zero(), &root)
+        );
+        let outside = ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]);
+        assert_eq!(
+            Maybe::Absent(firing::Absent::NoCommand(command_subterm::Absent::OffTerm)),
+            rewrite_at(&cell, &redex, &outside)
+        );
+        let mut store = CellStore::<Lying<RefusingSplice>>::new();
+        store.insert(cell);
+        let result = normalize(&store, &redex, NormalizationBudget::from(2_usize));
+        assert_eq!(redex, result.normal);
+        assert!(result.path.is_empty());
+        assert!(!bool::from(result.exhausted));
+    }
 
     /// `⟨Zero | Succ⁻(★)⟩`, the frame-defining cell's redex at `Zero`.
     ///

@@ -27,6 +27,7 @@
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
@@ -269,11 +270,15 @@ impl<A: CellAlphabet> CompletionOutcome<A>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a small overlapping system completes, and a run
-    ///   declined then resumed completes.
+    ///   declined then resumed completes. Zero-budget and invalid-input
+    ///   declines remain negative. Swapping variants or treating pending work
+    ///   as completed changes the flag.
     /// - witness: `tests::completion::completion_processes_within_budget`
     /// - witness: `tests::completion::decline_resume_matches_uninterrupted_completion`
+    /// - witness: `tests::completion::a_starved_budget_declines_with_pending`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| bool::from(output) == matches!(*self, Self::Completed { .. }))]
     pub fn is_completed(&self) -> CompletionStatus
     {
         CompletionStatus::from(matches!(*self, Self::Completed { .. }))
@@ -299,13 +304,25 @@ impl<A: CellAlphabet> CompletionOutcome<A>
     /// - hypothesis: L2 — a run declined one step into its leading batch and
     ///   resumed equals the uninterrupted run; L3 — every invalid supplied
     ///   decline is unchanged by resume, and a budget decline whose pending
-    ///   work is malformed is revalidated into a typed decline.
+    ///   work is malformed is revalidated into a typed decline. Completed
+    ///   outcomes stay unchanged even under zero ceilings. Lost accumulated
+    ///   evidence, skipped validation or restarted work changes the outcome.
     /// - witness: `tests::completion::decline_resume_matches_uninterrupted_completion`
     /// - witness: `tests::completion::invalid_supplied_decline_is_terminal_on_resume`
     /// - witness: `tests::completion::non_unifying_supplied_decline_is_terminal_on_resume`
     /// - witness: `tests::completion::budget_decline_revalidates_non_unifying_pending_overlap`
+    /// - witness: `completion::tests::terminal_outcomes_and_empty_sources_preserve_state`
     #[inline]
     #[must_use]
+    #[spec(captures: before = self.clone(), ensures: |output| if matches!(before, Self::Completed { .. } | Self::Declined { reason: DeclineReason::InvalidSuppliedOverlap(_), .. }) {
+        output == before
+    } else {
+        before.store().iter().all(|(id, cell)| output.store().get(id) == Maybe::Present(cell))
+        && output.derived().starts_with(before.derived()) && output.certificates().starts_with(before.certificates())
+        && output.derived().len() <= before.derived().len().saturating_add(usize::from(budget.max_steps))
+        && output.certificates().len() <= before.certificates().len().saturating_add(usize::from(budget.max_steps))
+        && usize::from(output.store().len()) <= core::cmp::max(usize::from(before.store().len()), usize::from(budget.max_cells))
+    })]
     pub fn resume(
         self,
         budget: CompletionBudget,
@@ -357,13 +374,21 @@ impl<A: CellAlphabet> CompletionOutcome<A>
 /// - hypothesis: L3 — a small sequent system completes within budget, a zero
 ///   step budget declines with the whole schedule pending, and the toy alphabet
 ///   drives the same loop to one oriented cell and replaying certificates; L1 —
-///   every certificate it emits replays.
+///   every certificate it emits replays. An empty store completes with zero
+///   ceilings. Extra work, lost original identities or exceeded ceilings
+///   changes the outcome.
 /// - witness: `tests::completion::completion_processes_within_budget`
 /// - witness: `tests::completion::a_starved_budget_declines_with_pending`
 /// - witness: `tests::second_inhabitant::completion_orients_and_certifies_over_the_toy_alphabet`
 /// - witness: `tests::differential::completion_certificates_replay`
+/// - witness: `completion::tests::terminal_outcomes_and_empty_sources_preserve_state`
 #[inline]
 #[must_use]
+#[spec(captures: before = store.clone(), ensures: |output| before.iter().all(|(id, cell)| output.store().get(id) == Maybe::Present(cell))
+    && usize::from(output.store().len()) == usize::from(before.len()).saturating_add(output.derived().len())
+    && output.derived().iter().enumerate().all(|(index, id)| *id == CellId::from(usize::from(before.len()).saturating_add(index)))
+    && output.derived().len() <= usize::from(budget.max_steps) && output.certificates().len() <= usize::from(budget.max_steps)
+    && usize::from(output.store().len()) <= core::cmp::max(usize::from(before.len()), usize::from(budget.max_cells)))]
 pub fn complete<A>(
     store: CellStore<A>,
     budget: CompletionBudget,
@@ -407,12 +432,23 @@ where
 ///   unissued right identifier, a composition, a unifier whose right leg misses
 ///   the peak, and a left identifier retargeted to another stored cell each
 ///   decline with the entry's position before any work, and the enumerator's
-///   own overlap rebuilt through the constructor is accepted.
+///   own overlap rebuilt through the constructor is accepted. An empty supplied
+///   schedule calls the source once and preserves the input store. Repeated or
+///   omitted invocation and validation after mutation change the observations.
 /// - witness: `tests::completion::supplied_overlap_validation_returns_typed_declines`
 /// - witness: `tests::completion::supplied_non_unifying_decline_is_typed`
 /// - witness: `tests::completion::a_supplied_overlap_naming_another_left_cell_is_declined`
+/// - witness: `completion::tests::terminal_outcomes_and_empty_sources_preserve_state`
 #[inline]
 #[must_use]
+#[spec(captures: before = store.clone(), ensures: |output| before.iter().all(|(id, cell)| output.store().get(id) == Maybe::Present(cell))
+    && usize::from(output.store().len()) == usize::from(before.len()).saturating_add(output.derived().len())
+    && output.derived().len() <= usize::from(budget.max_steps) && output.certificates().len() <= usize::from(budget.max_steps)
+    && usize::from(output.store().len()) <= core::cmp::max(usize::from(before.len()), usize::from(budget.max_cells))
+    && match output {
+        CompletionOutcome::Declined { ref store, ref derived, ref certificates, ref pending, reason: DeclineReason::InvalidSuppliedOverlap(error) } => *store == before && derived.is_empty() && certificates.is_empty() && validate_supplied_batches(store, pending) == Err(error),
+        CompletionOutcome::Completed { .. } | CompletionOutcome::Declined { .. } => true,
+    })]
 pub fn complete_with_overlap_source<A, F>(
     store: CellStore<A>,
     budget: CompletionBudget,
@@ -447,6 +483,28 @@ where
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — compositions, missing identifiers and independently
+///   non-unifying legs refuse at the first offending batch position. Changing
+///   validation order, dropping a leg or ignoring an earlier entry changes the
+///   typed decline.
+/// - witness: `tests::completion::supplied_overlap_validation_returns_typed_declines`
+/// - witness: `tests::completion::supplied_non_unifying_decline_is_typed`
+/// - witness: `tests::completion::a_supplied_overlap_naming_another_left_cell_is_declined`
+#[spec(ensures: |output| output == batches.iter().enumerate().find_map(|(batch, entries)| entries.iter().enumerate().find_map(|(overlap, item)| {
+    let batch = BatchIndex::from(batch);
+    let overlap = OverlapIndex::from(overlap);
+    if item.kind != OverlapKind::Confluence { return Some(SuppliedOverlapError::NonConfluence { batch, overlap }); }
+    match store.get(item.left) {
+        Maybe::Absent(_) => Some(SuppliedOverlapError::UnknownLeftCell { batch, overlap, cell: item.left }),
+        Maybe::Present(left) => if matches!(store.get(item.right), Maybe::Absent(_)) {
+            Some(SuppliedOverlapError::UnknownRightCell { batch, overlap, cell: item.right })
+        } else if legs_meet_peak(item, left) == LegAgreement::Miss {
+            Some(SuppliedOverlapError::NonUnifyingSubstitution { batch, overlap })
+        } else { None },
+    }
+})).map_or(Ok(()), Err))]
 fn validate_supplied_batches<A>(
     store: &CellStore<A>,
     batches: &[Vec<Overlap<A>>],
@@ -498,7 +556,17 @@ enum LegAgreement
 /// right cell's left-hand side both to the peak.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: positive exactly when both substituted left-hand sides equal the
+///   peak.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid supplied overlaps meet the peak on both legs; wrong
+///   left identity and a mismatching right leg decline. A one-leg check or
+///   reversed conjunction changes acceptance.
+/// - witness: `tests::completion::a_supplied_overlap_naming_another_left_cell_is_declined`
+/// - witness: `tests::completion::supplied_non_unifying_decline_is_typed`
+#[spec(ensures: |output| (output == LegAgreement::Meet) == (A::apply_subst(&overlap.unifier, left.lhs()) == overlap.peak && A::apply_subst(&overlap.unifier, overlap.right_renamed().lhs()) == overlap.peak))]
 fn legs_meet_peak<A>(
     overlap: &Overlap<A>,
     left: &Cell<A>,
@@ -517,7 +585,18 @@ where
 /// then every later batch.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the interrupted batch suffix is first, including an empty suffix,
+///   followed by every later batch unchanged and in order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — declines inside a batch preserve its exact suffix and
+///   every following batch. Zero, final and past-end indices separate suffix
+///   truncation from loss or reordering of later work.
+/// - witness: `completion::tests::empty_schedules_orientation_and_pending_boundaries_are_exact`
+#[spec(captures: tail = worklist.clone(), ensures: |output| output.len() == tail.len().saturating_add(1)
+    && output.first().is_some_and(|head| head.iter().eq(batch.iter().skip(usize::from(index))))
+    && output.iter().skip(1).eq(tail.iter()))]
 fn pending_from<A>(
     batch: &[Overlap<A>],
     index: OverlapIndex,
@@ -541,10 +620,27 @@ where
 ///
 /// # Specification
 /// - ensures: the outcome an uninterrupted run reaches from this state.
+/// - ensures: the input store and accumulated evidence remain prefixes; new
+///   cells and certificates number at most the step budget, and the store grows
+///   only within the greater of its initial size and cell ceiling.
 /// - panics: none.
 /// - intension: at most `budget.max_steps` critical pairs are processed, and
 ///   each pair's reducts are normalized once, the certificate built from those
 ///   normalizations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero and partial budgets preserve pending work, store
+///   identities and accumulated evidence; resumed outcomes equal uninterrupted
+///   outcomes. Lost prefixes, extra insertions and an off-by-one ceiling change
+///   those observations.
+/// - witness: `tests::completion::decline_resume_matches_uninterrupted_completion`
+/// - witness: `tests::completion::cell_budget_decline_preserves_pending_work`
+#[spec(captures: before = (store.clone(), derived.clone(), certificates.clone()), ensures: |output| before.0.iter().all(|(id, cell)| output.store().get(id) == Maybe::Present(cell))
+    && output.derived().starts_with(&before.1) && output.certificates().starts_with(&before.2)
+    && output.derived().len() <= before.1.len().saturating_add(usize::from(budget.max_steps))
+    && output.certificates().len() <= before.2.len().saturating_add(usize::from(budget.max_steps))
+    && usize::from(output.store().len()) == usize::from(before.0.len()).saturating_add(output.derived().len().saturating_sub(before.1.len()))
+    && usize::from(output.store().len()) <= core::cmp::max(usize::from(before.0.len()), usize::from(budget.max_cells)))]
 fn complete_with_worklist<A>(
     mut store: CellStore<A>,
     budget: CompletionBudget,
@@ -646,10 +742,15 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — three independent clusters schedule into two batches of
 ///   three, and a starved run declines with exactly this schedule pending.
+///   Empty schedules stay empty; a composition cannot enter a confluence batch.
+///   Wrong filtering or lost members changes the pending work.
 /// - witness: `tests::completion::decline_resume_matches_uninterrupted_completion`
 /// - witness: `tests::completion::a_starved_budget_declines_with_pending`
+/// - witness: `completion::tests::empty_schedules_orientation_and_pending_boundaries_are_exact`
 #[inline]
 #[must_use]
+#[spec(ensures: |output| output.iter().all(|batch| !batch.is_empty() && batch.iter().all(|overlap| overlap.kind == OverlapKind::Confluence))
+    && output.iter().map(Vec::len).sum::<usize>() == enumerate_overlaps(store).iter().filter(|overlap| overlap.kind == OverlapKind::Confluence).count())]
 pub fn scheduled_confluence_batches<A>(store: &CellStore<A>) -> Vec<Vec<Overlap<A>>>
 where
     A: CellAlphabet,
@@ -681,6 +782,20 @@ quenchant_shape::reason_enum! {
 /// - provides: [`orientation::Absent::Unorientable`] when the order does not
 ///   separate them.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — unequal sizes orient in both argument orders; equal size
+///   and missing hole domination refuse. Reversing the result or treating
+///   obstruction as a direction changes the exact outcome.
+/// - witness: `completion::tests::empty_schedules_orientation_and_pending_boundaries_are_exact`
+#[spec(captures: pair = (left.clone(), right.clone()), ensures: |output| match output {
+    Maybe::Present(ref actual) => match A::reduction_cmp(&pair.0, &pair.1) {
+        core::cmp::Ordering::Greater => actual.0 == pair.0 && actual.1 == pair.1,
+        core::cmp::Ordering::Less => actual.0 == pair.1 && actual.1 == pair.0,
+        core::cmp::Ordering::Equal => false,
+    },
+    Maybe::Absent(orientation::Absent::Unorientable) => A::reduction_cmp(&pair.0, &pair.1) == core::cmp::Ordering::Equal,
+})]
 fn orient<A>(
     left: A::Cmd,
     right: A::Cmd,
@@ -692,5 +807,133 @@ where
         | core::cmp::Ordering::Greater => Maybe::Present((left, right)),
         | core::cmp::Ordering::Less => Maybe::Present((right, left)),
         | core::cmp::Ordering::Equal => Maybe::Absent(orientation::Absent::Unorientable),
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_theory_cell_complexes_tools::Toy;
+    use gandr_theory_cell_complexes_tools::ToyAlphabet;
+    use gandr_theory_cell_complexes_tools::toy_cell;
+
+    use super::*;
+
+    #[test]
+    fn empty_schedules_orientation_and_pending_boundaries_are_exact()
+    {
+        let small = Toy::zero();
+        let large = Toy::succ(small.clone());
+        assert_eq!(
+            Maybe::Present((large.clone(), small.clone())),
+            orient::<ToyAlphabet>(large.clone(), small.clone())
+        );
+        assert_eq!(
+            Maybe::Present((large.clone(), small.clone())),
+            orient::<ToyAlphabet>(small.clone(), large.clone())
+        );
+        assert_eq!(
+            Maybe::Absent(orientation::Absent::Unorientable),
+            orient::<ToyAlphabet>(small.clone(), small.clone())
+        );
+        assert_eq!(
+            Maybe::Absent(orientation::Absent::Unorientable),
+            orient::<ToyAlphabet>(Toy::succ(Toy::var("x")), Toy::var("y"))
+        );
+        let mut store = CellStore::<ToyAlphabet>::new();
+        assert!(scheduled_confluence_batches(&store).is_empty());
+        let first = toy_cell(small.clone(), small);
+        let second = toy_cell(large.clone(), large);
+        let first_id = store.insert(first.clone());
+        let second_id = store.insert(second.clone());
+        let a = crate::overlap::overlaps_between((first_id, &first), (first_id, &first)).remove(0);
+        let b =
+            crate::overlap::overlaps_between((second_id, &second), (second_id, &second)).remove(0);
+        assert!(scheduled_confluence_batches(&store).is_empty());
+        let batch = alloc::vec![a.clone(), b.clone()];
+        let tail = VecDeque::from([alloc::vec![a.clone()], Vec::new(), alloc::vec![b.clone()]]);
+        assert_eq!(
+            alloc::vec![
+                batch.clone(),
+                alloc::vec![a.clone()],
+                Vec::new(),
+                alloc::vec![b.clone()]
+            ],
+            pending_from(&batch, OverlapIndex::from(0_usize), tail.clone())
+        );
+        assert_eq!(
+            alloc::vec![
+                alloc::vec![b.clone()],
+                alloc::vec![a.clone()],
+                Vec::new(),
+                alloc::vec![b.clone()]
+            ],
+            pending_from(&batch, OverlapIndex::from(1_usize), tail.clone())
+        );
+        for index in [2_usize, usize::MAX] {
+            assert_eq!(
+                alloc::vec![Vec::new(), alloc::vec![a.clone()], Vec::new(), alloc::vec![
+                    b.clone()
+                ]],
+                pending_from(&batch, OverlapIndex::from(index), tail.clone())
+            );
+        }
+        assert_eq!(
+            alloc::vec![Vec::<Overlap<ToyAlphabet>>::new()],
+            pending_from::<ToyAlphabet>(&[], OverlapIndex::from(0_usize), VecDeque::new())
+        );
+    }
+
+    #[test]
+    fn terminal_outcomes_and_empty_sources_preserve_state()
+    {
+        let zero = CompletionBudget::new(
+            CompletionStepBudget::from(0_usize),
+            CompletionCellBudget::from(0_usize),
+            NormalizationBudget::from(0_usize),
+        );
+        let empty = complete(CellStore::<ToyAlphabet>::new(), zero);
+        assert_eq!(
+            CompletionOutcome::Completed {
+                store: CellStore::new(),
+                derived: Vec::new(),
+                certificates: Vec::new()
+            },
+            empty
+        );
+        let mut store = CellStore::new();
+        let _shrinking = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
+        let _identity = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::succ(Toy::zero())));
+        let completed = complete(
+            store.clone(),
+            CompletionBudget::new(
+                CompletionStepBudget::from(2_usize),
+                CompletionCellBudget::from(0_usize),
+                NormalizationBudget::from(1_usize),
+            ),
+        );
+        assert!(bool::from(completed.is_completed()));
+        assert_eq!(2, completed.certificates().len());
+        assert_eq!(completed, completed.clone().resume(zero));
+        let automatic = complete(store.clone(), zero);
+        assert!(matches!(automatic, CompletionOutcome::Declined {
+            reason: DeclineReason::StepBudget,
+            ..
+        }));
+        let called = core::cell::Cell::new(false);
+        let source = alloc::vec![Vec::new()];
+        let supplied = complete_with_overlap_source(store.clone(), zero, |_| {
+            assert!(!called.replace(true));
+            source
+        });
+        assert!(called.get());
+        assert_eq!(
+            CompletionOutcome::Completed {
+                store,
+                derived: Vec::new(),
+                certificates: Vec::new()
+            },
+            supplied
+        );
     }
 }

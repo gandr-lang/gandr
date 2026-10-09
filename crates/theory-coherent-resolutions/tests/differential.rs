@@ -9,6 +9,7 @@
 //! tolerated divergence: the concurrency theorem of compositional rewriting
 //! is adopted as a property test rather than implemented as proof machinery.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellProvenance;
@@ -51,6 +52,14 @@ use crate::fixture::rule;
 ///
 /// # Specification
 /// - panics: when the store has no such overlap, which is a fixture defect.
+/// - ensures: the composition from the frame identity zero into successor
+///   identity two.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the fixed Peano store yields the composition whose
+///   certificate replays. Wrong identities or kind change the derived boundary.
+/// - witness: `tests::differential::the_fused_cell_certificate_replays_over_the_store`
+#[spec(ensures: |output| output.kind == OverlapKind::Composition && output.left == CellId::from(0_usize) && output.right == CellId::from(2_usize) && enumerate_overlaps(store).contains(&output))]
 fn frame_into_add(store: &CellStore) -> Overlap
 {
     enumerate_overlaps(store)
@@ -68,6 +77,14 @@ fn frame_into_add(store: &CellStore) -> Overlap
 ///
 /// # Specification
 /// - panics: when the composite cannot be formed, which is a fixture defect.
+/// - ensures: the composition peak and composite, with completion-derived tags.
+///
+/// # Adequacy
+/// - hypothesis: L2 — an independently executed two-step derivation agrees with
+///   the fused cell on generated ground inputs. Wrong faces, direction or tags
+///   change execution or the executable predicate.
+/// - witness: `tests::differential::fused_equals_two_step`
+#[spec(ensures: |output| { let base = peano_store(); let overlap = frame_into_add(&base); output.lhs() == &overlap.peak && matches!(overlap.composite(&base), Ok(ref composite) if output.rhs() == composite) && output.orient() == Orientation::CompletionDerived && output.provenance() == CellProvenance::DerivedByCompletion })]
 fn fused_commutation_cell() -> Cell
 {
     let base = peano_store();
@@ -85,6 +102,14 @@ fn fused_commutation_cell() -> Cell
 ///
 /// # Specification
 /// - panics: when the fused cell is not derived, which is a fixture defect.
+/// - ensures: a composition certificate that replays over the resulting store.
+///
+/// # Adequacy
+/// - hypothesis: L3 — repeated replay preserves the exact trace and an appended
+///   store preserves identifiers. A missing derived cell, wrong indices or
+///   retargeted certificate changes the trace or verdict.
+/// - witness: `tests::differential::replay_is_pure_over_a_fixed_certificate_and_store`
+#[spec(ensures: |output| output.1.overlap.kind == OverlapKind::Composition && bool::from(output.1.replay(&output.0)))]
 fn fusion_fixture() -> (CellStore, Tracelet)
 {
     let mut store = peano_store();
@@ -96,7 +121,18 @@ fn fusion_fixture() -> (CellStore, Tracelet)
 /// Generated Peano numerals `Succ^k(Zero)`, `k` below 64.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: generated values are ground unary successor spines ending in the
+///   nullary zero constructor, with fewer than 64 successors.
+/// - panics: none.
+/// - executable: none — the pinned attribute cannot name an opaque `impl
+///   Strategy` return in its generated predicate signature.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the generated values are checked through their borrowed
+///   producer views and size before the fusion comparison. A metavariable,
+///   wrong constructor or arity, or a spine outside zero through 63 successors
+///   fails the domain observer.
+/// - witness: `tests::differential::fused_equals_two_step`
 fn nat() -> impl Strategy<Value = ProdPat>
 {
     proptest::collection::vec(Just(()), 0 .. 64_usize).prop_map(|successors| {
@@ -270,6 +306,24 @@ proptest! {
     #[test]
     fn fused_equals_two_step(a in nat(), b in nat())
     {
+        for numeral in [&a, &b] {
+            prop_assert!((1_usize ..= 64_usize).contains(&usize::from(numeral.size())));
+            let mut view = numeral.view();
+            loop {
+                match view {
+                    gandr_theory_cell_complexes::ProdView::Ctor { ctor, mut args } => match ctor.as_ref() {
+                        "Zero" => { prop_assert!(args.next().is_none()); break; },
+                        "Succ" => {
+                            let child = args.next().expect("a successor has its argument");
+                            prop_assert!(args.next().is_none());
+                            view = child.view();
+                        },
+                        _ => { prop_assert!(false, "a numeral uses only zero and successor constructors"); break; },
+                    },
+                    gandr_theory_cell_complexes::ProdView::Meta(_) => { prop_assert!(false, "a numeral is ground"); break; },
+                }
+            }
+        }
         let fused = fused_commutation_cell();
         let frame = frame_defining_cell(&Sym::new("Succ"));
         let successor = add_s();

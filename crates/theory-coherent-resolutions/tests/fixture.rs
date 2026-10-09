@@ -1,5 +1,6 @@
 //! The sequent-alphabet cells and stores the suites share.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellProvenance;
 use gandr_theory_cell_complexes::CellStore;
@@ -172,7 +173,16 @@ pub fn joinable_store() -> CellStore
 /// `p`; the other two diverge by size and orient into a derived cell each.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: six cells form three independent two-rule clusters; their
+///   confluence schedule has exactly two batches of three.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact initial batches and interruption inside the leading
+///   batch witness all three clusters. Cross-cluster overlaps, a missing pair
+///   or a changed leading join alters scheduling or resumed completion.
+/// - witness: `tests::completion::decline_resume_matches_uninterrupted_completion`
+#[spec(ensures: |output| usize::from(output.len()) == 6 && gandr_theory_coherent_resolutions::scheduled_confluence_batches(&output).iter().map(Vec::len).eq([3, 3]))]
 pub fn independent_rule_clusters() -> CellStore
 {
     let reduced = || ConsPat::op("p", [], ConsPat::meta("alpha"));
