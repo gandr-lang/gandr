@@ -593,9 +593,6 @@ fn primed(name: &HoleName) -> HoleName
 ///   fresh name, so a hole worn at two polarities stays one hole. A name
 ///   already absent from `taken` maps to itself.
 /// - panics: none.
-/// - executable: none — the one-shot iterator is consumed by the body;
-///   retaining its inputs for an exit predicate requires a body or bound
-///   change.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — duplicate occurrences, a cross-category seam, a prime
@@ -603,6 +600,17 @@ fn primed(name: &HoleName) -> HoleName
 ///   names, renaming only one category or ignoring earlier reservations changes
 ///   the terms.
 /// - witness: `sequent::tests::skolemization_and_apartness_preserve_name_boundaries`
+#[spec(captures: reserved = taken.clone(), ensures: |output| reserved.iter().all(|name| {
+    let producer_fresh = match output.get_prod(&MetaVar::producer(name.clone())) {
+        Maybe::Present(image) => image.to_ref().metavars().next().is_some_and(|var| !reserved.contains(var.hole())),
+        Maybe::Absent(_) => true,
+    };
+    let consumer_fresh = match output.get_cons(&MetaVar::consumer(name.clone())) {
+        Maybe::Present(image) => image.to_ref().metavars().next().is_some_and(|var| !reserved.contains(var.hole())),
+        Maybe::Absent(_) => true,
+    };
+    producer_fresh && consumer_fresh
+}))]
 fn apartness_renaming<'var, I>(
     renamed: I,
     mut taken: BTreeSet<HoleName>,
