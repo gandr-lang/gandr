@@ -46,6 +46,7 @@ use crate::ledger::ObligationEntry;
 use crate::ledger::ObligationLedger;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
+use crate::support::Supported;
 
 /// The judgement's answer for one declaration.
 ///
@@ -249,6 +250,41 @@ pub fn check_declaration(
         ) => {},
     }
     verdict
+}
+
+/// Judge one declaration in `context`, and report the signature answers the
+/// judgement consulted.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the verdict [`check_declaration`] gives, with the same effect on
+///   `context`; beside it, every answer the judgement read from the signature
+///   table, once per position, ascending by position, and no answer read before
+///   this call.
+/// - provides: the support an incremental caller compares pointwise before it
+///   reuses the verdict: equal answers mean an equal judgement, because the
+///   signature table is the only input outside the declaration the judgement
+///   reads.
+/// - fails: never; a refusal is the verdict [`Verdict::Refused`].
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the surfaces are the log's span and its canonical form,
+///   separated by an unsupported judgement before a supported one, a supported
+///   one reading positions out of order and one twice, a read of an unadmitted
+///   position, and a refusal that stops the run before a later read.
+/// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
+/// - witness: `module::tests::a_refusal_cuts_the_support_where_the_run_stopped`
+#[inline]
+#[must_use]
+pub fn check_declaration_supported(
+    context: &mut CheckingContext<'_>,
+    declaration: &Declaration,
+) -> Supported
+{
+    context.start_support();
+    let verdict = check_declaration(context, declaration);
+    Supported::new(verdict, context.finish_support())
 }
 
 /// Judge every declaration of a module, in the order given.
@@ -775,6 +811,223 @@ mod tests
             usize::from(report.ledger().count()),
             0_usize,
             "a refusal of any class leaves the ledger empty"
+        );
+    }
+
+    /// The answers of `supported`, positions and type ids, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn answers(
+        supported: &super::Supported
+    ) -> Vec<(
+        ConstantIndex,
+        Maybe<ValueTypeId, crate::context::signature_table::Absent>,
+    )>
+    {
+        supported
+            .support()
+            .consulted()
+            .iter()
+            .map(|consulted| {
+                (
+                    consulted.constant(),
+                    consulted
+                        .answer()
+                        .map(crate::formation::FormedValueType::id),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_support_holds_each_consulted_answer_once_in_position_order()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns_integer = arena.comp_type_returner(integer);
+        let inner = arena.comp_type_arrow(integer, returns_integer);
+        let outer = arena.comp_type_arrow(integer, inner);
+        let function_type = arena.value_type_thunk(outer);
+        let suspended_type = arena.value_type_thunk(returns_integer);
+        let zero = arena.value_literal(integer_literal());
+        let x = arena.value_constant(ConstantIndex::from(0_usize));
+        let f = arena.value_constant(ConstantIndex::from(1_usize));
+        let unknown = arena.value_constant(ConstantIndex::from(7_usize));
+        // thunk ((force f) x) x: reads f, then x, then x again.
+        let forced = arena.computation_force(f);
+        let once = arena.computation_application(forced, x);
+        let twice = arena.computation_application(once, x);
+        let suspended = arena.value_thunk(twice);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let _x = check_declaration(
+            &mut context,
+            &declaration(At(0), Maybe::Present(integer), Maybe::Present(zero)),
+        );
+        let _f = check_declaration(
+            &mut context,
+            &declaration(At(1), Maybe::Present(function_type), HOLE),
+        );
+        let _read = check_declaration(
+            &mut context,
+            &declaration(At(2), UNSIGNED, Maybe::Present(x)),
+        );
+        let literal = super::check_declaration_supported(
+            &mut context,
+            &declaration(At(3), UNSIGNED, Maybe::Present(zero)),
+        );
+        assert_eq!(
+            answers(&literal),
+            [],
+            "a judgement that reads no constant consults nothing, whatever ran before it"
+        );
+        let applied = super::check_declaration_supported(
+            &mut context,
+            &declaration(
+                At(4),
+                Maybe::Present(suspended_type),
+                Maybe::Present(suspended),
+            ),
+        );
+        assert!(
+            matches!(applied.verdict(), Verdict::Checked { .. }),
+            "the application checks"
+        );
+        assert_eq!(
+            answers(&applied),
+            [
+                (ConstantIndex::from(0_usize), Maybe::Present(integer)),
+                (ConstantIndex::from(1_usize), Maybe::Present(function_type)),
+            ],
+            "f read first and x read twice are each held once, ascending by position"
+        );
+        let missing = super::check_declaration_supported(
+            &mut context,
+            &declaration(At(5), UNSIGNED, Maybe::Present(unknown)),
+        );
+        assert_eq!(
+            answers(&missing),
+            [(
+                ConstantIndex::from(7_usize),
+                Maybe::Absent(crate::context::signature_table::Absent::Untyped)
+            )],
+            "an unadmitted position is consulted and answers its absence"
+        );
+    }
+
+    #[test]
+    fn a_refusal_cuts_the_support_where_the_run_stopped()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns_integer = arena.comp_type_returner(integer);
+        let inner = arena.comp_type_arrow(integer, returns_integer);
+        let outer = arena.comp_type_arrow(integer, inner);
+        let function_type = arena.value_type_thunk(outer);
+        let suspended_type = arena.value_type_thunk(returns_integer);
+        let zero = arena.value_literal(integer_literal());
+        let text = arena.value_literal(text_literal());
+        let s = arena.value_constant(ConstantIndex::from(0_usize));
+        let f = arena.value_constant(ConstantIndex::from(1_usize));
+        let x = arena.value_constant(ConstantIndex::from(2_usize));
+        // thunk ((force f) s) x: s is a string, so the run stops before x.
+        let forced = arena.computation_force(f);
+        let once = arena.computation_application(forced, s);
+        let twice = arena.computation_application(once, x);
+        let suspended = arena.value_thunk(twice);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let module = [
+            declaration(At(0), UNSIGNED, Maybe::Present(text)),
+            declaration(At(1), Maybe::Present(function_type), HOLE),
+            declaration(At(2), Maybe::Present(integer), Maybe::Present(zero)),
+        ];
+        for offered in &module {
+            let _judged = check_declaration(&mut context, offered);
+        }
+        let string = context.atom(Atom::String).id();
+        let refused = super::check_declaration_supported(
+            &mut context,
+            &declaration(
+                At(3),
+                Maybe::Present(suspended_type),
+                Maybe::Present(suspended),
+            ),
+        );
+        assert!(
+            matches!(
+                refused.verdict(),
+                Verdict::Refused(CheckRefusal::TypeMismatch(Mismatch::Value { at, .. })) if at == s
+            ),
+            "the string argument is refused at the value bridge"
+        );
+        assert_eq!(
+            answers(&refused),
+            [
+                (ConstantIndex::from(0_usize), Maybe::Present(string)),
+                (ConstantIndex::from(1_usize), Maybe::Present(function_type)),
+            ],
+            "the support holds what the run consulted before the refusal and nothing after it"
+        );
+    }
+
+    #[test]
+    fn an_adopted_answer_is_read_as_if_judged()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let adopted = arena.value_constant(ConstantIndex::from(0_usize));
+        let untyped = arena.value_constant(ConstantIndex::from(1_usize));
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let formed =
+            crate::formation::form_value_type(&context, integer).expect("the integer atom forms");
+        assert_eq!(
+            context.adopt(ConstantIndex::from(0_usize), Maybe::Present(formed)),
+            Ok(()),
+            "a first adoption takes any position"
+        );
+        assert_eq!(
+            context.adopt(
+                ConstantIndex::from(1_usize),
+                Maybe::Absent(crate::context::signature_table::Absent::Untyped)
+            ),
+            Ok(()),
+            "an adopted absence is admitted"
+        );
+        assert!(
+            matches!(
+                check_declaration(&mut context, &declaration(At(2), UNSIGNED, Maybe::Present(adopted))),
+                Verdict::Synthesised { synthesised, .. } if synthesised.produced().id() == integer
+            ),
+            "a later declaration reads the adopted type"
+        );
+        assert_eq!(
+            check_declaration(
+                &mut context,
+                &declaration(At(3), UNSIGNED, Maybe::Present(untyped))
+            ),
+            Verdict::Refused(CheckRefusal::UnknownConstant {
+                at: untyped,
+                constant: ConstantIndex::from(1_usize),
+            }),
+            "a later declaration finds no type at an adopted absence"
+        );
+        assert_eq!(
+            context.adopt(
+                ConstantIndex::from(2_usize),
+                Maybe::Absent(crate::context::signature_table::Absent::Untyped)
+            ),
+            Err(CheckRefusal::AdmissionOrder {
+                constant: ConstantIndex::from(2_usize),
+                admitted: ConstantIndex::from(3_usize),
+            }),
+            "an adoption out of order is refused with both positions"
+        );
+        assert_eq!(
+            context
+                .signature(ConstantIndex::from(2_usize))
+                .map(crate::formation::FormedValueType::id),
+            Maybe::Present(integer),
+            "the refused adoption left the table as it was"
         );
     }
 }

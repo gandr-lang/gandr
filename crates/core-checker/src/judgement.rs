@@ -697,7 +697,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     ) => Err(CheckRefusal::MachineInvariant),
                 }
             },
-            | Value::Constant(constant) => match self.context.signature(constant) {
+            | Value::Constant(constant) => match self.context.consult(constant) {
                 | Maybe::Present(declared) => produced(declared),
                 | Maybe::Absent(_) => Err(CheckRefusal::UnknownConstant { at: term, constant }),
             },

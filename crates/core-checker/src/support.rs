@@ -1,0 +1,170 @@
+//! The support of a judgement: the signature answers one declaration's
+//! judgement read, so a caller holding an earlier verdict can tell whether it
+//! still answers for the same declaration.
+//!
+//! # An output of the judgement, not a scan of the term
+//!
+//! The constant rule is the one place the judgement reads the signature
+//! table, and it reads through the context, which logs each answer while a
+//! supported judgement runs. The support is therefore what the run consulted,
+//! not what a scan of the term predicts it would: a constant the run never
+//! reached because an earlier rule refused is absent, and a constant reached
+//! twice is present once. A caller compares the answers pointwise against the
+//! answers its own table would give now; equal answers mean the judgement
+//! would read exactly what it read before.
+
+use alloc::vec::Vec;
+
+use gandr_kernel_term::ConstantIndex;
+use quenchant_shape::shape::Maybe;
+
+use crate::context::signature_table;
+use crate::formation::FormedValueType;
+use crate::module::Verdict;
+
+/// One answer a judgement read from the signature table.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Consulted
+{
+    /// The admission position the judgement asked about.
+    constant: ConstantIndex,
+    /// The type the table held for it, or why it held none.
+    answer: Maybe<FormedValueType, signature_table::Absent>,
+}
+
+impl Consulted
+{
+    /// The answer `answer` the table gave for `constant`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn new(
+        constant: ConstantIndex,
+        answer: Maybe<FormedValueType, signature_table::Absent>,
+    ) -> Self
+    {
+        Self { constant, answer }
+    }
+
+    /// The admission position the judgement asked about.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn constant(&self) -> ConstantIndex
+    {
+        self.constant
+    }
+
+    /// The type the table held for the position, or why it held none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn answer(&self) -> Maybe<FormedValueType, signature_table::Absent>
+    {
+        self.answer
+    }
+}
+
+/// The answers one declaration's judgement consulted, ascending by position,
+/// each position once.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Support
+{
+    /// The answers, ascending by position, without repeats.
+    consulted: Vec<Consulted>,
+}
+
+impl Support
+{
+    /// The support a log of consultations stands for.
+    ///
+    /// # Specification
+    /// - requires: every entry for one position carries the same answer, which
+    ///   holds for one declaration's log because the table changes only after
+    ///   the declaration's body was judged.
+    /// - ensures: one entry per position the log names, ascending by position.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the surfaces are the sort and the repeat removal,
+    ///   separated by a judgement reading positions out of order and one
+    ///   position twice.
+    /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
+    pub(crate) fn from_log(mut log: Vec<Consulted>) -> Self
+    {
+        log.sort_by_key(|consulted| consulted.constant);
+        log.dedup_by_key(|consulted| consulted.constant);
+        Self { consulted: log }
+    }
+
+    /// The answers, ascending by position, each position once.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn consulted(&self) -> &[Consulted]
+    {
+        &self.consulted
+    }
+}
+
+/// One declaration's verdict, beside the support its judgement consulted.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Supported
+{
+    /// The verdict.
+    verdict: Verdict,
+    /// The answers the judgement consulted.
+    support: Support,
+}
+
+impl Supported
+{
+    /// The verdict `verdict`, reached by consulting `support`.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn new(
+        verdict: Verdict,
+        support: Support,
+    ) -> Self
+    {
+        Self { verdict, support }
+    }
+
+    /// The verdict.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn verdict(&self) -> Verdict
+    {
+        self.verdict
+    }
+
+    /// The answers the judgement consulted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn support(&self) -> &Support
+    {
+        &self.support
+    }
+}
+
+/// Whether the context logs the answers it hands out.
+pub enum SupportLog
+{
+    /// No supported judgement runs; nothing is logged.
+    Off,
+    /// A supported judgement runs; each answer is logged in the order read.
+    Recording(Vec<Consulted>),
+}

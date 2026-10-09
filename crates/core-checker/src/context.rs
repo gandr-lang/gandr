@@ -17,6 +17,14 @@
 //! admitted. A body therefore sees exactly the declarations strictly before
 //! it: self-reference and mutual reference find no type, whatever the producer
 //! resolved.
+//!
+//! # Adopted answers
+//!
+//! A caller that holds a declaration's earlier verdict and has shown it still
+//! answers — an incremental checker comparing the verdict's support pointwise
+//! — may admit the declaration with the type it supplied before, through
+//! [`CheckingContext::adopt`], instead of judging it again. Admission order
+//! binds an adopted declaration exactly as a judged one.
 
 use alloc::vec::Vec;
 use core::fmt;
@@ -29,6 +37,9 @@ use quenchant_shape::shape::Maybe;
 
 use crate::formation::FormedValueType;
 use crate::refusal::CheckRefusal;
+use crate::support::Consulted;
+use crate::support::Support;
+use crate::support::SupportLog;
 
 quenchant_shape::reason_enum! {
     /// Why the signature table holds no type for a position.
@@ -155,6 +166,8 @@ pub struct CheckingContext<'arena>
     atoms: Atoms,
     /// The allowance each judgement starts with.
     budget: CheckBudget,
+    /// The answers the running supported judgement consulted, when one runs.
+    support: SupportLog,
 }
 
 impl<'arena> CheckingContext<'arena>
@@ -190,6 +203,7 @@ impl<'arena> CheckingContext<'arena>
             admitted: Maybe::Absent(admission::Absent::Fresh),
             atoms,
             budget,
+            support: SupportLog::Off,
         }
     }
 
@@ -237,11 +251,106 @@ impl<'arena> CheckingContext<'arena>
         }
     }
 
-    /// The arena every id resolves in.
+    /// Admit the declaration at `constant` with the type an earlier judgement
+    /// of it supplied, without judging it again.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-order position is admissible input and
+    ///   refused.
+    /// - ensures: on success `constant` is the highest position admitted and
+    ///   [`Self::signature`] answers `supplied` for it, exactly as after
+    ///   judging a declaration that supplied `supplied`.
+    /// - provides: the seat an incremental caller places a reused verdict in;
+    ///   the caller, not the context, vouches that the verdict still answers.
+    /// - fails: [`CheckRefusal::AdmissionOrder`] when `constant` is not above
+    ///   the highest position admitted; the context is unchanged.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::AdmissionOrder`] — `constant` does not follow every
+    ///   position admitted before it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the surfaces are the admission and the record,
+    ///   separated by an adopted type a later declaration reads, an adopted
+    ///   absence a later declaration finds no type at, and an adoption out of
+    ///   order refused with the table unchanged.
+    /// - witness: `module::tests::an_adopted_answer_is_read_as_if_judged`
+    #[inline]
+    pub fn adopt(
+        &mut self,
+        constant: ConstantIndex,
+        supplied: Maybe<FormedValueType, signature_table::Absent>,
+    ) -> Result<(), CheckRefusal>
+    {
+        self.admit(constant)?;
+        if let Maybe::Present(declared) = supplied {
+            self.record(constant, declared);
+        }
+        Ok(())
+    }
+
+    /// The type the declaration at `constant` supplied, as the judgement reads
+    /// it: logged when a supported judgement runs.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the answer [`Self::signature`] gives; while a supported
+    ///   judgement runs, the answer is also appended to its log.
+    /// - provides: the one read of the table the judgement makes, so the
+    ///   support is complete by construction.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the surface is the log append, separated by a
+    ///   supported judgement whose support is asserted entry by entry and an
+    ///   unsupported judgement before it whose reads stay out.
+    /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
+    pub(crate) fn consult(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Maybe<FormedValueType, signature_table::Absent>
+    {
+        let answer = self.signature(constant);
+        if let SupportLog::Recording(ref mut log) = self.support {
+            log.push(Consulted::new(constant, answer));
+        }
+        answer
+    }
+
+    /// Start logging the answers handed out, discarding any earlier log.
     ///
     /// # Specification
     /// trivial.
-    pub(crate) const fn arena(&self) -> &'arena CoreArena
+    pub(crate) fn start_support(&mut self)
+    {
+        self.support = SupportLog::Recording(Vec::new());
+    }
+
+    /// Stop logging and return the support the log stands for.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the support of every answer logged since
+    ///   [`Self::start_support`], or the empty support when none was started;
+    ///   logging is off afterwards.
+    /// - panics: none.
+    pub(crate) fn finish_support(&mut self) -> Support
+    {
+        match core::mem::replace(&mut self.support, SupportLog::Off) {
+            | SupportLog::Recording(log) => Support::from_log(log),
+            | SupportLog::Off => Support::default(),
+        }
+    }
+
+    /// The arena every id resolves in, shared for as long as the context reads
+    /// it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn arena(&self) -> &'arena CoreArena
     {
         self.arena
     }
