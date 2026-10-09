@@ -581,7 +581,13 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a static lambda as one argument shape among the six a
+    ///   static family takes, read back as minted beneath its application.
+    /// - witness: `arena::tests::flat_arena_round_trips_all_static_argument_shapes`
     #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::StaticLambda(body)))]
     pub fn value_static_lambda(
         &mut self,
         body: ValueId,
@@ -615,6 +621,7 @@ impl CoreArena
     /// - witness: `arena::tests::flat_arena_round_trips_all_static_argument_shapes`
     /// - witness: `deep_static::deep_static::flat_arena_round_trips_deep_static_family_without_stack_recursion`
     #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::StaticApplication(head, argument)))]
     pub fn value_static_application(
         &mut self,
         head: ValueId,
@@ -934,7 +941,14 @@ impl CoreArena
     /// - provides: the only way to mint this former, which is what keeps a
     ///   child id below its parent's.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one static Pi over the value universe, read back as
+    ///   minted; the static Pi's own decision surface is the typing
+    ///   judgement's.
+    /// - witness: `arena::tests::flat_arena_round_trips_all_static_argument_shapes`
     #[inline]
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::StaticPi { domain, codomain }))]
     pub fn value_type_static_pi(
         &mut self,
         domain: ValueTypeId,

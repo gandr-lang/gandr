@@ -477,6 +477,19 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by an operator spine compared against a
+    ///   written application, a head alone, and spines differing by head and by
+    ///   arity.
+    /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Atom::Applied(Node::Stuck(cut, SpinePrefix(shorter)), _)) => {
+            cut == neutral && shorter < prefix.0
+        },
+        | Err(ConversionFault::Domain(_)) => self.domain.neutral(neutral).is_none(),
+        | Ok(_) | Err(_) => true,
+    })]
     fn stuck(
         &self,
         neutral: NeutralId,

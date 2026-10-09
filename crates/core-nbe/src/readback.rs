@@ -483,7 +483,16 @@ impl SpineStep
     ///   recomputes the polarity an elimination leaves behind.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a spine folding a static application then a
+    ///   computation application, read back at each polarity.
+    /// - witness: `readback::tests::an_unfolded_operator_reads_back_reduced`
     #[inline]
+    #[spec(ensures: |ret| ret.polarity == polarity
+        && ret.neutral == self.neutral
+        && ret.wanted == self.wanted
+        && ret.binders == self.binders)]
     fn onward(
         self,
         polarity: Polarity,
