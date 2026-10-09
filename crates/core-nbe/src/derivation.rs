@@ -267,7 +267,8 @@ impl Derivations
     /// - [`ConversionFault`] — as [`convert_values`] refuses.
     ///
     /// # Termination
-    /// - reason: a loop over an explicit stack, not recursion.
+    /// - reason: the `while let Some(process) = stack.pop()` preorder loop over
+    ///   an explicit stack of processes, not recursion.
     /// - measure: the multiset of pushed processes ordered by id: a process's
     ///   children were started after it, so every push names a larger id than
     ///   the process popped to push it.

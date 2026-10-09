@@ -1396,7 +1396,9 @@ pub enum Bound
 /// Every variant of [`EvalFault`] a step raises.
 ///
 /// # Termination
-/// - reason: a loop, not recursion.
+/// - reason: the `loop` below, which pops one task per iteration, not
+///   recursion; it audits only this slice, never the conversion driver that
+///   resumes it.
 /// - measure: the machine's fuel, which falls by one per iteration that pops.
 /// - boundedness: the loop ends when the fuel is zero or the task stack is
 ///   empty, whichever is first.

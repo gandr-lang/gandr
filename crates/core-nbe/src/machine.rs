@@ -218,6 +218,60 @@ impl Problem
     }
 }
 
+/// How many rule instances and evaluation steps a run may spend before it
+/// declines.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StepBudget(u64);
+
+impl StepBudget
+{
+    /// The budget a run takes when the caller names none: about a million
+    /// steps, far past any comparison a finite derivation of ordinary size
+    /// needs and small enough that a diverging one declines in well under a
+    /// second.
+    pub const DEFAULT: Self = Self(1_u64 << 20_u32);
+}
+
+impl Default for StepBudget
+{
+    /// [`StepBudget::DEFAULT`].
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::DEFAULT
+    }
+}
+
+impl From<u64> for StepBudget
+{
+    /// A budget of `steps`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(steps: u64) -> Self
+    {
+        Self(steps)
+    }
+}
+
+impl From<StepBudget> for u64
+{
+    /// The steps `budget` allows.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(budget: StepBudget) -> Self
+    {
+        budget.0
+    }
+}
+
 /// The parameters a conversion run is written against.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MachineSettings
@@ -226,11 +280,13 @@ pub struct MachineSettings
     scheduling: SchedulingPolicy,
     /// How finely evaluations are shared.
     granularity: GranularityPolicy,
+    /// How much the run may spend before it declines.
+    budget: StepBudget,
 }
 
 impl MachineSettings
 {
-    /// Settings over the two policies.
+    /// Settings over the two policies and the budget.
     ///
     /// # Specification
     /// trivial.
@@ -239,11 +295,13 @@ impl MachineSettings
     pub const fn new(
         scheduling: SchedulingPolicy,
         granularity: GranularityPolicy,
+        budget: StepBudget,
     ) -> Self
     {
         Self {
             scheduling,
             granularity,
+            budget,
         }
     }
 
@@ -268,6 +326,28 @@ impl MachineSettings
     {
         self.granularity
     }
+
+    /// The step budget.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn budget(&self) -> StepBudget
+    {
+        self.budget
+    }
+}
+
+/// Why a run answered neither way.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum DeclineReason
+{
+    /// A goal was about to unfold a neutral it had already unfolded on its
+    /// own chain: the same definition over the same spine.
+    Cycle,
+    /// The run spent its step budget.
+    Budget,
 }
 
 /// What the machine found.
@@ -278,6 +358,32 @@ pub enum MachineVerdict
     Convertible,
     /// An authoritative derivation of non-convertibility was found.
     NotConvertible,
+    /// Neither was found: a decline, never a verdict on the terms.
+    Declined(DeclineReason),
+}
+
+/// How many rule instances and evaluation steps a run spent.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StepCount(u64);
+
+impl StepCount
+{
+    /// One step: what a table read or a move charges.
+    const ONE: Self = Self(1_u64);
+}
+
+impl From<StepCount> for u64
+{
+    /// How many steps `count` counts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: StepCount) -> Self
+    {
+        count.0
+    }
 }
 
 /// How many processes a run started.
@@ -309,6 +415,8 @@ pub struct MachineReport
     processes: ProcessCount,
     /// How many derivations the run kept; zero for the null sink.
     derivations: DerivationCount,
+    /// How many rule instances and evaluation steps the run spent.
+    steps: StepCount,
 }
 
 impl MachineReport
@@ -345,6 +453,17 @@ impl MachineReport
     {
         self.derivations
     }
+
+    /// How many rule instances and evaluation steps the run spent.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn steps(&self) -> StepCount
+    {
+        self.steps
+    }
 }
 
 /// Decide whether the two sides of `problem` are convertible.
@@ -356,11 +475,14 @@ impl MachineReport
 /// - ensures: the search-free steps answer first — an identical or structurally
 ///   equal pair is convertible and a guard-separated pair is not, with no
 ///   process started; otherwise the machine runs its goals and channels fairly
-///   until the root answers, and the verdict is that answer: a convertible
-///   verdict rests on a derivation through the rule table, and a refutation on
-///   an authoritative one. A recording `sink` receives the winning derivation
-///   in preorder; the null sink receives nothing, and the report counts zero
-///   derivations kept.
+///   until the root answers or the run spends its budget, and the verdict is
+///   that answer: a convertible verdict rests on a derivation through the rule
+///   table, a refutation on an authoritative one, and a decline on neither. A
+///   goal about to unfold a neutral already unfolded on its own chain declines
+///   with [`DeclineReason::Cycle`]; a run past its budget declines with
+///   [`DeclineReason::Budget`]. A recording `sink` receives the winning
+///   derivation in preorder, and nothing for a decline; the null sink receives
+///   nothing, and the report counts zero derivations kept.
 /// - provides: step 4 of the conversion pipeline: the search the first three
 ///   steps defer to.
 /// - fails: [`ConversionFault::Polarity`] for a value against a computation
@@ -377,13 +499,16 @@ impl MachineReport
 /// Every variant of [`ConversionFault`]; see its documentation.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surfaces are the root fast path and the
-///   machine's rule arms; each rule arm is separated by a conversion answered
-///   through it, both verdicts are exercised, and recording is pinned against
-///   the null sink verdict for verdict.
+/// - hypothesis: L3 — the decision surfaces are the root fast path, the
+///   machine's rule arms and its two declines; each rule arm is separated by a
+///   conversion answered through it, both verdicts and both declines are
+///   exercised, and recording is pinned against the null sink verdict for
+///   verdict.
 /// - witness: `machine::tests::the_search_free_steps_answer_before_any_process`
 /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
+/// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
+/// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
 /// - witness: `machine::tests::recording_does_not_move_the_verdict`
 /// - witness: `machine::tests::the_sink_off_run_keeps_no_derivation`
 #[inline]
@@ -417,6 +542,7 @@ where
             verdict,
             processes: ProcessCount::default(),
             derivations: DerivationCount::default(),
+            steps: StepCount::default(),
         });
     }
     let mut scheduler = Scheduler::new(core, domain, definitions, settings, S::ACTIVITY);
@@ -425,20 +551,23 @@ where
         right: Slot::Ready(problem.right),
         depth: problem.depth,
         frozen: Frozen::default(),
+        chain: Chain::default(),
         next: Next::Classify,
     })?;
-    let settled = scheduler.run(root)?;
-    scheduler
-        .derivations
-        .emit(scheduler.core, scheduler.domain, root, sink)?;
-    let verdict = match settled {
-        | Settled::Convertible => MachineVerdict::Convertible,
-        | Settled::NotConvertible => MachineVerdict::NotConvertible,
-    };
+    let verdict = scheduler.run(root)?;
+    if matches!(
+        verdict,
+        MachineVerdict::Convertible | MachineVerdict::NotConvertible
+    ) {
+        scheduler
+            .derivations
+            .emit(scheduler.core, scheduler.domain, root, sink)?;
+    }
     Ok(MachineReport {
         verdict,
         processes: ProcessCount(scheduler.processes.len()),
         derivations: scheduler.derivations.count(),
+        steps: scheduler.spent,
     })
 }
 
@@ -568,8 +697,84 @@ struct Goal
     depth: BinderLevel,
     /// The constants frozen on each side.
     frozen: Frozen,
+    /// What each side has unfolded since the goal's last decomposition.
+    chain: Chain,
     /// The next step.
     next: Next,
+}
+
+/// One unfolding on a goal's chain: a definition over a spine.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Unfolded
+{
+    /// The definition unfolded.
+    constant: ConstantIndex,
+    /// The spine it was unfolded under, by the ids its eliminations name.
+    spine: Vec<Elimination>,
+}
+
+/// What each side of a goal has unfolded since the goal's last
+/// decomposition, inherited by every alternative a choice starts and dropped
+/// by every decomposition.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct Chain
+{
+    /// Unfolded on the left.
+    left: Vec<Unfolded>,
+    /// Unfolded on the right.
+    right: Vec<Unfolded>,
+}
+
+/// Whether an unfolding repeats one already on its side's chain.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Repeat
+{
+    /// It does not, and the chain now holds it.
+    Fresh,
+    /// It does: unfolding again would only return to this point.
+    Repeated,
+}
+
+impl Chain
+{
+    /// Add `unfolded` to `side`'s chain unless the chain holds it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Repeat::Repeated`] and no change when `side`'s chain holds
+    ///   an equal unfolding; [`Repeat::Fresh`] with `unfolded` appended
+    ///   otherwise.
+    /// - provides: the cycle key: a definition over a spine compared by the ids
+    ///   its eliminations name, so one function unfolded twice at different
+    ///   arguments is no cycle, while a definition that unfolds back to itself
+    ///   over the same arguments is.
+    /// - panics: none.
+    fn enter(
+        &mut self,
+        side: ConversionSide,
+        unfolded: Unfolded,
+    ) -> Repeat
+    {
+        let held = match side {
+            | ConversionSide::Left => &mut self.left,
+            | ConversionSide::Right => &mut self.right,
+        };
+        if held.contains(&unfolded) {
+            return Repeat::Repeated;
+        }
+        held.push(unfolded);
+        Repeat::Fresh
+    }
+}
+
+/// Whether an unfolding step went ahead.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Advance
+{
+    /// The side now waits on the unfolding.
+    Unfolding,
+    /// The unfolding repeats one on the side's chain, so the goal declines.
+    Cycle,
 }
 
 /// A channel: one evaluation goals demand.
@@ -606,6 +811,8 @@ enum Outcome
     Pending,
     /// A goal's answer.
     Settled(Settled),
+    /// A goal's decline.
+    Declined(DeclineReason),
     /// A channel's weak head.
     Evaluated(Glued),
 }
@@ -700,6 +907,8 @@ struct Scheduler<'run>
     variables: Vec<DomainValueId>,
     /// The derivations, kept only when recording.
     derivations: Derivations,
+    /// The rule instances and evaluation steps spent so far.
+    spent: StepCount,
 }
 
 impl<'run> Scheduler<'run>
@@ -730,6 +939,7 @@ impl<'run> Scheduler<'run>
             entries: BTreeMap::new(),
             variables: Vec::new(),
             derivations: Derivations::new(activity),
+            spent: StepCount::default(),
         }
     }
 
@@ -958,7 +1168,8 @@ impl<'run> Scheduler<'run>
     /// - [`ConversionFault::MachineInvariant`] — an id the arena does not hold.
     ///
     /// # Termination
-    /// - reason: a loop over an explicit worklist, not recursion.
+    /// - reason: the `while let Some(next) = work.pop()` loop over an explicit
+    ///   worklist of processes whose demand rose from zero, not recursion.
     /// - measure: the number of pending processes with no demand: an id is
     ///   pushed onward only when its demand rises from zero, which removes it
     ///   from that set.
@@ -1000,7 +1211,8 @@ impl<'run> Scheduler<'run>
     /// - [`ConversionFault::MachineInvariant`] — an id the arena does not hold.
     ///
     /// # Termination
-    /// - reason: a loop over an explicit worklist, not recursion.
+    /// - reason: the `while let Some(next) = work.pop()` loop over an explicit
+    ///   worklist of processes whose demand fell to zero, not recursion.
     /// - measure: the number of pending processes with nonzero demand: an id is
     ///   pushed onward only when its demand falls to zero.
     /// - boundedness: the arena is finite, so the set is.
@@ -1066,14 +1278,28 @@ impl<'run> Scheduler<'run>
         Ok(())
     }
 
-    /// Run until the root answers.
+    /// Charge `steps` to the run.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn charge(
+        &mut self,
+        steps: StepCount,
+    )
+    {
+        self.spent = StepCount(self.spent.0.saturating_add(steps.0));
+    }
+
+    /// Run until the root answers or the budget is spent.
     ///
     /// # Specification
     /// - requires: `root` is a pending goal no process waits on.
     /// - ensures: the root's answer, reached by turns taken round-robin over
     ///   the run queue, each process passed over until its credit reaches its
-    ///   share.
-    /// - provides: the machine's one loop.
+    ///   share; [`DeclineReason::Budget`] once the steps charged pass the
+    ///   settings' budget with the root unanswered.
+    /// - provides: the machine's one loop, and the backstop every comparison
+    ///   the cycle key does not catch reaches.
     /// - fails: every fault a turn raises, and
     ///   [`ConversionFault::MachineInvariant`] when the queue empties with the
     ///   root unanswered.
@@ -1081,12 +1307,32 @@ impl<'run> Scheduler<'run>
     ///
     /// # Errors
     /// Every fault a turn raises.
+    ///
+    /// # Termination
+    /// - reason: the `while let Some(id) = self.queue.pop_front()` loop below
+    ///   is the conversion driver: every unfolding, every evaluation slice and
+    ///   every alternative of every goal is issued from one of its turns, so it
+    ///   is the loop that must end, and per-slice fuel bounds each evaluation
+    ///   slice but never this loop.
+    /// - measure: the budget left, `budget - spent`. Every table read and every
+    ///   move charges one step plus one per alternative a choice starts, and
+    ///   every evaluation slice charges the steps it ran, at least one; the
+    ///   loop returns once the charged steps pass the budget.
+    /// - boundedness: the turns that charge nothing are bounded by the ones
+    ///   that do. A goal that waits or combines was queued by a dependency
+    ///   finishing, at most once per wait edge, and every edge was drawn when a
+    ///   charged turn started a process; a channel's re-application turn runs
+    ///   once per channel; a process passed over for credit re-queues at most
+    ///   its share less one times per turn it takes; a process popped answered
+    ///   or unneeded is dropped, once per queuing.
+    /// - input recursion: none.
     fn run(
         &mut self,
         root: ProcessId,
-    ) -> Result<Settled, ConversionFault>
+    ) -> Result<MachineVerdict, ConversionFault>
     {
         self.need(root)?;
+        let budget = u64::from(self.settings.budget());
         while let Some(id) = self.queue.pop_front() {
             let membership = self
                 .queued
@@ -1108,8 +1354,19 @@ impl<'run> Scheduler<'run>
                 self.enqueue(id)?;
             }
             let answered = self.outcome(root)?;
-            if let Outcome::Settled(settled) = answered {
-                return Ok(settled);
+            match answered {
+                | Outcome::Settled(Settled::Convertible) => {
+                    return Ok(MachineVerdict::Convertible);
+                },
+                | Outcome::Settled(Settled::NotConvertible) => {
+                    return Ok(MachineVerdict::NotConvertible);
+                },
+                | Outcome::Declined(reason) => return Ok(MachineVerdict::Declined(reason)),
+                | Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
+                | Outcome::Pending => {},
+            }
+            if self.spent.0 > budget {
+                return Ok(MachineVerdict::Declined(DeclineReason::Budget));
             }
         }
         Err(ConversionFault::MachineInvariant)
@@ -1191,14 +1448,15 @@ impl<'run> Scheduler<'run>
                         *channel = Channel::Running(evaluation);
                         Ok(Turn::Again)
                     },
-                    | Outcome::Evaluated(Glued::Computation(_)) | Outcome::Settled(_) => {
-                        Err(ConversionFault::MachineInvariant)
-                    },
+                    | Outcome::Evaluated(Glued::Computation(_))
+                    | Outcome::Settled(_)
+                    | Outcome::Declined(_) => Err(ConversionFault::MachineInvariant),
                 }
             },
             | Channel::Running(ref mut evaluation) => {
                 let sliced = evaluation.resume(self.core, self.domain, Fuel::from(SLICE));
-                let (progress, _spent) = sliced.map_err(ConversionFault::Evaluation)?;
+                let (progress, spent) = sliced.map_err(ConversionFault::Evaluation)?;
+                self.charge(StepCount(u64::from(u32::from(spent))));
                 match progress {
                     | Progress::Paused => Ok(Turn::Again),
                     | Progress::Finished(glued) => {
@@ -1272,7 +1530,7 @@ impl<'run> Scheduler<'run>
         match outcome {
             | Outcome::Pending => Ok(slot),
             | Outcome::Evaluated(glued) => Ok(Slot::Ready(glued)),
-            | Outcome::Settled(_) => Err(ConversionFault::MachineInvariant),
+            | Outcome::Settled(_) | Outcome::Declined(_) => Err(ConversionFault::MachineInvariant),
         }
     }
 
@@ -1280,10 +1538,12 @@ impl<'run> Scheduler<'run>
     ///
     /// # Specification
     /// - requires: both sides are in hand.
-    /// - ensures: the plan's rule applied: a shared or leaf answer recorded, a
-    ///   decomposition's children started, a step's decisions recorded and its
-    ///   sides replaced, or a choice's alternatives started; the goal's share
-    ///   tracks the height of the defined heads it compares.
+    /// - ensures: one step charged, and the plan's rule applied: a shared or
+    ///   leaf answer recorded, a decomposition's children started, a step's
+    ///   decisions recorded and its sides replaced — or the goal declined when
+    ///   the step would repeat an unfolding on its chain — or a choice's
+    ///   alternatives started; the goal's share tracks the height of the
+    ///   defined heads it compares.
     /// - provides: the table read once per goal turn.
     /// - fails: every fault the table or the rule raises.
     /// - panics: none.
@@ -1297,6 +1557,7 @@ impl<'run> Scheduler<'run>
         pair: (Glued, Glued),
     ) -> Result<Turn, ConversionFault>
     {
+        self.charge(StepCount::ONE);
         let planned = plan(self.core, self.domain, &goal.frozen, pair.0, pair.1)?;
         let height = self.pair_height(pair)?;
         let share = self.share_at(height);
@@ -1319,8 +1580,8 @@ impl<'run> Scheduler<'run>
                 self.decompose(id, goal, pair, subgoals, Collapse::Allowed)
             },
             | Plan::Step(Step::Unfold(side)) => {
-                self.unfold(id, goal, pair, side)?;
-                Ok(Turn::Again)
+                let advance = self.unfold(id, goal, pair, side)?;
+                self.advanced(id, advance)
             },
             | Plan::Step(Step::Force) => {
                 self.force(id, goal, pair)?;
@@ -1331,6 +1592,34 @@ impl<'run> Scheduler<'run>
                 Ok(Turn::Again)
             },
             | Plan::Choose(choice) => self.choose(id, goal, choice),
+        }
+    }
+
+    /// The turn an unfolding step leaves its goal at.
+    ///
+    /// # Specification
+    /// - requires: `advance` is what unfolding one of `id`'s sides answered.
+    /// - ensures: [`Turn::Again`] when the side now waits on its unfolding;
+    ///   otherwise the goal declines with [`DeclineReason::Cycle`] and the turn
+    ///   is [`Turn::Done`].
+    /// - provides: the one place a cycle becomes a decline.
+    /// - fails: as [`Scheduler::finish`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As [`Scheduler::finish`].
+    fn advanced(
+        &mut self,
+        id: ProcessId,
+        advance: Advance,
+    ) -> Result<Turn, ConversionFault>
+    {
+        match advance {
+            | Advance::Unfolding => Ok(Turn::Again),
+            | Advance::Cycle => {
+                self.finish(id, Outcome::Declined(DeclineReason::Cycle))?;
+                Ok(Turn::Done)
+            },
         }
     }
 
@@ -1382,9 +1671,9 @@ impl<'run> Scheduler<'run>
     /// - requires: `subgoals` are the decomposition's premises in subgoal
     ///   order.
     /// - ensures: an empty decomposition answers convertible at once; otherwise
-    ///   one fresh goal per subgoal — no frozen constant, a value pair as it
-    ///   stands, an opened pair one binder deeper on two opening channels at
-    ///   this depth — and the goal waits on all of them.
+    ///   one fresh goal per subgoal — no frozen constant and an empty chain, a
+    ///   value pair as it stands, an opened pair one binder deeper on two
+    ///   opening channels at this depth — and the goal waits on all of them.
     /// - provides: every rule with premises compared child by child.
     /// - fails: [`ConversionFault::MachineInvariant`] at the binder-level
     ///   ceiling, and every fault a channel raises.
@@ -1414,6 +1703,7 @@ impl<'run> Scheduler<'run>
                     right: Slot::Ready(Glued::Value(right)),
                     depth: goal.depth,
                     frozen: Frozen::default(),
+                    chain: Chain::default(),
                     next: Next::Classify,
                 })?,
                 | Subgoal::Opened(left, right) => {
@@ -1425,6 +1715,7 @@ impl<'run> Scheduler<'run>
                         right: Slot::Waiting(right),
                         depth: deeper,
                         frozen: Frozen::default(),
+                        chain: Chain::default(),
                         next: Next::Classify,
                     })?
                 },
@@ -1539,9 +1830,13 @@ impl<'run> Scheduler<'run>
     ///
     /// # Specification
     /// - requires: `side` holds a neutral headed by a defined constant.
-    /// - ensures: the derivation records `Unfold` and the side's reduction, and
-    ///   the side waits on the neutral's unfolding.
-    /// - provides: the red-l and red-r rules.
+    /// - ensures: [`Advance::Cycle`] with nothing recorded when the side's
+    ///   chain already holds this definition over this spine; otherwise the
+    ///   chain holds it, the derivation records `Unfold` and the side's
+    ///   reduction, the side waits on the neutral's unfolding, and the answer
+    ///   is [`Advance::Unfolding`].
+    /// - provides: the red-l and red-r rules, and the cycle check every
+    ///   unfolding passes through.
     /// - fails: every fault the channel raises, and
     ///   [`ConversionFault::MachineInvariant`] when the side is not a defined
     ///   neutral.
@@ -1555,10 +1850,21 @@ impl<'run> Scheduler<'run>
         goal: &mut Goal,
         pair: (Glued, Glued),
         side: ConversionSide,
-    ) -> Result<(), ConversionFault>
+    ) -> Result<Advance, ConversionFault>
     {
         let neutral = self.neutral_of(Self::side_of(pair, side))?;
         let constant = self.head_constant(neutral)?;
+        let held = self
+            .domain
+            .neutral(neutral)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        let unfolded = Unfolded {
+            constant,
+            spine: Vec::from(held.spine()),
+        };
+        if goal.chain.enter(side, unfolded) == Repeat::Repeated {
+            return Ok(Advance::Cycle);
+        }
         let named = TraceNode::Constant(constant);
         self.derivations
             .decide(id, ConversionDecision::Unfold { constant: named })?;
@@ -1570,7 +1876,7 @@ impl<'run> Scheduler<'run>
         let channel = self.unfold_channel(neutral)?;
         Self::set_side(goal, side, Slot::Waiting(channel));
         self.depend(id, channel)?;
-        Ok(())
+        Ok(Advance::Unfolding)
     }
 
     /// Force both sides: enter a thunk, or stack a force on a stuck value.
@@ -1686,9 +1992,10 @@ impl<'run> Scheduler<'run>
     ///
     /// # Specification
     /// - requires: both sides are in hand.
-    /// - ensures: one goal per alternative over this goal's sides, depth and
-    ///   frozen constants, each starting with its move, and the goal waits on
-    ///   them under the choice's combinator.
+    /// - ensures: one step charged per alternative, and one goal per
+    ///   alternative over this goal's sides, depth, frozen constants and chain,
+    ///   each starting with its move; the goal waits on them under the choice's
+    ///   combinator.
     /// - provides: every choice point.
     /// - fails: as [`Scheduler::start_goal`].
     /// - panics: none.
@@ -1703,6 +2010,8 @@ impl<'run> Scheduler<'run>
     ) -> Result<Turn, ConversionFault>
     {
         let (combination, moves) = choice.alternatives();
+        let branches = u64::try_from(moves.len()).unwrap_or(u64::MAX);
+        self.charge(StepCount(branches));
         let mut children = Vec::with_capacity(moves.len());
         for chosen in moves {
             let child = self.start_goal(Goal {
@@ -1710,6 +2019,7 @@ impl<'run> Scheduler<'run>
                 right: goal.right,
                 depth: goal.depth,
                 frozen: goal.frozen.clone(),
+                chain: goal.chain.clone(),
                 next: Next::Move(chosen),
             })?;
             self.depend(id, child)?;
@@ -1727,12 +2037,13 @@ impl<'run> Scheduler<'run>
     /// # Specification
     /// - requires: both sides are in hand and the move suits them, as the
     ///   choice that started this goal guarantees.
-    /// - ensures: the shortcut records `ConstShortcut` and decomposes the two
-    ///   spines, refuting at once when their shapes differ; an unfolding
-    ///   records and unfolds; a frozen unfolding records `Freeze`, freezes the
-    ///   head and unfolds the other side; a postponed unfolding records
-    ///   `Postpone` for the other head and unfolds; a frozen η-expansion
-    ///   records `Freeze`, freezes the head and η-expands it.
+    /// - ensures: one step charged; the shortcut records `ConstShortcut` and
+    ///   decomposes the two spines, refuting at once when their shapes differ;
+    ///   an unfolding records and unfolds; a frozen unfolding records `Freeze`,
+    ///   freezes the head and unfolds the other side; a postponed unfolding
+    ///   records `Postpone` for the other head and unfolds; a frozen
+    ///   η-expansion records `Freeze`, freezes the head and η-expands it. An
+    ///   unfolding that repeats one on its side's chain declines the goal.
     /// - provides: the moves the §6.1 and §6.2 alternatives start with.
     /// - fails: every fault the move raises.
     /// - panics: none.
@@ -1747,6 +2058,7 @@ impl<'run> Scheduler<'run>
         chosen: Move,
     ) -> Result<Turn, ConversionFault>
     {
+        self.charge(StepCount::ONE);
         match chosen {
             | Move::Shortcut => {
                 let left = self.neutral_of(pair.0)?;
@@ -1768,8 +2080,8 @@ impl<'run> Scheduler<'run>
                 }
             },
             | Move::Unfold(side) => {
-                self.unfold(id, goal, pair, side)?;
-                Ok(Turn::Again)
+                let advance = self.unfold(id, goal, pair, side)?;
+                self.advanced(id, advance)
             },
             | Move::FreezeUnfold(side) => {
                 let constant = self.side_constant(pair, side)?;
@@ -1778,16 +2090,16 @@ impl<'run> Scheduler<'run>
                     side,
                 })?;
                 goal.frozen.freeze(side, constant);
-                self.unfold(id, goal, pair, other(side))?;
-                Ok(Turn::Again)
+                let advance = self.unfold(id, goal, pair, other(side))?;
+                self.advanced(id, advance)
             },
             | Move::PostponeUnfold(side) => {
                 let postponed = self.side_constant(pair, other(side))?;
                 self.derivations.decide(id, ConversionDecision::Postpone {
                     constant: TraceNode::Constant(postponed),
                 })?;
-                self.unfold(id, goal, pair, side)?;
-                Ok(Turn::Again)
+                let advance = self.unfold(id, goal, pair, side)?;
+                self.advanced(id, advance)
             },
             | Move::FreezeEta(side) => {
                 let constant = self.side_constant(pair, side)?;
@@ -1831,9 +2143,15 @@ impl<'run> Scheduler<'run>
     ///   order, recording `NegativeSubgoal` with its position, and agrees once
     ///   every child agreed; a biased choice agrees on any agreeing child and
     ///   otherwise answers its last child's answer once it has one; an either
-    ///   agrees on any agreeing child and refutes once all refuted. Otherwise
-    ///   the goal waits. The children an answer rests on are recorded as its
-    ///   derivation's continuation, and the others lose this goal's need.
+    ///   agrees on any agreeing child and refutes once all refuted. A decline
+    ///   combines as the third value of Kleene's logic: a decomposition with no
+    ///   refutation declines once every child answered and one declined; a
+    ///   biased choice whose last child declined declines once no other child
+    ///   can still agree; an either declines once every child answered, none
+    ///   agreed and one declined. Each takes the first decline's reason in
+    ///   child order. Otherwise the goal waits. The children an answer rests on
+    ///   are recorded as its derivation's continuation, and the others lose
+    ///   this goal's need.
     /// - provides: the three combinators.
     /// - fails: [`ConversionFault::MachineInvariant`] for a child that answered
     ///   a weak head, an empty choice, or a position past the subgoal ceiling.
@@ -1854,7 +2172,8 @@ impl<'run> Scheduler<'run>
                 children,
                 collapse,
             } => {
-                let mut pending = Vec::new();
+                let mut waiting = 0_usize;
+                let mut declined = None;
                 for (position, &child) in children.iter().enumerate() {
                     let answered = self.outcome(child)?;
                     match answered {
@@ -1870,17 +2189,24 @@ impl<'run> Scheduler<'run>
                             return Ok(Turn::Done);
                         },
                         | Outcome::Settled(Settled::Convertible) => {},
-                        | Outcome::Pending => pending.push(child),
+                        | Outcome::Declined(reason) => {
+                            declined.get_or_insert(reason);
+                        },
+                        | Outcome::Pending => waiting = waiting.saturating_add(1_usize),
                         | Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
                     }
                 }
-                if !pending.is_empty() {
+                if waiting > 0_usize {
                     goal.next = Next::Combine(Combine::All {
                         pair,
                         children,
                         collapse,
                     });
                     return Ok(Turn::Wait);
+                }
+                if let Some(reason) = declined {
+                    self.finish(id, Outcome::Declined(reason))?;
+                    return Ok(Turn::Done);
                 }
                 match collapse {
                     | Collapse::Allowed => self.derivations.agree_on(id, pair, children)?,
@@ -1894,12 +2220,18 @@ impl<'run> Scheduler<'run>
                 else {
                     return Err(ConversionFault::MachineInvariant);
                 };
+                let mut waiting = 0_usize;
                 for &child in rest {
                     let answered = self.outcome(child)?;
-                    if answered == Outcome::Settled(Settled::Convertible) {
-                        self.derivations.rest_on(id, Vec::from([child]))?;
-                        self.finish(id, answered)?;
-                        return Ok(Turn::Done);
+                    match answered {
+                        | Outcome::Settled(Settled::Convertible) => {
+                            self.derivations.rest_on(id, Vec::from([child]))?;
+                            self.finish(id, answered)?;
+                            return Ok(Turn::Done);
+                        },
+                        | Outcome::Pending => waiting = waiting.saturating_add(1_usize),
+                        | Outcome::Settled(Settled::NotConvertible) | Outcome::Declined(_) => {},
+                        | Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
                     }
                 }
                 let authoritative = self.outcome(last)?;
@@ -1909,7 +2241,11 @@ impl<'run> Scheduler<'run>
                         self.finish(id, authoritative)?;
                         Ok(Turn::Done)
                     },
-                    | Outcome::Pending => {
+                    | Outcome::Declined(_) if waiting == 0_usize => {
+                        self.finish(id, authoritative)?;
+                        Ok(Turn::Done)
+                    },
+                    | Outcome::Pending | Outcome::Declined(_) => {
                         goal.next = Next::Combine(Combine::Biased(children));
                         Ok(Turn::Wait)
                     },
@@ -1918,6 +2254,8 @@ impl<'run> Scheduler<'run>
             },
             | Combine::Either(children) => {
                 let mut refuted = 0_usize;
+                let mut waiting = 0_usize;
+                let mut declined = None;
                 for &child in &children {
                     let answered = self.outcome(child)?;
                     match answered {
@@ -1929,17 +2267,25 @@ impl<'run> Scheduler<'run>
                         | Outcome::Settled(Settled::NotConvertible) => {
                             refuted = refuted.saturating_add(1_usize);
                         },
-                        | Outcome::Pending => {},
+                        | Outcome::Declined(reason) => {
+                            declined.get_or_insert(reason);
+                        },
+                        | Outcome::Pending => waiting = waiting.saturating_add(1_usize),
                         | Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
                     }
+                }
+                if waiting > 0_usize {
+                    goal.next = Next::Combine(Combine::Either(children));
+                    return Ok(Turn::Wait);
                 }
                 if refuted == children.len() {
                     self.derivations.rest_on(id, children)?;
                     self.finish(id, Outcome::Settled(Settled::NotConvertible))?;
                     return Ok(Turn::Done);
                 }
-                goal.next = Next::Combine(Combine::Either(children));
-                Ok(Turn::Wait)
+                let reason = declined.ok_or(ConversionFault::MachineInvariant)?;
+                self.finish(id, Outcome::Declined(reason))?;
+                Ok(Turn::Done)
             },
         }
     }
@@ -1959,6 +2305,17 @@ impl<'run> Scheduler<'run>
     /// # Errors
     /// - [`ConversionFault::Domain`] — the domain refused the node.
     /// - [`ConversionFault::MachineInvariant`] — the level ceiling.
+    ///
+    /// # Termination
+    /// - reason: the `while self.variables.len() <= index` loop below, which
+    ///   mints the variables of every level up to `level` that no earlier
+    ///   request reached, not recursion.
+    /// - measure: `index + 1 - self.variables.len()`, which falls by one per
+    ///   iteration because each pushes one variable.
+    /// - boundedness: `index` is fixed on entry, at most the problem's depth
+    ///   plus the binders the run has opened, so the loop mints at most that
+    ///   many variables over the whole run.
+    /// - input recursion: none.
     fn variable(
         &mut self,
         level: BinderLevel,
@@ -2237,10 +2594,12 @@ mod tests
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GlobalIndex;
 
+    use super::DeclineReason;
     use super::MachineReport;
     use super::MachineSettings;
     use super::MachineVerdict;
     use super::Problem;
+    use super::StepBudget;
     use super::TraceNode;
     use super::decide;
     use crate::arena::DomainArena;
@@ -2249,6 +2608,8 @@ mod tests
     use crate::eval::LoweredChain;
     use crate::eval::eval_computation;
     use crate::eval::eval_value;
+    use crate::policy::GranularityPolicy;
+    use crate::policy::SchedulingPolicy;
 
     /// A pair of core terms of one polarity, to be evaluated and compared.
     #[derive(Clone, Copy, Debug)]
@@ -2315,16 +2676,38 @@ mod tests
             }
         }
 
-        /// Evaluate `sides` into a fresh domain and decide them.
+        /// Evaluate `sides` into a fresh domain and decide them under the
+        /// default settings.
         ///
         /// # Specification
         /// - requires: both sides are closed.
-        /// - ensures: the machine's report under the default settings.
+        /// - ensures: as [`World::run_under`] with the default settings.
+        /// - provides: the entry every machine test with no settings of its own
+        ///   goes through.
+        /// - panics: as [`World::run_under`].
+        fn run<S>(
+            &self,
+            sides: Sides,
+            sink: &mut S,
+        ) -> MachineReport
+        where
+            S: TraceSink<TraceNode>,
+        {
+            self.run_under(MachineSettings::default(), sides, sink)
+        }
+
+        /// Evaluate `sides` into a fresh domain and decide them under
+        /// `settings`.
+        ///
+        /// # Specification
+        /// - requires: both sides are closed.
+        /// - ensures: the machine's report.
         /// - provides: the one entry every machine test goes through.
         /// - panics: when evaluation or the machine refuses, which no fixture
         ///   provokes.
-        fn run<S>(
+        fn run_under<S>(
             &self,
+            settings: MachineSettings,
             sides: Sides,
             sink: &mut S,
         ) -> MachineReport
@@ -2355,7 +2738,7 @@ mod tests
                 &self.core,
                 &mut domain,
                 definitions,
-                MachineSettings::default(),
+                settings,
                 problem,
                 sink,
             )
@@ -2876,6 +3259,144 @@ mod tests
             "the refutation names the second argument, then refutes it on its own; the \
              first argument's agreement is not part of it: {decisions:?}"
         );
+    }
+
+    #[test]
+    fn a_definition_cycle_declines_rather_than_unfolding_forever()
+    {
+        let mut core = CoreArena::new();
+        let zero = core.value_constant(Name::Zero.constant());
+        let one = core.value_constant(Name::One.constant());
+        let unit = core.value_unit();
+        // Each body is the other constant, and neither definition declares the
+        // other among its mentions, so the chain admits the cycle and nothing
+        // ahead of conversion refuses it.
+        let world = World::new(core, &[(Name::Zero, one), (Name::One, zero)]);
+
+        let mut log = TraceLog::new();
+        let report = world.run(Sides::Values(zero, unit), &mut log);
+        assert_eq!(
+            MachineVerdict::Declined(DeclineReason::Cycle),
+            report.verdict(),
+            "the left side unfolds to the other constant and back, so its third \
+             unfolding repeats its first"
+        );
+        assert!(
+            u64::from(report.steps()) < 64_u64,
+            "the chain caught the cycle at its first repeat, long before any budget"
+        );
+        assert!(
+            log.decisions().next().is_none(),
+            "and a decline emits no derivation"
+        );
+
+        let (verdict, _) = world.traced(Sides::Values(zero, one));
+        assert_eq!(
+            MachineVerdict::Convertible,
+            verdict,
+            "the cycle does not hide that the two constants unfold to each other"
+        );
+    }
+
+    #[test]
+    fn unfolding_one_function_twice_is_not_a_cycle()
+    {
+        let mut core = CoreArena::new();
+        let function = identity(&mut core);
+        let head = Name::Zero.constant();
+        let head = core.value_constant(head);
+        let unit = core.value_unit();
+        let applied = call(&mut core, head, &[unit]);
+        let occurrence = innermost(&mut core);
+        let again = call(&mut core, head, &[occurrence]);
+        let twice = core.computation_bind(applied, again);
+        let returned = core.computation_return(unit);
+        let world = World::new(core, &[(Name::Zero, function)]);
+
+        let (verdict, decisions) = world.traced(Sides::Computations(twice, returned));
+        assert_eq!(
+            MachineVerdict::Convertible,
+            verdict,
+            "the identity unfolds twice on one chain, under two spines, which is no cycle"
+        );
+        let unfoldings = decisions
+            .iter()
+            .filter(|decision| matches!(decision, ConversionDecision::Unfold { .. }))
+            .count();
+        assert_eq!(2_usize, unfoldings, "{decisions:?}");
+    }
+
+    #[test]
+    fn a_diverging_evaluation_declines_on_the_budget()
+    {
+        let mut core = CoreArena::new();
+        let occurrence = innermost(&mut core);
+        let self_applied = call(&mut core, occurrence, &[occurrence]);
+        let lambda = core.computation_lambda(self_applied);
+        let omega = core.value_thunk(lambda);
+        let looping = call(&mut core, omega, &[omega]);
+        let body = core.value_thunk(looping);
+        let head = core.value_constant(Name::Zero.constant());
+        let forced = core.computation_force(head);
+        let unit = core.value_unit();
+        let returned = core.computation_return(unit);
+        let world = World::new(core, &[(Name::Zero, body)]);
+
+        let budget = StepBudget::from(10_000_u64);
+        let settings = MachineSettings::new(
+            SchedulingPolicy::default(),
+            GranularityPolicy::default(),
+            budget,
+        );
+        let report = world.run_under(
+            settings,
+            Sides::Computations(forced, returned),
+            &mut NullSink,
+        );
+        assert_eq!(
+            MachineVerdict::Declined(DeclineReason::Budget),
+            report.verdict(),
+            "forcing the definition runs Ω, which unfolds nothing the chain could catch"
+        );
+        assert!(
+            u64::from(report.steps()) > u64::from(budget),
+            "the evaluation slices were charged until they passed the budget"
+        );
+    }
+
+    #[test]
+    fn a_refutation_outranks_a_decline()
+    {
+        let mut core = CoreArena::new();
+        let zero = core.value_constant(Name::Zero.constant());
+        let one = core.value_constant(Name::One.constant());
+        let unit = core.value_unit();
+        let units = core.value_pair(unit, unit);
+        let cyclic = core.value_pair(zero, unit);
+        let refuted = core.value_pair(unit, units);
+        let world = World::new(core, &[(Name::Zero, one), (Name::One, zero)]);
+
+        let (verdict, decisions) = world.traced(Sides::Values(cyclic, refuted));
+        assert_eq!(
+            MachineVerdict::NotConvertible,
+            verdict,
+            "the second components refute the pair whatever the first declines"
+        );
+        assert!(
+            matches!(decisions.as_slice(), &[
+                ConversionDecision::NegativeSubgoal { position },
+                ConversionDecision::ComparedShared { .. },
+            ] if position == SubgoalPosition::from(1_u32)),
+            "{decisions:?}"
+        );
+
+        let (verdict, decisions) = world.traced(Sides::Values(cyclic, units));
+        assert_eq!(
+            MachineVerdict::Declined(DeclineReason::Cycle),
+            verdict,
+            "with the second components agreeing, the first one's decline is the answer"
+        );
+        assert!(decisions.is_empty(), "{decisions:?}");
     }
 
     #[test]
