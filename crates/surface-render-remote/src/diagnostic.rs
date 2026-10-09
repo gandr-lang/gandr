@@ -22,6 +22,15 @@ impl fmt::Display for DiagnosticTemplate
     /// - provides: the text a translation keys on.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes write status, not the text
+    ///   emitted to its caller-owned sink; the output cannot be inspected here.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite registry is observed through the ordered
+    ///   argument-slot names of every message template. Missing, renamed or
+    ///   exchanged slots are distinguished; English phrasing and arbitrary
+    ///   formatter failures are outside this finite successful-write observer.
+    /// - witness: `diagnostic::tests::message_templates_preserve_argument_roles`
     #[inline]
     fn fmt(
         &self,
@@ -159,11 +168,16 @@ impl core::str::FromStr for DiagnosticCode
     /// [`UnknownDiagnosticCode`] when no row carries `spelling`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every allocated spelling parses back to its own code,
-    ///   which separates a lookup that confuses two rows; an unallocated
-    ///   spelling separates one that accepts a near miss.
+    /// - hypothesis: L3 — every allocated protocol spelling has an independent
+    ///   expected identity. Dense allocation, case, padding, shortened numbers
+    ///   and a non-ASCII prefix distinguish wrong rows and normalization; an
+    ///   unallocated number is refused. The domain is exact UTF-8 spelling.
     /// - witness: `diagnostic::tests::registry_codes_are_dense_unique_and_round_trip`
     #[inline]
+    #[anodized::spec(ensures: |ret| match ret {
+        | Ok(code) => code.text().0 == spelling,
+        | Err(_) => !DIAGNOSTIC_CODES.iter().any(|code| code.text().0 == spelling),
+    })]
     fn from_str(spelling: &str) -> Result<Self, Self::Err>
     {
         DIAGNOSTIC_CODES
@@ -200,13 +214,18 @@ impl serde::Serialize for DiagnosticCode
     /// - ensures: the wire image is the spelling the display writes.
     /// - fails: propagates the serializer's own error.
     /// - panics: none.
+    /// - executable: none — the serializer consumes the encoding operation; its
+    ///   generic success value exposes neither the emitted string nor a
+    ///   format-independent observation of the output.
     ///
     /// # Errors
     /// The serializer's error.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one code's exact wire string separates the spelling
-    ///   from the variant name.
+    /// - hypothesis: L3 — every registered code has an independently stated
+    ///   JSON string, distinguishing code identity, a variant-name image and a
+    ///   wrong wire kind. Other serializer formats and their sink failures are
+    ///   outside this finite wire observer.
     /// - witness: `diagnostic::tests::code_wire_image_is_its_stable_spelling`
     #[inline]
     fn serialize<S>(
@@ -255,10 +274,16 @@ impl serde::de::Visitor<'_> for CodeVisitor
     /// The invalid-value error for an unallocated spelling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the exact code decoded from its spelling separates a
-    ///   visitor that parses from one that defaults.
+    /// - hypothesis: L3 — every registered spelling is decoded from borrowed
+    ///   and owned JSON strings; unknown spellings and other JSON kinds are
+    ///   refused. These distinguish defaulting, alias acceptance and the wrong
+    ///   visitor kind within the JSON string boundary.
     /// - witness: `diagnostic::tests::code_wire_image_is_its_stable_spelling`
     #[inline]
+    #[anodized::spec(ensures: |ref ret| match *ret {
+        | Ok(code) => code.text().0 == v,
+        | Err(_) => !DIAGNOSTIC_CODES.iter().any(|code| code.text().0 == v),
+    })]
     fn visit_str<E>(
         self,
         v: &str,
@@ -286,13 +311,19 @@ impl<'input> serde::Deserialize<'input> for DiagnosticCode
     /// - fails: the deserializer's error for a non-string image, and the
     ///   invalid-value error for an unallocated spelling.
     /// - panics: none.
+    /// - executable: none — the generic deserializer owns and consumes its
+    ///   input; the returned code cannot be compared with that hidden image.
+    ///   The string visitor checks the relation when the spelling is available.
     ///
     /// # Errors
     /// The deserializer's error.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a spelling decoded to its code, and an unallocated
-    ///   one refused, separate the registry decode from a permissive one.
+    /// - hypothesis: L3 — the complete registered vocabulary is decoded from
+    ///   borrowed and owned JSON strings; variant names, unknown identifiers
+    ///   and non-string kinds are data errors. These distinguish a permissive
+    ///   decode and an incorrect wire representation, not every possible serde
+    ///   format.
     /// - witness: `diagnostic::tests::code_wire_image_is_its_stable_spelling`
     #[inline]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -412,11 +443,28 @@ impl DiagnosticMessage
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two messages of one variant with different arguments
-    ///   answer one code, which separates a code read off the arguments.
+    /// - hypothesis: L3 — every message variant, both suggestion branches and
+    ///   different arguments of an unbound-variable message are observed by
+    ///   their exact code. These distinguish exchanged identities and a code
+    ///   derived from payload text across the finite variant vocabulary.
     /// - witness: `diagnostic::tests::one_message_kind_has_one_code_independent_of_arguments`
+    /// - witness: `diagnostic::tests::message_templates_preserve_argument_roles`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| matches!((self, ret),
+        (&Self::TypeMismatch { .. }, DiagnosticCode::TypeMismatch)
+        | (&Self::ShapeMismatch { .. }, DiagnosticCode::ShapeMismatch)
+        | (&Self::StuckExpression { .. }, DiagnosticCode::StuckExpression)
+        | (&Self::UnboundVariable { .. }, DiagnosticCode::UnboundVariable)
+        | (&Self::GradeOrder { .. }, DiagnosticCode::GradeOrder)
+        | (&Self::UnknownAttribute { .. }, DiagnosticCode::UnknownAttribute)
+        | (&Self::DuplicateAttribute { .. }, DiagnosticCode::DuplicateAttribute)
+        | (&Self::MissingAttributePayload { .. }, DiagnosticCode::MissingAttributePayload)
+        | (&Self::NonValueAttributePayload { .. }, DiagnosticCode::NonValueAttributePayload)
+        | (&Self::ShadowedName { .. }, DiagnosticCode::ShadowedName)
+        | (&Self::Other { .. }, DiagnosticCode::Other)
+        | (&Self::ParseRepair { .. }, DiagnosticCode::ParseRepair)
+    ))]
     pub const fn code(&self) -> DiagnosticCode
     {
         match *self {
@@ -460,11 +508,17 @@ impl fmt::Display for DiagnosticMessage
     /// - provides: the rendered prose a card carries.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter's sink is opaque, so the emitted
+    ///   argument sequence cannot be inspected by a postcondition; its status
+    ///   alone does not expose missing, repeated or reordered arguments.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two arguments of one variant render two exact
-    ///   messages, which separates filling from echoing the template.
-    /// - witness: `diagnostic::tests::one_message_kind_has_one_code_independent_of_arguments`
+    /// - hypothesis: L3 — distinct Unicode and brace-containing arguments in
+    ///   every variant, including both suggestion branches, are observed in
+    ///   their declared order without unfilled slots. Missing, repeated and
+    ///   reordered arguments are distinguished. English phrasing and rejecting
+    ///   formatter sinks are not pinned by this successful-write observer.
+    /// - witness: `diagnostic::tests::message_templates_preserve_argument_roles`
     #[inline]
     fn fmt(
         &self,
@@ -537,39 +591,41 @@ mod tests
     use super::DiagnosticMessage;
     use super::UnknownDiagnosticCode;
 
+    /// Protocol identities stated independently of display and parse.
+    const CODE_CASES: [(DiagnosticCode, &str); 12] = [
+        (DiagnosticCode::TypeMismatch, "E0001"),
+        (DiagnosticCode::ShapeMismatch, "E0002"),
+        (DiagnosticCode::StuckExpression, "E0003"),
+        (DiagnosticCode::UnboundVariable, "E0004"),
+        (DiagnosticCode::GradeOrder, "E0005"),
+        (DiagnosticCode::UnknownAttribute, "E0006"),
+        (DiagnosticCode::DuplicateAttribute, "E0007"),
+        (DiagnosticCode::MissingAttributePayload, "E0008"),
+        (DiagnosticCode::NonValueAttributePayload, "E0009"),
+        (DiagnosticCode::ShadowedName, "W0010"),
+        (DiagnosticCode::Other, "E0011"),
+        (DiagnosticCode::ParseRepair, "W0012"),
+    ];
+
     #[test]
     fn registry_codes_are_dense_unique_and_round_trip()
     {
         for (index, code) in DIAGNOSTIC_CODES.iter().copied().enumerate() {
-            assert!(
-                !DIAGNOSTIC_CODES[.. index].contains(&code),
-                "{code} is allocated once"
-            );
+            assert!(!DIAGNOSTIC_CODES[.. index].contains(&code));
             let spelling = code.to_string();
-            let digits = spelling
-                .strip_prefix(['E', 'W'])
-                .expect("registry codes begin with their severity letter");
-            assert_eq!(
-                digits.parse::<usize>(),
-                Ok(index.saturating_add(1)),
-                "{code} is numbered by its allocation"
-            );
+            let digits = spelling.strip_prefix(['E', 'W']).expect("severity prefix");
+            assert_eq!(digits.parse::<usize>(), Ok(index.saturating_add(1)));
+        }
+        for (expected, spelling) in CODE_CASES {
+            assert_eq!(spelling.parse::<DiagnosticCode>(), Ok(expected));
+            assert_eq!(expected.to_string(), spelling);
+        }
+        for spelling in ["E0013", "e0001", " E0001", "E1", "Ｅ0001"] {
             assert_eq!(
                 spelling.parse::<DiagnosticCode>(),
-                Ok(code),
-                "{code} parses back to itself"
+                Err(UnknownDiagnosticCode)
             );
         }
-        assert_eq!(
-            "E0013".parse::<DiagnosticCode>(),
-            Err(UnknownDiagnosticCode),
-            "an unallocated number names no code"
-        );
-        assert_eq!(
-            "e0001".parse::<DiagnosticCode>(),
-            Err(UnknownDiagnosticCode),
-            "a spelling matches byte for byte"
-        );
     }
 
     #[test]
@@ -592,45 +648,188 @@ mod tests
             DiagnosticCode::UnboundVariable,
             "other arguments name the same code"
         );
-        assert_eq!(
-            first.template().to_string(),
-            "variable is unbound: {name}",
-            "the template is the code's"
-        );
-        assert_eq!(
-            first.to_string(),
-            "variable is unbound: first",
-            "the display fills the slot"
-        );
-        assert_eq!(
-            second.to_string(),
-            "variable is unbound: second",
-            "the display fills the slot with its own argument"
-        );
     }
 
     #[test]
     fn code_wire_image_is_its_stable_spelling()
     {
-        let json = serde_json::to_string(&DiagnosticCode::TypeMismatch).unwrap();
-        assert_eq!(json, r#""E0001""#, "the wire image is the spelling");
-        let decoded = serde_json::from_str::<DiagnosticCode>(&json).unwrap();
-        assert_eq!(
-            decoded,
-            DiagnosticCode::TypeMismatch,
-            "the spelling decodes to its code"
-        );
-        let owned = serde_json::from_value::<DiagnosticCode>(serde_json::json!("W0012")).unwrap();
-        assert_eq!(
-            owned,
-            DiagnosticCode::ParseRepair,
-            "an owned spelling decodes too"
-        );
-        let refused = serde_json::from_str::<DiagnosticCode>(r#""TypeMismatch""#)
-            .expect_err("the variant name is not a spelling");
-        assert!(
-            refused.to_string().contains("TypeMismatch"),
-            "the refusal quotes what it read: {refused}"
-        );
+        for (code, spelling) in CODE_CASES {
+            assert_eq!(
+                serde_json::to_value(code).unwrap(),
+                serde_json::json!(spelling)
+            );
+            let image = alloc::format!("\"{spelling}\"");
+            assert_eq!(
+                serde_json::from_str::<DiagnosticCode>(&image).unwrap(),
+                code
+            );
+            assert_eq!(
+                serde_json::from_value::<DiagnosticCode>(serde_json::json!(spelling)).unwrap(),
+                code
+            );
+        }
+        for image in [
+            serde_json::json!("TypeMismatch"),
+            serde_json::json!("E0013"),
+            serde_json::json!(null),
+            serde_json::json!(false),
+            serde_json::json!(1_i32),
+            serde_json::json!([]),
+            serde_json::json!({}),
+        ] {
+            assert!(
+                serde_json::from_value::<DiagnosticCode>(image)
+                    .unwrap_err()
+                    .is_data()
+            );
+        }
+    }
+
+    /// Translation slots and payload roles survive every message variant.
+    #[test]
+    fn message_templates_preserve_argument_roles()
+    {
+        let first = "α[one]";
+        let second = "β{two}";
+        let cases: [(DiagnosticMessage, DiagnosticCode, &[&str], &[&str]); 13] = [
+            (
+                DiagnosticMessage::TypeMismatch {
+                    expected: String::from(first),
+                    actual: String::from(second),
+                },
+                DiagnosticCode::TypeMismatch,
+                &["expected", "actual"],
+                &[first, second],
+            ),
+            (
+                DiagnosticMessage::ShapeMismatch {
+                    expected_shape: String::from(first),
+                    actual: String::from(second),
+                },
+                DiagnosticCode::ShapeMismatch,
+                &["expected_shape", "actual"],
+                &[first, second],
+            ),
+            (
+                DiagnosticMessage::StuckExpression {
+                    expression: String::from(first),
+                    hint: String::from(second),
+                },
+                DiagnosticCode::StuckExpression,
+                &["expression", "hint"],
+                &[first, second],
+            ),
+            (
+                DiagnosticMessage::UnboundVariable {
+                    name: String::from(first),
+                },
+                DiagnosticCode::UnboundVariable,
+                &["name"],
+                &[first],
+            ),
+            (
+                DiagnosticMessage::GradeOrder {
+                    lower: String::from(first),
+                    upper: String::from(second),
+                },
+                DiagnosticCode::GradeOrder,
+                &["lower", "upper"],
+                &[first, second],
+            ),
+            (
+                DiagnosticMessage::UnknownAttribute {
+                    name: String::from(first),
+                    suggestion: Some(String::from(second)),
+                },
+                DiagnosticCode::UnknownAttribute,
+                &["name", "suggestion"],
+                &[first, second],
+            ),
+            (
+                DiagnosticMessage::UnknownAttribute {
+                    name: String::from(first),
+                    suggestion: None,
+                },
+                DiagnosticCode::UnknownAttribute,
+                &["name", "suggestion"],
+                &[first],
+            ),
+            (
+                DiagnosticMessage::DuplicateAttribute {
+                    name: String::from(first),
+                },
+                DiagnosticCode::DuplicateAttribute,
+                &["name"],
+                &[first],
+            ),
+            (
+                DiagnosticMessage::MissingAttributePayload {
+                    name: String::from(first),
+                },
+                DiagnosticCode::MissingAttributePayload,
+                &["name"],
+                &[first],
+            ),
+            (
+                DiagnosticMessage::NonValueAttributePayload {
+                    name: String::from(first),
+                },
+                DiagnosticCode::NonValueAttributePayload,
+                &["name"],
+                &[first],
+            ),
+            (
+                DiagnosticMessage::ShadowedName {
+                    path: String::from(first),
+                },
+                DiagnosticCode::ShadowedName,
+                &["path"],
+                &[first],
+            ),
+            (
+                DiagnosticMessage::Other {
+                    message: String::from(first),
+                },
+                DiagnosticCode::Other,
+                &["message"],
+                &[first],
+            ),
+            (
+                DiagnosticMessage::ParseRepair {
+                    class: String::from(first),
+                },
+                DiagnosticCode::ParseRepair,
+                &["class"],
+                &[first],
+            ),
+        ];
+        for (message, expected_code, slots, arguments) in cases {
+            assert_eq!(message.code(), expected_code);
+            let template = message.template().to_string();
+            let actual_slots = template
+                .split('{')
+                .skip(1)
+                .map(|part| part.split_once('}').expect("a named slot closes").0);
+            assert!(actual_slots.eq(slots.iter().copied()), "{expected_code}");
+            let rendered = message.to_string();
+            let mut remaining = rendered.as_str();
+            for &argument in arguments {
+                remaining = remaining
+                    .split_once(argument)
+                    .expect("arguments keep their order")
+                    .1;
+                assert_eq!(rendered.matches(argument).count(), 1);
+            }
+            for &slot in slots {
+                assert!(
+                    !rendered.split('{').skip(1).any(|suffix| {
+                        suffix
+                            .strip_prefix(slot)
+                            .is_some_and(|rest| rest.starts_with('}'))
+                    }),
+                    "{expected_code} leaves no unfilled slot"
+                );
+            }
+        }
     }
 }
