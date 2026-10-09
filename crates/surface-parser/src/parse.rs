@@ -72,6 +72,8 @@ impl From<ParseCleanStatus> for bool
 /// - provides: the batch parse's carrier so obligations are not lost.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — this type has no call boundary; construction and
+///   obligation observation carry its executable invariants.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a clean parse and an obligation-bearing parse distinguish
@@ -111,10 +113,13 @@ impl<'source> ParseResult<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a mixed-severity parse observes the descending order.
-    /// - witness: `tests::acceptance::mixed_set_precedence_requires_obligation_and_commits`
+    /// - hypothesis: L3 — clean input, distinct severities and repeated classes
+    ///   at different source spans are observed through adjacent obligation
+    ///   keys; reversed severity and span ties change those ordered keys.
+    /// - witness: `parse::tests::obligations_are_reported_in_severity_then_source_order`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| (core::cmp::Reverse(left.class), left.span.start(), left.span.end()) <= (core::cmp::Reverse(right.class), right.span.start(), right.span.end())))]
     pub fn obligations(&self) -> &[ObligationInstance]
     {
         &self.obligations
@@ -151,11 +156,16 @@ impl<'source> ParseResult<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a two-class repair, an unclassed repair, and a clean
-    ///   parse distinguish the sequence.
+    /// - hypothesis: L3 — nested ghosts of distinct families and an unclassed
+    ///   repair distinguish depth-first order from arena order, skipped ghosts
+    ///   and invented families; a clean tree has no projected closes.
+    /// - witness: `parse::tests::minted_closes_follow_depth_first_tree_order`
     /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| [ClosingClass::Paren, ClosingClass::Bracket, ClosingClass::Brace].into_iter().all(|family| {
+        ret.iter().filter(|&&class| class == family).count() == self.tree.positions().filter(|&position| self.tree.node(position).is_some_and(|node| matches!(node.label(), NodeLabel::GhostClose { class, .. } if class == family))).count()
+    }))]
     pub fn minted_close_classes(&self) -> Vec<ClosingClass>
     {
         let mut classes = Vec::new();
@@ -242,6 +252,11 @@ impl<'source> ParseResult<'source>
 /// - witness: `parse::tests::parse_is_lossless_and_hash_stable`
 /// - witness: `parse::tests::arbitrary_source_parses_totally`
 #[inline]
+#[anodized::spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|parsed| {
+    parsed.tree.source() == source && parsed.tree.grammar() == pbg.fingerprint()
+        && parsed.tree.node(parsed.tree.root()).is_some_and(|node| node.label() == NodeLabel::Wald)
+        && parsed.obligations.iter().zip(parsed.obligations.iter().skip(1)).all(|(left, right)| (core::cmp::Reverse(left.class), left.span.start(), left.span.end()) <= (core::cmp::Reverse(right.class), right.span.start(), right.span.end()))
+}))]
 pub fn parse<'source>(
     pbg: &Pbg,
     source: SourceText<'source>,
@@ -302,7 +317,16 @@ mod tests
     impl fmt::Display for ReadSourceError
     {
         /// # Specification
-        /// trivial.
+        /// - ensures: the message names the requested path and original cause.
+        /// - fails: propagates the formatter's write failure.
+        /// - panics: none.
+        /// - executable: none — the formatter's sink is write-only; observing
+        ///   the emitted bytes would require replaying its side effects.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a directory read failure retains its path and
+        ///   cause in the message; a rejecting sink detects swallowed errors.
+        /// - witness: `parse::tests::source_reads_preserve_text_and_failure_context`
         fn fmt(
             &self,
             f: &mut fmt::Formatter<'_>,
@@ -320,6 +344,140 @@ mod tests
         {
             Some(&self.source)
         }
+    }
+
+    #[test]
+    fn obligations_are_reported_in_severity_then_source_order()
+    {
+        let pbg = built_in().unwrap();
+        let mut distinct_severity = false;
+        let mut distinct_span = false;
+        for source in ["", "def x = 1;", "def a = ( ; # def b = [ ;", "def = ; ? ?"] {
+            let parsed = parse(&pbg, SourceText::from(source)).unwrap();
+            let obligations = parsed.obligations();
+            for (left, right) in obligations.iter().zip(obligations.iter().skip(1)) {
+                assert!(left.class >= right.class);
+                if left.class == right.class {
+                    assert!(left.span <= right.span);
+                    distinct_span |= left.span != right.span;
+                }
+                else {
+                    distinct_severity = true;
+                }
+            }
+        }
+        assert!(distinct_severity, "the fixtures separate severity order");
+        assert!(distinct_span, "the fixtures separate source-order ties");
+    }
+
+    #[test]
+    fn minted_closes_follow_depth_first_tree_order()
+    {
+        use gandr_surface_syntax::ByteOffset;
+        use gandr_surface_syntax::ByteSpan;
+        use gandr_surface_syntax::ClosingClass;
+        use gandr_surface_syntax::GrammarFingerprint;
+        use gandr_surface_syntax::GroutShape;
+        use gandr_surface_syntax::GroutSort;
+        use gandr_surface_syntax::MoldId;
+        use gandr_surface_syntax::NodeLabel;
+        use gandr_surface_syntax::TreeBuilder;
+        let empty = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(0_usize)).unwrap();
+        let mut builder =
+            TreeBuilder::new(SourceText::from(""), GrammarFingerprint::from(0_u64)).unwrap();
+        let inner = builder
+            .node(
+                NodeLabel::GhostClose {
+                    sort: GroutSort::from(0_u16),
+                    class: ClosingClass::Brace,
+                },
+                empty,
+                &[],
+            )
+            .unwrap();
+        let form = builder
+            .node(NodeLabel::Meld(MoldId::from(0_u32)), empty, &[inner])
+            .unwrap();
+        let unclassed = builder
+            .node(
+                NodeLabel::Grout {
+                    sort: GroutSort::from(0_u16),
+                    shape: GroutShape::Postfix,
+                },
+                empty,
+                &[],
+            )
+            .unwrap();
+        let outer = builder
+            .node(
+                NodeLabel::GhostClose {
+                    sort: GroutSort::from(0_u16),
+                    class: ClosingClass::Paren,
+                },
+                empty,
+                &[],
+            )
+            .unwrap();
+        let root = builder
+            .node(NodeLabel::Wald, empty, &[form, unclassed, outer])
+            .unwrap();
+        let parsed = super::ParseResult {
+            tree: builder.finish(root).unwrap(),
+            obligations: Vec::new(),
+        };
+        assert_eq!(parsed.minted_close_classes(), [
+            ClosingClass::Brace,
+            ClosingClass::Paren
+        ]);
+        let pbg = built_in().unwrap();
+        assert!(
+            parse(&pbg, SourceText::from("def x = 1;"))
+                .unwrap()
+                .minted_close_classes()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn source_inventory_is_sorted_and_excludes_non_sources()
+    {
+        let root = corpus_root();
+        let paths = gandr_files(&root);
+        assert!(paths.contains(&root.join("strict/values.gandr")));
+        assert!(paths.contains(&root.join("fixture/surface/typed-holes.gandr")));
+        assert!(
+            paths
+                .iter()
+                .all(|path| path.extension().is_some_and(|ext| ext == "gandr"))
+        );
+        assert!(
+            paths
+                .iter()
+                .zip(paths.iter().skip(1))
+                .all(|(left, right)| left <= right)
+        );
+        assert!(gandr_files(&root.join("strict/values.gandr/child")).is_empty());
+    }
+
+    #[test]
+    fn source_reads_preserve_text_and_failure_context()
+    {
+        use core::fmt::Write as _;
+        let root = corpus_root();
+        assert_eq!(
+            read_source(&root.join("strict/values.gandr")).unwrap(),
+            include_str!("../../surface-corpus/strict/values.gandr")
+        );
+        let error = read_source(&root).unwrap_err();
+        assert_eq!(error.path, root);
+        let rendered = alloc::format!("{error}");
+        assert!(rendered.contains(&alloc::format!("{}", root.display())));
+        assert!(rendered.contains(&alloc::format!("{}", error.source)));
+        assert!(
+            crate::testing::RefusingSink
+                .write_fmt(format_args!("{error}"))
+                .is_err()
+        );
     }
 
     #[test]
@@ -354,6 +512,15 @@ mod tests
     /// - ensures: a walk of `dir` and its subdirectories, unreadable entries
     ///   skipped, the paths sorted so a run is deterministic.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nested checked-in source tree and a path below a
+    ///   regular file separate traversal from unreadable-directory refusal.
+    ///   Exact nested members, suffixes and sorted paths detect shallow-only
+    ///   walks, wrong extensions and nondeterministic ordering.
+    /// - witness: `parse::tests::source_inventory_is_sorted_and_excludes_non_sources`
+    #[anodized::spec(ensures: |ret| ret.iter().all(|path| path.starts_with(dir) && path.extension().is_some_and(|ext| ext == "gandr"))
+        && ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left <= right))]
     fn gandr_files(dir: &Path) -> Vec<PathBuf>
     {
         let mut out = Vec::new();
@@ -387,8 +554,21 @@ mod tests
     /// Read a source file while retaining path context in the error.
     ///
     /// # Specification
+    /// - ensures: success returns the file's UTF-8 text; failure retains the
+    ///   exact requested path and original I/O error.
+    /// - fails: propagates unreadable files and invalid UTF-8 with path
+    ///   context.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a checked-in source and a directory path distinguish
+    ///   byte-preserving success from a contextualized refusal. Exact source
+    ///   text and the path/cause observers detect truncation and lost context.
+    /// - witness: `parse::tests::source_reads_preserve_text_and_failure_context`
+    ///
     /// # Errors
     /// The read failure, carrying `path`.
+    #[anodized::spec(ensures: |ret| ret.as_ref().err().is_none_or(|error| error.path == path))]
     fn read_source(path: &Path) -> Result<String, ReadSourceError>
     {
         std::fs::read_to_string(path).map_err(|source| ReadSourceError {
@@ -458,7 +638,18 @@ ret greeting
     /// A biased strategy: byte soup, fragment mutations, and truncations.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: samples UTF-8 byte-soup renderings and full or truncated
+    ///   source fragments, including empty input.
+    /// - executable: none — the opaque Strategy exposes a generated value only
+    ///   through a random value tree; a separate sample cannot inspect the
+    ///   returned strategy.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — 400 generated sources observe grammar identity and
+    ///   exact source reconstruction after real parsing. Invalid bytes become
+    ///   replacement characters before parsing; sampling does not exhaust
+    ///   malformed programs or imply a distribution guarantee.
+    /// - witness: `parse::tests::arbitrary_source_parses_totally`
     fn hostile_source() -> impl Strategy<Value = String>
     {
         // A pool of gandr fragments to mutate and truncate.
