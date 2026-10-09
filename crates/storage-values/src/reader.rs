@@ -596,7 +596,8 @@ impl<'stream> TokenReader<'stream>
 ///   u64::from(spent).checked_add(u64::from(work)).is_some_and(|total| total <=
 ///   u64::from(ceiling))` — the new total exactly when it fits the width and
 ///   the ceiling.
-/// - provides: the decode budget's one accumulator step.
+/// - provides: the decode budget's one accumulator step, shared by the reader
+///   and the closure walk.
 /// - fails: [`ValueError::DecodeBudgetExceeded`] naming the would-be total,
 ///   saturated at the width, and the ceiling.
 /// - panics: none.
@@ -613,7 +614,7 @@ impl<'stream> TokenReader<'stream>
     == u64::from(spent)
         .checked_add(u64::from(work))
         .is_some_and(|total| total <= u64::from(ceiling)))]
-fn charge(
+pub(crate) fn charge(
     spent: DecodeWork,
     work: DecodeWork,
     ceiling: DecodeWork,

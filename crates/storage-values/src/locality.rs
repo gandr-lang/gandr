@@ -9,25 +9,20 @@
 //!
 //! # Edit measurement
 //!
-//! [`measure_edit`] counts chunks added by an edit and chunks left shared.
-//! The bound is an expectation over residues, not a per-edit ceiling; the
-//! locality suite compares corpus means against it. A finite corpus supplies
-//! evidence only for the edits and codecs it exercises.
-
-use alloc::collections::BTreeSet;
-use alloc::vec::Vec;
+//! [`measure_edit`] counts chunks added by an edit and chunks left shared,
+//! comparing the closures the closure walk finds for the two roots. The bound
+//! is an expectation over residues, not a per-edit ceiling; the locality suite
+//! compares corpus means against it. A finite corpus supplies evidence only
+//! for the edits and codecs it exercises.
 
 use anodized::spec;
 use gandr_storage_chunker::TypedChunkerParams;
 
 use crate::chunk::ChunkStore;
+use crate::closure::walk_closure;
 use crate::error::ValueError;
 use crate::error::ValueQuantity;
-use crate::ptr::ChunkDigest;
 use crate::ptr::ContentPtr;
-use crate::tokens::BodyFront;
-use crate::tokens::Record;
-use crate::tokens::split_record;
 use crate::units::ChunkBound;
 use crate::units::ChunkCount;
 use crate::units::EditDepth;
@@ -104,13 +99,14 @@ pub fn expected_chunk_bound(
 ///
 /// # Specification
 /// - requires: both pointers were committed into `store`.
-/// - ensures: on success `chunks_affected` counts the distinct chunks reachable
-///   from `after` that are not reachable from `before`, and `chunks_shared`
-///   those reachable from both; reachability follows every child record in
-///   every reachable chunk, each chunk visited once.
+/// - ensures: on success `chunks_affected` counts the distinct chunks in the
+///   closure of `after` that are not in the closure of `before`, and
+///   `chunks_shared` those in both, each closure the chunks a reader of its
+///   pointer loads.
 /// - provides: the observation a corpus of edits reads against
 ///   [`expected_chunk_bound`].
-/// - fails: the store's refusals for a chunk it cannot answer for.
+/// - fails: the closure walk's refusals: a chunk the store cannot answer for, a
+///   malformed subtree, or a spent decode budget.
 /// - panics: none.
 ///
 /// # Errors
@@ -139,9 +135,11 @@ pub fn measure_edit(
     edit_depth: EditDepth,
 ) -> Result<LocalityMeasurement, ValueError>
 {
-    let original = reachable(store, before)?;
-    let edited = reachable(store, after)?;
-    let shared = edited.intersection(&original).count();
+    let original = walk_closure(store, before)?;
+    let edited = walk_closure(store, after)?;
+    let original = original.closure().digests();
+    let edited = edited.closure().digests();
+    let shared = edited.intersection(original).count();
     let affected = edited.len().saturating_sub(shared);
 
     Ok(LocalityMeasurement {
@@ -149,43 +147,6 @@ pub fn measure_edit(
         chunks_affected: ChunkCount::from(affected),
         chunks_shared: ChunkCount::from(shared),
     })
-}
-
-/// Collects every chunk reachable from `root` by child records.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: on success the set of chunks reachable from the root's chunk,
-///   itself included, each loaded and verified once.
-/// - provides: the walk [`measure_edit`] counts over, held on the heap.
-/// - fails: the store's refusals.
-/// - panics: none.
-///
-/// # Errors
-/// [`ValueError`] — as listed above.
-#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|seen| seen.contains(&root.digest())))]
-fn reachable(
-    store: &dyn ChunkStore,
-    root: ContentPtr,
-) -> Result<BTreeSet<ChunkDigest>, ValueError>
-{
-    let mut seen = BTreeSet::new();
-    let mut pending = Vec::from([root.digest()]);
-
-    while let Some(digest) = pending.pop() {
-        if !seen.insert(digest) {
-            continue;
-        }
-        let mut remaining = store.load(digest)?.body();
-        while let Ok(BodyFront::Record(record, rest)) = split_record(remaining) {
-            if let Record::Child(child) = record {
-                pending.push(child.digest());
-            }
-            remaining = rest;
-        }
-    }
-
-    Ok(seen)
 }
 
 #[cfg(test)]

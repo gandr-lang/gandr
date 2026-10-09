@@ -13,10 +13,14 @@ mod generate;
 mod reference;
 
 #[cfg(test)]
+mod closure;
+#[cfg(test)]
 mod flat;
 #[cfg(test)]
 mod frame;
 #[cfg(test)]
 mod laws;
+#[cfg(test)]
+mod manifest;
 #[cfg(test)]
 mod values;

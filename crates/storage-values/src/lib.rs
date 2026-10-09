@@ -18,6 +18,17 @@
 //! failures. [`MAX_DECODE_WORK`] bounds accumulated decode work. See
 //! [verification and decode budgets](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#verification-and-decode-budgets).
 //!
+//! # The manifest
+//!
+//! A [`ValueManifest`] names a committed value under its [`ValueProfile`]:
+//! [`ValueManifest::encode`] writes it as bytes under [`MANIFEST_DOMAIN`],
+//! [`ValueManifest::decode`] refuses every other image by name, and
+//! [`ValueManifest::identity`] is the [`ManifestDigest`] a consumer stores.
+//! [`ValueManifest::read_under`] refuses a profile the reader does not share
+//! before any chunk is loaded, and [`ValueManifest::closure`] loads every chunk
+//! a reader would and checks the token count. See the
+//! [value manifest](https://github.com/gandr-lang/gandr/blob/main/crates/storage-values/README.md#the-value-manifest).
+//!
 //! # Locality
 //!
 //! [`expected_chunk_bound`] states an expectation, while [`measure_edit`]
@@ -30,6 +41,7 @@
 extern crate alloc;
 
 pub mod chunk;
+pub mod closure;
 pub mod commit;
 pub mod deref;
 pub mod error;
@@ -50,11 +62,14 @@ pub use crate::chunk::StoredChunkRef;
 pub use crate::chunk::VerifiedChunk;
 pub use crate::chunk::frame_chunk;
 pub use crate::chunk::verify_chunk_image;
+pub use crate::closure::ValueClosure;
 pub use crate::commit::RESIDUE_DOMAIN;
 pub use crate::commit::cam_commit;
 pub use crate::deref::cam_deref;
 pub use crate::error::ChunkFrameField;
 pub use crate::error::EmissionFault;
+pub use crate::error::ManifestField;
+pub use crate::error::ProfileField;
 pub use crate::error::ValueError;
 pub use crate::error::ValueQuantity;
 pub use crate::flat::decode_flat;
@@ -66,6 +81,9 @@ pub use crate::locality::measure_edit;
 pub use crate::manifest::BoundaryClassification;
 pub use crate::manifest::CodecIdentity;
 pub use crate::manifest::DigestFamily;
+pub use crate::manifest::MANIFEST_DIGEST_LEN;
+pub use crate::manifest::MANIFEST_DOMAIN;
+pub use crate::manifest::ManifestDigest;
 pub use crate::manifest::ValueManifest;
 pub use crate::manifest::ValueProfile;
 pub use crate::ptr::CHUNK_DIGEST_LEN;
@@ -89,6 +107,8 @@ pub use crate::units::DecodeWork;
 pub use crate::units::EditDepth;
 pub use crate::units::FlatBytes;
 pub use crate::units::MAX_DECODE_WORK;
+pub use crate::units::ManifestImage;
+pub use crate::units::ManifestImageBuf;
 pub use crate::units::SeamDepth;
 pub use crate::units::TokenBody;
 pub use crate::units::TokenBytes;

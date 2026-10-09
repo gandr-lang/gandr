@@ -3,6 +3,8 @@
 use core::error::Error;
 use core::fmt;
 
+use gandr_storage_chunker::TokenCount;
+
 use crate::index_base::ChildIndexBase;
 use crate::ptr::ChunkDigest;
 use crate::ptr::TokenOffset;
@@ -51,6 +53,121 @@ impl fmt::Display for ChunkFrameField
             | Self::BodyLength => "the declared body length does not match the image",
             | Self::Records => "the body is not a sequence of well-formed token records",
             | Self::TokenCount => "the declared token count does not match the body",
+        })
+    }
+}
+
+/// The field of a manifest image a refusal names, in image order.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ManifestField
+{
+    /// The domain the image opens with.
+    Domain,
+    /// The manifest layout version.
+    ManifestVersion,
+    /// The length prefix of the chunker commitment.
+    CommitmentLength,
+    /// The chunker commitment the length prefix counts.
+    ChunkerCommitment,
+    /// The digest family's tag.
+    DigestFamily,
+    /// The codec's identifier.
+    CodecId,
+    /// The codec's layout version.
+    CodecVersion,
+    /// The child index base's tag.
+    ChildIndexBase,
+    /// The boundary classification's tag.
+    BoundaryClassification,
+    /// The chunk frame layout version.
+    ChunkFrameVersion,
+    /// The root pointer's chunk digest.
+    RootDigest,
+    /// The root pointer's token offset.
+    RootOffset,
+    /// The value's token count.
+    TokenCount,
+}
+
+impl fmt::Display for ManifestField
+{
+    /// Writes the refused field.
+    ///
+    /// # Specification
+    /// - requires: nothing; every variant renders.
+    /// - ensures: writes one fixed phrase per variant, no two alike.
+    /// - provides: the field a manifest refusal names.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            | Self::Domain => "the domain",
+            | Self::ManifestVersion => "the manifest version",
+            | Self::CommitmentLength => "the chunker commitment's length",
+            | Self::ChunkerCommitment => "the chunker commitment",
+            | Self::DigestFamily => "the digest family",
+            | Self::CodecId => "the codec identifier",
+            | Self::CodecVersion => "the codec version",
+            | Self::ChildIndexBase => "the child index base",
+            | Self::BoundaryClassification => "the boundary classification",
+            | Self::ChunkFrameVersion => "the chunk frame version",
+            | Self::RootDigest => "the root digest",
+            | Self::RootOffset => "the root offset",
+            | Self::TokenCount => "the token count",
+        })
+    }
+}
+
+/// The field of a value profile a reader's expectation can differ in, in
+/// manifest image order.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ProfileField
+{
+    /// The typed chunker parameters, compared as their commitment.
+    ChunkerCommitment,
+    /// The digest family.
+    DigestFamily,
+    /// The codec's identifier.
+    CodecId,
+    /// The codec's layout version.
+    CodecVersion,
+    /// The child index base.
+    ChildIndexBase,
+    /// The boundary classification.
+    BoundaryClassification,
+    /// The chunk frame layout version.
+    ChunkFrameVersion,
+}
+
+impl fmt::Display for ProfileField
+{
+    /// Writes the differing field.
+    ///
+    /// # Specification
+    /// - requires: nothing; every variant renders.
+    /// - ensures: writes one fixed phrase per variant, no two alike.
+    /// - provides: the field an incompatible-profile refusal names.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.write_str(match *self {
+            | Self::ChunkerCommitment => "the chunker commitment",
+            | Self::DigestFamily => "the digest family",
+            | Self::CodecId => "the codec identifier",
+            | Self::CodecVersion => "the codec version",
+            | Self::ChildIndexBase => "the child index base",
+            | Self::BoundaryClassification => "the boundary classification",
+            | Self::ChunkFrameVersion => "the chunk frame version",
         })
     }
 }
@@ -248,6 +365,42 @@ pub enum ValueError
         /// The budget's ceiling.
         ceiling: DecodeWork,
     },
+
+    /// A manifest image's field holds a value this build does not read: a
+    /// foreign domain, an unknown version or tag, or a chunker commitment that
+    /// is not a typed one.
+    MalformedManifest
+    {
+        /// The field refused.
+        field: ManifestField,
+    },
+
+    /// A manifest image ended inside a field.
+    TruncatedManifest
+    {
+        /// The field the image ended inside.
+        field: ManifestField,
+    },
+
+    /// A manifest image continued past its last field.
+    TrailingManifestBytes,
+
+    /// A manifest's profile differs from the profile its reader expects.
+    IncompatibleProfile
+    {
+        /// The first field, in manifest image order, that differs.
+        field: ProfileField,
+    },
+
+    /// A manifest's token count is not the number of records its closure
+    /// delivers.
+    TokenCountMismatch
+    {
+        /// The count the manifest declares.
+        declared: TokenCount,
+        /// The records a reader of the root delivers, child chunks spliced.
+        spliced: TokenCount,
+    },
 }
 
 impl fmt::Display for ValueError
@@ -257,8 +410,8 @@ impl fmt::Display for ValueError
     /// # Specification
     /// - requires: nothing; every variant renders.
     /// - ensures: writes one message per variant, each naming the digest,
-    ///   field, kind, position, fault or quantity its payload carries, so no
-    ///   two variants render alike.
+    ///   field, kind, position, fault, quantity or counts its payload carries,
+    ///   so no two variants render alike.
     /// - provides: the operator-facing sentence a caller prints, and the
     ///   [`Error`] rendering the implementation below inherits.
     /// - fails: propagates the formatter's own write failure unchanged.
@@ -323,6 +476,27 @@ impl fmt::Display for ValueError
                 write!(
                     f,
                     "a decode would spend {spent} units of work, past the budget of {ceiling}"
+                )
+            },
+            | Self::MalformedManifest { field } => {
+                write!(f, "a manifest image holds {field} this build does not read")
+            },
+            | Self::TruncatedManifest { field } => {
+                write!(f, "a manifest image ends inside {field}")
+            },
+            | Self::TrailingManifestBytes => {
+                f.write_str("a manifest image continues past its token count")
+            },
+            | Self::IncompatibleProfile { field } => {
+                write!(
+                    f,
+                    "the manifest's profile differs from the expected one in {field}"
+                )
+            },
+            | Self::TokenCountMismatch { declared, spliced } => {
+                write!(
+                    f,
+                    "a manifest declares {declared} tokens where its closure delivers {spliced}"
                 )
             },
         }

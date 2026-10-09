@@ -51,6 +51,8 @@ use gandr_storage_chunker::TypedChunker;
 
 use crate::chunk::ChunkStore;
 use crate::chunk::frame_chunk;
+use crate::closure::add_tokens;
+use crate::closure::walk_closure;
 use crate::error::EmissionFault;
 use crate::error::ValueError;
 use crate::error::ValueQuantity;
@@ -118,8 +120,8 @@ where
     shape: EmissionShape,
     /// Records appended to the body since the previous boundary event.
     since_event: TokenCount,
-    /// Records the value emitted, across every chunk.
-    emitted: TokenCount,
+    /// Records a reader of the value will deliver, across every chunk.
+    delivered: TokenCount,
 }
 
 impl<'store, Store> CommitSink<'store, Store>
@@ -143,17 +145,20 @@ where
             open: Vec::new(),
             shape: EmissionShape::Empty,
             since_event: TokenCount::ZERO,
-            emitted: TokenCount::ZERO,
+            delivered: TokenCount::ZERO,
         }
     }
 
     /// Appends one record the value emitted, to the body and to the innermost
-    /// residue preimage.
+    /// residue preimage, counting the records a reader delivers for it.
     ///
     /// # Specification
-    /// - requires: the record's shape check has passed.
+    /// - requires: the record's shape check has passed, and `delivers` is the
+    ///   records a reader delivers in the record's place: one for a record of
+    ///   the value's own, the embedded subtree's total for a child record.
     /// - ensures: on success the record's bytes end both the body and the
-    ///   preimage stack, and both counters are one higher.
+    ///   preimage stack, the event counter is one higher, and the delivered
+    ///   count is `delivers` higher.
     /// - provides: the one place an emitted record is accounted.
     /// - fails: the body writer's overflow refusal, and an overflow refusal at
     ///   a counter's width.
@@ -161,19 +166,21 @@ where
     ///
     /// # Errors
     /// [`ValueError::ArithmeticOverflow`] — a length or count passes its width.
-    #[spec(captures: [entry_mark = self.body.mark(), entry_emitted = u64::from(self.emitted)],
+    #[spec(captures: [entry_mark = self.body.mark(), entry_delivered = u64::from(self.delivered)],
         ensures: |ret| ret.is_err()
-            || (self.body.mark() > entry_mark && u64::from(self.emitted) == entry_emitted.saturating_add(1_u64)))]
+            || (self.body.mark() > entry_mark
+                && u64::from(self.delivered) == entry_delivered.saturating_add(u64::from(delivers))))]
     fn emit(
         &mut self,
         record: Record<'_>,
+        delivers: TokenCount,
     ) -> Result<(), ValueError>
     {
         let mark = self.body.mark();
         self.body.push(record)?;
         self.preimage
             .extend_from_slice(self.body.since(mark).as_ref());
-        self.emitted = one_more(self.emitted)?;
+        self.delivered = add_tokens(self.delivered, delivers)?;
         self.since_event = one_more(self.since_event)?;
 
         Ok(())
@@ -242,7 +249,7 @@ where
 
         Ok((
             ContentPtr::new(chunk.digest(), TokenOffset::ZERO),
-            self.emitted,
+            self.delivered,
         ))
     }
 }
@@ -279,7 +286,7 @@ where
         });
         self.preimage.extend_from_slice(RESIDUE_DOMAIN);
 
-        self.emit(Record::Open(tag))
+        self.emit(Record::Open(tag), TokenCount::from(1_u64))
     }
 
     /// Appends a word record.
@@ -294,8 +301,8 @@ where
     /// # Errors
     /// [`ValueError`] — as listed above.
     #[inline]
-    #[spec(captures: [entry_emitted = u64::from(self.emitted)],
-        ensures: |ret| ret.is_err() || u64::from(self.emitted) == entry_emitted.saturating_add(1_u64))]
+    #[spec(captures: [entry_delivered = u64::from(self.delivered)],
+        ensures: |ret| ret.is_err() || u64::from(self.delivered) == entry_delivered.saturating_add(1_u64))]
     fn word(
         &mut self,
         word: CanonicalWord,
@@ -303,7 +310,7 @@ where
     {
         self.shape.payload()?;
 
-        self.emit(Record::Word(word))
+        self.emit(Record::Word(word), TokenCount::from(1_u64))
     }
 
     /// Appends a bytes record.
@@ -319,8 +326,8 @@ where
     /// # Errors
     /// [`ValueError`] — as listed above.
     #[inline]
-    #[spec(captures: [entry_emitted = u64::from(self.emitted)],
-        ensures: |ret| ret.is_err() || u64::from(self.emitted) == entry_emitted.saturating_add(1_u64))]
+    #[spec(captures: [entry_delivered = u64::from(self.delivered)],
+        ensures: |ret| ret.is_err() || u64::from(self.delivered) == entry_delivered.saturating_add(1_u64))]
     fn bytes(
         &mut self,
         bytes: TokenBytes<'_>,
@@ -328,31 +335,48 @@ where
     {
         self.shape.payload()?;
 
-        self.emit(Record::Bytes(bytes))
+        self.emit(Record::Bytes(bytes), TokenCount::from(1_u64))
     }
 
-    /// Appends a child record for an already-committed value.
+    /// Appends a child record for an already-committed value, counting the
+    /// records its subtree delivers.
     ///
     /// # Specification
-    /// - requires: the pointer addresses a chunk the store holds.
-    /// - ensures: on success the child record is appended unchanged.
+    /// - requires: nothing; a pointer whose closure the store cannot answer for
+    ///   is refused.
+    /// - ensures: on success the child record is appended unchanged, and the
+    ///   delivered count grows by the records a reader of the pointer delivers,
+    ///   so the manifest counts the value a reader reads back.
     /// - provides: the committing half of [`TokenSink::child_pointer`].
-    /// - fails: the shape refusal outside every constructor.
+    /// - fails: the shape refusal outside every constructor, and the closure
+    ///   walk's refusals for the pointer — [`ValueError::UnknownChunk`] naming
+    ///   a chunk of its closure the store does not hold among them.
     /// - panics: none.
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 agreement — a value embedding a committed value has a
+    ///   manifest whose closure, checked against its token count, is the
+    ///   store's whole digest set — plus L3 for an embedded value missing a
+    ///   chunk two seams down, refused naming it.
+    /// - witness: `tests::closure::the_closure_is_every_chunk_the_commit_wrote`
+    /// - witness: `tests::closure::a_missing_descendant_fails_the_closure_by_name`
     #[inline]
-    #[spec(captures: [entry_emitted = u64::from(self.emitted)],
-        ensures: |ret| ret.is_err() || u64::from(self.emitted) == entry_emitted.saturating_add(1_u64))]
+    #[spec(captures: [entry_delivered = u64::from(self.delivered)],
+        ensures: |ret| ret.is_err() || u64::from(self.delivered) > entry_delivered)]
     fn child_pointer(
         &mut self,
         pointer: ContentPtr,
     ) -> Result<(), ValueError>
     {
         self.shape.payload()?;
+        // economy: each embedding walks its pointer's closure afresh; a
+        // per-commit memo of embedded pointers if embedding-heavy codecs show.
+        let embedded = walk_closure(&*self.store, pointer)?;
 
-        self.emit(Record::Child(pointer))
+        self.emit(Record::Child(pointer), embedded.token_count())
     }
 
     /// Closes a constructor, raising its boundary event and cutting when the
@@ -392,7 +416,7 @@ where
     fn close(&mut self) -> Result<(), ValueError>
     {
         let closing = self.shape.close()?;
-        self.emit(Record::Close)?;
+        self.emit(Record::Close, TokenCount::from(1_u64))?;
 
         let Some(frame) = self.open.pop()
         else {
@@ -460,15 +484,17 @@ fn one_more(count: TokenCount) -> Result<TokenCount, ValueError>
 /// - requires: `profile` is the profile every reader of the value agrees on.
 /// - ensures: on success every chunk the traversal cut is in `store` under its
 ///   own digest, and the manifest carries `profile`, the root chunk at offset
-///   zero, and the number of records the value emitted. Committing is a
-///   deterministic function of the value and the profile: the same value
-///   commits to the same root, and two values sharing a subtree share the
-///   chunks it was cut into wherever the scanner's pending count agrees.
+///   zero, and the number of records a reader of the root delivers — every
+///   record the value emitted, each embedded pointer counted as the records its
+///   value delivers. Committing is a deterministic function of the value and
+///   the profile: the same value commits to the same root, and two values
+///   sharing a subtree share the chunks it was cut into wherever the scanner's
+///   pending count agrees.
 /// - provides: the value plane's write path.
 /// - fails: [`ValueError::UnsupportedIndexBase`] for a chunk-local profile,
 ///   before anything is written; [`ValueError::MalformedEmission`] for an
-///   emission that is not one balanced value; the framing's and the store's
-///   refusals.
+///   emission that is not one balanced value; the closure walk's refusals for
+///   an embedded pointer; the framing's and the store's refusals.
 /// - panics: none.
 ///
 /// # Errors
@@ -478,16 +504,20 @@ fn one_more(count: TokenCount) -> Result<TokenCount, ValueError>
 /// - hypothesis: L2 agreement — the same value commits to the same manifest in
 ///   an empty store and in one already holding generated values, some sharing
 ///   its subtrees and some under other profiles, the store ending with exactly
-///   the union of the two; shared subtrees are stored once, and an early edit
-///   adds few chunks — plus L3 for the chunk-local refusal, each emission
-///   fault, and a value mutated after its commit, which commits to a new root
-///   while the store grows by exactly the chunks the edit affected.
+///   the union of the two; shared subtrees are stored once, an early edit adds
+///   few chunks, and a value embedding a committed one has a token count its
+///   closure delivers — plus L3 for the chunk-local refusal, each emission
+///   fault, an embedded value missing a chunk, and a value mutated after its
+///   commit, which commits to a new root while the store grows by exactly the
+///   chunks the edit affected.
 /// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
 /// - witness: `tests::laws::a_value_mutated_after_commit_commits_anew_and_the_old_pointer_still_reads_the_old_value`
 /// - witness: `tests::values::the_same_value_commits_to_the_same_pointer`
 /// - witness: `tests::values::a_shared_subtree_is_stored_once`
 /// - witness: `tests::values::an_early_edit_moves_only_its_own_chunk_under_chunk_local_bases`
 /// - witness: `tests::values::a_malformed_emission_is_refused_by_name`
+/// - witness: `tests::closure::the_closure_is_every_chunk_the_commit_wrote`
+/// - witness: `tests::closure::a_missing_descendant_fails_the_closure_by_name`
 #[inline]
 #[spec(ensures: |ret| (ret.is_err() || profile.index_base() == ChildIndexBase::Absolute)
     && ret

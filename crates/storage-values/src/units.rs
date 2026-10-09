@@ -211,6 +211,11 @@ borrowed_bytes! {
 }
 
 borrowed_bytes! {
+    /// A value manifest image: the domain, then the manifest's fields.
+    pub struct ManifestImage<'image>;
+}
+
+borrowed_bytes! {
     /// An inline canonical byte payload.
     pub struct TokenBytes<'bytes>;
 }
@@ -296,6 +301,51 @@ impl From<Box<[u8]>> for FlatBytes
 impl AsRef<[u8]> for FlatBytes
 {
     /// Borrows the flat bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &[u8]
+    {
+        self.0.as_ref()
+    }
+}
+
+/// An owned value manifest image.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ManifestImageBuf(Box<[u8]>);
+
+impl ManifestImageBuf
+{
+    /// Borrows the image.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn as_image(&self) -> ManifestImage<'_>
+    {
+        ManifestImage(self.0.as_ref())
+    }
+}
+
+impl From<Box<[u8]>> for ManifestImageBuf
+{
+    /// Takes over manifest image bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(bytes: Box<[u8]>) -> Self
+    {
+        Self(bytes)
+    }
+}
+
+impl AsRef<[u8]> for ManifestImageBuf
+{
+    /// Borrows the image bytes.
     ///
     /// # Specification
     /// trivial.
