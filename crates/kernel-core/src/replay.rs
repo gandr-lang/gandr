@@ -65,6 +65,7 @@
 use alloc::vec::Vec;
 use core::iter::Peekable;
 
+use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::ConversionSide;
@@ -1882,6 +1883,17 @@ where
     ///   `for` loops over finite argument slices, not recursion.
     /// - measure: the focus's arena position while descending; then the
     ///   arguments left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by an operator of two parameters at its two
+    ///   arguments, in order and swapped, at an argument open in the ambient
+    ///   context, through an alias whose body stands under the spine, and short
+    ///   of its arguments.
+    /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+    #[spec(ensures: |ret| match ret {
+        | Ok(reduct) => self.arena.value(reduct).is_some(),
+        | Err(_) => true,
+    })]
     fn unfold_value(
         &mut self,
         value: ValueId,

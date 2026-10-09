@@ -38,6 +38,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;
 use quenchant_arith::arith;
 use quenchant_shape::shape::Maybe;
@@ -1081,6 +1082,7 @@ pub fn instantiate_comp_type(
 /// - witness: `rewrite::tests::substitution_avoids_capture`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| ret == body || arena.value(ret).is_some())]
 pub fn instantiate_value(
     arena: &mut CoreArena,
     body: ValueId,

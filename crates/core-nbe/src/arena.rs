@@ -1007,7 +1007,16 @@ impl DomainArena
     /// - provides: the domain form a static lambda evaluates to.
     /// - fails: never — a closure that dangles surfaces where it is read.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one operator evaluated from a static lambda and read
+    ///   by variant before its body is read back under a fresh binder.
+    /// - witness: `readback::tests::a_static_lambda_reads_back_with_its_binder_as_an_index`
     #[inline]
+    #[spec(ensures: |ret| matches!(
+        self.value(ret),
+        Some(&DomainValue::StaticLambda { lambda: held, .. }) if held == lambda
+    ) && matches!(self.value_guard(ret), Ok(Guard::Flexible)))]
     pub fn value_static_lambda(
         &mut self,
         lambda: ValueClosureId,

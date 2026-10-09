@@ -727,7 +727,13 @@ impl TermArena
     /// - provides: the neutral static application: the vocabulary has no static
     ///   lambda, so no arena holds a static redex and the node never reduces.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator constant at a quoted code, encoded and
+    ///   decoded back in wire order under the decode that reads it.
+    /// - witness: `sharing_format::sharing_format::a_static_family_round_trips_in_wire_order`
     #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::StaticApplication(head, argument)))]
     pub fn value_static_application(
         &mut self,
         head: ValueId,
@@ -1069,7 +1075,13 @@ impl TermArena
     /// - provides: the classifier of a type operator. Its codomain stands in
     ///   the ambient context, so the former binds nothing.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a static Pi from the value universe to the
+    ///   computation universe, encoded and decoded back in wire order.
+    /// - witness: `sharing_format::sharing_format::a_static_family_round_trips_in_wire_order`
     #[inline]
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::StaticPi { domain, codomain }))]
     pub fn value_type_static_pi(
         &mut self,
         domain: ValueTypeId,
