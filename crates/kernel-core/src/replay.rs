@@ -65,6 +65,7 @@
 use alloc::vec::Vec;
 use core::iter::Peekable;
 
+use anodized::spec;
 use gandr_kernel_check_memo::NullMemo;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_conversion_trace::ConversionSide;
@@ -86,7 +87,9 @@ use crate::conv::equal_values;
 use crate::encoding::ContentTable;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_computation;
+use crate::rewrite::shift_value;
 use crate::rewrite::substitute_computation;
+use crate::rewrite::substitute_value;
 
 /// What the replay reads of a trace identifier: the constant it names, if
 /// any. A caller maps its own identifiers into this before replaying.
@@ -105,9 +108,54 @@ pub enum Unfoldable
 {
     /// The constant is defined by this closed value.
     Body(ValueId),
+    /// The constant is a type operator: a value under `parameters` static
+    /// binders, the innermost binder its last parameter, closed beyond them.
+    ///
+    /// The kernel has no static lambda, so an operator's body is handed over
+    /// with its binders stripped, and unfolding it at a static application
+    /// instantiates them at the application's arguments: the δβ-step a static
+    /// definition's certificate replays.
+    Operator
+    {
+        /// How many static binders the body stands under.
+        parameters: ParameterCount,
+        /// The body, with its parameters as its innermost free variables.
+        body: ValueId,
+    },
     /// The constant has no body: an axiom, an atom, or a declaration the
     /// replay was not given.
     Opaque,
+}
+
+/// How many static parameters an operator's body stands under.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ParameterCount(u32);
+
+impl From<u32> for ParameterCount
+{
+    /// The parameter count of a raw count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: u32) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<ParameterCount> for u32
+{
+    /// The raw count of a parameter count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: ParameterCount) -> Self
+    {
+        count.0
+    }
 }
 
 /// The definitions a replay may unfold, by admission position.
@@ -125,12 +173,14 @@ impl Unfoldings
     /// the entry at that position.
     ///
     /// # Specification
-    /// - requires: every body is a closed value in the arena the replay runs
-    ///   in, minted below the watermark the replay finds.
+    /// - requires: every body is a value in the arena the replay runs in,
+    ///   minted below the watermark the replay finds: closed for
+    ///   [`Unfoldable::Body`], closed beyond its parameters for
+    ///   [`Unfoldable::Operator`].
     /// - ensures: [`Self::unfolding`] answers the entry at a constant's
     ///   position, and [`Unfoldable::Opaque`] past the end.
-    /// - provides: the δ-rules a replay may fire; a constant left opaque is
-    ///   compared by name only.
+    /// - provides: the δ- and δβ-rules a replay may fire; a constant left
+    ///   opaque is compared by name only.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -138,6 +188,7 @@ impl Unfoldings
     /// - hypothesis: L3 — the sole surface is the position lookup, separated by
     ///   a listed constant and one past the end.
     /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
+    /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
     #[inline]
     #[must_use]
     pub const fn new(bodies: Vec<Unfoldable>) -> Self
@@ -650,7 +701,7 @@ enum Head
     Constant(ConstantIndex, Status),
 }
 
-/// One elimination of a neutral computation's spine.
+/// One elimination of a neutral's spine.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Elimination
 {
@@ -662,13 +713,15 @@ enum Elimination
     Bind(ComputationId),
     /// A case into these two branches.
     Case(ComputationId, ComputationId),
+    /// A static application to this code: the one value elimination.
+    StaticApply(ValueId),
 }
 
 /// A side's shape in weak head form.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Shape
 {
-    /// A unit, literal, pair, injection or lift.
+    /// A unit, literal, pair, injection, lift or code.
     Former,
     /// A thunk of this computation.
     Thunk(ComputationId),
@@ -677,7 +730,7 @@ enum Shape
     /// A returner of this value.
     Return(ValueId),
     /// A head under its spine, innermost elimination first; a value's spine
-    /// is empty.
+    /// holds static applications only.
     Neutral(Head, Vec<Elimination>),
 }
 
@@ -1164,7 +1217,8 @@ where
                 | Value::Injection(..)
                 | Value::Lift { .. }
                 | Value::Quote(_)
-                | Value::QuoteComputation(_)),
+                | Value::QuoteComputation(_)
+                | Value::StaticApplication(..)),
             )
             | None => Err(unreadable()),
         }
@@ -1409,7 +1463,8 @@ where
                 | Value::Thunk(_)
                 | Value::Lift { .. }
                 | Value::Quote(_)
-                | Value::QuoteComputation(_)),
+                | Value::QuoteComputation(_)
+                | Value::StaticApplication(..)),
                 _,
             ) => Structure::Leaf(Expect::NotConvertible),
         };
@@ -1457,9 +1512,11 @@ where
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Rigidity::Rigid`] exactly when `term` holds no thunk, no
-    ///   lambda, no bind or case, and no constant with a body — through the
-    ///   types its quotes hold and the codes those types decode as well — and
-    ///   resolves throughout.
+    ///   lambda, no bind or case, and no constant with a body or an operator
+    ///   body — through the types its quotes hold, the codes those types decode
+    ///   as, and the heads and arguments of its static applications as well —
+    ///   and resolves throughout. No static lambda exists, so a static
+    ///   application over an opaque head is rigid.
     /// - provides: the separation half of [`Self::compared`].
     /// - fails: never — a dangling id is flexible.
     /// - panics: none.
@@ -1484,7 +1541,9 @@ where
             match next {
                 | AnyNode::Value(value) => match self.arena.value(value) {
                     | Some(&(Value::Unit | Value::Literal(_) | Value::Variable(_))) => {},
-                    | Some(&Value::Pair(first, second)) => {
+                    | Some(
+                        &(Value::Pair(first, second) | Value::StaticApplication(first, second)),
+                    ) => {
                         work.extend([AnyNode::Value(first), AnyNode::Value(second)]);
                     },
                     | Some(&(Value::Injection(_, body) | Value::Lift { body, .. })) => {
@@ -1525,7 +1584,12 @@ where
                         | ValueType::Abstract(_)),
                     ) => {},
                     | Some(
-                        &(ValueType::Product(first, second) | ValueType::Sum(first, second)),
+                        &(ValueType::Product(first, second)
+                        | ValueType::Sum(first, second)
+                        | ValueType::StaticPi {
+                            domain: first,
+                            codomain: second,
+                        }),
                     ) => {
                         work.extend([AnyNode::ValueType(first), AnyNode::ValueType(second)]);
                     },
@@ -1554,8 +1618,9 @@ where
     ///
     /// # Specification
     /// - requires: `term` is in weak head form.
-    /// - ensures: a value's former, thunk or neutral head; a computation's
-    ///   lambda, returner, or head under its spine, innermost first.
+    /// - ensures: a value's former, thunk, or head under its static
+    ///   applications, innermost first; a computation's lambda, returner, or
+    ///   head under its spine, innermost first.
     /// - provides: what the rule table dispatches on.
     /// - fails: [`ReplayRefusal::Unreadable`] on a dangling id or a head no
     ///   rule reads.
@@ -1566,7 +1631,8 @@ where
     ///
     /// # Termination
     /// - reason: the `loop` below, which descends a computation's head path,
-    ///   not recursion.
+    ///   and the `while let` loop descending a value's static applications, not
+    ///   recursion.
     /// - measure: the arena position of the focus, which falls at every descent
     ///   because a child is minted before its parent.
     fn shape(
@@ -1587,6 +1653,19 @@ where
                         Vec::new(),
                     )),
                     | Some(&Value::Thunk(body)) => Ok(Shape::Thunk(body)),
+                    | Some(&Value::StaticApplication(..)) => {
+                        let mut spine = Vec::new();
+                        let mut focus = value;
+                        while let Some(&Value::StaticApplication(head, argument)) =
+                            self.arena.value(focus)
+                        {
+                            spine.push(Elimination::StaticApply(argument));
+                            focus = head;
+                        }
+                        spine.reverse();
+                        let head = self.value_head(focus, frozen, side)?;
+                        Ok(Shape::Neutral(head, spine))
+                    },
                     | Some(
                         &(Value::Unit
                         | Value::Literal(_)
@@ -1642,7 +1721,7 @@ where
         Ok(Shape::Neutral(head, spine))
     }
 
-    /// The head a forced or scrutinized value stands for.
+    /// The head a forced, scrutinized or statically applied value stands for.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -1671,7 +1750,8 @@ where
                 | Value::Thunk(_)
                 | Value::Lift { .. }
                 | Value::Quote(_)
-                | Value::QuoteComputation(_)),
+                | Value::QuoteComputation(_)
+                | Value::StaticApplication(..)),
             )
             | None => Err(unreadable()),
         }
@@ -1682,7 +1762,8 @@ where
     /// # Specification
     /// - requires: nothing.
     /// - ensures: [`Status::Opaque`] without a body, [`Status::Frozen`] when
-    ///   `side` froze it, [`Status::Defined`] otherwise.
+    ///   `side` froze it, [`Status::Defined`] otherwise; an operator body is a
+    ///   body.
     /// - provides: the status the constant rules read.
     /// - fails: never.
     /// - panics: none.
@@ -1695,8 +1776,12 @@ where
     {
         let status = match self.unfoldings.unfolding(constant) {
             | Unfoldable::Opaque => Status::Opaque,
-            | Unfoldable::Body(_) if frozen.side(side).contains(&constant) => Status::Frozen,
-            | Unfoldable::Body(_) => Status::Defined,
+            | Unfoldable::Body(_) | Unfoldable::Operator { .. }
+                if frozen.side(side).contains(&constant) =>
+            {
+                Status::Frozen
+            },
+            | Unfoldable::Body(_) | Unfoldable::Operator { .. } => Status::Defined,
         };
         Head::Constant(constant, status)
     }
@@ -1705,10 +1790,12 @@ where
     ///
     /// # Specification
     /// - requires: `side`'s head is `constant`, defined.
-    /// - ensures: a value side becomes the body; a computation side keeps its
-    ///   spine over the body.
-    /// - provides: the δ-step.
-    /// - fails: a refusal when `constant` has no body or the side has no head.
+    /// - ensures: a value side becomes its δ- or δβ-reduct, as
+    ///   [`Self::unfold_value`] gives it; a computation side keeps its spine
+    ///   over the body.
+    /// - provides: the δ-step, and the δβ-step of a static definition.
+    /// - fails: a refusal when `constant` has no body, the side has no head, or
+    ///   an operator heads a computation.
     /// - panics: none.
     ///
     /// # Errors
@@ -1726,16 +1813,20 @@ where
         constant: ConstantIndex,
     ) -> Result<(), Stop>
     {
-        let Unfoldable::Body(body) = self.unfoldings.unfolding(constant)
-        else {
-            return Err(unreadable());
-        };
+        let unfolding = self.unfoldings.unfolding(constant);
         let start = match goal.side(side) {
-            | Term::Value(_) => {
-                goal.set(side, Term::Value(body));
+            | Term::Value(value) => {
+                let reduct = self.unfold_value(value, unfolding)?;
+                goal.set(side, Term::Value(reduct));
                 return Ok(());
             },
             | Term::Computation(computation) => computation,
+        };
+        // An operator classifies codes, so it is never forced or scrutinized:
+        // only a body stands at a computation's head.
+        let Unfoldable::Body(body) = unfolding
+        else {
+            return Err(unreadable());
         };
         let mut frames = Vec::new();
         let mut focus = start;
@@ -1765,6 +1856,96 @@ where
         }
         goal.set(side, Term::Computation(rebuilt));
         Ok(())
+    }
+
+    /// The reduct of a value side headed by a defined constant, under the
+    /// side's static applications.
+    ///
+    /// # Specification
+    /// - requires: `unfolding` is how the constant at `value`'s head unfolds.
+    /// - ensures: for a body, the body under every static application of the
+    ///   side, in order; for an operator of `n` parameters, its body with its
+    ///   binders instantiated at the side's first `n` arguments — the last
+    ///   argument at the innermost binder, each argument shifted past the
+    ///   binders still standing outside it — under the remaining applications.
+    /// - provides: δ at a value, and the δβ-step of a static definition: one
+    ///   saturated instance of the operator, reduced by substitution.
+    /// - fails: [`ReplayRefusal::Unreadable`] when the head is not a constant,
+    ///   the constant is opaque, or an operator has fewer arguments than
+    ///   parameters.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`Stop::Refused`].
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop descending the head path and the two
+    ///   `for` loops over finite argument slices, not recursion.
+    /// - measure: the focus's arena position while descending; then the
+    ///   arguments left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by an operator of two parameters at its two
+    ///   arguments, in order and swapped, at an argument open in the ambient
+    ///   context, through an alias whose body stands under the spine, and short
+    ///   of its arguments.
+    /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+    #[spec(ensures: |ret| match ret {
+        | Ok(reduct) => self.arena.value(reduct).is_some(),
+        | Err(_) => true,
+    })]
+    fn unfold_value(
+        &mut self,
+        value: ValueId,
+        unfolding: Unfoldable,
+    ) -> Result<ValueId, Stop>
+    {
+        let mut arguments = Vec::new();
+        let mut focus = value;
+        while let Some(&Value::StaticApplication(head, argument)) = self.arena.value(focus) {
+            arguments.push(argument);
+            focus = head;
+        }
+        arguments.reverse();
+        if !matches!(self.arena.value(focus), Some(&Value::Constant(_))) {
+            return Err(unreadable());
+        }
+        let (mut reduct, consumed) = match unfolding {
+            | Unfoldable::Opaque => return Err(unreadable()),
+            | Unfoldable::Body(body) => (body, 0_usize),
+            | Unfoldable::Operator { parameters, body } => {
+                let count =
+                    usize::try_from(u32::from(parameters)).map_err(|_overflow| unreadable())?;
+                let Some(instantiated) = arguments.get(.. count)
+                else {
+                    return Err(unreadable());
+                };
+                let mut reduct = body;
+                for (outside, &argument) in instantiated.iter().enumerate().rev() {
+                    let binders = u32::try_from(outside).map_err(|_overflow| unreadable())?;
+                    let carried = shift_value(
+                        self.arena,
+                        &mut self.table,
+                        &mut self.memo,
+                        argument,
+                        BinderDepth::default(),
+                        BinderDepth::from(binders),
+                    );
+                    reduct = substitute_value(
+                        self.arena,
+                        &mut self.table,
+                        &mut self.memo,
+                        reduct,
+                        carried,
+                    );
+                }
+                (reduct, count)
+            },
+        };
+        for &argument in arguments.get(consumed ..).unwrap_or_default() {
+            reduct = self.arena.value_static_application(reduct, argument);
+        }
+        Ok(reduct)
     }
 
     /// Put `term` in weak head form by the reductions that need no choice.
@@ -2027,9 +2208,9 @@ fn rule(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: a refuting leaf when the spines differ in length or in any
-///   elimination's kind; else an application's arguments, a bind's
-///   continuations and a case's two branches, in spine order, a force
-///   contributing none.
+///   elimination's kind; else an application's or a static application's
+///   arguments, a bind's continuations and a case's two branches, in spine
+///   order, a force contributing none.
 /// - provides: the decomposition of two neutrals over one head.
 /// - fails: never.
 /// - panics: none.
@@ -2045,7 +2226,11 @@ fn spines(
     for (&one, &other) in left.iter().zip(right) {
         match (one, other) {
             | (Elimination::Force, Elimination::Force) => {},
-            | (Elimination::Apply(left_argument), Elimination::Apply(right_argument)) => {
+            | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
+            | (
+                Elimination::StaticApply(left_argument),
+                Elimination::StaticApply(right_argument),
+            ) => {
                 premises.push(Premise::values(left_argument, right_argument));
             },
             | (Elimination::Bind(left_body), Elimination::Bind(right_body)) => {
@@ -2062,7 +2247,8 @@ fn spines(
                 Elimination::Force
                 | Elimination::Apply(_)
                 | Elimination::Bind(_)
-                | Elimination::Case(..),
+                | Elimination::Case(..)
+                | Elimination::StaticApply(_),
                 _,
             ) => return Structure::Leaf(Expect::NotConvertible),
         }
@@ -2078,6 +2264,8 @@ mod tests
     use gandr_kernel_conversion_trace::ConversionDecision;
     use gandr_kernel_conversion_trace::ConversionSide;
     use gandr_kernel_conversion_trace::SubgoalPosition;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::Side;
@@ -2085,6 +2273,7 @@ mod tests
 
     use super::EngineClaim;
     use super::KernelVerdict;
+    use super::ParameterCount;
     use super::ReplayBudget;
     use super::ReplayDecline;
     use super::ReplayNode;
@@ -2344,6 +2533,120 @@ mod tests
             refused(ReplayRefusal::Contradicted {
                 at: TracePosition::from(0),
             })
+        );
+    }
+
+    #[test]
+    fn an_operator_unfolds_by_instantiating_its_parameters_in_order()
+    {
+        let mut arena = TermArena::new();
+        let operator = ConstantIndex::from(0_usize);
+        let alias = ConstantIndex::from(1_usize);
+        // `F := λA. λB. ⌜El A × El B⌝` with its binders stripped: `A` is
+        // index 1 and `B` index 0.
+        let outer = arena.value_variable(DeBruijnIndex::from(1));
+        let inner = arena.value_variable(DeBruijnIndex::from(0));
+        let outer_type = arena.value_type_element(outer, Level::zero());
+        let inner_type = arena.value_type_element(inner, Level::zero());
+        let parameters = arena.value_type_product(outer_type, inner_type);
+        let body = arena.value_quote(parameters);
+        let head = arena.value_constant(operator);
+        let unfoldings = Unfoldings::new(Vec::from([
+            Unfoldable::Operator {
+                parameters: ParameterCount::from(2),
+                body,
+            },
+            Unfoldable::Body(head),
+        ]));
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let integer_code = arena.value_quote(integer);
+        let string_code = arena.value_quote(string);
+        let in_order_type = arena.value_type_product(integer, string);
+        let in_order = arena.value_quote(in_order_type);
+        let swapped_type = arena.value_type_product(string, integer);
+        let swapped = arena.value_quote(swapped_type);
+        let partial = arena.value_static_application(head, integer_code);
+        let instance = arena.value_static_application(partial, string_code);
+        let unfold = |constant| {
+            [
+                ConversionDecision::Unfold {
+                    constant: ReplayNode::Constant(constant),
+                },
+                ConversionDecision::ReduceLeft {
+                    redex: ReplayNode::Constant(constant),
+                },
+            ]
+        };
+
+        // The last argument meets the innermost binder.
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Values(instance, in_order),
+                EngineClaim::Convertible,
+                &unfold(operator)
+            ),
+            KernelVerdict::Convertible
+        );
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Values(instance, swapped),
+                EngineClaim::NotConvertible,
+                &unfold(operator)
+            ),
+            KernelVerdict::NotConvertible
+        );
+
+        // An argument open in the ambient context is carried past the outer
+        // parameter: `F(⌜Integer⌝, x)` is `⌜Integer × El x⌝`, where an
+        // uncarried `x` would be captured as `A` and give `Integer × Integer`.
+        let ambient = arena.value_variable(DeBruijnIndex::from(0));
+        let open_instance = arena.value_static_application(partial, ambient);
+        let ambient_type = arena.value_type_element(ambient, Level::zero());
+        let open_type = arena.value_type_product(integer, ambient_type);
+        let open = arena.value_quote(open_type);
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Values(open_instance, open),
+                EngineClaim::Convertible,
+                &unfold(operator)
+            ),
+            KernelVerdict::Convertible
+        );
+
+        // A body standing at a static spine keeps the spine over it.
+        let alias_head = arena.value_constant(alias);
+        let alias_partial = arena.value_static_application(alias_head, integer_code);
+        let alias_instance = arena.value_static_application(alias_partial, string_code);
+        let mut through_alias = Vec::from(unfold(alias));
+        through_alias.extend(unfold(operator));
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Values(alias_instance, in_order),
+                EngineClaim::Convertible,
+                &through_alias
+            ),
+            KernelVerdict::Convertible
+        );
+
+        // An operator short of its arguments has no δβ-reduct.
+        assert_eq!(
+            run(
+                &mut arena,
+                &unfoldings,
+                ReplaySides::Values(partial, in_order),
+                EngineClaim::Convertible,
+                &unfold(operator)
+            ),
+            refused(ReplayRefusal::Unreadable)
         );
     }
 

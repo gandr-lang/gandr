@@ -1,0 +1,13 @@
+def apply : (Type -> Type) -> Type -> Type ;
+def apply = \F. \X. F(X) ;
+
+@[ checks ]
+def at_a_static_parameter : apply(\Y. Y * Y, Integer) ;
+def at_a_static_parameter = (1, 2) ;
+
+@[ runs("<fun>") ]
+def use(f : Type -> Type) -> -F Unit { ret () }
+
+@[ refuses("StaticLambdaArgument") ]
+def at_a_dynamic_parameter : +U (-F Unit) ;
+def at_a_dynamic_parameter = thunk { use(\X. X * X) } ;

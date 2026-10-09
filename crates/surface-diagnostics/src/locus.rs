@@ -258,6 +258,12 @@ fn checked(
             at,
             synthesised,
             expected,
+        }
+        | CheckRefusal::FamilyArgumentClassifier {
+            at,
+            synthesised,
+            expected,
+            ..
         } => (spanned(origins.value(at)), [
             annotated(spanned(origins.value_type(expected)), Label::Expected),
             annotated(spanned(origins.value_type(synthesised)), Label::Synthesised),
@@ -281,11 +287,16 @@ fn checked(
             ])
         },
         | CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Thunk(at),
+            form: CheckingForm::Thunk(at) | CheckingForm::StaticLambda(at),
         }
         | CheckRefusal::UnknownConstant { at, .. }
         | CheckRefusal::UnboundIndex { at, .. }
-        | CheckRefusal::Undecided { at } => (spanned(origins.value(at)), UNNAMED),
+        | CheckRefusal::Undecided { at }
+        | CheckRefusal::FamilyArity { at, .. }
+        | CheckRefusal::StaticLambdaArgument { at } => (spanned(origins.value(at)), UNNAMED),
+        | CheckRefusal::StaticClassifierExpected { found, .. } => {
+            (spanned(origins.value_type(found)), UNNAMED)
+        },
         | CheckRefusal::NotSynthesisable {
             form: CheckingForm::Lambda(at) | CheckingForm::Return(at),
         } => (spanned(origins.computation(at)), UNNAMED),
@@ -401,6 +412,7 @@ impl fmt::Display for Checked
                     | CheckingForm::Lambda(_) => "a lambda",
                     | CheckingForm::Return(_) => "a return",
                     | CheckingForm::Hole(_) => "a hole",
+                    | CheckingForm::StaticLambda(_) => "a type operator",
                 }
             ),
             | CheckRefusal::UnknownConstant { constant, .. } => write!(
@@ -441,6 +453,27 @@ impl fmt::Display for Checked
             | CheckRefusal::Undecided { .. } => {
                 f.write_str("the normaliser did not certify the unfolding of this code")
             },
+            | CheckRefusal::FamilyArity {
+                expected, actual, ..
+            } => write!(
+                f,
+                "the type operator takes {} arguments, and this application passes {}",
+                u32::from(expected),
+                u32::from(actual)
+            ),
+            | CheckRefusal::FamilyArgumentClassifier { position, .. } => write!(
+                f,
+                "argument {} of this type operator is not classified by its parameter's domain",
+                u32::from(position)
+            ),
+            | CheckRefusal::StaticLambdaArgument { .. } => f.write_str(
+                "a type operator stands where a dynamic parameter needs a value, and it does not \
+                 normalize away",
+            ),
+            | CheckRefusal::StaticClassifierExpected { .. } => f.write_str(
+                "a type operator's classifier stands over a type that classifies no codes: \
+                 neither a universe nor another such classifier",
+            ),
         }
     }
 }
@@ -466,6 +499,8 @@ impl fmt::Display for Shape
             | ExpectedShape::Thunk => "a thunk type `+U C`",
             | ExpectedShape::Returner => "a returner `-F A`",
             | ExpectedShape::Arrow => "an arrow `A → C`",
+            | ExpectedShape::Product => "an eager product `A * B`",
+            | ExpectedShape::StaticPi => "a type operator's classifier `K -> J`",
         })
     }
 }
@@ -488,18 +523,17 @@ impl fmt::Display for Former
     ) -> fmt::Result
     {
         f.write_str(match self.0 {
-            | UnadmittedFormer::Pair => "the pair value",
             | UnadmittedFormer::Injection => "a sum injection",
             | UnadmittedFormer::ValueLift => "an explicit universe lift of a value",
             | UnadmittedFormer::NumericLiteral => "a numeric literal",
             | UnadmittedFormer::Case => "a sum elimination",
             | UnadmittedFormer::NumericAtom => "the numeric base atom",
-            | UnadmittedFormer::Product => "the product type",
             | UnadmittedFormer::Sum => "the sum type",
             | UnadmittedFormer::TypeLift => "a lift of a value type to a level not above its own",
             | UnadmittedFormer::Abstract => "a sealed abstract type",
             | UnadmittedFormer::SortParameter => "a universe over a sort parameter",
             | UnadmittedFormer::TopUniverse => "a universe at the greatest representable level",
+            | UnadmittedFormer::StaticLambda => "a type operator",
         })
     }
 }

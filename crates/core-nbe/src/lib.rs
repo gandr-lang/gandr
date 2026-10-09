@@ -112,6 +112,7 @@ pub use crate::eval::Fuel;
 pub use crate::eval::LoweredChain;
 pub use crate::eval::eval_computation;
 pub use crate::eval::eval_value;
+pub use crate::eval::eval_value_within;
 pub use crate::guard::ContentHash;
 pub use crate::guard::Guard;
 pub use crate::guard::GuardAnswer;

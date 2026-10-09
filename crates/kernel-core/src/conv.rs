@@ -403,6 +403,16 @@ fn converge(
                     | (
                         &ValueType::Sum(one_first, one_second),
                         &ValueType::Sum(other_first, other_second),
+                    )
+                    | (
+                        &ValueType::StaticPi {
+                            domain: one_first,
+                            codomain: one_second,
+                        },
+                        &ValueType::StaticPi {
+                            domain: other_first,
+                            codomain: other_second,
+                        },
                     ) => {
                         stack.push(ConversionGoal::ValueType(one_first, other_first));
                         stack.push(ConversionGoal::ValueType(one_second, other_second));
@@ -470,7 +480,8 @@ fn converge(
                         | &ValueType::Universe { .. }
                         | &ValueType::Abstract(_)
                         | &ValueType::Element { .. }
-                        | &ValueType::Lift { .. },
+                        | &ValueType::Lift { .. }
+                        | &ValueType::StaticPi { .. },
                         _,
                     ) => return Convertibility::Distinct,
                 }
@@ -579,6 +590,14 @@ fn converge(
                     | (
                         &Value::Pair(one_first, one_second),
                         &Value::Pair(other_first, other_second),
+                    )
+                    // A static application is neutral — no static lambda can
+                    // stand at its head — so two convert exactly when their
+                    // heads and arguments do, and a family's instances at
+                    // different heads or arities separate.
+                    | (
+                        &Value::StaticApplication(one_first, one_second),
+                        &Value::StaticApplication(other_first, other_second),
                     ) => {
                         stack.push(ConversionGoal::Value(one_first, other_first));
                         stack.push(ConversionGoal::Value(one_second, other_second));
@@ -630,7 +649,8 @@ fn converge(
                         | &Value::Thunk(_)
                         | &Value::Lift { .. }
                         | &Value::Quote(_)
-                        | &Value::QuoteComputation(_),
+                        | &Value::QuoteComputation(_)
+                        | &Value::StaticApplication(..),
                         _,
                     ) => return Convertibility::Distinct,
                 }

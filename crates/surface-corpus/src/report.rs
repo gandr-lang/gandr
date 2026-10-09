@@ -767,7 +767,7 @@ def silent : Integer ;
         let source = SourceText::from(
             r#"def helper = 3 ;
 @[ owes(2) ] def owed : Integer ;
-@[ refuses("OutOfFragment") ] def pair : Integer * Integer ;
+@[ refuses("OutOfFragment") ] def lazy : -F Integer & -F Integer ;
 @[ checks ] def wrong : Integer ; def wrong = "text" ;"#,
         );
         let tally = settled(CorpusRoot::Fixture, source).tally();
@@ -778,7 +778,7 @@ def silent : Integer ;
                 usize::from(tally.declarations().unsettled())
             ),
             (2_usize, 2_usize),
-            "the helper and the refused pair settle; the owed and the wrong do not"
+            "the helper and the refused lazy product settle; the owed and the wrong do not"
         );
         assert_eq!(
             (
@@ -821,7 +821,7 @@ def silent : Integer ;
         .tally();
         let other = settled(
             CorpusRoot::Fixture,
-            SourceText::from(r#"@[ owes(1) ] def a = 3 ; @[ refuses("OutOfFragment") ] def b : Integer * Integer ;"#),
+            SourceText::from(r#"@[ owes(1) ] def a = 3 ; @[ refuses("OutOfFragment") ] def b : -F Integer & -F Integer ;"#),
         )
         .tally();
         total.absorb(&other);

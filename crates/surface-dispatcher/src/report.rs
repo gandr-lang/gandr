@@ -715,6 +715,7 @@ def broken = missing ;"#,
             &mut CheckingContext::new(&mut arena, CheckBudget::from(0_usize)),
             &adapt(&module),
         );
+        let kernel = bridge::readmit(&mut arena, &verdicts).export(module.structured_names());
         let mut program = Program::new(&arena, &module, &verdicts);
         let composed = Composed::Settled {
             report: settle(
@@ -727,7 +728,7 @@ def broken = missing ;"#,
             .expect("the verdicts are the module's"),
             exercised: Exercised::default(),
             unstatable: Vec::new(),
-            kernel: bridge::readmit(&arena, &verdicts).export(module.structured_names()),
+            kernel,
             origins: module.into_origins(),
             program,
         };

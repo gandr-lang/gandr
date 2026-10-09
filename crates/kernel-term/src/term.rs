@@ -156,6 +156,14 @@ pub enum Value
     /// The code of a computation type: `⌜C⌝`, an inhabitant of the
     /// computation universe at `C`'s level.
     QuoteComputation(CompTypeId),
+    /// A static application `F a` of a type operator to a code: an inhabitant
+    /// of the static Pi's codomain at the head's classifier.
+    ///
+    /// The vocabulary has no static lambda, so a static application is always
+    /// neutral: its head is a constant or a variable, possibly under further
+    /// static applications, and nothing reduces it. A static lambda a producer
+    /// wrote is normalized away before export.
+    StaticApplication(ValueId, ValueId),
 }
 
 /// A computation: the negative fragment of the term vocabulary.

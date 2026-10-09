@@ -191,6 +191,9 @@ pub enum EvalFault
     BoundNonReturner,
     /// A case met a scrutinee that was neither an injection nor stuck.
     CasedNonInjection,
+    /// A static application met an operator that was neither a static lambda
+    /// nor stuck.
+    AppliedNonOperator,
     /// An internal invariant broke: a frame found no operand where one of its
     /// own tasks should have left one, or a task named an environment the
     /// machine does not hold. Unreachable while the machine's own pushes are
@@ -487,6 +490,9 @@ enum Task
     Force,
     /// Apply the weak head on the stack to the value on the stack.
     Apply,
+    /// Apply the operator beneath the top of the value stack to the argument
+    /// on top of it: static beta, or its stuck case.
+    StaticApply,
     /// Sequence into a body once the bound computation has a weak head.
     Bind
     {
@@ -1350,8 +1356,10 @@ pub fn eval_comp_within(
 /// - ensures: on success the domain value of `term` read in `environment`,
 ///   paired with the fuel left over.
 /// - provides: the value twin of [`eval_comp_within`], which is how a readback
-///   reads a decode's code inside a quoted type: in the quote's environment,
-///   extended by the binders the type's own dependent arrows open.
+///   reads a decode's code inside a quoted type — in the quote's environment,
+///   extended by the binders the type's own dependent arrows open — and how a
+///   caller certifies a conversion between open values, their free binders read
+///   as rigid variables it supplies.
 /// - fails: every variant of [`EvalFault`].
 /// - panics: none.
 ///
@@ -1367,7 +1375,7 @@ pub fn eval_comp_within(
     || ret.as_ref().is_ok_and(|pair| {
         domain.value(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)
     }))]
-pub(crate) fn eval_value_within(
+pub fn eval_value_within(
     core: &CoreArena,
     domain: &mut DomainArena,
     definitions: Definitions<'_>,
@@ -1380,6 +1388,55 @@ pub(crate) fn eval_value_within(
     let env = machine.hold_env(environment);
     machine.tasks.push(Task::Value { term, env });
     run(core, domain, &mut machine)?;
+    let produced = machine.pop_value()?;
+    Ok((produced, machine.fuel))
+}
+
+/// Apply the operator `head` to `arguments` in order, reporting the budget
+/// the run did not spend.
+///
+/// # Specification
+/// - requires: `head` and every argument resolve in `domain`.
+/// - ensures: on success the domain value of `head` applied to each argument in
+///   turn — static beta wherever the operator is a static lambda, a grown
+///   neutral wherever it is stuck — paired with the fuel left over.
+/// - provides: the re-application a readback spends an unfolded operator
+///   through: an unfolded head's body meets the neutral's static spine by beta
+///   rather than standing beside it as a redex, which is what makes the
+///   readback a static normal form.
+/// - fails: every variant of [`EvalFault`]; [`EvalFault::AppliedNonOperator`]
+///   for an operator neither a static lambda nor stuck.
+/// - panics: none.
+///
+/// # Errors
+/// Every variant of [`EvalFault`]; see its documentation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surface is the per-argument beta, separated
+///   by an unfolded operator of two parameters read back at two arguments.
+/// - witness: `readback::tests::an_unfolded_operator_reads_back_reduced`
+#[spec(ensures: |ret| ret.is_err()
+    || ret.as_ref().is_ok_and(|pair| {
+        domain.value(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)
+    }))]
+pub(crate) fn apply_static_within(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    fuel: Fuel,
+    head: DomainValueId,
+    arguments: &[DomainValueId],
+) -> Result<(DomainValueId, Fuel), EvalFault>
+{
+    let mut machine = Machine::new(definitions, fuel);
+    for &argument in arguments.iter().rev() {
+        machine.tasks.push(Task::StaticApply);
+        machine.tasks.push(Task::Supply(argument));
+    }
+    machine.values.push(head);
+    if !machine.tasks.is_empty() {
+        run(core, domain, &mut machine)?;
+    }
     let produced = machine.pop_value()?;
     Ok((produced, machine.fuel))
 }
@@ -1532,11 +1589,14 @@ impl<'run> Evaluation<'run>
     ///
     /// # Specification
     /// - requires: `spine` is non-empty and its first elimination eliminates a
-    ///   value — a force or a case — as every neutral's spine does.
+    ///   value — a force, a case or a static application — as every neutral's
+    ///   spine does.
     /// - ensures: an evaluation whose answer is the weak head of `head` under
-    ///   `spine`'s eliminations, in order.
+    ///   `spine`'s eliminations, in order: a value when every elimination is a
+    ///   static application, a computation otherwise.
     /// - provides: the unfolding of a neutral whose head's body is `head`: the
-    ///   body stands where the head stood and the spine runs again.
+    ///   body stands where the head stood and the spine runs again, so an
+    ///   unfolded type operator meets its arguments by static beta.
     /// - fails: never here; an ill-shaped spine is refused by the slice that
     ///   reaches it.
     /// - panics: none.
@@ -1547,24 +1607,34 @@ impl<'run> Evaluation<'run>
     ) -> Self
     {
         let mut machine = Machine::new(definitions, Fuel(0_u32));
+        let mut answer = Answer::Value;
         for elimination in spine.iter().rev() {
             match *elimination {
+                | Elimination::StaticApply(argument) => {
+                    machine.tasks.push(Task::StaticApply);
+                    machine.tasks.push(Task::Supply(argument));
+                },
                 | Elimination::Apply(argument) => {
+                    answer = Answer::Computation;
                     machine.tasks.push(Task::Apply);
                     machine.tasks.push(Task::Supply(argument));
                 },
-                | Elimination::Force => machine.tasks.push(Task::Force),
-                | Elimination::Bind(body) => machine.tasks.push(Task::BindClosure(body)),
+                | Elimination::Force => {
+                    answer = Answer::Computation;
+                    machine.tasks.push(Task::Force);
+                },
+                | Elimination::Bind(body) => {
+                    answer = Answer::Computation;
+                    machine.tasks.push(Task::BindClosure(body));
+                },
                 | Elimination::Case { on_left, on_right } => {
+                    answer = Answer::Computation;
                     machine.tasks.push(Task::CaseClosures { on_left, on_right });
                 },
             }
         }
         machine.values.push(head);
-        Self {
-            machine,
-            answer: Answer::Computation,
-        }
+        Self { machine, answer }
     }
 
     /// An evaluation of a closure's body, in its environment extended by
@@ -1857,6 +1927,7 @@ fn step(
         },
         | Task::Force => step_force(domain, machine),
         | Task::Apply => step_apply(domain, machine),
+        | Task::StaticApply => step_static_apply(core, domain, machine),
         | Task::Bind { body, env } => step_bind(domain, machine, body, env),
         | Task::Case {
             on_left,
@@ -1890,18 +1961,21 @@ fn step(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is the eight-arm match plus the
+/// - hypothesis: L3 — the decision surface is the ten-arm match plus the
 ///   variable and constant lookups, separated by one case per arm — the leaf
 ///   arms and the lift arm included, the last being the only one that holds a
 ///   level and so the only producer of the level family — an index past the
-///   environment, a constant at each unfolding stance, and a quote over the
-///   empty environment and over a captured one.
+///   environment, a constant at each unfolding stance, a quote over the empty
+///   environment and over a captured one, and a static lambda applied and left
+///   standing.
 /// - witness: `eval::tests::an_unreduced_composite_keeps_its_source_face`
 /// - witness: `eval::tests::the_leaf_and_lift_arms_evaluate_and_keep_their_faces`
 /// - witness: `eval::tests::a_lift_over_a_substituted_body_loses_its_face`
 /// - witness: `eval::tests::a_variable_resolves_out_of_the_environment`
 /// - witness: `eval::tests::a_manifest_definition_carries_its_body_unforced`
 /// - witness: `eval::tests::a_quote_is_suspended_over_its_environment`
+/// - witness: `eval::tests::normalizes_beta_redex`
+/// - witness: `eval::tests::normalization_preserves_a_stuck_application`
 #[spec(
     requires: env.0 < machine.envs.len(),
     captures: [
@@ -1991,6 +2065,28 @@ fn step_value(
             let closure = domain.value_closure_node(term, captured);
             let face = composite_face(closed, term);
             machine.values.push(domain.value_code(closure, face));
+            Ok(())
+        },
+        // A static lambda is suspended whole, as a quote is: the closure's
+        // body is the lambda itself, which a comparison reads whole and a
+        // static application enters.
+        | Value::StaticLambda(_) => {
+            let captured = machine.capture(env)?;
+            let closed = capture_keeps_source(&captured);
+            let closure = domain.value_closure_node(term, captured);
+            let face = composite_face(closed, term);
+            machine
+                .values
+                .push(domain.value_static_lambda(closure, face));
+            Ok(())
+        },
+        | Value::StaticApplication(head, argument) => {
+            machine.tasks.push(Task::StaticApply);
+            machine.tasks.push(Task::Value {
+                term: argument,
+                env,
+            });
+            machine.tasks.push(Task::Value { term: head, env });
             Ok(())
         },
     }
@@ -2161,7 +2257,8 @@ fn step_force(
         | DomainValue::Pair { .. }
         | DomainValue::Injection { .. }
         | DomainValue::Lift { .. }
-        | DomainValue::Code { .. } => Err(EvalFault::ForcedNonThunk),
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => Err(EvalFault::ForcedNonThunk),
     }
 }
 
@@ -2245,6 +2342,101 @@ fn step_apply(
             Ok(())
         },
         | DomainComp::Return { .. } => Err(EvalFault::AppliedNonFunction),
+    }
+}
+
+/// Apply the operator beneath the top of the value stack to the argument on
+/// top of it.
+///
+/// # Specification
+/// - requires: two value results on the stack, the operator beneath the
+///   argument.
+/// - ensures: a static lambda pushes a task entering its body with the argument
+///   bound in the intuitionistic zone; a neutral grows its spine by one static
+///   application and stands as a value again.
+/// - provides: static beta and its stuck case, one arm apart, which is what
+///   makes static normalization the value evaluation itself rather than a
+///   second normaliser. The clause states the two consumed values and the two
+///   admissible outcomes — one task entering the lambda's body, or one value
+///   result standing for the grown neutral; that the stuck outcome's spine grew
+///   by exactly one static application is a judgement over the produced graph,
+///   and the witnesses below carry it.
+/// - fails: [`EvalFault::AppliedNonOperator`] when the operator is neither a
+///   static lambda nor stuck, an ill-typed input this crate does not re-derive
+///   types to exclude; [`EvalFault::DanglingTerm`] when the lambda's closure
+///   holds anything but a static lambda.
+/// - panics: none.
+///
+/// # Errors
+/// As above, and [`EvalFault::Domain`] for a node that does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L1 — over generated simply kinded static terms, normal order
+///   and applicative order by substitution reach the normal form evaluation and
+///   readback reach; the three-way match is separated by applying a static
+///   lambda, a stuck variable and a unit, and a chain of redexes far deeper
+///   than a small stack normalizes inside one.
+/// - witness: `eval::tests::normalizes_beta_redex`
+/// - witness: `eval::tests::normalization_preserves_a_stuck_application`
+/// - witness: `eval::tests::an_ill_shaped_elimination_is_refused`
+/// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+/// - witness: `static_normalization::static_normalization::a_static_redex_normalizes_to_its_ground_type`
+/// - witness: `static_normalization::static_normalization::a_deep_static_term_normalizes_inside_a_small_stack`
+#[spec(
+    requires: machine.values.len() >= 2_usize,
+    captures: [
+        entry_values = machine.values.len(),
+        entry_tasks = machine.tasks.len(),
+    ],
+    ensures: |ret| ret.is_err()
+        || (machine.values.len() == entry_values.saturating_sub(2_usize)
+            && machine.tasks.len() == entry_tasks.saturating_add(1_usize))
+        || (machine.values.len() == entry_values.saturating_sub(1_usize)
+            && machine.tasks.len() == entry_tasks),
+)]
+fn step_static_apply(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+) -> Result<(), EvalFault>
+{
+    let argument = machine.pop_value()?;
+    let operator = machine.pop_value()?;
+    let Some(node) = domain.value(operator)
+    else {
+        return Err(EvalFault::Domain(DomainFault::Dangling));
+    };
+    match *node {
+        | DomainValue::StaticLambda { lambda, .. } => {
+            let Some(closure) = domain.value_closure(lambda)
+            else {
+                return Err(EvalFault::Domain(DomainFault::Dangling));
+            };
+            let Some(&Value::StaticLambda(term)) = core.value(closure.body())
+            else {
+                return Err(EvalFault::DanglingTerm);
+            };
+            let mut extended = closure.environment().clone();
+            extended.extend(Zone::Intuitionistic, argument);
+            let env = machine.hold_env(extended);
+            machine.tasks.push(Task::Value { term, env });
+            Ok(())
+        },
+        | DomainValue::Neutral { neutral, .. } => {
+            let grown = extend_spine(domain, neutral, Elimination::StaticApply(argument))?;
+            let stood = domain
+                .value_neutral(grown, TermFace::Reduced)
+                .map_err(EvalFault::Domain)?;
+            machine.values.push(stood);
+            Ok(())
+        },
+        | DomainValue::Unit { .. }
+        | DomainValue::Literal { .. }
+        | DomainValue::Pair { .. }
+        | DomainValue::Injection { .. }
+        | DomainValue::Thunk { .. }
+        | DomainValue::Lift { .. }
+        | DomainValue::Code { .. } => Err(EvalFault::AppliedNonOperator),
     }
 }
 
@@ -2392,7 +2584,8 @@ fn step_case(
         | DomainValue::Pair { .. }
         | DomainValue::Thunk { .. }
         | DomainValue::Lift { .. }
-        | DomainValue::Code { .. } => Err(EvalFault::CasedNonInjection),
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => Err(EvalFault::CasedNonInjection),
     }
 }
 
@@ -2506,7 +2699,8 @@ fn step_case_closures(
         | DomainValue::Pair { .. }
         | DomainValue::Thunk { .. }
         | DomainValue::Lift { .. }
-        | DomainValue::Code { .. } => Err(EvalFault::CasedNonInjection),
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => Err(EvalFault::CasedNonInjection),
     }
 }
 
@@ -2521,9 +2715,12 @@ mod tests
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::ScopeId;
     use gandr_core_term::Transparency;
+    use gandr_core_term::Value;
     use gandr_core_term::ValueId;
+    use gandr_core_term::ValueType;
     use gandr_core_term::Zone;
     use gandr_kernel_strata::Level;
+    use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GlobalIndex;
@@ -2558,6 +2755,8 @@ mod tests
     use crate::domain::NeutralHead;
     use crate::domain::TermFace;
     use crate::domain::Unfolding;
+    use crate::readback::ReadbackMode;
+    use crate::readback::readback_value;
 
     /// Ample fuel for every case that is meant to finish.
     ///
@@ -3231,6 +3430,128 @@ mod tests
                 "an eliminator meeting the wrong polarity of weak head is refused by name"
             );
         }
+
+        let applied_unit = core.value_static_application(unit, unit);
+        let mut domain = DomainArena::new();
+        assert_eq!(
+            Err(EvalFault::AppliedNonOperator),
+            eval_value(&core, &mut domain, definitions, ample(), applied_unit),
+            "a static application of a value that is no operator is refused by name"
+        );
+    }
+
+    #[test]
+    fn normalizes_beta_redex()
+    {
+        let mut core = CoreArena::new();
+        // (λX. ⌜El X × El X⌝) ⌜Integer⌝ ⇝ ⌜Integer × Integer⌝.
+        let integer = core.value_type_base(BaseType::Integer);
+        let argument = core.value_quote(integer);
+        let bound = core.value_variable(Zone::Intuitionistic, innermost());
+        let decoded = core.value_type_element(bound, Level::zero());
+        let doubled = core.value_type_product(decoded, decoded);
+        let body = core.value_quote(doubled);
+        let operator = core.value_static_lambda(body);
+        let redex = core.value_static_application(operator, argument);
+
+        let (chain, environment) = nothing_unfolds();
+        let scope = environment.root();
+        let definitions = Definitions::new(&chain, &environment, scope);
+        let mut domain = DomainArena::new();
+        let evaluated = eval_value(&core, &mut domain, definitions, ample(), redex)
+            .expect("a static redex evaluates");
+        assert!(
+            matches!(domain.value(evaluated), Some(&DomainValue::Code { .. })),
+            "static beta fired: the weak head is the body's code, not a stuck application"
+        );
+        let normal = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the reduct reads back");
+        let Some(&Value::Quote(quoted)) = core.value(normal)
+        else {
+            panic!("the normal form is a quote");
+        };
+        let Some(&ValueType::Product(first, second)) = core.value_type(quoted)
+        else {
+            panic!("the quoted type is the body's product");
+        };
+        for component in [first, second] {
+            assert_eq!(
+                Some(&ValueType::Base(BaseType::Integer)),
+                core.value_type(component),
+                "each decode of the bound code reads as the argument's quoted type"
+            );
+        }
+    }
+
+    #[test]
+    fn normalization_preserves_a_stuck_application()
+    {
+        let mut core = CoreArena::new();
+        // F ((λX. X) ⌜Integer⌝) with F a constant that cannot unfold ⇝
+        // F ⌜Integer⌝: the application stays, and its argument normalizes.
+        let family = ConstantIndex::from(0_usize);
+        let head = core.value_constant(family);
+        let integer = core.value_type_base(BaseType::Integer);
+        let quote = core.value_quote(integer);
+        let bound = core.value_variable(Zone::Intuitionistic, innermost());
+        let identity = core.value_static_lambda(bound);
+        let redex = core.value_static_application(identity, quote);
+        let stuck = core.value_static_application(head, redex);
+
+        let (chain, environment) = nothing_unfolds();
+        let scope = environment.root();
+        let definitions = Definitions::new(&chain, &environment, scope);
+        let mut domain = DomainArena::new();
+        let evaluated = eval_value(&core, &mut domain, definitions, ample(), stuck)
+            .expect("a stuck application evaluates");
+        let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(evaluated)
+        else {
+            panic!("an application of a rigid head is a neutral value");
+        };
+        let held = domain.neutral(neutral).expect("the neutral resolves");
+        assert_eq!(
+            NeutralHead::Constant(family),
+            held.head(),
+            "the neutral stands on the family's head"
+        );
+        assert!(
+            matches!(held.spine(), [Elimination::StaticApply(_)]),
+            "and carries the one static application"
+        );
+        let normal = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the stuck application reads back");
+        let Some(&Value::StaticApplication(read_head, read_argument)) = core.value(normal)
+        else {
+            panic!("the normal form is still a static application");
+        };
+        assert_eq!(
+            Some(&Value::Constant(family)),
+            core.value(read_head),
+            "its head is the family"
+        );
+        let Some(&Value::Quote(quoted)) = core.value(read_argument)
+        else {
+            panic!("its argument normalized past the inner redex to the quote");
+        };
+        assert_eq!(
+            Some(&ValueType::Base(BaseType::Integer)),
+            core.value_type(quoted),
+            "and the quote carries the argument's type"
+        );
     }
 
     #[test]

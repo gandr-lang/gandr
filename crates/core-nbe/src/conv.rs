@@ -631,7 +631,9 @@ impl<'run> Walk<'run>
     ///   pair, a neutral as a neutral pair; [`Local::Disagree`] when step 2
     ///   separated them, when two formers or two payloads differ, or when a
     ///   rigid neutral meets a former; [`Local::Defer`] when a neutral meets a
-    ///   thunk, or an unfoldable neutral meets a former.
+    ///   thunk or a static lambda, or an unfoldable neutral meets a former. Two
+    ///   static lambdas agree or disagree as their α-walk finds, and defer when
+    ///   it cannot tell.
     /// - provides: the value arms of step 3, head-mismatch first.
     /// - fails: [`ConversionFault`] for a side, a level or a payload that does
     ///   not resolve.
@@ -771,6 +773,28 @@ impl<'run> Walk<'run>
                 },
             ),
             | (
+                DomainValue::StaticLambda {
+                    lambda: left_lambda,
+                    ..
+                },
+                DomainValue::StaticLambda {
+                    lambda: right_lambda,
+                    ..
+                },
+            ) => Ok(
+                match compare_codes(
+                    self.core,
+                    self.domain,
+                    ConstantReading::Unread,
+                    left_lambda,
+                    right_lambda,
+                )? {
+                    | CodeComparison::Equal => Local::Agree,
+                    | CodeComparison::Apart => Local::Disagree,
+                    | CodeComparison::Undecided => Local::Defer(Deferral::Unfolding),
+                },
+            ),
+            | (
                 DomainValue::Neutral {
                     neutral: left_neutral,
                     ..
@@ -784,10 +808,14 @@ impl<'run> Walk<'run>
                     .push(Goal::Neutrals(left_neutral, right_neutral, context));
                 Ok(Local::Agree)
             },
-            | (DomainValue::Neutral { .. }, DomainValue::Thunk { .. })
-            | (DomainValue::Thunk { .. }, DomainValue::Neutral { .. }) => {
-                Ok(Local::Defer(Deferral::Binder))
-            },
+            | (
+                DomainValue::Neutral { .. },
+                DomainValue::Thunk { .. } | DomainValue::StaticLambda { .. },
+            )
+            | (
+                DomainValue::Thunk { .. } | DomainValue::StaticLambda { .. },
+                DomainValue::Neutral { .. },
+            ) => Ok(Local::Defer(Deferral::Binder)),
             | (DomainValue::Neutral { neutral, .. }, _)
             | (_, DomainValue::Neutral { neutral, .. }) => self.neutral_against_former(neutral),
             | (
@@ -797,7 +825,8 @@ impl<'run> Walk<'run>
                 | DomainValue::Injection { .. }
                 | DomainValue::Thunk { .. }
                 | DomainValue::Lift { .. }
-                | DomainValue::Code { .. },
+                | DomainValue::Code { .. }
+                | DomainValue::StaticLambda { .. },
                 _,
             ) => Ok(Local::Disagree),
         }
@@ -954,7 +983,11 @@ impl<'run> Walk<'run>
         let mut queued = Vec::new();
         for (&left_elimination, &right_elimination) in one.spine().iter().zip(other.spine()) {
             match (left_elimination, right_elimination) {
-                | (Elimination::Apply(left_argument), Elimination::Apply(right_argument)) => {
+                | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
+                | (
+                    Elimination::StaticApply(left_argument),
+                    Elimination::StaticApply(right_argument),
+                ) => {
                     queued.push(Goal::Values(left_argument, right_argument, beneath));
                 },
                 | (Elimination::Force, Elimination::Force) => {},
@@ -978,7 +1011,8 @@ impl<'run> Walk<'run>
                     Elimination::Apply(_)
                     | Elimination::Force
                     | Elimination::Bind(_)
-                    | Elimination::Case { .. },
+                    | Elimination::Case { .. }
+                    | Elimination::StaticApply(_),
                     _,
                 ) => return Ok(mismatch),
             }
@@ -1415,6 +1449,62 @@ mod tests
             Ok(Settlement::StructurallyEqual),
             convert_values(&core, &domain, left, right),
             "each graph expands to 2⁶⁴ leaves, and the walk meets 65 distinct pairs"
+        );
+    }
+
+    #[test]
+    fn family_spines_are_separated_by_head_index_and_arity()
+    {
+        /// The rigid family at `family` applied statically to `arguments`.
+        ///
+        /// # Specification
+        /// trivial.
+        fn applied(
+            domain: &mut DomainArena,
+            family: ConstantIndex,
+            arguments: &[DomainValueId],
+        ) -> DomainValueId
+        {
+            let spine = arguments
+                .iter()
+                .map(|&argument| Elimination::StaticApply(argument))
+                .collect();
+            let neutral = domain
+                .neutral_node(NeutralHead::Constant(family), spine, Unfolding::Rigid)
+                .expect("a rigid family mints");
+            domain
+                .value_neutral(neutral, TermFace::Reduced)
+                .expect("a static spine stands as a value")
+        }
+
+        let mut core = CoreArena::new();
+        let mut domain = DomainArena::new();
+        let one = literal(&mut core, &mut domain, String::from("1"));
+        let two = literal(&mut core, &mut domain, String::from("2"));
+        let f_one = applied(&mut domain, ConstantIndex::from(0_usize), &[one]);
+        let f_one_again = applied(&mut domain, ConstantIndex::from(0_usize), &[one]);
+        let g_one = applied(&mut domain, ConstantIndex::from(1_usize), &[one]);
+        let f_one_two = applied(&mut domain, ConstantIndex::from(0_usize), &[one, two]);
+        let f_two = applied(&mut domain, ConstantIndex::from(0_usize), &[two]);
+        assert_eq!(
+            Ok(Settlement::StructurallyEqual),
+            convert_values(&core, &domain, f_one, f_one_again),
+            "one head at one arity over one argument is one family instance"
+        );
+        assert_eq!(
+            Ok(Settlement::GuardedApart),
+            convert_values(&core, &domain, f_one, g_one),
+            "two head indices fold to two words"
+        );
+        assert_eq!(
+            Ok(Settlement::GuardedApart),
+            convert_values(&core, &domain, f_one, f_one_two),
+            "two arities over one head fold to two words"
+        );
+        assert_eq!(
+            Ok(Settlement::GuardedApart),
+            convert_values(&core, &domain, f_one, f_two),
+            "and two arguments at one head and arity fold apart too"
         );
     }
 }

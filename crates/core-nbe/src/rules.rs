@@ -360,11 +360,11 @@ pub enum Spines
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`Spines::Agree`] when the spines have one length and one
-///   elimination kind at every position: an application's arguments as a value
-///   pair, a bind's continuations as an opened pair, a case's branches as two
-///   opened pairs left first, a force as nothing, in spine order innermost
-///   first; [`Spines::Disagree`] when a length or a kind differs. The heads are
-///   not compared.
+///   elimination kind at every position: an application's or a static
+///   application's arguments as a value pair, a bind's continuations as an
+///   opened pair, a case's branches as two opened pairs left first, a force as
+///   nothing, in spine order innermost first; [`Spines::Disagree`] when a
+///   length or a kind differs. The heads are not compared.
 /// - provides: the premises of `var-1` and `const`, in the order a recorded
 ///   subgoal position counts.
 /// - fails: [`ConversionFault::Domain`] when a neutral does not resolve.
@@ -388,7 +388,11 @@ pub fn spine_subgoals(
     let mut subgoals = Vec::new();
     for (&left_elimination, &right_elimination) in one.spine().iter().zip(other.spine()) {
         match (left_elimination, right_elimination) {
-            | (Elimination::Apply(left_argument), Elimination::Apply(right_argument)) => {
+            | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
+            | (
+                Elimination::StaticApply(left_argument),
+                Elimination::StaticApply(right_argument),
+            ) => {
                 subgoals.push(Subgoal::Values(left_argument, right_argument));
             },
             | (Elimination::Force, Elimination::Force) => {},
@@ -412,7 +416,8 @@ pub fn spine_subgoals(
                 Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
-                | Elimination::Case { .. },
+                | Elimination::Case { .. }
+                | Elimination::StaticApply(_),
                 _,
             ) => return Ok(Spines::Disagree),
         }
@@ -659,7 +664,8 @@ fn plan_rigid(
 /// # Specification
 /// - requires: nothing.
 /// - ensures: [`Neutrality::Neutral`] with the head as [`head`] reads it for a
-///   neutral value; [`Neutrality::Former`] for every other value.
+///   neutral value; [`Neutrality::Former`] for every other value, a static
+///   lambda among them.
 /// - provides: the neutral projection the constant arms match on.
 /// - fails: [`ConversionFault::Domain`] when the neutral does not resolve.
 /// - panics: none.
@@ -684,7 +690,8 @@ fn value_neutrality(
         | DomainValue::Injection { .. }
         | DomainValue::Thunk { .. }
         | DomainValue::Lift { .. }
-        | DomainValue::Code { .. } => Neutrality::Former,
+        | DomainValue::Code { .. }
+        | DomainValue::StaticLambda { .. } => Neutrality::Former,
     })
 }
 
@@ -888,6 +895,35 @@ fn plan_values(
                 | CodeComparison::Undecided => Plan::Decline(DeclineReason::UndecidedCodes),
             }
         },
+        // Two static lambdas compare whole by the same α-walk, and a static
+        // lambda against a stuck operator is declined: η could relate them,
+        // and this rung does not expand an operator.
+        | (
+            DomainValue::StaticLambda {
+                lambda: left_lambda,
+                ..
+            },
+            DomainValue::StaticLambda {
+                lambda: right_lambda,
+                ..
+            },
+        ) => {
+            match compare_codes(
+                core,
+                domain,
+                ConstantReading::Read(definitions),
+                left_lambda,
+                right_lambda,
+            )? {
+                | CodeComparison::Equal => Plan::Shared(Settled::Convertible),
+                | CodeComparison::Apart => Plan::Shared(Settled::NotConvertible),
+                | CodeComparison::Undecided => Plan::Decline(DeclineReason::UndecidedCodes),
+            }
+        },
+        | (DomainValue::StaticLambda { .. }, DomainValue::Neutral { .. })
+        | (DomainValue::Neutral { .. }, DomainValue::StaticLambda { .. }) => {
+            Plan::Decline(DeclineReason::UndecidedCodes)
+        },
         | (
             DomainValue::Unit { .. }
             | DomainValue::Literal { .. }
@@ -896,7 +932,8 @@ fn plan_values(
             | DomainValue::Thunk { .. }
             | DomainValue::Lift { .. }
             | DomainValue::Neutral { .. }
-            | DomainValue::Code { .. },
+            | DomainValue::Code { .. }
+            | DomainValue::StaticLambda { .. },
             _,
         ) => Plan::Leaf(Settled::NotConvertible),
     };

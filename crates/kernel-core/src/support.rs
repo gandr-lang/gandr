@@ -705,7 +705,7 @@ impl LooseDepths
                         | Value::Constant(_)
                         | Value::Unit
                         | Value::Literal(_) => {},
-                        | Value::Pair(first, second) => {
+                        | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
                             tasks.push(ReachTask::OpenValue(first));
                             tasks.push(ReachTask::OpenValue(second));
                         },
@@ -776,7 +776,12 @@ impl LooseDepths
                         | ValueType::Unit
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_) => {},
-                        | ValueType::Product(first, second) | ValueType::Sum(first, second) => {
+                        | ValueType::Product(first, second)
+                        | ValueType::Sum(first, second)
+                        | ValueType::StaticPi {
+                            domain: first,
+                            codomain: second,
+                        } => {
                             tasks.push(ReachTask::OpenValueType(first));
                             tasks.push(ReachTask::OpenValueType(second));
                         },
@@ -935,7 +940,12 @@ impl LooseDepths
             | ValueType::Unit
             | ValueType::Universe { .. }
             | ValueType::Abstract(_) => LooseDepth(0),
-            | ValueType::Product(first, second) | ValueType::Sum(first, second) => self
+            | ValueType::Product(first, second)
+            | ValueType::Sum(first, second)
+            | ValueType::StaticPi {
+                domain: first,
+                codomain: second,
+            } => self
                 .cached_value_type(first)
                 .join(self.cached_value_type(second)),
             | ValueType::Lift { inner, .. } => self.cached_value_type(inner),
@@ -1017,7 +1027,7 @@ impl LooseDepths
                 )))
             },
             | Value::Constant(_) | Value::Unit | Value::Literal(_) => LooseDepth(0),
-            | Value::Pair(first, second) => {
+            | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
                 self.cached_value(first).join(self.cached_value(second))
             },
             | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),

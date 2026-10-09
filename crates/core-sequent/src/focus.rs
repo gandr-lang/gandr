@@ -183,8 +183,8 @@ pub enum FocusRefusal
     DanglingComputation(ComputationId),
     /// The command arena refused a node.
     Mint(MintRefusal),
-    /// A code: the command IL carries no types, so a quoted type has no
-    /// producer to become.
+    /// A code: the command IL carries no types, so a quoted type, a type
+    /// operator or a static application has no producer to become.
     Code(ValueId),
     /// An internal invariant broke: a finishing task found no result where
     /// its own children should have left one. Unreachable while the
@@ -633,7 +633,8 @@ impl<'run> Focusing<'run>
     ///   its children's tasks are scheduled, children left to right.
     /// - provides: the `𝓥` rows.
     /// - fails: [`FocusRefusal::DanglingValue`], [`FocusRefusal::Code`] for a
-    ///   quote of either sort, or a refused mint.
+    ///   quote of either sort, a static lambda or a static application, or a
+    ///   refused mint.
     /// - panics: none.
     ///
     /// # Errors
@@ -678,7 +679,10 @@ impl<'run> Focusing<'run>
                 });
                 return Ok(());
             },
-            | Value::Quote(_) | Value::QuoteComputation(_) => return Err(FocusRefusal::Code(id)),
+            | Value::Quote(_)
+            | Value::QuoteComputation(_)
+            | Value::StaticLambda(_)
+            | Value::StaticApplication(..) => return Err(FocusRefusal::Code(id)),
         };
         let producer = self.arena.mint_producer(leaf)?;
         self.producers.push(producer);

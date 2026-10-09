@@ -58,6 +58,8 @@ pub enum ValueTypeHead
     Element,
     /// A sealed abstract type.
     Abstract,
+    /// A static Pi, classifying type operators.
+    StaticPi,
     /// The reference resolved to nothing.
     Unreadable,
 }
@@ -82,6 +84,7 @@ impl ValueTypeHead
             | ValueType::Universe { .. } => Self::Universe,
             | ValueType::Lift { .. } => Self::Lift,
             | ValueType::Abstract(_) => Self::Abstract,
+            | ValueType::StaticPi { .. } => Self::StaticPi,
         }
     }
 }
@@ -233,6 +236,8 @@ pub enum ExpectedValueShape
     Sum,
     /// A thunk type, for a thunk or a force.
     Thunk,
+    /// A static Pi, for a static application's head.
+    StaticPi,
 }
 
 /// The computation-type shape a rule required at the position it refused.
@@ -591,6 +596,14 @@ pub enum KernelError
         /// How many staged, unresolved marks sit above this declaration's.
         above: OutstandingCount,
     },
+    /// A static Pi's domain or codomain was not a static classifier: a
+    /// universe, or a static Pi over them. An operator ranges over codes, so
+    /// its classifier is built of the types that classify codes.
+    StaticClassifierExpected
+    {
+        /// The child type actually present.
+        actual: ValueTypeWitness,
+    },
 }
 
 impl From<LevelError> for KernelError
@@ -678,6 +691,9 @@ impl core::fmt::Display for KernelError
             },
             | Self::OutstandingStagedContent { .. } => {
                 f.write_str("a later staged declaration is still unresolved")
+            },
+            | Self::StaticClassifierExpected { .. } => {
+                f.write_str("a static Pi stands over a type that classifies no codes")
             },
         }
     }

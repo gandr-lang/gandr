@@ -12,6 +12,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Completion obligations are not typing obligations](#completion-obligations-are-not-typing-obligations)
 - [Label, mold, meld](#label-mold-meld)
 - [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
+- [A required tail runs as far as its group yields](#a-required-tail-runs-as-far-as-its-group-yields)
 - [The tree the melder commits](#the-tree-the-melder-commits)
 - [The completion query is a bound](#the-completion-query-is-a-bound)
 - [Checkpoints](#checkpoints)
@@ -94,7 +95,7 @@ Two different objects share the word. A completion obligation is produced here, 
 
 ## Label, mold, meld
 
-The labeler classifies lexemes and stops there. A lowercase word could be an identifier, a type variable or a keyword; an uppercase word a constructor, a type name or a primitive; `-` a prefix or an infix operator. Which one is decided by the molder, in context, never by the labeler — teaching the labeler grammar would duplicate the grammar and drift from it. Multi-byte operators munch longest first, so the shorter tiles `->`, `<-`, `==` and `<=` never shadow the circuit arrows `-->`, `<->`, `==>` and `<=>` that extend them. The bridges `+U` and `-F` are one tile each only where the letter ends, so `+Unit` stays a sign and a word and the sum keeps its spellings. Shell blocks, strings and interpolations switch the labeler into their own lexical modes.
+The labeler classifies lexemes and stops there. A lowercase word could be an identifier, a type variable or a keyword; an uppercase word a constructor, a type name or a primitive; `-` a prefix or an infix operator. Which one is decided by the molder, in context, never by the labeler — teaching the labeler grammar would duplicate the grammar and drift from it. Multi-byte operators munch longest first, so the shorter tiles `->`, `<-`, `==` and `<=` never shadow the circuit arrows `-->`, `<->`, `==>` and `<=>` that extend them. The bridges `+U` and `-F` are one tile each only where the letter ends, so `+Unit` stays a sign and a word and the sum keeps its spellings. A backslash in code is one tile, the static abstraction's lead, so `\A.` is the lead, the binder and the dot; an escape sequence exists only inside a string or a character, whose modes read it. Shell blocks, strings and interpolations switch the labeler into their own lexical modes.
 
 The molder's candidates for a token are the union of the grammar's molds for each label the token could carry, visited in ascending `MoldId` order. The pre-filter drops every candidate the slope head cannot admit — a closer with no matching open form, an operator with no left operand — and most tokens are left with one, taken without a dry-run. The survivors are dry-run in a `Mark` / `rollback_to` transaction and ranked by their obligation delta, then form continuation, then sort compatibility, then the completion cost `finalize` reports, then the smaller `MoldId`; a bounded lookahead settles the families whose openers tie and diverge only at a later tile. Nothing process-dependent reaches the choice, so molding is a function of the token stream.
 
@@ -107,6 +108,12 @@ A tile with a same-form predecessor and no same-form successor ends its form in 
 The completion query and the molder follow. `finalize` charges no tile to a required-tail frontier whose operand is written or already opened, because the commit's force-close mints none there. The lookahead window settles and bounds each token at its declaration as the stream does, so a tied opener is judged on the frontier the stream would leave. Without them, the mid-tile bracket made `package [ T ] Integer;` followed by another declaration rank the package reading below an instantiation of a type variable named `package`.
 
 The alternative was a grammar change: spell the graded bridge as a prefix operator whose operand is its argument, keeping the three-way classification. It splits one form into two and moves the grade off the bridge's tile, and `package [ T ]` would need the same split. Reversal: if a grammar form ever needs a closing bracket that ends it while an operand still follows, the tail moves into an enclosing form and this case becomes a grammar check.
+
+## A required tail runs as far as its group yields
+
+A form whose last symbol is a required sort hole — `forall a . T`, `mu a . S`, the session types, the static abstraction `\A. T`, `+U[r] C`, `package [ T ] C` — has no tile to end it, so the melder decides where its tail stops. It stops where a prefix operator at the form's own group would stop: the form closes once its tail is a whole operand run of the hole's sort, every operator in it holding the operands it wants, and the next tile does not continue that run. An infix or postfix operator, or a left-absorbing form start, of the hole's sort continues the run exactly when the form's group yields to it. So `forall a . a * b` quantifies the product, `\A. -F A` keeps the returner in the abstraction, `\A. A => B` keeps the arrow of its own right-associative group, and `+U[1] C * D` closes the bridge before the product, its group being tighter. The decision runs twice: before a token is gathered, against every mold its labels may take, so the frontier the molder ranks against is the one the stream will leave; and again as the chosen tile is pushed.
+
+The alternatives were closing the tail at its first operand, which reads `forall a . a * b` as a product of a quantifier and cannot read `forall a . -F a` at all, a prefix operator's operand being a run rather than one operand; and a closing tile for each binder form, `forall a . { T }`, which spends a bracket on every quantifier. Reversal: if a form needs a tail tighter than its own group, that tail gets its own group in the precedence table.
 
 ## The tree the melder commits
 
@@ -146,7 +153,7 @@ The language's sources live in `gandr-surface-corpus` (`crates/surface-corpus/`)
 
 ## Grammar contracts witnessed by a parse
 
-Four of the grammar's contracts can only be witnessed by parsing: that each type operator the precedence table declares right-associative chains cleanly, that every recursion-marker instantiation parses cleanly, that a chain mixing incomparable set operators is refused a clean reading, and that every spelling of the universe reads cleanly wherever a type stands. They live here, in `tests::grammar`, because the dependency runs from this crate to the grammar; the grammar's own suite keeps the contracts it can state without a parser.
+Five of the grammar's contracts can only be witnessed by parsing: that each type operator the precedence table declares right-associative chains cleanly, the value function space `=>` among them, that every recursion-marker instantiation parses cleanly, that a chain mixing incomparable set operators is refused a clean reading, that every spelling of the universe reads cleanly wherever a type stands, and that every spelling of a type operator — the static abstraction, its application, the unary and n-ary `=>` — reads cleanly as a declared type, a definition's value and an operator's argument, beside a case arm's `=>`. They live here, in `tests::grammar`, because the dependency runs from this crate to the grammar; the grammar's own suite keeps the contracts it can state without a parser.
 
 ## License
 

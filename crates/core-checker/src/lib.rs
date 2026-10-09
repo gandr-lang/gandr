@@ -128,7 +128,7 @@
 //! );
 //!
 //! // The kernel defines the two bodies and assumes the hole.
-//! let readmission = bridge::readmit(&arena, &report);
+//! let readmission = bridge::readmit(&mut arena, &report);
 //! assert_eq!(
 //!     readmission.environment().entries().len(),
 //!     3_usize,
@@ -166,6 +166,7 @@ mod view;
 pub use crate::code::Certificate;
 pub use crate::code::CodeDefinitions;
 pub use crate::code::Lift;
+pub use crate::code::Unfolded;
 pub use crate::code::unfolding;
 pub use crate::context::CheckBudget;
 pub use crate::context::CheckingContext;
@@ -198,11 +199,13 @@ pub use crate::module::Verdict;
 pub use crate::module::check_declaration;
 pub use crate::module::check_declaration_supported;
 pub use crate::module::check_module;
+pub use crate::refusal::ArgumentPosition;
 pub use crate::refusal::CheckRefusal;
 pub use crate::refusal::CheckingForm;
 pub use crate::refusal::CoreNode;
 pub use crate::refusal::ExpectedShape;
 pub use crate::refusal::Mismatch;
+pub use crate::refusal::StaticArity;
 pub use crate::refusal::TermNode;
 pub use crate::refusal::TypeNode;
 pub use crate::refusal::UnadmittedFormer;

@@ -131,6 +131,8 @@ pub enum GuardTag
     Apply,
     /// A force stacked on a spine.
     Force,
+    /// A static application stacked on a spine.
+    StaticApply,
 }
 
 /// The FNV-1a 64-bit offset basis.

@@ -403,5 +403,66 @@ pub fn every_former(noise: Noise) -> Program
         Maybe::Present(quoted),
     );
 
+    // 19: a type operator at the static Pi from the value universe to itself,
+    // by the static lambda λA. A.
+    let value_universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let operator_type = arena.value_type_static_pi(value_universe, value_universe);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let operator = arena.value_static_lambda(bound);
+    push(
+        "operator",
+        Maybe::Present(operator_type),
+        Maybe::Present(operator),
+    );
+
+    // 20: the operator at the code of Integer, a static application.
+    let operator_constant = arena.value_constant(ConstantIndex::from(19_usize));
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let code = arena.value_quote(integer_type);
+    let instance = arena.value_static_application(operator_constant, code);
+    push("instance", unsigned(), Maybe::Present(instance));
+
+    // 21: the operator at two codes: past its arity.
+    let operator_constant = arena.value_constant(ConstantIndex::from(19_usize));
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let code = arena.value_quote(integer_type);
+    let once = arena.value_static_application(operator_constant, code);
+    let twice = arena.value_static_application(once, code);
+    push("arity", unsigned(), Maybe::Present(twice));
+
+    // 22: the operator at a literal: an argument of the wrong classifier.
+    let operator_constant = arena.value_constant(ConstantIndex::from(19_usize));
+    let literal = arena.value_literal(integer(Digits("2")));
+    let misapplied = arena.value_static_application(operator_constant, literal);
+    push("argument", unsigned(), Maybe::Present(misapplied));
+
+    // 23: U ((Type ⇒ Type) → F 1), owed: a function of an operator.
+    let value_universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let operator_type = arena.value_type_static_pi(value_universe, value_universe);
+    let unit_type = arena.value_type_unit();
+    let unit_returner = arena.comp_type_returner(unit_type);
+    let consumer_arrow = arena.comp_type_arrow(operator_type, unit_returner);
+    let consumer_type = arena.value_type_thunk(consumer_arrow);
+    push("consumer", Maybe::Present(consumer_type), hole());
+
+    // 24: U (F 1) by the consumer at λA. A: a static lambda at a dynamic
+    // parameter.
+    let unit_type = arena.value_type_unit();
+    let unit_returner = arena.comp_type_returner(unit_type);
+    let suspended = arena.value_type_thunk(unit_returner);
+    let consumer = arena.value_constant(ConstantIndex::from(23_usize));
+    let forced = arena.computation_force(consumer);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let identity = arena.value_static_lambda(bound);
+    let applied = arena.computation_application(forced, identity);
+    let thunk = arena.value_thunk(applied);
+    push("dynamic", Maybe::Present(suspended), Maybe::Present(thunk));
+
+    // 25: Integer ⇒ Type, owed: a static Pi over a classifier of no codes.
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let value_universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let unclassified = arena.value_type_static_pi(integer_type, value_universe);
+    push("classifier", Maybe::Present(unclassified), hole());
+
     Program::new(arena, items).expect("positions ascend")
 }

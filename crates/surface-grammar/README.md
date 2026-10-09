@@ -16,6 +16,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Walk index and comparison table](#walk-index-and-comparison-table)
 - [Built-in surface](#built-in-surface)
 - [The bridges and the universe are built-in spellings](#the-bridges-and-the-universe-are-built-in-spellings)
+- [Type operators: the static abstraction and the value function space](#type-operators-the-static-abstraction-and-the-value-function-space)
 - [Named-kind inventory](#named-kind-inventory)
 - [Highlighter](#highlighter)
 - [Fingerprint](#fingerprint)
@@ -145,7 +146,7 @@ Each rule's tiles form a graph under adjacency. Every tile in one strongly conne
 
 ## Built-in surface
 
-`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2371 molds, 77 labels projected to more than one mold, and the fingerprint `0x8828_d8a1_38da_19ff`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
+`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2378 molds, 77 labels projected to more than one mold, and the fingerprint `0xf9c2_15a1_2bea_b69c`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
 
 ## The bridges and the universe are built-in spellings
 
@@ -155,6 +156,18 @@ The shifts between the value and the computation sorts, Levy's `U` and `F`, are 
 - Reversal: once user-declared notation is admitted, these spellings move into the prelude that declares them.
 
 The respelling moved the pinned shape from 2364 molds and the fingerprint `0x6a74_f2ef_1d8a_5c07`: the two formers' keyword tiles became the compound tiles, and the universe rule added seven molds.
+
+## Type operators: the static abstraction and the value function space
+
+A type operator is written `\A. T`: the backslash, one binder — a type name or a type variable — a dot and the body, which runs as far right as a `forall`'s does, so `\T. \A. \B. T(A) * B` nests three binders. The labeler reads a backslash in code as one tile; escape sequences stay inside strings and characters, where their scanners read them. Applying an operator reuses `type_application`, `T(A, B)`, whose head is a type name or a type variable: a declaration is named by a lowercase identifier, which molds as a type variable in type position, so an operator declared by `def` applies as `raw_rel_monad(T, A, B)`. Admitting the variable head added one mold and moved the fingerprint from `0x8feb_efc4_2bd0_36d1`.
+
+- Alternatives: a keyword lead such as `fn` at the type sort, which ties with the term lambda wherever a definition's body stands, where a type-only lead molds unopposed; a binder list `\A B. T`, which saves a few backslashes and adds a repetition the lowering would curry anyway.
+- Reversal: a binder that needs its classifier written beside it (`\(T : Type -> Type[-]). …`) would take the parenthesized binder as a second alternative of the same rule.
+
+The value function space `A => B` is the alias of the thunked arrow `+U (A -> -F B)`, and `(A, B) => C` its n-ary form, `+U (A -> B -> -F C)`. It is an infix rule in the arrow's group, so the two arrows nest to the right of one another; its n-ary domain is a parenthesized type list, which is why `parenthesized_type` holds one type or several. One rule keeps `(` at a single type-sort mold, so the molder never opens a lookahead window to tell a parenthesized type from a domain list, and the lowering refuses a list anywhere but before `=>`. A case arm's `=>` follows a pattern and this one a type; the two never compete for one slot. Nothing distinguishes the alias from its unfolding after lowering except the printer, which may choose either spelling.
+
+- Alternatives: a separate rule for the n-ary domain, `( T , T+ ) => T`, which gives `(` two type-sort molds tied on the molder's local key; a nullary `() => B` for `+U (-F B)`, which the recorded design does not rule and the surface does not need while `+U (-F B)` is short.
+- Reversal: if a tuple type ever takes the parenthesized list, the domain list moves into the alias rule and the tie is settled there.
 
 ## Named-kind inventory
 

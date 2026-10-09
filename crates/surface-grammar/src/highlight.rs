@@ -96,6 +96,7 @@ const OPERATORS: &[&str] = &[
     ">&",
     ">=",
     ">>",
+    "\\",
     "list_operator",
     "negation",
     "newline",

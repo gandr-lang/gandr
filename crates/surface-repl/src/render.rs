@@ -128,6 +128,11 @@ impl Source for ContentTable<'_>
             | ContentNode::Arrow { domain, codomain } => Former::Arrow { domain, codomain },
             | ContentNode::Pi { domain, codomain } => Former::Pi { domain, codomain },
             | ContentNode::ComputationElement { code, .. } => Former::ComputationElement(code),
+            | ContentNode::StaticLambda(body) => Former::StaticLambda(body),
+            | ContentNode::StaticApplication(operator, argument) => {
+                Former::StaticApplication(operator, argument)
+            },
+            | ContentNode::StaticPi { domain, codomain } => Former::StaticPi { domain, codomain },
             | ContentNode::Unresolved(_) => Former::Unreadable,
         }
     }

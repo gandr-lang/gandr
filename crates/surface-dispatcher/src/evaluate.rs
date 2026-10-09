@@ -798,7 +798,12 @@ impl<'source> Program<'source>
                 ]),
                 | Some(&Value::Lift { body, .. }) => pending.push(Piece::Value(body)),
                 | Some(&Value::Thunk(_)) => spelled.push_str("<thunk>"),
-                | Some(&(Value::Quote(_) | Value::QuoteComputation(_))) => {
+                | Some(
+                    &(Value::Quote(_)
+                    | Value::QuoteComputation(_)
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..)),
+                ) => {
                     spelled.push_str("<code>");
                 },
                 | Some(&Value::Constant(constant)) => match self.name(constant) {
@@ -877,7 +882,9 @@ fn references(
                     | Value::Unit
                     | Value::Literal(_)
                     | Value::Quote(_)
-                    | Value::QuoteComputation(_)),
+                    | Value::QuoteComputation(_)
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..)),
                 )
                 | None => {},
             },

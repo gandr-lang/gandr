@@ -121,6 +121,7 @@ pub use crate::error::ValueTypeWitness;
 pub use crate::levels::LevelContext;
 pub use crate::replay::EngineClaim;
 pub use crate::replay::KernelVerdict;
+pub use crate::replay::ParameterCount;
 pub use crate::replay::ReplayBudget;
 pub use crate::replay::ReplayDecline;
 pub use crate::replay::ReplayNode;

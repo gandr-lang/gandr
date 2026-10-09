@@ -32,7 +32,7 @@ The presentation printer: a checked core type or a normal-form value, written in
 
 ## Provided features
 
-- `present_type`: a value or computation type at a page width. Witnesses: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`, `goldens::tests::universes_spell_their_sort_and_level`, `goldens::tests::dependent_function_type_breaks_before_codomain`, `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`, `goldens::tests::arrow_chain_breaks_before_each_continuation`, `goldens::tests::nullary_declared_data_uses_its_bare_name`, `goldens::tests::a_binder_skips_the_names_the_type_mentions`.
+- `present_type`: a value or computation type at a page width. Witnesses: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`, `goldens::tests::universes_spell_their_sort_and_level`, `goldens::tests::dependent_function_type_breaks_before_codomain`, `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`, `goldens::tests::arrow_chain_breaks_before_each_continuation`, `goldens::tests::nullary_declared_data_uses_its_bare_name`, `goldens::tests::a_binder_skips_the_names_the_type_mentions`, `goldens::tests::static_operators_spell_as_the_grammar_writes_them`.
 - `present_value`: a value at a page width, bounded at `DEPTH_LIMIT`. Witnesses: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`, `goldens::tests::string_controls_stay_in_one_escaped_literal`, `goldens::tests::pair_of_injections_pins_sum_notation`, `goldens::tests::record_value_breaks_fields_at_the_narrow_page`, `goldens::tests::beyond_the_depth_limit_renders_deep`.
 - `Presentation`, `Fidelity`: the text, and whether it says the whole node, by the nodes met rather than the characters written. Witnesses: `goldens::tests::fidelity_follows_nodes_not_the_characters_of_a_name`, `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`.
 - `Source`, `Former`, `Name`: the one question the printer asks of its input; a malformed source — a child of the wrong sort, a dangling node, a cycle — is written `?`, never a panic. Witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`.
@@ -104,7 +104,7 @@ The printer asks one question of its input, the former at a node, through the `S
 
 ## One spelling per former
 
-Every former has exactly one spelling, the one the surface grammar parses, so a printed type reads back as the type it names: `Integer`, `String`, `Unit`, `A * B`, `A + B`, `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract type and a constant by name, and a decode as the code it reads; values are `()`, literals with their canonical digits and escapes, `(a, b)`, `Inl(v)` and `Inr(v)`. Binding strength follows the grammar's bands, tightest first: atoms, the bridges `+U` and `-F` ([the bridges and the universe](../surface-grammar/README.md#the-bridges-and-the-universe-are-built-in-spellings)), product, sum, arrow. Product and sum associate to the right and parenthesize a left operand of equal strength; an arrow's domain is bare up to a sum and its codomain bare.
+Every former has exactly one spelling, the one the surface grammar parses, so a printed type reads back as the type it names: `Integer`, `String`, `Unit`, `A * B`, `A + B`, `+U C`, `-F A`, `A -> C`, `(x : A) -> C`, the static Pi `A -> B` between value types, `Type`, `Type[-]`, `Type[+, l]`, `Type[-, l]`, an abstract type and a constant by name, and a decode as the code it reads; values are `()`, literals with their canonical digits and escapes, `(a, b)`, `Inl(v)`, `Inr(v)`, the static abstraction `\a. v`, and a static application as its spine, `f(a, b)` for `f` applied to `a` and then to `b` ([type operators](../surface-grammar/README.md#type-operators-the-static-abstraction-and-the-value-function-space)). Binding strength follows the grammar's bands, tightest first: atoms, the bridges `+U` and `-F` ([the bridges and the universe](../surface-grammar/README.md#the-bridges-and-the-universe-are-built-in-spellings)), product, sum, arrow. Product and sum associate to the right and parenthesize a left operand of equal strength; an arrow's domain is bare up to a sum and its codomain bare. A static abstraction binds as loosely as an arrow, its body running to the right, and an application is an atom whose operator is parenthesized unless it is one, so a redex reads `(\a. a)(Integer)`. The value-function alias `(A, B) => C` is never printed: it lowers to `+U (A -> B -> -F C)`, and the printer writes what the core holds.
 
 A node the surface has no spelling for — a lift, the numeric atom, a linear or unbound variable, a term where a type stands — is written `?`, and a thunk value `<thunk>`; each makes the presentation approximate. Fidelity is recorded by the nodes the walk met, so a name that happens to contain `?` stays faithful.
 
@@ -124,7 +124,7 @@ The computation width is twice the page. Past it the engine resolves without its
 
 ## Binder names
 
-The core is nameless, so a dependent arrow's binder is generated: `a` through `z`, then `a1`, `b1`, and so on, the outermost binder first, skipping every name the type mentions — a constant or an abstract type of that name. The prior implementation printed the binder name its surface type carried.
+The core is nameless, so a dependent arrow's binder and a static abstraction's are generated: `a` through `z`, then `a1`, `b1`, and so on, the outermost binder first, skipping every name the type mentions — a constant or an abstract type of that name. The prior implementation printed the binder name its surface type carried.
 
 - **Alternatives.** Printing a de Bruijn index reads as nothing the surface parses; reusing a mentioned name would make the codomain ambiguous.
 - **Reversal.** The core carries a binder's source name as an origin hint, and the printer prints it when no mentioned name collides.
@@ -156,7 +156,7 @@ Deferred, with the former each needs:
 | `annotations_are_transparent` | an annotated value; no core value carries one |
 | `here_witness_pins_identity_notation` | the identity witness |
 
-The crate carries 15 tests: the eight ported rows and seven additional witnesses — every type former's spelling, universes, binder names, every value leaf, malformed sources, fidelity by node, and the doubly-tainted separator at zero columns.
+The crate carries 16 tests: the eight ported rows and eight additional witnesses — every type former's spelling, universes, binder names, the static formers, every value leaf, malformed sources, fidelity by node, and the doubly-tainted separator at zero columns.
 
 ## License
 

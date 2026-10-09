@@ -110,6 +110,14 @@ pub enum Value
     /// `Type[-, l]` where `l` is `C`'s level. A computation type's code is a
     /// value like any other code: quoting suspends nothing.
     QuoteComputation(CompTypeId),
+    /// A static lambda `λ. v`, binding one intuitionistic value variable over
+    /// a value body: a type operator, introducing a static Pi. It is static
+    /// content, erased before runtime, and the kernel never represents it.
+    StaticLambda(ValueId),
+    /// A static application `f a` of a type operator to a value argument,
+    /// eliminating a static Pi. Applied to a static lambda it is a static
+    /// redex; applied to anything else it stands as a neutral spine.
+    StaticApplication(ValueId, ValueId),
 }
 
 /// A computation: the negative fragment of the core term vocabulary.
@@ -192,6 +200,19 @@ pub enum ValueType
     /// A sealed abstract type: a nominal atom named by the admission position
     /// of the declaration that introduced it.
     Abstract(ConstantIndex),
+    /// The static Pi: the classifier of a type operator, taking an operand
+    /// classified by the domain to a result classified by the codomain.
+    /// Formation admits only static classifiers — universes and static Pis —
+    /// as either child, and a static classifier mentions no term variable, so
+    /// the codomain cannot depend on the operand and stands in the ambient
+    /// context: the [`CompType::Arrow`] scoping, not the [`CompType::Pi`] one.
+    StaticPi
+    {
+        /// The classifier of the operand, in the ambient context.
+        domain: ValueTypeId,
+        /// The classifier of the result, in the ambient context.
+        codomain: ValueTypeId,
+    },
 }
 
 /// A computation type: the negative fragment of the core type vocabulary.

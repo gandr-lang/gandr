@@ -34,10 +34,8 @@
 //!
 //! | region        | tags        | holds                                                                |
 //! | ------------- | ----------- | -------------------------------------------------------------------- |
-//! | frozen block  | `0x00–0x1D` | every former this crate mints, contiguous from zero                  |
-//! | growth room   | `0x1E–0x1F` | held for the core vocabulary, contiguous continuation of the block   |
+//! | frozen block  | `0x00–0x1F` | every former this crate mints, contiguous from zero                  |
 //! | sharing block | `0x20–0x27` | the stored sharing plane: one former per family, plus held weakening |
-//!
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
 //! binder, so it is a different node from the non-dependent [`NODE_CT_ARROW`]
 //! at the same arity and takes its own tag rather than a flag on the arrow's.
@@ -55,15 +53,22 @@
 //! dependent arrow is: a payload byte that changes what the node means is a
 //! field-shape change, which bumps the version, where a fresh tag holds it.
 //!
+//! The static operators took the last two tags of the growth room: the
+//! static Pi [`NODE_VT_STATIC_PI`] among the value types and the static
+//! application [`NODE_V_STATIC_APPLICATION`] among the values. The static
+//! lambda takes none, because the kernel never represents it: a producer
+//! normalizes it away before export. The growth room is spent, so the next
+//! former resumes above [`SHARING_BLOCK_LAST`].
+//!
 //! The sharing block is **reserved and unassigned**: four per-family sharing
 //! formers so polarity stays recoverable from the tag alone, and four held
 //! slots for an explicit weakening form. No entry carries one, and a reader
 //! meeting one refuses it by name at the node site, exactly as it refuses any
 //! other unassigned byte. Reserving the block rather than numbering it on
 //! demand is what stops the core vocabulary from growing into it: the core
-//! grows through the growth room and resumes above [`SHARING_BLOCK_LAST`], and
-//! the block's contiguity — the property that makes a sharing former's family a
-//! subtraction rather than a lookup — survives.
+//! resumes above [`SHARING_BLOCK_LAST`], and the block's contiguity — the
+//! property that makes a sharing former's family a subtraction rather than a
+//! lookup — survives.
 
 use crate::wire::FormatVersion;
 use crate::wire::WireTag;
@@ -198,6 +203,11 @@ pub const NODE_CT_ELEMENT: WireTag = WireTag(0x1B);
 pub const NODE_V_QUOTE: WireTag = WireTag(0x1C);
 /// Node tag: the code of a computation type, over one computation type.
 pub const NODE_V_QUOTE_COMPUTATION: WireTag = WireTag(0x1D);
+/// Node tag: the static Pi, over a value-type domain and a value-type
+/// codomain in the ambient context.
+pub const NODE_VT_STATIC_PI: WireTag = WireTag(0x1E);
+/// Node tag: a static application, over a value head and a value argument.
+pub const NODE_V_STATIC_APPLICATION: WireTag = WireTag(0x1F);
 
 /// Reserved node tag: the stored sharing plane's value-family sharing former.
 pub const NODE_SHARE_VALUE: WireTag = WireTag(0x20);
@@ -399,7 +409,7 @@ const fn bounded_alias(
 /// own child relation, and its rows are pinned against the encoder's wire
 /// images by the round-trip suites, so a row that drifts from the code is a
 /// test failure rather than a comment that quietly went stale.
-pub const NODE_TAG_TABLE: [NodeTagDescription; 30] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 32] = [
     row(
         NODE_VT_BASE,
         ChildArity(0),
@@ -436,6 +446,8 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 30] = [
     unbounded(NODE_CT_ELEMENT, ChildArity(1)),
     unbounded(NODE_V_QUOTE, ChildArity(1)),
     unbounded(NODE_V_QUOTE_COMPUTATION, ChildArity(1)),
+    unbounded(NODE_VT_STATIC_PI, ChildArity(2)),
+    unbounded(NODE_V_STATIC_APPLICATION, ChildArity(2)),
 ];
 
 #[cfg(test)]
@@ -512,6 +524,8 @@ mod tests
         let comp_element = arena.comp_type_element(unit, level);
         let quote = arena.value_quote(unit_type);
         let quote_computation = arena.value_quote_computation(returner);
+        let static_pi = arena.value_type_static_pi(universe, universe);
+        let static_application = arena.value_static_application(constant, quote);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(unit_type),
@@ -543,6 +557,8 @@ mod tests
             AnyNode::CompType(comp_element),
             AnyNode::Value(quote),
             AnyNode::Value(quote_computation),
+            AnyNode::ValueType(static_pi),
+            AnyNode::Value(static_application),
         ];
         (arena, nodes)
     }
@@ -571,15 +587,16 @@ mod tests
     fn the_tag_table_is_a_contiguous_frozen_block()
     {
         let tags: Vec<WireTag> = NODE_TAG_TABLE.iter().map(|row| row.tag).collect();
-        let expected: Vec<WireTag> = (0_u8 .. 30).map(WireTag::from).collect();
+        let expected: Vec<WireTag> = (0_u8 .. 32).map(WireTag::from).collect();
         assert_eq!(expected, tags, "the node tags are contiguous from zero");
     }
 
-    /// The settled numbering, asserted as the three regions it splits into: the
-    /// frozen block stays strictly below the sharing block, the growth room
-    /// between them is non-empty, and the sharing block is eight contiguous
-    /// tags. A frozen-block addition that grew into the reserved block would
-    /// fail here rather than at the merge the settlement exists to avoid.
+    /// The settled numbering, asserted as the regions it splits into: the
+    /// frozen block stays strictly below the sharing block and, the growth
+    /// room spent by the static operators, meets it; the sharing block is
+    /// eight contiguous tags. A frozen-block addition that grew into the
+    /// reserved block would fail here rather than at the merge the settlement
+    /// exists to avoid.
     #[test]
     fn the_reserved_sharing_block_sits_above_the_frozen_block()
     {
@@ -588,9 +605,11 @@ mod tests
             u8::from(highest) < u8::from(super::SHARING_BLOCK_FIRST),
             "the frozen block stays below the reserved sharing block"
         );
-        assert!(
-            u8::from(highest).saturating_add(1) < u8::from(super::SHARING_BLOCK_FIRST),
-            "and the growth room between them is non-empty"
+        assert_eq!(
+            u8::from(highest).checked_add(1),
+            Some(u8::from(super::SHARING_BLOCK_FIRST)),
+            "and the growth room between them is spent, so the next former resumes above the \
+             block"
         );
         let block = [
             super::NODE_SHARE_VALUE,

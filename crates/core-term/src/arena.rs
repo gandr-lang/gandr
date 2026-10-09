@@ -569,6 +569,68 @@ impl CoreArena
         self.alloc_value(Value::QuoteComputation(quoted))
     }
 
+    /// Mint a static lambda over an already-allocated value body, scoped under
+    /// the one binder the lambda opens.
+    ///
+    /// # Specification
+    /// - requires: `body` names a value node already allocated in this arena;
+    ///   that it reads the binder at a static classifier is a typing fact this
+    ///   constructor does not decide.
+    /// - ensures: appends the static lambda and returns a fresh id strictly
+    ///   above `body`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a static lambda as one argument shape among the six a
+    ///   static family takes, read back as minted beneath its application.
+    /// - witness: `arena::tests::flat_arena_round_trips_all_static_argument_shapes`
+    #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::StaticLambda(body)))]
+    pub fn value_static_lambda(
+        &mut self,
+        body: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::StaticLambda(body))
+    }
+
+    /// Mint a static application over an already-allocated head and argument.
+    ///
+    /// Minting reduces nothing: a static lambda at the head is a redex the
+    /// normaliser fires, so the redex is representable and the reduction is
+    /// a step a certificate can name.
+    ///
+    /// # Specification
+    /// - requires: `head` and `argument` name value nodes already allocated in
+    ///   this arena; that the head inhabits a static Pi the argument suits is a
+    ///   typing fact this constructor does not decide.
+    /// - ensures: appends the static application and returns a fresh id
+    ///   strictly above `head` and `argument`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every argument shape a static family takes, a quote,
+    ///   a computation quote, a variable, a constant, a static lambda and a
+    ///   nested application, reads back as minted with a lambda head left
+    ///   unreduced; and a spine fifty thousand applications deep is built,
+    ///   rewritten and walked inside a small stack.
+    /// - witness: `arena::tests::flat_arena_round_trips_all_static_argument_shapes`
+    /// - witness: `deep_static::deep_static::flat_arena_round_trips_deep_static_family_without_stack_recursion`
+    #[inline]
+    #[spec(ensures: |ret| self.value(ret) == Some(&Value::StaticApplication(head, argument)))]
+    pub fn value_static_application(
+        &mut self,
+        head: ValueId,
+        argument: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::StaticApplication(head, argument))
+    }
+
     // Computation constructors.
 
     /// Mint a lambda over an already-allocated computation body.
@@ -867,6 +929,35 @@ impl CoreArena
         self.alloc_value_type(ValueType::Lift { inner, target })
     }
 
+    /// Mint a static Pi over an already-allocated domain and codomain, both in
+    /// the ambient context.
+    ///
+    /// # Specification
+    /// - requires: `domain` and `codomain` name value-type nodes already
+    ///   allocated in this arena; that both are static classifiers is a typing
+    ///   fact this constructor does not decide.
+    /// - ensures: appends the static Pi and returns a fresh id strictly above
+    ///   `domain` and `codomain`.
+    /// - provides: the only way to mint this former, which is what keeps a
+    ///   child id below its parent's.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one static Pi over the value universe, read back as
+    ///   minted; the static Pi's own decision surface is the typing
+    ///   judgement's.
+    /// - witness: `arena::tests::flat_arena_round_trips_all_static_argument_shapes`
+    #[inline]
+    #[spec(ensures: |ret| self.value_type(ret) == Some(&ValueType::StaticPi { domain, codomain }))]
+    pub fn value_type_static_pi(
+        &mut self,
+        domain: ValueTypeId,
+        codomain: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::StaticPi { domain, codomain })
+    }
+
     // Computation-type constructors.
 
     /// Mint a returner type over an already-allocated value type.
@@ -975,6 +1066,7 @@ mod tests
 {
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GroundSort;
 
@@ -1150,6 +1242,54 @@ mod tests
             arena.value(structural),
             arena.value(linear),
             "one index in two zones is two different occurrences"
+        );
+    }
+
+    #[test]
+    fn flat_arena_round_trips_all_static_argument_shapes()
+    {
+        let mut arena = CoreArena::new();
+        let family = arena.value_constant(ConstantIndex::from(0_usize));
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returner = arena.comp_type_returner(integer);
+        let quote = arena.value_quote(integer);
+        let computation_quote = arena.value_quote_computation(returner);
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let constant = arena.value_constant(ConstantIndex::from(1_usize));
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let lambda = arena.value_static_lambda(bound);
+        let nested = arena.value_static_application(constant, quote);
+        for argument in [quote, computation_quote, variable, constant, lambda, nested] {
+            let applied = arena.value_static_application(family, argument);
+            assert_eq!(
+                Some(&Value::StaticApplication(family, argument)),
+                arena.value(applied),
+                "the family applied to {:?} reads back with its head and argument",
+                arena.value(argument)
+            );
+        }
+        assert_eq!(
+            Some(&Value::StaticLambda(bound)),
+            arena.value(lambda),
+            "the static lambda reads back over its body"
+        );
+
+        let redex = arena.value_static_application(lambda, quote);
+        assert_eq!(
+            Some(&Value::StaticApplication(lambda, quote)),
+            arena.value(redex),
+            "a lambda head is left unreduced: the redex is representable"
+        );
+
+        let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let pi = arena.value_type_static_pi(universe, universe);
+        assert_eq!(
+            Some(&ValueType::StaticPi {
+                domain: universe,
+                codomain: universe,
+            }),
+            arena.value_type(pi),
+            "the static Pi reads back with its domain and codomain"
         );
     }
 }

@@ -540,23 +540,16 @@ where
 /// - ensures: as [`shift_value_type`], over the value family, where the
 ///   variable arm is the one that does the work.
 /// - provides: the value half of the shifting machine, which substitution uses
-///   to carry a replacement under a binder. The inherited session and rewrite
-///   clauses remain prose-only for the same reason as [`shift_value_type`].
+///   to carry a replacement under a binder and the replay's δβ-step uses to
+///   carry a static argument past an operator's outer parameters. The inherited
+///   session and rewrite clauses remain prose-only for the same reason as
+///   [`shift_value_type`].
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`shift_value_type`].
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
-// No production caller yet: the checker reaches the shifting machine through
-// its value-type face and the substitution machine through its computation-type
-// face, and the other four faces exist because the machines are defined over all
-// four families rather than because a call site wanted them. The expectation is
-// scoped to the non-test build so it lapses — loudly — the moment one is wired.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "family face awaiting its first production caller")
-)]
 #[must_use]
 pub(crate) fn shift_value<M>(
     arena: &mut TermArena,
@@ -732,24 +725,16 @@ where
 /// - requires: as [`substitute_comp_type`].
 /// - ensures: as [`substitute_comp_type`], over the value family, where the
 ///   variable arm is the one that does the work.
-/// - provides: the value half of the substitution machine. The inherited
-///   binder, session, and rewrite clauses remain prose-only for the same reason
-///   as [`substitute_comp_type`].
+/// - provides: the value half of the substitution machine: the δβ-step a
+///   conversion replay fires when an operator's body meets its static
+///   arguments. The inherited binder, session, and rewrite clauses remain
+///   prose-only for the same reason as [`substitute_comp_type`].
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — as [`substitute_comp_type`].
 /// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
-// No production caller yet: the checker reaches the shifting machine through
-// its value-type face and the substitution machine through its computation-type
-// face, and the other four faces exist because the machines are defined over all
-// four families rather than because a call site wanted them. The expectation is
-// scoped to the non-test build so it lapses — loudly — the moment one is wired.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "family face awaiting its first production caller")
-)]
 #[must_use]
 pub(crate) fn substitute_value<M>(
     arena: &mut TermArena,
@@ -994,7 +979,8 @@ fn carried_occurrence(
         | Value::Thunk(_)
         | Value::Lift { .. }
         | Value::Quote(_)
-        | Value::QuoteComputation(_) => Maybe::Absent(carrying::Absent::DifferentOccurrence),
+        | Value::QuoteComputation(_)
+        | Value::StaticApplication(..) => Maybe::Absent(carrying::Absent::DifferentOccurrence),
     }
 }
 
@@ -1053,7 +1039,7 @@ fn push_rewrite_children(
                 &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
             )
             | None => {},
-            | Some(&Value::Pair(first, second)) => {
+            | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(second), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(first), depth, rewrite));
             },
@@ -1138,7 +1124,15 @@ fn push_rewrite_children(
                 | &ValueType::Abstract(_),
             )
             | None => {},
-            | Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)) => {
+            // The static Pi binds nothing: both children stand at its depth.
+            | Some(
+                &ValueType::Product(first, second)
+                | &ValueType::Sum(first, second)
+                | &ValueType::StaticPi {
+                    domain: first,
+                    codomain: second,
+                },
+            ) => {
                 tasks.push(RewriteTask::Open(
                     AnyNode::ValueType(second),
                     depth,
@@ -1299,6 +1293,16 @@ fn close_value(
             }
             else {
                 arena.value_pair(rewritten_first, rewritten_second)
+            }
+        },
+        | Value::StaticApplication(head, argument) => {
+            let rewritten_argument = popped(results, AnyNode::Value(argument)).value_or(argument);
+            let rewritten_head = popped(results, AnyNode::Value(head)).value_or(head);
+            if rewritten_head == head && rewritten_argument == argument {
+                id
+            }
+            else {
+                arena.value_static_application(rewritten_head, rewritten_argument)
             }
         },
         | Value::Injection(side, body) => {
@@ -1561,6 +1565,18 @@ fn close_value_type(
             }
             else {
                 arena.value_type_sum(rewritten_first, rewritten_second)
+            }
+        },
+        | ValueType::StaticPi { domain, codomain } => {
+            let rewritten_codomain =
+                popped(results, AnyNode::ValueType(codomain)).value_type_or(codomain);
+            let rewritten_domain =
+                popped(results, AnyNode::ValueType(domain)).value_type_or(domain);
+            if rewritten_domain == domain && rewritten_codomain == codomain {
+                id
+            }
+            else {
+                arena.value_type_static_pi(rewritten_domain, rewritten_codomain)
             }
         },
         | ValueType::Thunk(body) => {

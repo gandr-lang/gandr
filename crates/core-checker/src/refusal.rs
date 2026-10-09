@@ -79,6 +79,10 @@ pub enum ExpectedShape
     /// An arrow `A → C`: what a lambda is checked against and what the head of
     /// an application must synthesise.
     Arrow,
+    /// An eager product `A × B`: what a pair is checked against.
+    Product,
+    /// A static Pi: what a static lambda is checked against.
+    StaticPi,
 }
 
 /// A checking-only form, met where a type had to be synthesised.
@@ -94,14 +98,14 @@ pub enum CheckingForm
     /// A hole: the body of the declaration at this admission position, which
     /// no definition supplies.
     Hole(ConstantIndex),
+    /// A static lambda.
+    StaticLambda(ValueId),
 }
 
 /// A former of the core vocabulary the judgement has no rule for.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum UnadmittedFormer
 {
-    /// The pair value.
-    Pair,
     /// A sum injection.
     Injection,
     /// An explicit universe lift of a value.
@@ -112,8 +116,6 @@ pub enum UnadmittedFormer
     Case,
     /// The numeric base atom.
     NumericAtom,
-    /// The product type.
-    Product,
     /// The sum type.
     Sum,
     /// A lift of a value type whose target does not lie above the type's
@@ -127,6 +129,74 @@ pub enum UnadmittedFormer
     /// A universe at the greatest representable level, whose own universe
     /// has no level to stand at.
     TopUniverse,
+    /// A static lambda the readmission cannot normalize away: an argument of
+    /// a static application whose head no definition unfolds, which the
+    /// kernel has no former for.
+    StaticLambda,
+}
+
+/// A count of static arguments: how many a static application passes, or how
+/// many static Pis a head's type opens.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StaticArity(u32);
+
+impl From<u32> for StaticArity
+{
+    /// The arity of a raw count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(count: u32) -> Self
+    {
+        Self(count)
+    }
+}
+
+impl From<StaticArity> for u32
+{
+    /// The raw count of an arity.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(arity: StaticArity) -> Self
+    {
+        arity.0
+    }
+}
+
+/// The position of an argument among a static application's arguments,
+/// counted from zero at the argument nearest the head.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ArgumentPosition(u32);
+
+impl From<u32> for ArgumentPosition
+{
+    /// The position of a raw count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: u32) -> Self
+    {
+        Self(position)
+    }
+}
+
+impl From<ArgumentPosition> for u32
+{
+    /// The raw count of a position.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: ArgumentPosition) -> Self
+    {
+        position.0
+    }
 }
 
 /// A synthesised type that does not convert to the type it was checked
@@ -276,12 +346,53 @@ pub enum CheckRefusal
         synthesised: CompTypeId,
     },
     /// The normaliser's conversion did not certify the unfolding of a code
-    /// constant to its body, which it holds by definition: its budget ran out
-    /// or its search declined.
+    /// constant to its body or the static step at a code, which hold by
+    /// definition: its budget ran out or its search declined.
     Undecided
     {
         /// The code.
         at: ValueId,
+    },
+    /// A static application applies its head to more arguments than the
+    /// head's static Pis take.
+    FamilyArity
+    {
+        /// The static application, outermost.
+        at: ValueId,
+        /// How many static Pis the head's type opens.
+        expected: StaticArity,
+        /// How many arguments the application passes.
+        actual: StaticArity,
+    },
+    /// A static application passes an argument whose classifier is not the
+    /// domain of the static Pi it meets.
+    FamilyArgumentClassifier
+    {
+        /// The argument.
+        at: ValueId,
+        /// Its position among the application's arguments, from zero.
+        position: ArgumentPosition,
+        /// The classifier it synthesised.
+        synthesised: ValueTypeId,
+        /// The domain it was passed at.
+        expected: ValueTypeId,
+    },
+    /// A dynamic application passes a type operator that does not normalize
+    /// away: a static lambda, or a code that reduces to one, is a value the
+    /// kernel would have to type.
+    StaticLambdaArgument
+    {
+        /// The argument.
+        at: ValueId,
+    },
+    /// A static Pi stands over a type that classifies no codes: neither a
+    /// universe nor a static Pi at its weak head.
+    StaticClassifierExpected
+    {
+        /// The static Pi.
+        at: ValueTypeId,
+        /// The child that classifies no codes.
+        found: ValueTypeId,
     },
 }
 
@@ -294,11 +405,14 @@ impl CheckRefusal
     /// - ensures: the class is a function of the variant alone — two refusals
     ///   of one variant classify alike whatever their payloads hold. A type
     ///   mismatch, a shape mismatch, a checking-only form in synthesis
-    ///   position, an unknown constant, a sort mismatch, a level mismatch and a
-    ///   dependent bind are malformed source; a former outside the fragment is
-    ///   unrepresentable; an unbound index, an exhausted allowance, a dangling
-    ///   id, an admission out of order, a machine invariant and an undecided
-    ///   unfolding are engine faults; nothing is a user absence.
+    ///   position, an unknown constant, a sort mismatch, a level mismatch, a
+    ///   dependent bind, a family at the wrong arity or with an argument at the
+    ///   wrong classifier, a static lambda at a dynamic parameter and a static
+    ///   Pi over a type that classifies no codes are malformed source; a former
+    ///   outside the fragment is unrepresentable; an unbound index, an
+    ///   exhausted allowance, a dangling id, an admission out of order, a
+    ///   machine invariant and an undecided unfolding are engine faults;
+    ///   nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -322,7 +436,11 @@ impl CheckRefusal
             | Self::UnknownConstant { .. }
             | Self::SortMismatch { .. }
             | Self::LevelMismatch { .. }
-            | Self::DependentBind { .. } => FailureClass::MalformedSource,
+            | Self::DependentBind { .. }
+            | Self::FamilyArity { .. }
+            | Self::FamilyArgumentClassifier { .. }
+            | Self::StaticLambdaArgument { .. }
+            | Self::StaticClassifierExpected { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. } => FailureClass::Unrepresentable,
             | Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
@@ -345,11 +463,13 @@ mod tests
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
 
+    use super::ArgumentPosition;
     use super::CheckRefusal;
     use super::CheckingForm;
     use super::CoreNode;
     use super::ExpectedShape;
     use super::Mismatch;
+    use super::StaticArity;
     use super::TermNode;
     use super::TypeNode;
     use super::UnadmittedFormer;
@@ -366,7 +486,7 @@ mod tests
     ///   `every_refusal_carries_its_pinned_class`.
     /// - provides: the table both classification witnesses read.
     /// - panics: none.
-    fn table() -> [(CheckRefusal, CheckRefusal, FailureClass); 14]
+    fn table() -> [(CheckRefusal, CheckRefusal, FailureClass); 18]
     {
         let mut arena = CoreArena::new();
         let first_value = arena.value_unit();
@@ -429,7 +549,7 @@ mod tests
             (
                 CheckRefusal::OutOfFragment {
                     at: CoreNode::Term(TermNode::Value(first_value)),
-                    former: UnadmittedFormer::Pair,
+                    former: UnadmittedFormer::Injection,
                 },
                 CheckRefusal::OutOfFragment {
                     at: CoreNode::Type(TypeNode::Value(second_type)),
@@ -528,13 +648,57 @@ mod tests
                 CheckRefusal::Undecided { at: second_value },
                 FailureClass::EngineFault,
             ),
+            (
+                CheckRefusal::FamilyArity {
+                    at: first_value,
+                    expected: StaticArity::from(1_u32),
+                    actual: StaticArity::from(2_u32),
+                },
+                CheckRefusal::FamilyArity {
+                    at: second_value,
+                    expected: StaticArity::from(0_u32),
+                    actual: StaticArity::from(3_u32),
+                },
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::FamilyArgumentClassifier {
+                    at: first_value,
+                    position: ArgumentPosition::from(0_u32),
+                    synthesised: first_type,
+                    expected: second_type,
+                },
+                CheckRefusal::FamilyArgumentClassifier {
+                    at: second_value,
+                    position: ArgumentPosition::from(1_u32),
+                    synthesised: second_type,
+                    expected: first_type,
+                },
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::StaticLambdaArgument { at: first_value },
+                CheckRefusal::StaticLambdaArgument { at: second_value },
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::StaticClassifierExpected {
+                    at: first_type,
+                    found: second_type,
+                },
+                CheckRefusal::StaticClassifierExpected {
+                    at: second_type,
+                    found: first_type,
+                },
+                FailureClass::MalformedSource,
+            ),
         ]
     }
 
     #[test]
     fn every_refusal_carries_its_pinned_class()
     {
-        let mut covered = [false; 14];
+        let mut covered = [false; 18];
         for (refusal, _, class) in table() {
             let row = match refusal {
                 | CheckRefusal::TypeMismatch(_) => 0_usize,
@@ -551,6 +715,10 @@ mod tests
                 | CheckRefusal::LevelMismatch { .. } => 11_usize,
                 | CheckRefusal::DependentBind { .. } => 12_usize,
                 | CheckRefusal::Undecided { .. } => 13_usize,
+                | CheckRefusal::FamilyArity { .. } => 14_usize,
+                | CheckRefusal::FamilyArgumentClassifier { .. } => 15_usize,
+                | CheckRefusal::StaticLambdaArgument { .. } => 16_usize,
+                | CheckRefusal::StaticClassifierExpected { .. } => 17_usize,
             };
             covered[row] = true;
             assert_eq!(
@@ -559,7 +727,7 @@ mod tests
                 "{refusal:?} must classify as {class}"
             );
         }
-        assert_eq!(covered, [true; 14], "the table names every variant once");
+        assert_eq!(covered, [true; 18], "the table names every variant once");
     }
 
     #[test]

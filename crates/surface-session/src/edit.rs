@@ -1424,6 +1424,7 @@ fn children(node: &ContentNode) -> Children
         | ContentNode::ValueLift { body: only, .. }
         | ContentNode::Quote(only)
         | ContentNode::QuoteComputation(only)
+        | ContentNode::StaticLambda(only)
         | ContentNode::Lambda(only)
         | ContentNode::Return(only)
         | ContentNode::Force(only)
@@ -1436,12 +1437,17 @@ fn children(node: &ContentNode) -> Children
         | ContentNode::Application(first, second)
         | ContentNode::Bind(first, second)
         | ContentNode::Product(first, second)
+        | ContentNode::StaticApplication(first, second)
         | ContentNode::Sum(first, second)
         | ContentNode::Arrow {
             domain: first,
             codomain: second,
         }
         | ContentNode::Pi {
+            domain: first,
+            codomain: second,
+        }
+        | ContentNode::StaticPi {
             domain: first,
             codomain: second,
         } => ([first, second, unused], 2_usize),
@@ -1488,6 +1494,18 @@ where
         },
         | ContentNode::Quote(quoted) => ContentNode::Quote(image(quoted)),
         | ContentNode::QuoteComputation(quoted) => ContentNode::QuoteComputation(image(quoted)),
+        | ContentNode::StaticLambda(body) => ContentNode::StaticLambda(image(body)),
+        | ContentNode::StaticApplication(head, argument) => {
+            let head = image(head);
+            ContentNode::StaticApplication(head, image(argument))
+        },
+        | ContentNode::StaticPi { domain, codomain } => {
+            let domain = image(domain);
+            ContentNode::StaticPi {
+                domain,
+                codomain: image(codomain),
+            }
+        },
         | ContentNode::Lambda(body) => ContentNode::Lambda(image(body)),
         | ContentNode::Application(head, argument) => {
             let head = image(head);
@@ -1645,6 +1663,11 @@ where
         | Some(&Value::QuoteComputation(quoted)) => {
             ContentNode::QuoteComputation(child(Root::CompType(quoted)))
         },
+        | Some(&Value::StaticLambda(body)) => ContentNode::StaticLambda(child(Root::Value(body))),
+        | Some(&Value::StaticApplication(head, argument)) => {
+            let head = child(Root::Value(head));
+            ContentNode::StaticApplication(head, child(Root::Value(argument)))
+        },
         | None => ContentNode::Unresolved(Sort::Value),
     }
 }
@@ -1727,6 +1750,13 @@ where
             target: target.clone(),
         },
         | Some(&ValueType::Abstract(position)) => ContentNode::Abstract(program.resolve(position)),
+        | Some(&ValueType::StaticPi { domain, codomain }) => {
+            let domain = child(Root::ValueType(domain));
+            ContentNode::StaticPi {
+                domain,
+                codomain: child(Root::ValueType(codomain)),
+            }
+        },
         | None => ContentNode::Unresolved(Sort::ValueType),
     }
 }
