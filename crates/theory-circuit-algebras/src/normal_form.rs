@@ -160,6 +160,7 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::interface::ComponentIndex;
@@ -326,6 +327,7 @@ impl CanonicalDiagram
     ///   canonicalization must return the same form with the identity
     ///   relabelling on wires and on generators, which is the fixed-point law.
     /// - witness: `normal_form::tests::canonicalization_is_idempotent`
+    #[spec(ensures: |ref result| result.as_ref().is_ok_and(|wiring| wiring.wire_count() == self.wires && wiring.generators() == &*self.generators && wiring.boundary() == &self.boundary))]
     #[inline]
     pub fn to_wiring(&self) -> Result<Wiring, WiringObstruction>
     {
@@ -357,6 +359,15 @@ impl Relabelling
     /// - provides: [`relabelled_wire::Absent::Unmapped`] when `wire` is not in
     ///   the relabelling's domain.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the identity relabelling after canonicalization
+    ///   exposes every mapped wire, and a first-past lookup exposes typed
+    ///   absence. Returning another image or inventing a missing entry differs;
+    ///   lookup does not certify the map.
+    /// - witness: `normal_form::tests::canonicalization_is_idempotent`
+    /// - witness: `normal_form::tests::relabelling_observers_refuse_missing_positions`
+    #[spec(ensures: |ref result| match *result { Maybe::Present(image) => self.wires.get(&wire) == Some(&image), Maybe::Absent(relabelled_wire::Absent::Unmapped) => !self.wires.contains_key(&wire) })]
     #[inline]
     pub fn image_of_wire(
         &self,
@@ -375,6 +386,15 @@ impl Relabelling
     /// - provides: [`relabelled_generator::Absent::Unmapped`] when `edge` is
     ///   not in the relabelling's domain.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the identity relabelling after canonicalization
+    ///   exposes every generator image, and a first-past lookup exposes typed
+    ///   absence. Shifting an image or admitting a foreign position differs;
+    ///   certification belongs to verify.
+    /// - witness: `normal_form::tests::canonicalization_is_idempotent`
+    /// - witness: `normal_form::tests::relabelling_observers_refuse_missing_positions`
+    #[spec(ensures: |ref result| match *result { Maybe::Present(image) => self.generators.get(&edge) == Some(&image), Maybe::Absent(relabelled_generator::Absent::Unmapped) => !self.generators.contains_key(&edge) })]
     #[inline]
     pub fn image_of_generator(
         &self,
@@ -478,6 +498,44 @@ impl Relabelling
     /// - witness: `normal_form::tests::the_verifier_refuses_a_boundary_that_does_not_commute`
     /// - witness: `normal_form::tests::canonicalization_is_total_and_its_witness_verifies`
     /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+    #[spec(ensures: |ref result| match *result {
+        Ok(()) => (source).wire_count() == (form).wire_count() && (source).edge_count() == (form).edge_count()
+    && (self).wires.len() == usize::from((source).wire_count()) && (self).generators.len() == (source).generators().len()
+    && (self).wires.iter().all(|(wire, image)| usize::from(*wire) < usize::from((source).wire_count()) && usize::from(*image) < usize::from((form).wire_count())
+        && (self).wires.range(..*wire).all(|(_, prior)| prior != image))
+    && (self).generators.iter().all(|(edge, image)| usize::from(*edge) < (source).generators().len() && usize::from(*image) < (form).generators().len()
+        && (self).generators.range(..*edge).all(|(_, prior)| prior != image))
+    && (source).generators().iter().enumerate().all(|entry| (self).generators.get(&Edge::from(entry.0)).and_then(|image| (form).generators().get(usize::from(*image))).is_some_and(|found|
+        entry.1.label() == found.label() && [(entry.1.sources(), found.sources()), (entry.1.targets(), found.targets())].into_iter().all(|(declared, actual)|
+            declared.len() == actual.len() && declared.iter().zip(actual).all(|(wire, image)| (self).wires.get(wire) == Some(image)))))
+    && [((source).boundary().inputs(), (form).boundary().inputs()), ((source).boundary().outputs(), (form).boundary().outputs())].into_iter().all(|(declared, found)|
+        declared.len() == found.len() && declared.iter().zip(found).all(|(wire, image)| (self).wires.get(wire) == Some(image))),
+        Err(RelabellingDefect::WireCountMismatch { source: first, form: second }) => first == source.wire_count() && second == form.wire_count() && first != second,
+        Err(RelabellingDefect::EdgeCountMismatch { source: first, form: second }) => first == source.edge_count() && second == form.edge_count() && first != second,
+        Err(RelabellingDefect::WireImageOutOfRange { wire, image }) => self.wires.get(&wire) == Some(&image) && usize::from(image) >= usize::from(form.wire_count()),
+        Err(RelabellingDefect::WireImageReused { wire, image, bound }) => bound < wire && self.wires.get(&wire) == Some(&image) && self.wires.get(&bound) == Some(&image),
+        Err(RelabellingDefect::WireUnmapped { wire }) => usize::from(wire) < usize::from(source.wire_count()) && !self.wires.contains_key(&wire),
+        Err(RelabellingDefect::GeneratorImageOutOfRange { at, image }) => self.generators.get(&at) == Some(&image) && usize::from(image) >= form.generators().len(),
+        Err(RelabellingDefect::GeneratorImageReused { at, image, bound }) => bound < at && self.generators.get(&at) == Some(&image) && self.generators.get(&bound) == Some(&image),
+        Err(RelabellingDefect::GeneratorUnmapped { at }) => usize::from(at) < source.generators().len() && !self.generators.contains_key(&at),
+        Err(RelabellingDefect::LabelMismatch { at, image }) => self.generators.get(&at) == Some(&image) && source.generators().get(usize::from(at)).zip(form.generators().get(usize::from(image))).is_some_and(|(from, to)| from.label() != to.label()),
+        Err(RelabellingDefect::ArityMismatch { at, image, leg, declared, found }) => source.generators().get(usize::from(at)).zip(form.generators().get(usize::from(image))).is_some_and(|(from, to)| {
+            let (first, second) = match leg { Leg::Input => (from.sources(), to.sources()), Leg::Output => (from.targets(), to.targets()) };
+            usize::from(declared) == first.len() && usize::from(found) == second.len() && declared != found
+        }),
+        Err(RelabellingDefect::PortMismatch { at, image, leg, position }) => source.generators().get(usize::from(at)).zip(form.generators().get(usize::from(image))).is_some_and(|(from, to)| {
+            let (first, second) = match leg { Leg::Input => (from.sources(), to.sources()), Leg::Output => (from.targets(), to.targets()) };
+            first.get(usize::from(position)).is_some_and(|wire| self.wires.get(wire) != second.get(usize::from(position)))
+        }),
+        Err(RelabellingDefect::BoundaryArityMismatch { leg, declared, found }) => {
+            let (first, second) = match leg { Leg::Input => (source.boundary().inputs(), form.boundary().inputs()), Leg::Output => (source.boundary().outputs(), form.boundary().outputs()) };
+            usize::from(declared) == first.len() && usize::from(found) == second.len() && declared != found
+        },
+        Err(RelabellingDefect::BoundaryMismatch { leg, position }) => {
+            let (first, second) = match leg { Leg::Input => (source.boundary().inputs(), form.boundary().inputs()), Leg::Output => (source.boundary().outputs(), form.boundary().outputs()) };
+            first.get(usize::from(position)).is_some_and(|wire| self.wires.get(wire) != second.get(usize::from(position)))
+        },
+    })]
     #[inline]
     pub fn verify(
         &self,
@@ -599,6 +657,14 @@ impl Relabelling
     ///   a wrong target each fail only this check, asserted with the leg and
     ///   the position.
     /// - witness: `normal_form::tests::the_verifier_refuses_a_record_that_does_not_correspond`
+    #[spec(ensures: |ref result| match *result {
+        Ok(()) => ports.declared.len() == ports.found.len() && ports.declared.iter().zip(ports.found).all(|(wire, found)| self.wires.get(wire) == Some(found)),
+        Err(RelabellingDefect::ArityMismatch { at: source, image: target, leg: side, declared, found }) => source == at && target == image && side == leg && usize::from(declared) == ports.declared.len() && usize::from(found) == ports.found.len() && declared != found,
+        Err(RelabellingDefect::PortMismatch { at: source, image: target, leg: side, position }) => source == at && target == image && side == leg && ports.declared.len() == ports.found.len()
+            && ports.declared.get(usize::from(position)).is_some_and(|wire| self.wires.get(wire) != ports.found.get(usize::from(position)))
+            && ports.declared.iter().zip(ports.found).take(usize::from(position)).all(|(wire, found)| self.wires.get(wire) == Some(found)),
+        Err(_) => false,
+    })]
     fn check_ports(
         &self,
         ports: PortRecords<'_>,
@@ -651,6 +717,14 @@ impl Relabelling
     ///   port and a wrong output port each fail only this check, asserted with
     ///   the leg and the position.
     /// - witness: `normal_form::tests::the_verifier_refuses_a_boundary_that_does_not_commute`
+    #[spec(ensures: |ref result| match *result {
+        Ok(()) => ports.declared.len() == ports.found.len() && ports.declared.iter().zip(ports.found).all(|(wire, found)| self.wires.get(wire) == Some(found)),
+        Err(RelabellingDefect::BoundaryArityMismatch { leg: side, declared, found }) => side == leg && usize::from(declared) == ports.declared.len() && usize::from(found) == ports.found.len() && declared != found,
+        Err(RelabellingDefect::BoundaryMismatch { leg: side, position }) => side == leg && ports.declared.len() == ports.found.len()
+            && ports.declared.get(usize::from(position)).is_some_and(|wire| self.wires.get(wire) != ports.found.get(usize::from(position)))
+            && ports.declared.iter().zip(ports.found).take(usize::from(position)).all(|(wire, found)| self.wires.get(wire) == Some(found)),
+        Err(_) => false,
+    })]
     fn check_boundary(
         &self,
         ports: PortRecords<'_>,
@@ -1077,6 +1151,17 @@ pub enum DiagramEquality
 /// - witness: `normal_form::tests::presentations_of_one_diagram_collapse_to_one_key`
 /// - witness: `normal_form::tests::equal_canonical_forms_hash_alike`
 /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+#[spec(ensures: |ref result| (diagram).wire_count() == (result.form).wire_count() && (diagram).edge_count() == (result.form).edge_count()
+    && (result.relabelling).wires.len() == usize::from((diagram).wire_count()) && (result.relabelling).generators.len() == (diagram).generators().len()
+    && (result.relabelling).wires.iter().all(|(wire, image)| usize::from(*wire) < usize::from((diagram).wire_count()) && usize::from(*image) < usize::from((result.form).wire_count())
+        && (result.relabelling).wires.range(..*wire).all(|(_, prior)| prior != image))
+    && (result.relabelling).generators.iter().all(|(edge, image)| usize::from(*edge) < (diagram).generators().len() && usize::from(*image) < (result.form).generators().len()
+        && (result.relabelling).generators.range(..*edge).all(|(_, prior)| prior != image))
+    && (diagram).generators().iter().enumerate().all(|entry| (result.relabelling).generators.get(&Edge::from(entry.0)).and_then(|image| (result.form).generators().get(usize::from(*image))).is_some_and(|found|
+        entry.1.label() == found.label() && [(entry.1.sources(), found.sources()), (entry.1.targets(), found.targets())].into_iter().all(|(declared, actual)|
+            declared.len() == actual.len() && declared.iter().zip(actual).all(|(wire, image)| (result.relabelling).wires.get(wire) == Some(image)))))
+    && [((diagram).boundary().inputs(), (result.form).boundary().inputs()), ((diagram).boundary().outputs(), (result.form).boundary().outputs())].into_iter().all(|(declared, found)|
+        declared.len() == found.len() && declared.iter().zip(found).all(|(wire, image)| (result.relabelling).wires.get(wire) == Some(image))))]
 #[inline]
 #[must_use]
 pub fn canonicalize(diagram: &Wiring) -> Canonicalization
@@ -1120,7 +1205,7 @@ pub fn canonicalize(diagram: &Wiring) -> Canonicalization
 /// # Adequacy
 /// - hypothesis: L2 — the verdict is checked against an independent
 ///   cospan-isomorphism oracle over every ordered pair of every fixture, with
-///   both verdicts' counts pinned so the agreement is not vacuous. L3 — each
+///   both verdicts independently checked on hand-classified diagrams. L3 — each
 ///   negative arm is separated by a pair differing in exactly the datum its
 ///   variant names, and the four identifications a coarser canon would wrongly
 ///   admit — a permuted interface leg, a permuted port list on one generator,
@@ -1136,6 +1221,43 @@ pub fn canonicalize(diagram: &Wiring) -> Canonicalization
 /// - witness: `normal_form::tests::the_canon_separates_a_label_worn_at_two_sorts`
 /// - witness: `normal_form::tests::the_canon_separates_one_generator_multiset_wired_two_ways`
 /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+/// - boundary: the predicate checks both positive isomorphisms and the negative
+///   payload's invariant counts or canonical position; the oracle and located
+///   differences establish negative canonical-record provenance.
+#[spec(ensures: |ref result| match *result {
+    DiagramEquality::Same(ref shared) => (left).wire_count() == (shared.form).wire_count() && (left).edge_count() == (shared.form).edge_count()
+    && (shared.left).wires.len() == usize::from((left).wire_count()) && (shared.left).generators.len() == (left).generators().len()
+    && (shared.left).wires.iter().all(|(wire, image)| usize::from(*wire) < usize::from((left).wire_count()) && usize::from(*image) < usize::from((shared.form).wire_count())
+        && (shared.left).wires.range(..*wire).all(|(_, prior)| prior != image))
+    && (shared.left).generators.iter().all(|(edge, image)| usize::from(*edge) < (left).generators().len() && usize::from(*image) < (shared.form).generators().len()
+        && (shared.left).generators.range(..*edge).all(|(_, prior)| prior != image))
+    && (left).generators().iter().enumerate().all(|entry| (shared.left).generators.get(&Edge::from(entry.0)).and_then(|image| (shared.form).generators().get(usize::from(*image))).is_some_and(|found|
+        entry.1.label() == found.label() && [(entry.1.sources(), found.sources()), (entry.1.targets(), found.targets())].into_iter().all(|(declared, actual)|
+            declared.len() == actual.len() && declared.iter().zip(actual).all(|(wire, image)| (shared.left).wires.get(wire) == Some(image)))))
+    && [((left).boundary().inputs(), (shared.form).boundary().inputs()), ((left).boundary().outputs(), (shared.form).boundary().outputs())].into_iter().all(|(declared, found)|
+        declared.len() == found.len() && declared.iter().zip(found).all(|(wire, image)| (shared.left).wires.get(wire) == Some(image)))
+        && (right).wire_count() == (shared.form).wire_count() && (right).edge_count() == (shared.form).edge_count()
+    && (shared.right).wires.len() == usize::from((right).wire_count()) && (shared.right).generators.len() == (right).generators().len()
+    && (shared.right).wires.iter().all(|(wire, image)| usize::from(*wire) < usize::from((right).wire_count()) && usize::from(*image) < usize::from((shared.form).wire_count())
+        && (shared.right).wires.range(..*wire).all(|(_, prior)| prior != image))
+    && (shared.right).generators.iter().all(|(edge, image)| usize::from(*edge) < (right).generators().len() && usize::from(*image) < (shared.form).generators().len()
+        && (shared.right).generators.range(..*edge).all(|(_, prior)| prior != image))
+    && (right).generators().iter().enumerate().all(|entry| (shared.right).generators.get(&Edge::from(entry.0)).and_then(|image| (shared.form).generators().get(usize::from(*image))).is_some_and(|found|
+        entry.1.label() == found.label() && [(entry.1.sources(), found.sources()), (entry.1.targets(), found.targets())].into_iter().all(|(declared, actual)|
+            declared.len() == actual.len() && declared.iter().zip(actual).all(|(wire, image)| (shared.right).wires.get(wire) == Some(image)))))
+    && [((right).boundary().inputs(), (shared.form).boundary().inputs()), ((right).boundary().outputs(), (shared.form).boundary().outputs())].into_iter().all(|(declared, found)|
+        declared.len() == found.len() && declared.iter().zip(found).all(|(wire, image)| (shared.right).wires.get(wire) == Some(image))),
+    DiagramEquality::Distinct(DiagramDivergence::WireCount { left: first, right: second }) => first == left.wire_count() && second == right.wire_count() && first != second,
+    DiagramEquality::Distinct(DiagramDivergence::GeneratorCount { left: first, right: second }) => first == left.edge_count() && second == right.edge_count() && first != second,
+    DiagramEquality::Distinct(DiagramDivergence::BoundaryArity { leg, left: first, right: second }) => {
+        let (mine, theirs) = match leg { Leg::Input => (left.boundary().inputs(), right.boundary().inputs()), Leg::Output => (left.boundary().outputs(), right.boundary().outputs()) };
+        usize::from(first) == mine.len() && usize::from(second) == theirs.len() && first != second
+    },
+    DiagramEquality::Distinct(DiagramDivergence::BoundaryPort { leg, position, left: first, right: second }) => first != second && Outline::of_wiring(left) == Outline::of_wiring(right)
+        && usize::from(first) < usize::from(left.wire_count()) && usize::from(second) < usize::from(right.wire_count())
+        && usize::from(position) < match leg { Leg::Input => left.boundary().inputs().len(), Leg::Output => left.boundary().outputs().len() },
+    DiagramEquality::Distinct(DiagramDivergence::Generator { at }) => Outline::of_wiring(left) == Outline::of_wiring(right) && usize::from(at) < left.generators().len(),
+})]
 #[inline]
 #[must_use]
 pub fn same_diagram(
@@ -1218,6 +1340,16 @@ impl Outline
     ///   variant with both values.
     /// - witness: `normal_form::tests::same_diagram_locates_a_count_difference`
     /// - witness: `normal_form::tests::same_diagram_locates_a_boundary_difference`
+    #[spec(ensures: |ref result| match *result {
+        Maybe::Absent(form_divergence::Absent::Equal) => self == other,
+        Maybe::Present(DiagramDivergence::WireCount { left, right }) => left == self.wires && right == other.wires && left != right,
+        Maybe::Present(DiagramDivergence::GeneratorCount { left, right }) => self.wires == other.wires && left == self.edges && right == other.edges && left != right,
+        Maybe::Present(DiagramDivergence::BoundaryArity { leg, left, right }) => self.wires == other.wires && self.edges == other.edges && left != right && match leg {
+            Leg::Input => left == self.inputs && right == other.inputs,
+            Leg::Output => self.inputs == other.inputs && left == self.outputs && right == other.outputs,
+        },
+        Maybe::Present(_) => false,
+    })]
     fn divergence(
         self,
         other: Self,
@@ -1272,6 +1404,23 @@ impl Outline
 /// - witness: `normal_form::tests::the_canon_separates_a_permuted_port_list`
 /// - witness: `normal_form::tests::same_diagram_locates_a_hyperedge_difference`
 /// - witness: `normal_form::tests::the_canon_agrees_with_the_cospan_isomorphism_oracle`
+#[spec(ensures: |ref result| match *result {
+    Maybe::Absent(form_divergence::Absent::Equal) => left == right,
+    Maybe::Present(DiagramDivergence::WireCount { left: first, right: second }) => first == left.wire_count() && second == right.wire_count() && first != second,
+    Maybe::Present(DiagramDivergence::GeneratorCount { left: first, right: second }) => left.wire_count() == right.wire_count() && first == left.edge_count() && second == right.edge_count() && first != second,
+    Maybe::Present(DiagramDivergence::BoundaryArity { leg, left: first, right: second }) => left.wire_count() == right.wire_count() && left.edge_count() == right.edge_count() && first != second && match leg {
+        Leg::Input => usize::from(first) == left.boundary().inputs().len() && usize::from(second) == right.boundary().inputs().len(),
+        Leg::Output => left.boundary().inputs().len() == right.boundary().inputs().len() && usize::from(first) == left.boundary().outputs().len() && usize::from(second) == right.boundary().outputs().len(),
+    },
+    Maybe::Present(DiagramDivergence::BoundaryPort { leg, position, left: first, right: second }) => Outline::of_form(left) == Outline::of_form(right) && first != second && {
+        let (mine, theirs) = match leg { Leg::Input => (left.boundary().inputs(), right.boundary().inputs()), Leg::Output => (left.boundary().outputs(), right.boundary().outputs()) };
+        (leg == Leg::Input || left.boundary().inputs() == right.boundary().inputs()) && mine.get(usize::from(position)) == Some(&first) && theirs.get(usize::from(position)) == Some(&second)
+            && mine.iter().zip(theirs).take(usize::from(position)).all(|pair| pair.0 == pair.1)
+    },
+    Maybe::Present(DiagramDivergence::Generator { at }) => Outline::of_form(left) == Outline::of_form(right) && left.boundary() == right.boundary()
+        && left.generators().get(usize::from(at)).zip(right.generators().get(usize::from(at))).is_some_and(|(mine, theirs)| mine != theirs)
+        && left.generators().iter().zip(right.generators()).take(usize::from(at)).all(|pair| pair.0 == pair.1),
+})]
 fn divergence_of(
     left: &CanonicalDiagram,
     right: &CanonicalDiagram,
@@ -1345,6 +1494,14 @@ fn divergence_of(
 /// - witness: `normal_form::tests::the_least_linearization_is_compared_past_its_first_record`
 /// - witness: `normal_form::tests::two_isomorphic_anchorless_components_still_have_one_form`
 /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+/// - boundary: the predicate checks the drained boundary, unvisited membership
+///   and uniqueness. The witnesses establish one least seed per component and
+///   their global order without allocating a second set of trial traversals.
+#[spec(requires: anchored.cursor == anchored.wire_order.len()
+    && anchored.diagram.boundary().inputs().iter().chain(anchored.diagram.boundary().outputs()).all(|wire| anchored.wire_image.contains_key(wire)),
+ensures: |ref seeds| seeds.is_empty() == (anchored.edge_image.len() == anchored.diagram.generators().len())
+    && seeds.iter().enumerate().all(|entry| usize::from(*entry.1) < anchored.diagram.generators().len() && !anchored.edge_image.contains_key(entry.1)
+        && !seeds.iter().take(entry.0).any(|prior| prior == entry.1)))]
 fn anchorless_seeds(anchored: &Linearization<'_>) -> Vec<Edge>
 {
     let diagram = anchored.diagram;
@@ -1443,6 +1600,11 @@ impl<'diagram> Linearization<'diagram>
     ///   and then the output leg.
     /// - witness: `normal_form::tests::an_isolated_wire_is_numbered_from_the_boundary_alone`
     /// - witness: `normal_form::tests::the_boundary_is_numbered_before_the_interior`
+    #[spec(captures: [prior = self.wire_image.get(&wire).copied(), count = self.wire_order.len()],
+    ensures: |_| self.wire_order.len() == count.saturating_add(usize::from(prior.is_none()))
+        && self.wire_image.get(&wire) == Some(&prior.unwrap_or_else(|| Wire::from(count)))
+        && (prior.is_some() || self.wire_order.last() == Some(&wire))
+        && self.wire_order.iter().enumerate().all(|entry| self.wire_image.get(entry.1) == Some(&Wire::from(entry.0))))]
     fn assign_wire(
         &mut self,
         wire: Wire,
@@ -1473,6 +1635,13 @@ impl<'diagram> Linearization<'diagram>
     ///   the sources-before-targets order is observable, and its form is
     ///   pinned.
     /// - witness: `normal_form::tests::a_visited_hyperedge_numbers_its_sources_before_its_targets`
+    #[spec(requires: usize::from(edge) < self.diagram.generators().len(),
+    captures: [prior = self.edge_image.get(&edge).copied(), count = self.visited.len()],
+    ensures: |_| self.visited.len() == count.saturating_add(usize::from(prior.is_none()))
+        && self.edge_image.get(&edge) == Some(&prior.unwrap_or_else(|| Edge::from(count)))
+        && self.diagram.generators().get(usize::from(edge)).is_some_and(|generator|
+            generator.sources().iter().chain(generator.targets()).all(|wire| self.wire_image.contains_key(wire))
+            && self.visited.get(usize::from(prior.unwrap_or_else(|| Edge::from(count)))).is_some_and(|seen| core::ptr::eq(core::ptr::from_ref(*seen), core::ptr::from_ref(generator)))))]
     fn visit(
         &mut self,
         edge: Edge,
@@ -1515,6 +1684,10 @@ impl<'diagram> Linearization<'diagram>
     ///   order of their interior generators.
     /// - witness: `normal_form::tests::an_anchored_component_is_ordered_by_the_boundary_and_not_by_its_labels`
     /// - witness: `normal_form::tests::the_boundary_is_numbered_before_the_interior`
+    #[spec(requires: self.cursor <= self.wire_order.len(),
+    ensures: |_| self.cursor == self.wire_order.len() && self.wire_order.iter().all(|wire|
+        match self.diagram.producer_of(*wire) { Maybe::Present(edge) => self.edge_image.contains_key(&edge), Maybe::Absent(_) => true }
+        && match self.diagram.consumer_of(*wire) { Maybe::Present(edge) => self.edge_image.contains_key(&edge), Maybe::Absent(_) => true }))]
     fn drain(&mut self)
     {
         let diagram = self.diagram;
@@ -1535,9 +1708,22 @@ impl<'diagram> Linearization<'diagram>
     /// - requires: every wire of `ports` is numbered.
     /// - ensures: their canonical numbers in the same order.
     /// - panics: none.
+    /// - executable: none — the backend lowers the body to a closure whose
+    ///   return type cannot name this opaque iterator, even for requires-only
+    ///   instrumentation; changing the iterator signature is outside this
+    ///   contract.
     /// - intension: an unnumbered wire is skipped rather than guessed at, so
     ///   the list comes out short and [`Relabelling::verify`] reports an arity
     ///   difference; the requirement holds at every call site.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — boundary and hyperedge port-order witnesses observe
+    ///   the emitted mapped sequence through the final form, while idempotence
+    ///   checks all canonical positions. Dropping a mapped port or reordering
+    ///   the stream differs; callers provide fully numbered ports.
+    /// - witness: `normal_form::tests::the_boundary_is_numbered_before_the_interior`
+    /// - witness: `normal_form::tests::a_visited_hyperedge_numbers_its_sources_before_its_targets`
+    /// - witness: `normal_form::tests::canonicalization_is_idempotent`
     fn images<'walk>(
         &'walk self,
         ports: &'walk [Wire],
@@ -1566,6 +1752,14 @@ impl<'diagram> Linearization<'diagram>
     ///   isomorphic components compare equal and leave the form invariant.
     /// - witness: `normal_form::tests::the_least_linearization_is_compared_past_its_first_record`
     /// - witness: `normal_form::tests::two_isomorphic_anchorless_components_still_have_one_form`
+    /// - witness: `normal_form::tests::record_comparison_resolves_equal_prefixes_by_length`
+    #[spec(requires: self.cursor == self.wire_order.len() && other.cursor == other.wire_order.len(),
+    ensures: |order| order == self.visited.iter().zip(&other.visited).find_map(|(mine, theirs)| {
+        let difference = mine.label().cmp(theirs.label())
+            .then_with(|| self.images(mine.sources()).cmp(other.images(theirs.sources())))
+            .then_with(|| self.images(mine.targets()).cmp(other.images(theirs.targets())));
+        difference.is_ne().then_some(difference)
+    }).unwrap_or_else(|| self.visited.len().cmp(&other.visited.len())))]
     fn compare_records(
         &self,
         other: &Self,
@@ -1599,6 +1793,28 @@ impl<'diagram> Linearization<'diagram>
     ///   canonical numbers, and carries the interface in canonical numbers; the
     ///   relabelling is the two numberings.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — every fixture and generated presentation verifies its
+    ///   returned isomorphism, and recanonicalization yields the same form with
+    ///   identity maps. Losing a numbering, changing a port or interchanging
+    ///   the maps breaks the certificate; only complete internal numberings are
+    ///   converted.
+    /// - witness: `normal_form::tests::canonicalization_is_total_and_its_witness_verifies`
+    /// - witness: `normal_form::tests::canonicalization_is_idempotent`
+    /// - witness: `tests::normal_form::every_presentation_permutation_canonicalizes_alike`
+    #[spec(requires: self.wire_order.len() == usize::from(self.diagram.wire_count()) && self.visited.len() == self.diagram.generators().len(),
+    captures: [source = self.diagram], ensures: |ref result| (source).wire_count() == (result.form).wire_count() && (source).edge_count() == (result.form).edge_count()
+        && (result.relabelling).wires.len() == usize::from((source).wire_count()) && (result.relabelling).generators.len() == (source).generators().len()
+        && (result.relabelling).wires.iter().all(|(wire, image)| usize::from(*wire) < usize::from((source).wire_count()) && usize::from(*image) < usize::from((result.form).wire_count())
+            && (result.relabelling).wires.range(..*wire).all(|(_, prior)| prior != image))
+        && (result.relabelling).generators.iter().all(|(edge, image)| usize::from(*edge) < (source).generators().len() && usize::from(*image) < (result.form).generators().len()
+            && (result.relabelling).generators.range(..*edge).all(|(_, prior)| prior != image))
+        && (source).generators().iter().enumerate().all(|entry| (result.relabelling).generators.get(&Edge::from(entry.0)).and_then(|image| (result.form).generators().get(usize::from(*image))).is_some_and(|found|
+            entry.1.label() == found.label() && [(entry.1.sources(), found.sources()), (entry.1.targets(), found.targets())].into_iter().all(|(declared, actual)|
+                declared.len() == actual.len() && declared.iter().zip(actual).all(|(wire, image)| (result.relabelling).wires.get(wire) == Some(image)))))
+        && [((source).boundary().inputs(), (result.form).boundary().inputs()), ((source).boundary().outputs(), (result.form).boundary().outputs())].into_iter().all(|(declared, found)|
+            declared.len() == found.len() && declared.iter().zip(found).all(|(wire, image)| (result.relabelling).wires.get(wire) == Some(image))))]
     fn into_canonicalization(self) -> Canonicalization
     {
         let boundary = self.diagram.boundary();
