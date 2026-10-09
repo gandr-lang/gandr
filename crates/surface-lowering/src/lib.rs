@@ -45,9 +45,16 @@
 //! and because nothing the lowering *refuses* may become an obligation, which
 //! the failure classifier states by leaving its absence class empty.
 //!
-//! **Reserved forms are declined by name.** The product type and the pair parse
-//! and then refuse, so the classifier's unrepresentable class has a real
-//! inhabitant from the first landing.
+//! **Type operators lower to the static calculus over codes.** `\A. T` is a
+//! static lambda over the code of its body, an arrow where a value type is
+//! read is a static Pi, and an operator a binder or a declaration names,
+//! applied to arguments, is a static application — the decode of one where a
+//! type is read. `A * B` and `(a, b)` are the eager product and its pair, and
+//! `(A1, …, An) => B` is exactly `+U (A1 -> … -> An -> -F B)`.
+//!
+//! **Reserved forms are declined by name.** The lazy product parses and then
+//! refuses, so the classifier's unrepresentable class keeps a real
+//! inhabitant.
 //!
 //! **Origins are carried for types as well as terms.** Every minted core node
 //! records the syntax node that produced it, and a declaration's own origin

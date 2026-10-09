@@ -108,6 +108,15 @@ pub enum Former<'source, Node>
     Element(Node),
     /// A sealed abstract type, by its name.
     Abstract(Name<'source>),
+    /// The static Pi `A -> B` classifying a type operator, whose codomain
+    /// binds nothing.
+    StaticPi
+    {
+        /// The classifier of the operand.
+        domain: Node,
+        /// The classifier of the result.
+        codomain: Node,
+    },
     /// The returner `-F A` of a value type.
     Returner(Node),
     /// The arrow `A -> C`, whose codomain binds nothing.
@@ -155,6 +164,11 @@ pub enum Former<'source, Node>
     Quote(Node),
     /// The code of a computation type.
     QuoteComputation(Node),
+    /// A static abstraction `\a. v`, its body under one binder.
+    StaticLambda(Node),
+    /// A static application of an operator to one argument; the printer
+    /// spells a spine of them as one application, `f(a, b)`.
+    StaticApplication(Node, Node),
     /// A computation term, which no position the printer fills admits.
     Computation,
     /// A handle that names no node, or a node whose name the source cannot

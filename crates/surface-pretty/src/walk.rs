@@ -110,11 +110,17 @@ struct BinderName(String);
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct Ordinal(u32);
 
-/// How many dependent arrows' binders are open at a point of the walk; read
-/// as a position, the binder that many arrows in.
+/// How many binders — of dependent arrows and of static abstractions — are
+/// open at a point of the walk; read as a position, the binder that many
+/// binders in.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct OpenBinders(usize);
+
+/// How many arguments one spelled application holds.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Arity(usize);
 
 /// The sort of node a former is, as far as a position cares.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -159,7 +165,8 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Universe { .. }
         | Former::TypeLift
         | Former::Element(_)
-        | Former::Abstract(_) => Kind::ValueType,
+        | Former::Abstract(_)
+        | Former::StaticPi { .. } => Kind::ValueType,
         | Former::Returner(_)
         | Former::Arrow { .. }
         | Former::Pi { .. }
@@ -173,7 +180,9 @@ const fn kind<Node>(former: &Former<'_, Node>) -> Kind
         | Former::Thunk
         | Former::ValueLift
         | Former::Quote(_)
-        | Former::QuoteComputation(_) => Kind::Value,
+        | Former::QuoteComputation(_)
+        | Former::StaticLambda(_)
+        | Former::StaticApplication(..) => Kind::Value,
         | Former::Computation => Kind::Computation,
         | Former::Unreadable => Kind::Unknown,
     }
@@ -272,12 +281,13 @@ enum Children<Node>
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: a product's and a sum's operands admit value types; a thunk
-///   type's body and a quoted computation type admit computation types; a
-///   returner's result, an arrow's and a dependent arrow's domain and a quoted
-///   value type admit value types, the arrows' codomains computation types; a
-///   decode's code, a pair's items and an injection's body admit values; every
-///   other former is a leaf.
+/// - ensures: a product's and a sum's operands and a static Pi's domain and
+///   codomain admit value types; a thunk type's body and a quoted computation
+///   type admit computation types; a returner's result, an arrow's and a
+///   dependent arrow's domain and a quoted value type admit value types, the
+///   arrows' codomains computation types; a decode's code, a pair's items, an
+///   injection's body, a static abstraction's body and a static application's
+///   operator and argument admit values; every other former is a leaf.
 /// - provides: the one table of child positions the scan and the walk share.
 /// - fails: never.
 /// - panics: none.
@@ -293,7 +303,12 @@ where
 {
     let slot = |node: Node, admits: Admits| Slot { node, admits };
     match *former {
-        | Former::Product(first, second) | Former::Sum(first, second) => Children::Two(
+        | Former::Product(first, second)
+        | Former::Sum(first, second)
+        | Former::StaticPi {
+            domain: first,
+            codomain: second,
+        } => Children::Two(
             slot(first, Admits::ValueType),
             slot(second, Admits::ValueType),
         ),
@@ -301,7 +316,7 @@ where
             slot(domain, Admits::ValueType),
             slot(codomain, Admits::CompType),
         ),
-        | Former::Pair(first, second) => {
+        | Former::Pair(first, second) | Former::StaticApplication(first, second) => {
             Children::Two(slot(first, Admits::Value), slot(second, Admits::Value))
         },
         | Former::ThunkType(child) | Former::QuoteComputation(child) => {
@@ -312,7 +327,8 @@ where
         },
         | Former::Element(child)
         | Former::ComputationElement(child)
-        | Former::Injection(_, child) => Children::One(slot(child, Admits::Value)),
+        | Former::Injection(_, child)
+        | Former::StaticLambda(child) => Children::One(slot(child, Admits::Value)),
         | Former::BaseType(_)
         | Former::UnitType
         | Former::Universe { .. }
@@ -372,7 +388,8 @@ enum Binding
     Product,
     /// `A + B`.
     Sum,
-    /// `A -> C` or `(x : A) -> C`.
+    /// `A -> C`, `(x : A) -> C`, or the static abstraction `\a. v`, whose
+    /// body runs as far right as an arrow's codomain.
     Arrow,
 }
 
@@ -475,6 +492,12 @@ enum Join
     /// A dependent arrow over its domain and codomain, its binder named by the
     /// binders open where the join runs.
     Pi,
+    /// A static abstraction over its body, its binder named as a dependent
+    /// arrow's is.
+    StaticLambda,
+    /// An operator applied to this many arguments, the spine of static
+    /// applications it was written as.
+    Apply(Arity),
     /// A bracketed value former over its items.
     Bracket(Bracket),
 }
@@ -493,7 +516,8 @@ enum Task<Node>
         /// How many value formers enclose the node.
         depth: ValueDepth,
     },
-    /// Open the binder of the dependent arrow whose codomain follows.
+    /// Open the binder of the dependent arrow or static abstraction whose
+    /// body follows.
     Bind,
     /// Close that binder.
     Unbind,
@@ -1026,30 +1050,33 @@ impl Walk<'_, '_, '_>
     /// Spells one node, or schedules its children and their join.
     ///
     /// # Specification
-    /// - requires: `tasks` is the walk's stack.
+    /// - requires: `tasks` is the walk's stack, and `former` is what `source`
+    ///   reads at the node.
     /// - ensures: a value at the depth limit finishes as `<deep>`; a node of a
     ///   sort its position does not admit, an unreadable node and a former
     ///   without a surface spelling finish as `?`; a thunk finishes as
     ///   `<thunk>`; a leaf former finishes as its spelling; a composite former
     ///   pushes its join below its children's visits, a dependent arrow's
-    ///   codomain between the opening and the closing of its binder; a decode
-    ///   and a quote push their child's visit alone, so the child's piece is
-    ///   theirs.
+    ///   codomain and a static abstraction's body between the opening and the
+    ///   closing of its binder; a static application schedules its spine as
+    ///   [`Self::spine`] does; a decode and a quote push their child's visit
+    ///   alone, so the child's piece is theirs.
     /// - provides: one step of the walk.
     /// - fails: as [`Self::leaf`].
     /// - panics: none.
     ///
     /// # Errors
     /// As [`Self::leaf`].
-    fn visit<Node>(
+    fn visit<S>(
         &mut self,
-        former: Former<'_, Node>,
+        source: &S,
+        former: Former<'_, S::Node>,
         admits: Admits,
         depth: ValueDepth,
-        tasks: &mut Vec<Task<Node>>,
+        tasks: &mut Vec<Task<S::Node>>,
     ) -> Result<(), PresentationError>
     where
-        Node: Copy,
+        S: Source + ?Sized,
     {
         let kind = kind(&former);
         match reach(admits, depth, kind) {
@@ -1093,11 +1120,16 @@ impl Walk<'_, '_, '_>
             | Former::Sum(..) => Some(Join::Infix(Infix::Sum)),
             | Former::ThunkType(_) => Some(Join::Prefix(Prefix::Thunk)),
             | Former::Returner(_) => Some(Join::Prefix(Prefix::Returner)),
-            | Former::Arrow { .. } => Some(Join::Arrow),
+            | Former::Arrow { .. } | Former::StaticPi { .. } => Some(Join::Arrow),
             | Former::Pi { .. } => Some(Join::Pi),
+            | Former::StaticLambda(_) => Some(Join::StaticLambda),
             | Former::Pair(..) => Some(Join::Bracket(Bracket::Pair)),
             | Former::Injection(Side::Left, _) => Some(Join::Bracket(Bracket::Left)),
             | Former::Injection(Side::Right, _) => Some(Join::Bracket(Bracket::Right)),
+            | Former::StaticApplication(operator, argument) => {
+                Self::spine(source, operator, argument, depth, tasks);
+                return Ok(());
+            },
             | Former::Element(_)
             | Former::ComputationElement(_)
             | Former::Quote(_)
@@ -1107,27 +1139,116 @@ impl Walk<'_, '_, '_>
             tasks.push(Task::Join(join));
         }
         let below = below(depth, kind);
-        let visit = |slot: Slot<Node>| Task::Visit {
+        let visit = |slot: Slot<S::Node>| Task::Visit {
             node: slot.node,
             admits: slot.admits,
             depth: below,
         };
+        let binds_last = matches!(join, Some(Join::Pi | Join::StaticLambda));
         match children(&former) {
             | Children::None => {},
-            | Children::One(only) => tasks.push(visit(only)),
+            | Children::One(only) => {
+                if binds_last {
+                    tasks.push(Task::Unbind);
+                }
+                tasks.push(visit(only));
+                if binds_last {
+                    tasks.push(Task::Bind);
+                }
+            },
             | Children::Two(first, second) => {
-                let binds = join == Some(Join::Pi);
-                if binds {
+                if binds_last {
                     tasks.push(Task::Unbind);
                 }
                 tasks.push(visit(second));
-                if binds {
+                if binds_last {
                     tasks.push(Task::Bind);
                 }
                 tasks.push(visit(first));
             },
         }
         Ok(())
+    }
+
+    /// Schedules a static application and the applications under its
+    /// operator as one application, `f(a1, …, an)`.
+    ///
+    /// # Specification
+    /// - requires: the application at `depth` applies `operator` to `argument`,
+    ///   and `tasks` is the walk's stack.
+    /// - ensures: the operator is read down through every static application it
+    ///   is, each argument scheduled at the depth the scan reaches it at, until
+    ///   an operator that is no application or one at the depth limit, which is
+    ///   scheduled as itself; the join over the operator and the arguments,
+    ///   left to right, is pushed below their visits, the operator visited
+    ///   first.
+    /// - provides: the one spelling the surface writes a spine in, which a join
+    ///   over one application at a time could not give.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Every turn deepens the depth it reads at by one, and the loop stops at
+    /// [`DEPTH_LIMIT`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator applied to one argument and to three, and
+    ///   a spine whose operator is a static abstraction, each asserted at its
+    ///   exact spelling.
+    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
+    fn spine<S>(
+        source: &S,
+        operator: S::Node,
+        argument: S::Node,
+        depth: ValueDepth,
+        tasks: &mut Vec<Task<S::Node>>,
+    ) where
+        S: Source + ?Sized,
+    {
+        let mut level = below(depth, Kind::Value);
+        let mut arguments = Vec::from([(argument, level)]);
+        let mut operator = operator;
+        while level < DEPTH_LIMIT {
+            let Former::StaticApplication(inner, next) = source.read(operator)
+            else {
+                break;
+            };
+            level = level.deeper();
+            arguments.push((next, level));
+            operator = inner;
+        }
+        tasks.push(Task::Join(Join::Apply(Arity(arguments.len()))));
+        for (node, at) in arguments {
+            tasks.push(Task::Visit {
+                node,
+                admits: Admits::Value,
+                depth: at,
+            });
+        }
+        tasks.push(Task::Visit {
+            node: operator,
+            admits: Admits::Value,
+            depth: level,
+        });
+    }
+
+    /// A leaf naming the binder the join at hand closes over, `?` and
+    /// approximate when the names ran out.
+    ///
+    /// # Specification
+    /// trivial.
+    fn binder(&mut self) -> Result<DocId, PresentationError>
+    {
+        match self.binders.name_at(self.open) {
+            | Maybe::Present(name) => {
+                let name = name.clone();
+                self.leaf(Glyphs(name.0.as_str()))
+            },
+            | Maybe::Absent(_) => {
+                self.fidelity = Fidelity::Approximate;
+                self.leaf(Glyphs("?"))
+            },
+        }
     }
 
     /// Combines the finished pieces a join takes into one.
@@ -1141,8 +1262,10 @@ impl Walk<'_, '_, '_>
     ///   it binds looser, a break after the symbol; `A -> C` with the domain
     ///   bare up to a sum and the codomain bare, a break after the arrow; `(x :
     ///   A) -> C` naming the binder by the binders open outside it, a break
-    ///   after the arrow; `(a, b)`, `Inl(v)` and `Inr(v)` with a break after
-    ///   the comma and before the closer.
+    ///   after the arrow; `\a. v` naming its binder so, a break after the dot;
+    ///   `f(a1, …, an)` with the operator parenthesized unless it is an atom;
+    ///   `(a, b)`, `Inl(v)` and `Inr(v)`; every list with a break after each
+    ///   comma and before the closer.
     /// - provides: every composite spelling.
     /// - fails: a missing operand, which the walk's scheduling excludes, or the
     ///   builder's refusal.
@@ -1151,6 +1274,9 @@ impl Walk<'_, '_, '_>
     /// # Errors
     /// Returns [`PresentationError::Unbalanced`] for a missing operand and
     /// [`PresentationError::Build`] when the builder refuses.
+    ///
+    /// # Termination
+    /// An application's loops run once per argument its arity counts.
     fn join(
         &mut self,
         join: Join,
@@ -1188,16 +1314,7 @@ impl Walk<'_, '_, '_>
             | Join::Pi => {
                 let codomain = self.pop()?;
                 let domain = self.pop()?;
-                let binder = match self.binders.name_at(self.open) {
-                    | Maybe::Present(name) => {
-                        let name = name.clone();
-                        self.leaf(Glyphs(name.0.as_str()))?
-                    },
-                    | Maybe::Absent(_) => {
-                        self.fidelity = Fidelity::Approximate;
-                        self.leaf(Glyphs("?"))?
-                    },
-                };
+                let binder = self.binder()?;
                 let open = self.leaf(Glyphs("("))?;
                 let colon = self.leaf(Glyphs(" : "))?;
                 let arrow = self.leaf(Glyphs(") ->"))?;
@@ -1206,6 +1323,36 @@ impl Walk<'_, '_, '_>
                     .concat_all([open, binder, colon, domain.doc, arrow])?;
                 let head = self.space_or_break(head)?;
                 (self.builder.concat(head, codomain.doc)?, Binding::Arrow)
+            },
+            | Join::StaticLambda => {
+                let body = self.pop()?;
+                let binder = self.binder()?;
+                let lead = self.leaf(Glyphs("\\"))?;
+                let dot = self.leaf(Glyphs("."))?;
+                let head = self.builder.concat_all([lead, binder, dot])?;
+                let head = self.space_or_break(head)?;
+                (self.builder.concat(head, body.doc)?, Binding::Arrow)
+            },
+            | Join::Apply(Arity(count)) => {
+                let mut arguments = Vec::with_capacity(count);
+                for _ in 0_usize .. count {
+                    arguments.push(self.pop()?);
+                }
+                let operator = self.pop()?;
+                let operator = self.bare_up_to(operator, Binding::Atom)?;
+                let opener = self.leaf(Glyphs("("))?;
+                let mut items = Vec::from([operator, opener]);
+                for (position, argument) in arguments.iter().rev().enumerate() {
+                    if position > 0_usize {
+                        let comma = self.leaf(Glyphs(","))?;
+                        items.push(self.space_or_break(comma)?);
+                    }
+                    items.push(argument.doc);
+                }
+                let inner = self.builder.concat_all(items)?;
+                let inner = self.none_or_break(inner)?;
+                let close = self.leaf(Glyphs(")"))?;
+                (self.builder.concat(inner, close)?, Binding::Atom)
             },
             | Join::Bracket(bracket) => {
                 let mut items = Vec::new();
@@ -1300,7 +1447,7 @@ where
                 node,
                 admits,
                 depth,
-            } => walk.visit(source.read(node), admits, depth, &mut tasks)?,
+            } => walk.visit(source, source.read(node), admits, depth, &mut tasks)?,
             | Task::Bind => walk.open = OpenBinders(walk.open.0.saturating_add(1_usize)),
             | Task::Unbind => walk.open = OpenBinders(walk.open.0.saturating_sub(1_usize)),
             | Task::Join(join) => walk.join(join)?,

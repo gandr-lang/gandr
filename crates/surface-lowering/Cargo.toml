@@ -11,7 +11,10 @@ keywords = ["call-by-push-value", "gandr", "lowering", "no-std"]
 categories = ["compilers", "no-std"]
 publish.workspace = true
 
+# The pinned anodized facade supplies the executable specifications of the
+# readers and minters; logic/BigInt stays disabled in this no_std library.
 [dependencies]
+anodized.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
@@ -19,8 +22,11 @@ gandr-surface-grammar.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 
+# The kernel's content digest witnesses that two spellings readmit as one
+# declaration content.
 [dev-dependencies]
 gandr-core-checker.workspace = true
+gandr-kernel-core.workspace = true
 gandr-surface-parser.workspace = true
 
 [lints]

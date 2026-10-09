@@ -617,8 +617,10 @@ dependencies = [
 name = "gandr-surface-lowering"
 version = "0.0.0"
 dependencies = [
+ "anodized",
  "gandr-core-checker",
  "gandr-core-term",
+ "gandr-kernel-core",
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-surface-grammar",
