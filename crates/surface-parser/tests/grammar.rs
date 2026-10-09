@@ -2,7 +2,7 @@
 //! precedence table declares right-associative molds clean, every recursion
 //! marker instantiation molds clean, a chain mixing incomparable set
 //! operators is refused a clean reading, and every spelling of the universe
-//! molds clean wherever a type stands.
+//! and of a type operator molds clean wherever a type stands.
 //!
 //! They live with the parser rather than the grammar because the dependency
 //! points from the parser to the grammar; the grammar's own suite keeps the
@@ -37,6 +37,8 @@ fn right_associative_type_operator_chains_parse_cleanly() -> Result<(), Box<dyn 
         ("four-member union", "def f : A | B | C | D;"),
         ("three-member intersection", r"def f : A /\ B /\ C;"),
         ("four-member intersection", r"def f : A /\ B /\ C /\ D;"),
+        ("three-member value function space", "def f : A => B => C;"),
+        ("mixed arrows", "def f : A => +U (B -> -F C) => D;"),
     ];
     for (case, source) in cases {
         assert_parses_clean(CaseName(case), SourceText::from(source))?;
@@ -108,6 +110,39 @@ fn every_universe_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
         ("computation sort and level", "def f : Type[-, 0];"),
         ("bare binder", "def f(a : Type, x : a) -> -F a { ret x }"),
         ("under an arrow", "def f : +U (Type[+, 1] -> -F Type);"),
+    ];
+    for (case, source) in cases {
+        assert_parses_clean(CaseName(case), SourceText::from(source))?;
+    }
+    Ok(())
+}
+
+/// A type operator is a static abstraction `\A. T`, applied as `T(A)`, and the
+/// value function space is `A => B` or `(A, B) => C`; each molds clean as a
+/// declared type, as a definition's value and as an operator's argument, and
+/// a case arm's `=>` still molds beside them.
+#[test]
+fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
+{
+    let cases = [
+        (
+            "declared operator",
+            "def f : (Type -> Type[-]) -> Type -> Type;",
+        ),
+        ("one binder", r"def f = \X. -F (X * X);"),
+        ("nested binders", r"def f = \T. \A. \b. +U (A -> T(A)) * b;"),
+        (
+            "abstraction argument",
+            r"def f : G(\X. -F (X * X), Integer);",
+        ),
+        ("unary alias", "def f : Integer => Integer * Integer;"),
+        ("n-ary alias", "def f : (A, B => C) => D;"),
+        ("alias in a product", "def f : (A => B) * ((C, D) => E);"),
+        ("alias in a binder", "def f(k : A => B) -> -F B { force k }"),
+        (
+            "case arm beside the alias",
+            "def f : A => B; def g(c : C) -> -F Integer { case c { Red => ret 0, _ => ret 1 } }",
+        ),
     ];
     for (case, source) in cases {
         assert_parses_clean(CaseName(case), SourceText::from(source))?;
