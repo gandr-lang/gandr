@@ -1,17 +1,20 @@
-//! A second, minimal [`CellAlphabet`] inhabitant: a single-sorted first-order
-//! term language — `Zero`, `Succ`, `Add` and metavariables — implemented
-//! outside the crate, the path every later alphabet takes.
+//! The toy alphabet: a single-sorted first-order term language — `Zero`,
+//! `Succ`, `Add` and metavariables — inhabiting [`CellAlphabet`] from outside
+//! the substrate, the path every later alphabet takes.
 //!
-//! It is the inhabitant whose terms nest commands: every subterm is a command,
-//! so a law about a position below the root can be exercised at all. Each
-//! term is one flat table in prefix order, every node followed by its
-//! children's ranges, so no fixture value routes ownership through itself and
-//! no walk over one recurses.
+//! Every subterm is a command, so a law about a position below the root can be
+//! exercised at all. Each term is one flat table in prefix order, every node
+//! followed by its children's ranges, so no term routes ownership through
+//! itself and no walk over one recurses.
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
+use alloc::string::String;
+use alloc::vec::Vec;
 
+use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellInvertibility;
 use gandr_theory_cell_complexes::CellStore;
@@ -27,6 +30,23 @@ use gandr_theory_cell_complexes::path_order;
 use quenchant_shape::shape::Maybe;
 
 /// The toy alphabet marker.
+///
+/// # Specification
+/// - ensures: the implementation keeps the three inhabitant laws an engine
+///   spends: substituting a match into its pattern reproduces the matched term,
+///   a successful match binds every metavariable the pattern names, and
+///   splicing at a position agrees with reading there, both ways.
+/// - provides: terms that nest commands, so every subterm is a command position
+///   and a splice below the root is exercised.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each law is asserted pointwise on terms that bind
+///   distinct, repeated and target-carried metavariables, and at every position
+///   of a term nesting commands two deep.
+/// - witness: `tests::inhabitant::matching_then_substituting_returns_the_matched_term`
+/// - witness: `tests::inhabitant::a_successful_match_binds_every_metavariable_the_pattern_names`
+/// - witness: `tests::inhabitant::splicing_at_a_position_agrees_with_reading_it`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ToyAlphabet;
 
@@ -35,12 +55,28 @@ pub struct ToyAlphabet;
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ToyVar(Box<str>);
 
+impl ToyVar
+{
+    /// The name with one prime appended.
+    ///
+    /// # Specification
+    /// trivial.
+    fn primed(&self) -> Self
+    {
+        let mut primed = String::with_capacity(self.0.len().saturating_add(1));
+        primed.push_str(&self.0);
+        primed.push('\'');
+        Self(primed.into_boxed_str())
+    }
+}
+
 impl From<&str> for ToyVar
 {
     /// A metavariable spelled by the name.
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn from(value: &str) -> Self
     {
         Self(value.into())
@@ -49,7 +85,7 @@ impl From<&str> for ToyVar
 
 /// One node of a toy term.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum ToyHead
+enum ToyHead
 {
     /// A metavariable leaf.
     Var(ToyVar),
@@ -82,7 +118,21 @@ impl ToyHead
 /// A count or an index within one toy table.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ToyCount(usize);
+struct ToyCount(usize);
+
+impl ToyCount
+{
+    /// The next index.
+    ///
+    /// # Specification
+    /// - ensures: one more than `self`; a table held in memory never reaches
+    ///   the saturation bound.
+    /// - panics: none.
+    const fn next(self) -> Self
+    {
+        Self(self.0.saturating_add(1))
+    }
+}
 
 /// A toy term: its nodes in prefix order.
 #[repr(transparent)]
@@ -95,29 +145,36 @@ impl Toy
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn var<N>(name: N) -> Self
     where
         N: Into<ToyVar>,
     {
-        Self(vec![ToyHead::Var(name.into())])
+        Self(alloc::vec![ToyHead::Var(name.into())])
     }
 
     /// The nullary constructor.
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn zero() -> Self
     {
-        Self(vec![ToyHead::Zero])
+        Self(alloc::vec![ToyHead::Zero])
     }
 
     /// The unary constructor applied to `arg`.
     ///
     /// # Specification
     /// trivial.
+    #[inline]
+    #[must_use]
     pub fn succ(arg: Self) -> Self
     {
-        let mut nodes = vec![ToyHead::Succ];
+        let mut nodes = Vec::with_capacity(arg.0.len().saturating_add(1));
+        nodes.push(ToyHead::Succ);
         nodes.extend(arg.0);
         Self(nodes)
     }
@@ -126,12 +183,20 @@ impl Toy
     ///
     /// # Specification
     /// trivial.
+    #[expect(
+        clippy::should_implement_trait,
+        reason = "builds the `Add` node of a term; terms have no arithmetic for `core::ops::Add` to name"
+    )]
+    #[inline]
+    #[must_use]
     pub fn add(
         lhs: Self,
         rhs: Self,
     ) -> Self
     {
-        let mut nodes = vec![ToyHead::Add];
+        let mut nodes =
+            Vec::with_capacity(lhs.0.len().saturating_add(rhs.0.len()).saturating_add(1));
+        nodes.push(ToyHead::Add);
         nodes.extend(lhs.0);
         nodes.extend(rhs.0);
         Self(nodes)
@@ -148,24 +213,23 @@ impl Toy
         start: ToyCount,
     ) -> ToyCount
     {
-        let mut pending = 1_usize;
-        let mut index = start.0;
-        while pending > 0 {
-            let Some(head) = self.0.get(index)
+        let mut pending = ToyCount(1);
+        let mut index = start;
+        while pending > ToyCount(0) {
+            let Some(head) = self.0.get(index.0)
             else {
                 break;
             };
-            pending = pending.saturating_sub(1).saturating_add(head.arity().0);
-            index = index.saturating_add(1);
+            pending = ToyCount(pending.0.saturating_sub(1).saturating_add(head.arity().0));
+            index = index.next();
         }
-        ToyCount(index)
+        index
     }
 
-    /// The subterm ranges a position addresses: the start and end of the
-    /// subterm reached by following `steps` from the root.
+    /// The range of the subterm reached by following `steps` from the root.
     ///
     /// # Specification
-    /// - ensures: the range of the subterm `steps` reaches.
+    /// - ensures: the start and end of the subterm `steps` reaches.
     /// - provides: [`command_subterm::Absent::OffTerm`] when a step indexes
     ///   past a node's children.
     /// - panics: none.
@@ -180,11 +244,12 @@ impl Toy
             else {
                 return Maybe::Absent(command_subterm::Absent::OffTerm);
             };
-            if usize::from(step) >= head.arity().0 {
+            let step = ToyCount(usize::from(step));
+            if step >= head.arity() {
                 return Maybe::Absent(command_subterm::Absent::OffTerm);
             }
-            let mut child = ToyCount(start.0.saturating_add(1));
-            for _ in 0 .. usize::from(step) {
+            let mut child = start.next();
+            for _ in 0 .. step.0 {
                 child = self.end_of(child);
             }
             start = child;
@@ -202,7 +267,7 @@ impl Toy
         end: ToyCount,
     ) -> Self
     {
-        Self(self.0[start.0 .. end.0].to_vec())
+        Self(self.0.iter().take(end.0).skip(start.0).cloned().collect())
     }
 
     /// The term's metavariables, left to right with repeats.
@@ -248,6 +313,20 @@ impl Toy
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct ToyPos(Box<[PositionStep]>);
 
+impl ToyPos
+{
+    /// The child indices from the root outward.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn steps(&self) -> &[PositionStep]
+    {
+        &self.0
+    }
+}
+
 /// A toy substitution: an ordered map from metavariables to terms.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
@@ -266,16 +345,13 @@ impl ToySubst
     {
         let mut nodes = Vec::with_capacity(term.0.len());
         for head in &term.0 {
-            match *head {
-                | ToyHead::Var(ref var) if self.0.contains_key(var) => {
-                    nodes.extend(self.0[var].0.iter().cloned());
-                },
-                | ToyHead::Var(_)
-                | ToyHead::Konst(_)
-                | ToyHead::Zero
-                | ToyHead::Succ
-                | ToyHead::Add => nodes.push(head.clone()),
+            if let ToyHead::Var(ref var) = *head
+                && let Some(image) = self.0.get(var)
+            {
+                nodes.extend(image.0.iter().cloned());
+                continue;
             }
+            nodes.push(head.clone());
         }
         Toy(nodes)
     }
@@ -306,7 +382,9 @@ impl ToySubst
     /// metavariable.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the first term on the binding chain that is not a bound
+    ///   metavariable, or the term reached after one step per binding.
+    /// - panics: none.
     fn walk(
         &self,
         term: Toy,
@@ -314,11 +392,11 @@ impl ToySubst
     {
         let mut current = term;
         for _ in 0 ..= self.0.len() {
-            let [ToyHead::Var(ref var)] = current.0[..]
-            else {
-                break;
+            let image = match current.0.as_slice() {
+                | &[ToyHead::Var(ref var)] => self.0.get(var),
+                | _ => None,
             };
-            let Some(image) = self.0.get(var)
+            let Some(image) = image
             else {
                 break;
             };
@@ -378,11 +456,15 @@ fn occurrences(term: &Toy) -> BTreeMap<&ToyVar, Occurrences>
     counts
 }
 
-/// Whether `larger` carries every metavariable of `smaller` at least as
-/// often.
-#[repr(transparent)]
+/// Whether one side carries every metavariable of the other at least as often.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Dominates(bool);
+enum HoleDomination
+{
+    /// Every hole of the smaller side occurs at least as often on the larger.
+    Dominates,
+    /// Some hole of the smaller side occurs more often than on the larger.
+    FallsShort,
+}
 
 /// Whether `larger` dominates `smaller` hole by hole.
 ///
@@ -391,13 +473,15 @@ struct Dominates(bool);
 fn dominates(
     larger: &BTreeMap<&ToyVar, Occurrences>,
     smaller: &BTreeMap<&ToyVar, Occurrences>,
-) -> Dominates
+) -> HoleDomination
 {
-    Dominates(
-        smaller
-            .iter()
-            .all(|(var, count)| larger.get(var).is_some_and(|held| held >= count)),
-    )
+    if smaller
+        .iter()
+        .all(|(var, count)| larger.get(var).is_some_and(|held| held >= count))
+    {
+        return HoleDomination::Dominates;
+    }
+    HoleDomination::FallsShort
 }
 
 impl CellAlphabet for ToyAlphabet
@@ -418,6 +502,7 @@ impl CellAlphabet for ToyAlphabet
     ///   place, a bound one only an equal subterm; every other node must equal
     ///   the target's. `subst` is extended only on success.
     /// - panics: none.
+    #[inline]
     fn match_cmd(
         pattern: &Self::Cmd,
         target: &Self::Cmd,
@@ -444,9 +529,9 @@ impl CellAlphabet for ToyAlphabet
             if head != target_head {
                 return SubstitutionDecision::from(false);
             }
-            at = ToyCount(at.0.saturating_add(1));
+            at = at.next();
         }
-        if at.0 != target.0.len() {
+        if at != ToyCount(target.0.len()) {
             return SubstitutionDecision::from(false);
         }
         *subst = found;
@@ -459,6 +544,7 @@ impl CellAlphabet for ToyAlphabet
     /// - ensures: a most general unifier extending `subst` on success, with the
     ///   occurs check; `subst` is extended only on success.
     /// - panics: none.
+    #[inline]
     fn unify_cmd(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -466,7 +552,7 @@ impl CellAlphabet for ToyAlphabet
     ) -> SubstitutionDecision
     {
         let mut found = subst.clone();
-        let mut goals = vec![(lhs.clone(), rhs.clone())];
+        let mut goals = alloc::vec![(lhs.clone(), rhs.clone())];
         while let Some((left, right)) = goals.pop() {
             let left = found.walk(left);
             let right = found.walk(right);
@@ -508,6 +594,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn apply_subst(
         subst: &Self::Subst,
         cmd: &Self::Cmd,
@@ -520,6 +607,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn metavariables(cmd: &Self::Cmd) -> Vec<Self::Var>
     {
         cmd.vars().cloned().collect()
@@ -528,10 +616,13 @@ impl CellAlphabet for ToyAlphabet
     /// Every position of the term, breadth first: every subterm is a command.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: one position per node, the root first and no position before
+    ///   one enclosing it.
+    /// - panics: none.
+    #[inline]
     fn command_positions(cmd: &Self::Cmd) -> Vec<Self::Pos>
     {
-        let mut positions = Vec::new();
+        let mut positions = Vec::with_capacity(cmd.0.len());
         let mut queue: VecDeque<(Vec<PositionStep>, ToyCount)> = VecDeque::new();
         queue.push_back((Vec::new(), ToyCount(0)));
         while let Some((path, start)) = queue.pop_front() {
@@ -539,7 +630,7 @@ impl CellAlphabet for ToyAlphabet
             else {
                 continue;
             };
-            let mut child = ToyCount(start.0.saturating_add(1));
+            let mut child = start.next();
             for index in 0 .. head.arity().0 {
                 let mut child_path = path.clone();
                 child_path.push(PositionStep::from(index));
@@ -555,6 +646,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn root_position() -> Self::Pos
     {
         ToyPos::default()
@@ -564,6 +656,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn position_at_path(path: &[PositionStep]) -> Self::Pos
     {
         ToyPos(path.into())
@@ -573,6 +666,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn position_order(
         left: &Self::Pos,
         right: &Self::Pos,
@@ -581,11 +675,12 @@ impl CellAlphabet for ToyAlphabet
         path_order(left.0.iter().copied(), right.0.iter().copied())
     }
 
-    /// Discharged: left-hand sides are trees rooted at one operation and
-    /// targets are trees.
+    /// Discharged: left-hand sides are trees rooted at one node and targets are
+    /// trees.
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn convexity_discharge(_store: &CellStore<Self>) -> ConvexityDischarge
     {
         ConvexityDischarge::StronglyConnectedOverAcyclicTarget
@@ -594,7 +689,11 @@ impl CellAlphabet for ToyAlphabet
     /// The subterm at `pos`, owned.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the subterm `pos` addresses; every subterm is a command.
+    /// - provides: [`command_subterm::Absent::OffTerm`] when a step of `pos`
+    ///   indexes past a node's children.
+    /// - panics: none.
+    #[inline]
     fn subterm_cmd_at(
         cmd: &Self::Cmd,
         pos: &Self::Pos,
@@ -607,20 +706,39 @@ impl CellAlphabet for ToyAlphabet
     /// `cmd` with the subterm at `pos` replaced.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the term equal to `cmd` except at `pos`, which holds
+    ///   `replacement`.
+    /// - fails: [`CommandSpliceRefusal::OffTerm`] when a step of `pos` indexes
+    ///   past a node's children.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As the failure clause states.
+    #[inline]
     fn splice_cmd_at(
         cmd: &Self::Cmd,
         pos: &Self::Pos,
         replacement: Self::Cmd,
     ) -> Result<Self::Cmd, CommandSpliceRefusal>
     {
-        let Maybe::Present((start, end)) = cmd.range_at(&pos.0)
-        else {
-            return Err(CommandSpliceRefusal::OffTerm);
+        let (start, end) = match cmd.range_at(&pos.0) {
+            | Maybe::Present(range) => range,
+            | Maybe::Absent(command_subterm::Absent::OffTerm) => {
+                return Err(CommandSpliceRefusal::OffTerm);
+            },
+            | Maybe::Absent(command_subterm::Absent::NotACommand) => {
+                return Err(CommandSpliceRefusal::NotACommand);
+            },
         };
-        let mut nodes = cmd.0[.. start.0].to_vec();
+        let mut nodes: Vec<ToyHead> = Vec::with_capacity(
+            cmd.0
+                .len()
+                .saturating_sub(end.0.saturating_sub(start.0))
+                .saturating_add(replacement.0.len()),
+        );
+        nodes.extend(cmd.0.iter().take(start.0).cloned());
         nodes.extend(replacement.0);
-        nodes.extend_from_slice(&cmd.0[end.0 ..]);
+        nodes.extend(cmd.0.iter().skip(end.0).cloned());
         Ok(Toy(nodes))
     }
 
@@ -628,7 +746,11 @@ impl CellAlphabet for ToyAlphabet
     /// an obstruction.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the larger table wins when it carries every hole of the
+    ///   smaller at least as often; every other pair is
+    ///   [`core::cmp::Ordering::Equal`].
+    /// - panics: none.
+    #[inline]
     fn reduction_cmp(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -636,10 +758,14 @@ impl CellAlphabet for ToyAlphabet
     {
         let (left, right) = (occurrences(lhs), occurrences(rhs));
         match lhs.0.len().cmp(&rhs.0.len()) {
-            | core::cmp::Ordering::Greater if dominates(&left, &right).0 => {
+            | core::cmp::Ordering::Greater
+                if dominates(&left, &right) == HoleDomination::Dominates =>
+            {
                 core::cmp::Ordering::Greater
             },
-            | core::cmp::Ordering::Less if dominates(&right, &left).0 => core::cmp::Ordering::Less,
+            | core::cmp::Ordering::Less if dominates(&right, &left) == HoleDomination::Dominates => {
+                core::cmp::Ordering::Less
+            },
             | core::cmp::Ordering::Greater
             | core::cmp::Ordering::Less
             | core::cmp::Ordering::Equal => core::cmp::Ordering::Equal,
@@ -649,7 +775,11 @@ impl CellAlphabet for ToyAlphabet
     /// The renamed faces with each name primed apart from the anchor's.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: every metavariable of `renamed` replaced by itself primed
+    ///   until it is absent from `anchor` and from the other fresh names;
+    ///   shapes kept, and a cell already apart returned unchanged.
+    /// - panics: none.
+    #[inline]
     fn rename_apart(
         anchor: (&Self::Cmd, &Self::Cmd),
         renamed: (&Self::Cmd, &Self::Cmd),
@@ -663,14 +793,15 @@ impl CellAlphabet for ToyAlphabet
             }
             let mut name = var.clone();
             while taken.contains(&name) {
-                let mut primed = String::from(&*name.0);
-                primed.push('\'');
-                name = ToyVar(primed.into_boxed_str());
+                name = name.primed();
             }
             taken.insert(name.clone());
             fresh.insert(var.clone(), name);
         }
-        let relabel = |var: &ToyVar| ToyHead::Var(fresh[var].clone());
+        // Every metavariable of both renamed faces was given a fresh name
+        // above, so the fallback to the original name is never taken.
+        let relabel =
+            |var: &ToyVar| ToyHead::Var(fresh.get(var).cloned().unwrap_or_else(|| var.clone()));
         (renamed.0.relabel(relabel), renamed.1.relabel(relabel))
     }
 
@@ -678,6 +809,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn skolemize(cmd: &Self::Cmd) -> Self::Cmd
     {
         cmd.relabel(|var| ToyHead::Konst(var.clone()))
@@ -687,6 +819,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn hole_of(var: &Self::Var) -> Self::Hole
     {
         var.clone()
@@ -696,6 +829,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn completion_certificate(provenance: &Self::Provenance) -> CellInvertibility
     {
         CellInvertibility::from(matches!(*provenance, ToyProv::Derived))
@@ -705,6 +839,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn derive_meta(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -725,6 +860,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn hole_flow(
         meta: &Self::Meta,
         hole: &Self::Hole,
@@ -741,6 +877,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn may_fire(
         _provenance: &Self::Provenance,
         _target: &Self::Cmd,
@@ -753,6 +890,7 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn derived_orientation() -> Self::Orientation
     {
         ToyOrient::Derived
@@ -762,8 +900,23 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Specification
     /// trivial.
+    #[inline]
     fn derived_provenance() -> Self::Provenance
     {
         ToyProv::Derived
     }
+}
+
+/// A toy rule cell `lhs ~> rhs`, its orientation given.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn toy_cell(
+    lhs: Toy,
+    rhs: Toy,
+) -> Cell<ToyAlphabet>
+{
+    Cell::new(lhs, rhs, ToyOrient::Given, ToyProv::Rule)
 }

@@ -176,10 +176,11 @@ impl Subst
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the triangular-unification witness reads the bindings
-    ///   back after commitment, and the inhabitant laws bind through this path
-    ///   for every metavariable a matched pattern names.
+    ///   back after commitment; L1 — the generated suite binds every producer
+    ///   hole of each generated pattern through this path to build the instance
+    ///   it then matches back.
     /// - witness: `subst::tests::unification_resolves_triangular_bindings`
-    /// - witness: `tests::inhabitant::a_successful_match_binds_every_metavariable_the_pattern_names`
+    /// - witness: `tests::subst::every_match_reproduces_its_target`
     #[inline]
     pub fn bind_prod(
         &mut self,
@@ -532,7 +533,6 @@ type Step = Result<(), Refusal>;
 /// - witness: `subst::tests::matching_binds_a_ground_configuration`
 /// - witness: `subst::tests::a_polarity_clash_blocks_a_match`
 /// - witness: `tests::subst::every_match_reproduces_its_target`
-/// - witness: `tests::inhabitant::matching_then_substituting_returns_the_matched_term`
 #[inline]
 #[must_use]
 pub fn match_cmd(

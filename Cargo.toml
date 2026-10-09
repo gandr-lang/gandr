@@ -17,6 +17,7 @@ members = [
   "crates/surface-parser",
   "crates/surface-syntax",
   "crates/theory-cell-complexes",
+  "crates/theory-cell-complexes-tools",
   "crates/theory-circuit-algebras",
   "crates/theory-graphs",
   "crates/theory-orders",
@@ -166,6 +167,7 @@ path = "crates/surface-syntax"
 # The cell-shape substrate: command patterns, matching, the reduction order,
 # the cell alphabet and its store.
 # consumers:
+# - theory-cell-complexes-tools
 # - theory-circuit-algebras
 [workspace.dependencies.gandr-theory-cell-complexes]
 path = "crates/theory-cell-complexes"
@@ -219,6 +221,7 @@ default-features = false
 # consumers:
 # - kernel-core
 # - theory-cell-complexes
+# - theory-cell-complexes-tools
 # - theory-circuit-algebras
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"

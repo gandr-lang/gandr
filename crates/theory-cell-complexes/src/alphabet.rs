@@ -223,14 +223,16 @@ impl core::error::Error for CommandSpliceRefusal
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the sequent alphabet's own suite runs through the trait's
-///   methods, and a second inhabitant over a different, nesting term language
-///   satisfies the three inhabitant laws the engines spend: a match followed by
-///   its substitution reproduces the matched term, a successful match binds
-///   every metavariable its pattern names, and a splice at a position agrees
-///   with the read there.
-/// - witness: `tests::inhabitant::matching_then_substituting_returns_the_matched_term`
-/// - witness: `tests::inhabitant::a_successful_match_binds_every_metavariable_the_pattern_names`
-/// - witness: `tests::inhabitant::splicing_at_a_position_agrees_with_reading_it`
+///   methods: renaming apart, skolemization and the firing discipline are
+///   asserted on cells that wear a seam, repeat a name and carry each η kind.
+///   The three inhabitant laws the engines spend — a match followed by its
+///   substitution reproduces the matched term, a successful match binds every
+///   metavariable its pattern names, and a splice at a position agrees with the
+///   read there — are asserted over this inhabitant and a second, nesting term
+///   language by `gandr-theory-cell-complexes-tools`' inhabitant suite, which
+///   depends on this crate, so the laws are cited here rather than witnessed.
+/// - witness: `sequent::tests::renaming_apart_keeps_a_seam_one_hole`
+/// - witness: `sequent::tests::skolemization_is_name_stable`
 /// - witness: `sequent::tests::each_eta_kind_requires_its_own_polarity`
 pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt::Debug
 {

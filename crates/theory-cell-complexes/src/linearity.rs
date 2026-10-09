@@ -147,11 +147,11 @@ quenchant_shape::reason_enum! {
 /// - hypothesis: L3 — the three decision surfaces (a repeat found, polarity
 ///   told apart, the side read) are separated by one copied pattern, one
 ///   two-polarity seam, and one cell linear on the left that repeats on the
-///   right; the search reads a second alphabet through the same interface.
+///   right; the inhabitant suite of `gandr-theory-cell-complexes-tools` runs
+///   the search over a second alphabet through the same interface.
 /// - witness: `linearity::tests::a_repeated_producer_hole_is_the_copy`
 /// - witness: `linearity::tests::a_hole_at_both_polarities_is_not_a_copy`
 /// - witness: `linearity::tests::a_repeat_on_the_right_hand_side_is_not_a_copy`
-/// - witness: `tests::inhabitant::the_copy_search_is_alphabet_neutral`
 #[inline]
 pub fn copied_hole<A>(cell: &Cell<A>) -> Maybe<A::Var, copy_search::Absent>
 where

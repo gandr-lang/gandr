@@ -1,0 +1,29 @@
+[package]
+name = "gandr-theory-cell-complexes-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The test-facing second inhabitant of gandr's cell-alphabet trait: a first-order toy alphabet whose terms nest commands, and the adversary frame whose alphabets each break one law"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "no-std", "rewriting", "testing"]
+categories = ["development-tools::testing", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# Dev-only: a crate depends on this one through `[dev-dependencies]` alone,
+# which `tests::workspace::no_production_crate_links_the_tools_crate` checks
+# against the resolved workspace.
+[dependencies]
+gandr-theory-cell-complexes.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

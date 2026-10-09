@@ -1,16 +1,15 @@
 //! The inhabitant laws every engine above the substrate spends, checked over
 //! both inhabitants through the generic interface alone: the sequent alphabet
-//! and the toy alphabet of [`crate::toy`], whose terms nest commands.
+//! and the toy alphabet, whose terms nest commands.
 //!
 //! A cell fires by matching its left-hand side and substituting into its
 //! right-hand side, and an engine rewrites below the root by reading and
 //! splicing at a position. An inhabitant whose match and substitution
 //! disagree, or whose splice and read disagree, would make every
 //! alphabet-generic result measured over it meaningless. The copy search the
-//! linearity boundary runs is read through the same interface, so it is
-//! checked over the toy alphabet too.
+//! substrate's linearity boundary runs is read through the same interface, so
+//! it is checked over the toy alphabet too.
 
-use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CmdPat;
 use gandr_theory_cell_complexes::ConsPat;
@@ -20,13 +19,11 @@ use gandr_theory_cell_complexes::ProdPat;
 use gandr_theory_cell_complexes::SequentAlphabet;
 use gandr_theory_cell_complexes::copied_hole;
 use gandr_theory_cell_complexes::copy_search;
+use gandr_theory_cell_complexes_tools::Toy;
+use gandr_theory_cell_complexes_tools::ToyAlphabet;
+use gandr_theory_cell_complexes_tools::ToyVar;
+use gandr_theory_cell_complexes_tools::toy_cell;
 use quenchant_shape::shape::Maybe;
-
-use crate::toy::Toy;
-use crate::toy::ToyAlphabet;
-use crate::toy::ToyOrient;
-use crate::toy::ToyProv;
-use crate::toy::ToyVar;
 
 /// `pattern` matched against `target`, and the substitution it found.
 ///
@@ -198,16 +195,17 @@ fn splicing_at_a_position_agrees_with_reading_it()
 #[test]
 fn the_copy_search_is_alphabet_neutral()
 {
-    let rule =
-        |lhs, rhs| -> Cell<ToyAlphabet> { Cell::new(lhs, rhs, ToyOrient::Given, ToyProv::Rule) };
     assert_eq!(
         Maybe::Present(ToyVar::from("x")),
-        copied_hole(&rule(Toy::add(Toy::var("x"), Toy::var("x")), Toy::var("x"))),
+        copied_hole(&toy_cell(
+            Toy::add(Toy::var("x"), Toy::var("x")),
+            Toy::var("x")
+        )),
         "the toy's repeated hole is the copy"
     );
     assert_eq!(
         Maybe::Absent(copy_search::Absent::Linear),
-        copied_hole(&rule(
+        copied_hole(&toy_cell(
             Toy::add(Toy::var("x"), Toy::var("y")),
             Toy::add(Toy::var("y"), Toy::var("y")),
         )),

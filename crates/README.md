@@ -23,25 +23,26 @@ One row per directory: the directory, its package, and what it is.
 
 ```text
 crates/
-├── theory-cell-complexes/     gandr-theory-cell-complexes     command patterns, matching, the reduction order, the cell alphabet and store
-├── theory-circuit-algebras/   gandr-theory-circuit-algebras   the diagram view, the spine reading of a command pattern, embedding matching with its convexity check, the diagram normal form
-├── theory-graphs/             gandr-theory-graphs             the precedence DAG, the walk machine, and the graph algorithms they read
-├── theory-orders/             gandr-theory-orders             order maintenance with constant-time comparison
-├── kernel-strata/             gandr-kernel-strata             the universe-level oracle with checkable order evidence
-├── kernel-term/               gandr-kernel-term               the term arena, the sharing format, the decode budgets
-├── kernel-check-memo/         gandr-kernel-check-memo         the check-memo seam a checker consults
-├── kernel-conversion-trace/   gandr-kernel-conversion-trace   the conversion-decision vocabulary and its sink
-├── kernel-core/               gandr-kernel-core               the checking machine, conversion, admission, the check memo
-├── core-term/                 gandr-core-term                 the core syntax and the one unified context
-├── core-nbe/                  gandr-core-nbe                  the glued value domain, evaluation, readback, conversion (search-free steps and the concurrent machine), the sharing overlay and its erasure
-├── storage-chunker/           gandr-storage-chunker           content-defined chunk boundaries and their committed parameters
-├── storage-records/           gandr-storage-records           the authenticated ordered-record plane
-├── storage-values/            gandr-storage-values            the content-addressed value plane: typed chunk DAG and content pointers
-├── surface-syntax/            gandr-surface-syntax            the molded concrete syntax tree and the mold references a grammar and a parser exchange
-├── surface-grammar/           gandr-surface-grammar           the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
-├── surface-parser/            gandr-surface-parser            the labeler, molder and resumable melder: source to molded tree with completion obligations
-├── surface-dispatcher/        gandr-surface-dispatcher        routes a driver invocation into the surface pipeline
-└── surface-driver/            gandr-lang                      the `gandr` driver binary
+├── theory-cell-complexes/         gandr-theory-cell-complexes         command patterns, matching, the reduction order, the cell alphabet and store
+├── theory-cell-complexes-tools/   gandr-theory-cell-complexes-tools   the toy alphabet and the adversary frame engine suites test against (dev only)
+├── theory-circuit-algebras/       gandr-theory-circuit-algebras       the diagram view, the spine reading of a command pattern, embedding matching with its convexity check, the diagram normal form
+├── theory-graphs/                 gandr-theory-graphs                 the precedence DAG, the walk machine, and the graph algorithms they read
+├── theory-orders/                 gandr-theory-orders                 order maintenance with constant-time comparison
+├── kernel-strata/                 gandr-kernel-strata                 the universe-level oracle with checkable order evidence
+├── kernel-term/                   gandr-kernel-term                   the term arena, the sharing format, the decode budgets
+├── kernel-check-memo/             gandr-kernel-check-memo             the check-memo seam a checker consults
+├── kernel-conversion-trace/       gandr-kernel-conversion-trace       the conversion-decision vocabulary and its sink
+├── kernel-core/                   gandr-kernel-core                   the checking machine, conversion, admission, the check memo
+├── core-term/                     gandr-core-term                     the core syntax and the one unified context
+├── core-nbe/                      gandr-core-nbe                      the glued value domain, evaluation, readback, conversion (search-free steps and the concurrent machine), the sharing overlay and its erasure
+├── storage-chunker/               gandr-storage-chunker               content-defined chunk boundaries and their committed parameters
+├── storage-records/               gandr-storage-records               the authenticated ordered-record plane
+├── storage-values/                gandr-storage-values                the content-addressed value plane: typed chunk DAG and content pointers
+├── surface-syntax/                gandr-surface-syntax                the molded concrete syntax tree and the mold references a grammar and a parser exchange
+├── surface-grammar/               gandr-surface-grammar               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
+├── surface-parser/                gandr-surface-parser                the labeler, molder and resumable melder: source to molded tree with completion obligations
+├── surface-dispatcher/            gandr-surface-dispatcher            routes a driver invocation into the surface pipeline
+└── surface-driver/                gandr-lang                          the `gandr` driver binary
 ```
 
 `workflow` has no member: the policy library and the gate binary come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.

@@ -1696,10 +1696,10 @@ pub fn splice_at(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the round-trip and miscategorized witnesses splice into a
-///   command root, and the inhabitant law splices a command back at the root.
+///   command root; the inhabitant suite of `gandr-theory-cell-complexes-tools`
+///   splices a command back at the root through the alphabet interface.
 /// - witness: `pattern::tests::subterm_and_splice_round_trip`
 /// - witness: `pattern::tests::a_miscategorized_splice_is_rejected`
-/// - witness: `tests::inhabitant::splicing_at_a_position_agrees_with_reading_it`
 #[inline]
 pub fn splice_cmd(
     cmd: &CmdPat,
