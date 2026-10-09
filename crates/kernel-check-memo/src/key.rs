@@ -31,13 +31,22 @@ use crate::digest::ContentDigest;
 /// - ensures: [`MemoKey::plane`] is a function of the support, so an entry's
 ///   plane never changes under it.
 /// - provides: the two comparisons a memo needs, with the deciding one named.
-///   This stays prose: every clause above constrains the implementor's own
-///   relations — the completeness of the support, the one-directional digest
-///   agreement, and the equivalence — and a clause on a trait declaration
-///   requires the trait itself to carry `#[spec]`, which turns each declaration
-///   into a wrapper over a generated required method and changes what an
-///   implementor implements.
 /// - panics: none.
+/// - executable: none — these are laws over consumer-defined computations and
+///   relations; applying the attribute to the trait also generates new required
+///   methods and changes the implementor API.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the shared and unshared finite DAG workload compares
+///   answers with a fresh walk on both planes, catching omitted support
+///   content. L1 closed-form expansion counts distinguish content keys from
+///   arena positions. L3 colliding unequal contents and equal contents on
+///   distinct planes separate digest-only and plane-blind agreement. These
+///   witnesses cover the shipped fixtures, not arbitrary implementations.
+/// - witness: `differential::tests::memoized_and_memoless_agree_answer_for_answer`
+/// - witness: `differential::tests::a_content_key_collapses_the_unshared_spelling_too`
+/// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
+/// - witness: `memo::tests::entries_are_accounted_to_their_own_plane`
 pub trait MemoKey
 {
     /// The consumer's accounting partition.
@@ -50,10 +59,17 @@ pub trait MemoKey
     /// - ensures: answers the same plane for the same support, so an entry's
     ///   plane never changes under it.
     /// - provides: the accounting partition per-plane entry counts are kept
-    ///   over. This stays prose: which partition a support belongs to is what
-    ///   the implementor decides, and a clause on the declaration would change
-    ///   what an implementor implements.
+    ///   over.
     /// - panics: none.
+    /// - executable: none — the partition is consumer-defined, and decorating
+    ///   this declaration generates required methods in the implementor API.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — on supports with equal content but distinct planes,
+    ///   exact independent entry counts and served outcomes distinguish a
+    ///   constant partition or plane-blind support identity. Repeated entries
+    ///   on one plane distinguish per-plane counts from the total.
+    /// - witness: `memo::tests::entries_are_accounted_to_their_own_plane`
     fn plane(&self) -> Self::Plane;
 
     /// The content digest: a positive fast path, never a decision.
@@ -63,11 +79,19 @@ pub trait MemoKey
     /// - ensures: answers a digest derived from the support's content alone,
     ///   equal for supports that agree; unequal digests prove the supports
     ///   differ, and equal ones decide nothing.
-    /// - provides: the bucket selector a memo narrows with before the deciding
-    ///   comparison. This stays prose: content derivation and the
-    ///   one-directional agreement are obligations on the implementor, and a
-    ///   clause on the declaration would change what an implementor implements.
+    /// - provides: the bucket selector used before the deciding comparison.
     /// - panics: none.
+    /// - executable: none — the source content and equivalence are supplied by
+    ///   the consumer; a declaration attribute changes required trait methods.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — equal subgraphs at different arena positions must
+    ///   reach the closed-form distinct-content count, separating position
+    ///   hashes from content hashes. L3 an equal digest for unequal content
+    ///   must still produce distinct answers and a colliding miss, separating a
+    ///   bucket selector from an equality decision.
+    /// - witness: `differential::tests::a_content_key_collapses_the_unshared_spelling_too`
+    /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
     fn digest(&self) -> ContentDigest;
 
     /// The deciding comparison over content.
@@ -76,11 +100,20 @@ pub trait MemoKey
     /// - requires: nothing beyond the trait's own preconditions.
     /// - ensures: [`ContentAgreement::Agree`] exactly when the two supports are
     ///   the same complete input, so that either may answer for the other.
-    /// - provides: the relation a memo hit is served on. This stays prose:
-    ///   whether two supports are the same complete input is what the
-    ///   implementor decides, so no clause here can check it, and a clause on
-    ///   the declaration would change what an implementor implements.
+    /// - provides: the relation a memo hit is served on.
     /// - panics: none.
+    /// - executable: none — complete-input equivalence belongs to the consumer;
+    ///   a declaration attribute would change the required implementor API.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — for the fixture relation, equal support, unequal
+    ///   content sharing a digest, and equal content on distinct planes have
+    ///   exact hit, miss and separate-answer observations. These distinguish
+    ///   digest-only, content-only and always-different comparisons; they do
+    ///   not prove the equivalence laws for arbitrary downstream supports.
+    /// - witness: `memo::tests::remembering_an_agreeing_support_replaces_rather_than_accumulates`
+    /// - witness: `memo::tests::colliding_digests_share_a_bucket_and_still_decide`
+    /// - witness: `memo::tests::entries_are_accounted_to_their_own_plane`
     fn agreement(
         &self,
         other: &Self,
