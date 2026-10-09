@@ -115,10 +115,11 @@ pub fn unfolded(
             | CoreNode::Value(id) => match *erased.value(id).expect("an erased value resolves") {
                 | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
                 },
-                | Value::Pair(first, second) => {
+                | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
                     pending.push(CoreNode::Value(first));
                     pending.push(CoreNode::Value(second));
                 },
+                | Value::StaticLambda(body) => pending.push(CoreNode::Value(body)),
                 | Value::Injection(_, body) | Value::Lift { body, .. } => {
                     pending.push(CoreNode::Value(body));
                 },
@@ -163,7 +164,12 @@ pub fn unfolded(
                     | ValueType::Unit
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_) => {},
-                    | ValueType::Product(first, second) | ValueType::Sum(first, second) => {
+                    | ValueType::Product(first, second)
+                    | ValueType::Sum(first, second)
+                    | ValueType::StaticPi {
+                        domain: first,
+                        codomain: second,
+                    } => {
                         pending.push(CoreNode::ValueType(first));
                         pending.push(CoreNode::ValueType(second));
                     },

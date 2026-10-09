@@ -108,11 +108,11 @@ error[DuplicateDefinition]: `a` already has a definition at 0..11; a second at 1
   ╰ note: unsettled `a` states checks owing 0
 
 === out-of-fragment ===
-error[OutOfFragment]: `product_type` at 8..25, read as a value type, is reserved and declined
+error[OutOfFragment]: `lazy_product_type` at 8..31, read as a value type, is reserved and declined
   ╭▸ out-of-fragment.gandr:1:9
   │
-1 │ def a : Integer * Integer ;
-  │         ━━━━━━━━━━━━━━━━━ unrepresentable
+1 │ def a : -F Integer & -F Integer ;
+  │         ━━━━━━━━━━━━━━━━━━━━━━━ unrepresentable
   │
   ╰ note: unsettled `a` states checks owing 0
 

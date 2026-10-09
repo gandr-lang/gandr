@@ -1116,7 +1116,7 @@ fn collect_reachable(
                     let _fresh = found.insert(index);
                 },
                 | Some(&Value::Variable(_) | &Value::Unit | &Value::Literal(_)) | None => {},
-                | Some(&Value::Pair(first, second)) => {
+                | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
                     pending.push(AnyNode::Value(first));
                     pending.push(AnyNode::Value(second));
                 },
@@ -1162,7 +1162,14 @@ fn collect_reachable(
                 },
                 | Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. })
                 | None => {},
-                | Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)) => {
+                | Some(
+                    &ValueType::Product(first, second)
+                    | &ValueType::Sum(first, second)
+                    | &ValueType::StaticPi {
+                        domain: first,
+                        codomain: second,
+                    },
+                ) => {
                     pending.push(AnyNode::ValueType(first));
                     pending.push(AnyNode::ValueType(second));
                 },

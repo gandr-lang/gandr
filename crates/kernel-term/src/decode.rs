@@ -1285,6 +1285,12 @@ fn decode_entry(
             let id = table.arena.value_type_element(code, target);
             (DecodedNode::ValueType(id), Family::ValueType)
         },
+        | tags::NODE_VT_STATIC_PI => {
+            let domain = read_value_type(reader, table, this, &mut children)?;
+            let codomain = read_value_type(reader, table, this, &mut children)?;
+            let id = table.arena.value_type_static_pi(domain, codomain);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
         | tags::NODE_CT_RETURNER => {
             let result = read_value_type(reader, table, this, &mut children)?;
             let id = table.arena.comp_type_returner(result);
@@ -1359,6 +1365,12 @@ fn decode_entry(
         | tags::NODE_V_QUOTE_COMPUTATION => {
             let quoted = read_comp_type(reader, table, this, &mut children)?;
             let id = table.arena.value_quote_computation(quoted);
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_V_STATIC_APPLICATION => {
+            let head = read_value(reader, table, this, &mut children)?;
+            let argument = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.value_static_application(head, argument);
             (DecodedNode::Value(id), Family::Value)
         },
         | tags::NODE_C_LAMBDA => {

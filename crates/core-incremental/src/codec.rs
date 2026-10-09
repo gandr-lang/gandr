@@ -23,9 +23,11 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use gandr_core_checker::ArgumentPosition;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::ConversionCount;
 use gandr_core_checker::ExpectedShape;
+use gandr_core_checker::StaticArity;
 use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
@@ -72,7 +74,7 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x02";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x03";
 /// The magic and version a program's address is computed over.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x01";
 /// The decoder's cap on a level atom's offset.
@@ -721,6 +723,15 @@ where
             writer.tag(Tag(0x0A));
             write_index(writer, quoted)?;
         },
+        | ContentNode::StaticLambda(body) => {
+            writer.tag(Tag(0x0B));
+            write_index(writer, body)?;
+        },
+        | ContentNode::StaticApplication(head, argument) => {
+            writer.tag(Tag(0x0C));
+            write_index(writer, head)?;
+            write_index(writer, argument)?;
+        },
         | ContentNode::Lambda(body) => {
             writer.tag(Tag(0x10));
             write_index(writer, body)?;
@@ -815,6 +826,11 @@ where
             writer.tag(Tag(0x28));
             write_reference(writer, reference)?;
         },
+        | ContentNode::StaticPi { domain, codomain } => {
+            writer.tag(Tag(0x2B));
+            write_index(writer, domain)?;
+            write_index(writer, codomain)?;
+        },
         | ContentNode::Returner(result) => {
             writer.tag(Tag(0x30));
             write_index(writer, result)?;
@@ -908,6 +924,15 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let quoted = read_index(reader)?;
             ContentNode::QuoteComputation(quoted)
         },
+        | 0x0B => {
+            let body = read_index(reader)?;
+            ContentNode::StaticLambda(body)
+        },
+        | 0x0C => {
+            let head = read_index(reader)?;
+            let argument = read_index(reader)?;
+            ContentNode::StaticApplication(head, argument)
+        },
         | 0x10 => {
             let body = read_index(reader)?;
             ContentNode::Lambda(body)
@@ -1000,6 +1025,11 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 sort: TypeSort::Parameter(SortParameter::from(parameter)),
                 level,
             }
+        },
+        | 0x2B => {
+            let domain = read_index(reader)?;
+            let codomain = read_index(reader)?;
+            ContentNode::StaticPi { domain, codomain }
         },
         | 0x30 => {
             let result = read_index(reader)?;
@@ -1383,26 +1413,27 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in declaration order.
-const FORMERS: [UnadmittedFormer; 12] = [
-    UnadmittedFormer::Pair,
+const FORMERS: [UnadmittedFormer; 11] = [
     UnadmittedFormer::Injection,
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
     UnadmittedFormer::Case,
     UnadmittedFormer::NumericAtom,
-    UnadmittedFormer::Product,
     UnadmittedFormer::Sum,
     UnadmittedFormer::TypeLift,
     UnadmittedFormer::Abstract,
     UnadmittedFormer::SortParameter,
     UnadmittedFormer::TopUniverse,
+    UnadmittedFormer::StaticLambda,
 ];
 
 /// The shapes a rule can require, in declaration order.
-const SHAPES: [ExpectedShape; 3] = [
+const SHAPES: [ExpectedShape; 5] = [
     ExpectedShape::Thunk,
     ExpectedShape::Returner,
     ExpectedShape::Arrow,
+    ExpectedShape::Product,
+    ExpectedShape::StaticPi,
 ];
 
 /// Write the position of `wanted` in `table` as a tag.
@@ -1495,6 +1526,10 @@ where
                     write_site(writer, site)?;
                 },
                 | Form::Hole => writer.tag(Tag(3)),
+                | Form::StaticLambda(site) => {
+                    writer.tag(Tag(4));
+                    write_site(writer, site)?;
+                },
             }
         },
         | Refusal::UnknownConstant { at, ref constant } => {
@@ -1566,8 +1601,65 @@ where
             writer.tag(Tag(13));
             write_site(writer, at)?;
         },
+        | Refusal::FamilyArity {
+            at,
+            expected,
+            actual,
+        } => {
+            writer.tag(Tag(14));
+            write_site(writer, at)?;
+            writer.word(Word(u64::from(u32::from(expected))));
+            writer.word(Word(u64::from(u32::from(actual))));
+        },
+        | Refusal::FamilyArgumentClassifier {
+            at,
+            position,
+            ref synthesised,
+            ref expected,
+        } => {
+            writer.tag(Tag(15));
+            write_site(writer, at)?;
+            writer.word(Word(u64::from(u32::from(position))));
+            write_type(writer, synthesised)?;
+            write_type(writer, expected)?;
+        },
+        | Refusal::StaticLambdaArgument { at } => {
+            writer.tag(Tag(16));
+            write_site(writer, at)?;
+        },
+        | Refusal::StaticClassifierExpected { at, ref found } => {
+            writer.tag(Tag(17));
+            write_site(writer, at)?;
+            write_type(writer, found)?;
+        },
     }
     Ok(())
+}
+
+/// Read a count a refusal names in 32 bits: an arity or a position.
+///
+/// # Specification
+/// - ensures: the word the writer wrote, narrowed to 32 bits; the crate takes
+///   no specification facade, so the round-trip witness holds this clause
+///   rather than an executable predicate.
+/// - fails: [`CodecError::Corrupt`] when the word exceeds `u32::MAX`, which no
+///   write produces.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CodecError`] — as above, or the reader's own refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an arity and a position, each written and read back
+///   through a checkpoint set.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+fn read_narrow<Count32>(reader: &mut Reader<'_>) -> Result<Count32, CodecError>
+where
+    Count32: From<u32>,
+{
+    let word = reader.word()?;
+    let narrow = u32::try_from(word.0).map_err(|_overflow| CodecError::Corrupt)?;
+    Ok(Count32::from(narrow))
 }
 
 /// Read a refusal.
@@ -1610,6 +1702,10 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                     Form::Return(site)
                 },
                 | 3 => Form::Hole,
+                | 4 => {
+                    let site = read_site(reader)?;
+                    Form::StaticLambda(site)
+                },
                 | _ => return Err(CodecError::Corrupt),
             };
             Refusal::NotSynthesisable { form }
@@ -1682,6 +1778,37 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         | 13 => {
             let at = read_site(reader)?;
             Refusal::Undecided { at }
+        },
+        | 14 => {
+            let at = read_site(reader)?;
+            let expected: StaticArity = read_narrow(reader)?;
+            let actual: StaticArity = read_narrow(reader)?;
+            Refusal::FamilyArity {
+                at,
+                expected,
+                actual,
+            }
+        },
+        | 15 => {
+            let at = read_site(reader)?;
+            let position: ArgumentPosition = read_narrow(reader)?;
+            let synthesised = read_type(reader)?;
+            let expected = read_type(reader)?;
+            Refusal::FamilyArgumentClassifier {
+                at,
+                position,
+                synthesised,
+                expected,
+            }
+        },
+        | 16 => {
+            let at = read_site(reader)?;
+            Refusal::StaticLambdaArgument { at }
+        },
+        | 17 => {
+            let at = read_site(reader)?;
+            let found = read_type(reader)?;
+            Refusal::StaticClassifierExpected { at, found }
         },
         | _ => return Err(CodecError::Corrupt),
     };

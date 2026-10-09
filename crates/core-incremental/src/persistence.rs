@@ -1100,6 +1100,14 @@ mod tests
             | Typing::Refused(Refusal::LevelMismatch { .. }) => "level-mismatch",
             | Typing::Refused(Refusal::DependentBind { .. }) => "dependent-bind",
             | Typing::Refused(Refusal::Undecided { .. }) => "undecided",
+            | Typing::Refused(Refusal::FamilyArity { .. }) => "family-arity",
+            | Typing::Refused(Refusal::FamilyArgumentClassifier { .. }) => {
+                "family-argument-classifier"
+            },
+            | Typing::Refused(Refusal::StaticLambdaArgument { .. }) => "static-lambda-argument",
+            | Typing::Refused(Refusal::StaticClassifierExpected { .. }) => {
+                "static-classifier-expected"
+            },
         })
     }
 
@@ -1172,6 +1180,10 @@ mod tests
             "unknown-constant",
             "out-of-fragment",
             "unbound-index",
+            "family-arity",
+            "family-argument-classifier",
+            "static-lambda-argument",
+            "static-classifier-expected",
         ] {
             assert!(
                 kinds.contains(expected),

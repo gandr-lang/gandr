@@ -8,16 +8,23 @@
 //! subgoals. It compares them whole instead, in two passes:
 //!
 //! - **α-equality.** The two types are walked in lockstep. A variable bound by
-//!   a dependent arrow inside the type is matched by the binder it names, a
-//!   variable free in the quote is read through the quote's environment, a
-//!   constant by its position, and a nested code by the same walk over its own
-//!   closure. Equal walks are [`CodeComparison::Equal`].
+//!   a dependent arrow or a static lambda inside the type is matched by the
+//!   binder it names, a variable free in the quote is read through the quote's
+//!   environment, a constant by its position, a static application by its
+//!   operator and its argument — whether written in the quote or held as a
+//!   neutral's static spine — and a nested code by the same walk over its own
+//!   closure. A decode whose code reads as a quote is the quoted type, read at
+//!   the quote's place: core-term and the kernel fire that rule when they mint
+//!   a decode, and an environment holds codes no mint saw, so the walk fires it
+//!   too. Equal walks are [`CodeComparison::Equal`].
 //! - **Rigidity.** Two codes that are not α-equal are [`CodeComparison::Apart`]
 //!   only when neither holds anything that could still unfold: a constant with
-//!   a body, a neutral stuck on an elimination, or a value no code can be.
-//!   Anything else is [`CodeComparison::Undecided`], and the machine declines
-//!   rather than answer, which is the honest answer at a rung where nothing
-//!   reduces inside a type.
+//!   a body, a neutral stuck on an elimination, or a value no code can be. A
+//!   static lambda counts as unfolding too: η could still equate it with a
+//!   stuck operator, and the walk does not expand it to find out. Anything else
+//!   is [`CodeComparison::Undecided`], and the machine declines rather than
+//!   answer, which is the honest answer at a rung where nothing reduces inside
+//!   a type.
 //!
 //! The rigidity criterion is the one the kernel's replay applies to a shared
 //! comparison, so an answer of [`CodeComparison::Apart`] is one the kernel
@@ -25,6 +32,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::CoreArena;
@@ -39,10 +47,12 @@ use gandr_kernel_term::DeBruijnIndex;
 use crate::arena::DomainArena;
 use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
+use crate::arena::NeutralId;
 use crate::arena::ValueClosureId;
 use crate::conv::ConversionFault;
 use crate::domain::BinderLevel;
 use crate::domain::DomainValue;
+use crate::domain::Elimination;
 use crate::domain::NeutralHead;
 use crate::domain::Unfolding;
 use crate::eval::Definitions;
@@ -156,6 +166,11 @@ struct Place
     chain: Chain,
 }
 
+/// How many leading eliminations of a held neutral's spine a node reads.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct SpinePrefix(usize);
+
 /// A node of one side, at its place.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Node
@@ -168,6 +183,9 @@ enum Node
     Code(ValueId, Place),
     /// A domain value an environment holds.
     Held(DomainValueId),
+    /// A held neutral read as its head and the first so many of its static
+    /// applications.
+    Stuck(NeutralId, SpinePrefix),
 }
 
 /// What a code reads as, once its variables are resolved.
@@ -186,6 +204,10 @@ enum Atom
     QuoteComputation(CompTypeId, Place),
     /// A lift of a code, by the lift node itself, at its place.
     Lift(ValueId, Place),
+    /// A static application, by its operator and its argument.
+    Applied(Node, Node),
+    /// A static lambda, by the lambda node itself, at its place.
+    Operator(ValueId, Place),
     /// Anything else, which compares by identity alone.
     Other(Node),
 }
@@ -329,11 +351,12 @@ impl<'run> Walk<'run>
     /// What `node` reads as.
     ///
     /// # Specification
-    /// - requires: `node` is a code or a held value.
+    /// - requires: `node` is a code, a held value or a stuck prefix.
     /// - ensures: the atom the code resolves to: a bound variable as its
     ///   binder, a free one through its closure's environment, a constant with
-    ///   its rigidity, a quote or a lift at its place, and everything else as
-    ///   itself.
+    ///   its rigidity, a quote, a lift or a static lambda at its place, a
+    ///   static application — written, or the last of a held neutral's static
+    ///   spine — as its operator and argument, and everything else as itself.
     /// - provides: the one resolution both passes read codes through.
     /// - fails: [`ConversionFault::Domain`] when a closure or a held value does
     ///   not resolve, and [`ConversionFault::MachineInvariant`] when a variable
@@ -377,6 +400,13 @@ impl<'run> Walk<'run>
                         return Ok(Atom::QuoteComputation(quoted, place));
                     },
                     | Value::Lift { .. } => return Ok(Atom::Lift(code, place)),
+                    | Value::StaticLambda(_) => return Ok(Atom::Operator(code, place)),
+                    | Value::StaticApplication(head, argument) => {
+                        return Ok(Atom::Applied(
+                            Node::Code(head, place),
+                            Node::Code(argument, place),
+                        ));
+                    },
                     | Value::Unit
                     | Value::Literal(_)
                     | Value::Pair(..)
@@ -385,26 +415,14 @@ impl<'run> Walk<'run>
                 }
             },
             | Node::Held(value) => value,
+            | Node::Stuck(neutral, prefix) => return self.stuck(neutral, prefix),
             | Node::ValueType(..) | Node::CompType(..) => return Ok(Atom::Other(node)),
         };
         let stood = Node::Held(held);
         match *self.domain.value(held).ok_or(dangling)? {
             | DomainValue::Neutral { neutral, .. } => {
                 let stuck = self.domain.neutral(neutral).ok_or(dangling)?;
-                if !stuck.spine().is_empty() {
-                    return Ok(Atom::Other(stood));
-                }
-                Ok(match stuck.head() {
-                    | NeutralHead::Variable { zone, level } => Atom::Variable(zone, level),
-                    | NeutralHead::Constant(constant) => {
-                        let rigidity = match stuck.unfolding() {
-                            | Unfolding::Rigid => Rigidity::Rigid,
-                            | Unfolding::Unforced(_) | Unfolding::Forced(_) => Rigidity::Flexible,
-                        };
-                        Atom::Constant(constant, rigidity)
-                    },
-                    | NeutralHead::Module(_) => Atom::Other(stood),
-                })
+                self.stuck(neutral, SpinePrefix(stuck.spine().len()))
             },
             | DomainValue::Code { code, .. } => {
                 let closure = self.domain.value_closure(code).ok_or(dangling)?;
@@ -423,8 +441,14 @@ impl<'run> Walk<'run>
                     | Value::Pair(..)
                     | Value::Injection(..)
                     | Value::Thunk(_)
-                    | Value::Lift { .. } => Ok(Atom::Other(stood)),
+                    | Value::Lift { .. }
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..) => Ok(Atom::Other(stood)),
                 }
+            },
+            | DomainValue::StaticLambda { lambda, .. } => {
+                let closure = self.domain.value_closure(lambda).ok_or(dangling)?;
+                Ok(Atom::Operator(closure.body(), Self::opened(lambda)))
             },
             | DomainValue::Unit { .. }
             | DomainValue::Literal { .. }
@@ -432,6 +456,76 @@ impl<'run> Walk<'run>
             | DomainValue::Injection { .. }
             | DomainValue::Thunk { .. }
             | DomainValue::Lift { .. } => Ok(Atom::Other(stood)),
+        }
+    }
+
+    /// What a held neutral reads as, cut to its head and the first `length`
+    /// eliminations of its spine.
+    ///
+    /// # Specification
+    /// - requires: `prefix` counts within the neutral's spine.
+    /// - ensures: for no elimination, the head — a variable by level, a
+    ///   constant with its rigidity, a module form as itself; for a static
+    ///   application last, the prefix before it applied to its argument; for
+    ///   any other elimination last, the prefix as itself.
+    /// - provides: the one reading of a stuck operator spine, so a written
+    ///   static application and a held one compare by the same pairwise walk.
+    /// - fails: [`ConversionFault::Domain`] when the neutral does not resolve,
+    ///   and [`ConversionFault::MachineInvariant`] when `prefix` counts past
+    ///   its spine.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by an operator spine compared against a
+    ///   written application, a head alone, and spines differing by head and by
+    ///   arity.
+    /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Atom::Applied(Node::Stuck(cut, SpinePrefix(shorter)), _)) => {
+            cut == neutral && shorter < prefix.0
+        },
+        | Err(ConversionFault::Domain(_)) => self.domain.neutral(neutral).is_none(),
+        | Ok(_) | Err(_) => true,
+    })]
+    fn stuck(
+        &self,
+        neutral: NeutralId,
+        prefix: SpinePrefix,
+    ) -> Result<Atom, ConversionFault>
+    {
+        let held = self
+            .domain
+            .neutral(neutral)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+        let Some(last) = prefix.0.checked_sub(1_usize)
+        else {
+            return Ok(match held.head() {
+                | NeutralHead::Variable { zone, level } => Atom::Variable(zone, level),
+                | NeutralHead::Constant(constant) => {
+                    let rigidity = match held.unfolding() {
+                        | Unfolding::Rigid => Rigidity::Rigid,
+                        | Unfolding::Unforced(_) | Unfolding::Forced(_) => Rigidity::Flexible,
+                    };
+                    Atom::Constant(constant, rigidity)
+                },
+                | NeutralHead::Module(_) => Atom::Other(Node::Stuck(neutral, prefix)),
+            });
+        };
+        match held.spine().get(last) {
+            | Some(&Elimination::StaticApply(argument)) => Ok(Atom::Applied(
+                Node::Stuck(neutral, SpinePrefix(last)),
+                Node::Held(argument),
+            )),
+            | Some(
+                &(Elimination::Apply(_)
+                | Elimination::Force
+                | Elimination::Bind(_)
+                | Elimination::Case { .. }),
+            ) => Ok(Atom::Other(Node::Stuck(neutral, prefix))),
+            | None => Err(ConversionFault::MachineInvariant),
         }
     }
 
@@ -456,7 +550,7 @@ impl<'run> Walk<'run>
     /// Whether two codes are α-equal.
     ///
     /// # Specification
-    /// - requires: both closures hold quotes.
+    /// - requires: both closures hold quotes or static lambdas.
     /// - ensures: [`Alike::Same`] exactly when the lockstep walk finds every
     ///   pair of formers alike, every pair of bound variables naming one
     ///   binder, and every pair of resolved atoms alike.
@@ -510,6 +604,28 @@ impl<'run> Walk<'run>
                         let other = self.atom(Node::Code(right_body, there))?;
                         atoms.push((one, other));
                     },
+                    | (
+                        Atom::Applied(head, argument),
+                        Atom::Applied(other_head, other_argument),
+                    ) => {
+                        let arguments = (self.atom(argument)?, self.atom(other_argument)?);
+                        let heads = (self.atom(head)?, self.atom(other_head)?);
+                        atoms.push(arguments);
+                        atoms.push(heads);
+                    },
+                    | (Atom::Operator(first, here), Atom::Operator(second, there)) => {
+                        let (
+                            Some(&Value::StaticLambda(left_body)),
+                            Some(&Value::StaticLambda(right_body)),
+                        ) = (self.core.value(first), self.core.value(second))
+                        else {
+                            return Err(ConversionFault::MachineInvariant);
+                        };
+                        let (inside, other_inside) = self.crossed(here, there);
+                        let one = self.atom(Node::Code(left_body, inside))?;
+                        let other = self.atom(Node::Code(right_body, other_inside))?;
+                        atoms.push((one, other));
+                    },
                     | (Atom::Local(first), Atom::Local(second)) if first == second => {},
                     | (Atom::Variable(zone, first), Atom::Variable(other_zone, second))
                         if (zone, first) == (other_zone, second) => {},
@@ -523,6 +639,8 @@ impl<'run> Walk<'run>
                         | Atom::Quote(..)
                         | Atom::QuoteComputation(..)
                         | Atom::Lift(..)
+                        | Atom::Applied(..)
+                        | Atom::Operator(..)
                         | Atom::Other(_),
                         _,
                     ) => return Ok(Alike::Different),
@@ -554,14 +672,108 @@ impl<'run> Walk<'run>
         self.atom(Node::Code(held.body(), Self::opened(closure)))
     }
 
+    /// The node `node` reads as once every decode of a quote at its root has
+    /// fired: `El ⌜A⌝` is `A`, read at the quote's own place.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a value-type decode whose code resolves to a value quote is
+    ///   replaced by the quoted type, and a computation-type decode whose code
+    ///   resolves to a computation quote by the quoted computation type, until
+    ///   the root is neither; every other node unchanged.
+    /// - provides: the decoding rule core-term and the kernel fire on mint,
+    ///   fired here on a code an environment holds, where no mint saw it — so
+    ///   an instantiated body, decoded when it was minted, and the closure the
+    ///   machine evaluated it as compare alike.
+    /// - fails: as [`Walk::atom`]; [`ConversionFault::MachineInvariant`] when a
+    ///   type node does not resolve.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Termination
+    /// - reason: the `loop` fires one decode per iteration, not recursion.
+    /// - measure: the quotes nested beneath the node, read through the
+    ///   environments, which each iteration enters one deeper and which a
+    ///   finite domain arena bounds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a value decode and a computation decode
+    ///   of a held quote, and a decode beside a type it is not.
+    /// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Node::ValueType(at, place)) => match self.core.value_type(at) {
+            | Some(&ValueType::Element { code, .. }) => {
+                !matches!(self.atom(Node::Code(code, place)), Ok(Atom::Quote(..)))
+            },
+            | _ => true,
+        },
+        | Ok(Node::CompType(at, place)) => match self.core.comp_type(at) {
+            | Some(&CompType::Element { code, .. }) => {
+                !matches!(self.atom(Node::Code(code, place)), Ok(Atom::QuoteComputation(..)))
+            },
+            | _ => true,
+        },
+        | Ok(_) | Err(_) => true,
+    })]
+    fn decoded(
+        &self,
+        node: Node,
+    ) -> Result<Node, ConversionFault>
+    {
+        let mut node = node;
+        loop {
+            let (code, place) = match node {
+                | Node::ValueType(at, place) => match *self
+                    .core
+                    .value_type(at)
+                    .ok_or(ConversionFault::MachineInvariant)?
+                {
+                    | ValueType::Element { code, .. } => (code, place),
+                    | ValueType::Base(_)
+                    | ValueType::Unit
+                    | ValueType::Product(..)
+                    | ValueType::Sum(..)
+                    | ValueType::Thunk(_)
+                    | ValueType::Universe { .. }
+                    | ValueType::Lift { .. }
+                    | ValueType::Abstract(_)
+                    | ValueType::StaticPi { .. } => return Ok(node),
+                },
+                | Node::CompType(at, place) => match *self
+                    .core
+                    .comp_type(at)
+                    .ok_or(ConversionFault::MachineInvariant)?
+                {
+                    | CompType::Element { code, .. } => (code, place),
+                    | CompType::Returner(_) | CompType::Arrow { .. } | CompType::Pi { .. } => {
+                        return Ok(node);
+                    },
+                },
+                | Node::Code(..) | Node::Held(_) | Node::Stuck(..) => return Ok(node),
+            };
+            node = match (node, self.atom(Node::Code(code, place))?) {
+                | (Node::ValueType(..), Atom::Quote(quoted, there)) => {
+                    Node::ValueType(quoted, there)
+                },
+                | (Node::CompType(..), Atom::QuoteComputation(quoted, there)) => {
+                    Node::CompType(quoted, there)
+                },
+                | _ => return Ok(node),
+            };
+        }
+    }
+
     /// Compare one pair of type nodes' formers, queueing their children.
     ///
     /// # Specification
     /// - requires: `one` and `other` are type nodes of the same family.
     /// - ensures: [`Alike::Different`] when the formers or their payloads
-    ///   differ, and otherwise [`Alike::Same`] with the children queued: type
-    ///   children as nodes, a decode's code as an atom pair, a dependent
-    ///   arrow's codomain one shared binder further in.
+    ///   differ, read after every decode of a quote at either root has fired,
+    ///   and otherwise [`Alike::Same`] with the children queued: type children
+    ///   as nodes, a decode's code as an atom pair, a dependent arrow's
+    ///   codomain one shared binder further in.
     /// - provides: the per-former step of the first pass.
     /// - fails: [`ConversionFault::MachineInvariant`] when a node does not
     ///   resolve.
@@ -577,6 +789,8 @@ impl<'run> Walk<'run>
         atoms: &mut Vec<(Atom, Atom)>,
     ) -> Result<Alike, ConversionFault>
     {
+        let one = self.decoded(one)?;
+        let other = self.decoded(other)?;
         match (one, other) {
             | (Node::ValueType(first, here), Node::ValueType(second, there)) => {
                 let (Some(left), Some(right)) =
@@ -601,7 +815,17 @@ impl<'run> Walk<'run>
                         },
                     ) => Ok(Alike::between(&(sort, level), &(other_sort, other_level))),
                     | (&ValueType::Product(a, b), &ValueType::Product(c, d))
-                    | (&ValueType::Sum(a, b), &ValueType::Sum(c, d)) => {
+                    | (&ValueType::Sum(a, b), &ValueType::Sum(c, d))
+                    | (
+                        &ValueType::StaticPi {
+                            domain: a,
+                            codomain: b,
+                        },
+                        &ValueType::StaticPi {
+                            domain: c,
+                            codomain: d,
+                        },
+                    ) => {
                         pending.push((Node::ValueType(b, here), Node::ValueType(d, there)));
                         pending.push((Node::ValueType(a, here), Node::ValueType(c, there)));
                         Ok(Alike::Same)
@@ -650,7 +874,8 @@ impl<'run> Walk<'run>
                         | ValueType::Universe { .. }
                         | ValueType::Lift { .. }
                         | ValueType::Element { .. }
-                        | ValueType::Abstract(_)),
+                        | ValueType::Abstract(_)
+                        | ValueType::StaticPi { .. }),
                         _,
                     ) => Ok(Alike::Different),
                 }
@@ -725,20 +950,27 @@ impl<'run> Walk<'run>
                     ) => Ok(Alike::Different),
                 }
             },
-            | (Node::ValueType(..) | Node::CompType(..) | Node::Code(..) | Node::Held(_), _) => {
-                Ok(Alike::Different)
-            },
+            | (
+                Node::ValueType(..)
+                | Node::CompType(..)
+                | Node::Code(..)
+                | Node::Held(_)
+                | Node::Stuck(..),
+                _,
+            ) => Ok(Alike::Different),
         }
     }
 
     /// Whether anything in a code can still unfold.
     ///
     /// # Specification
-    /// - requires: `closure` holds a quote.
+    /// - requires: `closure` holds a quote or a static lambda.
     /// - ensures: [`Rigidity::Rigid`] exactly when every atom the quoted type
-    ///   reaches — through its decodes, nested quotes and environment — is a
-    ///   bound or free variable, a constant without a body, or a quote whose
-    ///   own type is rigid.
+    ///   reaches — through its decodes, nested quotes, static applications and
+    ///   environment — is a bound or free variable, a constant without a body,
+    ///   or a quote whose own type is rigid; a static lambda anywhere is
+    ///   [`Rigidity::Flexible`], η being able to equate it with a stuck
+    ///   operator.
     /// - provides: the second pass.
     /// - fails: as [`Walk::atom`].
     /// - panics: none.
@@ -757,8 +989,14 @@ impl<'run> Walk<'run>
                 match atom {
                     | Atom::Local(_) | Atom::Variable(..) | Atom::Constant(_, Rigidity::Rigid) => {
                     },
-                    | Atom::Constant(_, Rigidity::Flexible) | Atom::Other(_) => {
+                    | Atom::Constant(_, Rigidity::Flexible)
+                    | Atom::Operator(..)
+                    | Atom::Other(_) => {
                         return Ok(Rigidity::Flexible);
+                    },
+                    | Atom::Applied(head, argument) => {
+                        atoms.push(self.atom(argument)?);
+                        atoms.push(self.atom(head)?);
                     },
                     | Atom::Quote(quoted, place) => types.push(Node::ValueType(quoted, place)),
                     | Atom::QuoteComputation(quoted, place) => {
@@ -788,7 +1026,12 @@ impl<'run> Walk<'run>
                         | ValueType::Unit
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_) => {},
-                        | ValueType::Product(first, second) | ValueType::Sum(first, second) => {
+                        | ValueType::Product(first, second)
+                        | ValueType::Sum(first, second)
+                        | ValueType::StaticPi {
+                            domain: first,
+                            codomain: second,
+                        } => {
                             types.push(Node::ValueType(first, place));
                             types.push(Node::ValueType(second, place));
                         },
@@ -822,24 +1065,28 @@ impl<'run> Walk<'run>
                         },
                     }
                 },
-                | Node::Code(..) | Node::Held(_) => return Err(ConversionFault::MachineInvariant),
+                | Node::Code(..) | Node::Held(_) | Node::Stuck(..) => {
+                    return Err(ConversionFault::MachineInvariant);
+                },
             }
         }
         Ok(Rigidity::Rigid)
     }
 }
 
-/// Compare two codes, each a quote closed over its environment.
+/// Compare two codes or two type operators, each closed over its
+/// environment.
 ///
 /// # Specification
 /// - requires: `left` and `right` are value closures of `domain` whose bodies
-///   are quotes written in `core`.
-/// - ensures: [`CodeComparison::Equal`] when the two quoted types are α-equal
-///   read through their environments; [`CodeComparison::Apart`] when they are
-///   not and neither holds anything that could unfold; and
-///   [`CodeComparison::Undecided`] otherwise.
-/// - provides: the one comparison of two codes, which conversion's structural
-///   step and the machine's rule table both read.
+///   are quotes or static lambdas written in `core`.
+/// - ensures: [`CodeComparison::Equal`] when the two are α-equal read through
+///   their environments, a decode of a quote read as the quoted type;
+///   [`CodeComparison::Apart`] when they are not and neither holds anything
+///   that could unfold; and [`CodeComparison::Undecided`] otherwise — always so
+///   for two operators that are not α-equal.
+/// - provides: the one comparison of two codes or two operators, which
+///   conversion's structural step and the machine's rule table both read.
 /// - fails: [`ConversionFault::Domain`] for a closure or a held value that does
 ///   not resolve, and [`ConversionFault::MachineInvariant`] for a core node
 ///   that does not.
@@ -852,11 +1099,16 @@ impl<'run> Walk<'run>
 /// - hypothesis: L3 — the three answers, separated by two quotes of one type,
 ///   two of different rigid types, and two of different types one of which
 ///   decodes a defined constant; with the environment read through by two
-///   quotes over one variable.
+///   quotes over one variable, and a decode of a held quote read as the quoted
+///   type in both families; and the static formers by a written application
+///   against a held static spine, two heads and two arguments apart, and two
+///   operators alike and unlike.
 /// - witness: `code::tests::two_quotes_of_one_type_are_equal`
 /// - witness: `code::tests::rigid_quotes_of_different_types_are_apart`
 /// - witness: `code::tests::a_quote_over_a_defined_constant_is_undecided`
+/// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
 /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
+/// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
 pub fn compare_codes(
     core: &CoreArena,
     domain: &DomainArena,
@@ -898,6 +1150,7 @@ mod tests
     use crate::closure::Environment;
     use crate::domain::BinderLevel;
     use crate::domain::DomainValue;
+    use crate::domain::Elimination;
     use crate::domain::NeutralHead;
     use crate::domain::TermFace;
     use crate::domain::Unfolding;
@@ -1066,6 +1319,69 @@ mod tests
     }
 
     #[test]
+    fn a_decode_of_a_held_quote_compares_as_its_quoted_type()
+    {
+        // `El x * El x` over `x := ⌜Integer⌝` against `Integer * Integer`, and
+        // `El x` over `x := ⌜F Integer⌝` against `F Integer`: the decoding
+        // rule a mint fires, fired where the environment holds the quote.
+        let mut core = CoreArena::new();
+        let integer = core.value_type_base(BaseType::Integer);
+        let integer_quote = core.value_quote(integer);
+        let returns = core.comp_type_returner(integer);
+        let action_quote = core.value_quote_computation(returns);
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded = core.value_type_element(bound, Level::zero());
+        let squared = core.value_type_product(decoded, decoded);
+        let squared_quote = core.value_quote(squared);
+        let written = core.value_type_product(integer, integer);
+        let written_quote = core.value_quote(written);
+        let acting = core.comp_type_element(bound, Level::zero());
+        let acting_quote = core.value_quote_computation(acting);
+        let string = core.value_type_base(BaseType::String);
+        let other = core.value_type_product(integer, string);
+        let other_quote = core.value_quote(other);
+
+        let mut domain = DomainArena::new();
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let held = |domain: &mut DomainArena, quote: ValueId| {
+            eval_value_within(
+                &core,
+                domain,
+                definitions,
+                Fuel::from(64_u32),
+                quote,
+                Environment::new(),
+            )
+            .expect("the quote evaluates")
+            .0
+        };
+        let held_integer = held(&mut domain, integer_quote);
+        let held_action = held(&mut domain, action_quote);
+        let squared_code = code_of(&core, &mut domain, squared_quote, &[held_integer]);
+        let written_code = code_of(&core, &mut domain, written_quote, &[]);
+        let other_code = code_of(&core, &mut domain, other_quote, &[]);
+        let acting_code = code_of(&core, &mut domain, acting_quote, &[held_action]);
+        let action_code = code_of(&core, &mut domain, action_quote, &[]);
+        assert_eq!(
+            compare_rigidly(&core, &domain, squared_code, written_code),
+            CodeComparison::Equal,
+            "a value decode of a held quote reads as the quoted type"
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, acting_code, action_code),
+            CodeComparison::Equal,
+            "and so does a computation decode of a held computation quote"
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, squared_code, other_code),
+            CodeComparison::Apart,
+            "a decoded side still differs from a type it is not"
+        );
+    }
+
+    #[test]
     fn a_quote_over_a_defined_constant_is_undecided()
     {
         let mut core = CoreArena::new();
@@ -1117,6 +1433,99 @@ mod tests
             CodeComparison::Apart,
             compare_rigidly(&core, &domain, reads_x_near, reads_y_near),
             "and one index that the environments resolve to two variables is apart"
+        );
+    }
+
+    #[test]
+    fn static_operators_compare_by_binder_and_spine()
+    {
+        let mut core = CoreArena::new();
+        let family = ConstantIndex::from(0_usize);
+        let other_family = ConstantIndex::from(1_usize);
+        // `⌜El (F #0)⌝` and `⌜El (G #0)⌝`, with the application written in the
+        // quote, and `⌜El #0⌝`, whose code an environment supplies.
+        let innermost = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let head = core.value_constant(family);
+        let other_head = core.value_constant(other_family);
+        let written = core.value_static_application(head, innermost);
+        let other_written = core.value_static_application(other_head, innermost);
+        let written_decode = core.value_type_element(written, Level::zero());
+        let other_decode = core.value_type_element(other_written, Level::zero());
+        let plain_decode = core.value_type_element(innermost, Level::zero());
+        let written_quote = core.value_quote(written_decode);
+        let other_quote = core.value_quote(other_decode);
+        let plain_quote = core.value_quote(plain_decode);
+
+        let mut domain = DomainArena::new();
+        let x = variable(&mut domain, BinderLevel::from(0_u32));
+        let y = variable(&mut domain, BinderLevel::from(1_u32));
+        let held_neutral = domain
+            .neutral_node(
+                NeutralHead::Constant(family),
+                Vec::from([Elimination::StaticApply(x)]),
+                Unfolding::Rigid,
+            )
+            .expect("a statically applied neutral mints");
+        let held = domain
+            .value_neutral(held_neutral, TermFace::Reduced)
+            .expect("a static spine stands as a value");
+
+        let written_at_x = code_of(&core, &mut domain, written_quote, &[x]);
+        let written_at_y = code_of(&core, &mut domain, written_quote, &[y]);
+        let other_at_x = code_of(&core, &mut domain, other_quote, &[x]);
+        let held_at_x = code_of(&core, &mut domain, plain_quote, &[held]);
+        assert_eq!(
+            CodeComparison::Equal,
+            compare_rigidly(&core, &domain, written_at_x, held_at_x),
+            "a written application and a held static spine compare by head and argument alike"
+        );
+        assert_eq!(
+            CodeComparison::Apart,
+            compare_rigidly(&core, &domain, written_at_x, written_at_y),
+            "one rigid head at two rigid arguments is apart"
+        );
+        assert_eq!(
+            CodeComparison::Apart,
+            compare_rigidly(&core, &domain, written_at_x, other_at_x),
+            "two rigid heads at one argument are apart"
+        );
+
+        // `λX. ⌜El X⌝` written twice, and `λX. ⌜Unit⌝`.
+        let operators = [plain_quote, plain_quote, {
+            let unit = core.value_type_unit();
+            core.value_quote(unit)
+        }]
+        .map(|body| core.value_static_lambda(body));
+        let [first, second, constant_operator] = operators.map(|lambda| {
+            let chain = LoweredChain::new();
+            let environment = DefinitionalEnvironment::new();
+            let definitions = Definitions::new(&chain, &environment, environment.root());
+            let (produced, _) = eval_value_within(
+                &core,
+                &mut domain,
+                definitions,
+                Fuel::from(64_u32),
+                lambda,
+                Environment::new(),
+            )
+            .expect("a static lambda evaluates");
+            let Some(&DomainValue::StaticLambda {
+                lambda: closure, ..
+            }) = domain.value(produced)
+            else {
+                panic!("a static lambda evaluates to an operator");
+            };
+            closure
+        });
+        assert_eq!(
+            CodeComparison::Equal,
+            compare_rigidly(&core, &domain, first, second),
+            "two operators alike under one shared binder are equal"
+        );
+        assert_eq!(
+            CodeComparison::Undecided,
+            compare_rigidly(&core, &domain, first, constant_operator),
+            "two operators that differ are undecided: an operator is never declared apart"
         );
     }
 }

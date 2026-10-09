@@ -28,12 +28,14 @@
 //! # Neutrals are one family, and the spine is what separates the polarities
 //!
 //! A stuck value and a stuck computation share a head and differ in what is
-//! stacked on it: the vocabulary has no value eliminator, so a neutral standing
-//! in a value position carries an empty spine, while a neutral standing in a
-//! computation position carries the applications, binds and cases that could
-//! not fire. [`Neutral`] is therefore one node kind, and the well-formedness
-//! condition — a value-position neutral has an empty spine — is enforced by the
-//! arena constructor rather than left to a convention.
+//! stacked on it. The vocabulary's one value eliminator is the static
+//! application, so a neutral standing in a value position carries a spine of
+//! static applications alone — empty for a bare variable or constant — while a
+//! neutral standing in a computation position carries the applications, binds
+//! and cases that could not fire. [`Neutral`] is therefore one node kind, and
+//! the well-formedness condition — a value-position neutral's spine holds
+//! static applications only — is enforced by the arena constructor rather than
+//! left to a convention.
 //!
 //! **Module forms enter as neutrals and cost nothing.** A module reference is a
 //! rigid head like any other opaque constant; no arm anywhere replaces it by a
@@ -193,9 +195,9 @@ pub enum NeutralHead
 
 /// One elimination stacked on a neutral head.
 ///
-/// Every arm is a computation eliminator, because the term vocabulary has no
-/// value eliminator — which is why a neutral in value position has an empty
-/// spine.
+/// Every arm but [`Self::StaticApply`] is a computation eliminator. The static
+/// application is the vocabulary's one value eliminator, which is why a
+/// neutral in value position carries only static applications.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Elimination
 {
@@ -213,6 +215,9 @@ pub enum Elimination
         /// The right branch, closed over its environment.
         on_right: CompClosureId,
     },
+    /// `f a`: a static application whose operator was stuck, applied to a
+    /// domain value argument.
+    StaticApply(DomainValueId),
 }
 
 /// A stuck computation or value: a head, the eliminations stacked on it, and
@@ -234,10 +239,10 @@ impl Neutral
     /// Build a neutral over a head, a spine and an unfolding face.
     ///
     /// # Specification
-    /// - requires: `spine` is empty exactly when the neutral will stand in a
-    ///   value position, and `unfolding` is loaded only for a head a definition
-    ///   can stand behind. The arena checks both at its own mint, which is why
-    ///   this constructor is crate-private.
+    /// - requires: `spine` holds static applications alone exactly when the
+    ///   neutral will stand in a value position, and `unfolding` is loaded only
+    ///   for a head a definition can stand behind. The arena checks both at its
+    ///   own mint, which is why this constructor is crate-private.
     /// - ensures: the neutral carries exactly the head, spine, and unfolding
     ///   face offered, in that spine order.
     /// - provides: the one neutral shape both positions share, so the position
@@ -276,10 +281,11 @@ impl Neutral
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the eliminations in the order they were stacked, innermost
-    ///   first, so the last is the outermost; the slice is empty exactly when
-    ///   the neutral stands in a value position.
-    /// - provides: the emptiness test the arena's value-position guard reads,
-    ///   and the walk readback rebuilds an eliminated term from.
+    ///   first, so the last is the outermost; the slice holds static
+    ///   applications alone exactly when the neutral stands in a value
+    ///   position.
+    /// - provides: the spine the arena's value-position guard reads, and the
+    ///   walk readback rebuilds an eliminated term from.
     /// - fails: never.
     /// - panics: none.
     #[inline]
@@ -441,7 +447,7 @@ pub enum DomainValue
         /// The term face.
         face: TermFace,
     },
-    /// A stuck value: a neutral with an empty spine.
+    /// A stuck value: a neutral whose spine holds static applications alone.
     Neutral
     {
         /// The neutral.
@@ -461,6 +467,20 @@ pub enum DomainValue
     {
         /// The quote, closed over its environment.
         code: ValueClosureId,
+        /// The term face.
+        face: TermFace,
+    },
+    /// A type operator: a static lambda, closed over the environment its
+    /// body reads.
+    ///
+    /// Like a code, the closure's body is the static lambda itself rather
+    /// than the lambda's body, so a comparison reads the operator whole as it
+    /// reads a quote; a static application enters the lambda's body in the
+    /// closure's environment extended by the argument.
+    StaticLambda
+    {
+        /// The static lambda, closed over its environment.
+        lambda: ValueClosureId,
         /// The term face.
         face: TermFace,
     },
@@ -491,7 +511,8 @@ impl DomainValue
             | Self::Thunk { face, .. }
             | Self::Lift { face, .. }
             | Self::Neutral { face, .. }
-            | Self::Code { face, .. } => face,
+            | Self::Code { face, .. }
+            | Self::StaticLambda { face, .. } => face,
         }
     }
 }

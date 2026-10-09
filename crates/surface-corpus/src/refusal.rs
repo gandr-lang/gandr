@@ -216,6 +216,14 @@ pub enum RefusalName
     DependentBind,
     /// A code constant's unfolding the normaliser did not certify.
     Undecided,
+    /// A static application at more arguments than its head takes.
+    FamilyArity,
+    /// A static application's argument at a classifier other than its domain.
+    FamilyArgumentClassifier,
+    /// A type operator passed where a dynamic parameter needs a value.
+    StaticLambdaArgument,
+    /// A static Pi over a type that classifies no codes.
+    StaticClassifierExpected,
     /// An expectation the strict root refuses.
     ExpectationOutsideFixtureRoot,
 }
@@ -223,7 +231,7 @@ pub enum RefusalName
 impl RefusalName
 {
     /// Every name of the vocabulary, in declaration order.
-    pub const VOCABULARY: [Self; 35_usize] = [
+    pub const VOCABULARY: [Self; 39_usize] = [
         Self::UnresolvedName,
         Self::UnresolvedTypeHead,
         Self::DuplicateSignature,
@@ -258,6 +266,10 @@ impl RefusalName
         Self::LevelMismatch,
         Self::DependentBind,
         Self::Undecided,
+        Self::FamilyArity,
+        Self::FamilyArgumentClassifier,
+        Self::StaticLambdaArgument,
+        Self::StaticClassifierExpected,
         Self::ExpectationOutsideFixtureRoot,
     ];
 
@@ -317,6 +329,10 @@ impl RefusalName
             | Self::LevelMismatch => "LevelMismatch",
             | Self::DependentBind => "DependentBind",
             | Self::Undecided => "Undecided",
+            | Self::FamilyArity => "FamilyArity",
+            | Self::FamilyArgumentClassifier => "FamilyArgumentClassifier",
+            | Self::StaticLambdaArgument => "StaticLambdaArgument",
+            | Self::StaticClassifierExpected => "StaticClassifierExpected",
             | Self::ExpectationOutsideFixtureRoot => "ExpectationOutsideFixtureRoot",
         })
     }
@@ -491,6 +507,10 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::LevelMismatch { .. } => RefusalName::LevelMismatch,
         | CheckRefusal::DependentBind { .. } => RefusalName::DependentBind,
         | CheckRefusal::Undecided { .. } => RefusalName::Undecided,
+        | CheckRefusal::FamilyArity { .. } => RefusalName::FamilyArity,
+        | CheckRefusal::FamilyArgumentClassifier { .. } => RefusalName::FamilyArgumentClassifier,
+        | CheckRefusal::StaticLambdaArgument { .. } => RefusalName::StaticLambdaArgument,
+        | CheckRefusal::StaticClassifierExpected { .. } => RefusalName::StaticClassifierExpected,
     }
 }
 
@@ -500,12 +520,14 @@ mod tests
     use alloc::string::String;
     use alloc::vec::Vec;
 
+    use gandr_core_checker::ArgumentPosition;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckRefusal;
     use gandr_core_checker::CheckingForm;
     use gandr_core_checker::CoreNode;
     use gandr_core_checker::ExpectedShape;
     use gandr_core_checker::Mismatch;
+    use gandr_core_checker::StaticArity;
     use gandr_core_checker::TermNode;
     use gandr_core_checker::TypeNode;
     use gandr_core_checker::UnadmittedFormer;
@@ -617,7 +639,7 @@ mod tests
             (
                 LoweringRefusal::OutOfFragment {
                     span: empty,
-                    form: FormName::from(NamedKind("product_type")),
+                    form: FormName::from(NamedKind("lazy_product_type")),
                     sort: FragmentSort::ValueType,
                     boundary: FragmentBoundary::Reserved,
                 },
@@ -791,7 +813,7 @@ mod tests
             (
                 CheckRefusal::OutOfFragment {
                     at: CoreNode::Term(TermNode::Value(value)),
-                    former: UnadmittedFormer::Pair,
+                    former: UnadmittedFormer::Sum,
                 },
                 "OutOfFragment",
                 FailureClass::Unrepresentable,
@@ -863,6 +885,38 @@ mod tests
                 CheckRefusal::Undecided { at: value },
                 "Undecided",
                 FailureClass::EngineFault,
+            ),
+            (
+                CheckRefusal::FamilyArity {
+                    at: value,
+                    expected: StaticArity::from(1_u32),
+                    actual: StaticArity::from(2_u32),
+                },
+                "FamilyArity",
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::FamilyArgumentClassifier {
+                    at: value,
+                    position: ArgumentPosition::from(0_u32),
+                    synthesised: value_type,
+                    expected: integer,
+                },
+                "FamilyArgumentClassifier",
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::StaticLambdaArgument { at: value },
+                "StaticLambdaArgument",
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::StaticClassifierExpected {
+                    at: value_type,
+                    found: integer,
+                },
+                "StaticClassifierExpected",
+                FailureClass::MalformedSource,
             ),
         ];
         let corpus = (

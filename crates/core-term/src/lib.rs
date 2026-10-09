@@ -7,9 +7,13 @@
 //! - [`Classifier`] is what a type's own type is: a ground sort and a level.
 //!   `Type[+, l]` and `Type[-, l]` are the two universe families, and a quote
 //!   is the code of a type in one of them.
+//! - The static calculus is three formers over codes: the static Pi classifies
+//!   a type operator, and the static lambda and the static application are
+//!   values, so a type operator is a value like any code.
 //! - [`shift_value_type`], [`shift_comp_type`], [`instantiate_comp_type`] and
 //!   [`strengthen_comp_type`] are the rewrites a type that mentions a bound
-//!   variable needs, as iterative machines memoized per node.
+//!   variable needs, and [`instantiate_value`] the substitution static beta
+//!   takes, as iterative machines memoized per node.
 //! - [`Context`] is the two-zone typing context `Γ; Σ`: flat, de Bruijn,
 //!   id-addressed and name-free. Names live in the surface syntax and in
 //!   diagnostics, above this crate.
@@ -59,6 +63,7 @@ pub use crate::definition::Transparency;
 pub use crate::failure::FailureClass;
 pub use crate::rewrite::Binders;
 pub use crate::rewrite::instantiate_comp_type;
+pub use crate::rewrite::instantiate_value;
 pub use crate::rewrite::shift_comp_type;
 pub use crate::rewrite::shift_value_type;
 pub use crate::rewrite::strengthen_comp_type;

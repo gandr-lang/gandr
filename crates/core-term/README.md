@@ -11,6 +11,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - [Kernel alphabet and core grammar](#kernel-alphabet-and-core-grammar)
 - [Universe families](#universe-families)
 - [Quotes and decode-on-mint](#quotes-and-decode-on-mint)
+- [Static operators](#static-operators)
 - [Binder machines](#binder-machines)
 - [Zone-qualified variables](#zone-qualified-variables)
 - [Failure state](#failure-state)
@@ -39,9 +40,9 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 ## Provided features
 
-- `Value`, `Computation`, `ValueType` and `CompType`: the core vocabulary, including the dependent function type `CompType::Pi`, the two universe towers `ValueType::Universe`, the quotes `Value::Quote` and `Value::QuoteComputation`, and the code-reading formers `ValueType::Element` and `CompType::Element`.
+- `Value`, `Computation`, `ValueType` and `CompType`: the core vocabulary, including the dependent function type `CompType::Pi`, the two universe towers `ValueType::Universe`, the quotes `Value::Quote` and `Value::QuoteComputation`, the code-reading formers `ValueType::Element` and `CompType::Element`, and the static operators `ValueType::StaticPi`, `Value::StaticLambda` and `Value::StaticApplication`.
 - `Classifier`, `Sort` and `SortParameter`: a type's ground sort and level, and the sort a universe is written at.
-- `shift_value_type`, `shift_comp_type`, `instantiate_comp_type` and `strengthen_comp_type`, with `Binders`: the binder machines over types.
+- `shift_value_type`, `shift_comp_type`, `instantiate_comp_type`, `instantiate_value` and `strengthen_comp_type`, with `Binders`: the binder machines over types and codes.
 - `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, and `ArenaWatermark` with `CoreArena::truncate_to`.
 - `Context`: `open`, `close`, `occurrence`, `declared`, `linear_use` and `depth` over `Zone::Intuitionistic` and `Zone::Linear`, refusing with `ContextError`.
 - `DefinitionChain`, `DefinitionEntry` and `DefinitionHeight`: `define`, `entry` and `entries`, refusing with `DefinitionError`.
@@ -130,6 +131,22 @@ Alternatives: one universe tower with a polarity bit on each code, which makes e
 `Value::Quote` names a value type as a code and `Value::QuoteComputation` a computation type; `ValueType::Element` and `CompType::Element` read a code back as the type it names. `CoreArena::value_type_element` and `CoreArena::comp_type_element` decode on mint: given a quote of the matching family as the code, they return the quoted type itself rather than minting a decode of it, so `El(⌜A⌝)` and `A` are one id and no conversion ever meets the redex. The level a decode carries is the code's universe level, and a decode of a quote ignores it: the quoted type has its own.
 
 Alternatives: a decode node kept over a quote and the β-rule left to conversion, which every comparison of a type then pays and the kernel would have to fire too. Reversal: a decode whose quote is only known after substitution still meets the rule, so a machine that substitutes a quote for a code variable re-mints the decode through the same constructor (`instantiate_comp_type` does).
+
+## Static operators
+
+A type operator such as `\A. A * A` is a code-level function: it takes codes and returns a code, and it is gone before runtime. The core spells it with three value-family formers. `ValueType::StaticPi { domain, codomain }` classifies operators; `Value::StaticLambda` abstracts over one intuitionistic binder; `Value::StaticApplication` applies an operator to a code. All three are values because codes are values (§ Universe families): an operator is a code that awaits codes, so it lives where codes live, and an application is a code too. It decodes through `ValueType::Element` or `CompType::Element` like any other code.
+
+The static Pi is non-dependent: its codomain stands in the ambient context, as `CompType::Arrow`'s does, not under a binder. Its domain and codomain are themselves static classifiers: universes, or static Pis over them. That is the simply kinded discipline of System Fω, enough for a family such as `Type -> Type[-]` and for a relative monad's carrier. Dependency at the type level would make classifiers mention codes, and with them the kernel's conversion would have to compare open codes.
+
+A static application whose head is a static lambda is a redex, and the arena represents it. Arena constructors do not reduce it. Static beta belongs to the normalizer in `gandr-core-nbe`, which reads back static normal forms, and `instantiate_value` is the one substitution step a certificate replays. Keeping the redex representable means the elaborator can write a family's use as it stands in the source, and the checker can name each unfolding it performs.
+
+Alternatives:
+
+- a separate static-term language with its own arena family, which duplicates every walk, every binder machine and every content codec;
+- type operators as computation-family functions over thunked codes, which puts code-level reduction under effects;
+- reduce on mint, as decode does, which would hide the redex the certificate names and would need substitution inside the arena.
+
+Reversal: a family whose classifier must mention a code, at which point the static Pi gains a binder and the kernel's conversion gains open codes.
 
 ## Binder machines
 

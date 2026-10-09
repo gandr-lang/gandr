@@ -149,6 +149,21 @@ pub enum ValueType
     /// therefore re-derived from a closed match rather than imported as a claim
     /// — no arm anywhere replaces an atom by a representation.
     Abstract(ConstantIndex),
+    /// The static Pi from `A` to `B`: the classifier of a type operator from
+    /// codes at `A` to codes at `B`.
+    ///
+    /// It is non-dependent: the codomain stands in the ambient context, as
+    /// [`CompType::Arrow`]'s does, so the former binds nothing. Both children
+    /// are static classifiers — universes, or static Pis over them — which
+    /// formation checks; its inhabitants are codes, so it is a value type at
+    /// the join of its children's levels.
+    StaticPi
+    {
+        /// The classifier of the operand.
+        domain: ValueTypeId,
+        /// The classifier of the result.
+        codomain: ValueTypeId,
+    },
 }
 
 /// A computation type: the negative fragment of the type vocabulary.

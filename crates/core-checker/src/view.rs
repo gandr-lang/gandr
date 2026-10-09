@@ -113,6 +113,17 @@ pub enum ValueTypeView<'arena>
         /// The level of the universe the code inhabits.
         target: &'arena Level,
     },
+    /// The eager product `A × B` of two value types.
+    Product(ValueTypeId, ValueTypeId),
+    /// The static Pi: the classifier of a type operator from codes of its
+    /// domain to codes of its codomain, which stands in the ambient context.
+    StaticPi
+    {
+        /// The classifier of the operator's argument.
+        domain: ValueTypeId,
+        /// The classifier of what it builds.
+        codomain: ValueTypeId,
+    },
 }
 
 /// A computation type the fragment admits, with its children.
@@ -155,14 +166,14 @@ pub enum CompTypeView<'arena>
 /// - requires: nothing — a dangling id and a former outside the fragment are
 ///   both admissible input and both refused.
 /// - ensures: the node's view when its former is the integer atom, the string
-///   atom, the unit type, a thunk type, a universe of a ground sort, a lift or
-///   a decode; the children are the node's own.
+///   atom, the unit type, a thunk type, a universe of a ground sort, a lift, a
+///   decode, an eager product or a static Pi; the children are the node's own.
 /// - provides: the one decision of which value types the judgement and the
 ///   bridge reason about.
 /// - fails: [`FragmentRefusal::DanglingNode`] when the id names no node of
 ///   `arena`; [`FragmentRefusal::OutOfFragment`], naming the former, for the
-///   numeric atom, a product, a sum, an abstract atom and a universe over a
-///   sort parameter.
+///   numeric atom, a sum, an abstract atom and a universe over a sort
+///   parameter.
 /// - panics: none.
 ///
 /// # Errors
@@ -194,7 +205,7 @@ pub fn value_type_view(
         | ValueType::Base(BaseType::Numeric) => Err(unadmitted(UnadmittedFormer::NumericAtom)),
         | ValueType::Unit => Ok(ValueTypeView::Unit),
         | ValueType::Thunk(body) => Ok(ValueTypeView::Thunk(body)),
-        | ValueType::Product(..) => Err(unadmitted(UnadmittedFormer::Product)),
+        | ValueType::Product(first, second) => Ok(ValueTypeView::Product(first, second)),
         | ValueType::Sum(..) => Err(unadmitted(UnadmittedFormer::Sum)),
         | ValueType::Universe {
             sort: Sort::Ground(sort),
@@ -207,6 +218,9 @@ pub fn value_type_view(
         | ValueType::Lift { inner, ref target } => Ok(ValueTypeView::Lift { inner, target }),
         | ValueType::Element { code, ref target } => Ok(ValueTypeView::Element { code, target }),
         | ValueType::Abstract(_) => Err(unadmitted(UnadmittedFormer::Abstract)),
+        | ValueType::StaticPi { domain, codomain } => {
+            Ok(ValueTypeView::StaticPi { domain, codomain })
+        },
     }
 }
 

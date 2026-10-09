@@ -1087,7 +1087,7 @@ mod tests
                 FailureClass::MalformedSource,
             ),
             (
-                r#"@[ refuses("OutOfFragment") ] def a : Integer * Integer ;"#,
+                r#"@[ refuses("OutOfFragment") ] def a : -F Integer & -F Integer ;"#,
                 RefusalName::OutOfFragment,
                 FailureClass::Unrepresentable,
             ),

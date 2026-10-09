@@ -489,6 +489,7 @@ fn intern(
             Some(&ValueType::Thunk(_)) => tags::NODE_VT_THUNK,
             Some(&ValueType::Lift { .. }) => tags::NODE_VT_LIFT,
             Some(&ValueType::Element { .. }) => tags::NODE_VT_ELEMENT,
+            Some(&ValueType::StaticPi { .. }) => tags::NODE_VT_STATIC_PI,
         },
         AnyNode::CompType(id) => match arena.comp_type(id) {
             None | Some(&CompType::Returner(_)) => tags::NODE_CT_RETURNER,
@@ -507,6 +508,7 @@ fn intern(
             Some(&Value::Lift { .. }) => tags::NODE_V_LIFT,
             Some(&Value::Quote(_)) => tags::NODE_V_QUOTE,
             Some(&Value::QuoteComputation(_)) => tags::NODE_V_QUOTE_COMPUTATION,
+            Some(&Value::StaticApplication(..)) => tags::NODE_V_STATIC_APPLICATION,
         },
         AnyNode::Computation(id) => match arena.computation(id) {
             None | Some(&Computation::Return(_)) => tags::NODE_C_RETURN,
@@ -562,6 +564,7 @@ fn encode_entry(
                     out.put_tag(tags::NODE_VT_ELEMENT);
                     encode_level(&mut out, target);
                 },
+                | ValueType::StaticPi { .. } => out.put_tag(tags::NODE_VT_STATIC_PI),
             },
         },
         | AnyNode::CompType(id) => match arena.comp_type(id) {
@@ -601,6 +604,7 @@ fn encode_entry(
                 },
                 | Value::Quote(_) => out.put_tag(tags::NODE_V_QUOTE),
                 | Value::QuoteComputation(_) => out.put_tag(tags::NODE_V_QUOTE_COMPUTATION),
+                | Value::StaticApplication(..) => out.put_tag(tags::NODE_V_STATIC_APPLICATION),
             },
         },
         | AnyNode::Computation(id) => match arena.computation(id) {

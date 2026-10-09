@@ -677,6 +677,76 @@ mod tests
         );
     }
 
+    /// The static formers spell as the grammar writes them: a static Pi as an
+    /// arrow between value types, a static abstraction as `\a. v` with its
+    /// binder named as a dependent arrow's is, and a spine of static
+    /// applications as one application of its operator, whether read as a
+    /// value or as the type its decode denotes.
+    #[test]
+    fn static_operators_spell_as_the_grammar_writes_them()
+    {
+        let names = [Name::from("t")];
+        let mut core = CoreArena::new();
+        let small = small_universe(&mut core);
+        let negative =
+            core.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
+        let family = core.value_type_static_pi(small, negative);
+        let rest = core.value_type_static_pi(small, small);
+        let classifier = core.value_type_static_pi(family, rest);
+
+        let element = bound(&mut core, DeBruijnIndex::from(0_u32));
+        let squared = core.value_type_product(element, element);
+        let returns_squared = core.comp_type_returner(squared);
+        let squared_code = core.value_quote_computation(returns_squared);
+        let squaring = core.value_static_lambda(squared_code);
+
+        let outer = bound(&mut core, DeBruijnIndex::from(1_u32));
+        let inner = bound(&mut core, DeBruijnIndex::from(0_u32));
+        let both = core.value_type_product(outer, inner);
+        let both_code = core.value_quote(both);
+        let over_inner = core.value_static_lambda(both_code);
+        let nested = core.value_static_lambda(over_inner);
+
+        let integer = core.value_type_base(BaseType::Integer);
+        let integer_code = core.value_quote(integer);
+        let operator = core.value_constant(ConstantIndex::from(0_usize));
+        let at_family = core.value_static_application(operator, squaring);
+        let at_carrier = core.value_static_application(at_family, integer_code);
+        let applied = core.value_static_application(at_carrier, integer_code);
+        let decoded = core.value_type_element(applied, Level::zero());
+        let once = core.value_static_application(operator, integer_code);
+
+        let variable = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let identity = core.value_static_lambda(variable);
+        let redex = core.value_static_application(identity, integer_code);
+
+        let source = CoreSource::new(&core, &names);
+        for (root, spelling) in [
+            (
+                Root::Type(CoreNode::ValueType(classifier)),
+                "(Type -> Type[-]) -> Type -> Type",
+            ),
+            (Root::Value(CoreNode::Value(squaring)), "\\a. -F (a * a)"),
+            (Root::Value(CoreNode::Value(nested)), "\\a. \\b. a * b"),
+            (Root::Value(CoreNode::Value(once)), "t(Integer)"),
+            (
+                Root::Value(CoreNode::Value(applied)),
+                "t(\\a. -F (a * a), Integer, Integer)",
+            ),
+            (
+                Root::Type(CoreNode::ValueType(decoded)),
+                "t(\\a. -F (a * a), Integer, Integer)",
+            ),
+            (Root::Value(CoreNode::Value(redex)), "(\\a. a)(Integer)"),
+        ] {
+            assert_eq!(
+                spelled(&source, root),
+                faithful(Written(spelling)),
+                "{root:?} spells as the grammar writes it"
+            );
+        }
+    }
+
     /// Every value leaf spells as the surface writes it — a signed integer,
     /// a numeric literal with and without a fraction, a string's escapes, the
     /// unit and a constant by its name — and a thunk, whose body a reader

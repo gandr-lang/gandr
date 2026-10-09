@@ -15,6 +15,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - [Rejection vocabulary](#rejection-vocabulary)
 - [Structured names](#structured-names)
 - [Universe families and quotes](#universe-families-and-quotes)
+- [Static operators](#static-operators)
 - [Tag numbering and versioning](#tag-numbering-and-versioning)
 - [Sharing and compression](#sharing-and-compression)
 - [Specification attributes](#specification-attributes)
@@ -135,19 +136,26 @@ A decode failure is a format failure and never a typing failure. `DecodeError` i
 
 **Alternatives.** One universe over both sorts was rejected because a value type and a computation type are different kinds of thing in call-by-push-value, and a single universe would need a sort test at every decode. A sort parameter on the universe is the surface's business: no sort parameter reaches this crate, so `GroundSort` has exactly the two ground sorts.
 
+## Static operators
+
+**Choice.** A type operator is classified by `ValueType::StaticPi { domain, codomain }` and eliminated by `Value::StaticApplication(head, argument)`. The static Pi is non-dependent: its codomain stands in the ambient context and the former binds nothing. The kernel has no static lambda. An operator's body is an elaborator-side definition; what reaches an admitted declaration is its static normal form, where every application of a defined operator has been reduced away and a remaining static application is neutral — headed by a variable or an opaque constant. A δβ-step a certificate replays hands the kernel the operator's body with its binders stripped (see the conversion replay in `gandr-kernel-core`), so no node in this arena ever binds a static parameter.
+
+**Alternatives.** A static lambda former would make every static redex a kernel concern: the checker would owe a β-rule at values, conversion would owe it too, and the trusted base would grow by a reduction the elaborator already performs and certifies. A dependent static Pi was not needed: no former indexed by a code is applied to a static argument at this vocabulary.
+
+**Reversal.** A static lambda former arrives when a declaration must carry an operator itself rather than its instances — an operator exported across a module boundary whose instances the importer forms.
+
 ## Tag numbering and versioning
 
 The tag space is one disjoint enumeration over the four families:
 
 | region | tags | holds |
 | ------ | ---- | ----- |
-| frozen block | `0x00–0x1D` | every former this crate mints, contiguous from zero through the two quotes |
-| growth room | `0x1E–0x1F` | the core vocabulary's next formers |
+| frozen block | `0x00–0x1F` | every former this crate mints, contiguous from zero through the two static operators |
 | sharing block | `0x20–0x27` | a stored sharing plane: one former per family, plus four held slots for an explicit weakening form |
 
-The universe families took four tags from the growth room, in family order: `NODE_VT_COMPUTATION_UNIVERSE` (`0x1A`), `NODE_CT_ELEMENT` (`0x1B`), `NODE_V_QUOTE` (`0x1C`) and `NODE_V_QUOTE_COMPUTATION` (`0x1D`). `NODE_VT_UNIVERSE` keeps its byte and now names the value universe alone. The sort is a tag rather than an inline byte on `NODE_VT_UNIVERSE` for the reason the dependent arrow is a tag rather than a flag on the arrow: a payload byte that changes what a node means is a field-shape change, which bumps `FORMAT_VERSION`, where a fresh tag in the growth room holds it.
+The universe families took four tags from the former growth room, in family order: `NODE_VT_COMPUTATION_UNIVERSE` (`0x1A`), `NODE_CT_ELEMENT` (`0x1B`), `NODE_V_QUOTE` (`0x1C`) and `NODE_V_QUOTE_COMPUTATION` (`0x1D`). `NODE_VT_UNIVERSE` keeps its byte and now names the value universe alone. The sort is a tag rather than an inline byte on `NODE_VT_UNIVERSE` for the reason the dependent arrow is a tag rather than a flag on the arrow: a payload byte that changes what a node means is a field-shape change, which bumps `FORMAT_VERSION`, where a fresh tag holds it. The static operators took the last two, `NODE_VT_STATIC_PI` (`0x1E`) and `NODE_V_STATIC_APPLICATION` (`0x1F`); the growth room is spent, and the next core former resumes above `SHARING_BLOCK_LAST`.
 
-The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core grows through the growth room and resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
+The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
 
 Assigning an unassigned tag or kind byte, or filling a reserved slot that is framed from the start, holds `FORMAT_VERSION`: the reader is a closed-vocabulary parser, so an unknown byte is a named refusal rather than a mis-parse. Reassigning a byte or changing a field's shape, order or width bumps it, because an older reader would otherwise parse successfully and wrongly.
 

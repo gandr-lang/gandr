@@ -403,11 +403,15 @@ fn checking_row(
             }
         },
         | CheckRefusal::ShapeMismatch {
-            wanted: ExpectedShape::Thunk | ExpectedShape::Arrow,
+            wanted:
+                ExpectedShape::Thunk
+                | ExpectedShape::Arrow
+                | ExpectedShape::Product
+                | ExpectedShape::StaticPi,
             ..
         }
         | CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Return(_) | CheckingForm::Hole(_),
+            form: CheckingForm::Return(_) | CheckingForm::Hole(_) | CheckingForm::StaticLambda(_),
         }
         | CheckRefusal::TypeMismatch(_)
         | CheckRefusal::UnknownConstant { .. }
@@ -420,7 +424,11 @@ fn checking_row(
         | CheckRefusal::SortMismatch { .. }
         | CheckRefusal::LevelMismatch { .. }
         | CheckRefusal::DependentBind { .. }
-        | CheckRefusal::Undecided { .. } => {},
+        | CheckRefusal::Undecided { .. }
+        | CheckRefusal::FamilyArity { .. }
+        | CheckRefusal::FamilyArgumentClassifier { .. }
+        | CheckRefusal::StaticLambdaArgument { .. }
+        | CheckRefusal::StaticClassifierExpected { .. } => {},
     }
 }
 
@@ -509,15 +517,18 @@ fn formers(
                 },
                 | Some(&Value::Injection(_, injected)) => worklist.push(Node::Value(injected)),
                 | Some(&Value::Lift { body: lifted, .. }) => worklist.push(Node::Value(lifted)),
-                // A quote carries a type, whose codes are values that hold no
-                // computation former, so it marks no row.
+                // A quote carries a type, and a static operator and its
+                // application build one, whose codes are values that hold no
+                // computation former, so they mark no row.
                 | Some(
                     &(Value::Variable { .. }
                     | Value::Constant(_)
                     | Value::Unit
                     | Value::Literal(_)
                     | Value::Quote(_)
-                    | Value::QuoteComputation(_)),
+                    | Value::QuoteComputation(_)
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..)),
                 )
                 | None => {},
             },
@@ -662,7 +673,7 @@ def konst = thunk { fn (x) { fn (y) { ret x } } } ;"#,
                 vec![(Row::NonSynthesisableDefinition, 1_usize)],
             ),
             (
-                r#"@[ refuses("OutOfFragment") ] def a : Integer * Integer ;"#,
+                r#"@[ refuses("OutOfFragment") ] def a : -F Integer & -F Integer ;"#,
                 vec![(Row::ReservedForm, 1_usize)],
             ),
             (r#"@[ owes(1) ] def a : Integer ;"#, vec![(

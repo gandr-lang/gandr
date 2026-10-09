@@ -413,11 +413,12 @@ enum TypeLevelFrame
 /// - requires: nothing — an unreadable root refuses rather than panicking.
 /// - ensures: `Ok(level)` — the type's universe level — exactly when every
 ///   embedded level is in scope, every lift strictly raises, every sealed atom
-///   resolves to an admitted abstract-type declaration, and no successor
-///   overflows; a bare universe of either sort at `l` forms at `l + 1`, and a
-///   decode of either family forms at the level it carries and owes its code.
-///   The walk is iterative over an explicit heap frame stack, so it is total on
-///   any type depth.
+///   resolves to an admitted abstract-type declaration, every static Pi stands
+///   over static classifiers, and no successor overflows; a bare universe of
+///   either sort at `l` forms at `l + 1`, a static Pi at the join of its
+///   children, and a decode of either family forms at the level it carries and
+///   owes its code. The walk is iterative over an explicit heap frame stack, so
+///   it is total on any type depth.
 /// - provides: type formation for the declared type and for the machine's lift
 ///   synthesis, with the memo consulted on **this** plane so the type half's
 ///   collapse is real rather than assumed. Formation remains prose-only: the
@@ -426,7 +427,8 @@ enum TypeLevelFrame
 /// - fails: [`KernelError::LevelVariableOutOfScope`],
 ///   [`KernelError::LevelArithmetic`], [`KernelError::UniverseViolation`],
 ///   [`KernelError::LevelOracleFault`], [`KernelError::NotAnAbstractType`],
-///   [`KernelError::AbstractTypeKindNotUniverse`], [`KernelError::ArenaFault`].
+///   [`KernelError::AbstractTypeKindNotUniverse`],
+///   [`KernelError::StaticClassifierExpected`], [`KernelError::ArenaFault`].
 /// - panics: none.
 ///
 /// # Errors
@@ -445,6 +447,7 @@ enum TypeLevelFrame
 /// - witness: `check::tests::a_dependent_identity_checks_through_its_codes`
 /// - witness: `check::tests::a_computation_decode_owes_its_code_to_the_computation_universe`
 /// - witness: `check::tests::an_abstract_type_forms_at_its_declared_universe`
+/// - witness: `check::tests::a_static_pi_forms_over_static_classifiers_only`
 fn type_level<M>(
     arena: &TermArena,
     judgement: Judgement<'_>,
@@ -532,6 +535,18 @@ where
                         | ValueType::Product(first, second) | ValueType::Sum(first, second) => {
                             frames.push(TypeLevelFrame::MaxSecondValue(second));
                             goal = TypeLevelGoal::Value(first);
+                            continue 'expand;
+                        },
+                        // A static Pi classifies type operators, so both its
+                        // children must classify codes: a universe, or a static
+                        // Pi over universes, which the walk forms in turn. Its
+                        // inhabitants are codes, so it forms at the join of its
+                        // children's levels, among the value types.
+                        | ValueType::StaticPi { domain, codomain } => {
+                            static_classifier(arena, domain)?;
+                            static_classifier(arena, codomain)?;
+                            frames.push(TypeLevelFrame::MaxSecondValue(codomain));
+                            goal = TypeLevelGoal::Value(domain);
                             continue 'expand;
                         },
                         | ValueType::Thunk(body) => {
@@ -704,8 +719,54 @@ fn abstract_atom_level(
         | ValueType::Thunk(_)
         | ValueType::Lift { .. }
         | ValueType::Element { .. }
-        | ValueType::Abstract(_) => Err(KernelError::AbstractTypeKindNotUniverse {
+        | ValueType::Abstract(_)
+        | ValueType::StaticPi { .. } => Err(KernelError::AbstractTypeKindNotUniverse {
             actual: value_type_witness(arena, kind),
+        }),
+    }
+}
+
+/// Require `classifier` to classify codes: a universe of either sort, or a
+/// static Pi.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: success exactly when `classifier` resolves to a universe or to a
+///   static Pi.
+/// - provides: the head check static Pi formation runs on each child. A static
+///   Pi child is formed by the walk in turn, so the check reaches every leaf of
+///   a nested classifier.
+/// - fails: [`KernelError::StaticClassifierExpected`] for any other type, and
+///   [`KernelError::ArenaFault`] when `classifier` does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// As `- fails:`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a universe of either sort and a static Pi pass; a base
+///   type at either child refuses by name.
+/// - witness: `check::tests::a_static_pi_forms_over_static_classifiers_only`
+#[spec(ensures: |ret| ret.is_ok() == matches!(arena.value_type(classifier), Some(&ValueType::Universe { .. } | &ValueType::StaticPi { .. })))]
+fn static_classifier(
+    arena: &TermArena,
+    classifier: ValueTypeId,
+) -> Result<(), KernelError>
+{
+    match *arena
+        .value_type(classifier)
+        .ok_or(KernelError::ArenaFault)?
+    {
+        | ValueType::Universe { .. } | ValueType::StaticPi { .. } => Ok(()),
+        | ValueType::Base(_)
+        | ValueType::Unit
+        | ValueType::Product(..)
+        | ValueType::Sum(..)
+        | ValueType::Thunk(_)
+        | ValueType::Lift { .. }
+        | ValueType::Element { .. }
+        | ValueType::Abstract(_) => Err(KernelError::StaticClassifierExpected {
+            actual: value_type_witness(arena, classifier),
         }),
     }
 }
@@ -902,6 +963,11 @@ enum Frame
     SynthApply(ValueId),
     /// An application: the argument checked; produce the held codomain.
     ProduceComp(CompTypeId),
+    /// A static application: the head is synthesized; the argument source is
+    /// held.
+    SynthStaticApply(ValueId),
+    /// A static application: the argument checked; produce the held codomain.
+    ProduceValue(ValueTypeId),
     /// A force: the value is synthesized.
     SynthForce,
     /// A returner synthesis: the value is synthesized.
@@ -1258,6 +1324,7 @@ fn resolve_constant(
 /// - witness: `check::tests::an_injection_checks_against_its_sum`
 /// - witness: `check::tests::a_pair_propagates_into_a_checking_component`
 /// - witness: `check::tests::an_application_produces_the_codomain`
+/// - witness: `check::tests::a_static_application_produces_the_codomain_of_its_head`
 /// - witness: `check::tests::a_dependent_arrow_forms_checks_and_eliminates_like_an_arrow`
 /// - witness: `check::tests::an_application_instantiates_a_dependent_codomain`
 /// - witness: `check::tests::a_force_unwraps_a_thunk`
@@ -1388,6 +1455,16 @@ where
                             arena.value_type_universe(GroundSort::Computation, level),
                         )
                     },
+                    // A static application synthesizes from its head, as a
+                    // computation application does: the head's static Pi
+                    // supplies the domain the argument checks against and the
+                    // codomain it produces. No static lambda exists to stand at
+                    // the head, so nothing here reduces.
+                    | Value::StaticApplication(head, argument) => {
+                        frames.push(Frame::SynthStaticApply(argument));
+                        goal = Goal::SynthValue(head);
+                        continue 'expand;
+                    },
                 },
                 | Goal::CheckValue(id, expected) => match read_value(arena, id)? {
                     | Value::Injection(side, body) => match arena.value_type(expected) {
@@ -1440,7 +1517,8 @@ where
                     | Value::Literal(_)
                     | Value::Lift { .. }
                     | Value::Quote(_)
-                    | Value::QuoteComputation(_) => {
+                    | Value::QuoteComputation(_)
+                    | Value::StaticApplication(..) => {
                         frames.push(Frame::ConvertValue(expected));
                         goal = Goal::SynthValue(id);
                         continue 'expand;
@@ -1639,6 +1717,28 @@ where
                 },
                 | Frame::ProduceComp(codomain) => {
                     produced = Produced::CompType(codomain);
+                },
+                | Frame::SynthStaticApply(argument) => {
+                    let head_type = produced.value_type()?;
+                    match arena.value_type(head_type) {
+                        // The static Pi binds nothing, so its codomain is the
+                        // application's type as it stands.
+                        | Some(&ValueType::StaticPi { domain, codomain }) => {
+                            frames.push(Frame::ProduceValue(codomain));
+                            goal = Goal::CheckValue(argument, domain);
+                            continue 'expand;
+                        },
+                        | _ => {
+                            return Err(value_shape_mismatch(
+                                arena,
+                                ExpectedValueShape::StaticPi,
+                                head_type,
+                            ));
+                        },
+                    }
+                },
+                | Frame::ProduceValue(codomain) => {
+                    produced = Produced::ValueType(codomain);
                 },
                 | Frame::SynthForce => {
                     let value_type = produced.value_type()?;
@@ -2031,7 +2131,8 @@ where
                 | ValueType::Thunk(_)
                 | ValueType::Lift { .. }
                 | ValueType::Element { .. }
-                | ValueType::Abstract(_) => Err(KernelError::AbstractTypeKindNotUniverse {
+                | ValueType::Abstract(_)
+                | ValueType::StaticPi { .. } => Err(KernelError::AbstractTypeKindNotUniverse {
                     actual: value_type_witness(arena, kind),
                 }),
             }
@@ -2175,6 +2276,7 @@ mod tests
     use crate::error::KernelError;
     use crate::error::NonInferableForm;
     use crate::error::RegisterFault;
+    use crate::error::ValueTypeHead;
     use crate::levels::LevelContext;
     use crate::support::SupportContext;
 
@@ -2666,6 +2768,81 @@ mod tests
             Ok(level(LevelConstant::from(5))),
             value_level(&arena, thunk),
             "the arrow takes the maximum of its domain's and codomain's levels"
+        );
+    }
+
+    #[test]
+    fn a_static_pi_forms_over_static_classifiers_only()
+    {
+        let mut arena = TermArena::new();
+        let low = arena.value_type_universe(GroundSort::Value, level(LevelConstant::from(1)));
+        let high =
+            arena.value_type_universe(GroundSort::Computation, level(LevelConstant::from(3)));
+        let operator = arena.value_type_static_pi(low, high);
+        assert_eq!(
+            Ok(level(LevelConstant::from(4))),
+            value_level(&arena, operator),
+            "a static Pi forms at the join of its children's levels"
+        );
+        let curried = arena.value_type_static_pi(low, operator);
+        assert_eq!(
+            Ok(level(LevelConstant::from(4))),
+            value_level(&arena, curried),
+            "and a static Pi is itself a static classifier"
+        );
+        let integer = arena.value_type_base(BaseType::Integer);
+        for ill in [
+            arena.value_type_static_pi(integer, low),
+            arena.value_type_static_pi(low, integer),
+        ] {
+            assert!(
+                matches!(
+                    value_level(&arena, ill),
+                    Err(KernelError::StaticClassifierExpected { actual })
+                        if actual.head() == ValueTypeHead::Base
+                ),
+                "a type that classifies no codes stands at neither child"
+            );
+        }
+    }
+
+    #[test]
+    fn a_static_application_produces_the_codomain_of_its_head()
+    {
+        let mut arena = TermArena::new();
+        let small = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let computations = arena.value_type_universe(GroundSort::Computation, Level::zero());
+        let operator = arena.value_type_static_pi(small, computations);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let code = arena.value_quote(integer);
+        let head = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let instance = arena.value_static_application(head, code);
+        let produced = synth_value(&mut arena, vec![operator], instance)
+            .expect("an operator applied to a code of its domain synthesizes");
+        assert_eq!(
+            computations,
+            produced.value_type().expect("a value type"),
+            "a static application produces its head's codomain"
+        );
+
+        let unit = arena.value_unit();
+        let ill_argument = arena.value_static_application(head, unit);
+        assert!(
+            matches!(
+                synth_value(&mut arena, vec![operator], ill_argument),
+                Err(KernelError::ValueTypeMismatch(_))
+            ),
+            "the argument is checked against the domain"
+        );
+        assert!(
+            matches!(
+                synth_value(&mut arena, vec![small], instance),
+                Err(KernelError::ValueShapeMismatch {
+                    expected: ExpectedValueShape::StaticPi,
+                    ..
+                })
+            ),
+            "and only a static Pi's inhabitant is applied"
         );
     }
 

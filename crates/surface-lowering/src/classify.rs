@@ -153,7 +153,7 @@ mod tests
             },
             LoweringRefusal::OutOfFragment {
                 span: empty,
-                form: FormName::from(NamedKind("product_type")),
+                form: FormName::from(NamedKind("lazy_product_type")),
                 sort: FragmentSort::ValueType,
                 boundary: FragmentBoundary::Reserved,
             },
@@ -287,7 +287,7 @@ mod tests
         // span, a form or a boundary would separate these two.
         let reserved = LoweringRefusal::OutOfFragment {
             span: span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
-            form: FormName::from(NamedKind("product_type")),
+            form: FormName::from(NamedKind("lazy_product_type")),
             sort: FragmentSort::ValueType,
             boundary: FragmentBoundary::Reserved,
         };
