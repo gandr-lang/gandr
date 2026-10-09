@@ -3,6 +3,7 @@
 //! differ and once per distinct column, and a family of instances of one
 //! pattern generalizes to an instance of that pattern.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CmdPat;
 use gandr_theory_cell_complexes::ConsPat;
 use gandr_theory_cell_complexes::Generalization;
@@ -49,8 +50,25 @@ fn column(point: &GeneralizationPoint<SequentAlphabet>) -> Vec<Image<'_>>
 /// The generalization of `family`, or the property fails.
 ///
 /// # Specification
+/// - requires: a nonempty family of equally wide tuples whose corresponding
+///   commands have the same polarity.
+/// - ensures: one generalized pattern per component and one arm per member at
+///   each disagreement point.
 /// - panics: when the family is refused; generated members share one polarity
 ///   and one length, so a refusal is a defect.
+///
+/// # Adequacy
+/// - hypothesis: L3 — generated nonempty uniform families reconstruct every
+///   member from the returned arms and compare shared patterns against the
+///   generalization. Wrong component widths, arms or disagreement sharing
+///   change these observations.
+/// - witness: `tests::generalize::every_member_is_its_generalization_under_its_arms`
+#[spec(
+    requires: family.first().is_some_and(|first| family.iter().all(|member| member.len() == first.len()
+        && member.iter().zip(first).all(|(left, right)| left.polarity() == right.polarity()))),
+    ensures: |output| family.first().is_some_and(|first| output.patterns.len() == first.len())
+        && output.points.iter().all(|point| point.arms.len() == family.len()),
+)]
 fn generalized(family: &[Vec<CmdPat>]) -> Generalization<SequentAlphabet>
 {
     let members: Vec<&[CmdPat]> = family.iter().map(Vec::as_slice).collect();

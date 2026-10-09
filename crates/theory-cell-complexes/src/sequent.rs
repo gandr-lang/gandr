@@ -21,6 +21,7 @@ use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::alphabet::CellAlphabet;
@@ -85,6 +86,8 @@ impl EtaKind
     /// - ensures: [`Polarity::Positive`] for [`EtaKind::Data`],
     ///   [`Polarity::Negative`] for [`EtaKind::Codata`].
     /// - panics: none.
+    /// - executable: none — the instrumentation calls a non-const wrapper;
+    ///   enforcing this predicate would remove the public const interface.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — both kinds are enumerated against both polarities.
@@ -156,6 +159,13 @@ impl CellVariance
     ///   [`CellVariance::Consumer`] for [`Cat::Consumer`]; never
     ///   [`CellVariance::Mixed`], which is the join of two occurrences.
     /// - panics: none.
+    /// - executable: none — the instrumentation calls a non-const wrapper;
+    ///   enforcing this predicate would remove the public const interface.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both source categories have distinct non-mixed
+    ///   variances; swapping or conflating the cases changes the result.
+    /// - witness: `sequent::tests::metadata_order_and_growth_include_empty_and_rhs_only_holes`
     #[inline]
     #[must_use]
     pub const fn from_cat(cat: Cat) -> Self
@@ -316,8 +326,18 @@ impl CellMeta
     /// - witness: `sequent::tests::a_repeated_metavariable_is_nonlinear`
     /// - witness: `sequent::tests::a_hole_at_both_polarities_is_a_linear_seam`
     /// - witness: `sequent::tests::the_contractum_use_reports_erased_once_and_repeated`
+    /// - witness: `sequent::tests::metadata_order_and_growth_include_empty_and_rhs_only_holes`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output.invertible == invertible
+        && lhs.metavars().chain(rhs.metavars()).all(|var| output.vars.iter().filter(|meta| meta.var.hole() == var.hole()).count() == 1)
+        && output.vars.iter().all(|meta| lhs.metavars().chain(rhs.metavars()).any(|var| var == &meta.var)
+            && bool::from(meta.linear) == (lhs.metavars().filter(|var| *var == &meta.var).count() == 1)
+            && match rhs.metavars().filter(|var| *var == &meta.var).count() {
+                0 => meta.contractum == CellContractumUse::Erased,
+                1 => meta.contractum == CellContractumUse::Once,
+                _ => meta.contractum == CellContractumUse::Repeated,
+            }))]
     pub fn derive(
         lhs: &CmdPat,
         rhs: &CmdPat,
@@ -402,8 +422,15 @@ impl CellMeta
     ///   cell, a cell dropping one of two holes, and a cell dropping one hole
     ///   while duplicating another.
     /// - witness: `sequent::tests::the_step_growth_join_names_duplication_erasure_and_strict_linearity`
+    /// - witness: `sequent::tests::metadata_order_and_growth_include_empty_and_rhs_only_holes`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| match output {
+        StepGrowth::Duplicating => self.vars.iter().any(|var| var.contractum == CellContractumUse::Repeated),
+        StepGrowth::Erasing => !self.vars.iter().any(|var| var.contractum == CellContractumUse::Repeated)
+            && self.vars.iter().any(|var| var.contractum == CellContractumUse::Erased),
+        StepGrowth::StrictlyLinear => self.vars.iter().all(|var| var.contractum == CellContractumUse::Once),
+    })]
     pub fn step_growth(&self) -> StepGrowth
     {
         let mut growth = StepGrowth::StrictlyLinear;
@@ -450,6 +477,8 @@ impl Cell<SequentAlphabet>
     /// - provides: [`eta_requirement::Absent::NotEta`] for every other
     ///   provenance.
     /// - panics: none.
+    /// - executable: none — the instrumentation calls a non-const wrapper;
+    ///   enforcing this predicate would remove the public const interface.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — both η kinds and a non-η provenance are enumerated.
@@ -483,8 +512,13 @@ impl Cell<SequentAlphabet>
 ///   structure, and the order's documented limit is pinned on its two faces.
 /// - witness: `sequent::tests::the_store_dedups_on_structural_identity`
 /// - witness: `order::tests::the_frame_defining_shape_is_not_oriented_forwards_and_that_is_stated`
+/// - witness: `sequent::tests::frame_cells_and_alphabet_reduction_preserve_structure`
 #[inline]
 #[must_use]
+#[spec(ensures: |output| output.provenance() == CellProvenance::FrameDefining
+    && output.orient() == Orientation::PolarityDerived && output.lhs().polarity() == Polarity::Positive
+    && output.rhs().polarity() == Polarity::Positive && output.meta().vars().len() == 2
+    && output.meta().vars().iter().all(|var| bool::from(var.linear()) && var.contractum() == CellContractumUse::Once))]
 pub fn frame_defining_cell(ctor: &Sym) -> Cell<SequentAlphabet>
 {
     let lhs = CmdPat::cut(
@@ -511,6 +545,14 @@ pub fn frame_defining_cell(ctor: &Sym) -> Cell<SequentAlphabet>
 /// - ensures: the symbol `$k$<name>`, whose `$k$` prefix no datatype symbol
 ///   carries.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — producer and consumer holes with the same name get
+///   category-shaped ground constants with the identical reserved symbol. Empty
+///   and primed names retain their complete payload; a changed prefix or lost
+///   suffix changes the pattern.
+/// - witness: `sequent::tests::skolemization_and_apartness_preserve_name_boundaries`
+#[spec(ensures: |output| { let spelled: &str = output.as_ref(); let name: &str = var.hole().as_ref(); spelled.strip_prefix("$k$") == Some(name) })]
 fn skolem_sym(var: &MetaVar) -> Sym
 {
     let name: &str = var.hole().as_ref();
@@ -526,6 +568,13 @@ fn skolem_sym(var: &MetaVar) -> Sym
 /// - ensures: a strictly longer name, so priming terminates against any finite
 ///   set of taken names.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — occupied names with successive primes force repeated
+///   freshening, while disjoint names remain unchanged. Missing or repeated
+///   suffixes change the exact fresh names and can collide.
+/// - witness: `sequent::tests::skolemization_and_apartness_preserve_name_boundaries`
+#[spec(ensures: |output| { let spelled: &str = output.as_ref(); let original: &str = name.as_ref(); spelled.strip_suffix("'") == Some(original) })]
 fn primed(name: &HoleName) -> HoleName
 {
     let name: &str = name.as_ref();
@@ -544,6 +593,16 @@ fn primed(name: &HoleName) -> HoleName
 ///   fresh name, so a hole worn at two polarities stays one hole. A name
 ///   already absent from `taken` maps to itself.
 /// - panics: none.
+/// - executable: none — the one-shot iterator is consumed by the body;
+///   retaining its inputs for an exit predicate requires a body or bound
+///   change.
+///
+/// # Adequacy
+/// - hypothesis: L3 — duplicate occurrences, a cross-category seam, a prime
+///   chain and disjoint names reconstruct exact renamed faces. Conflating fresh
+///   names, renaming only one category or ignoring earlier reservations changes
+///   the terms.
+/// - witness: `sequent::tests::skolemization_and_apartness_preserve_name_boundaries`
 fn apartness_renaming<'var, I>(
     renamed: I,
     mut taken: BTreeSet<HoleName>,
@@ -596,7 +655,14 @@ impl CellAlphabet for SequentAlphabet
     /// - ensures: as [`crate::subst::match_cmd`], which leaves `subst`
     ///   unchanged on a negative decision.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — successful matching reconstructs the target and
+    ///   clashes preserve prior bindings. Reversed matching and eager partial
+    ///   commits change these observations.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     #[inline]
+    #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) { subst.apply_cmd(pattern) == *target } else { *subst == before })]
     fn match_cmd(
         pattern: &Self::Cmd,
         target: &Self::Cmd,
@@ -612,7 +678,14 @@ impl CellAlphabet for SequentAlphabet
     /// - ensures: as [`crate::subst::unify_cmd`], which leaves `subst`
     ///   unchanged on a negative decision.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two different patterns unify to the same instantiated
+    ///   command, while incompatible heads preserve existing bindings. Missing
+    ///   bindings and partial failure commits change the observations.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     #[inline]
+    #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) { subst.apply_cmd(lhs) == subst.apply_cmd(rhs) } else { *subst == before })]
     fn unify_cmd(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -629,7 +702,21 @@ impl CellAlphabet for SequentAlphabet
     /// - ensures: as [`crate::generalize::anti_unify_cmd`].
     /// - provides: as [`crate::generalize::anti_unify_cmd`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, singleton and distinct-member families expose
+    ///   typed refusal, identity and exact arm reconstruction. Dropped tuple
+    ///   components, point reuse and wrong arms change the observations.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     #[inline]
+    #[spec(ensures: |output| match output {
+        Maybe::Absent(anti_unification::Absent::EmptyFamily) => family.is_empty(),
+        Maybe::Absent(anti_unification::Absent::RaggedFamily) => family.first().is_some_and(|first| family.iter().any(|member| member.len() != first.len())),
+        Maybe::Absent(anti_unification::Absent::Ungeneralizable) => family.first().is_some_and(|first| family.iter().any(|member|
+            member.iter().zip(first.iter()).any(|(left, right)| left.polarity() != right.polarity()))),
+        Maybe::Present(ref generalized) => family.first().is_some_and(|first| generalized.patterns.len() == first.len())
+            && generalized.points.iter().all(|point| point.arms.len() == family.len()),
+    })]
     fn anti_unify_cmd(
         family: &[&[Self::Cmd]]
     ) -> Maybe<Generalization<Self>, anti_unification::Absent>
@@ -642,7 +729,14 @@ impl CellAlphabet for SequentAlphabet
     /// # Specification
     /// - ensures: as [`Subst::apply_cmd`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and nonempty maps act on both variable
+    ///   categories through matching and arm reconstruction. Lost categories,
+    ///   altered polarity and unapplied bindings change the resulting commands.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     #[inline]
+    #[spec(ensures: |output| output.polarity() == cmd.polarity() && (!bool::from(subst.is_empty()) || output == *cmd))]
     fn apply_subst(
         subst: &Self::Subst,
         cmd: &Self::Cmd,
@@ -656,7 +750,15 @@ impl CellAlphabet for SequentAlphabet
     /// # Specification
     /// - ensures: as [`Subst::restricted`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, absent, partial and complete key sets expose
+    ///   exact retained images in both categories. Retaining an unlisted
+    ///   binding or dropping a listed one changes the result.
+    /// - witness: `alphabet::tests::substitution_and_generalization_obey_the_alphabet_laws`
     #[inline]
+    #[spec(ensures: |output| usize::from(output.len()) <= vars.len() && output.len() <= subst.len()
+        && vars.iter().all(|var| output.get_prod(var) == subst.get_prod(var) && output.get_cons(var) == subst.get_cons(var)))]
     fn restrict_subst(
         subst: &Self::Subst,
         vars: &[Self::Var],
@@ -670,7 +772,15 @@ impl CellAlphabet for SequentAlphabet
     /// # Specification
     /// - ensures: as [`CmdPat::metavars`], owned.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — repeated producers, an operation argument and a
+    ///   continuation occur in an exact left-to-right sequence; a ground
+    ///   command has none. Deduplication, category loss and reordering change
+    ///   the sequence.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     #[inline]
+    #[spec(ensures: |output| output.iter().eq(cmd.metavars()))]
     fn metavariables(cmd: &Self::Cmd) -> Vec<Self::Var>
     {
         cmd.metavars().cloned().collect()
@@ -681,7 +791,14 @@ impl CellAlphabet for SequentAlphabet
     /// # Specification
     /// - ensures: as [`CmdPat::size`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — leaf and nested commands have hand-counted sizes.
+    ///   Omitting the cut, either half or an operation argument changes the
+    ///   count.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     #[inline]
+    #[spec(ensures: |output| usize::from(output) == 1_usize.saturating_add(usize::from(cmd.producer().size())).saturating_add(usize::from(cmd.consumer().size())))]
     fn cmd_size(cmd: &Self::Cmd) -> PatternSize
     {
         cmd.size()
@@ -693,7 +810,14 @@ impl CellAlphabet for SequentAlphabet
     /// - ensures: exactly the root position; the grammar admits a cut only at
     ///   the root, so no other position addresses a command.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — leaf and nested terms expose the root as the only
+    ///   command position. Missing the root or admitting a producer or
+    ///   continuation position changes the position set.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     #[inline]
+    #[spec(ensures: |output| output.len() == 1 && output.first().is_some_and(|pos| bool::from(pos.is_root())))]
     fn command_positions(_cmd: &Self::Cmd) -> Vec<Self::Pos>
     {
         alloc::vec![Pos::root()]
@@ -744,7 +868,14 @@ impl CellAlphabet for SequentAlphabet
     ///   disconnected left-hand sides breaks the argument and answers
     ///   [`ConvexityDischarge::ReCheckRequired`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and populated stores retain the structural
+    ///   grammar discharge. A store-dependent or weakened verdict changes the
+    ///   observation.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     #[inline]
+    #[spec(ensures: |output| output == ConvexityDischarge::StronglyConnectedOverAcyclicTarget)]
     fn convexity_discharge(_store: &CellStore<Self>) -> ConvexityDischarge
     {
         ConvexityDischarge::StronglyConnectedOverAcyclicTarget
@@ -758,7 +889,18 @@ impl CellAlphabet for SequentAlphabet
     ///   pattern; [`command_subterm::Absent::NotACommand`] when it addresses a
     ///   producer or consumer subterm.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — root, producer, continuation and out-of-pattern paths
+    ///   separate exact success from both named absences. Collapsing the
+    ///   refusals or returning a non-root command changes the result.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     #[inline]
+    #[spec(ensures: |output| match output {
+        Maybe::Present(ref found) => bool::from(pos.is_root()) && found == cmd,
+        Maybe::Absent(command_subterm::Absent::NotACommand) => matches!(subterm_at(NodeRef::Cmd(cmd), pos), Maybe::Present(NodeRef::Prod(_) | NodeRef::Cons(_))),
+        Maybe::Absent(command_subterm::Absent::OffTerm) => matches!(subterm_at(NodeRef::Cmd(cmd), pos), Maybe::Absent(position_read::Absent::OffPattern)),
+    })]
     fn subterm_cmd_at(
         cmd: &Self::Cmd,
         pos: &Self::Pos,
@@ -786,7 +928,19 @@ impl CellAlphabet for SequentAlphabet
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — root replacement yields the replacement exactly;
+    ///   producer, continuation and out-of-pattern paths distinguish both
+    ///   refusal classes. Wrong replacement and collapsed refusals change the
+    ///   result.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     #[inline]
+    #[spec(captures: expected = replacement.clone(), ensures: |output| match output {
+        Ok(ref found) => bool::from(pos.is_root()) && found == &expected,
+        Err(CommandSpliceRefusal::NotACommand) => matches!(subterm_at(NodeRef::Cmd(cmd), pos), Maybe::Present(NodeRef::Prod(_) | NodeRef::Cons(_))),
+        Err(CommandSpliceRefusal::OffTerm) => matches!(subterm_at(NodeRef::Cmd(cmd), pos), Maybe::Absent(position_read::Absent::OffPattern)),
+    })]
     fn splice_cmd_at(
         cmd: &Self::Cmd,
         pos: &Self::Pos,
@@ -804,7 +958,19 @@ impl CellAlphabet for SequentAlphabet
     /// # Specification
     /// - ensures: as [`crate::order::reduction_cmp`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — size separation and equal-size path separation are
+    ///   observed in both directions, with missing-hole and reflexive
+    ///   obstructions. Reversed comparison or a skipped domination guard
+    ///   changes orientation.
+    /// - witness: `sequent::tests::frame_cells_and_alphabet_reduction_preserve_structure`
     #[inline]
+    #[spec(ensures: |output| (lhs != rhs || output == core::cmp::Ordering::Equal) && match output {
+        core::cmp::Ordering::Greater => lhs.size() >= rhs.size(),
+        core::cmp::Ordering::Less => lhs.size() <= rhs.size(),
+        core::cmp::Ordering::Equal => true,
+    })]
     fn reduction_cmp(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -830,7 +996,11 @@ impl CellAlphabet for SequentAlphabet
     ///   name stays one hole at two polarities, and a disjoint cell is returned
     ///   unchanged.
     /// - witness: `sequent::tests::renaming_apart_keeps_a_seam_one_hole`
+    /// - witness: `sequent::tests::skolemization_and_apartness_preserve_name_boundaries`
     #[inline]
+    #[spec(ensures: |output| output.0.polarity() == renamed.0.polarity() && output.1.polarity() == renamed.1.polarity()
+        && output.0.size() == renamed.0.size() && output.1.size() == renamed.1.size()
+        && output.0.metavars().chain(output.1.metavars()).all(|var| anchor.0.metavars().chain(anchor.1.metavars()).all(|held| var.hole() != held.hole())))]
     fn rename_apart(
         anchor: (&Self::Cmd, &Self::Cmd),
         renamed: (&Self::Cmd, &Self::Cmd),
@@ -860,7 +1030,10 @@ impl CellAlphabet for SequentAlphabet
     /// - hypothesis: L3 — one peak skolemizes to the same ground pattern twice,
     ///   and that pattern is ground.
     /// - witness: `sequent::tests::skolemization_is_name_stable`
+    /// - witness: `sequent::tests::skolemization_and_apartness_preserve_name_boundaries`
     #[inline]
+    #[spec(ensures: |output| output.polarity() == cmd.polarity() && bool::from(output.is_ground())
+        && (!bool::from(cmd.is_ground()) || output == *cmd))]
     fn skolemize(cmd: &Self::Cmd) -> Self::Cmd
     {
         let mut prods: BTreeMap<MetaVar, ProdPat> = BTreeMap::new();
@@ -903,6 +1076,7 @@ impl CellAlphabet for SequentAlphabet
     ///   invertible.
     /// - witness: `sequent::tests::completion_cells_are_invertible_certificates`
     #[inline]
+    #[spec(ensures: |output| bool::from(output) == (*provenance == CellProvenance::DerivedByCompletion))]
     fn completion_certificate(provenance: &Self::Provenance) -> CellInvertibility
     {
         CellInvertibility::from(matches!(*provenance, CellProvenance::DerivedByCompletion))
@@ -913,7 +1087,16 @@ impl CellAlphabet for SequentAlphabet
     /// # Specification
     /// - ensures: as [`CellMeta::derive`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, producer-only, consumer-only and mixed holes
+    ///   expose exact entries and flow roles for both invertibility values.
+    ///   Lost categories, duplicate holes and ignored invertibility change the
+    ///   observations.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     #[inline]
+    #[spec(ensures: |output| output.invertible() == invertible
+        && lhs.metavars().chain(rhs.metavars()).all(|var| output.vars().iter().filter(|meta| meta.var().hole() == var.hole()).count() == 1))]
     fn derive_meta(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -930,7 +1113,17 @@ impl CellAlphabet for SequentAlphabet
     ///   [`SeamRole::Forward`] for a producer hole, [`SeamRole::Backward`] for
     ///   a consumer hole, [`SeamRole::Both`] for a mixed one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — producer, consumer and mixed holes yield distinct
+    ///   roles, while an absent hole yields no endpoints. Wrong filtering,
+    ///   representative identity or variance translation changes the
+    ///   observation.
+    /// - witness: `alphabet::tests::position_and_metadata_observations_obey_the_alphabet_laws`
     #[inline]
+    #[spec(ensures: |output| output.len() == meta.vars().iter().filter(|var| var.var().hole() == hole).count()
+        && output.iter().zip(meta.vars().iter().filter(|var| var.var().hole() == hole)).all(|(endpoint, var)| endpoint.0 == *var.var()
+            && endpoint.1 == match var.variance() { CellVariance::Producer => SeamRole::Forward, CellVariance::Consumer => SeamRole::Backward, CellVariance::Mixed => SeamRole::Both }))]
     fn hole_flow(
         meta: &Self::Meta,
         hole: &Self::Hole,
@@ -962,6 +1155,10 @@ impl CellAlphabet for SequentAlphabet
     ///   polarities, beside a non-η provenance.
     /// - witness: `sequent::tests::each_eta_kind_requires_its_own_polarity`
     #[inline]
+    #[spec(ensures: |output| bool::from(output) == match *provenance {
+        CellProvenance::Eta(kind) => target.polarity() == kind.required_polarity(),
+        CellProvenance::SurfaceRule | CellProvenance::MuMuTilde | CellProvenance::FrameDefining | CellProvenance::DerivedByCompletion => true,
+    })]
     fn may_fire(
         provenance: &Self::Provenance,
         target: &Self::Cmd,
@@ -1004,10 +1201,232 @@ mod tests
     use crate::boundary::CellCount;
     use crate::cell::cell_lookup;
 
+    #[test]
+    fn metadata_order_and_growth_include_empty_and_rhs_only_holes()
+    {
+        assert_eq!(
+            CellVariance::Producer,
+            CellVariance::from_cat(Cat::Producer)
+        );
+        assert_eq!(
+            CellVariance::Consumer,
+            CellVariance::from_cat(Cat::Consumer)
+        );
+        let ground = CmdPat::cut(
+            Polarity::Negative,
+            ProdPat::ctor("Zero", []),
+            ConsPat::top(),
+        );
+        let empty = CellMeta::derive(&ground, &ground, CellInvertibility::from(false));
+        assert!(empty.vars().is_empty());
+        assert_eq!(StepGrowth::StrictlyLinear, empty.step_growth());
+        let lhs = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("p"),
+            ConsPat::op(
+                "inspect",
+                [ProdPat::meta("p"), ProdPat::meta("q")],
+                ConsPat::meta("seam"),
+            ),
+        );
+        let rhs = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Tuple", [
+                ProdPat::meta("rhs_only"),
+                ProdPat::meta("seam"),
+                ProdPat::meta("q"),
+                ProdPat::meta("p"),
+                ProdPat::meta("p"),
+            ]),
+            ConsPat::top(),
+        );
+        for invertible in [false, true] {
+            let metadata = CellMeta::derive(&lhs, &rhs, CellInvertibility::from(invertible));
+            let observed: Vec<_> = metadata
+                .vars()
+                .iter()
+                .map(|meta| {
+                    (
+                        meta.var().clone(),
+                        meta.variance(),
+                        bool::from(meta.linear()),
+                        meta.contractum(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                alloc::vec![
+                    (
+                        MetaVar::producer("p"),
+                        CellVariance::Producer,
+                        false,
+                        CellContractumUse::Repeated
+                    ),
+                    (
+                        MetaVar::producer("q"),
+                        CellVariance::Producer,
+                        true,
+                        CellContractumUse::Once
+                    ),
+                    (
+                        MetaVar::consumer("seam"),
+                        CellVariance::Mixed,
+                        true,
+                        CellContractumUse::Erased
+                    ),
+                    (
+                        MetaVar::producer("rhs_only"),
+                        CellVariance::Producer,
+                        false,
+                        CellContractumUse::Once
+                    ),
+                ],
+                observed
+            );
+            assert_eq!(invertible, bool::from(metadata.invertible()));
+            assert_eq!(StepGrowth::Duplicating, metadata.step_growth());
+        }
+    }
+
+    #[test]
+    fn skolemization_and_apartness_preserve_name_boundaries()
+    {
+        for name in ["", "r'"] {
+            let source = CmdPat::cut(Polarity::Negative, ProdPat::meta(name), ConsPat::meta(name));
+            let symbol = Sym::new(alloc::format!("{}{}", "$k$", name));
+            let expected = CmdPat::cut(
+                Polarity::Negative,
+                ProdPat::ctor(symbol.clone(), []),
+                ConsPat::op(symbol, [], ConsPat::top()),
+            );
+            assert_eq!(expected, SequentAlphabet::skolemize(&source));
+            assert_eq!(expected, SequentAlphabet::skolemize(&expected));
+            let fresh = alloc::format!("{name}'");
+            let expected = CmdPat::cut(
+                Polarity::Negative,
+                ProdPat::meta(fresh.clone()),
+                ConsPat::meta(fresh),
+            );
+            assert_eq!(
+                (expected.clone(), expected),
+                SequentAlphabet::rename_apart((&source, &source), (&source, &source))
+            );
+        }
+        let anchor = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Pair", [ProdPat::meta("r"), ProdPat::meta("r'")]),
+            ConsPat::meta("r''"),
+        );
+        let lhs = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Triple", [
+                ProdPat::meta("r"),
+                ProdPat::meta("r'"),
+                ProdPat::meta("r"),
+            ]),
+            ConsPat::meta("r"),
+        );
+        let rhs = CmdPat::cut(Polarity::Negative, ProdPat::meta("r'"), ConsPat::meta("r'"));
+        let expected_lhs = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Triple", [
+                ProdPat::meta("r'''"),
+                ProdPat::meta("r''''"),
+                ProdPat::meta("r'''"),
+            ]),
+            ConsPat::meta("r'''"),
+        );
+        let expected_rhs = CmdPat::cut(
+            Polarity::Negative,
+            ProdPat::meta("r''''"),
+            ConsPat::meta("r''''"),
+        );
+        assert_eq!(
+            (expected_lhs, expected_rhs),
+            SequentAlphabet::rename_apart((&anchor, &anchor), (&lhs, &rhs))
+        );
+        let ground = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Zero", []),
+            ConsPat::top(),
+        );
+        assert_eq!(
+            (lhs.clone(), rhs.clone()),
+            SequentAlphabet::rename_apart((&ground, &ground), (&lhs, &rhs))
+        );
+        assert_eq!(
+            (ground.clone(), ground.clone()),
+            SequentAlphabet::rename_apart((&anchor, &anchor), (&ground, &ground))
+        );
+    }
+
+    #[test]
+    fn frame_cells_and_alphabet_reduction_preserve_structure()
+    {
+        use core::cmp::Ordering;
+
+        let cell = frame_defining_cell(&Sym::new("Node"));
+        let lhs = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("v"),
+            ConsPat::frame("Node", ConsPat::meta("beta")),
+        );
+        let rhs = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Node", [ProdPat::meta("v")]),
+            ConsPat::meta("beta"),
+        );
+        assert_eq!(
+            (
+                &lhs,
+                &rhs,
+                Orientation::PolarityDerived,
+                CellProvenance::FrameDefining
+            ),
+            (cell.lhs(), cell.rhs(), cell.orient(), cell.provenance())
+        );
+        assert_eq!(StepGrowth::StrictlyLinear, cell.meta().step_growth());
+        let cut = |prod| CmdPat::cut(Polarity::Positive, prod, ConsPat::top());
+        for (left, right, expected) in [
+            (
+                cut(ProdPat::ctor("Succ", [ProdPat::meta("x")])),
+                cut(ProdPat::meta("x")),
+                Ordering::Greater,
+            ),
+            (
+                cut(ProdPat::ctor("Succ", [ProdPat::ctor("Zero", [])])),
+                cut(ProdPat::meta("x")),
+                Ordering::Equal,
+            ),
+            (
+                cut(ProdPat::ctor("A", [])),
+                cut(ProdPat::ctor("Z", [])),
+                Ordering::Less,
+            ),
+        ] {
+            assert_eq!(expected, SequentAlphabet::reduction_cmp(&left, &right));
+            assert_eq!(
+                expected.reverse(),
+                SequentAlphabet::reduction_cmp(&right, &left)
+            );
+            assert_eq!(
+                Ordering::Equal,
+                SequentAlphabet::reduction_cmp(&left, &left)
+            );
+        }
+    }
+
     /// The metadata entry of the hole named `name`.
     ///
     /// # Specification
     /// - panics: when no entry carries the name, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fixtures with all variance and contractum classes
+    ///   select entries by name and observe the expected metadata. Selecting
+    ///   the first entry regardless of name changes those observations.
+    /// - witness: `sequent::tests::the_contractum_use_reports_erased_once_and_repeated`
+    #[spec(ensures: |output| meta.vars().contains(output))]
     fn entry<N>(
         meta: &CellMeta,
         name: N,
@@ -1211,16 +1630,33 @@ mod tests
     fn completion_cells_are_invertible_certificates()
     {
         let lhs = CmdPat::cut(Polarity::Positive, ProdPat::meta("x"), ConsPat::top());
-        let cell: Cell = Cell::new(
-            lhs.clone(),
-            lhs,
-            Orientation::CompletionDerived,
+        let rhs = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Zero", []),
+            ConsPat::top(),
+        );
+        for provenance in [
+            CellProvenance::SurfaceRule,
+            CellProvenance::MuMuTilde,
+            CellProvenance::FrameDefining,
+            CellProvenance::Eta(EtaKind::Data),
+            CellProvenance::Eta(EtaKind::Codata),
             CellProvenance::DerivedByCompletion,
-        );
-        assert!(
-            bool::from(cell.meta().invertible()),
-            "a completion-emitted cell is an invertible certificate"
-        );
+        ] {
+            for orient in [Orientation::PolarityDerived, Orientation::CompletionDerived] {
+                let cell: Cell = Cell::new(lhs.clone(), rhs.clone(), orient, provenance);
+                assert_eq!(
+                    (&lhs, &rhs, orient, provenance),
+                    (cell.lhs(), cell.rhs(), cell.orient(), cell.provenance())
+                );
+                assert_eq!(
+                    provenance == CellProvenance::DerivedByCompletion,
+                    bool::from(cell.meta().invertible())
+                );
+                assert_eq!(1, cell.meta().vars().len());
+                assert_eq!(StepGrowth::Erasing, cell.meta().step_growth());
+            }
+        }
     }
 
     #[test]
@@ -1250,25 +1686,57 @@ mod tests
     {
         let cell = frame_defining_cell(&Sym::new("Succ"));
         let mut store = CellStore::new();
-        let a = store.insert(cell.clone());
-        let b = store.insert(cell);
-        assert_eq!(a, b, "the same cell inserts once");
-        assert_eq!(
-            CellCount::from(1_usize),
-            store.len(),
-            "the store did not grow"
-        );
-        assert!(
-            matches!(store.get(a), Maybe::Present(_)),
-            "the issued identifier reads its cell back"
-        );
-        assert!(
-            matches!(
-                store.get(crate::cell::CellId::from(1_usize)),
-                Maybe::Absent(cell_lookup::Absent::Unissued)
+        for index in [0, usize::MAX] {
+            assert_eq!(
+                Maybe::Absent(cell_lookup::Absent::Unissued),
+                store.get(crate::cell::CellId::from(index))
+            );
+        }
+        let cells = [
+            cell.clone(),
+            Cell::new(
+                cell.rhs().clone(),
+                cell.rhs().clone(),
+                cell.orient(),
+                cell.provenance(),
             ),
-            "and the next identifier was never issued"
-        );
+            Cell::new(
+                cell.lhs().clone(),
+                cell.lhs().clone(),
+                cell.orient(),
+                cell.provenance(),
+            ),
+            Cell::new(
+                cell.lhs().clone(),
+                cell.rhs().clone(),
+                Orientation::CompletionDerived,
+                cell.provenance(),
+            ),
+            Cell::new(
+                cell.lhs().clone(),
+                cell.rhs().clone(),
+                cell.orient(),
+                CellProvenance::SurfaceRule,
+            ),
+        ];
+        for (index, offered) in cells.iter().enumerate() {
+            let expected = crate::cell::CellId::from(index);
+            assert_eq!(expected, store.insert(offered.clone()));
+            assert_eq!(expected, store.insert(offered.clone()));
+            assert_eq!(CellCount::from(index.saturating_add(1)), store.len());
+            for (held_index, held) in cells.iter().take(index.saturating_add(1)).enumerate() {
+                assert_eq!(
+                    Maybe::Present(held),
+                    store.get(crate::cell::CellId::from(held_index))
+                );
+            }
+        }
+        for index in [cells.len(), usize::MAX] {
+            assert_eq!(
+                Maybe::Absent(cell_lookup::Absent::Unissued),
+                store.get(crate::cell::CellId::from(index))
+            );
+        }
     }
 
     #[test]
@@ -1305,24 +1773,27 @@ mod tests
                 "the cell reports the polarity its law requires"
             );
         }
-        let rule: Cell = Cell::new(
-            cut_at(Polarity::Negative),
-            cut_at(Polarity::Negative),
-            Orientation::PolarityDerived,
+        for provenance in [
             CellProvenance::SurfaceRule,
-        );
-        assert_eq!(
-            Maybe::Absent(eta_requirement::Absent::NotEta),
-            rule.eta_requirement(),
-            "a non-η cell carries no requirement"
-        );
-        assert!(
-            bool::from(SequentAlphabet::may_fire(
-                &CellProvenance::SurfaceRule,
-                &cut_at(Polarity::Negative)
-            )),
-            "and fires at either polarity"
-        );
+            CellProvenance::MuMuTilde,
+            CellProvenance::FrameDefining,
+            CellProvenance::DerivedByCompletion,
+        ] {
+            for polarity in [Polarity::Positive, Polarity::Negative] {
+                let target = cut_at(polarity);
+                let cell: Cell = Cell::new(
+                    target.clone(),
+                    target.clone(),
+                    Orientation::PolarityDerived,
+                    provenance,
+                );
+                assert_eq!(
+                    Maybe::Absent(eta_requirement::Absent::NotEta),
+                    cell.eta_requirement()
+                );
+                assert!(bool::from(SequentAlphabet::may_fire(&provenance, &target)));
+            }
+        }
     }
 
     #[test]

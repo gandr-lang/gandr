@@ -32,6 +32,7 @@
 //! is not refused, because the copy relation is per `(name, category)` pair,
 //! which is exactly [`MetaVar`]'s own equality.
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::alphabet::CellAlphabet;
@@ -78,12 +79,18 @@ impl core::fmt::Display for NonLinearPattern
     /// - ensures: the rendering names the hole's category and name, states that
     ///   cell patterns are linear, and shows how an idempotence or cancellation
     ///   law is respelled without the copy.
+    /// - fails: the formatter's error when its output sink rejects a write.
     /// - panics: none.
+    /// - executable: none — a formatter exposes no readable rendering at
+    ///   function exit; the owned display result and sink failures are
+    ///   witnessed.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the rendering of one refused copy is asserted to name
-    ///   the hole, both respellings and the hosting generalization.
-    /// - witness: `linearity::tests::the_diagnostic_names_the_copy_and_the_respelling`
+    /// - hypothesis: L3 — producer and consumer refusals retain their supplied
+    ///   hole names in the rendered diagnostic, and a refusing sink propagates
+    ///   its error. Lost identity and discarded write failures change the
+    ///   observations; incidental prose is not pinned.
+    /// - witness: `linearity::tests::refusal_payloads_and_rendering_preserve_hole_identity`
     #[inline]
     fn fmt(
         &self,
@@ -152,7 +159,15 @@ quenchant_shape::reason_enum! {
 /// - witness: `linearity::tests::a_repeated_producer_hole_is_the_copy`
 /// - witness: `linearity::tests::a_hole_at_both_polarities_is_not_a_copy`
 /// - witness: `linearity::tests::a_repeat_on_the_right_hand_side_is_not_a_copy`
+/// - witness: `linearity::tests::admission_chooses_the_first_copied_occurrence_and_accepts_ground_terms`
 #[inline]
+#[spec(captures: occurrences = A::metavariables(cell.lhs()), ensures: |output| {
+    let first = occurrences.iter().enumerate().find(|entry| occurrences.iter().skip(entry.0.saturating_add(1)).any(|later| later == entry.1));
+    match output {
+        Maybe::Present(ref copied) => first.is_some_and(|(_, expected)| copied == expected),
+        Maybe::Absent(copy_search::Absent::Linear) => first.is_none(),
+    }
+})]
 pub fn copied_hole<A>(cell: &Cell<A>) -> Maybe<A::Var, copy_search::Absent>
 where
     A: CellAlphabet,
@@ -187,13 +202,20 @@ where
 /// `(name, category)` pair.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — one refused copy, whose diagnostic is asserted to name
-///   the hole and the respelling, one admitted two-polarity seam, and one
-///   admitted linear cell separate the predicate.
-/// - witness: `linearity::tests::the_diagnostic_names_the_copy_and_the_respelling`
+/// - hypothesis: L3 — copied, linear and ground redexes separate both outcomes;
+///   two distinct copied holes distinguish first-occurrence priority from
+///   first-completed-repeat priority. Swapped categories, reversed admission
+///   and a wrong refusal payload change the observation; right-hand repeats do
+///   not alter the redex-side condition.
+/// - witness: `linearity::tests::refusal_payloads_and_rendering_preserve_hole_identity`
+/// - witness: `linearity::tests::admission_chooses_the_first_copied_occurrence_and_accepts_ground_terms`
 /// - witness: `linearity::tests::a_hole_at_both_polarities_is_admitted`
 /// - witness: `linearity::tests::a_linear_cell_is_admitted`
 #[inline]
+#[spec(ensures: |output| match output {
+    Ok(()) => matches!(copied_hole(cell), Maybe::Absent(copy_search::Absent::Linear)),
+    Err(ref refusal) => matches!(copied_hole(cell), Maybe::Present(ref copied) if refusal.copied() == copied),
+})]
 pub fn admit_linear_cell(cell: &Cell<SequentAlphabet>) -> Result<(), NonLinearPattern>
 {
     match copied_hole(cell) {
@@ -321,39 +343,84 @@ mod tests
     }
 
     #[test]
-    fn the_diagnostic_names_the_copy_and_the_respelling()
+    fn refusal_payloads_and_rendering_preserve_hole_identity()
     {
-        let cell = rule_cell(
-            idempotence_lhs(),
-            CmdPat::cut(
-                Polarity::Positive,
-                ProdPat::meta("x"),
-                ConsPat::meta("alpha"),
-            ),
-        );
-        let refusal = admit_linear_cell(&cell).expect_err("a copied hole is refused");
+        use core::fmt::Write as _;
+
+        struct RefusingWriter;
+        impl core::fmt::Write for RefusingWriter
+        {
+            /// # Specification
+            /// trivial.
+            fn write_str(
+                &mut self,
+                _: &str,
+            ) -> core::fmt::Result
+            {
+                Err(core::fmt::Error)
+            }
+        }
+        for copied in [
+            MetaVar::producer("requested_producer_42"),
+            MetaVar::consumer("requested_consumer_81"),
+        ] {
+            let refusal = NonLinearPattern {
+                copied: copied.clone(),
+            };
+            assert!(format!("{refusal}").contains(&format!("{}", copied.hole())));
+            assert!(write!(&mut RefusingWriter, "{refusal}").is_err());
+        }
+        let cell = rule_cell(idempotence_lhs(), seam_lhs());
         assert_eq!(
             &MetaVar::producer("x"),
-            refusal.copied(),
-            "the refusal carries the copied hole"
+            admit_linear_cell(&cell)
+                .expect_err("a copy is refused")
+                .copied()
         );
-        let diagnostic = format!("{refusal}");
-        assert!(
-            diagnostic.contains("the producer hole `x`"),
-            "the diagnostic names the copy: {diagnostic}"
+    }
+
+    #[test]
+    fn admission_chooses_the_first_copied_occurrence_and_accepts_ground_terms()
+    {
+        let lhs = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Tuple", [
+                ProdPat::meta("first"),
+                ProdPat::meta("second"),
+                ProdPat::meta("second"),
+                ProdPat::meta("first"),
+            ]),
+            ConsPat::top(),
         );
-        assert!(
-            diagnostic.contains("and(x, x) ==> x"),
-            "the diagnostic points at the idempotence respelling: {diagnostic}"
+        let cell = rule_cell(lhs.clone(), lhs);
+        assert_eq!(
+            Maybe::Present(MetaVar::producer("first")),
+            copied_hole(&cell)
         );
-        assert!(
-            diagnostic.contains("x - x ==> 0"),
-            "the diagnostic points at the cancellation respelling: {diagnostic}"
+        assert_eq!(
+            &MetaVar::producer("first"),
+            admit_linear_cell(&cell)
+                .expect_err("both holes are copied")
+                .copied()
         );
-        assert!(
-            diagnostic.contains("cocommutative comonoid"),
-            "the diagnostic names the hosting generalization: {diagnostic}"
+        let ground = CmdPat::cut(
+            Polarity::Negative,
+            ProdPat::ctor("Zero", []),
+            ConsPat::top(),
         );
+        let ground_cell = rule_cell(ground.clone(), ground);
+        assert_eq!(
+            Maybe::Absent(copy_search::Absent::Linear),
+            copied_hole(&ground_cell)
+        );
+        assert_eq!(Ok(()), admit_linear_cell(&ground_cell));
+        let copied_consumer = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::meta("x"),
+            ConsPat::op("repeat", [ProdPat::meta("x")], ConsPat::meta("x")),
+        );
+        let cell = rule_cell(copied_consumer.clone(), copied_consumer);
+        assert_eq!(Maybe::Present(MetaVar::producer("x")), copied_hole(&cell));
     }
 
     #[test]

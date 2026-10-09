@@ -132,6 +132,14 @@ impl PatternSize
     ///   `usize::MAX`. A count of nodes held in memory never reaches that
     ///   bound, so every sum the crate forms is exact.
     /// - panics: none.
+    /// - executable: none — specification instrumentation invokes a non-const
+    ///   helper; this operation must remain callable in constant expressions.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — arbitrary node counts admit zero, ordinary sums and
+    ///   the representable/saturated boundary at `usize::MAX`. Exact results
+    ///   distinguish wrapping, premature saturation and operand loss.
+    /// - witness: `boundary::tests::node_counts_saturate_only_at_the_arithmetic_boundaries`
     #[inline]
     #[must_use]
     pub const fn saturating_add(
@@ -149,6 +157,14 @@ impl PatternSize
     ///   holds at every use: a subtree's count is subtracted from the count of
     ///   a tree containing it. Otherwise zero.
     /// - panics: none.
+    /// - executable: none — specification instrumentation invokes a non-const
+    ///   helper; this operation must remain callable in constant expressions.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — arbitrary node counts admit zero, equal operands and
+    ///   either operand larger. Exact differences distinguish wrapping,
+    ///   reversed subtraction and a strict guard at equality.
+    /// - witness: `boundary::tests::node_counts_saturate_only_at_the_arithmetic_boundaries`
     #[inline]
     #[must_use]
     pub const fn saturating_sub(
@@ -157,5 +173,32 @@ impl PatternSize
     ) -> Self
     {
         Self(self.0.saturating_sub(rhs.0))
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::PatternSize;
+
+    #[test]
+    fn node_counts_saturate_only_at_the_arithmetic_boundaries()
+    {
+        let below_max = usize::MAX.saturating_sub(1);
+        for (left, right, sum, difference) in [
+            (0, 0, 0, 0),
+            (0, 1, 1, 0),
+            (7, 3, 10, 4),
+            (3, 7, 10, 0),
+            (7, 7, 14, 0),
+            (usize::MAX, 0, usize::MAX, usize::MAX),
+            (below_max, 1, usize::MAX, usize::MAX.saturating_sub(2)),
+            (usize::MAX, 1, usize::MAX, below_max),
+        ] {
+            let left = PatternSize::from(left);
+            let right = PatternSize::from(right);
+            assert_eq!(PatternSize::from(sum), left.saturating_add(right));
+            assert_eq!(PatternSize::from(difference), left.saturating_sub(right));
+        }
     }
 }

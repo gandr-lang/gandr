@@ -3,6 +3,7 @@
 
 use core::cmp::Ordering;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CmdPat;
 use gandr_theory_cell_complexes::ConsPat;
 use gandr_theory_cell_complexes::MetaVar;
@@ -31,7 +32,15 @@ const SMALL_STACK: usize = 0x4_0000;
 /// `Succ` applied `DEPTH` times to `base`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the producer has the input node count plus the fixed depth.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a deep variable pattern and its ground instance have
+///   hand-counted sizes, match exactly and drop on the small stack. A missing
+///   wrapper or recursive walk changes those observations.
+/// - witness: `tests::depth::a_deep_pattern_is_matched_ordered_and_dropped_on_a_small_stack`
+#[spec(captures: before = base.size(), ensures: |output| output.size() == before.saturating_add(PatternSize::from(DEPTH)))]
 fn succ_tower(base: ProdPat) -> ProdPat
 {
     let mut prod = base;
@@ -44,7 +53,15 @@ fn succ_tower(base: ProdPat) -> ProdPat
 /// `S⁻` framed `DEPTH` times around `end`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the consumer has the input node count plus the fixed depth.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a deep variable pattern and its ground instance have
+///   hand-counted sizes, match exactly and drop on the small stack. A missing
+///   wrapper or recursive walk changes those observations.
+/// - witness: `tests::depth::a_deep_pattern_is_matched_ordered_and_dropped_on_a_small_stack`
+#[spec(captures: before = end.size(), ensures: |output| output.size() == before.saturating_add(PatternSize::from(DEPTH)))]
 fn frame_tower(end: ConsPat) -> ConsPat
 {
     let mut cons = end;
@@ -59,6 +76,14 @@ fn frame_tower(end: ConsPat) -> ConsPat
 ///
 /// # Specification
 /// - panics: when any step disagrees with the shape it was built to have.
+/// - executable: none — this assertion-driven witness has no inputs or output
+///   state beyond unit; its observations are the assertions in its body.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the caller runs every deep-pattern operation on a fixed
+///   small stack. Wrong reconstruction, counts, splice results, ordering or
+///   recursive stack use causes a failed observation.
+/// - witness: `tests::depth::a_deep_pattern_is_matched_ordered_and_dropped_on_a_small_stack`
 fn walk_the_deep_pattern()
 {
     let pattern = CmdPat::cut(
