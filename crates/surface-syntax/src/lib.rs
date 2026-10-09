@@ -66,3 +66,26 @@ pub use crate::tree::NodeCount;
 pub use crate::tree::NodeIndex;
 pub use crate::tree::NodeIndices;
 pub use crate::tree::SyntaxTree;
+
+#[cfg(test)]
+mod test_support
+{
+    /// A formatter destination that rejects every write.
+    pub struct RefusingSink;
+
+    impl core::fmt::Write for RefusingSink
+    {
+        /// Refuse the supplied fragment.
+        ///
+        /// # Specification
+        /// trivial.
+        #[inline]
+        fn write_str(
+            &mut self,
+            _text: &str,
+        ) -> core::fmt::Result
+        {
+            Err(core::fmt::Error)
+        }
+    }
+}

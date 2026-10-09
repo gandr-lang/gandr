@@ -58,12 +58,11 @@ const NODE_DOMAIN: &[u8] = b"gandr.surface-syntax.node.v2";
 /// - ensures: `Display` renders the lowercase hexadecimal of the bytes in
 ///   order, and `Debug` renders identically, because one identity read in two
 ///   notations in one log is harder to match by eye than it is worth.
-/// - provides: an opaque, fixed-width name for a node's content. The
-///   postcondition stays prose: the item is a type, and its rendering claim is
-///   about the two implementations beside it, which a data specification's
-///   `maintains` does not reach.
+/// - provides: an opaque, fixed-width name for a node's content.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — the carrier admits every byte array; its rendering
+///   obligation concerns trait implementations, not a data invariant.
 ///
 /// # Adequacy
 /// - hypothesis: L3 only — the rendering is separated from any other rendering
@@ -127,6 +126,17 @@ impl core::fmt::Display for NodeDigest
     /// - fails: propagates the formatter's own write failure unchanged,
     ///   stopping at the byte that failed.
     /// - panics: none.
+    /// - executable: none — the formatter exposes a write-only sink; neither
+    ///   emitted bytes nor the sink's failure state can be read back by a
+    ///   predicate, and replaying writes changes the observed sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a full-width digest with a leading byte below sixteen
+    ///   exposes dropped padding, uppercase digits, reordered bytes and
+    ///   divergent notations through exact strings; a rejecting sink detects
+    ///   swallowed errors.
+    /// - witness: `digest::tests::a_digest_renders_lowercase_hexadecimal`
+    /// - witness: `digest::tests::formatters_propagate_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -153,6 +163,17 @@ impl core::fmt::Debug for NodeDigest
     /// - provides: the single rendering the type's own specification claims.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes a write-only sink; neither
+    ///   emitted bytes nor the sink's failure state can be read back by a
+    ///   predicate, and replaying writes changes the observed sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a full-width digest with a leading byte below sixteen
+    ///   exposes dropped padding, uppercase digits, reordered bytes and
+    ///   divergent notations through exact strings; a rejecting sink detects
+    ///   swallowed errors.
+    /// - witness: `digest::tests::a_digest_renders_lowercase_hexadecimal`
+    /// - witness: `digest::tests::formatters_propagate_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -177,12 +198,12 @@ impl core::fmt::Debug for NodeDigest
 ///   otherwise; the digest is independent of where in a source the node sits,
 ///   and of the arena the node will be laid out into.
 /// - provides: the crate's only hashing entry point, so no node identity is
-///   computed outside the domain or with a differently shaped preimage. The
-///   postcondition stays prose: it is a law relating two calls' inputs to their
-///   outputs, which no predicate over one call states, and the precondition is
-///   a provenance claim about `text` and `children`.
+///   computed outside the domain or with a differently shaped preimage.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — source provenance is not carried by these arguments,
+///   and position-independent identity is a relation between calls. Repeating
+///   the same hash in a postcondition supplies no independent observation.
 ///
 /// Counts and lengths enter the preimage at a fixed eight-byte width so the
 /// digest does not depend on the pointer width of the machine that computed it.
@@ -280,6 +301,16 @@ mod tests
     /// - provides: the childless case every rendering and collision fixture
     ///   below is written against.
     /// - panics: none.
+    /// - executable: none — fragment provenance is not carried by the input; an
+    ///   equality check would repeat the hashing operation it purports to check
+    ///   rather than supply an independent observation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the childless digest is checked against an external
+    ///   golden; L3 text-folding boundaries separate interior and leaf labels
+    ///   with equal versus changed fragments.
+    /// - witness: `digest::tests::a_pinned_leaf_digest_is_stable`
+    /// - witness: `digest::tests::an_interior_label_ignores_its_own_text`
     fn leaf(
         label: NodeLabel,
         text: SourceFragment<'_>,
@@ -307,6 +338,16 @@ mod tests
     fn word(text: SourceFragment<'_>) -> NodeDigest
     {
         tile(MoldId::from(1_u32), text)
+    }
+
+    #[test]
+    fn formatters_propagate_sink_failure()
+    {
+        use core::fmt::Write as _;
+        let digest = NodeDigest::from([0_u8; NODE_DIGEST_LEN]);
+        let mut sink = crate::test_support::RefusingSink;
+        assert!(sink.write_fmt(format_args!("{digest}")).is_err());
+        assert!(sink.write_fmt(format_args!("{digest:?}")).is_err());
     }
 
     #[test]

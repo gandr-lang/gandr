@@ -149,7 +149,9 @@ The grammar owns its mold table; this crate defines only the references into it,
 
 ## Specification attributes
 
-Each item's `# Specification` prose is the statement of record; a `#[spec(...)]` attribute states a clause verbatim where the whole clause is a predicate over one call, such as `SourceText::fragment` returning exactly the range the span names. The `const fn` items — `NodeLabel::tag`, `NodeLabel::carries_text`, `NodeLabel::significance`, `ByteSpan::new`, `ByteSpan::length` and `SyntaxTree::from_layout` — keep their `const` API and stay prose, because the `anodized` expansion calls a non-`const` evaluator (`E0015`). A clause that relates several calls, a counter's whole issuance history, or a precondition the item adopts without checking stays prose and names its boundary in `provides`.
+Each nontrivial item's `# Specification` is paired with `# Adequacy`: the input boundaries, observable results, fault classes and same-crate witnesses. Executable `#[spec(...)]` clauses cover source slicing and refusal precedence, delimiter recognition, checked identifiers, builder transitions and arena walks. Enforcement captures scalar pre-state where an operation consumes or mutates its inputs; it does not copy the staging arena or repeat hashing.
+
+An item without an executable predicate ends its specification with `executable: none` and its reason. Constant functions retain their compile-time API because the evaluator is not `const`; formatters expose a write-only sink; hashing's provenance and cross-call identity laws need independent witnesses rather than a repeated hash; type-level obligations are witnessed at their construction and observation boundaries. The tests cover exact output and sink failures, UTF-8 boundary and fault precedence, iterator exhaustion at the host-width ceiling, and the builder's final issuable identity. Run the suite both normally and with `--cfg anodized_panic` using the commands above.
 
 ## License
 

@@ -84,7 +84,14 @@ impl BuilderIdCounter
     ///   constructor exists only under `cfg(test)`.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the specification evaluator is not const; this test
+    ///   constructor preserves compile-time initialization.
     #[cfg(test)]
+    /// # Adequacy
+    /// - hypothesis: L3 — the final issuable identity and two successive
+    ///   refusals distinguish the seed, the saturation boundary and identity
+    ///   reuse.
+    /// - witness: `build::tests::builder_id_exhaustion_is_typed`
     #[inline]
     const fn nearly_exhausted() -> Self
     {
@@ -97,11 +104,7 @@ impl BuilderIdCounter
     /// - requires: nothing; the counter is safe to share across threads.
     /// - ensures: on success the returned identity was never issued by this
     ///   counter before and never will be again.
-    /// - provides: the stamp every staged handle carries. The postcondition
-    ///   stays prose: it quantifies over every identity this counter has issued
-    ///   and will issue, which no predicate over one call states, and any
-    ///   per-call reformulation is false under the concurrent sharing the
-    ///   precondition admits.
+    /// - provides: the stamp every staged handle carries.
     /// - fails: [`SyntaxError::BuilderIdExhausted`] once the counter would
     ///   wrap, leaving the final identity permanently unissued.
     /// - panics: none.
@@ -116,6 +119,10 @@ impl BuilderIdCounter
     ///   exact error variant asserted.
     /// - witness: `build::tests::builder_id_exhaustion_is_typed`
     #[inline]
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| *error == SyntaxError::BuilderIdExhausted && self.0.load(AtomicOrdering::Relaxed) == usize::MAX,
+        |identity| identity.0 < usize::MAX,
+    ))]
     fn allocate(&self) -> Result<BuilderId, SyntaxError>
     {
         self.0
@@ -157,6 +164,17 @@ impl fmt::Display for StagedId
     ///   identity prints.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes a write-only sink; neither
+    ///   emitted bytes nor the sink's failure state can be read back by a
+    ///   predicate, and replaying writes changes the observed sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — consecutive positions in one builder and position
+    ///   zero in different builders retain both identity components in exact
+    ///   text. Dropping a component or swallowing a sink failure changes an
+    ///   observation.
+    /// - witness: `build::tests::formatters_preserve_staged_identity`
+    /// - witness: `build::tests::formatters_propagate_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -286,10 +304,7 @@ impl<'source> TreeBuilder<'source>
     ///   identity no other builder in this process has held or will hold; the
     ///   tree it finishes records `grammar`.
     /// - provides: the only way to obtain a builder, so every staged handle
-    ///   carries a stamp. The freshness half is a claim over every builder this
-    ///   process has made and will make, which no predicate over one call
-    ///   reaches; the empty-staging half alone is the body restated, so the
-    ///   line stays prose and the counter's own witness carries it.
+    ///   carries a stamp.
     /// - fails: [`SyntaxError::BuilderIdExhausted`] when the process-wide
     ///   identity counter has no distinct value left; construction refuses
     ///   rather than reissuing an identity.
@@ -307,6 +322,11 @@ impl<'source> TreeBuilder<'source>
     /// - witness: `build::tests::two_builders_take_distinct_identities`
     /// - witness: `build::tests::a_tree_records_its_grammar`
     #[inline]
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| *error == SyntaxError::BuilderIdExhausted,
+        |builder| builder.source == source && builder.grammar == grammar
+            && builder.staged.is_empty() && builder.edges.is_empty(),
+    ))]
     pub fn new(
         source: SourceText<'source>,
         grammar: GrammarFingerprint,
@@ -339,10 +359,22 @@ impl<'source> TreeBuilder<'source>
     /// # Errors
     /// [`SyntaxError::UnknownStagedNode`] for a foreign stamp or an
     /// out-of-range position.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a live local identity, an absent position and a
+    ///   foreign identity at a live position separate both guards. Exact error
+    ///   payloads and the resulting child relation detect skipped stamps and
+    ///   wrong slots.
+    /// - witness: `build::tests::an_unknown_staged_node_is_refused`
+    /// - witness: `build::tests::a_foreign_identity_at_a_live_position_is_refused`
+    /// - witness: `build::tests::children_are_contiguous_and_in_source_order`
     #[inline]
     #[spec(ensures: |ret| {
         let resolvable = node.builder == self.identity && node.position < self.staged.len();
-        ret.as_ref().ok().map(|position| position.0) == resolvable.then_some(node.position)
+        ret.as_ref().map_or_else(
+            |error| !resolvable && *error == SyntaxError::UnknownStagedNode { node },
+            |position| resolvable && position.0 == node.position,
+        )
     })]
     fn resolve(
         &self,
@@ -371,12 +403,7 @@ impl<'source> TreeBuilder<'source>
     ///   exactly one parent; the returned identity is fresh.
     /// - provides: the one way to stage a node, so every node in a finished
     ///   tree has a validated span and a digest computed over the same
-    ///   preimage. Stating the digest half means rebuilding the child digest
-    ///   list this call consumed and hashing the preimage a second time, and
-    ///   the exactly-one-parent half is a claim over the whole edge list rather
-    ///   than over the flags this call sets; the attachment flags and the
-    ///   minted position alone are the body restated, so the line stays prose
-    ///   and the pinned digest golden and the witnesses below carry it.
+    ///   preimage.
     /// - fails: [`SyntaxError::SpanOutsideSource`] or
     ///   [`SyntaxError::SpanSplitsCharacter`] when the span does not name a
     ///   fragment of the source; [`SyntaxError::UnknownStagedNode`] when a
@@ -412,6 +439,20 @@ impl<'source> TreeBuilder<'source>
     /// - witness: `build::tests::a_refusal_leaves_the_builder_at_the_failure_point`
     /// - witness: `build::tests::layout_never_reaches_a_parent_digest`
     #[inline]
+    #[spec(
+        captures: [next_position = self.staged.len(), next_edge = self.edges.len()],
+        ensures: |ret| ret.as_ref().map_or_else(
+            |_| self.staged.len() == next_position && self.edges.len() == next_edge,
+            |minted| minted.builder == self.identity && minted.position == next_position
+                && self.staged.len() == next_position.saturating_add(1)
+                && self.staged.get(minted.position).is_some_and(|staged| {
+                    staged.label == label && staged.span == span && !staged.attached.0
+                        && staged.child_count == children.len() && staged.first_edge == next_edge
+                        && self.edges.get(next_edge ..) == Some(children)
+                        && children.iter().all(|child| self.staged.get(child.position).is_some_and(|child| child.attached.0))
+                }),
+        ),
+    )]
     pub fn node(
         &mut self,
         label: NodeLabel,
@@ -465,11 +506,6 @@ impl<'source> TreeBuilder<'source>
     ///   the order they were given; every node keeps the digest it was staged
     ///   with, so the layout permutes positions and never content.
     /// - provides: the finished tree, and the end of the staged identity space.
-    ///   Reachability, `root`'s arrival at position zero, sibling order and
-    ///   digest preservation all compare against the staged side, which the
-    ///   call consumes, so no predicate over the result reaches them; the
-    ///   parent-before-child positions alone are the walk restated, so the line
-    ///   stays prose and the layout witnesses carry it.
     /// - fails: [`SyntaxError::UnknownStagedNode`] when `root` carries another
     ///   builder's stamp or names no node here.
     /// - panics: none.
@@ -503,6 +539,19 @@ impl<'source> TreeBuilder<'source>
     /// - witness: `build::tests::a_tree_records_its_grammar`
     /// - witness: `build::tests::a_foreign_identity_at_a_live_position_is_refused`
     #[inline]
+    #[spec(
+        captures: [
+            source = self.source,
+            grammar = self.grammar,
+            root_parts = self.resolve(root).ok().and_then(|position| self.staged.get(position.0)).map(|staged| (staged.label, staged.span, staged.digest)),
+        ],
+        ensures: |ret| ret.as_ref().map_or_else(
+            |error| root_parts.is_none() && *error == SyntaxError::UnknownStagedNode { node: root },
+            |tree| tree.source() == source && tree.grammar() == grammar
+                && tree.node(tree.root()).map(|node| (node.label(), node.span(), node.digest())) == root_parts
+                && tree.positions().all(|parent| tree.children(parent).all(|child| child > parent && tree.node(child).is_some())),
+        ),
+    )]
     pub fn finish(
         self,
         root: StagedId,
@@ -625,6 +674,13 @@ mod tests
     /// - panics: when the endpoints are inverted, so a fixture that violates
     ///   the precondition fails its own test rather than staging a span the
     ///   crate would have refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered endpoints preserve distinct exact source
+    ///   fragments. Swapping, shifting or clamping endpoints changes those
+    ///   fragment observations.
+    /// - witness: `build::tests::a_node_names_the_fragment_it_spans`
+    #[anodized::spec(requires: start <= end, ensures: |ret| ret.start() == start && ret.end() == end)]
     fn span(
         start: ByteOffset,
         end: ByteOffset,
@@ -649,6 +705,21 @@ mod tests
     /// - panics: when any staged span is refused against `source` or the layout
     ///   fails, so a fixture that no longer matches its source fails loudly
     ///   rather than asserting over a truncated tree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero and shifted origins expose all seven nodes,
+    ///   exact child ranges and stable subtree digests; wrong shape, shifted
+    ///   endpoints and changed content are separately observed.
+    /// - witness: `build::tests::the_root_is_the_first_position`
+    /// - witness: `build::tests::children_are_contiguous_and_in_source_order`
+    /// - witness: `build::tests::the_same_subtree_in_two_sources_shares_its_digest`
+    #[anodized::spec(
+        requires: [0_usize, 4, 5, 8, 9, 10, 12, 19, 20, 22].into_iter().all(|offset| {
+            usize::from(padding).checked_add(offset).is_some_and(|position| source.as_ref().is_char_boundary(position))
+        }),
+        ensures: |ret| ret.source() == source && ret.node_count() == NodeCount::from(7_usize)
+            && ret.node(ret.root()).map(Node::label) == Some(NodeLabel::Wald),
+    )]
     fn lambda_tree(
         source: SourceText<'_>,
         padding: ByteOffset,
@@ -732,12 +803,48 @@ mod tests
     /// - provides: the comparable form the position assertions below are
     ///   written against.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — interior, leaf and absent positions are observed
+    ///   through exact index lists; lost order, omitted children and spurious
+    ///   children of absent positions change those observations.
+    /// - witness: `build::tests::children_are_contiguous_and_in_source_order`
+    /// - witness: `build::tests::a_leaf_has_no_children`
+    /// - witness: `build::tests::a_position_past_the_arena_has_no_children`
+    #[anodized::spec(ensures: |ret| ret.iter().copied().eq(tree.children(position)))]
     fn children(
         tree: &SyntaxTree<'_>,
         position: NodeIndex,
     ) -> Vec<NodeIndex>
     {
         tree.children(position).collect()
+    }
+
+    #[test]
+    fn formatters_preserve_staged_identity()
+    {
+        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let first = builder.node(word(), first_byte(), &[]).unwrap();
+        let second = builder.node(word(), second_byte(), &[]).unwrap();
+        assert_eq!(format!("{first}"), format!("{}:0", builder.identity.0));
+        assert_eq!(format!("{second}"), format!("{}:1", builder.identity.0));
+        let mut other = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let foreign = other.node(word(), first_byte(), &[]).unwrap();
+        assert_eq!(format!("{foreign}"), format!("{}:0", other.identity.0));
+        assert_ne!(format!("{first}"), format!("{foreign}"));
+    }
+
+    #[test]
+    fn formatters_propagate_sink_failure()
+    {
+        use core::fmt::Write as _;
+        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let node = builder.node(word(), first_byte(), &[]).unwrap();
+        assert!(
+            crate::test_support::RefusingSink
+                .write_fmt(format_args!("{node}"))
+                .is_err()
+        );
     }
 
     #[test]
@@ -754,6 +861,12 @@ mod tests
             tree.node(tree.root()).map(Node::label),
             Some(NodeLabel::Wald),
             "position zero holds the node finish was called with"
+        );
+        assert_eq!(
+            tree.positions().collect::<Vec<_>>(),
+            (0_usize .. 7_usize)
+                .map(NodeIndex::from)
+                .collect::<Vec<_>>(),
         );
         assert_eq!(
             tree.node_count(),
@@ -1113,15 +1226,17 @@ mod tests
     {
         let counter = super::BuilderIdCounter::nearly_exhausted();
 
-        assert!(
-            counter.allocate().is_ok(),
-            "the last distinct identity is issued"
+        assert_eq!(
+            counter.allocate(),
+            Ok(super::BuilderId(usize::MAX.saturating_sub(1_usize))),
+            "the last issuable identity is exact"
         );
         assert_eq!(
             counter.allocate(),
             Err(SyntaxError::BuilderIdExhausted),
             "the counter refuses rather than wrapping into a reissued identity"
         );
+        assert_eq!(counter.allocate(), Err(SyntaxError::BuilderIdExhausted));
     }
 
     #[test]
