@@ -475,7 +475,7 @@ mod tests
         let code = arena.value_constant(ConstantIndex::from(0_usize));
         let one = LevelConstant::from(1_u64);
         let zero = LevelConstant::from(0_u64);
-        let rows: [(ValueTypeId, Result<Classifier, UnadmittedFormer>); 11] = [
+        let rows: [(ValueTypeId, Result<Classifier, UnadmittedFormer>); 12] = [
             (arena.value_type_base(BaseType::Integer), Ok(value_at(zero))),
             (arena.value_type_base(BaseType::String), Ok(value_at(zero))),
             (
@@ -499,8 +499,12 @@ mod tests
                 arena.value_type_abstract(ConstantIndex::from(0_usize)),
                 Err(UnadmittedFormer::Abstract),
             ),
+            (
+                arena.value_type_static_pi(small, small),
+                Err(UnadmittedFormer::StaticPi),
+            ),
         ];
-        let mut covered = [false; 9];
+        let mut covered = [false; 10];
         for &(value_type, _) in &rows {
             let row = match arena.value_type(value_type) {
                 | Some(&ValueType::Base(_)) => 0_usize,
@@ -512,11 +516,15 @@ mod tests
                 | Some(&ValueType::Lift { .. }) => 6_usize,
                 | Some(&ValueType::Element { .. }) => 7_usize,
                 | Some(&ValueType::Abstract(_)) => 8_usize,
+                | Some(&ValueType::StaticPi { .. }) => 9_usize,
                 | None => panic!("every row's node resolves"),
             };
             covered[row] = true;
         }
-        assert_eq!(covered, [true; 9], "the rows reach every value-type former");
+        assert_eq!(
+            covered, [true; 10],
+            "the rows reach every value-type former"
+        );
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         seed(&mut context, &[small]);
         for (value_type, answer) in rows {

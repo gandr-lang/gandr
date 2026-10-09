@@ -509,15 +509,18 @@ fn formers(
                 },
                 | Some(&Value::Injection(_, injected)) => worklist.push(Node::Value(injected)),
                 | Some(&Value::Lift { body: lifted, .. }) => worklist.push(Node::Value(lifted)),
-                // A quote carries a type, whose codes are values that hold no
-                // computation former, so it marks no row.
+                // A quote carries a type, and a static operator and its
+                // application build one, whose codes are values that hold no
+                // computation former, so they mark no row.
                 | Some(
                     &(Value::Variable { .. }
                     | Value::Constant(_)
                     | Value::Unit
                     | Value::Literal(_)
                     | Value::Quote(_)
-                    | Value::QuoteComputation(_)),
+                    | Value::QuoteComputation(_)
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..)),
                 )
                 | None => {},
             },

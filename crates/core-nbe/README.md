@@ -22,6 +22,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - [Conversion steps 1 through 3](#conversion-steps-1-through-3)
 - [Conversion machine](#conversion-machine)
 - [Codes](#codes)
+- [Static operators](#static-operators)
 - [Termination](#termination)
 - [Process re-sharing](#process-re-sharing)
 - [The cached word](#the-cached-word)
@@ -46,6 +47,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - Thibaut Balabonski. "Weak Optimality, and the Meaning of Sharing." _Proceedings of the 18th ACM SIGPLAN International Conference on Functional Programming (ICFP 2013)_, pages 263–274, September 2013. `doi:10.1145/2500365.2500606` — spinal and ordinary full laziness are both β-optimal for weak reduction, so the spinal stance pays only under strong reduction and stays a measured choice.
 - Fanny He. _The Atomic Lambda-Mu Calculus_. PhD thesis, University of Bath, 2018. `https://researchportal.bath.ac.uk/en/studentTheses/the-atomic-lambda-mu-calculus` — the strong-normalisation measure for sharing reductions that `SharingMeasure` reads over the overlay.
 - Paul Blain Levy. _Call-By-Push-Value: A Functional/Imperative Synthesis_. Semantics Structures in Computation 2, Kluwer Academic Publishers, 2003. `isbn:978-1-4020-1730-8`, `doi:10.1007/978-94-007-0954-6` — the polarity split the domain's value and computation halves follow.
+- Henk P. Barendregt. _The Lambda Calculus: Its Syntax and Semantics_. Revised edition, North-Holland, 1984. `isbn:978-0-444-87508-2` — confluence of β and the normal-order and applicative-order strategies the static normalization property compares against.
 
 ## Provided features
 
@@ -150,11 +152,11 @@ Readback chooses a face and conversion forces one, so both faces are part of one
 
 ## Neutrals and spines
 
-A stuck value and a stuck computation share a head and differ in what is stacked on it. The core vocabulary has no value eliminator, so a neutral in value position carries an empty spine and one in computation position carries the applications, binds and cases that could not fire. `Neutral` is one node kind; `DomainArena::value_neutral` refuses a spined neutral in value position, and `DomainArena::neutral_node` refuses an unfolding face on a head that has no definition behind it. A module reference is a rigid head like any opaque constant, with no eliminator of its own.
+A stuck value and a stuck computation share a head and differ in what is stacked on it. The one value eliminator is static application, so a neutral in value position carries a spine of static applications only, and one in computation position carries the applications, binds and cases that could not fire, after any static prefix its head took first. `Neutral` is one node kind; `DomainArena::value_neutral` refuses a value-position neutral whose spine eliminates a computation, and `DomainArena::neutral_node` refuses an unfolding face on a head that has no definition behind it. A module reference is a rigid head like any opaque constant, with no eliminator of its own.
 
 ## Closure spaces
 
-`ValueClosure` suspends a value body and `CompClosure` a computation body: a lambda, a thunk, a bind continuation and a case branch are computation closures, and a quote is the one former that produces a value closure ([Codes](#codes)). Both spaces close over the same `Environment`, so entering either is one operation: extend the captured environment and evaluate the body. The environment has the typing context's two zones, because an occurrence names its zone and one stack could not answer a linear occurrence. Its entries are `Copy` ids, so capturing an environment clones two flat vectors.
+`ValueClosure` suspends a value body and `CompClosure` a computation body: a lambda, a thunk, a bind continuation and a case branch are computation closures, and a quote and a static lambda are the formers that produce a value closure ([Codes](#codes), [Static operators](#static-operators)). Both spaces close over the same `Environment`, so entering either is one operation: extend the captured environment and evaluate the body. The environment has the typing context's two zones, because an occurrence names its zone and one stack could not answer a linear occurrence. Its entries are `Copy` ids, so capturing an environment clones two flat vectors.
 
 ## Per-run arena
 
@@ -217,6 +219,24 @@ Conversion compares two codes whole, in two passes. α-equality walks both types
 Alternatives: a domain of types with weak-head formers, compared by the rule table, which is type-level reduction this language does not have and a second domain the replay would need a reading of; and codes compared by identity alone, which refutes two quotes of one type written twice. Reversal: a type former that reduces, such as a large elimination, needs types evaluated; codes then become weak heads the rule table decomposes, and the decline goes.
 
 The duplication walk refuses a quote graft by name, `DuplicationFault::Quote`: no producer shares inside a type, so the overlay carries quotes for erasure alone. Reversal: a producer that shares across a type, which makes the type families ribs of the walk.
+
+## Static operators
+
+A static lambda evaluates to `DomainValue::StaticLambda`, a value closure over the lambda node itself, flexible because the closure is. A static application evaluates its head and its argument, then fires static beta when the head is a static lambda: it extends the closure's environment by the argument and enters the body. Over a neutral it grows the spine by `Elimination::StaticApply`; over anything else it refuses with `EvalFault::AppliedNonOperator`. A family applied to its arguments is therefore one neutral whose spine records them, and the cached word folds the spine in order, so `F(A)` and `F(A, B)` and `G(A)` separate by head index and arity before any comparison runs.
+
+Readback under `ReadbackMode::Unfolding` reads back static normal form. A static lambda opens a fresh variable for its body, as a lambda does. A neutral whose head unfolds to an operator has its leading static applications re-applied to the forced body, and the fold resumes after them. No static redex survives readback in that mode. `ReadbackMode::ZeroUnfold` keeps the term face, redexes included, because it is the mode that hands back what the source wrote.
+
+Static normalization is confluent: the evaluator's environment machine, normal-order substitution and applicative-order substitution reach one normal form on every simply kinded term the property generates. Static beta is the β of the simply typed λ-calculus over codes, so it is strongly normalizing and confluent, and the machine's fuel only bounds a definition that unfolds into itself.
+
+Conversion compares two static lambdas through the code walk of [Codes](#codes), matching their binders by level. A static lambda against a neutral defers in the search-free steps and declines with `DeclineReason::UndecidedCodes` in the machine. The machine never η-expands an operator, and the code walk never declares an operator rigidly apart, because η could relate it to a stuck operator the rigidity reading cannot see through.
+
+Alternatives:
+
+- static beta in the arena's constructors, which reduces before the definitions are known and hides the unfolding the checker certifies;
+- a separate normalizer for codes, which duplicates the environment machine and its fuel;
+- η for operators, which needs a static-Pi-typed comparison the untyped machine does not have.
+
+Reversal: a measured family where the decline at a lambda against a neutral costs a refusal a typed η would have answered. Conversion then becomes typed at static Pis.
 
 ## Termination
 

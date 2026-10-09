@@ -508,10 +508,11 @@ impl Children
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each child the core former names, left to right: a lambda's
-    ///   body, a bind's continuation, a case's branches and a dependent arrow's
-    ///   codomain under one binder, every other child under none, and a leaf
-    ///   none. A quote's child is its type and a decode's its code, so the
-    ///   indices a type reads through a code are the quote's own.
+    ///   body, a static lambda's body, a bind's continuation, a case's branches
+    ///   and a dependent arrow's codomain under one binder, every other child
+    ///   under none, and a leaf none. A quote's child is its type and a
+    ///   decode's its code, so the indices a type reads through a code are the
+    ///   quote's own.
     /// - provides: the one reading of the core formers' arity and binding the
     ///   walk and the assembly share.
     /// - fails: [`FreeFault::Dangling`] when `node` does not resolve.
@@ -538,9 +539,10 @@ impl Children
                     | Value::Constant(_)
                     | Value::Unit
                     | Value::Literal(_) => [None, None, None],
-                    | Value::Pair(first, second) => {
+                    | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
                         two(value(first), value(second), Lowering::NONE)
                     },
+                    | Value::StaticLambda(body) => one(value(body), Lowering::ONE),
                     | Value::Injection(_, body) | Value::Lift { body, .. } => {
                         one(value(body), Lowering::NONE)
                     },
@@ -582,7 +584,12 @@ impl Children
                     | ValueType::Unit
                     | ValueType::Universe { .. }
                     | ValueType::Abstract(_) => [None, None, None],
-                    | ValueType::Product(first, second) | ValueType::Sum(first, second) => two(
+                    | ValueType::Product(first, second)
+                    | ValueType::Sum(first, second)
+                    | ValueType::StaticPi {
+                        domain: first,
+                        codomain: second,
+                    } => two(
                         Reached::ValueType(first),
                         Reached::ValueType(second),
                         Lowering::NONE,

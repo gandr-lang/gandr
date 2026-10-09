@@ -365,9 +365,10 @@ pub enum DeclineReason
     Cycle,
     /// The run spent its step budget.
     Budget,
-    /// Two codes are not α-equal and one of them decodes something that could
-    /// still unfold: telling them apart needs reduction inside a type, which
-    /// this rung does not perform.
+    /// Two codes or two static lambdas are not α-equal and one of them holds
+    /// something that could still unfold, or a static lambda meets a stuck
+    /// operator that η could relate it to: telling them apart needs reduction
+    /// or expansion inside a type, which this rung does not perform.
     UndecidedCodes,
 }
 
@@ -2105,7 +2106,10 @@ where
                 | DomainValue::Pair { .. }
                 | DomainValue::Injection { .. }
                 | DomainValue::Lift { .. }
-                | DomainValue::Code { .. } => return Err(ConversionFault::MachineInvariant),
+                | DomainValue::Code { .. }
+                | DomainValue::StaticLambda { .. } => {
+                    return Err(ConversionFault::MachineInvariant);
+                },
             }
         }
         Ok(())
@@ -3282,9 +3286,10 @@ mod tests
                 | Value::Literal(_)
                 | Value::Quote(_)
                 | Value::QuoteComputation(_) => Vec::new(),
-                | Value::Pair(first, second) => {
+                | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
                     Vec::from([CoreTerm::Value(first), CoreTerm::Value(second)])
                 },
+                | Value::StaticLambda(body) => Vec::from([CoreTerm::Value(body)]),
                 | Value::Injection(_, body) | Value::Lift { body, .. } => {
                     Vec::from([CoreTerm::Value(body)])
                 },
@@ -3373,6 +3378,10 @@ mod tests
                                         Value::Injection(side, value(body))
                                     },
                                     | Value::Thunk(body) => Value::Thunk(computation(body)),
+                                    | Value::StaticLambda(body) => Value::StaticLambda(value(body)),
+                                    | Value::StaticApplication(head, argument) => {
+                                        Value::StaticApplication(value(head), value(argument))
+                                    },
                                     | Value::Lift { target, body } => Value::Lift {
                                         target,
                                         body: value(body),
@@ -3642,8 +3651,11 @@ mod tests
                                     target: target.clone(),
                                     body: value(0),
                                 },
-                                | Value::Quote(_) | Value::QuoteComputation(_) => {
-                                    panic!("the duplication fixtures carry no quote")
+                                | Value::Quote(_)
+                                | Value::QuoteComputation(_)
+                                | Value::StaticLambda(_)
+                                | Value::StaticApplication(..) => {
+                                    panic!("the duplication fixtures carry no quote or operator")
                                 },
                             };
                             OverlayId::Value(
@@ -3845,9 +3857,11 @@ mod tests
             match node {
                 | Node::Value(value) => {
                     match core.value(value).expect("a fixture value resolves") {
-                        | &Value::Pair(first, second) => {
+                        | &(Value::Pair(first, second)
+                        | Value::StaticApplication(first, second)) => {
                             Vec::from([Node::Value(first), Node::Value(second)])
                         },
+                        | &Value::StaticLambda(body) => Vec::from([Node::Value(body)]),
                         | &(Value::Injection(_, body) | Value::Lift { body, .. }) => {
                             Vec::from([Node::Value(body)])
                         },
@@ -3891,9 +3905,12 @@ mod tests
                         .value_type(value_type)
                         .expect("a fixture type resolves")
                     {
-                        | ValueType::Product(first, second) | ValueType::Sum(first, second) => {
-                            Vec::from([Node::ValueType(first), Node::ValueType(second)])
-                        },
+                        | ValueType::Product(first, second)
+                        | ValueType::Sum(first, second)
+                        | ValueType::StaticPi {
+                            domain: first,
+                            codomain: second,
+                        } => Vec::from([Node::ValueType(first), Node::ValueType(second)]),
                         | ValueType::Thunk(body) => Vec::from([Node::CompType(body)]),
                         | ValueType::Lift { inner, .. } => Vec::from([Node::ValueType(inner)]),
                         | ValueType::Element { code, .. } => Vec::from([Node::Value(code)]),
@@ -3975,6 +3992,9 @@ mod tests
                         | &Value::Lift { ref target, body } => {
                             let body = value(self, body);
                             self.arena.value_lift(target.clone(), body)
+                        },
+                        | &(Value::StaticLambda(_) | Value::StaticApplication(..)) => {
+                            panic!("the replay fixtures carry no static operator")
                         },
                     };
                     self.values.insert(id, copy);
@@ -4058,6 +4078,9 @@ mod tests
                             self.arena.value_type_element(code, target.clone())
                         },
                         | ValueType::Abstract(atom) => self.arena.value_type_abstract(atom),
+                        | ValueType::StaticPi { .. } => {
+                            panic!("the replay fixtures carry no static Pi")
+                        },
                     };
                     self.value_types.insert(id, copy);
                 },

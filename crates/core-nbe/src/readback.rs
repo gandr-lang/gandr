@@ -103,6 +103,7 @@ use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
+use crate::arena::ValueClosureId;
 use crate::closure::Environment;
 use crate::domain::BinderLevel;
 use crate::domain::CompTermFace;
@@ -117,6 +118,7 @@ use crate::domain::Unfolding;
 use crate::eval::Definitions;
 use crate::eval::EvalFault;
 use crate::eval::Fuel;
+use crate::eval::apply_static_within;
 use crate::eval::eval_closed_value;
 use crate::eval::eval_comp_within;
 use crate::eval::eval_value_within;
@@ -467,26 +469,30 @@ impl SpineStep
 {
     /// The step after this one.
     ///
-    /// Every elimination is a computation eliminator, so whatever polarity the
-    /// fold stood at before, it stands at computation polarity after one.
+    /// A computation eliminator leaves the fold at computation polarity
+    /// whatever it stood at before; the static application, the one value
+    /// eliminator, leaves it at value polarity.
     ///
     /// # Specification
     /// - requires: nothing; a position past the spine's end is admissible and
     ///   ends the fold at the lookup.
     /// - ensures: the same neutral, wanted polarity, and open binders, the
-    ///   position advanced by one, and computation polarity — for the reason
-    ///   the paragraph above states.
+    ///   position advanced by one, and `polarity` — for the reason the
+    ///   paragraph above states.
     /// - provides: the one step the spine fold advances by, so no rule
     ///   recomputes the polarity an elimination leaves behind.
     /// - fails: never.
     /// - panics: none.
     #[inline]
-    fn onward(self) -> Self
+    fn onward(
+        self,
+        polarity: Polarity,
+    ) -> Self
     {
         Self {
             neutral: self.neutral,
             at: self.at.next(),
-            polarity: Polarity::Computation,
+            polarity,
             wanted: self.wanted,
             binders: self.binders,
         }
@@ -555,6 +561,8 @@ enum Task
     Thunk,
     /// Assemble a lambda from the computation term on the stack.
     Lambda,
+    /// Assemble a static lambda from the value term on the stack.
+    StaticLambda,
     /// Assemble a returner from the value term on the stack.
     Return,
     /// Fold one more of a neutral's eliminations onto the term beneath it.
@@ -563,6 +571,8 @@ enum Task
     Force,
     /// Assemble an application over the computation and value terms.
     Apply,
+    /// Assemble a static application over the two value terms.
+    StaticApply,
     /// Assemble a bind over the two computation terms.
     Bind,
     /// Assemble a sum elimination over the value term and the two branches.
@@ -631,6 +641,8 @@ enum Task
     Arrow,
     /// Assemble a dependent arrow from the two types on the stacks.
     Pi,
+    /// Assemble a static Pi from the two value types on the stack.
+    StaticPi,
 }
 
 /// An environment a quoted type is read in, by its position in the machine's
@@ -1099,6 +1111,83 @@ fn open(
     Ok((whnf, deeper))
 }
 
+/// Open a static lambda under one fresh intuitionistic binder.
+///
+/// # Specification
+/// - requires: nothing — a dangling closure id, a closure over anything but a
+///   static lambda, and the intuitionistic zone at its ceiling are all
+///   admissible input.
+/// - ensures: on success the domain value of the lambda's body read with a
+///   fresh variable neutral bound in the intuitionistic zone, paired with the
+///   binders that variable is in scope under.
+/// - provides: the binder-entering step of a static lambda's readback, the
+///   value twin of [`open`]: the lambda's closure holds the lambda itself, so
+///   the body evaluated is the lambda's own body.
+/// - fails: [`ReadbackFault::BinderCeiling`] at the zone's level ceiling,
+///   [`ReadbackFault::Domain`] when the closure or the fresh neutral does not
+///   resolve, [`ReadbackFault::MachineInvariant`] when the closure holds no
+///   static lambda, and [`ReadbackFault::Eval`] when the body's evaluation
+///   refuses.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surfaces are the ceiling guard and the
+///   extension, separated by a static lambda whose body reads its binder.
+/// - witness: `readback::tests::a_static_lambda_reads_back_with_its_binder_as_an_index`
+#[spec(ensures: |ret| ret.is_err()
+    || ret.as_ref().is_ok_and(|pair| {
+        Some(pair.1) == binders.opened(Zone::Intuitionistic) && domain.value(pair.0).is_some()
+    }))]
+fn open_static(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    lambda: ValueClosureId,
+    binders: OpenBinders,
+) -> Result<(DomainValueId, OpenBinders), ReadbackFault>
+{
+    let zone = Zone::Intuitionistic;
+    let Some(deeper) = binders.opened(zone)
+    else {
+        return Err(ReadbackFault::BinderCeiling { zone });
+    };
+    let (term, mut environment) = {
+        let Some(held) = domain.value_closure(lambda)
+        else {
+            return Err(ReadbackFault::Domain(DomainFault::Dangling));
+        };
+        let Some(&Value::StaticLambda(term)) = core.value(held.body())
+        else {
+            return Err(ReadbackFault::MachineInvariant);
+        };
+        (term, held.environment().clone())
+    };
+    let level = binders.fresh(zone);
+    let minted = domain.neutral_node(
+        NeutralHead::Variable { zone, level },
+        Vec::new(),
+        Unfolding::Rigid,
+    );
+    let neutral = minted.map_err(ReadbackFault::Domain)?;
+    let stood = domain.value_neutral(neutral, TermFace::Reduced);
+    let bound = stood.map_err(ReadbackFault::Domain)?;
+    environment.extend(zone, bound);
+    let evaluated = eval_value_within(
+        core,
+        domain,
+        machine.definitions,
+        machine.fuel,
+        term,
+        environment,
+    );
+    let (body, remaining) = evaluated.map_err(ReadbackFault::Eval)?;
+    machine.fuel = remaining;
+    Ok((body, deeper))
+}
+
 /// The core value a neutral head reads back as.
 ///
 /// # Specification
@@ -1531,6 +1620,11 @@ fn step(
             machine.comps.push(core.computation_lambda(body));
             Ok(())
         },
+        | Task::StaticLambda => {
+            let body = machine.pop_value()?;
+            machine.values.push(core.value_static_lambda(body));
+            Ok(())
+        },
         | Task::Return => {
             let produced = machine.pop_value()?;
             machine.comps.push(core.computation_return(produced));
@@ -1548,6 +1642,14 @@ fn step(
             machine
                 .comps
                 .push(core.computation_application(head, argument));
+            Ok(())
+        },
+        | Task::StaticApply => {
+            let argument = machine.pop_value()?;
+            let head = machine.pop_value()?;
+            machine
+                .values
+                .push(core.value_static_application(head, argument));
             Ok(())
         },
         | Task::Bind => {
@@ -1664,6 +1766,14 @@ fn step(
                 .push(core.comp_type_pi(domain_type, codomain));
             Ok(())
         },
+        | Task::StaticPi => {
+            let codomain = machine.pop_value_type()?;
+            let domain_type = machine.pop_value_type()?;
+            machine
+                .value_types
+                .push(core.value_type_static_pi(domain_type, codomain));
+            Ok(())
+        },
     }
 }
 
@@ -1710,9 +1820,11 @@ fn held_level(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — one case per former, separated by a quote of a leaf, a
-///   quote whose decode unfolds, and a quote over a dependent arrow.
+///   quote whose decode unfolds, a quote over a dependent arrow, and a quoted
+///   static Pi.
 /// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
 /// - witness: `readback::tests::a_quoted_decode_unfolds_to_the_quoted_type`
+/// - witness: `readback::tests::a_quoted_static_pi_reads_back_former_by_former`
 fn step_quoted_value_type(
     core: &CoreArena,
     domain: &mut DomainArena,
@@ -1747,6 +1859,16 @@ fn step_quoted_value_type(
             machine.tasks.push(Task::Sum);
             machine.tasks.push(at(second));
             machine.tasks.push(at(first));
+        },
+        // The static Pi opens no binder: its codomain stands in the ambient
+        // context, so both halves read in the same frame.
+        | ValueType::StaticPi {
+            domain: from,
+            codomain,
+        } => {
+            machine.tasks.push(Task::StaticPi);
+            machine.tasks.push(at(codomain));
+            machine.tasks.push(at(from));
         },
         | ValueType::Thunk(body) => {
             machine.tasks.push(Task::ThunkType);
@@ -1906,13 +2028,14 @@ fn step_quoted_comp_type(
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the decision surface is the face choice ahead of the
-///   seven-arm match, separated by a retained face, and by one case per arm —
-///   the two leaves, the pair, the injection, the lift, the thunk, and the
-///   neutral.
+///   nine-arm match, separated by a retained face, and by one case per arm —
+///   the two leaves, the pair, the injection, the lift, the thunk, the neutral,
+///   the code, and the static lambda.
 /// - witness: `readback::tests::an_unreduced_value_reads_back_as_its_own_source`
 /// - witness: `readback::tests::the_leaf_and_lift_arms_read_back_into_the_core_arena`
 /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
 /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
+/// - witness: `readback::tests::a_static_lambda_reads_back_with_its_binder_as_an_index`
 // economy: a rebuilt node is minted fresh, with no table keyed on the domain
 // node, so a domain value reachable by two paths is read back twice and the
 // sharing an environment carried is expanded into a tree. The ceiling is the
@@ -2026,6 +2149,15 @@ fn step_value(
                 },
                 | Some(_) | None => return Err(ReadbackFault::MachineInvariant),
             }
+            Ok(())
+        },
+        | DomainValue::StaticLambda { lambda, .. } => {
+            let (body, deeper) = open_static(core, domain, machine, lambda, binders)?;
+            machine.tasks.push(Task::StaticLambda);
+            machine.tasks.push(Task::Value {
+                value: body,
+                binders: deeper,
+            });
             Ok(())
         },
     }
@@ -2176,7 +2308,8 @@ fn force_body(
 ///   head by the glued form it was forced to and the fold starts at that form's
 ///   polarity — which is the reading the unfolding face carries: the face names
 ///   the **head's** body, so the neutral's own value is that body with this
-///   spine re-applied.
+///   spine re-applied. A value body meets the spine's leading static
+///   applications by beta, and the fold resumes past them.
 /// - provides: the one site the unfolding face is **spent**, and the site the
 ///   zero-unfold mode is defined by not spending it. Both modes read the face —
 ///   the read is one match on a `Copy` field and the mode's own arm is what
@@ -2192,14 +2325,16 @@ fn force_body(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surfaces are the mode-by-unfolding table and
-///   the starting polarity, separated by each of the three unfolding states
-///   under each mode, and by a body forced to each polarity.
+/// - hypothesis: L3 — the decision surfaces are the mode-by-unfolding table,
+///   the static prefix and the starting polarity, separated by each of the
+///   three unfolding states under each mode, by a body forced to each polarity,
+///   and by an unfolded operator under a static spine.
 /// - witness: `readback::tests::the_zero_unfold_mode_leaves_an_unforced_body_unforced`
 /// - witness: `readback::tests::the_unfolding_mode_refuses_a_body_no_chain_entry_names`
 /// - witness: `readback::tests::a_lowered_definition_body_unfolds_through_readback`
 /// - witness: `readback::tests::the_unfolding_mode_spends_a_body_already_forced`
 /// - witness: `readback::tests::a_spine_that_misses_its_polarity_is_refused`
+/// - witness: `readback::tests::an_unfolded_operator_reads_back_reduced`
 #[spec(
     captures: [
         entry_values = machine.values.len(),
@@ -2239,13 +2374,54 @@ fn step_neutral(
             | Unfolding::Forced(glued) => Some(glued),
         },
     };
+    // An unfolded head meets the leading static applications of its spine by
+    // beta rather than standing beside them as a redex: the operator's body is
+    // re-applied to those arguments here, and the fold resumes past them. This
+    // is what makes the spending mode's answer a static normal form.
+    let (spent, start) = match spent {
+        | Some(Glued::Value(body)) => {
+            let arguments: Vec<DomainValueId> = {
+                let Some(held) = domain.neutral(neutral)
+                else {
+                    return Err(ReadbackFault::Domain(DomainFault::Dangling));
+                };
+                held.spine()
+                    .iter()
+                    .map_while(|elimination| match *elimination {
+                        | Elimination::StaticApply(argument) => Some(argument),
+                        | Elimination::Apply(_)
+                        | Elimination::Force
+                        | Elimination::Bind(_)
+                        | Elimination::Case { .. } => None,
+                    })
+                    .collect()
+            };
+            if arguments.is_empty() {
+                (Some(Glued::Value(body)), SpineOffset::innermost())
+            }
+            else {
+                let applied = apply_static_within(
+                    core,
+                    domain,
+                    machine.definitions,
+                    machine.fuel,
+                    body,
+                    &arguments,
+                );
+                let (reduced, remaining) = applied.map_err(ReadbackFault::Eval)?;
+                machine.fuel = remaining;
+                (Some(Glued::Value(reduced)), SpineOffset(arguments.len()))
+            }
+        },
+        | None | Some(Glued::Computation(_)) => (spent, SpineOffset::innermost()),
+    };
     let polarity = match spent {
         | None | Some(Glued::Value(_)) => Polarity::Value,
         | Some(Glued::Computation(_)) => Polarity::Computation,
     };
     machine.tasks.push(Task::Spine(SpineStep {
         neutral,
-        at: SpineOffset::innermost(),
+        at: start,
         polarity,
         wanted,
         binders,
@@ -2271,13 +2447,15 @@ fn step_neutral(
 ///   it stands at `wanted`; otherwise the elimination's operands are queued and
 ///   the frame that consumes them is queued after them, with the next position
 ///   queued after that. A `force` and a case walk the fold from value to
-///   computation polarity; an application and a bind keep it there.
+///   computation polarity; an application and a bind keep it there, and a
+///   static application keeps it at value polarity.
 /// - provides: the whole of "a neutral is a head with eliminations stacked on
-///   it", read back as the applications, forces, binds and cases that could not
-///   fire. The clause states that an exhausted spine queues nothing and an
-///   unexhausted one queues at least one task, with both result stacks left as
-///   they were; which operands and frames are queued, and in which order, are
-///   judgements over the produced term, and the witnesses below carry them.
+///   it", read back as the applications, forces, binds, cases and static
+///   applications that could not fire. The clause states that an exhausted
+///   spine queues nothing and an unexhausted one queues at least one task, with
+///   both result stacks left as they were; which operands and frames are
+///   queued, and in which order, are judgements over the produced term, and the
+///   witnesses below carry them.
 /// - fails: [`ReadbackFault::Domain`] when the neutral does not resolve,
 ///   [`ReadbackFault::NeutralPolarity`] when an elimination is stacked where
 ///   its operand's polarity is not what the fold holds or when the finished
@@ -2285,13 +2463,15 @@ fn step_neutral(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surfaces are the four elimination arms, the
+/// - hypothesis: L3 — the decision surfaces are the five elimination arms, the
 ///   per-arm polarity guard and the end guard, separated by a spine carrying
-///   one of each elimination in a valid order, an application stacked at value
-///   polarity, and a computation-position neutral with an empty spine.
+///   one of each computation elimination in a valid order, a static spine, an
+///   application stacked at value polarity, and a computation-position neutral
+///   with an empty spine.
 /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
 /// - witness: `readback::tests::a_stuck_bind_and_case_read_back_their_branches`
 /// - witness: `readback::tests::a_spine_that_misses_its_polarity_is_refused`
+/// - witness: `eval::tests::normalization_preserves_a_stuck_application`
 #[spec(
     requires: [
         match spine.polarity {
@@ -2339,7 +2519,7 @@ fn step_spine(
     else {
         return expect_polarity(spine.polarity, spine.wanted, neutral);
     };
-    let onward = Task::Spine(spine.onward());
+    let onward = Task::Spine(spine.onward(Polarity::Computation));
     match elimination {
         | Elimination::Force => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
@@ -2351,6 +2531,18 @@ fn step_spine(
             expect_polarity(spine.polarity, Polarity::Computation, neutral)?;
             machine.tasks.push(onward);
             machine.tasks.push(Task::Apply);
+            machine.tasks.push(Task::Value {
+                value: argument,
+                binders,
+            });
+            Ok(())
+        },
+        | Elimination::StaticApply(argument) => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            machine
+                .tasks
+                .push(Task::Spine(spine.onward(Polarity::Value)));
+            machine.tasks.push(Task::StaticApply);
             machine.tasks.push(Task::Value {
                 value: argument,
                 binders,
@@ -3821,6 +4013,221 @@ mod tests
             Some(&ValueType::Unit),
             core.value_type(quoted),
             "the decode's code unfolded to a quote, and decoding it on mint left the quoted type"
+        );
+    }
+
+    #[test]
+    fn a_static_lambda_reads_back_with_its_binder_as_an_index()
+    {
+        // `λX. λY. ⌜El X × El Y⌝`: the inner quote reads both binders.
+        let mut core = CoreArena::new();
+        let outer = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let inner = core.value_variable(Zone::Intuitionistic, innermost());
+        let first = core.value_type_element(outer, Level::zero());
+        let second = core.value_type_element(inner, Level::zero());
+        let product = core.value_type_product(first, second);
+        let quote = core.value_quote(product);
+        let inner_lambda = core.value_static_lambda(quote);
+        let lambda = core.value_static_lambda(inner_lambda);
+
+        let (chain, environment) = nothing_unfolds();
+        let scope = environment.root();
+        let definitions = Definitions::new(&chain, &environment, scope);
+        let mut domain = DomainArena::new();
+        let evaluated = eval_value(&core, &mut domain, definitions, ample(), lambda)
+            .expect("a static lambda is already a value");
+        assert!(
+            matches!(
+                domain.value(evaluated),
+                Some(&DomainValue::StaticLambda { .. })
+            ),
+            "a static lambda evaluates to an operator"
+        );
+        let kept = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::ZeroUnfold,
+            ample(),
+            evaluated,
+        )
+        .expect("the zero-unfold mode reads the operator");
+        assert_eq!(lambda, kept, "a closed operator still denotes its source");
+
+        let read = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the unfolding mode rebuilds the operator");
+        assert_ne!(lambda, read, "the operator was rebuilt, not spliced");
+        let Some(&Value::StaticLambda(body)) = core.value(read)
+        else {
+            panic!("the rebuilt value is a static lambda");
+        };
+        let Some(&Value::StaticLambda(body)) = core.value(body)
+        else {
+            panic!("whose body is the inner static lambda");
+        };
+        let Some(&Value::Quote(quoted)) = core.value(body)
+        else {
+            panic!("whose body is the quote");
+        };
+        let Some(&ValueType::Product(left, right)) = core.value_type(quoted)
+        else {
+            panic!("the quoted type is the product");
+        };
+        for (component, index) in [(left, 1_u32), (right, 0_u32)] {
+            let Some(&ValueType::Element { code, .. }) = core.value_type(component)
+            else {
+                panic!("each component is a decode");
+            };
+            assert_eq!(
+                Some(&Value::Variable {
+                    zone: Zone::Intuitionistic,
+                    index: DeBruijnIndex::from(index),
+                }),
+                core.value(code),
+                "each decode names the binder it was written under, as an index again"
+            );
+        }
+    }
+
+    #[test]
+    fn a_quoted_static_pi_reads_back_former_by_former()
+    {
+        // `⌜Type → Type⌝`: the spending mode rebuilds the quote, rebuilds the
+        // static Pi from its two halves, and splices each leaf as it stands.
+        let mut core = CoreArena::new();
+        let universe = core.value_type_universe(
+            gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+            Level::zero(),
+        );
+        let pi = core.value_type_static_pi(universe, universe);
+        let quote = core.value_quote(pi);
+
+        let (chain, environment) = nothing_unfolds();
+        let scope = environment.root();
+        let definitions = Definitions::new(&chain, &environment, scope);
+        let mut domain = DomainArena::new();
+        let evaluated = eval_value(&core, &mut domain, definitions, ample(), quote)
+            .expect("a closed quote evaluates");
+        let read = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the unfolding mode reads the quote");
+        assert_ne!(quote, read, "the quote was rebuilt, not spliced");
+        let Some(&Value::Quote(quoted)) = core.value(read)
+        else {
+            panic!("the read value is a quote");
+        };
+        assert_ne!(pi, quoted, "the static Pi was rebuilt from its halves");
+        assert_eq!(
+            Some(&ValueType::StaticPi {
+                domain: universe,
+                codomain: universe,
+            }),
+            core.value_type(quoted),
+            "both halves are the universe leaf, spliced in order"
+        );
+    }
+
+    #[test]
+    fn an_unfolded_operator_reads_back_reduced()
+    {
+        // `Pair := λA. λB. ⌜El A × El B⌝`, read at `Pair ⌜Integer⌝ ⌜Unit⌝`.
+        let mut core = CoreArena::new();
+        let pair = ConstantIndex::from(0_usize);
+        let first = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let second = core.value_variable(Zone::Intuitionistic, innermost());
+        let left = core.value_type_element(first, Level::zero());
+        let right = core.value_type_element(second, Level::zero());
+        let product = core.value_type_product(left, right);
+        let quote = core.value_quote(product);
+        let inner = core.value_static_lambda(quote);
+        let body = core.value_static_lambda(inner);
+        let integer = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let unit = core.value_type_unit();
+        let integer_code = core.value_quote(integer);
+        let unit_code = core.value_quote(unit);
+        let head = core.value_constant(pair);
+        let partial = core.value_static_application(head, integer_code);
+        let applied = core.value_static_application(partial, unit_code);
+
+        let mut chain = DefinitionChain::new();
+        let defined = chain.define(pair, GlobalIndex::from(0_u32), Transparency::Manifest, &[]);
+        assert!(defined.is_ok());
+        let environment = DefinitionalEnvironment::new();
+        let scope = environment.root();
+        let chain = LoweredChain::lower(chain, |_| Ok::<_, Infallible>(body))
+            .unwrap_or_else(|never| match never {});
+        let definitions = Definitions::new(&chain, &environment, scope);
+
+        let mut domain = DomainArena::new();
+        let evaluated = eval_value(&core, &mut domain, definitions, ample(), applied)
+            .expect("a defined operator applied evaluates");
+        let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(evaluated)
+        else {
+            panic!("the operator is stuck until a readback spends it");
+        };
+        assert!(
+            matches!(
+                domain.neutral(neutral).map(crate::domain::Neutral::spine),
+                Some([Elimination::StaticApply(_), Elimination::StaticApply(_)])
+            ),
+            "the neutral carries both static applications"
+        );
+
+        let kept = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::ZeroUnfold,
+            ample(),
+            evaluated,
+        )
+        .expect("the zero-unfold mode reads the stuck application");
+        let Some(&Value::StaticApplication(kept_head, _)) = core.value(kept)
+        else {
+            panic!("the mode that spends nothing keeps the application");
+        };
+        assert!(
+            matches!(core.value(kept_head), Some(&Value::StaticApplication(..))),
+            "both applications stand"
+        );
+
+        let reduced = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the spending mode unfolds the operator and fires both betas");
+        let Some(&Value::Quote(quoted)) = core.value(reduced)
+        else {
+            panic!("the reduct is the body's quote, with no application left");
+        };
+        let Some(&ValueType::Product(read_left, read_right)) = core.value_type(quoted)
+        else {
+            panic!("the quoted type is the body's product");
+        };
+        assert_eq!(
+            (
+                Some(&ValueType::Base(gandr_kernel_term::BaseType::Integer)),
+                Some(&ValueType::Unit)
+            ),
+            (core.value_type(read_left), core.value_type(read_right)),
+            "each parameter was replaced by its own argument, in order"
         );
     }
 

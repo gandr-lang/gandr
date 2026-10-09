@@ -1469,7 +1469,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - fails: [`Refusal::Cyclic`] for an open value;
     ///   [`Refusal::DanglingNode`]; [`Refusal::LinearVariable`];
     ///   [`Refusal::Withheld`]; [`Refusal::OutOfFragment`] for a numeric
-    ///   literal, a pair, an injection or a value lift.
+    ///   literal, a pair, an injection, a value lift, a static lambda or a
+    ///   static application.
     /// - panics: none.
     fn descend_value(
         &mut self,
@@ -1530,6 +1531,10 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             | Value::Pair(..) => return Err(unadmitted(UnadmittedFormer::Pair)),
             | Value::Injection(..) => return Err(unadmitted(UnadmittedFormer::Injection)),
             | Value::Lift { .. } => return Err(unadmitted(UnadmittedFormer::ValueLift)),
+            | Value::StaticLambda(_) => return Err(unadmitted(UnadmittedFormer::StaticLambda)),
+            | Value::StaticApplication(..) => {
+                return Err(unadmitted(UnadmittedFormer::StaticApplication));
+            },
         };
         self.values.insert(at, Image::Open);
         self.frames.push(frame);
@@ -1713,6 +1718,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - fails: [`Refusal::CertificateDeclined`] for an unfolding the
     ///   normaliser does not certify; [`Refusal::Withheld`] for a constant that
     ///   did not cross; [`Refusal::LinearVariable`]; [`Refusal::DanglingNode`];
+    ///   [`Refusal::OutOfFragment`] for a static application;
     ///   [`Refusal::MachineInvariant`] for a code that is no code.
     /// - panics: none.
     /// - intension: a loop over the unfolding chain, which the admission order
@@ -1768,6 +1774,12 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                     let position = self.positions.kernel_position(code, constant)?;
                     target.value_constant(position)
                 },
+                | (&Value::StaticApplication(..), _) => {
+                    return Err(Refusal::OutOfFragment {
+                        at: CoreNode::Term(TermNode::Value(code)),
+                        former: UnadmittedFormer::StaticApplication,
+                    });
+                },
                 | (&Value::Quote(_), GroundSort::Computation)
                 | (&Value::QuoteComputation(_), GroundSort::Value)
                 | (
@@ -1776,7 +1788,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                     | Value::Thunk(_)
                     | Value::Pair(..)
                     | Value::Injection(..)
-                    | Value::Lift { .. }),
+                    | Value::Lift { .. }
+                    | Value::StaticLambda(_)),
                     _,
                 ) => return Err(Refusal::MachineInvariant),
             };

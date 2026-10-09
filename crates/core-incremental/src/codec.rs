@@ -721,6 +721,15 @@ where
             writer.tag(Tag(0x0A));
             write_index(writer, quoted)?;
         },
+        | ContentNode::StaticLambda(body) => {
+            writer.tag(Tag(0x0B));
+            write_index(writer, body)?;
+        },
+        | ContentNode::StaticApplication(head, argument) => {
+            writer.tag(Tag(0x0C));
+            write_index(writer, head)?;
+            write_index(writer, argument)?;
+        },
         | ContentNode::Lambda(body) => {
             writer.tag(Tag(0x10));
             write_index(writer, body)?;
@@ -815,6 +824,11 @@ where
             writer.tag(Tag(0x28));
             write_reference(writer, reference)?;
         },
+        | ContentNode::StaticPi { domain, codomain } => {
+            writer.tag(Tag(0x2B));
+            write_index(writer, domain)?;
+            write_index(writer, codomain)?;
+        },
         | ContentNode::Returner(result) => {
             writer.tag(Tag(0x30));
             write_index(writer, result)?;
@@ -908,6 +922,15 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let quoted = read_index(reader)?;
             ContentNode::QuoteComputation(quoted)
         },
+        | 0x0B => {
+            let body = read_index(reader)?;
+            ContentNode::StaticLambda(body)
+        },
+        | 0x0C => {
+            let head = read_index(reader)?;
+            let argument = read_index(reader)?;
+            ContentNode::StaticApplication(head, argument)
+        },
         | 0x10 => {
             let body = read_index(reader)?;
             ContentNode::Lambda(body)
@@ -1000,6 +1023,11 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
                 sort: TypeSort::Parameter(SortParameter::from(parameter)),
                 level,
             }
+        },
+        | 0x2B => {
+            let domain = read_index(reader)?;
+            let codomain = read_index(reader)?;
+            ContentNode::StaticPi { domain, codomain }
         },
         | 0x30 => {
             let result = read_index(reader)?;
@@ -1383,7 +1411,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in declaration order.
-const FORMERS: [UnadmittedFormer; 12] = [
+const FORMERS: [UnadmittedFormer; 15] = [
     UnadmittedFormer::Pair,
     UnadmittedFormer::Injection,
     UnadmittedFormer::ValueLift,
@@ -1396,6 +1424,9 @@ const FORMERS: [UnadmittedFormer; 12] = [
     UnadmittedFormer::Abstract,
     UnadmittedFormer::SortParameter,
     UnadmittedFormer::TopUniverse,
+    UnadmittedFormer::StaticPi,
+    UnadmittedFormer::StaticLambda,
+    UnadmittedFormer::StaticApplication,
 ];
 
 /// The shapes a rule can require, in declaration order.

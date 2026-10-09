@@ -127,6 +127,12 @@ pub enum UnadmittedFormer
     /// A universe at the greatest representable level, whose own universe
     /// has no level to stand at.
     TopUniverse,
+    /// A static Pi: the classifier of a type operator.
+    StaticPi,
+    /// A static lambda: a type operator.
+    StaticLambda,
+    /// A static application: a type operator at an argument.
+    StaticApplication,
 }
 
 /// A synthesised type that does not convert to the type it was checked

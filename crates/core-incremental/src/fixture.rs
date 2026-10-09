@@ -403,5 +403,24 @@ pub fn every_former(noise: Noise) -> Program
         Maybe::Present(quoted),
     );
 
+    // 19: a type operator at the static Pi from the value universe to itself,
+    // by the static lambda λA. A.
+    let value_universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let operator_type = arena.value_type_static_pi(value_universe, value_universe);
+    let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+    let operator = arena.value_static_lambda(bound);
+    push(
+        "operator",
+        Maybe::Present(operator_type),
+        Maybe::Present(operator),
+    );
+
+    // 20: the operator at the code of Integer, a static application.
+    let operator_constant = arena.value_constant(ConstantIndex::from(19_usize));
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let code = arena.value_quote(integer_type);
+    let instance = arena.value_static_application(operator_constant, code);
+    push("instance", unsigned(), Maybe::Present(instance));
+
     Program::new(arena, items).expect("positions ascend")
 }

@@ -656,7 +656,9 @@ impl<'arena> CheckingContext<'arena>
             | Value::Pair(..)
             | Value::Injection(..)
             | Value::Thunk(_)
-            | Value::Lift { .. } => Ok(otherwise.clone()),
+            | Value::Lift { .. }
+            | Value::StaticLambda(_)
+            | Value::StaticApplication(..) => Ok(otherwise.clone()),
         }
     }
 

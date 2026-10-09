@@ -174,10 +174,11 @@ pub enum DomainFault
 {
     /// The id names no node of its family in this arena.
     Dangling,
-    /// A neutral carrying a spine was offered for a value position. The term
-    /// vocabulary has no value eliminator, so a spined neutral is a stuck
+    /// A neutral whose spine stacks a computation eliminator was offered for a
+    /// value position. The vocabulary's one value eliminator is the static
+    /// application, so a neutral stacking anything else is a stuck
     /// computation and cannot stand where a value is expected.
-    ValueNeutralHasSpine,
+    ValueNeutralEliminatesComputation,
     /// A neutral with nothing to unfold was asked to record a forced body.
     NeutralIsRigid,
     /// A neutral whose body was already forced was asked to record another.
@@ -596,8 +597,10 @@ impl DomainArena
     /// - hypothesis: L3 — the decision surfaces are the loaded face, the
     ///   closure-holding eliminations and the argument's word, separated by a
     ///   rigid variable applied to a rigid argument, the same head carrying an
-    ///   unforced body, and a spine stacking a bind.
+    ///   unforced body, and a spine stacking a bind; a static family's word is
+    ///   separated by head index, by arity and by argument.
     /// - witness: `arena::tests::a_neutral_is_rigid_only_without_a_body_or_a_closure`
+    /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
     fn neutral_word(
         &self,
         head: NeutralHead,
@@ -623,6 +626,12 @@ impl DomainArena
                     word,
                     self.folded_value_guard(argument),
                 ]),
+                | Elimination::StaticApply(argument) => {
+                    Guard::compose(GuardTag::StaticApply, &(), &[
+                        word,
+                        self.folded_value_guard(argument),
+                    ])
+                },
                 | Elimination::Force => Guard::compose(GuardTag::Force, &(), &[word]),
                 | Elimination::Bind(_) | Elimination::Case { .. } => return Guard::Flexible,
             };
@@ -984,41 +993,69 @@ impl DomainArena
         self.alloc_value(DomainValue::Code { code, face }, Guard::Flexible)
     }
 
+    /// Mint a type operator over an already-allocated value closure whose body
+    /// is a static lambda.
+    ///
+    /// An operator's guard is flexible, as a code's is: whether two operators
+    /// are apart depends on the bodies they close over, which the comparison
+    /// reads rather than a content hash.
+    ///
+    /// # Specification
+    /// - requires: `lambda` names a live value closure of this arena whose body
+    ///   is a static lambda.
+    /// - ensures: a fresh value node carrying that closure id and `face`.
+    /// - provides: the domain form a static lambda evaluates to.
+    /// - fails: never — a closure that dangles surfaces where it is read.
+    /// - panics: none.
+    #[inline]
+    pub fn value_static_lambda(
+        &mut self,
+        lambda: ValueClosureId,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        self.alloc_value(DomainValue::StaticLambda { lambda, face }, Guard::Flexible)
+    }
+
     /// Mint a stuck **value** over an already-allocated neutral.
     ///
     /// # Specification
-    /// - requires: nothing — a dangling neutral and a spined one are both
-    ///   admissible input and both refused.
+    /// - requires: nothing — a dangling neutral and one stacking a computation
+    ///   eliminator are both admissible input and both refused.
     /// - ensures: on success a value node standing for the neutral, whose spine
-    ///   the arena has checked is empty.
+    ///   the arena has checked holds static applications alone.
     /// - provides: the one well-formedness condition of the domain that is not
     ///   structural, checked at the only site that can violate it.
     /// - fails: [`DomainFault::Dangling`] when the neutral does not resolve,
-    ///   and [`DomainFault::ValueNeutralHasSpine`] when it carries an
-    ///   elimination — the term vocabulary has no value eliminator, so a spined
-    ///   neutral is a stuck computation and cannot stand in a value slot.
+    ///   and [`DomainFault::ValueNeutralEliminatesComputation`] when its spine
+    ///   stacks an application, a force, a bind or a case — the static
+    ///   application is the vocabulary's one value eliminator, so any other is
+    ///   a stuck computation and cannot stand in a value slot.
     /// - panics: none.
     ///
     /// # Errors
     /// - [`DomainFault::Dangling`] — the neutral id names no node.
-    /// - [`DomainFault::ValueNeutralHasSpine`] — the neutral carries a spine.
+    /// - [`DomainFault::ValueNeutralEliminatesComputation`] — the neutral
+    ///   stacks a computation eliminator.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the two decision surfaces are the resolution guard
     ///   and the spine guard, separated by a spineless neutral, a neutral
-    ///   carrying one application, and an id past the family, each asserted by
-    ///   variant.
-    /// - witness: `arena::tests::a_value_neutral_refuses_a_spine`
+    ///   carrying one static application, a neutral carrying one application,
+    ///   and an id past the family, each asserted by variant.
+    /// - witness: `arena::tests::a_value_neutral_refuses_a_computation_spine`
     #[inline]
     #[spec(ensures: |ret| match ret {
-        | Ok(id) => self.neutral(neutral).is_some_and(|node| node.spine().is_empty())
+        | Ok(id) => self.neutral(neutral).is_some_and(|node| node.spine().iter().all(
+                |elimination| matches!(elimination, Elimination::StaticApply(_))))
             && self.value(id).is_some_and(|value| {
                 matches!(*value, DomainValue::Neutral { neutral: stored, face: stored_face }
                     if stored == neutral && stored_face == face)
             }),
         | Err(DomainFault::Dangling) => self.neutral(neutral).is_none(),
-        | Err(DomainFault::ValueNeutralHasSpine) =>
-            self.neutral(neutral).is_some_and(|node| !node.spine().is_empty()),
+        | Err(DomainFault::ValueNeutralEliminatesComputation) =>
+            self.neutral(neutral).is_some_and(|node| node.spine().iter().any(
+                |elimination| !matches!(elimination, Elimination::StaticApply(_)))),
         | Err(_) => false,
     })]
     pub fn value_neutral(
@@ -1031,8 +1068,12 @@ impl DomainArena
         else {
             return Err(DomainFault::Dangling);
         };
-        if !node.spine().is_empty() {
-            return Err(DomainFault::ValueNeutralHasSpine);
+        if node
+            .spine()
+            .iter()
+            .any(|elimination| !matches!(elimination, Elimination::StaticApply(_)))
+        {
+            return Err(DomainFault::ValueNeutralEliminatesComputation);
         }
         let word = self.neutral_guard(neutral).unwrap_or(Guard::Flexible);
         let guard = Guard::compose(GuardTag::ValueNeutral, &(), &[word]);
@@ -1268,7 +1309,7 @@ mod tests
     }
 
     #[test]
-    fn a_value_neutral_refuses_a_spine()
+    fn a_value_neutral_refuses_a_computation_spine()
     {
         let mut arena = DomainArena::new();
         let spineless = arena
@@ -1285,6 +1326,17 @@ mod tests
         );
 
         let unit = arena.value_unit(TermFace::Reduced);
+        let operated = arena
+            .neutral_node(
+                NeutralHead::Constant(ConstantIndex::from(1_usize)),
+                Vec::from([Elimination::StaticApply(unit)]),
+                Unfolding::Rigid,
+            )
+            .expect("a statically applied neutral mints");
+        assert!(
+            arena.value_neutral(operated, TermFace::Reduced).is_ok(),
+            "a static application is the one value eliminator, so its neutral stands as a value"
+        );
         let applied = arena
             .neutral_node(
                 NeutralHead::Constant(ConstantIndex::from(1_usize)),
@@ -1293,9 +1345,9 @@ mod tests
             )
             .expect("a spined neutral mints; it just cannot stand in a value slot");
         assert_eq!(
-            Err(DomainFault::ValueNeutralHasSpine),
+            Err(DomainFault::ValueNeutralEliminatesComputation),
             arena.value_neutral(applied, TermFace::Reduced),
-            "a spined neutral is a stuck computation and cannot stand in a value slot"
+            "an applied neutral is a stuck computation and cannot stand in a value slot"
         );
         assert_eq!(
             Err(DomainFault::Dangling),

@@ -160,6 +160,10 @@ pub enum ContentNode
     Quote(NodeIndex),
     /// The code of a computation type.
     QuoteComputation(NodeIndex),
+    /// A static lambda over its body, under one binder.
+    StaticLambda(NodeIndex),
+    /// A static application of an operator to an argument.
+    StaticApplication(NodeIndex, NodeIndex),
     /// A lambda over its body.
     Lambda(NodeIndex),
     /// An application of a computation to a value.
@@ -213,6 +217,14 @@ pub enum ContentNode
         code: NodeIndex,
         /// The level it is read at.
         target: Level,
+    },
+    /// A static Pi, whose codomain binds nothing.
+    StaticPi
+    {
+        /// The domain.
+        domain: NodeIndex,
+        /// The codomain.
+        codomain: NodeIndex,
     },
     /// A sealed abstract type, by what its position names.
     Abstract(Reference),
@@ -316,7 +328,9 @@ impl ContentNode
             | Self::Thunk(_)
             | Self::ValueLift { .. }
             | Self::Quote(_)
-            | Self::QuoteComputation(_) => Sort::Value,
+            | Self::QuoteComputation(_)
+            | Self::StaticLambda(_)
+            | Self::StaticApplication(..) => Sort::Value,
             | Self::Lambda(_)
             | Self::Application(..)
             | Self::Return(_)
@@ -331,7 +345,8 @@ impl ContentNode
             | Self::Universe { .. }
             | Self::TypeLift { .. }
             | Self::Element { .. }
-            | Self::Abstract(_) => Sort::ValueType,
+            | Self::Abstract(_)
+            | Self::StaticPi { .. } => Sort::ValueType,
             | Self::Returner(_)
             | Self::Arrow { .. }
             | Self::Pi { .. }
@@ -363,7 +378,10 @@ impl ContentNode
             | Self::Universe { .. }
             | Self::Abstract(_)
             | Self::Unresolved(_) => Children::default(),
-            | Self::Pair(first, second) => Children::of(&[(first, V), (second, V)]),
+            | Self::Pair(first, second) | Self::StaticApplication(first, second) => {
+                Children::of(&[(first, V), (second, V)])
+            },
+            | Self::StaticLambda(body)
             | Self::Injection(_, body)
             | Self::ValueLift { body, .. }
             | Self::Return(body)
@@ -376,9 +394,12 @@ impl ContentNode
                 on_left,
                 on_right,
             } => Children::of(&[(scrutinee, V), (on_left, M), (on_right, M)]),
-            | Self::Product(first, second) | Self::Sum(first, second) => {
-                Children::of(&[(first, A), (second, A)])
-            },
+            | Self::Product(first, second)
+            | Self::Sum(first, second)
+            | Self::StaticPi {
+                domain: first,
+                codomain: second,
+            } => Children::of(&[(first, A), (second, A)]),
             | Self::ThunkType(body) => Children::of(&[(body, C)]),
             | Self::TypeLift { inner, .. } | Self::Returner(inner) => Children::of(&[(inner, A)]),
             | Self::Element { code, .. } | Self::ComputationElement { code, .. } => {
@@ -428,6 +449,9 @@ impl ContentNode
             | Self::Pi { .. }
             | Self::Quote(_)
             | Self::QuoteComputation(_)
+            | Self::StaticLambda(_)
+            | Self::StaticApplication(..)
+            | Self::StaticPi { .. }
             | Self::ComputationElement { .. }
             | Self::Unresolved(_) => Maybe::Absent(referencing::Absent::NotAReference),
         }
@@ -917,6 +941,13 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             | Value::QuoteComputation(quoted) => {
                 ContentNode::QuoteComputation(self.discover(ArenaNode::CompType(quoted)))
             },
+            | Value::StaticLambda(body) => {
+                ContentNode::StaticLambda(self.discover(ArenaNode::Value(body)))
+            },
+            | Value::StaticApplication(head, argument) => {
+                let head = self.discover(ArenaNode::Value(head));
+                ContentNode::StaticApplication(head, self.discover(ArenaNode::Value(argument)))
+            },
         }
     }
 
@@ -999,6 +1030,13 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 target: target.clone(),
             },
             | ValueType::Abstract(position) => ContentNode::Abstract(self.layout.resolve(position)),
+            | ValueType::StaticPi { domain, codomain } => {
+                let domain = self.discover(ArenaNode::ValueType(domain));
+                ContentNode::StaticPi {
+                    domain,
+                    codomain: self.discover(ArenaNode::ValueType(codomain)),
+                }
+            },
         }
     }
 
@@ -1169,6 +1207,18 @@ where
         },
         | ContentNode::Quote(quoted) => ContentNode::Quote(image(quoted)),
         | ContentNode::QuoteComputation(quoted) => ContentNode::QuoteComputation(image(quoted)),
+        | ContentNode::StaticLambda(body) => ContentNode::StaticLambda(image(body)),
+        | ContentNode::StaticApplication(head, argument) => {
+            let head = image(head);
+            ContentNode::StaticApplication(head, image(argument))
+        },
+        | ContentNode::StaticPi { domain, codomain } => {
+            let domain = image(domain);
+            ContentNode::StaticPi {
+                domain,
+                codomain: image(codomain),
+            }
+        },
         | ContentNode::ComputationElement { code, ref target } => ContentNode::ComputationElement {
             code: image(code),
             target: target.clone(),
@@ -1356,6 +1406,17 @@ fn mint_node(
                 | _ => ill_sorted,
             }
         },
+        | ContentNode::StaticPi { domain, codomain } => {
+            match (
+                minted_value_type(states, domain),
+                minted_value_type(states, codomain),
+            ) {
+                | (Maybe::Present(domain), Maybe::Present(codomain)) => Maybe::Present(
+                    Minted::ValueType(arena.value_type_static_pi(domain, codomain)),
+                ),
+                | _ => ill_sorted,
+            }
+        },
         | ContentNode::ThunkType(body) => match minted_comp_type(states, body) {
             | Maybe::Present(body) => {
                 Maybe::Present(Minted::ValueType(arena.value_type_thunk(body)))
@@ -1409,6 +1470,8 @@ fn mint_node(
         | ContentNode::ValueLift { .. }
         | ContentNode::Quote(_)
         | ContentNode::QuoteComputation(_)
+        | ContentNode::StaticLambda(_)
+        | ContentNode::StaticApplication(..)
         | ContentNode::Lambda(_)
         | ContentNode::Application(..)
         | ContentNode::Return(_)

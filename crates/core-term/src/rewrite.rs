@@ -405,11 +405,12 @@ impl<'arena> Engine<'arena>
     /// Schedule `node`'s children, each at the depth its position sits at.
     ///
     /// **The binding positions are the whole content of this function.** A
-    /// lambda binds for its body, a bind for its body and not its bound
-    /// computation, a case for each branch and not its scrutinee, and the
-    /// dependent arrow for its codomain and not its domain. A quote and a
-    /// decode bind nothing: they cross between terms and types at the depth
-    /// they stand at.
+    /// lambda binds for its body, a static lambda for its body, a bind for
+    /// its body and not its bound computation, a case for each branch and not
+    /// its scrutinee, and the dependent arrow for its codomain and not its
+    /// domain. A quote and a decode bind nothing: they cross between terms
+    /// and types at the depth they stand at. Nor does a static Pi: its
+    /// codomain stands in the ambient context.
     ///
     /// # Specification
     /// - requires: `depth` is the number of binders crossed to reach `node`.
@@ -448,6 +449,13 @@ impl<'arena> Engine<'arena>
                 | Some(&Value::QuoteComputation(quoted)) => {
                     children.push((Node::CompType(quoted), depth));
                 },
+                | Some(&Value::StaticLambda(body)) => {
+                    children.push((Node::Value(body), depth.deeper()));
+                },
+                | Some(&Value::StaticApplication(head, argument)) => {
+                    children.push((Node::Value(head), depth));
+                    children.push((Node::Value(argument), depth));
+                },
             },
             | Node::Computation(id) => match self.arena.computation(id) {
                 | None => {},
@@ -483,7 +491,14 @@ impl<'arena> Engine<'arena>
                     | &ValueType::Abstract(_),
                 )
                 | None => {},
-                | Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)) => {
+                | Some(
+                    &ValueType::Product(first, second)
+                    | &ValueType::Sum(first, second)
+                    | &ValueType::StaticPi {
+                        domain: first,
+                        codomain: second,
+                    },
+                ) => {
                     children.push((Node::ValueType(first), depth));
                     children.push((Node::ValueType(second), depth));
                 },
@@ -692,6 +707,26 @@ impl<'arena> Engine<'arena>
                     self.arena.value_quote_computation(rewritten)
                 }
             },
+            | Value::StaticLambda(body) => {
+                let rewritten = self.value(body);
+                if rewritten == body {
+                    id
+                }
+                else {
+                    self.arena.value_static_lambda(rewritten)
+                }
+            },
+            | Value::StaticApplication(head, argument) => {
+                let rewritten_argument = self.value(argument);
+                let rewritten_head = self.value(head);
+                if (rewritten_head, rewritten_argument) == (head, argument) {
+                    id
+                }
+                else {
+                    self.arena
+                        .value_static_application(rewritten_head, rewritten_argument)
+                }
+            },
         }
     }
 
@@ -845,6 +880,17 @@ impl<'arena> Engine<'arena>
                 }
                 else {
                     self.arena.value_type_element(rewritten, target)
+                }
+            },
+            | ValueType::StaticPi { domain, codomain } => {
+                let rewritten_codomain = self.value_type(codomain);
+                let rewritten_domain = self.value_type(domain);
+                if (rewritten_domain, rewritten_codomain) == (domain, codomain) {
+                    id
+                }
+                else {
+                    self.arena
+                        .value_type_static_pi(rewritten_domain, rewritten_codomain)
                 }
             },
         }
@@ -1009,6 +1055,44 @@ pub fn instantiate_comp_type(
     }
 }
 
+/// Instantiate a value scoped under one binder at an argument: `v[a / x]`,
+/// the reduct of a static redex `(λ. v) a`.
+///
+/// # Specification
+/// - requires: `body` names a value of `arena` scoped under one binder beyond
+///   some context `Γ`, and `argument` a value of `arena` in `Γ`.
+/// - ensures: the body in `Γ`, with every occurrence of its binder replaced by
+///   the argument carried under the binders it crosses, every index outside the
+///   binder lowered by one, and every decode whose code became a quote read as
+///   the quoted type; `body` itself when nothing in it changed.
+/// - provides: the one substitution static beta takes, shared by the
+///   normaliser's certificates and every walk that unfolds a static definition
+///   at an instance.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the three substitution boundaries, each asserted as the
+///   exact rewritten term: a free occurrence replaced, an occurrence under a
+///   shadowing static lambda spared, and an open argument carried under a
+///   binder without capture.
+/// - witness: `rewrite::tests::substitution_replaces_a_free_occurrence`
+/// - witness: `rewrite::tests::substitution_stops_at_a_shadowing_binder`
+/// - witness: `rewrite::tests::substitution_avoids_capture`
+#[inline]
+#[must_use]
+pub fn instantiate_value(
+    arena: &mut CoreArena,
+    body: ValueId,
+    argument: ValueId,
+) -> ValueId
+{
+    match Engine::new(arena).run(Node::Value(body), Rewrite::Substitute(argument)) {
+        | Node::Value(id) => id,
+        | Node::Computation(_) | Node::ValueType(_) | Node::CompType(_) => body,
+    }
+}
+
 /// Lower a computation type out from under its innermost binder.
 ///
 /// # Specification
@@ -1051,11 +1135,13 @@ mod tests
 
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use quenchant_shape::shape::Maybe;
 
     use super::Binders;
     use super::instantiate_comp_type;
+    use super::instantiate_value;
     use super::shift_comp_type;
     use super::shift_value_type;
     use super::strengthen_comp_type;
@@ -1107,8 +1193,12 @@ mod tests
         Thunk,
         Product,
         Variable(u32),
+        Constant(ConstantIndex),
+        Pair,
         Quote,
         QuoteComputation,
+        StaticLambda,
+        StaticApplication,
         Other,
     }
 
@@ -1132,8 +1222,33 @@ mod tests
         root: CompTypeId,
     ) -> Vec<Token>
     {
+        spelling_of(arena, Visit::CompType(root))
+    }
+
+    /// The pre-order spelling of a value, through the formers the static
+    /// tests write.
+    ///
+    /// # Specification
+    /// trivial.
+    fn value_spelling(
+        arena: &CoreArena,
+        root: ValueId,
+    ) -> Vec<Token>
+    {
+        spelling_of(arena, Visit::Value(root))
+    }
+
+    /// The pre-order spelling of any node the walk visits.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spelling_of(
+        arena: &CoreArena,
+        root: Visit,
+    ) -> Vec<Token>
+    {
         let mut tokens = Vec::new();
-        let mut pending = vec![Visit::CompType(root)];
+        let mut pending = vec![root];
         while let Some(visit) = pending.pop() {
             match visit {
                 | Visit::CompType(id) => match arena.comp_type(id) {
@@ -1178,6 +1293,12 @@ mod tests
                     | Some(&Value::Variable { index, .. }) => {
                         tokens.push(Token::Variable(u32::from(index)));
                     },
+                    | Some(&Value::Constant(constant)) => tokens.push(Token::Constant(constant)),
+                    | Some(&Value::Pair(first, second)) => {
+                        tokens.push(Token::Pair);
+                        pending.push(Visit::Value(second));
+                        pending.push(Visit::Value(first));
+                    },
                     | Some(&Value::Quote(quoted)) => {
                         tokens.push(Token::Quote);
                         pending.push(Visit::ValueType(quoted));
@@ -1185,6 +1306,15 @@ mod tests
                     | Some(&Value::QuoteComputation(quoted)) => {
                         tokens.push(Token::QuoteComputation);
                         pending.push(Visit::CompType(quoted));
+                    },
+                    | Some(&Value::StaticLambda(body)) => {
+                        tokens.push(Token::StaticLambda);
+                        pending.push(Visit::Value(body));
+                    },
+                    | Some(&Value::StaticApplication(head, argument)) => {
+                        tokens.push(Token::StaticApplication);
+                        pending.push(Visit::Value(argument));
+                        pending.push(Visit::Value(head));
                     },
                     | Some(_) | None => tokens.push(Token::Other),
                 },
@@ -1629,6 +1759,81 @@ mod tests
             reference.watermark(),
             arena.watermark(),
             "the shift minted exactly one more copy of the shared chain, never its unfolding"
+        );
+    }
+
+    #[test]
+    fn substitution_replaces_a_free_occurrence()
+    {
+        let mut arena = CoreArena::new();
+        // F #0 #1 under one binder, at G: the binder's #0 becomes G and the
+        // outer #1 lowers to #0.
+        let operator = arena.value_constant(ConstantIndex::from(0_usize));
+        let bound = variable(&mut arena, DeBruijnIndex::from(0));
+        let outer = variable(&mut arena, DeBruijnIndex::from(1));
+        let inner = arena.value_static_application(operator, bound);
+        let body = arena.value_static_application(inner, outer);
+        let argument = arena.value_constant(ConstantIndex::from(1_usize));
+        let reduct = instantiate_value(&mut arena, body, argument);
+        assert_eq!(
+            vec![
+                Token::StaticApplication,
+                Token::StaticApplication,
+                Token::Constant(ConstantIndex::from(0_usize)),
+                Token::Constant(ConstantIndex::from(1_usize)),
+                Token::Variable(0),
+            ],
+            value_spelling(&arena, reduct),
+            "the free occurrence is the argument and the outer index lowers by one"
+        );
+    }
+
+    #[test]
+    fn substitution_stops_at_a_shadowing_binder()
+    {
+        let mut arena = CoreArena::new();
+        // λ. ⟨#0, #1⟩ under one binder: the inner #0 is the lambda's own and
+        // stays; the inner #1 is the substituted binder.
+        let own = variable(&mut arena, DeBruijnIndex::from(0));
+        let substituted = variable(&mut arena, DeBruijnIndex::from(1));
+        let pair = arena.value_pair(own, substituted);
+        let body = arena.value_static_lambda(pair);
+        let argument = arena.value_constant(ConstantIndex::from(1_usize));
+        let reduct = instantiate_value(&mut arena, body, argument);
+        assert_eq!(
+            vec![
+                Token::StaticLambda,
+                Token::Pair,
+                Token::Variable(0),
+                Token::Constant(ConstantIndex::from(1_usize)),
+            ],
+            value_spelling(&arena, reduct),
+            "the shadowing lambda's own occurrence is spared"
+        );
+
+        let only_own = variable(&mut arena, DeBruijnIndex::from(0));
+        let closed = arena.value_static_lambda(only_own);
+        assert_eq!(
+            closed,
+            instantiate_value(&mut arena, closed, argument),
+            "and a body that never reads the binder is returned as it stands"
+        );
+    }
+
+    #[test]
+    fn substitution_avoids_capture()
+    {
+        let mut arena = CoreArena::new();
+        // λ. #1 under one binder, at the open argument #0: carried under the
+        // lambda the argument is #1, not the lambda's own #0.
+        let substituted = variable(&mut arena, DeBruijnIndex::from(1));
+        let body = arena.value_static_lambda(substituted);
+        let argument = variable(&mut arena, DeBruijnIndex::from(0));
+        let reduct = instantiate_value(&mut arena, body, argument);
+        assert_eq!(
+            vec![Token::StaticLambda, Token::Variable(1)],
+            value_spelling(&arena, reduct),
+            "the open argument rises past the binder it crosses"
         );
     }
 }

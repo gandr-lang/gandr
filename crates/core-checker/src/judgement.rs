@@ -787,7 +787,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   [`CheckRefusal::UnboundIndex`] for a variable past its zone's binders;
     ///   [`CheckRefusal::UnknownConstant`] for a constant with no type;
     ///   [`CheckRefusal::OutOfFragment`] for a numeric literal, a pair, an
-    ///   injection or a value lift.
+    ///   injection, a value lift, a static lambda or a static application.
     /// - panics: none.
     fn synthesise_value(
         &mut self,
@@ -844,6 +844,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Pair(..) => Err(unadmitted_value(term, UnadmittedFormer::Pair)),
             | Value::Injection(..) => Err(unadmitted_value(term, UnadmittedFormer::Injection)),
             | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
+            | Value::StaticLambda(_) => Err(unadmitted_value(term, UnadmittedFormer::StaticLambda)),
+            | Value::StaticApplication(..) => {
+                Err(unadmitted_value(term, UnadmittedFormer::StaticApplication))
+            },
         }
     }
 
@@ -869,8 +873,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///   `expected`'s weak head; a synthesising value synthesises, then crosses
     ///   the value bridge to `expected`.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a thunk against no thunk
-    ///   type; [`CheckRefusal::OutOfFragment`] for a pair, an injection or a
-    ///   value lift.
+    ///   type; [`CheckRefusal::OutOfFragment`] for a pair, an injection, a
+    ///   value lift, a static lambda or a static application.
     /// - panics: none.
     ///
     /// # Judgement
@@ -904,6 +908,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Pair(..) => Err(unadmitted_value(term, UnadmittedFormer::Pair)),
             | Value::Injection(..) => Err(unadmitted_value(term, UnadmittedFormer::Injection)),
             | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
+            | Value::StaticLambda(_) => Err(unadmitted_value(term, UnadmittedFormer::StaticLambda)),
+            | Value::StaticApplication(..) => {
+                Err(unadmitted_value(term, UnadmittedFormer::StaticApplication))
+            },
         }
     }
 
@@ -2495,8 +2503,10 @@ mod tests
                     | Value::Injection(..)
                     | Value::Lift { .. }
                     | Value::Quote(_)
-                    | Value::QuoteComputation(_) => {
-                        prop_assert!(false, "the recipe mints no pair, injection, lift or quote");
+                    | Value::QuoteComputation(_)
+                    | Value::StaticLambda(_)
+                    | Value::StaticApplication(..) => {
+                        prop_assert!(false, "the recipe mints no pair, injection, lift, quote or static operator");
                     },
                 }
                 prop_assert_eq!(

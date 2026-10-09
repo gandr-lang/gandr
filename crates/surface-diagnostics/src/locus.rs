@@ -500,6 +500,9 @@ impl fmt::Display for Former
             | UnadmittedFormer::Abstract => "a sealed abstract type",
             | UnadmittedFormer::SortParameter => "a universe over a sort parameter",
             | UnadmittedFormer::TopUniverse => "a universe at the greatest representable level",
+            | UnadmittedFormer::StaticPi => "the classifier of a type operator",
+            | UnadmittedFormer::StaticLambda => "a type operator",
+            | UnadmittedFormer::StaticApplication => "a type operator at an argument",
         })
     }
 }

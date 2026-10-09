@@ -119,6 +119,7 @@ impl<'arena> CoreSource<'arena>
             | Value::QuoteComputation(quoted) => {
                 Former::QuoteComputation(CoreNode::CompType(quoted))
             },
+            | Value::StaticLambda(_) | Value::StaticApplication(..) => Former::Unreadable,
         }
     }
 
@@ -154,6 +155,7 @@ impl<'arena> CoreSource<'arena>
             | ValueType::Lift { .. } => Former::TypeLift,
             | ValueType::Element { code, .. } => Former::Element(CoreNode::Value(code)),
             | ValueType::Abstract(atom) => self.named(atom, Former::Abstract),
+            | ValueType::StaticPi { .. } => Former::Unreadable,
         }
     }
 
