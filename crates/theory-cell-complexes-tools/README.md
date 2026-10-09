@@ -18,11 +18,11 @@ The test-facing second inhabitant of the cell-alphabet trait — a first-order t
 
 ## Synopsis
 
-**What.** `ToyAlphabet` implements `CellAlphabet` over a single-sorted term language of `Zero`, `Succ`, `Add` and metavariables, with every subterm a command position. `Lying<L>` is that alphabet in every answer but the ones an `AlphabetLie` overrides; `IncomparablePositions` calls every position pair disjoint, and `NonLocalSplice` disturbs the sibling of the position it splices. The crate's own suite asserts the three inhabitant laws over the sequent alphabet and the toy, the copy search over the toy, and each adversary's one lie.
+**What.** `ToyAlphabet` implements `CellAlphabet` over a single-sorted term language of `Zero`, `Succ`, `Add` and metavariables, with every subterm a command position. `Lying<L>` is that alphabet in every answer but the ones an `AlphabetLie` overrides; `IncomparablePositions` calls every position pair disjoint, `NonLocalSplice` disturbs the sibling of the position it splices, `WithheldConvexity` withholds the convexity warrant, and `CollidingAddresses` hashes every orientation tag to nothing. The crate's own suite asserts the three inhabitant laws over the sequent alphabet and the toy, the copy search over the toy, and each adversary's one lie.
 
 **Why.** The workspace ships one production alphabet, whose only command position is the root. An engine generic over `CellAlphabet` measured over that alphabet alone measures that alphabet, and never meets two applications inside one term. A second inhabitant with nested commands gives every engine suite a term language where positions below the root, overlaps between them and splices into them exist; an adversary gives the defensive checks of an engine an input that reaches them, which no honest inhabitant does.
 
-**How.** A toy term is one flat table in prefix order, so every walk over it is a loop. Matching, unification, reading and splicing run over index ranges into that table. `Lying<L>` reuses the toy's associated types and forwards every method to `ToyAlphabet` except `position_order` and `splice_cmd_at`, which it forwards to `L`; `AlphabetLie` gives both the honest answer by default, so an adversary overrides exactly the method it lies about.
+**How.** A toy term is one flat table in prefix order, so every walk over it is a loop. Matching, unification, reading and splicing run over index ranges into that table. `Lying<L>` reuses the toy's associated types, its orientation tag wrapped in `LyingOrient<L>`, and forwards every method to `ToyAlphabet` except `position_order`, `splice_cmd_at` and `convexity_discharge`, which it forwards to `L`, as `LyingOrient<L>` forwards its hash; `AlphabetLie` gives each the honest answer by default, so an adversary overrides exactly the method it lies about.
 
 ## References
 
@@ -31,7 +31,7 @@ The test-facing second inhabitant of the cell-alphabet trait — a first-order t
 ## Provided features
 
 - `ToyAlphabet`, `Toy`, `ToyVar`, `ToyPos`, `ToySubst`, `ToyOrient`, `ToyProv`, `ToyMeta`, `toy_cell`: the toy inhabitant, its terms and tags, and a rule-cell constructor. Witnesses: `tests::inhabitant::matching_then_substituting_returns_the_matched_term`, `tests::inhabitant::a_successful_match_binds_every_metavariable_the_pattern_names`, `tests::inhabitant::splicing_at_a_position_agrees_with_reading_it`, `tests::inhabitant::the_copy_search_is_alphabet_neutral`.
-- `Lying`, `AlphabetLie`, `IncomparablePositions`, `NonLocalSplice`, `lying_cell`: the adversary frame and its two lies. Witnesses: `tests::adversary::the_incomparable_wrapper_breaks_the_position_order_and_keeps_the_match`, `tests::adversary::the_non_local_splice_wrapper_breaks_the_splice_and_keeps_the_read`.
+- `Lying`, `AlphabetLie`, `LyingOrient`, `IncomparablePositions`, `NonLocalSplice`, `WithheldConvexity`, `CollidingAddresses`, `lying_cell`, `reoriented_lying_cell`: the adversary frame and its four lies. Witnesses: `tests::adversary::the_incomparable_wrapper_breaks_the_position_order_and_keeps_the_match`, `tests::adversary::the_non_local_splice_wrapper_breaks_the_splice_and_keeps_the_read`, `tests::adversary::the_withheld_convexity_wrapper_withholds_the_warrant_and_keeps_the_match`, `tests::adversary::the_colliding_addresses_wrapper_hides_the_orientation_and_keeps_the_cell`.
 - No production edge: the resolved workspace reaches this crate through no normal or build dependency. Witness: `tests::workspace::no_production_crate_links_the_tools_crate`.
 
 ## Expected features
@@ -98,14 +98,16 @@ The reduction order is size guarded by hole domination: the larger side wins whe
 
 An engine generic over `CellAlphabet` spends clauses of the trait it cannot check, and some of its checks exist only to catch an inhabitant that breaks one. Such a check is dead code over every honest inhabitant. `Lying<L>` makes it live: it is the toy alphabet with exactly one answer replaced, so a behaviour seen over `Lying<L>` and not over `ToyAlphabet` is attributable to `L`'s lie alone. Each adversary has a fixture witness here, asserting that its lie happens and that a neighbouring answer stays honest, so an adversary that drifted into a second lie fails in this crate rather than silently changing what every suite over it measures.
 
-The frame carries two lies, the two an engine's commutation check defends against:
+The frame carries four lies. The first two break a clause `CellAlphabet` states, the two an engine's commutation check defends against; the last two give an answer the trait permits and no honest inhabitant gives, so the refusal that answer triggers has no other input:
 
-| Adversary | Clause broken | What an engine sees |
-| --------- | ------------- | ------------------- |
-| `IncomparablePositions` | `position_order` returns `Same` for a position with itself, and `Incomparable` only for disjoint subtrees | an application enclosing another licensed to commute with it |
-| `NonLocalSplice` | `splice_cmd_at` changes the term only at the spliced position | two applications at disjoint positions that do not commute, though nothing an engine reads predicts it |
+| Adversary | What it does | What an engine sees |
+| --------- | ------------ | ------------------- |
+| `IncomparablePositions` | breaks `position_order`'s clauses that a position is `Same` as itself and `Incomparable` only to a disjoint one | an application enclosing another licensed to commute with it |
+| `NonLocalSplice` | breaks `splice_cmd_at`'s clause that a splice changes the term only at its position | two applications at disjoint positions that do not commute, though nothing an engine reads predicts it |
+| `WithheldConvexity` | answers `convexity_discharge` with `ReCheckRequired` for every store, which an alphabet whose left-hand sides could match non-convexly owes | a commutation check's convexity conjunct refusing every pair |
+| `CollidingAddresses` | hashes the orientation tag to nothing, which the `Hash` law permits for unequal values | two cells the store keeps apart, differing only in orientation, whose hashes collide, so a content address digested over them collides too |
 
-A lie is added together with the engine check it exercises, never ahead of one: an adversary with no suite instantiating it measures nothing. `Lying<L>` reuses the toy's orientation and provenance tags and answers the convexity question as the toy does, so a lie about either is a new `AlphabetLie` method with an honest default, added with its first adversary.
+A lie is added together with the engine check it exercises, never ahead of one: an adversary with no suite instantiating it measures nothing. Orientation is the narrowest place for a hash lie, because it enters a cell's derived hash and nothing else an engine reads to address the cell; `LyingOrient<L>` keeps the toy tag's equality and asks `L` only how it hashes, so every adversary but `CollidingAddresses` hashes a cell exactly as the toy cell with the same fields. The convexity warrant is restated rather than asked of the toy, because the trait reads it from a store of the alphabet's own cells.
 
 `AlphabetLie` is a trait of static methods with honest defaults rather than a set of wrapper types, one per lie: one forwarding implementation of the 21-method trait serves every adversary, and an adversary is a unit struct overriding one method.
 

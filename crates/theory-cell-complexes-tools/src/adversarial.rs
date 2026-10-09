@@ -9,10 +9,13 @@
 //! [`AlphabetLie`] overrides, so a behaviour observed over `Lying<L>` and not
 //! over the toy alphabet is attributable to `L`'s one lie.
 //!
-//! Two lies are carried: [`IncomparablePositions`] reports every position pair
-//! as disjoint, and [`NonLocalSplice`] disturbs a sibling of the position it
-//! splices. Both break a clause [`CellAlphabet`] states, on purpose, and are
-//! instantiated only by test suites.
+//! Four adversaries are carried. [`IncomparablePositions`] reports every
+//! position pair as disjoint, and [`NonLocalSplice`] disturbs a sibling of the
+//! position it splices: each breaks a clause [`CellAlphabet`] states.
+//! [`WithheldConvexity`] withholds the convexity warrant, and
+//! [`CollidingAddresses`] hashes every orientation tag to nothing: each gives
+//! an answer the trait and [`core::hash::Hash`] permit and no honest
+//! inhabitant gives. All four are instantiated only by test suites.
 
 use alloc::vec::Vec;
 use core::marker::PhantomData;
@@ -79,6 +82,121 @@ pub trait AlphabetLie: Copy + Default + Eq + Ord + core::fmt::Debug + core::hash
     ) -> Result<Toy, CommandSpliceRefusal>
     {
         ToyAlphabet::splice_cmd_at(cmd, pos, replacement)
+    }
+
+    /// The convexity warrant this alphabet supplies for any store.
+    ///
+    /// The toy alphabet's own answer cannot be asked here: its
+    /// [`CellAlphabet::convexity_discharge`] reads a store of toy cells, and a
+    /// store over [`Lying`] is a different type. The default restates the
+    /// answer the toy alphabet gives every store, since its left-hand sides
+    /// are single trees.
+    ///
+    /// # Specification
+    /// - ensures: by default,
+    ///   [`ConvexityDischarge::StronglyConnectedOverAcyclicTarget`], the toy
+    ///   alphabet's answer.
+    /// - panics: none.
+    #[inline]
+    #[must_use]
+    fn convexity_discharge() -> ConvexityDischarge
+    {
+        ConvexityDischarge::StronglyConnectedOverAcyclicTarget
+    }
+
+    /// Feed an orientation tag to `state`, as a [`LyingOrient`] hashes.
+    ///
+    /// # Specification
+    /// - ensures: by default, exactly the writes the tag's own
+    ///   [`core::hash::Hash`] makes, so a cell over a [`Lying`] alphabet hashes
+    ///   as the toy cell with the same fields.
+    /// - panics: none.
+    #[inline]
+    fn hash_orientation<H>(
+        orient: ToyOrient,
+        state: &mut H,
+    ) where
+        H: core::hash::Hasher,
+    {
+        core::hash::Hash::hash(&orient, state);
+    }
+}
+
+/// The toy orientation tag, hashed as `L` decides.
+///
+/// A cell's orientation enters its derived [`core::hash::Hash`] and nothing
+/// else an engine reads to address the cell, so it is the narrowest place for
+/// an adversary to make two distinct cells hash alike. Equality stays the
+/// tag's own: two tags are equal exactly when their toy tags are.
+///
+/// # Specification
+/// - ensures: [`Eq`] is the toy tag's equality; [`core::hash::Hash`] is
+///   [`AlphabetLie::hash_orientation`] of the toy tag, which may identify
+///   unequal tags, as the trait permits.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LyingOrient<L>
+{
+    /// The toy tag.
+    orient: ToyOrient,
+    /// The adversary deciding how the tag hashes.
+    lie: PhantomData<L>,
+}
+
+impl<L> From<ToyOrient> for LyingOrient<L>
+{
+    /// Wraps the toy tag.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(orient: ToyOrient) -> Self
+    {
+        Self {
+            orient,
+            lie: PhantomData,
+        }
+    }
+}
+
+impl<L> From<LyingOrient<L>> for ToyOrient
+{
+    /// Unwraps the toy tag.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(value: LyingOrient<L>) -> Self
+    {
+        value.orient
+    }
+}
+
+impl<L> core::hash::Hash for LyingOrient<L>
+where
+    L: AlphabetLie,
+{
+    /// Hashes the toy tag as `L` decides; deliberately coarser than [`Eq`]
+    /// when `L` lies about it, which the [`core::hash::Hash`] law permits.
+    ///
+    /// # Specification
+    /// - ensures: the writes [`AlphabetLie::hash_orientation`] makes for the
+    ///   toy tag.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — under [`CollidingAddresses`] two cells differing only
+    ///   in orientation write one byte stream, and under an adversary that does
+    ///   not lie about the tag they write two.
+    /// - witness: `tests::adversary::the_colliding_addresses_wrapper_hides_the_orientation_and_keeps_the_cell`
+    #[inline]
+    fn hash<H>(
+        &self,
+        state: &mut H,
+    ) where
+        H: core::hash::Hasher,
+    {
+        L::hash_orientation(self.orient, state);
     }
 }
 
@@ -177,11 +295,79 @@ impl AlphabetLie for NonLocalSplice
     }
 }
 
+/// The adversary that **withholds** the convexity warrant, answering
+/// [`ConvexityDischarge::ReCheckRequired`] for every store.
+///
+/// It breaks no clause: [`CellAlphabet::convexity_discharge`] provides the
+/// answer, and an alphabet whose left-hand sides could match non-convexly owes
+/// it. No honest inhabitant in the workspace gives it, so a commutation check
+/// whose third conjunct reads the warrant has no other input that reaches the
+/// refusal.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct WithheldConvexity;
+
+impl AlphabetLie for WithheldConvexity
+{
+    /// The warrant is withheld.
+    ///
+    /// # Specification
+    /// - ensures: [`ConvexityDischarge::ReCheckRequired`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the toy alphabet's store carries the warrant and the
+    ///   wrapper's withholds it, while a match decided through the wrapper is
+    ///   the honest one.
+    /// - witness: `tests::adversary::the_withheld_convexity_wrapper_withholds_the_warrant_and_keeps_the_match`
+    #[inline]
+    fn convexity_discharge() -> ConvexityDischarge
+    {
+        ConvexityDischarge::ReCheckRequired
+    }
+}
+
+/// The adversary whose orientation tag hashes to **nothing**, so two cells
+/// that differ only in orientation write one byte stream to any hasher.
+///
+/// It breaks no clause either: the [`core::hash::Hash`] law asks that equal
+/// values hash equally and lets unequal ones collide. A store deduplicating on
+/// structural equality keeps the two cells under two identifiers, so a
+/// content address digested over a cell's hash gives two identifiers one
+/// address — the input a refusal of address collisions needs, and that no
+/// honest digest produces on demand.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CollidingAddresses;
+
+impl AlphabetLie for CollidingAddresses
+{
+    /// Writes nothing.
+    ///
+    /// # Specification
+    /// - ensures: `state` is left as it was.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the given and the derived orientation of one toy cell
+    ///   write one byte stream through the wrapper and two through an honest
+    ///   hasher, while the store keeps both cells apart.
+    /// - witness: `tests::adversary::the_colliding_addresses_wrapper_hides_the_orientation_and_keeps_the_cell`
+    #[inline]
+    fn hash_orientation<H>(
+        _orient: ToyOrient,
+        _state: &mut H,
+    ) where
+        H: core::hash::Hasher,
+    {
+    }
+}
+
 /// [`ToyAlphabet`], except for the answers `L` gives dishonestly.
 ///
-/// Every associated type is the toy alphabet's own, so a toy term, position or
-/// substitution is one of this alphabet's too, and a cell over it hashes as the
-/// toy cell with the same fields.
+/// Every associated type but the orientation is the toy alphabet's own, so a
+/// toy term, position or substitution is one of this alphabet's too. The
+/// orientation is the toy tag in a [`LyingOrient`], so a cell over this
+/// alphabet hashes as the toy cell with the same fields unless `L` lies about
+/// the tag's hash.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Lying<L>(PhantomData<L>);
@@ -193,7 +379,7 @@ where
     type Cmd = Toy;
     type Hole = ToyVar;
     type Meta = ToyMeta;
-    type Orientation = ToyOrient;
+    type Orientation = LyingOrient<L>;
     type Pos = ToyPos;
     type Provenance = ToyProv;
     type Subst = ToySubst;
@@ -293,15 +479,14 @@ where
         L::position_order(left, right)
     }
 
-    /// The toy alphabet's discharge, restated: the store is keyed by this
-    /// alphabet, so the toy answer cannot be asked for it.
+    /// `L`'s convexity warrant, the same for every store.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn convexity_discharge(_store: &CellStore<Self>) -> ConvexityDischarge
     {
-        ConvexityDischarge::StronglyConnectedOverAcyclicTarget
+        L::convexity_discharge()
     }
 
     /// The toy alphabet's read.
@@ -432,14 +617,14 @@ where
         ToyAlphabet::may_fire(provenance, target)
     }
 
-    /// The toy alphabet's derived orientation.
+    /// The toy alphabet's derived orientation, wrapped.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     fn derived_orientation() -> Self::Orientation
     {
-        ToyAlphabet::derived_orientation()
+        LyingOrient::from(ToyAlphabet::derived_orientation())
     }
 
     /// The toy alphabet's derived provenance.
@@ -467,5 +652,30 @@ pub fn lying_cell<L>(
 where
     L: AlphabetLie,
 {
-    Cell::new(lhs, rhs, ToyOrient::Given, ToyProv::Rule)
+    Cell::new(lhs, rhs, LyingOrient::from(ToyOrient::Given), ToyProv::Rule)
+}
+
+/// The cell [`lying_cell`] builds, tagged with the derived orientation instead
+/// of the given one.
+///
+/// The two are structurally distinct, so one store holds both under two
+/// identifiers; under [`CollidingAddresses`] they nonetheless hash alike.
+///
+/// # Specification
+/// trivial.
+#[inline]
+#[must_use]
+pub fn reoriented_lying_cell<L>(
+    lhs: Toy,
+    rhs: Toy,
+) -> Cell<Lying<L>>
+where
+    L: AlphabetLie,
+{
+    Cell::new(
+        lhs,
+        rhs,
+        <Lying<L> as CellAlphabet>::derived_orientation(),
+        ToyProv::Rule,
+    )
 }

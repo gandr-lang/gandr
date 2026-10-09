@@ -6,14 +6,22 @@
 //! would notice.
 
 use gandr_theory_cell_complexes::CellAlphabet;
+use gandr_theory_cell_complexes::CellStore;
+use gandr_theory_cell_complexes::ConvexityDischarge;
 use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::PositionStep;
+use gandr_theory_cell_complexes_tools::CollidingAddresses;
 use gandr_theory_cell_complexes_tools::IncomparablePositions;
 use gandr_theory_cell_complexes_tools::Lying;
 use gandr_theory_cell_complexes_tools::NonLocalSplice;
 use gandr_theory_cell_complexes_tools::Toy;
 use gandr_theory_cell_complexes_tools::ToyAlphabet;
+use gandr_theory_cell_complexes_tools::ToyOrient;
 use gandr_theory_cell_complexes_tools::ToyPos;
+use gandr_theory_cell_complexes_tools::WithheldConvexity;
+use gandr_theory_cell_complexes_tools::lying_cell;
+use gandr_theory_cell_complexes_tools::reoriented_lying_cell;
+use gandr_theory_cell_complexes_tools::toy_cell;
 
 /// The toy position of `path`.
 ///
@@ -22,6 +30,49 @@ use gandr_theory_cell_complexes_tools::ToyPos;
 fn at(path: &[PositionStep]) -> ToyPos
 {
     ToyAlphabet::position_at_path(path)
+}
+
+/// Every byte a value's [`core::hash::Hash`] writes, kept in order, so two
+/// values' hash inputs compare exactly rather than through a digest.
+#[repr(transparent)]
+#[derive(Debug, Default, Eq, PartialEq)]
+struct Written(Vec<u8>);
+
+impl core::hash::Hasher for Written
+{
+    /// No digest: the bytes themselves are the observation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn finish(&self) -> u64
+    {
+        0
+    }
+
+    /// Appends the bytes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn write(
+        &mut self,
+        bytes: &[u8],
+    )
+    {
+        self.0.extend_from_slice(bytes);
+    }
+}
+
+/// The bytes `value` writes when hashed.
+///
+/// # Specification
+/// trivial.
+fn written<T>(value: &T) -> Written
+where
+    T: core::hash::Hash,
+{
+    let mut state = Written::default();
+    value.hash(&mut state);
+    state
 }
 
 /// The delegating wrapper differs from the honest alphabet on the one law it
@@ -84,5 +135,86 @@ fn the_non_local_splice_wrapper_breaks_the_splice_and_keeps_the_read()
         ToyAlphabet::subterm_cmd_at(&binary, &left),
         <Lying<NonLocalSplice> as CellAlphabet>::subterm_cmd_at(&binary, &left),
         "and the read at the spliced position is the honest one"
+    );
+}
+
+/// The withheld warrant is the wrapper's one answer apart from the toy's: the
+/// toy store carries the warrant, and matching through the wrapper is honest.
+#[test]
+fn the_withheld_convexity_wrapper_withholds_the_warrant_and_keeps_the_match()
+{
+    let mut honest_store = CellStore::<ToyAlphabet>::new();
+    honest_store.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::var("x")));
+    let mut lying_store = CellStore::<Lying<WithheldConvexity>>::new();
+    lying_store.insert(lying_cell(Toy::succ(Toy::var("x")), Toy::var("x")));
+    assert_eq!(
+        ConvexityDischarge::StronglyConnectedOverAcyclicTarget,
+        ToyAlphabet::convexity_discharge(&honest_store),
+        "the honest alphabet carries the warrant"
+    );
+    assert_eq!(
+        ConvexityDischarge::ReCheckRequired,
+        <Lying<WithheldConvexity> as CellAlphabet>::convexity_discharge(&lying_store),
+        "the wrapper withholds it, which is its whole lie"
+    );
+    let pattern = Toy::add(Toy::var("x"), Toy::zero());
+    let ground = Toy::add(Toy::succ(Toy::zero()), Toy::zero());
+    let mut honest = <ToyAlphabet as CellAlphabet>::Subst::default();
+    let mut lying = <Lying<WithheldConvexity> as CellAlphabet>::Subst::default();
+    assert_eq!(
+        ToyAlphabet::match_cmd(&pattern, &ground, &mut honest),
+        <Lying<WithheldConvexity> as CellAlphabet>::match_cmd(&pattern, &ground, &mut lying),
+        "and it delegates the match decision unchanged"
+    );
+    assert_eq!(
+        ToyAlphabet::apply_subst(&honest, &pattern),
+        <Lying<WithheldConvexity> as CellAlphabet>::apply_subst(&lying, &pattern),
+        "with the same bindings behind it"
+    );
+}
+
+/// Two cells differing only in orientation hash alike through the wrapper and
+/// stay two cells: the store keeps both, and each keeps its own tag.
+#[test]
+fn the_colliding_addresses_wrapper_hides_the_orientation_and_keeps_the_cell()
+{
+    let lhs = Toy::succ(Toy::var("x"));
+    let rhs = Toy::var("x");
+    let given = lying_cell::<CollidingAddresses>(lhs.clone(), rhs.clone());
+    let derived = reoriented_lying_cell::<CollidingAddresses>(lhs.clone(), rhs.clone());
+    assert_ne!(given, derived, "the two cells differ in orientation");
+    assert_eq!(
+        written(&given),
+        written(&derived),
+        "and hash alike through the wrapper, which is its whole lie"
+    );
+    let honest_given = lying_cell::<WithheldConvexity>(lhs.clone(), rhs.clone());
+    let honest_derived = reoriented_lying_cell::<WithheldConvexity>(lhs.clone(), rhs.clone());
+    assert_ne!(
+        written(&honest_given),
+        written(&honest_derived),
+        "a wrapper that does not lie about the tag hashes the two apart"
+    );
+    assert_eq!(
+        written(&toy_cell(lhs, rhs)),
+        written(&honest_given),
+        "and hashes a cell exactly as the toy cell with the same fields"
+    );
+    let mut store = CellStore::new();
+    let given_id = store.insert(given.clone());
+    let derived_id = store.insert(derived.clone());
+    assert_ne!(given_id, derived_id, "the store keeps both cells");
+    assert_eq!(
+        (given.lhs(), given.rhs(), given.provenance()),
+        (derived.lhs(), derived.rhs(), derived.provenance()),
+        "which share their faces and provenance"
+    );
+    assert_eq!(
+        (ToyOrient::Given, ToyOrient::Derived),
+        (
+            ToyOrient::from(given.orient()),
+            ToyOrient::from(derived.orient())
+        ),
+        "and keep their own orientation tags"
     );
 }

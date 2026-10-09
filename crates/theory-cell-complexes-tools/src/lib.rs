@@ -10,8 +10,10 @@
 //!
 //! [`Lying`] is the toy alphabet in every answer but the ones an
 //! [`AlphabetLie`] overrides: [`IncomparablePositions`] calls every position
-//! pair disjoint, and [`NonLocalSplice`] disturbs a sibling of the position it
-//! splices.
+//! pair disjoint, [`NonLocalSplice`] disturbs a sibling of the position it
+//! splices, [`WithheldConvexity`] withholds the convexity warrant, and
+//! [`CollidingAddresses`] hashes every orientation tag ([`LyingOrient`]) to
+//! nothing.
 //!
 //! The crate is `no_std` and depends on `alloc`, the substrate and
 //! `quenchant-shape`. Its `README.md` carries the design and the references.
@@ -26,10 +28,14 @@ mod adversarial;
 mod toy;
 
 pub use crate::adversarial::AlphabetLie;
+pub use crate::adversarial::CollidingAddresses;
 pub use crate::adversarial::IncomparablePositions;
 pub use crate::adversarial::Lying;
+pub use crate::adversarial::LyingOrient;
 pub use crate::adversarial::NonLocalSplice;
+pub use crate::adversarial::WithheldConvexity;
 pub use crate::adversarial::lying_cell;
+pub use crate::adversarial::reoriented_lying_cell;
 pub use crate::toy::Toy;
 pub use crate::toy::ToyAlphabet;
 pub use crate::toy::ToyMeta;
