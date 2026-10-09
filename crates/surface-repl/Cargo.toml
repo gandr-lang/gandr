@@ -17,9 +17,11 @@ publish.workspace = true
 # renderer, lays types from the incremental checker's checkpoints out through
 # the presentation printer, echoes the buffer through the grammar's role
 # table, and encodes everything onto the renderer seam's transcript blocks.
-# The terminal face edits lines with rustyline.
+# The session's checkpoints and kernel records live in memory. The terminal
+# face edits lines with rustyline.
 [dependencies]
 gandr-core-incremental.workspace = true
+gandr-storage-records.workspace = true
 gandr-surface-corpus.workspace = true
 gandr-surface-diagnostics.workspace = true
 gandr-surface-dispatcher.workspace = true

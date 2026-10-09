@@ -566,6 +566,7 @@ mod tests
 {
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckingContext;
+    use gandr_core_checker::bridge;
     use gandr_core_checker::check_module;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
@@ -726,6 +727,7 @@ def broken = missing ;"#,
             .expect("the verdicts are the module's"),
             exercised: Exercised::default(),
             unstatable: Vec::new(),
+            kernel: bridge::readmit(&arena, &verdicts).export(module.structured_names()),
             origins: module.into_origins(),
             program,
         };

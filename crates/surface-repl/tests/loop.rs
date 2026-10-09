@@ -19,6 +19,7 @@ mod tests
     use gandr_core_incremental::Reference;
     use gandr_core_incremental::Typing;
     use gandr_kernel_term::BaseType;
+    use gandr_storage_records::InMemoryBlockStore;
     use gandr_surface_diagnostics::Class;
     use gandr_surface_diagnostics::Entry;
     use gandr_surface_diagnostics::RenderStyle;
@@ -147,12 +148,13 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn session() -> Session<MemoryCheckpointStore>
+    fn session() -> Session<MemoryCheckpointStore, InMemoryBlockStore>
     {
         Session::new(
             grammar(),
             SourceRoot::Strict,
             MemoryCheckpointStore::default(),
+            InMemoryBlockStore::default(),
             BackendArtifact::from(b"gandr-surface-repl tests".as_slice()),
         )
     }

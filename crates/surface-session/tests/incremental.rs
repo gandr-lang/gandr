@@ -14,6 +14,7 @@ use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::ItemSource as _;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_core_incremental::Typing;
+use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::LoweringCount;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::compose;
@@ -208,6 +209,7 @@ proptest! {
             grammar.clone(),
             SourceRoot::Fixture,
             MemoryCheckpointStore::default(),
+            InMemoryBlockStore::default(),
             crate::common::backend(),
         );
         let mut current = statements;

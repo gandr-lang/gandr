@@ -18,6 +18,17 @@
 //! the parse's completion obligations, taken from the lowering before it is
 //! consumed, on every path, re-sorted from the parse's severity order into
 //! source order because a reader meets them in the text.
+//!
+//! # The kernel checkpoint is records, trusted only through the decoder
+//!
+//! Each accepted revision's kernel artifact — what the dispatcher's
+//! readmission let cross, exported once — is cut at the decoder's segment
+//! boundaries and committed into the session's block store as records, and
+//! the submission carries the manifest that names them. Reading it back,
+//! from this session or one reopened over the same block store, re-seals the
+//! stored tree against the manifest and hands the bytes to the kernel's
+//! bounded decoder: a manifest whose identity matches never stands in for the
+//! decoder's admission.
 
 use core::fmt;
 use std::path::Path;
@@ -41,6 +52,14 @@ use gandr_core_incremental::restore;
 use gandr_core_incremental::restored;
 use gandr_core_incremental::submitted;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::DecodedArtifact;
+use gandr_kernel_term::EncodedArtifact;
+use gandr_storage_artifact::ArtifactError;
+use gandr_storage_artifact::ArtifactManifest;
+use gandr_storage_artifact::ArtifactRecordSet;
+use gandr_storage_artifact::build;
+use gandr_storage_records::BlockStore;
+use gandr_storage_records::TreeParams;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Produced;
 use gandr_surface_dispatcher::ComposeFault;
@@ -286,6 +305,19 @@ impl Resumed
     }
 }
 
+/// Whether a submission's kernel checkpoint reached the block store.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum KernelCheckpoint
+{
+    /// The block store holds the revision's kernel artifact as records under
+    /// this manifest, which [`Session::read_kernel`] reads back.
+    Stored(ArtifactManifest),
+    /// The artifact was not committed: its records did not form or the block
+    /// store refused a node. No manifest names what reached the store, and the
+    /// session still resumes from the submission.
+    Failed(ArtifactError),
+}
+
 /// What one submitted revision became: the dispatcher's composition of its
 /// text, its standing, and what the incremental checker made of it.
 #[derive(Clone, Debug)]
@@ -305,6 +337,8 @@ pub struct Submission<'text>
     resumed: Maybe<Resumed, resumed::Absent>,
     /// The edits from the latest accepted revision before it.
     edits: Maybe<EditScript, resumed::Absent>,
+    /// Whether the revision's kernel checkpoint reached the block store.
+    kernel: Maybe<KernelCheckpoint, resumed::Absent>,
     /// The parse's completion obligations, in source order.
     obligations: Vec<ObligationInstance>,
 }
@@ -375,6 +409,20 @@ impl<'text> Submission<'text>
     {
         match self.edits {
             | Maybe::Present(ref edits) => Maybe::Present(edits),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+
+    /// Whether the revision's kernel checkpoint reached the block store, and
+    /// the manifest naming it when it did.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn kernel(&self) -> Maybe<&KernelCheckpoint, resumed::Absent>
+    {
+        match self.kernel {
+            | Maybe::Present(ref kernel) => Maybe::Present(kernel),
             | Maybe::Absent(reason) => Maybe::Absent(reason),
         }
     }
@@ -570,17 +618,17 @@ impl core::error::Error for SessionFault<'_>
 
 /// A session reopened over a revision, and whether its checkpoints were
 /// restored.
-pub struct Reopened<Store>
+pub struct Reopened<Store, Blocks>
 {
     /// The reopened session.
-    session: Session<Store>,
+    session: Session<Store, Blocks>,
     /// How many items' checkpoints were restored.
     restored: Maybe<ItemCount, reopened::Absent>,
 }
 
-impl<Store> fmt::Debug for Reopened<Store>
+impl<Store, Blocks> fmt::Debug for Reopened<Store, Blocks>
 {
-    /// Writes the session and what was restored; the store is opaque.
+    /// Writes the session and what was restored; the stores are opaque.
     ///
     /// # Specification
     /// trivial.
@@ -597,7 +645,7 @@ impl<Store> fmt::Debug for Reopened<Store>
     }
 }
 
-impl<Store> Reopened<Store>
+impl<Store, Blocks> Reopened<Store, Blocks>
 {
     /// How many items' checkpoints were restored.
     ///
@@ -615,14 +663,14 @@ impl<Store> Reopened<Store>
     /// trivial.
     #[inline]
     #[must_use]
-    pub fn into_session(self) -> Session<Store>
+    pub fn into_session(self) -> Session<Store, Blocks>
     {
         self.session
     }
 }
 
 /// The interactive session over successive revisions of one source.
-pub struct Session<Store>
+pub struct Session<Store, Blocks>
 {
     /// The grammar every revision is parsed under.
     grammar: Pbg,
@@ -631,6 +679,8 @@ pub struct Session<Store>
     root: SourceRoot,
     /// The incremental checker's latest resume and its checkpoint store.
     incremental: IncrementalSession<Store>,
+    /// Where each accepted revision's kernel checkpoint is committed.
+    blocks: Blocks,
     /// The import scope of the latest accepted revision.
     imports: Imports,
     /// The lowered core of the latest accepted revision.
@@ -639,10 +689,10 @@ pub struct Session<Store>
     lowerings: LoweringCount,
 }
 
-impl<Store> fmt::Debug for Session<Store>
+impl<Store, Blocks> fmt::Debug for Session<Store, Blocks>
 {
     /// Writes the root, the latest resume and the import scope; the grammar
-    /// and the store are opaque.
+    /// and the stores are opaque.
     ///
     /// # Specification
     /// trivial.
@@ -661,10 +711,11 @@ impl<Store> fmt::Debug for Session<Store>
     }
 }
 
-impl<Store> Session<Store>
+impl<Store, Blocks> Session<Store, Blocks>
 {
     /// A session with nothing submitted, parsing under `grammar` a source
-    /// under `root`, persisting into `store` as `backend`.
+    /// under `root`, persisting checkpoints into `store` as `backend` and
+    /// kernel checkpoints into `blocks`.
     ///
     /// # Specification
     /// trivial.
@@ -674,6 +725,7 @@ impl<Store> Session<Store>
         grammar: Pbg,
         root: SourceRoot,
         store: Store,
+        blocks: Blocks,
         backend: BackendArtifact,
     ) -> Self
     {
@@ -681,6 +733,7 @@ impl<Store> Session<Store>
             grammar,
             root,
             incremental: IncrementalSession::new(store, backend, CheckBudget::DEFAULT),
+            blocks,
             imports: Imports::empty(),
             snapshot: Snapshot::default(),
             lowerings: LoweringCount::default(),
@@ -688,7 +741,7 @@ impl<Store> Session<Store>
     }
 
     /// A session reopened over `revision`, resuming from the checkpoints
-    /// `store` holds for it.
+    /// `store` holds for it, its kernel checkpoints read from `blocks`.
     ///
     /// # Specification
     /// - requires: nothing.
@@ -697,7 +750,7 @@ impl<Store> Session<Store>
     ///   session resumes from them and their item count is reported; otherwise
     ///   the session is fresh, as [`Self::new`] makes it, and the reason is
     ///   reported. Either way the session's import scope and snapshot are the
-    ///   revision's.
+    ///   revision's, and it reads and commits kernel checkpoints in `blocks`.
     /// - provides: a session that outlives the process that wrote its
     ///   checkpoints: its next submission adopts every restored checkpoint that
     ///   still answers.
@@ -724,9 +777,10 @@ impl<Store> Session<Store>
         grammar: Pbg,
         root: SourceRoot,
         mut store: Store,
+        blocks: Blocks,
         backend: BackendArtifact,
         revision: SourceText<'_>,
-    ) -> Result<Reopened<Store>, SessionFault<'_>>
+    ) -> Result<Reopened<Store, Blocks>, SessionFault<'_>>
     where
         Store: CheckpointStore,
     {
@@ -775,6 +829,7 @@ impl<Store> Session<Store>
                 grammar,
                 root,
                 incremental,
+                blocks,
                 imports,
                 snapshot,
                 lowerings,
@@ -784,7 +839,7 @@ impl<Store> Session<Store>
     }
 
     /// Submit one revision: lower it, judge it, resume the incremental checker
-    /// over it and persist its checkpoints.
+    /// over it and persist its checkpoints and its kernel checkpoint.
     ///
     /// # Specification
     /// - requires: `revision` is the whole text of the session's source.
@@ -793,16 +848,18 @@ impl<Store> Session<Store>
     ///   [`judge_module`] — the composition `gandr check` gives the same text
     ///   under the same root — and the same declarations are submitted to the
     ///   incremental checker, which resumes from the latest accepted revision
-    ///   and persists the new checkpoints; the submission carries the [`diff`]
-    ///   of the latest accepted revision's snapshot and this one's, and the
-    ///   session then holds the revision's resume, import scope and snapshot. A
-    ///   revision the lowering refuses as a whole is reported as
-    ///   [`Composed::Refused`] with no resume and no edits, and the session is
-    ///   unchanged. Either way the submission carries the parse's completion
-    ///   obligations, in source order.
+    ///   and persists the new checkpoints; the composition's kernel artifact is
+    ///   committed into the block store as records; the submission carries the
+    ///   [`diff`] of the latest accepted revision's snapshot and this one's,
+    ///   and the session then holds the revision's resume, import scope and
+    ///   snapshot. A revision the lowering refuses as a whole is reported as
+    ///   [`Composed::Refused`] with no resume, no edits and no kernel
+    ///   checkpoint, and the session is unchanged. Either way the submission
+    ///   carries the parse's completion obligations, in source order.
     /// - provides: a report whose verdicts are the batch pipeline's, beside the
-    ///   census of what the resume adopted, the edits that led to it and the
-    ///   repairs the parser made.
+    ///   census of what the resume adopted, the manifest of the kernel
+    ///   environment it leaves, the edits that led to it and the repairs the
+    ///   parser made.
     /// - fails: [`SessionFault::Compose`] when the composition faults, with the
     ///   session unchanged; [`SessionFault::Unordered`] when the lowered
     ///   positions do not ascend, unchanged; [`SessionFault::Resume`] when the
@@ -811,25 +868,28 @@ impl<Store> Session<Store>
     /// - panics: none.
     /// - economy: the lowered arena is cloned once per accepted revision, so
     ///   the judgement and the resume each check over their own copy; the
-    ///   snapshot and its diff are each one walk of the revision's terms.
+    ///   snapshot and its diff are each one walk of the revision's terms; the
+    ///   kernel artifact is decoded, cut and hashed once, linear in its bytes.
     ///
     /// # Errors
     /// As above. A failure to persist is not an error: the submission
-    /// reports it as [`Persistence::Failed`].
+    /// reports it as [`Persistence::Failed`] or [`KernelCheckpoint::Failed`].
     ///
     /// # Adequacy
     /// - hypothesis: L2 for the report — every source of both corpus roots is
     ///   submitted whole and its submission compared with the dispatcher's step
     ///   for the same path, field by field; L3 for the session state —
     ///   successive revisions asserted at the census, the synthesis stream and
-    ///   the import scope they leave, and a refused revision asserted to leave
-    ///   them unchanged.
+    ///   the import scope they leave, a refused revision asserted to leave them
+    ///   unchanged, and the kernel checkpoint read back as exactly the decoding
+    ///   of the composition's artifact.
     /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
     /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
     /// - witness: `tests::session::successful_submissions_publish_whole_program_synthesis`
     /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
     /// - witness: `tests::edit::a_submission_carries_the_edits_from_the_last_accepted_revision`
     /// - witness: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`
+    /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
     #[inline]
     pub fn submit<'text>(
         &mut self,
@@ -837,6 +897,7 @@ impl<Store> Session<Store>
     ) -> Result<Submission<'text>, SessionFault<'text>>
     where
         Store: CheckpointStore,
+        Blocks: BlockStore,
     {
         let lowering = lower_source(&self.grammar, revision, &mut self.lowerings)
             .map_err(SessionFault::Compose)?;
@@ -853,6 +914,7 @@ impl<Store> Session<Store>
                     composed,
                     resumed: Maybe::Absent(resumed::Absent::RefusedWhole),
                     edits: Maybe::Absent(resumed::Absent::RefusedWhole),
+                    kernel: Maybe::Absent(resumed::Absent::RefusedWhole),
                     obligations,
                 });
             },
@@ -876,6 +938,12 @@ impl<Store> Session<Store>
                 | Maybe::Absent(_) => return Err(SessionFault::Store(error)),
             },
         };
+        let kernel = match composed {
+            | Composed::Settled { ref kernel, .. } => {
+                Maybe::Present(checkpoint_kernel(kernel, &mut self.blocks))
+            },
+            | Composed::Refused(_) => Maybe::Absent(resumed::Absent::RefusedWhole),
+        };
         let edits = diff(&self.snapshot, &snapshot);
         self.imports = imports;
         self.snapshot = snapshot;
@@ -889,6 +957,7 @@ impl<Store> Session<Store>
                 persistence,
             }),
             edits: Maybe::Present(edits),
+            kernel,
             obligations,
         })
     }
@@ -986,6 +1055,56 @@ impl<Store> Session<Store>
         &self.snapshot
     }
 
+    /// Reads the kernel checkpoint `manifest` names back from the block store,
+    /// through the kernel's decoder.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly [`ArtifactManifest::read_under`] over the session's
+    ///   block store at the current tree parameters: the decoded artifact when
+    ///   the manifest's profile and kernel format are the session's, the stored
+    ///   tree seals to the manifest's root, every key and cut is the decoder's,
+    ///   and the kernel's bounded decoder admits the bytes; otherwise the first
+    ///   refusal, in that order.
+    /// - provides: the one way a session trusts a kernel checkpoint: a manifest
+    ///   whose identity matches never stands in for the decoder.
+    /// - fails: as [`ArtifactManifest::read_under`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`ArtifactError`], as [`ArtifactManifest::read_under`] names it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a kernel checkpoint one session wrote, its manifest
+    ///   carried as bytes, reads back from a session reopened over the same
+    ///   block store as exactly the decoding of the composition's artifact; and
+    ///   a manifest minted over bytes the kernel refuses, whose identity its
+    ///   own bytes reproduce and whose tree the block store holds and seals, is
+    ///   refused by the decoder.
+    /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
+    /// - witness: `tests::checkpoint::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`
+    #[inline]
+    pub fn read_kernel(
+        &self,
+        manifest: &ArtifactManifest,
+    ) -> Result<DecodedArtifact, ArtifactError>
+    where
+        Blocks: BlockStore,
+    {
+        manifest.read_under(&self.blocks, TreeParams::current())
+    }
+
+    /// The block store the session commits kernel checkpoints into.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn blocks(&self) -> &Blocks
+    {
+        &self.blocks
+    }
+
     /// The checkpoint store, once the session is done.
     ///
     /// # Specification
@@ -995,6 +1114,38 @@ impl<Store> Session<Store>
     pub fn into_store(self) -> Store
     {
         self.incremental.into_store()
+    }
+}
+
+/// Commits `kernel` into `blocks` as artifact records under the current tree
+/// parameters.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: [`KernelCheckpoint::Stored`] with the manifest [`build`] mints
+///   over the records [`ArtifactRecordSet::from_artifact`] cuts from `kernel`,
+///   every node of their tree then in `blocks`; otherwise
+///   [`KernelCheckpoint::Failed`] with the first refusal.
+/// - provides: the kernel checkpoint an accepted submission carries.
+/// - fails: never; a refusal is the checkpoint's own variant.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the checkpoint a submission carries reads back as exactly
+///   the decoding of the composition's artifact.
+/// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
+fn checkpoint_kernel<Blocks>(
+    kernel: &EncodedArtifact,
+    blocks: &mut Blocks,
+) -> KernelCheckpoint
+where
+    Blocks: BlockStore,
+{
+    let committed = ArtifactRecordSet::from_artifact(kernel.as_image())
+        .and_then(|records| build(&records, TreeParams::current(), blocks));
+    match committed {
+        | Ok(manifest) => KernelCheckpoint::Stored(manifest),
+        | Err(refusal) => KernelCheckpoint::Failed(refusal),
     }
 }
 

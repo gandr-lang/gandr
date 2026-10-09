@@ -678,6 +678,7 @@ version = "0.0.0"
 dependencies = [
  "gandr-core-incremental",
  "gandr-kernel-term",
+ "gandr-storage-records",
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
@@ -699,6 +700,8 @@ dependencies = [
  "gandr-core-incremental",
  "gandr-core-term",
  "gandr-kernel-term",
+ "gandr-storage-artifact",
+ "gandr-storage-records",
  "gandr-surface-corpus",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",

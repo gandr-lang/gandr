@@ -238,6 +238,13 @@ path = "crates/kernel-strata"
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
 
+# Kernel artifacts on the record plane, under a manifest identity, read back
+# through the kernel's decoder.
+# consumers:
+# - surface-session
+[workspace.dependencies.gandr-storage-artifact]
+path = "crates/storage-artifact"
+
 # Content-defined chunking: where a stream of canonical units is cut, and the
 # committed parameters that decide it.
 # consumers:
@@ -250,6 +257,8 @@ path = "crates/storage-chunker"
 # consumers:
 # - storage-artifact
 # - storage-values (dev)
+# - surface-repl
+# - surface-session
 [workspace.dependencies.gandr-storage-records]
 path = "crates/storage-records"
 

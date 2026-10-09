@@ -22,13 +22,17 @@ path = "tests/lib.rs"
 # grammar, carries the parser's completion obligations, reads the lowered
 # module's declarations, origins and import scope, hands the same
 # declarations to the incremental checker with its checkpoint stores, names
-# the kernel's literals and indices in its edit actions, and reads a
-# declaration's produced verdict to decide what it evaluates.
+# the kernel's literals and indices in its edit actions, reads a
+# declaration's produced verdict to decide what it evaluates, and commits the
+# kernel artifact as records into a block store, reading it back through the
+# kernel's decoder.
 [dependencies]
 gandr-core-checker.workspace = true
 gandr-core-incremental.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-term.workspace = true
+gandr-storage-artifact.workspace = true
+gandr-storage-records.workspace = true
 gandr-surface-corpus.workspace = true
 gandr-surface-dispatcher.workspace = true
 gandr-surface-grammar.workspace = true

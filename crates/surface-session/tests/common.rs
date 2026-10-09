@@ -16,6 +16,7 @@ use gandr_core_incremental::Program;
 use gandr_core_incremental::Reference;
 use gandr_core_incremental::Typing;
 use gandr_core_incremental::project;
+use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_corpus::CorpusRoot;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::SourceRoot;
@@ -44,13 +45,19 @@ pub fn backend() -> BackendArtifact
     BackendArtifact::from(b"gandr-surface-session tests".as_slice())
 }
 
-/// A fresh session over a memory store, for a source under `root`.
+/// A fresh session over memory stores, for a source under `root`.
 ///
 /// # Specification
 /// trivial.
-pub fn session(root: SourceRoot) -> Session<MemoryCheckpointStore>
+pub fn session(root: SourceRoot) -> Session<MemoryCheckpointStore, InMemoryBlockStore>
 {
-    Session::new(grammar(), root, MemoryCheckpointStore::default(), backend())
+    Session::new(
+        grammar(),
+        root,
+        MemoryCheckpointStore::default(),
+        InMemoryBlockStore::default(),
+        backend(),
+    )
 }
 
 /// A source text a test submits.
@@ -87,7 +94,7 @@ impl<'text> From<&'text String> for Text<'text>
 /// # Specification
 /// trivial.
 pub fn submit<'text>(
-    session: &mut Session<MemoryCheckpointStore>,
+    session: &mut Session<MemoryCheckpointStore, InMemoryBlockStore>,
     text: impl Into<Text<'text>>,
 ) -> Submission<'text>
 {
@@ -118,7 +125,7 @@ pub fn corpus(root: CorpusRoot) -> PathBuf
 ///
 /// # Specification
 /// trivial.
-pub fn resumed<Store>(session: &Session<Store>) -> Vec<Typing>
+pub fn resumed<Store, Blocks>(session: &Session<Store, Blocks>) -> Vec<Typing>
 {
     match session.last() {
         | Maybe::Present(resume) => resume.typings().cloned().collect(),
@@ -131,7 +138,7 @@ pub fn resumed<Store>(session: &Session<Store>) -> Vec<Typing>
 ///
 /// # Specification
 /// trivial.
-pub fn footprints<Store>(session: &Session<Store>) -> Vec<(ItemKey, HoleMark)>
+pub fn footprints<Store, Blocks>(session: &Session<Store, Blocks>) -> Vec<(ItemKey, HoleMark)>
 {
     let Maybe::Present(resume) = session.last()
     else {

@@ -15,6 +15,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - [Refusals are the report](#refusals-are-the-report)
 - [The item source](#the-item-source)
 - [Checkpoints](#checkpoints)
+- [The kernel checkpoint](#the-kernel-checkpoint)
 - [The import scope persists across submissions](#the-import-scope-persists-across-submissions)
 - [Edits are a diff of the lowered core](#edits-are-a-diff-of-the-lowered-core)
 - [Localization descends extents](#localization-descends-extents)
@@ -28,11 +29,11 @@ The interactive session: each revision of one source lowered, judged exactly as 
 
 ## Synopsis
 
-**What.** A `Session` takes successive revisions of one source through `Session::submit`. Each revision is lowered once; the dispatcher's `judge_module` judges, readmits and settles the lowered module, and the same declarations, offered by the item source as a `Program`, go to the incremental checker, which adopts every checkpoint that still answers, judges the rest and persists the set. The `Submission` carries the dispatcher's `Composed` and `Standing` for the text, the resume's census and whether the checkpoints were stored, the edit actions from the latest accepted revision and the parse's completion obligations, and turns into the dispatcher's `Step` so a face renders it through the same renderer the batch verbs use. `Session::reopen` restores a session over the checkpoints an earlier one wrote.
+**What.** A `Session` takes successive revisions of one source through `Session::submit`. Each revision is lowered once; the dispatcher's `judge_module` judges, readmits and settles the lowered module, and the same declarations, offered by the item source as a `Program`, go to the incremental checker, which adopts every checkpoint that still answers, judges the rest and persists the set. The composition's kernel artifact — what the readmission let cross — is committed into a block store as records through `gandr-storage-artifact`. The `Submission` carries the dispatcher's `Composed` and `Standing` for the text, the resume's census and whether the checkpoints were stored, the manifest of the kernel checkpoint, the edit actions from the latest accepted revision and the parse's completion obligations, and turns into the dispatcher's `Step` so a face renders it through the same renderer the batch verbs use. `Session::reopen` restores a session over the checkpoints an earlier one wrote, and `Session::read_kernel` reads a kernel checkpoint back through the kernel's decoder.
 
 **Why.** The REPL, the language server and a terminal interface all need what the batch pipeline does not keep: the latest resume to adopt from, a checkpoint store that outlives the process, and the import scope of the last revision that lowered. Holding that state once, below every face, means each face is a loop over `submit` and a renderer of steps, and every face's verdicts are the batch pipeline's.
 
-**How.** `submit` calls the dispatcher's `lower_source`, then `judge_module` for the report and `program` plus `IncrementalSession::submit` for the resume, over a copy of the lowered arena. A revision the lowering refuses as a whole is reported as `Composed::Refused` and leaves the session as it was. Checkpoints go through `gandr-core-incremental`'s `CheckpointStore`, memory or file; a store's failure is reported in the submission as `Persistence::Failed`, never raised.
+**How.** `submit` calls the dispatcher's `lower_source`, then `judge_module` for the report and `program` plus `IncrementalSession::submit` for the resume, over a copy of the lowered arena. A revision the lowering refuses as a whole is reported as `Composed::Refused` and leaves the session as it was. Checkpoints go through `gandr-core-incremental`'s `CheckpointStore`, memory or file; a store's failure is reported in the submission as `Persistence::Failed`, never raised. The kernel checkpoint goes through `gandr-storage-records`' `BlockStore`; a refusal is reported as `KernelCheckpoint::Failed`, never raised.
 
 ## References
 
@@ -46,6 +47,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - **The step a face renders.** `Submission::into_step`: the submission as the dispatcher's `Step::Source`. Witnesses: `tests::corpus::every_source_submits_as_the_walk_composes_it`, `tests::diag::error_corpus_reports_match_goldens`, `tests::diag::goal_corpus_reports_match_goldens`.
 - **The parser's repairs.** `Submission::obligations`: the parse's completion obligations, in source order. Witnesses: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`, `tests::diag_obligations::rows_are_in_source_order_not_severity_order`, `tests::diag_obligations::a_clean_source_reports_no_obligations`.
 - **Checkpoints across processes.** `Session::reopen`, `Reopened`, `reopened::Absent`. Witnesses: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`, `tests::checkpoint::a_store_holding_nothing_reopens_fresh`, `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`.
+- **The kernel checkpoint.** `KernelCheckpoint`, `Submission::kernel`, `Session::read_kernel`, `Session::blocks`. Witnesses: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`, `tests::checkpoint::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`, `tests::corpus::every_source_submits_as_the_walk_composes_it`.
 - **The import scope.** `Session::resolve_import`, `ImportRow`, `import::Absent`. Witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`.
 - **The item source.** `program`, `SurfaceItems` (an `ItemSource`), `Revision`, `RevisionFault`, `fault_span::Absent`. Witnesses: `tests::items::each_unrefused_declaration_is_one_item_keyed_by_its_name`, `tests::items::the_item_source_offers_a_revision_or_names_its_fault`.
 - **Evaluation.** `Submission::evaluate`, `evaluate`, `evaluation::Absent`: a hole-free item run on the dispatcher's run stage. Witnesses: `tests::session::integer_literal_types_and_evaluates`, `tests::session::nullary_function_call_evaluates`, `tests::session::holes_decline_evaluation`.
@@ -54,6 +56,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 ## Expected features
 
 - **A checkpoint store.** Any `CheckpointStore`: `gandr-core-incremental`'s `MemoryCheckpointStore` for a session that dies with its process, its `FileCheckpointStore` for one that outlives it.
+- **A block store.** Any `BlockStore`: `gandr-storage-records`' `InMemoryBlockStore` for a session that dies with its process; a store that outlives it carries the kernel checkpoints to the next.
 - **A backend identity.** A `BackendArtifact` naming the checker build, so checkpoints a different checker judged are never restored.
 - **The text.** The caller owns the source's buffer and submits each revision whole; the submission borrows it.
 - **A renderer.** `gandr-surface-diagnostics` renders the `Step` a submission turns into.
@@ -63,6 +66,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 ```rust
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::MemoryCheckpointStore;
+use gandr_storage_records::InMemoryBlockStore;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_grammar::built_in;
 use gandr_surface_session::Session;
@@ -72,13 +76,15 @@ let mut session = Session::new(
     built_in()?,
     SourceRoot::Strict,
     MemoryCheckpointStore::default(),
+    InMemoryBlockStore::default(),
     BackendArtifact::from(b"this checker build".as_slice()),
 );
 let _first = session.submit(SourceText::from("def x = 40 ;"))?;
 let second = session.submit(SourceText::from("def x = 40 ;\ndef y = x ;"))?;
 // `second.composed()` is what `gandr check` reports for the text; its resume
-// adopted the checkpoint of `x` and judged `y`, and `second.edits()` holds the
-// one action inserting `y`.
+// adopted the checkpoint of `x` and judged `y`, `second.edits()` holds the one
+// action inserting `y`, and `second.kernel()` names the kernel checkpoint of
+// both definitions, which `session.read_kernel` reads back.
 ```
 
 The crate's tests run with `cargo nextest run -p gandr-surface-session`.
@@ -112,6 +118,14 @@ The prior implementation lowered totally, degrading what it could not lower to a
 ## Checkpoints
 
 Every accepted submission persists its checkpoints under its program's content address. A store that fails leaves itself as it was and the session resuming from the submission; the submission reports `Persistence::Failed` and the next one adopts as usual. `Session::reopen` lowers the revision it is given, restores what the store holds for that program and backend, and resumes from it; a store holding nothing for it, or holding another backend's set, reopens fresh and says why. A restored set is not trusted: the next resume validates each checkpoint as it validates an in-memory one.
+
+## The kernel checkpoint
+
+**Choice.** Every accepted submission commits the composition's kernel artifact into the session's block store through `gandr-storage-artifact`: one record per declaration segment, cut where the kernel's decoder ends each, under a manifest whose identity binds the record plane's boundary commitment, the record count, the root node and the kernel format version. The submission carries the manifest, and the caller keeps it as it keeps anything — `ArtifactManifest::encode` gives its bytes. `Session::read_kernel` is the one way back: it refuses a manifest of another profile or kernel format before loading anything, re-seals the stored tree against the manifest, checks every key and cut, and hands the bytes to the kernel's bounded decoder. A matching identity says which bytes these are, never that the kernel admits them, so a manifest minted over bytes the kernel refuses names a tree the store holds and seals, and is still refused.
+
+**Alternatives.** The encoded artifact as one opaque blob beside the checkpoints would leave no record grain, so a reader could not take one declaration's segment with its proof, and the blob would be trusted by its hash. Keying it into the `CheckpointStore` under the program's address would give that store a second kind of value its trait does not name. Restoring it in `Session::reopen` needs a manifest to read by, and the manifest is the caller's root of trust, not the session's.
+
+**Reversal.** A durable table of manifests by program address, owned by the session, lets `Session::reopen` restore the kernel checkpoint itself; and a face that never reads the kernel environment, measured paying for the commit, moves it behind a choice the caller makes.
 
 ## The import scope persists across submissions
 

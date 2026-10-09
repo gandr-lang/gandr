@@ -68,6 +68,7 @@ pub use crate::item_source::SurfaceItems;
 pub use crate::item_source::fault_span;
 pub use crate::item_source::program;
 pub use crate::session::ImportRow;
+pub use crate::session::KernelCheckpoint;
 pub use crate::session::Persistence;
 pub use crate::session::Reopened;
 pub use crate::session::Resumed;
