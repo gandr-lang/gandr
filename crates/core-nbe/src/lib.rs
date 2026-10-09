@@ -18,7 +18,8 @@
 //!   and structural comparison — answering a [`Settlement`].
 //! - [`Overlay`] holds sharing syntax over the core language in four flat
 //!   families, minted only over children it holds and checked by
-//!   [`Overlay::validate`] over a heap worklist.
+//!   [`Overlay::validate`] over a heap worklist; [`erase_value`] and its
+//!   siblings erase it, with no policy, back to the unshared core term.
 //!
 //! The design, and what a caller must guarantee, is stated in this crate's
 //! `README.md`, § Synopsis and § Expected features, and in the sections they
@@ -83,6 +84,7 @@ pub use crate::overlay::CompGraft;
 pub use crate::overlay::CompNode;
 pub use crate::overlay::CompTypeGraft;
 pub use crate::overlay::CompTypeNode;
+pub use crate::overlay::EraseFault;
 pub use crate::overlay::Overlay;
 pub use crate::overlay::OverlayCompId;
 pub use crate::overlay::OverlayCompTypeId;
@@ -101,6 +103,10 @@ pub use crate::overlay::ValueGraft;
 pub use crate::overlay::ValueNode;
 pub use crate::overlay::ValueTypeGraft;
 pub use crate::overlay::ValueTypeNode;
+pub use crate::overlay::erase_comp_type;
+pub use crate::overlay::erase_computation;
+pub use crate::overlay::erase_value;
+pub use crate::overlay::erase_value_type;
 pub use crate::policy::Copied;
 pub use crate::policy::DuplicationPolicy;
 pub use crate::policy::DuplicationStance;

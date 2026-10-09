@@ -32,6 +32,11 @@
 //! the same chain is validated inside the same small stack: the validation
 //! walk is the overlay's other deep traversal, and a recursive one would need
 //! a frame per link just as a recursive destructor would.
+//!
+//! Erased, the same overlay is the unshared chain `⟨top, top⟩` with each link
+//! naming the one below twice: a core DAG of one node per link. The erased
+//! arena is compared with that chain built by hand, node for node, inside the
+//! same small stack, and both arenas are then dropped there.
 
 /// The teardown case and its chain builder, in a `cfg(test)` module so the
 /// crate's lint wall reads them as test code rather than as shipping code.
@@ -60,9 +65,12 @@ mod teardown
     use gandr_core_nbe::ValueNode;
     use gandr_core_nbe::ValueTypeGraft;
     use gandr_core_nbe::ValueTypeNode;
+    use gandr_core_nbe::erase_value;
+    use gandr_core_nbe::erase_value_type;
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
     use gandr_core_term::ValueId;
+    use gandr_core_term::ValueTypeId;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::ConstantIndex;
 
@@ -274,6 +282,66 @@ mod teardown
         assert!(
             released.is_ok(),
             "validation and both release orders complete inside a stack too small for a \
+             recursive walk"
+        );
+    }
+
+    /// The chain [`deep_overlay`] stands for, built by hand: `⟨top, top⟩` per
+    /// value link and a lift per value-type link.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an arena holding [`CHAIN_LINKS`] value links over a unit and
+    ///   as many value-type links over the unit type, with the outermost of
+    ///   each.
+    /// - provides: the reference the deep overlay erases to.
+    /// - panics: none.
+    fn unshared_chain() -> (CoreArena, ValueId, ValueTypeId)
+    {
+        let mut core = CoreArena::new();
+        let mut top = core.value_unit();
+        let mut lifted = core.value_type_unit();
+        let target = Level::zero().succ().expect("level one exists");
+        let mut remaining = CHAIN_LINKS;
+        while remaining > 0 {
+            top = core.value_pair(top, top);
+            lifted = core.value_type_lift(lifted, target.clone());
+            remaining = remaining.saturating_sub(1);
+        }
+        (core, top, lifted)
+    }
+
+    #[test]
+    fn an_erased_deep_overlay_equals_the_unshared_chain_inside_a_small_stack()
+    {
+        let compared = std::thread::Builder::new()
+            .stack_size(SMALL_STACK_BYTES)
+            .spawn(|| {
+                let (reference, reference_top, reference_lifted) = unshared_chain();
+                let (overlay, top, lifted) = deep_overlay();
+                let mut erased = CoreArena::new();
+                let erased_top = erase_value(&overlay, top, &mut erased)
+                    .expect("the chain of shares validates and erases");
+                let erased_lifted = erase_value_type(&overlay, lifted, &mut erased)
+                    .expect("the chain of lifts validates and erases");
+                assert!(
+                    reference == erased,
+                    "each share erased its leg once and both occurrences name it, so the \
+                     erased arena is the hand-built DAG node for node"
+                );
+                assert_eq!(
+                    (reference_top, reference_lifted),
+                    (erased_top, erased_lifted)
+                );
+                drop(overlay);
+                drop(erased);
+                drop(reference);
+            })
+            .expect("the small-stack thread starts")
+            .join();
+        assert!(
+            compared.is_ok(),
+            "erasure and the release of all three arenas fit a stack too small for a \
              recursive walk"
         );
     }

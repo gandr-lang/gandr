@@ -44,6 +44,17 @@
 //! parent, so a walk enters each node once and costs the reachable overlay's
 //! size; a node reused implicitly would cost its expansion, which is the cost
 //! an explicit share exists to remove.
+//!
+//! # Erasure is total and takes no policy
+//!
+//! [`erase_value`] and its three siblings validate first, then mint the core
+//! term a root stands for: each graft one core node after its children, each
+//! opaque node as it stands, each share's leg once, and every occurrence that
+//! one id. Indices are copied, never shifted, so an occurrence reads its
+//! leg's free indices where it stands — the reading a core DAG gives a node
+//! it reaches twice. The result is the unshared pipeline's input: no share
+//! survives, and the pipeline walks each occurrence of the leg's id as a copy.
+//! A refused erasure truncates the core arena back to where it found it.
 
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
@@ -51,6 +62,7 @@ use alloc::vec::Vec;
 use anodized::spec;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
@@ -979,7 +991,7 @@ impl Overlay
                         return Err(OverlayRefusal::ReachedTwice { node });
                     }
                     match shape {
-                        | Shape::Opaque => {},
+                        | Shape::Opaque(_) => {},
                         | Shape::Bound(bound) => {
                             occur(&mut frames, node, bound)?;
                         },
@@ -1212,8 +1224,8 @@ impl Children
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Shape
 {
-    /// An opaque core node.
-    Opaque,
+    /// An opaque core node, by its core id.
+    Opaque(CoreId),
     /// An occurrence.
     Bound(Bound),
     /// A share, its body named as a node of any family.
@@ -1232,7 +1244,7 @@ impl Shape
     fn children(self) -> Children
     {
         match self {
-            | Self::Opaque | Self::Bound(_) => Children::Leaf,
+            | Self::Opaque(_) | Self::Bound(_) => Children::Leaf,
             | Self::Shared(sharing) => Children::Two(sharing.leg, sharing.body),
             | Self::Grafted(children) => children,
         }
@@ -1248,7 +1260,7 @@ impl ValueNode
     fn shape(&self) -> Shape
     {
         match *self {
-            | Self::Opaque(_) => Shape::Opaque,
+            | Self::Opaque(id) => Shape::Opaque(CoreId::Value(id)),
             | Self::Bound(bound) => Shape::Bound(bound),
             | Self::Shared(sharing) => Shape::Shared(sharing.widened()),
             | Self::Grafted(ref graft) => Shape::Grafted(graft.children()),
@@ -1265,7 +1277,7 @@ impl CompNode
     fn shape(&self) -> Shape
     {
         match *self {
-            | Self::Opaque(_) => Shape::Opaque,
+            | Self::Opaque(id) => Shape::Opaque(CoreId::Computation(id)),
             | Self::Bound(bound) => Shape::Bound(bound),
             | Self::Shared(sharing) => Shape::Shared(sharing.widened()),
             | Self::Grafted(graft) => Shape::Grafted(graft.children()),
@@ -1282,7 +1294,7 @@ impl ValueTypeNode
     fn shape(&self) -> Shape
     {
         match *self {
-            | Self::Opaque(_) => Shape::Opaque,
+            | Self::Opaque(id) => Shape::Opaque(CoreId::ValueType(id)),
             | Self::Bound(bound) => Shape::Bound(bound),
             | Self::Shared(sharing) => Shape::Shared(sharing.widened()),
             | Self::Grafted(ref graft) => Shape::Grafted(graft.children()),
@@ -1299,7 +1311,7 @@ impl CompTypeNode
     fn shape(&self) -> Shape
     {
         match *self {
-            | Self::Opaque(_) => Shape::Opaque,
+            | Self::Opaque(id) => Shape::Opaque(CoreId::CompType(id)),
             | Self::Bound(bound) => Shape::Bound(bound),
             | Self::Shared(sharing) => Shape::Shared(sharing.widened()),
             | Self::Grafted(graft) => Shape::Grafted(graft.children()),
@@ -1484,23 +1496,757 @@ fn occur(
     Ok(())
 }
 
+/// A core node of any family: what an opaque node holds and what erasure
+/// produces.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CoreId
+{
+    /// A core value.
+    Value(ValueId),
+    /// A core computation.
+    Computation(ComputationId),
+    /// A core value type.
+    ValueType(ValueTypeId),
+    /// A core computation type.
+    CompType(CompTypeId),
+}
+
+/// Why an overlay could not be erased. A refused erasure leaves the core
+/// arena as it found it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum EraseFault
+{
+    /// Validation refused the overlay, in its own vocabulary. Carried rather
+    /// than translated, so the refusal arrives under the name of the condition.
+    Refused(OverlayRefusal),
+    /// An opaque node names no node of the core arena erasure writes into.
+    UnresolvedOpaque
+    {
+        /// The opaque node.
+        node: OverlayId,
+    },
+    /// The walk's own stacks disagreed with the validated overlay. Unreachable
+    /// while every leg is bound beneath the body that reads it and every graft
+    /// is assembled over the children its own tasks erased; kept so erasure
+    /// fails closed rather than answering.
+    MachineInvariant,
+}
+
+/// Erase a value overlay into the core arena.
+///
+/// # Specification
+/// - requires: `core` is the arena the overlay's opaque nodes name.
+/// - ensures: on success, the core value `root` stands for. Each graft mints
+///   one core node, after its children and its children left to right; an
+///   opaque node is its core id as it stands; a share erases its leg once,
+///   before its body, and every occurrence of it is that one id. On refusal
+///   `core` is truncated back to its entry watermark.
+/// - provides: the total, policy-free erasure every duplication stance is
+///   measured against. It takes no policy, and its output is node for node the
+///   arena a hand-built unshared term mints when built in the same order.
+/// - fails: [`EraseFault::Refused`] with the validation refusal before anything
+///   is minted, [`EraseFault::UnresolvedOpaque`] for an opaque node the core
+///   arena does not hold, and [`EraseFault::MachineInvariant`] when the walk's
+///   own stacks break.
+/// - panics: none.
+/// - intension: one core node per graft and none per occurrence, so the erased
+///   term is a core DAG of the overlay's size even where its expansion is
+///   exponential. Indices are copied, never shifted: an occurrence reads its
+///   leg's free indices where it stands, which is the reading a core DAG gives
+///   a node it reaches twice.
+///
+/// # Errors
+/// - [`EraseFault::Refused`] — the overlay does not validate from `root`.
+/// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
+/// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surfaces are the validation gate, the four
+///   node kinds and the graft arms, separated by every former of every family
+///   erased against a hand-built arena, a refusal of each kind leaving the core
+///   arena unchanged, and the deep cases erased and run through the unshared
+///   pipeline beside their hand-built references inside a small stack.
+/// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+/// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+/// - witness:
+///   `deep_evaluation::deep_evaluation::an_erased_value_chain_evaluates_byte_for_byte_as_the_unshared_one`
+/// - witness:
+///   `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
+/// - witness:
+///   `teardown::teardown::an_erased_deep_overlay_equals_the_unshared_chain_inside_a_small_stack`
+#[inline]
+pub fn erase_value(
+    overlay: &Overlay,
+    root: OverlayValueId,
+    core: &mut CoreArena,
+) -> Result<ValueId, EraseFault>
+{
+    let erased = erase(overlay, OverlayId::Value(root), core)?;
+    let CoreId::Value(value) = erased
+    else {
+        return Err(EraseFault::MachineInvariant);
+    };
+    Ok(value)
+}
+
+/// Erase a computation overlay into the core arena.
+///
+/// # Specification
+/// - requires: `core` is the arena the overlay's opaque nodes name.
+/// - ensures: on success, the core computation `root` stands for, minted as
+///   [`erase_value`] mints; on refusal `core` is truncated back to its entry
+///   watermark.
+/// - provides: the computation half of the policy-free erasure.
+/// - fails: as [`erase_value`] fails.
+/// - panics: none.
+///
+/// # Errors
+/// - [`EraseFault::Refused`] — the overlay does not validate from `root`.
+/// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
+/// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surface is the computation root, separated
+///   by a shared case over every computation former, a deep bind chain whose
+///   base is opaque and whose shared leg sits under every binder, and a deep
+///   curried application sharing its argument.
+/// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+/// - witness:
+///   `deep_evaluation::deep_evaluation::an_erased_bind_chain_evaluates_byte_for_byte_as_the_unshared_one`
+/// - witness:
+///   `deep_evaluation::deep_evaluation::an_erased_curried_application_evaluates_byte_for_byte_as_the_unshared_one`
+/// - witness:
+///   `deep_readback::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
+#[inline]
+pub fn erase_computation(
+    overlay: &Overlay,
+    root: OverlayCompId,
+    core: &mut CoreArena,
+) -> Result<ComputationId, EraseFault>
+{
+    let erased = erase(overlay, OverlayId::Computation(root), core)?;
+    let CoreId::Computation(computation) = erased
+    else {
+        return Err(EraseFault::MachineInvariant);
+    };
+    Ok(computation)
+}
+
+/// Erase a value-type overlay into the core arena.
+///
+/// # Specification
+/// - requires: `core` is the arena the overlay's opaque nodes name.
+/// - ensures: on success, the core value type `root` stands for, minted as
+///   [`erase_value`] mints; on refusal `core` is truncated back to its entry
+///   watermark.
+/// - provides: the value-type half of the policy-free erasure.
+/// - fails: as [`erase_value`] fails.
+/// - panics: none.
+///
+/// # Errors
+/// - [`EraseFault::Refused`] — the overlay does not validate from `root`.
+/// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
+/// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surface is the value-type root, separated by
+///   every value-type former and a deep chain of lifts.
+/// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+/// - witness:
+///   `teardown::teardown::an_erased_deep_overlay_equals_the_unshared_chain_inside_a_small_stack`
+#[inline]
+pub fn erase_value_type(
+    overlay: &Overlay,
+    root: OverlayValueTypeId,
+    core: &mut CoreArena,
+) -> Result<ValueTypeId, EraseFault>
+{
+    let erased = erase(overlay, OverlayId::ValueType(root), core)?;
+    let CoreId::ValueType(value_type) = erased
+    else {
+        return Err(EraseFault::MachineInvariant);
+    };
+    Ok(value_type)
+}
+
+/// Erase a computation-type overlay into the core arena.
+///
+/// # Specification
+/// - requires: `core` is the arena the overlay's opaque nodes name.
+/// - ensures: on success, the core computation type `root` stands for, minted
+///   as [`erase_value`] mints; on refusal `core` is truncated back to its entry
+///   watermark.
+/// - provides: the computation-type half of the policy-free erasure.
+/// - fails: as [`erase_value`] fails.
+/// - panics: none.
+///
+/// # Errors
+/// - [`EraseFault::Refused`] — the overlay does not validate from `root`.
+/// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
+/// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surface is the computation-type root,
+///   separated by a share of a value type among the domains of a dependent and
+///   a non-dependent function type.
+/// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+#[inline]
+pub fn erase_comp_type(
+    overlay: &Overlay,
+    root: OverlayCompTypeId,
+    core: &mut CoreArena,
+) -> Result<CompTypeId, EraseFault>
+{
+    let erased = erase(overlay, OverlayId::CompType(root), core)?;
+    let CoreId::CompType(comp_type) = erased
+    else {
+        return Err(EraseFault::MachineInvariant);
+    };
+    Ok(comp_type)
+}
+
+/// Validate, then erase, restoring the core arena on refusal.
+///
+/// # Specification
+/// - requires: `core` is the arena the overlay's opaque nodes name.
+/// - ensures: the core node `root` stands for, or a refusal with `core` at its
+///   entry watermark.
+/// - provides: the one gate the four typed entry points share.
+/// - fails: as [`erase_value`] fails.
+/// - panics: none.
+///
+/// # Errors
+/// - [`EraseFault::Refused`] — the overlay does not validate from `root`.
+/// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
+/// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
+fn erase(
+    overlay: &Overlay,
+    root: OverlayId,
+    core: &mut CoreArena,
+) -> Result<CoreId, EraseFault>
+{
+    overlay.validate(root).map_err(EraseFault::Refused)?;
+    let mark = core.watermark();
+    let mut erasure = Erasure {
+        overlay,
+        core,
+        steps: Vec::from([Step::Enter(root)]),
+        legs: Vec::new(),
+        results: Vec::new(),
+    };
+    let outcome = erasure.run();
+    if outcome.is_err() {
+        erasure.core.truncate_to(mark);
+    }
+    outcome
+}
+
+/// One pending step of the erasure walk.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Step
+{
+    /// Erase one node, or queue what erasing it takes.
+    Enter(OverlayId),
+    /// Bind the erased leg on the result stack for the body that follows.
+    Bind,
+    /// Release the innermost bound leg once its body is erased.
+    Unbind,
+    /// Mint a graft over the children its own tasks erased.
+    Assemble(OverlayId),
+}
+
+/// The erasure walk: its task stack, the legs bound around the current node
+/// innermost last, and the erased nodes awaiting their parent.
+struct Erasure<'run>
+{
+    /// The overlay erased.
+    overlay: &'run Overlay,
+    /// The core arena erased into.
+    core: &'run mut CoreArena,
+    /// The pending steps.
+    steps: Vec<Step>,
+    /// The erased legs of the shares around the current node.
+    legs: Vec<CoreId>,
+    /// The erased nodes awaiting their parent.
+    results: Vec<CoreId>,
+}
+
+impl Erasure<'_>
+{
+    /// Drive the walk until its steps run out.
+    ///
+    /// # Specification
+    /// - requires: the overlay validates from the root the steps hold.
+    /// - ensures: the one erased root, with no leg left bound.
+    /// - provides: the heap-only drive; depth costs steps, never host frames.
+    /// - fails: [`EraseFault::UnresolvedOpaque`] for an opaque node the core
+    ///   arena does not hold, and [`EraseFault::MachineInvariant`] when a stack
+    ///   breaks.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
+    /// - [`EraseFault::MachineInvariant`] — a stack broke.
+    fn run(&mut self) -> Result<CoreId, EraseFault>
+    {
+        while let Some(step) = self.steps.pop() {
+            match step {
+                | Step::Enter(node) => {
+                    self.enter(node)?;
+                },
+                | Step::Bind => {
+                    let Some(leg) = self.results.pop()
+                    else {
+                        return Err(EraseFault::MachineInvariant);
+                    };
+                    self.legs.push(leg);
+                },
+                | Step::Unbind => {
+                    if self.legs.pop().is_none() {
+                        return Err(EraseFault::MachineInvariant);
+                    }
+                },
+                | Step::Assemble(node) => {
+                    let assembled = self.assemble(node)?;
+                    self.results.push(assembled);
+                },
+            }
+        }
+        let Some(erased) = self.results.pop()
+        else {
+            return Err(EraseFault::MachineInvariant);
+        };
+        if self.results.is_empty() && self.legs.is_empty() {
+            Ok(erased)
+        }
+        else {
+            Err(EraseFault::MachineInvariant)
+        }
+    }
+
+    /// Erase one node, or queue what erasing it takes.
+    ///
+    /// # Specification
+    /// - requires: `node` is reachable from a validated root.
+    /// - ensures: an opaque node or an occurrence pushes its core id; a share
+    ///   queues its leg, the bind, its body and the unbind, in that order; a
+    ///   graft queues its children left to right and then its own assembly.
+    /// - provides: the post-order the minting order follows.
+    /// - fails: [`EraseFault::UnresolvedOpaque`] for an opaque node the core
+    ///   arena does not hold, [`EraseFault::Refused`] for a node that does not
+    ///   resolve, and [`EraseFault::MachineInvariant`] for an occurrence no
+    ///   bound leg answers.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
+    /// - [`EraseFault::Refused`] — `node` does not resolve.
+    /// - [`EraseFault::MachineInvariant`] — no bound leg answers.
+    fn enter(
+        &mut self,
+        node: OverlayId,
+    ) -> Result<(), EraseFault>
+    {
+        let shape = self.overlay.shape(node).map_err(EraseFault::Refused)?;
+        match shape {
+            | Shape::Opaque(held) => {
+                let present = match held {
+                    | CoreId::Value(id) => self.core.value(id).is_some(),
+                    | CoreId::Computation(id) => self.core.computation(id).is_some(),
+                    | CoreId::ValueType(id) => self.core.value_type(id).is_some(),
+                    | CoreId::CompType(id) => self.core.comp_type(id).is_some(),
+                };
+                if !present {
+                    return Err(EraseFault::UnresolvedOpaque { node });
+                }
+                self.results.push(held);
+            },
+            | Shape::Bound(bound) => {
+                let distance = usize::try_from(bound.distance.0).unwrap_or(usize::MAX);
+                let Some(&leg) = self
+                    .legs
+                    .len()
+                    .checked_sub(1)
+                    .and_then(|innermost| innermost.checked_sub(distance))
+                    .and_then(|named| self.legs.get(named))
+                else {
+                    return Err(EraseFault::MachineInvariant);
+                };
+                self.results.push(leg);
+            },
+            | Shape::Shared(sharing) => {
+                self.steps.push(Step::Unbind);
+                self.steps.push(Step::Enter(sharing.body));
+                self.steps.push(Step::Bind);
+                self.steps.push(Step::Enter(sharing.leg));
+            },
+            | Shape::Grafted(children) => {
+                self.steps.push(Step::Assemble(node));
+                children.push_reversed(&mut self.steps, Step::Enter);
+            },
+        }
+        Ok(())
+    }
+
+    /// Mint the graft `node` holds over its erased children.
+    ///
+    /// # Specification
+    /// - requires: `node` is a graft whose children were erased onto the result
+    ///   stack, leftmost deepest.
+    /// - ensures: the children are popped and one core node of the graft's
+    ///   former is minted over them.
+    /// - provides: the one place a graft becomes a core node.
+    /// - fails: [`EraseFault::MachineInvariant`] when `node` is not a graft or
+    ///   a child is missing or of the wrong family.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EraseFault::MachineInvariant`] — the graft or a child is missing.
+    fn assemble(
+        &mut self,
+        node: OverlayId,
+    ) -> Result<CoreId, EraseFault>
+    {
+        let overlay = self.overlay;
+        match node {
+            | OverlayId::Value(id) => {
+                let Some(held) = overlay.value(id)
+                else {
+                    return Err(EraseFault::MachineInvariant);
+                };
+                let ValueNode::Grafted(ref graft) = *held
+                else {
+                    return Err(EraseFault::MachineInvariant);
+                };
+                let value = self.assemble_value(graft)?;
+                Ok(CoreId::Value(value))
+            },
+            | OverlayId::Computation(id) => {
+                let Some(&CompNode::Grafted(graft)) = overlay.computation(id)
+                else {
+                    return Err(EraseFault::MachineInvariant);
+                };
+                let computation = self.assemble_computation(graft)?;
+                Ok(CoreId::Computation(computation))
+            },
+            | OverlayId::ValueType(id) => {
+                let Some(held) = overlay.value_type(id)
+                else {
+                    return Err(EraseFault::MachineInvariant);
+                };
+                let ValueTypeNode::Grafted(ref graft) = *held
+                else {
+                    return Err(EraseFault::MachineInvariant);
+                };
+                let value_type = self.assemble_value_type(graft)?;
+                Ok(CoreId::ValueType(value_type))
+            },
+            | OverlayId::CompType(id) => {
+                let Some(&CompTypeNode::Grafted(graft)) = overlay.comp_type(id)
+                else {
+                    return Err(EraseFault::MachineInvariant);
+                };
+                let comp_type = self.assemble_comp_type(graft)?;
+                Ok(CoreId::CompType(comp_type))
+            },
+        }
+    }
+
+    /// Mint one core value over its erased children.
+    ///
+    /// # Specification
+    /// - requires: the graft's children are the topmost results, rightmost on
+    ///   top.
+    /// - ensures: the core value of the graft's former over those children.
+    /// - provides: one arm per value former.
+    /// - fails: [`EraseFault::MachineInvariant`] for a missing child.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EraseFault::MachineInvariant`] — a child is missing.
+    fn assemble_value(
+        &mut self,
+        graft: &ValueGraft,
+    ) -> Result<ValueId, EraseFault>
+    {
+        match *graft {
+            | ValueGraft::Variable { zone, index } => Ok(self.core.value_variable(zone, index)),
+            | ValueGraft::Constant(index) => Ok(self.core.value_constant(index)),
+            | ValueGraft::Unit => Ok(self.core.value_unit()),
+            | ValueGraft::Literal(ref literal) => Ok(self.core.value_literal(literal.clone())),
+            | ValueGraft::Pair(..) => {
+                let second = self.value()?;
+                let first = self.value()?;
+                Ok(self.core.value_pair(first, second))
+            },
+            | ValueGraft::Injection(side, _) => {
+                let body = self.value()?;
+                Ok(self.core.value_injection(side, body))
+            },
+            | ValueGraft::Thunk(_) => {
+                let body = self.computation()?;
+                Ok(self.core.value_thunk(body))
+            },
+            | ValueGraft::Lift { ref target, .. } => {
+                let body = self.value()?;
+                Ok(self.core.value_lift(target.clone(), body))
+            },
+        }
+    }
+
+    /// Mint one core computation over its erased children.
+    ///
+    /// # Specification
+    /// - requires: the graft's children are the topmost results, rightmost on
+    ///   top.
+    /// - ensures: the core computation of the graft's former over those
+    ///   children.
+    /// - provides: one arm per computation former.
+    /// - fails: [`EraseFault::MachineInvariant`] for a missing child.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EraseFault::MachineInvariant`] — a child is missing.
+    fn assemble_computation(
+        &mut self,
+        graft: CompGraft,
+    ) -> Result<ComputationId, EraseFault>
+    {
+        match graft {
+            | CompGraft::Lambda(_) => {
+                let body = self.computation()?;
+                Ok(self.core.computation_lambda(body))
+            },
+            | CompGraft::Application(..) => {
+                let argument = self.value()?;
+                let head = self.computation()?;
+                Ok(self.core.computation_application(head, argument))
+            },
+            | CompGraft::Return(_) => {
+                let value = self.value()?;
+                Ok(self.core.computation_return(value))
+            },
+            | CompGraft::Bind(..) => {
+                let body = self.computation()?;
+                let bound = self.computation()?;
+                Ok(self.core.computation_bind(bound, body))
+            },
+            | CompGraft::Force(_) => {
+                let value = self.value()?;
+                Ok(self.core.computation_force(value))
+            },
+            | CompGraft::Case { .. } => {
+                let on_right = self.computation()?;
+                let on_left = self.computation()?;
+                let scrutinee = self.value()?;
+                Ok(self.core.computation_case(scrutinee, on_left, on_right))
+            },
+        }
+    }
+
+    /// Mint one core value type over its erased children.
+    ///
+    /// # Specification
+    /// - requires: the graft's children are the topmost results, rightmost on
+    ///   top.
+    /// - ensures: the core value type of the graft's former over those
+    ///   children.
+    /// - provides: one arm per value-type former.
+    /// - fails: [`EraseFault::MachineInvariant`] for a missing child.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EraseFault::MachineInvariant`] — a child is missing.
+    fn assemble_value_type(
+        &mut self,
+        graft: &ValueTypeGraft,
+    ) -> Result<ValueTypeId, EraseFault>
+    {
+        match *graft {
+            | ValueTypeGraft::Base(base) => Ok(self.core.value_type_base(base)),
+            | ValueTypeGraft::Unit => Ok(self.core.value_type_unit()),
+            | ValueTypeGraft::Product(..) => {
+                let second = self.value_type()?;
+                let first = self.value_type()?;
+                Ok(self.core.value_type_product(first, second))
+            },
+            | ValueTypeGraft::Sum(..) => {
+                let second = self.value_type()?;
+                let first = self.value_type()?;
+                Ok(self.core.value_type_sum(first, second))
+            },
+            | ValueTypeGraft::Thunk(_) => {
+                let body = self.comp_type()?;
+                Ok(self.core.value_type_thunk(body))
+            },
+            | ValueTypeGraft::Universe(ref level) => {
+                Ok(self.core.value_type_universe(level.clone()))
+            },
+            | ValueTypeGraft::Lift { ref target, .. } => {
+                let inner = self.value_type()?;
+                Ok(self.core.value_type_lift(inner, target.clone()))
+            },
+            | ValueTypeGraft::Element { ref target, .. } => {
+                let code = self.value()?;
+                Ok(self.core.value_type_element(code, target.clone()))
+            },
+            | ValueTypeGraft::Abstract(atom) => Ok(self.core.value_type_abstract(atom)),
+        }
+    }
+
+    /// Mint one core computation type over its erased children.
+    ///
+    /// # Specification
+    /// - requires: the graft's children are the topmost results, rightmost on
+    ///   top.
+    /// - ensures: the core computation type of the graft's former over those
+    ///   children.
+    /// - provides: one arm per computation-type former.
+    /// - fails: [`EraseFault::MachineInvariant`] for a missing child.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EraseFault::MachineInvariant`] — a child is missing.
+    fn assemble_comp_type(
+        &mut self,
+        graft: CompTypeGraft,
+    ) -> Result<CompTypeId, EraseFault>
+    {
+        match graft {
+            | CompTypeGraft::Returner(_) => {
+                let result = self.value_type()?;
+                Ok(self.core.comp_type_returner(result))
+            },
+            | CompTypeGraft::Arrow { .. } => {
+                let codomain = self.comp_type()?;
+                let domain = self.value_type()?;
+                Ok(self.core.comp_type_arrow(domain, codomain))
+            },
+            | CompTypeGraft::Pi { .. } => {
+                let codomain = self.comp_type()?;
+                let domain = self.value_type()?;
+                Ok(self.core.comp_type_pi(domain, codomain))
+            },
+        }
+    }
+
+    /// Pop an erased value.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the topmost result, when it is a value.
+    /// - provides: the typed pop that catches a family the walk did not expect.
+    /// - fails: [`EraseFault::MachineInvariant`] when the top is missing or of
+    ///   another family.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EraseFault::MachineInvariant`] — no value is on top.
+    fn value(&mut self) -> Result<ValueId, EraseFault>
+    {
+        let Some(CoreId::Value(id)) = self.results.pop()
+        else {
+            return Err(EraseFault::MachineInvariant);
+        };
+        Ok(id)
+    }
+
+    /// Pop an erased computation.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the topmost result, when it is a computation.
+    /// - provides: the typed pop that catches a family the walk did not expect.
+    /// - fails: [`EraseFault::MachineInvariant`] when the top is missing or of
+    ///   another family.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EraseFault::MachineInvariant`] — no computation is on top.
+    fn computation(&mut self) -> Result<ComputationId, EraseFault>
+    {
+        let Some(CoreId::Computation(id)) = self.results.pop()
+        else {
+            return Err(EraseFault::MachineInvariant);
+        };
+        Ok(id)
+    }
+
+    /// Pop an erased value type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the topmost result, when it is a value type.
+    /// - provides: the typed pop that catches a family the walk did not expect.
+    /// - fails: [`EraseFault::MachineInvariant`] when the top is missing or of
+    ///   another family.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EraseFault::MachineInvariant`] — no value type is on top.
+    fn value_type(&mut self) -> Result<ValueTypeId, EraseFault>
+    {
+        let Some(CoreId::ValueType(id)) = self.results.pop()
+        else {
+            return Err(EraseFault::MachineInvariant);
+        };
+        Ok(id)
+    }
+
+    /// Pop an erased computation type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the topmost result, when it is a computation type.
+    /// - provides: the typed pop that catches a family the walk did not expect.
+    /// - fails: [`EraseFault::MachineInvariant`] when the top is missing or of
+    ///   another family.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`EraseFault::MachineInvariant`] — no computation type is on top.
+    fn comp_type(&mut self) -> Result<CompTypeId, EraseFault>
+    {
+        let Some(CoreId::CompType(id)) = self.results.pop()
+        else {
+            return Err(EraseFault::MachineInvariant);
+        };
+        Ok(id)
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::String;
+
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::Zone;
     use gandr_kernel_strata::Level;
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::IntegerLiteral;
+    use gandr_kernel_term::Literal;
+    use gandr_kernel_term::Magnitude;
+    use gandr_kernel_term::Side;
+    use gandr_kernel_term::Sign;
 
     use super::Bound;
     use super::CompGraft;
     use super::CompNode;
     use super::CompTypeGraft;
     use super::CompTypeNode;
+    use super::EraseFault;
     use super::Overlay;
     use super::OverlayCompId;
+    use super::OverlayCompTypeId;
     use super::OverlayFamily;
     use super::OverlayFault;
     use super::OverlayId;
     use super::OverlayRefusal;
     use super::OverlayValueId;
+    use super::OverlayValueTypeId;
     use super::OverlayWatermark;
     use super::ShareArity;
     use super::ShareDistance;
@@ -1510,6 +2256,10 @@ mod tests
     use super::ValueNode;
     use super::ValueTypeGraft;
     use super::ValueTypeNode;
+    use super::erase_comp_type;
+    use super::erase_computation;
+    use super::erase_value;
+    use super::erase_value_type;
 
     /// A grafted unit value.
     ///
@@ -2046,5 +2796,397 @@ mod tests
 
         overlay.truncate_to(OverlayWatermark::default());
         assert_eq!(Overlay::new(), overlay, "the floor is the whole teardown");
+    }
+
+    /// Mint a computation node whose children resolve.
+    ///
+    /// # Specification
+    /// - requires: every child of `node` resolves in `overlay`.
+    /// - ensures: a fresh computation id.
+    /// - provides: the terse mint the erasure witnesses build with.
+    /// - panics: when the mint is refused, which the requirement excludes.
+    fn computation(
+        overlay: &mut Overlay,
+        node: CompNode,
+    ) -> OverlayCompId
+    {
+        overlay
+            .mint_computation(node)
+            .expect("every child resolves")
+    }
+
+    /// Mint a value-type node whose children resolve.
+    ///
+    /// # Specification
+    /// - requires: every child of `node` resolves in `overlay`.
+    /// - ensures: a fresh value-type id.
+    /// - provides: the terse mint the erasure witnesses build with.
+    /// - panics: when the mint is refused, which the requirement excludes.
+    fn value_type(
+        overlay: &mut Overlay,
+        node: ValueTypeNode,
+    ) -> OverlayValueTypeId
+    {
+        overlay.mint_value_type(node).expect("every child resolves")
+    }
+
+    /// Mint a computation-type node whose children resolve.
+    ///
+    /// # Specification
+    /// - requires: every child of `node` resolves in `overlay`.
+    /// - ensures: a fresh computation-type id.
+    /// - provides: the terse mint the erasure witnesses build with.
+    /// - panics: when the mint is refused, which the requirement excludes.
+    fn comp_type(
+        overlay: &mut Overlay,
+        node: CompTypeNode,
+    ) -> OverlayCompTypeId
+    {
+        overlay.mint_comp_type(node).expect("every child resolves")
+    }
+
+    /// Mint a value node whose children resolve.
+    ///
+    /// # Specification
+    /// - requires: every child of `node` resolves in `overlay`.
+    /// - ensures: a fresh value id.
+    /// - provides: the terse mint the erasure witnesses build with.
+    /// - panics: when the mint is refused, which the requirement excludes.
+    fn value(
+        overlay: &mut Overlay,
+        node: ValueNode,
+    ) -> OverlayValueId
+    {
+        overlay.mint_value(node).expect("every child resolves")
+    }
+
+    #[test]
+    fn erasure_mints_every_former_of_every_family_in_order()
+    {
+        let target = Level::zero().succ().expect("level one exists");
+        let magnitude =
+            Magnitude::from_decimal_text(String::from("1")).expect("the digits are decimal");
+        let literal = Literal::Integer(IntegerLiteral::new(Sign::NonNegative, magnitude));
+        let innermost = DeBruijnIndex::from(0_u32);
+        let first = ConstantIndex::from(0_usize);
+        let second = ConstantIndex::from(1_usize);
+        let zero = ShareDistance::from(0_u32);
+
+        // The reference: every former minted by hand, in the order erasure walks —
+        // a share's leg first, then each graft after its children, left to right.
+        let mut reference = CoreArena::new();
+        let held = reference.value_unit();
+        let r_variable = reference.value_variable(Zone::Intuitionistic, innermost);
+        let r_constant = reference.value_constant(first);
+        let r_names = reference.value_pair(r_variable, r_constant);
+        let r_literal = reference.value_literal(literal.clone());
+        let r_injected = reference.value_injection(Side::Left, r_literal);
+        let r_returned = reference.value_unit();
+        let r_return = reference.computation_return(r_returned);
+        let r_thunk = reference.value_thunk(r_return);
+        let r_lifted = reference.value_unit();
+        let r_lift = reference.value_lift(target.clone(), r_lifted);
+        let r_suspended = reference.value_pair(r_thunk, r_lift);
+        let r_wrapped = reference.value_pair(r_injected, r_suspended);
+        let r_value = reference.value_pair(r_names, r_wrapped);
+
+        let r_leg = reference.value_unit();
+        let r_force = reference.computation_force(r_leg);
+        let r_bound = reference.value_variable(Zone::Intuitionistic, innermost);
+        let r_body = reference.computation_return(r_bound);
+        let r_lambda = reference.computation_lambda(r_body);
+        let r_application = reference.computation_application(r_lambda, held);
+        let r_produced = reference.value_unit();
+        let r_then = reference.computation_return(r_produced);
+        let r_bind = reference.computation_bind(r_application, r_then);
+        let r_case = reference.computation_case(r_leg, r_force, r_bind);
+
+        let r_base = reference.value_type_base(BaseType::Integer);
+        let r_unit = reference.value_type_unit();
+        let r_sum = reference.value_type_sum(r_base, r_unit);
+        let r_result = reference.value_type_unit();
+        let r_returner = reference.comp_type_returner(r_result);
+        let r_thunk_type = reference.value_type_thunk(r_returner);
+        let r_universe = reference.value_type_universe(target.clone());
+        let r_atom = reference.value_type_abstract(first);
+        let r_lift_type = reference.value_type_lift(r_atom, target.clone());
+        let r_code = reference.value_unit();
+        let r_element = reference.value_type_element(r_code, target.clone());
+        let r_codes = reference.value_type_product(r_lift_type, r_element);
+        let r_universes = reference.value_type_product(r_universe, r_codes);
+        let r_thunks = reference.value_type_product(r_thunk_type, r_universes);
+        let r_value_type = reference.value_type_product(r_sum, r_thunks);
+
+        let r_domain = reference.value_type_unit();
+        let r_sealed = reference.value_type_abstract(second);
+        let r_codomain = reference.comp_type_returner(r_sealed);
+        let r_arrow = reference.comp_type_arrow(r_domain, r_codomain);
+        let r_pi = reference.comp_type_pi(r_domain, r_arrow);
+
+        // The overlay: the same four terms, the computation and the
+        // computation type each sharing one leg between two occurrences.
+        let mut core = CoreArena::new();
+        let opaque = core.value_unit();
+        let mut overlay = Overlay::new();
+
+        let o_variable = value(
+            &mut overlay,
+            ValueNode::Grafted(ValueGraft::Variable {
+                zone: Zone::Intuitionistic,
+                index: innermost,
+            }),
+        );
+        let o_constant = value(
+            &mut overlay,
+            ValueNode::Grafted(ValueGraft::Constant(first)),
+        );
+        let o_names = pair(&mut overlay, o_variable, o_constant);
+        let o_literal = value(
+            &mut overlay,
+            ValueNode::Grafted(ValueGraft::Literal(literal)),
+        );
+        let o_injected = value(
+            &mut overlay,
+            ValueNode::Grafted(ValueGraft::Injection(Side::Left, o_literal)),
+        );
+        let o_returned = unit(&mut overlay);
+        let o_return = computation(
+            &mut overlay,
+            CompNode::Grafted(CompGraft::Return(o_returned)),
+        );
+        let o_thunk = value(
+            &mut overlay,
+            ValueNode::Grafted(ValueGraft::Thunk(o_return)),
+        );
+        let o_lifted = unit(&mut overlay);
+        let o_lift = value(
+            &mut overlay,
+            ValueNode::Grafted(ValueGraft::Lift {
+                target: target.clone(),
+                body: o_lifted,
+            }),
+        );
+        let o_suspended = pair(&mut overlay, o_thunk, o_lift);
+        let o_wrapped = pair(&mut overlay, o_injected, o_suspended);
+        let o_value = pair(&mut overlay, o_names, o_wrapped);
+
+        let o_leg = unit(&mut overlay);
+        let o_scrutinee = occurrence(&mut overlay, zero, SharePosition::from(0_u32));
+        let o_forced = occurrence(&mut overlay, zero, SharePosition::from(1_u32));
+        let o_force = computation(&mut overlay, CompNode::Grafted(CompGraft::Force(o_forced)));
+        let o_bound = value(
+            &mut overlay,
+            ValueNode::Grafted(ValueGraft::Variable {
+                zone: Zone::Intuitionistic,
+                index: innermost,
+            }),
+        );
+        let o_body = computation(&mut overlay, CompNode::Grafted(CompGraft::Return(o_bound)));
+        let o_lambda = computation(&mut overlay, CompNode::Grafted(CompGraft::Lambda(o_body)));
+        let o_held = value(&mut overlay, ValueNode::Opaque(opaque));
+        let o_application = computation(
+            &mut overlay,
+            CompNode::Grafted(CompGraft::Application(o_lambda, o_held)),
+        );
+        let o_produced = unit(&mut overlay);
+        let o_then = computation(
+            &mut overlay,
+            CompNode::Grafted(CompGraft::Return(o_produced)),
+        );
+        let o_bind = computation(
+            &mut overlay,
+            CompNode::Grafted(CompGraft::Bind(o_application, o_then)),
+        );
+        let o_case = computation(
+            &mut overlay,
+            CompNode::Grafted(CompGraft::Case {
+                scrutinee: o_scrutinee,
+                on_left: o_force,
+                on_right: o_bind,
+            }),
+        );
+        let o_computation = computation(
+            &mut overlay,
+            CompNode::Shared(Sharing {
+                arity: ShareArity::from(2_u32),
+                leg: OverlayId::Value(o_leg),
+                body: o_case,
+            }),
+        );
+
+        let o_base = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Base(BaseType::Integer)),
+        );
+        let o_unit = value_type(&mut overlay, ValueTypeNode::Grafted(ValueTypeGraft::Unit));
+        let o_sum = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Sum(o_base, o_unit)),
+        );
+        let o_result = value_type(&mut overlay, ValueTypeNode::Grafted(ValueTypeGraft::Unit));
+        let o_returner = comp_type(
+            &mut overlay,
+            CompTypeNode::Grafted(CompTypeGraft::Returner(o_result)),
+        );
+        let o_thunk_type = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Thunk(o_returner)),
+        );
+        let o_universe = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Universe(target.clone())),
+        );
+        let o_atom = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Abstract(first)),
+        );
+        let o_lift_type = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Lift {
+                inner: o_atom,
+                target: target.clone(),
+            }),
+        );
+        let o_code = unit(&mut overlay);
+        let o_element = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Element {
+                code: o_code,
+                target,
+            }),
+        );
+        let o_codes = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Product(o_lift_type, o_element)),
+        );
+        let o_universes = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Product(o_universe, o_codes)),
+        );
+        let o_thunks = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Product(o_thunk_type, o_universes)),
+        );
+        let o_value_type = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Product(o_sum, o_thunks)),
+        );
+
+        let o_domain = value_type(&mut overlay, ValueTypeNode::Grafted(ValueTypeGraft::Unit));
+        let o_dependent = value_type(
+            &mut overlay,
+            ValueTypeNode::Bound(Bound {
+                distance: zero,
+                position: SharePosition::from(0_u32),
+            }),
+        );
+        let o_plain = value_type(
+            &mut overlay,
+            ValueTypeNode::Bound(Bound {
+                distance: zero,
+                position: SharePosition::from(1_u32),
+            }),
+        );
+        let o_sealed = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Abstract(second)),
+        );
+        let o_codomain = comp_type(
+            &mut overlay,
+            CompTypeNode::Grafted(CompTypeGraft::Returner(o_sealed)),
+        );
+        let o_arrow = comp_type(
+            &mut overlay,
+            CompTypeNode::Grafted(CompTypeGraft::Arrow {
+                domain: o_plain,
+                codomain: o_codomain,
+            }),
+        );
+        let o_pi = comp_type(
+            &mut overlay,
+            CompTypeNode::Grafted(CompTypeGraft::Pi {
+                domain: o_dependent,
+                codomain: o_arrow,
+            }),
+        );
+        let o_comp_type = comp_type(
+            &mut overlay,
+            CompTypeNode::Shared(Sharing {
+                arity: ShareArity::from(2_u32),
+                leg: OverlayId::ValueType(o_domain),
+                body: o_pi,
+            }),
+        );
+
+        let erased = (
+            erase_value(&overlay, o_value, &mut core),
+            erase_computation(&overlay, o_computation, &mut core),
+            erase_value_type(&overlay, o_value_type, &mut core),
+            erase_comp_type(&overlay, o_comp_type, &mut core),
+        );
+        assert_eq!(
+            (Ok(r_value), Ok(r_case), Ok(r_value_type), Ok(r_pi)),
+            erased,
+            "each root erases to the id its hand-built term takes"
+        );
+        assert_eq!(
+            reference, core,
+            "and the arena holds node for node what the hand-built terms minted: one node \
+             per graft, the opaque id as it stands, and one leg per share"
+        );
+    }
+
+    #[test]
+    fn a_refused_erasure_leaves_the_core_arena_unchanged()
+    {
+        let mut core = CoreArena::new();
+        let kept = core.value_unit();
+        let entry = core.clone();
+        let mut overlay = Overlay::new();
+
+        let stray = occurrence(
+            &mut overlay,
+            ShareDistance::from(0_u32),
+            SharePosition::from(0_u32),
+        );
+        let wrapped = computation(&mut overlay, CompNode::Grafted(CompGraft::Return(stray)));
+        assert_eq!(
+            Err(EraseFault::Refused(OverlayRefusal::OpenReference {
+                node: OverlayId::Value(stray)
+            })),
+            erase_computation(&overlay, wrapped, &mut core),
+            "validation refuses in its own vocabulary"
+        );
+        assert_eq!(entry, core, "before anything is minted");
+
+        // A core id one past every value the arena holds, so it cannot resolve.
+        let foreign = {
+            let mut elsewhere = CoreArena::new();
+            let leaf = elsewhere.value_unit();
+            let pair = elsewhere.value_pair(leaf, leaf);
+            elsewhere.value_pair(pair, pair)
+        };
+        let leaf = unit(&mut overlay);
+        let opaque = value(&mut overlay, ValueNode::Opaque(foreign));
+        let both = pair(&mut overlay, leaf, opaque);
+        assert_eq!(
+            Err(EraseFault::UnresolvedOpaque {
+                node: OverlayId::Value(opaque)
+            }),
+            erase_value(&overlay, both, &mut core),
+            "an opaque id the core arena does not hold is refused where it stands"
+        );
+        assert_eq!(
+            entry, core,
+            "and the leaf minted before it is truncated away"
+        );
+
+        let leaf = unit(&mut overlay);
+        let held = value(&mut overlay, ValueNode::Opaque(kept));
+        let both = pair(&mut overlay, leaf, held);
+        assert!(
+            erase_value(&overlay, both, &mut core).is_ok(),
+            "the same shape over an id the arena holds erases"
+        );
     }
 }
