@@ -429,6 +429,12 @@ struct ValueForm(bool);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Fractional(bool);
 
+/// Whether a node lies inside an attribute payload, which lowers whatever
+/// its declaration's outcome.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct InPayload(bool);
+
 /// One form being classified: where it stands, what it is called, and how
 /// its position reads it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -531,6 +537,8 @@ struct Lowerer<'run, 'source>
     plans: Vec<Plan>,
     /// Each node's lowered core node.
     lowered: Vec<Maybe<Lowered, lowered::Absent>>,
+    /// Which nodes lie inside an attribute payload.
+    payload: Vec<InPayload>,
     /// The binder frames the lambdas extended.
     scope: Scope<'source>,
     /// The remaining allowance.
@@ -631,6 +639,8 @@ struct Sink<'run>
 /// - witness: `lower::tests::a_payload_of_the_wrong_form_is_refused`
 /// - witness: `lower::tests::a_marker_given_a_payload_is_refused`
 /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+/// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
 /// - witness: `lower::tests::every_minted_node_has_an_origin`
 /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
 /// - witness: `lower::tests::a_module_past_the_allowance_is_refused`
@@ -709,6 +719,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         plans.resize(count, Plan::Unplanned);
         let mut lowered = Vec::new();
         lowered.resize(count, Maybe::Absent(lowered::Absent::Unminted));
+        let mut payload = Vec::new();
+        payload.resize(count, InPayload(false));
 
         Self {
             pbg,
@@ -717,6 +729,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             readings,
             plans,
             lowered,
+            payload,
             scope: Scope::new(),
             fuel,
             pieces: Pieces::new(),
@@ -730,6 +743,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: a signature's type is read as a value type, a definition's
     ///   body as a value in the outermost frame, and an attribute's payload as
     ///   a value when its form can stand as one; every other node stays unread.
+    ///   Every written payload is marked as one, whatever its form.
     /// - provides: the entry points of the ascending sweep.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a payload of a mold the
     ///   grammar does not hold.
@@ -740,6 +754,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     fn seed(&mut self) -> Result<(), LoweringRefusal<'source>>
     {
         let mut seeds: Vec<(NodeIndex, Reading)> = Vec::new();
+        let mut payloads: Vec<NodeIndex> = Vec::new();
         for slot in &self.collected.slots {
             if let Maybe::Present(half) = slot.signature {
                 seeds.push((half.operand.node, Reading::ValueType));
@@ -752,6 +767,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 else {
                     continue;
                 };
+                payloads.push(payload.node);
                 let (_shape, value) = self.payload_former(payload)?;
                 if value.0 {
                     seeds.push((payload.node, Reading::Value(Frame::Outermost)));
@@ -760,6 +776,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         for (position, reading) in seeds {
             self.read(position, reading);
+        }
+        for position in payloads {
+            if let Some(held) = self.payload.get_mut(usize::from(position)) {
+                *held = InPayload(true);
+            }
         }
 
         Ok(())
@@ -791,10 +812,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: the seeds have been read.
-    /// - ensures: every node carries the reading its parent fixed and the owner
-    ///   its parent belongs to, every read form has its plan or has offered its
-    ///   refusal to the declaration that owns it, and a node under a form that
-    ///   refused stays unread, so a refusal costs its subtree nothing.
+    /// - ensures: every node carries the reading its parent fixed, the owner
+    ///   its parent belongs to and its parent's payload mark, every read form
+    ///   has its plan or has offered its refusal to the declaration that owns
+    ///   it, and a node under a form that refused stays unread, so a refusal
+    ///   costs its subtree nothing.
     /// - provides: everything the mint sweep needs, so the mint sweep decides
     ///   nothing and can fail at nothing.
     /// - fails: every engine fault — [`LoweringRefusal::BudgetExceeded`] and
@@ -810,6 +832,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         for position in self.tree.positions() {
             self.fuel.spend()?;
             self.inherit_owner(position);
+            self.inherit_payload(position);
             if let Err(refusal) = self.classify_node(position) {
                 if refusal.classify() == FailureClass::EngineFault {
                     return Err(refusal);
@@ -843,6 +866,47 @@ impl<'run, 'source> Lowerer<'run, 'source>
         for child in self.tree.children(position) {
             self.collected.own(child, slot);
         }
+    }
+
+    /// Mark every child of `position` as inside a payload when `position` is.
+    ///
+    /// # Specification
+    /// - requires: `position` is visited in ascending arena order, so its own
+    ///   mark is already set when its children are reached.
+    /// - ensures: every node under a written payload carries the mark, so the
+    ///   mint sweep can tell a payload's subtree from the rest of its
+    ///   declaration.
+    /// - provides: the payload half of what the mint sweep skips.
+    /// - fails: never.
+    /// - panics: none.
+    fn inherit_payload(
+        &mut self,
+        position: NodeIndex,
+    )
+    {
+        if !self.in_payload(position).0 {
+            return;
+        }
+        for child in self.tree.children(position) {
+            if let Some(held) = self.payload.get_mut(usize::from(child)) {
+                *held = InPayload(true);
+            }
+        }
+    }
+
+    /// Whether `position` lies inside an attribute payload.
+    ///
+    /// # Specification
+    /// trivial.
+    fn in_payload(
+        &self,
+        position: NodeIndex,
+    ) -> InPayload
+    {
+        self.payload
+            .get(usize::from(position))
+            .copied()
+            .unwrap_or(InPayload(false))
     }
 
     /// Classify one node at the reading its parent fixed.
@@ -1572,7 +1636,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   positions; every minted node gets an origin naming the syntax node
     ///   that produced it, terms and types alike, while an adopted child keeps
     ///   its own. A node under a declaration that refused is not minted, and
-    ///   neither is any node above it.
+    ///   neither is any node above it, unless it lies inside an attribute
+    ///   payload: the side table files a payload whatever its declaration's
+    ///   outcome, so an expectation about a refused declaration stays readable.
     /// - provides: the whole allocation half of the lowering.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the sweep outruns the
     ///   allowance; nothing else, because every decision was made ascending.
@@ -1590,7 +1656,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             remaining = next;
             self.fuel.spend()?;
             let position = NodeIndex::from(next);
-            if self.collected.refused(position).0 {
+            if self.collected.refused(position).0 && !self.in_payload(position).0 {
                 continue;
             }
             let Some(planned) = self.plans.get_mut(next)
@@ -1827,11 +1893,14 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: the mint sweep has run, so an admitted payload already has
     ///   its core value.
-    /// - ensures: every attribute of every unrefused declaration is resolved
-    ///   against the registry and filed under the content identity of the
-    ///   declaration form it decorates, in source order; an attribute written
-    ///   twice for one declared name is refused wherever its two spellings sit,
-    ///   and the earlier one is the one kept.
+    /// - ensures: every attribute of every declaration, refused or not, is
+    ///   resolved against the registry and filed under the content identity of
+    ///   the declaration form it decorates, in source order; an attribute
+    ///   written twice for one declared name is refused wherever its two
+    ///   spellings sit, and the earlier one is the one kept. A declaration's
+    ///   lowering outcome does not gate its attributes: an expectation about a
+    ///   refusal is read off the refused declaration, and an attribute's own
+    ///   refusal competes with the declaration's other refusals by position.
     /// - provides: the attribute side table of the lowered module.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] and
     ///   [`LoweringRefusal::UnknownMold`] abort the pass. Every other refusal
@@ -1873,9 +1942,6 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Result<(), LoweringRefusal<'source>>
     {
         for slot in slots {
-            if slot.refused().0 {
-                continue;
-            }
             let mut seen: Vec<(RegisteredAttribute, ByteSpan)> = Vec::new();
             for written in core::mem::take(&mut slot.attributes) {
                 self.fuel.spend()?;
@@ -1907,7 +1973,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   payload whose form is not a value at all is refused before its schema
     ///   is consulted, because being no value is a different fact from being
     ///   the wrong one; nothing is filed for a payload the mint sweep left
-    ///   unlowered, which is the refused-declaration case.
+    ///   unlowered, which is the case of a payload that itself refused.
     /// - provides: the per-attribute half of the attribute pass.
     /// - fails: yields the unknown-attribute refusal with its bounded
     ///   suggestion, the duplicate refusal naming the first spelling, the
@@ -2131,8 +2197,8 @@ enum Filing
 {
     /// The entry to file.
     Filed(AttributeEntry),
-    /// Nothing: the payload did not lower, which only a refused declaration
-    /// leaves behind.
+    /// Nothing: the payload did not lower, which only a payload that itself
+    /// refused leaves behind.
     Unlowered,
 }
 
@@ -3725,6 +3791,138 @@ mod tests
             Some(&Value::Literal(integer(SourceFragment::from("1")))),
             "the payload is the lowered value"
         );
+    }
+
+    #[test]
+    fn a_refused_declarations_attributes_are_filed_under_its_digest()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                r#"@[ refuses("UnresolvedName") ] def a = b ; @[ owes(1) ] def c : Intgr ;"#,
+            ),
+            &mut arena,
+        );
+        let [ref defined, ref signed] = *module.declarations()
+        else {
+            panic!("two names are declared");
+        };
+
+        assert_eq!(
+            (defined.outcome(), signed.outcome()),
+            (
+                DeclarationOutcome::Refused(LoweringRefusal::UnresolvedName {
+                    span: at(39_usize, 40_usize),
+                    name: SurfaceName::from("b"),
+                }),
+                DeclarationOutcome::Refused(LoweringRefusal::UnresolvedTypeHead {
+                    span: at(64_usize, 69_usize),
+                    name: SurfaceName::from("Intgr"),
+                    arity: HeadArity::Nullary,
+                }),
+            ),
+            "both declarations are refused by their operands"
+        );
+        let (Maybe::Present(definition), Maybe::Present(signature)) =
+            (defined.definition(), signed.signature())
+        else {
+            panic!("each refused name keeps the digest of the form it wrote");
+        };
+        let [ref refuses] = *module.attributes().entries(definition)
+        else {
+            panic!("one attribute is filed under the refused definition");
+        };
+        let [ref owes] = *module.attributes().entries(signature)
+        else {
+            panic!("one attribute is filed under the refused signature");
+        };
+        assert_eq!(
+            ((refuses.name(), refuses.span()), (owes.name(), owes.span())),
+            (
+                (
+                    registered(SurfaceName::from("refuses")),
+                    at(3_usize, 28_usize)
+                ),
+                (
+                    registered(SurfaceName::from("owes")),
+                    at(46_usize, 53_usize)
+                ),
+            ),
+            "each entry names its attribute and where it was written"
+        );
+        let (Maybe::Present(named), Maybe::Present(counted)) = (refuses.payload(), owes.payload())
+        else {
+            panic!("each entry carries its payload");
+        };
+        assert_eq!(
+            (arena.value(named), arena.value(counted)),
+            (
+                Some(&Value::Literal(text(SourceFragment::from(
+                    "UnresolvedName"
+                )))),
+                Some(&Value::Literal(integer(SourceFragment::from("1")))),
+            ),
+            "a refused declaration's payloads are lowered all the same"
+        );
+    }
+
+    #[test]
+    fn the_attribute_diagnostics_fire_on_a_refused_declaration()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let owes = registered(SurfaceName::from("owes"));
+        let rows = [
+            (
+                r#"@[ check ] def a = b ;"#,
+                LoweringRefusal::UnknownAttribute {
+                    span: at(3_usize, 8_usize),
+                    name: SurfaceName::from("check"),
+                    suggestion: Maybe::Present(registered(SurfaceName::from("checks"))),
+                },
+            ),
+            (
+                r#"@[ checks ] @[ checks ] def a = b ;"#,
+                LoweringRefusal::DuplicateAttribute {
+                    span: at(15_usize, 21_usize),
+                    name: SurfaceName::from("checks"),
+                    first: at(3_usize, 9_usize),
+                },
+            ),
+            (
+                r#"@[ owes ] def a = b ;"#,
+                LoweringRefusal::MissingPayload {
+                    span: at(3_usize, 7_usize),
+                    name: owes,
+                    expected: schema_of(SurfaceName::from("owes")),
+                },
+            ),
+            (
+                r#"@[ owes(ret 1) ] def a = b ;"#,
+                LoweringRefusal::NonValuePayload {
+                    span: at(8_usize, 13_usize),
+                    name: owes,
+                    form: FormName::from(NamedKind("ret_expression")),
+                },
+            ),
+            (
+                r#"@[ owes("one") ] def a = b ;"#,
+                LoweringRefusal::IllTypedPayload {
+                    span: at(8_usize, 13_usize),
+                    name: owes,
+                    expected: schema_of(SurfaceName::from("owes")),
+                    written: payload_form(Former::Text),
+                },
+            ),
+        ];
+
+        for (source, expected) in rows {
+            assert_eq!(
+                refusal(SourceText::from(source)),
+                expected,
+                "the attribute's refusal sits before the body's in `{source}` and is the one kept"
+            );
+        }
     }
 
     #[test]

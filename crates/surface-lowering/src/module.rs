@@ -366,7 +366,8 @@ impl<'source> Collected<'source>
     /// - requires: nothing — a position no declaration owns is admissible
     ///   input.
     /// - ensures: affirmative exactly when the owning declaration already holds
-    ///   a refusal, so a refused declaration's whole subtree is left unminted.
+    ///   a refusal, so a refused declaration's subtree is left unminted outside
+    ///   its attribute payloads.
     /// - provides: the skip test the mint sweep takes.
     /// - fails: never.
     /// - panics: none.
