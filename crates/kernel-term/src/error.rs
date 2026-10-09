@@ -69,11 +69,6 @@ pub enum ReservedSlot
     /// This is the one refusal in the family that is not about emptiness: the
     /// table is live, and it is refuted rather than believed.
     MintedAtomTable,
-    /// The structured-name record carried a segment. A name is a sequence of
-    /// segments rather than a flat dotted string, and the point of reserving it
-    /// is that a namespace layer's strings must never become the export
-    /// identity; until one exists the count is pinned to zero.
-    StructuredName,
     /// The erasure annotation slot was non-empty.
     ErasureAnnotation,
     /// The modes-and-grades annotation slot was non-empty.
@@ -101,7 +96,6 @@ impl fmt::Display for ReservedSlot
     {
         f.write_str(match *self {
             | Self::MintedAtomTable => "the minted-atom table",
-            | Self::StructuredName => "the structured-name record",
             | Self::ErasureAnnotation => "the erasure annotation slot",
             | Self::ModeGradeAnnotation => "the modes-and-grades annotation slot",
             | Self::DirectednessVariance => "the directedness-and-variance annotation slot",
@@ -181,6 +175,9 @@ pub enum MalformedSite
     /// A literal payload was not reconstructible: a magnitude or fraction
     /// carried a non-digit byte, or a string literal's bytes were not UTF-8.
     LiteralPayload,
+    /// A structured-name segment was not UTF-8 or held the separator `.`, so it
+    /// was not a segment a name can carry.
+    NameSegment,
     /// A decoded child's polarity did not fit the slot its parent's constructor
     /// requires.
     Polarity,
@@ -226,6 +223,7 @@ impl fmt::Display for MalformedSite
             | Self::LevelOffset => "a level atom offset exceeded the decode cap",
             | Self::ConstraintForm => "a constraint side was not variable-only",
             | Self::LiteralPayload => "a literal payload was not reconstructible",
+            | Self::NameSegment => "a name segment was not UTF-8 or held the separator",
             | Self::Polarity => "a decoded node had the wrong polarity for its slot",
             | Self::ChildOrder => "a child index was not strictly earlier than its entry",
             | Self::TableSize => "the subterm table exceeded the entry cap",
@@ -448,7 +446,6 @@ mod tests
         }
 
         let slots = [
-            (ReservedSlot::StructuredName, "the structured-name record"),
             (
                 ReservedSlot::ErasureAnnotation,
                 "the erasure annotation slot",

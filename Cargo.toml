@@ -445,6 +445,7 @@ default-features = false
 # - core-incremental (dev)
 # - core-sequent (dev)
 # - kernel-strata (dev)
+# - kernel-term (dev)
 # - storage-records (dev)
 # - storage-values (dev)
 # - surface-parser (dev)

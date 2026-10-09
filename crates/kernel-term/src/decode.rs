@@ -80,6 +80,8 @@ use crate::decl::LevelParamCount;
 use crate::decl::LevelSignature;
 use crate::decl::MarkedDeclaration;
 use crate::decl::MintedAtom;
+use crate::decl::NameSegment;
+use crate::decl::StructuredName;
 use crate::encode::encode;
 use crate::encode::minted_atoms;
 use crate::error::DecodeError;
@@ -208,6 +210,8 @@ struct DeclMeta
     mark: AdmissionMark,
     /// Which live kind the segment carried.
     kind: DeclKind,
+    /// The structured name the segment's name record carried.
+    name: StructuredName,
     /// The prenex level signature.
     levels: LevelSignature,
     /// The declared value type's global index, which is an abstract type's
@@ -342,7 +346,7 @@ pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
     }
     let metrics = budget_report(&table, &metas);
     check_budget(metrics)?;
-    let declarations = build_declarations(&mut table, &metas);
+    let declarations = build_declarations(&mut table, &mut metas);
     check_minted_atom_table(&declared_atoms, &declarations)?;
     if encode(&table.arena, &declarations).as_image() != image {
         return Err(DecodeError::Malformed {
@@ -550,10 +554,9 @@ fn value_id_at(
 /// Resolve each declaration's roots to arena ids and build the sequence.
 ///
 /// # Specification
-/// - requires: each meta's roots resolved to an entry of the correct family at
-///   decode, and `table.arena` holds the built nodes.
 /// - ensures: one marked declaration per meta, its content roots addressing
-///   `table.arena`, in admission order.
+///   `table.arena` and its structured name taken out of the meta, in admission
+///   order.
 /// - provides: the decoded sequence, which is also the re-encode input the
 ///   canonical-form comparison runs over.
 /// - fails: never — a family mismatch cannot survive decode's checks, and a
@@ -567,7 +570,7 @@ fn value_id_at(
             value_id_at(&table.nodes, root)
                 .is_some_and(|id| table.arena.value(id).is_some()))),
     ensures: |ret| ret.len() == metas.len()
-        && ret.iter().zip(metas).all(|(marked, meta)|
+        && ret.iter().zip(metas.iter()).all(|(marked, meta)|
             marked.mark() == meta.mark
             && Some(marked.declaration().declared_id())
                 == value_type_id_at(&table.nodes, meta.root_declared)
@@ -582,11 +585,11 @@ fn value_id_at(
 )]
 fn build_declarations(
     table: &mut Table,
-    metas: &[DeclMeta],
+    metas: &mut [DeclMeta],
 ) -> Vec<MarkedDeclaration>
 {
     let mut declarations: Vec<MarkedDeclaration> = Vec::new();
-    for meta in metas {
+    for meta in metas.iter_mut() {
         let declared_id = value_type_id_at(&table.nodes, meta.root_declared);
         let body_id = meta.root_body.map(|root| value_id_at(&table.nodes, root));
         let mut builder = DeclarationBuilder::new(&mut table.arena);
@@ -602,7 +605,10 @@ fn build_declarations(
             // fallbacks above take, and unreachable after decode's checks.
             | (DeclKind::Def | DeclKind::Axiom, _) => builder.axiom(meta.levels.clone(), declared),
         };
-        declarations.push(MarkedDeclaration::new(meta.mark, declaration));
+        declarations.push(MarkedDeclaration::new(
+            meta.mark,
+            declaration.named(core::mem::take(&mut meta.name)),
+        ));
     }
     declarations
 }
@@ -938,20 +944,20 @@ impl<'bytes> ByteReader<'bytes>
     /// - ensures: on `Ok`, returns the field's bytes as owned text and advances
     ///   past them.
     /// - provides: the one validating conversion every text payload passes
-    ///   through, so no invalid UTF-8 reaches a literal.
+    ///   through, so no invalid UTF-8 reaches a literal or a name.
     /// - fails: the length and bulk reads' own failures, and
-    ///   [`DecodeError::Malformed`] at the literal-payload site on invalid
-    ///   UTF-8.
+    ///   [`DecodeError::Malformed`] at `site` on invalid UTF-8.
     /// - panics: none.
     #[inline]
-    fn read_text(&mut self) -> Result<String, DecodeError>
+    fn read_text(
+        &mut self,
+        site: MalformedSite,
+    ) -> Result<String, DecodeError>
     {
         let length = self.read_usize()?;
         let bytes = self.take(ByteCount::from(usize::from(length)))?;
-        let text =
-            core::str::from_utf8(bytes.as_ref()).map_err(|_error| DecodeError::Malformed {
-                site: MalformedSite::LiteralPayload,
-            })?;
+        let text = core::str::from_utf8(bytes.as_ref())
+            .map_err(|_error| DecodeError::Malformed { site })?;
         Ok(String::from(text))
     }
 }
@@ -963,17 +969,19 @@ impl<'bytes> ByteReader<'bytes>
 ///   entry the earlier segments introduced, since the table's index space runs
 ///   across segments.
 /// - ensures: the segment's entries are appended to `table` in wire order, and
-///   the returned metadata carries the admission mark, the live kind, the level
-///   signature, the roots resolved to already-decoded entries of the required
-///   family, and the sealing-provenance atoms a definition carried.
+///   the returned metadata carries the admission mark, the live kind, the
+///   structured name, the level signature, the roots resolved to
+///   already-decoded entries of the required family, and the sealing-provenance
+///   atoms a definition carried.
 /// - provides: the per-segment step of the artifact decode. The clause checks
 ///   the returned roots' table membership and polarity. Wire-order appends and
 ///   metadata fidelity stay prose: the parser exposes no independent segment
 ///   view, and replaying it would mint a second graph.
 /// - fails: [`DecodeError::ReservedDeclarationKind`] on a reserved kind;
-///   [`DecodeError::ReservedSlotOccupied`] on an occupied reserved slot;
-///   [`DecodeError::UnknownTag`] at the admission or declaration-kind site; and
-///   whatever the entry and root decoders refuse.
+///   [`DecodeError::Malformed`] at the name-segment site on a segment that is
+///   not UTF-8 or holds the separator; [`DecodeError::ReservedSlotOccupied`] on
+///   an occupied reserved slot; [`DecodeError::UnknownTag`] at the admission or
+///   declaration-kind site; and whatever the entry and root decoders refuse.
 /// - panics: none.
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|meta|
     meta.root_declared < table.next_index()
@@ -992,7 +1000,7 @@ fn decode_declaration(
     let mark = decode_admission(reader)?;
     let kind = reader.next_tag()?;
     let kind = declaration_kind(kind)?;
-    decode_empty_name(reader)?;
+    let name = decode_structured_name(reader)?;
     let levels = decode_level_signature(reader)?;
     let entry_count = reader.read_uvarint()?;
     let mut remaining = u64::from(entry_count);
@@ -1015,6 +1023,7 @@ fn decode_declaration(
     Ok(DeclMeta {
         mark,
         kind,
+        name,
         levels,
         root_declared,
         root_body,
@@ -1571,20 +1580,49 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
     }
 }
 
-/// Decode the structured-name record, requiring it empty.
+/// Decode the structured-name record: a segment count, then each segment as
+/// length-prefixed UTF-8.
+///
+/// No capacity is reserved from the declared count, so an adversarial count
+/// costs one truncation rather than an allocation.
 ///
 /// # Specification
 /// - requires: the cursor is positioned at the structured-name record.
-/// - ensures: on `Ok`, the record's count was zero and the cursor is past it.
-/// - provides: the refusal that keeps the reserved name record unusable, so an
-///   artifact cannot carry names this format does not define.
-/// - fails: the count read's own failures, and
-///   [`DecodeError::ReservedSlotOccupied`] naming the structured-name record.
+/// - ensures: on `Ok`, returns exactly the declared number of segments, in wire
+///   order, each rebuilt through [`NameSegment::from_text`], and advances past
+///   the record.
+/// - provides: the name a decoded declaration carries; a segment holding the
+///   separator is unrepresentable, so no dotted string becomes a name through
+///   the wire.
+/// - fails: the count and length reads' own failures, and
+///   [`DecodeError::Malformed`] at the name-segment site on a segment that is
+///   not UTF-8 or holds the separator.
 /// - panics: none.
-#[inline]
-fn decode_empty_name(reader: &mut ByteReader<'_>) -> Result<(), DecodeError>
+///
+/// # Adequacy
+/// - hypothesis: L3 — a segment holding the separator, and one whose bytes are
+///   not UTF-8, are each refused at the name-segment site beside the bare
+///   segment they differ from, which decodes; the L2 round trip carries every
+///   generated list.
+/// - witness: `sharing_format::sharing_format::a_segment_holding_a_separator_is_refused`
+/// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
+fn decode_structured_name(reader: &mut ByteReader<'_>) -> Result<StructuredName, DecodeError>
 {
-    expect_empty_slot(reader, ReservedSlot::StructuredName)
+    let count = reader.read_uvarint()?;
+    let mut segments: Vec<NameSegment> = Vec::new();
+    let mut remaining = u64::from(count);
+    while remaining > 0_u64 {
+        let text = reader.read_text(MalformedSite::NameSegment)?;
+        let Some(segment) = NameSegment::from_text(text)
+        else {
+            return Err(DecodeError::Malformed {
+                site: MalformedSite::NameSegment,
+            });
+        };
+        segments.push(segment);
+        remaining = remaining.wrapping_sub(1_u64);
+    }
+    Ok(StructuredName::from(segments))
 }
 
 /// Decode the four per-definition annotation slots, yielding the
@@ -1897,7 +1935,7 @@ fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
             Ok(Literal::Integer(IntegerLiteral::new(sign, magnitude)))
         },
         | tags::LITERAL_TEXT => {
-            let content = reader.read_text()?;
+            let content = reader.read_text(MalformedSite::LiteralPayload)?;
             Ok(Literal::Text(StringLiteral::new(content)))
         },
         | tags::LITERAL_NUMERIC => {
@@ -1954,7 +1992,7 @@ fn decode_sign(reader: &mut ByteReader<'_>) -> Result<Sign, DecodeError>
 #[inline]
 fn decode_magnitude(reader: &mut ByteReader<'_>) -> Result<Magnitude, DecodeError>
 {
-    let digits = reader.read_text()?;
+    let digits = reader.read_text(MalformedSite::LiteralPayload)?;
     Magnitude::from_decimal_text(digits).ok_or(DecodeError::Malformed {
         site: MalformedSite::LiteralPayload,
     })
@@ -1974,7 +2012,7 @@ fn decode_magnitude(reader: &mut ByteReader<'_>) -> Result<Magnitude, DecodeErro
 #[inline]
 fn decode_fraction(reader: &mut ByteReader<'_>) -> Result<FractionDigits, DecodeError>
 {
-    let digits = reader.read_text()?;
+    let digits = reader.read_text(MalformedSite::LiteralPayload)?;
     FractionDigits::from_decimal_text(digits).ok_or(DecodeError::Malformed {
         site: MalformedSite::LiteralPayload,
     })

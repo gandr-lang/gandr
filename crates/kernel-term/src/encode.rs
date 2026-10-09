@@ -60,6 +60,7 @@ use crate::decl::DeclarationContent;
 use crate::decl::LevelSignature;
 use crate::decl::MarkedDeclaration;
 use crate::decl::MintedAtom;
+use crate::decl::StructuredName;
 use crate::tags;
 use crate::term::Computation;
 use crate::term::ConstantIndex;
@@ -246,11 +247,12 @@ fn encode_minted_atom_table(
 ///   segment, since the table's index space runs across segments and
 ///   cross-declaration sharing lives there. A dangling content root is
 ///   admissible input.
-/// - ensures: the segment carries only the entries this declaration first
-///   completes, in post-order first-completion order, with children referenced
-///   by strictly earlier global index; an axiom and an abstract type write one
-///   root and no per-definition annotation slots, a definition writes two roots
-///   and four slots of which the sealing-provenance one is live.
+/// - ensures: the segment carries the declaration's structured name, then only
+///   the entries this declaration first completes, in post-order
+///   first-completion order, with children referenced by strictly earlier
+///   global index; an axiom and an abstract type write one root and no
+///   per-definition annotation slots, a definition writes two roots and four
+///   slots of which the sealing-provenance one is live.
 /// - provides: the per-declaration step of the canonical byte image. This
 ///   segment contract stays prose: the entries and the root references reach
 ///   `out` as bytes, so checking their order, their strictly-earlier child
@@ -276,8 +278,7 @@ fn encode_declaration(
         | DeclarationContent::Axiom { .. } => tags::KIND_AXIOM,
         | DeclarationContent::AbstractType { .. } => tags::KIND_ABSTRACT_TYPE,
     });
-    // The structured name: reserved, and written as zero segments.
-    out.put_uvarint(WireU64::from(0_u64));
+    encode_structured_name(out, declaration.name());
     encode_level_signature(out, declaration.levels());
 
     let mut segment: Vec<EncodedEntry> = Vec::new();
@@ -313,6 +314,36 @@ fn encode_declaration(
         out.put_uvarint(WireU64::from(0_u64));
         encode_sealing_provenance(out, declaration.provenance());
         out.put_uvarint(WireU64::from(0_u64));
+    }
+}
+
+/// Write the structured-name record: a segment count, then each segment as
+/// length-prefixed UTF-8.
+///
+/// An unnamed declaration writes a zero count and nothing else, so its segment
+/// is the same bytes whatever names its neighbours carry.
+///
+/// # Specification
+/// - requires: nothing — a segment's constructor already refused the separator.
+/// - ensures: appends the segment count and then each segment's byte length and
+///   bytes, outermost segment first.
+/// - provides: the record a reader rebuilds the name from, segment by segment,
+///   so no dotted string is ever the wire form of a name.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated segment lists, the empty list among them,
+///   decode to the lists encoded.
+/// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
+fn encode_structured_name(
+    out: &mut EncodedArtifact,
+    name: &StructuredName,
+)
+{
+    out.put_uvarint(WireU64::from(WireUsize::from(name.segments().len())));
+    for segment in name.segments() {
+        encode_text(out, ArtifactText::from(segment.as_ref()));
     }
 }
 

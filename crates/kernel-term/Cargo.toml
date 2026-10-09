@@ -20,6 +20,7 @@ anodized.workspace = true
 gandr-kernel-strata.workspace = true
 
 [dev-dependencies]
+proptest.workspace = true
 
 [lints]
 workspace = true

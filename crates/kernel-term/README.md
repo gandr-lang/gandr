@@ -13,6 +13,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - [Amplification budgets](#amplification-budgets)
 - [Admission watermark](#admission-watermark)
 - [Rejection vocabulary](#rejection-vocabulary)
+- [Structured names](#structured-names)
 - [Universe families and quotes](#universe-families-and-quotes)
 - [Tag numbering and versioning](#tag-numbering-and-versioning)
 - [Sharing and compression](#sharing-and-compression)
@@ -39,6 +40,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - **A flat arena in four typed id families** (`ValueId`, `ComputationId`, `ValueTypeId`, `CompTypeId`) where a node's children are `Copy` ids. Constructors require children already allocated in the same arena; same-family children precede their parent while the family length fits `u32`. Lookup checks the family index, not arena provenance. Truncation permits index reuse, and minting saturates the returned index at the `u32` ceiling. Derived equality, hashing and debug output are shallow.
 - **The admission watermark** (`ArenaWatermark`): a snapshot of the four family lengths, truncation back to one, and the clamp a rollback needs when staging order differs from admission order. `DeclarationBuilder` ties content minting to it.
 - **The unified subterm table**: `encode` and `decode` over `EncodedArtifact` and `ArtifactImage`, with `DecodedArtifact` holding the arena and its `MarkedDeclaration` sequence. Polarity is recoverable from the tag alone, so a child slot's requirement is a table lookup.
+- **Structured names** (`StructuredName`, `NameSegment`): each declaration's name record, a list of segments that `Declaration::named` attaches and the format carries, described in [Structured names](#structured-names).
 - **Canonical form enforced by re-encoding**, described in [Canonical form by re-encoding](#canonical-form-by-re-encoding).
 - **The amplification defence**: `MAX_TABLE_ENTRIES`, `MAX_EXPANDED_TERM_WORK`, `MAX_ARTIFACT_EXPANDED_WORK` and `MAX_DECODED_LEVEL_OFFSET`, enforced during decode, and `DecodeMetrics`, the deterministic measurements the same scan yields for a caller to record.
 - **The node-tag table** (`NODE_TAG_TABLE`): a const protocol input with one row per frozen tag, giving its child arity, its token bound and its two storage-boundary verdicts. A differential pins its arities against the arena's own child relation.
@@ -115,6 +117,14 @@ The mark stores lengths rather than copied nodes, keeping truncation allocation-
 A decode failure is a format failure and never a typing failure. `DecodeError` is a rejection triple — truncation, an unknown tag at a named `TagSite`, a violated structural invariant at a named `MalformedSite` — plus two by-name refusals for the reserved parts of the format and a version refusal that names the version it met.
 
 `ReservedKind` names the declaration kinds a module layer would export (`ModuleSig`, `ModuleDef`, `FunctorDef`); they are reserved together so graduating one into the kernel never renumbers a shipped format, and a live kind such as the abstract type has no variant. `ReservedSlot` names the slots and sections that must be empty, and the minted-atom table, the one live member, refused when the declarations decoded beside it refute it.
+
+## Structured names
+
+**Choice.** A declaration carries a `StructuredName`: a list of `NameSegment`s, outermost first, written in the segment's name record as a count and then each segment's length-prefixed UTF-8. A segment never holds `.`. `NameSegment::from_text` is the only constructor and refuses the separator, so the encoder's input cannot carry one and the encoder stays total; the decoder rebuilds every segment through the same constructor and refuses a dotted or non-UTF-8 segment as `MalformedSite::NameSegment`. A finisher builds an unnamed declaration, and a producer names it afterwards with `Declaration::named`, so no finisher's signature changed. The name is identity for a reader and is never read by a check: a reference is a `ConstantIndex`, the admission position of what it names, so renaming a sequence leaves every content root and the arena unchanged.
+
+**Alternatives.** One dotted string per declaration would make the namespace's spelling the exported identity, and two different segment lists would collide on one string. Keeping the record reserved and naming declarations in a side table would leave an artifact unreadable without that table. A fallible `encode` refusing the separator would make every caller handle a refusal its input type can rule out.
+
+**Reversal.** If a renamed module must export a byte-identical artifact, the names move to a side table and the record is pinned empty again. If a segment needs to carry `.` — a foreign namespace whose names hold it — the segment gains an escape in its text field, which changes the field's shape and bumps `FORMAT_VERSION`. The record itself is framed in every declaration segment and an unnamed declaration writes a zero count, so naming declarations changes no byte of an unnamed sequence's artifact.
 
 ## Universe families and quotes
 

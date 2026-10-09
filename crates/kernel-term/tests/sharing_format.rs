@@ -15,6 +15,7 @@ mod sharing_format
     use gandr_kernel_term::ArtifactImage;
     use gandr_kernel_term::CompType;
     use gandr_kernel_term::Computation;
+    use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::DeclarationBuilder;
     use gandr_kernel_term::DeclarationContent;
@@ -32,10 +33,12 @@ mod sharing_format
     use gandr_kernel_term::MAX_TABLE_ENTRIES;
     use gandr_kernel_term::MalformedSite;
     use gandr_kernel_term::MarkedDeclaration;
+    use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::ReservedKind;
     use gandr_kernel_term::ReservedSlot;
     use gandr_kernel_term::SHARING_BLOCK_FIRST;
     use gandr_kernel_term::SHARING_BLOCK_LAST;
+    use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::TableEntryCount;
     use gandr_kernel_term::TagSite;
     use gandr_kernel_term::TermArena;
@@ -46,6 +49,13 @@ mod sharing_format
     use gandr_kernel_term::WireTag;
     use gandr_kernel_term::decode;
     use gandr_kernel_term::encode;
+    use proptest::prelude::Just;
+    use proptest::prelude::ProptestConfig;
+    use proptest::prelude::Strategy;
+    use proptest::prelude::any;
+    use proptest::prop_assert_eq;
+    use proptest::prop_oneof;
+    use proptest::proptest;
 
     // ---------------------------------------------------------------------------
     // The suite's own nominal vocabulary
@@ -248,9 +258,9 @@ mod sharing_format
         mark: RawByte,
         /// The declaration kind byte.
         kind: RawByte,
-        /// The structured-name segment count, which must be zero to be
-        /// accepted.
-        name_segments: WireValue,
+        /// The structured name's segments, each as the raw bytes its text
+        /// field carries.
+        name: Vec<Bytes>,
         /// The entries this segment introduces, already encoded.
         entries: Vec<Bytes>,
         /// The declared-type root's global index.
@@ -282,7 +292,7 @@ mod sharing_format
             Self {
                 mark: RawByte(0),
                 kind: RawByte(0),
-                name_segments: WireValue(0),
+                name: Vec::new(),
                 entries,
                 root_declared,
                 root_body: Some(root_body),
@@ -308,7 +318,7 @@ mod sharing_format
             Self {
                 mark: RawByte(0),
                 kind: RawByte(1),
-                name_segments: WireValue(0),
+                name: Vec::new(),
                 entries,
                 root_declared,
                 root_body: None,
@@ -320,10 +330,11 @@ mod sharing_format
         ///
         /// # Specification
         /// - requires: nothing.
-        /// - ensures: appends the mark and kind bytes, the name-segment count,
-        ///   the two level counts, the entry count and the entries, the
-        ///   declared root, and — for a definition only — the body root
-        ///   followed by the four annotation slots.
+        /// - ensures: appends the mark and kind bytes, the name record — its
+        ///   segment count, then each segment's length and bytes — the two
+        ///   level counts, the entry count and the entries, the declared root,
+        ///   and — for a definition only — the body root followed by the four
+        ///   annotation slots.
         /// - provides: the segment field order written out by hand, so the
         ///   suite pins the order rather than deriving it from the encoder.
         /// - panics: none.
@@ -332,7 +343,15 @@ mod sharing_format
             let mut out = Bytes::new();
             out.byte(self.mark);
             out.byte(self.kind);
-            out.varint(self.name_segments);
+            out.varint(WireValue(
+                u64::try_from(self.name.len()).unwrap_or(u64::MAX),
+            ));
+            for segment in &self.name {
+                out.varint(WireValue(
+                    u64::try_from(segment.0.len()).unwrap_or(u64::MAX),
+                ));
+                out.append(segment);
+            }
             out.varint(WireValue(0)); // the level parameter count
             out.varint(WireValue(0)); // the landmark constraint count
             out.varint(WireValue(
@@ -1601,20 +1620,171 @@ mod sharing_format
         );
     }
 
+    /// Segment text, the empty text among it: any characters but the
+    /// separator, from an alphabet narrow enough that generated names collide.
+    ///
+    /// # Specification
+    /// trivial.
+    fn segment_text() -> impl Strategy<Value = String>
+    {
+        proptest::collection::vec(
+            prop_oneof![Just('a'), Just('b'), Just('ß'), any::<char>()]
+                .prop_filter("a segment holds no separator", |character| {
+                    *character != NameSegment::SEPARATOR
+                }),
+            0 ..= 3,
+        )
+        .prop_map(|characters| characters.into_iter().collect())
+    }
+
+    /// A sequence of one to six declarations over one arena, each reading the
+    /// one admitted before it, cycling through a definition, an axiom and an
+    /// abstract type.
+    ///
+    /// # Specification
+    /// - requires: `count` is at least one.
+    /// - ensures: `count` unnamed declarations in admission order; every
+    ///   declaration past the first has a declared type or body referencing the
+    ///   admission position before it.
+    /// - provides: the content the name round trip holds fixed while it varies
+    ///   the names, so a reference changing with a name would show.
+    /// - panics: none.
+    fn referencing_sequence(
+        arena: &mut TermArena,
+        count: Position,
+    ) -> Vec<MarkedDeclaration>
+    {
+        let mut declarations = Vec::new();
+        for position in 0 .. count.0 {
+            let previous = position.checked_sub(1).map(ConstantIndex::from);
+            let mut builder = DeclarationBuilder::new(arena);
+            let reference = match previous {
+                | Some(previous) => builder.arena().value_constant(previous),
+                | None => builder.arena().value_unit(),
+            };
+            let declared = builder.arena().value_type_unit();
+            let declaration = match position % 3 {
+                | 0 => builder.def(LevelSignature::monomorphic(), declared, reference),
+                | 1 => builder.axiom(LevelSignature::monomorphic(), declared),
+                | _ => builder.abstract_type(LevelSignature::monomorphic(), declared),
+            };
+            declarations.push(MarkedDeclaration::new(AdmissionMark::Checked, declaration));
+        }
+        declarations
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        /// Generated segment lists survive the round trip as lists, and naming
+        /// a sequence changes nothing its declarations hold: the decoded arena
+        /// and every content root are the unnamed sequence's, so a reference
+        /// reads the admission position whatever the names are.
+        #[test]
+        fn a_structured_name_round_trips_as_segments(
+            names in proptest::collection::vec(
+                proptest::collection::vec(segment_text(), 0 ..= 4),
+                1 ..= 6,
+            )
+        ) {
+            let mut arena = TermArena::new();
+            let unnamed = referencing_sequence(&mut arena, Position(names.len()));
+            let named: Vec<MarkedDeclaration> = unnamed
+                .iter()
+                .zip(&names)
+                .map(|(marked, segments)| {
+                    let name = StructuredName::from(
+                        segments
+                            .iter()
+                            .map(|text| NameSegment::from_text(text.clone()))
+                            .collect::<Option<Vec<NameSegment>>>()
+                            .expect("generated text holds no separator"),
+                    );
+                    MarkedDeclaration::new(marked.mark(), marked.declaration().clone().named(name))
+                })
+                .collect();
+
+            let named_bytes = encode(&arena, &named);
+            let decoded_named = decode(named_bytes.as_image()).expect("a named artifact decodes");
+            let decoded_unnamed =
+                decode(encode(&arena, &unnamed).as_image()).expect("an unnamed artifact decodes");
+
+            let decoded_names: Vec<Vec<&str>> = decoded_named
+                .declarations()
+                .iter()
+                .map(|marked| {
+                    marked.declaration().name().segments().iter().map(AsRef::as_ref).collect()
+                })
+                .collect();
+            let written_names: Vec<Vec<&str>> = names
+                .iter()
+                .map(|segments| segments.iter().map(String::as_str).collect())
+                .collect();
+            prop_assert_eq!(written_names, decoded_names);
+            prop_assert_eq!(decoded_unnamed.arena(), decoded_named.arena());
+            for (named, unnamed) in decoded_named.declarations().iter().zip(decoded_unnamed.declarations()) {
+                prop_assert_eq!(named.mark(), unnamed.mark());
+                prop_assert_eq!(named.declaration().levels(), unnamed.declaration().levels());
+                prop_assert_eq!(named.declaration().content(), unnamed.declaration().content());
+                prop_assert_eq!(named.declaration().provenance(), unnamed.declaration().provenance());
+            }
+            prop_assert_eq!(named_bytes, encode(decoded_named.arena(), decoded_named.declarations()));
+        }
+    }
+
+    #[test]
+    fn a_segment_holding_a_separator_is_refused()
+    {
+        // At encode: the only constructor refuses the separator, so the
+        // encoder's input cannot carry one.
+        for dotted in [".lead", "mid.dle", "trail.", "."] {
+            assert_eq!(
+                None,
+                NameSegment::from_text(String::from(dotted)),
+                "`{dotted}` holds the separator and is no segment"
+            );
+        }
+        let bare = NameSegment::from_text(String::from("middle"))
+            .expect("the bare spelling one character away is a segment");
+        assert_eq!("middle", bare.as_ref());
+
+        // At decode: the same spelling written by hand into the name record.
+        let named = |segment: &[u8]| {
+            let mut declaration = RawDeclaration::axiom(vec![entry_unit_type()], TableIndex(0));
+            declaration.name = vec![Bytes(segment.to_vec())];
+            raw_artifact(current_version(), &[], &[declaration])
+        };
+        let refused = Err(DecodeError::Malformed {
+            site: MalformedSite::NameSegment,
+        });
+        assert_eq!(
+            refused,
+            decode(ArtifactImage::from(named(b"mid.dle").as_ref())),
+            "a dotted segment on the wire is refused at the name-segment site"
+        );
+        assert_eq!(
+            refused,
+            decode(ArtifactImage::from(named(&[0xff]).as_ref())),
+            "a segment that is not UTF-8 is refused at the same site"
+        );
+        let decoded = decode(ArtifactImage::from(named(b"middle").as_ref()))
+            .expect("the bare segment decodes");
+        let segments: Vec<&str> = decoded
+            .declarations()
+            .first()
+            .expect("the declaration decodes")
+            .declaration()
+            .name()
+            .segments()
+            .iter()
+            .map(AsRef::as_ref)
+            .collect();
+        assert_eq!(vec!["middle"], segments);
+    }
+
     #[test]
     fn an_occupied_reserved_slot_is_refused_by_name()
     {
-        let mut named = RawDeclaration::axiom(vec![entry_unit_type()], TableIndex(0));
-        named.name_segments = WireValue(1);
-        let bytes = raw_artifact(current_version(), &[], &[named]);
-        assert_eq!(
-            Err(DecodeError::ReservedSlotOccupied {
-                slot: ReservedSlot::StructuredName,
-            }),
-            decode(ArtifactImage::from(bytes.as_ref())),
-            "a name segment would make a namespace string the export identity"
-        );
-
         let mut erased = RawDeclaration::definition(
             vec![entry_unit_type(), entry_unit()],
             TableIndex(0),

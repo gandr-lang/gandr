@@ -1,11 +1,13 @@
 //! Declarations as data: the prenex level signature, the three live content
-//! shapes, the admission mark that rides with each declaration in an artifact,
-//! and the borrowing builder that ties content minting to the arena watermark.
+//! shapes, the structured name, the admission mark that rides with each
+//! declaration in an artifact, and the borrowing builder that ties content
+//! minting to the arena watermark.
 //!
 //! Nothing here admits anything. A [`Declaration`] is the unit an artifact
 //! carries and a choke point later re-checks; the checking, the audit, and the
 //! environment that orders admissions belong to the crate above this one.
 
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::mem::ManuallyDrop;
 
@@ -231,8 +233,104 @@ impl DeclarationContent
     }
 }
 
-/// A declaration: a level interface, its content roots, and its sealing
-/// provenance.
+/// One segment of a declaration's structured name: text holding no `.`.
+///
+/// A name is a list of segments, never one dotted string. A segment holding the
+/// separator would let two different lists render as one string, so the
+/// constructor refuses it and the decoder refuses it on the wire; a namespace
+/// layer's dotted spelling cannot become an exported identity either way.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct NameSegment(String);
+
+impl NameSegment
+{
+    /// The separator a rendered name writes between segments, which no segment
+    /// holds.
+    pub const SEPARATOR: char = '.';
+
+    /// Build a segment from `text`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `Some(segment)` holding `text` unchanged exactly when `text`
+    ///   holds no [`Self::SEPARATOR`].
+    /// - provides: the only construction of a segment, so the encoder's input
+    ///   cannot carry a separator and the encoder stays total.
+    /// - fails: returns `None` when `text` holds [`Self::SEPARATOR`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a segment holding the separator at its start, middle
+    ///   and end is refused beside the bare segment it differs from by one
+    ///   character, which is accepted.
+    /// - witness: `sharing_format::sharing_format::a_segment_holding_a_separator_is_refused`
+    #[inline]
+    #[must_use]
+    #[spec(
+        captures: entry_is_bare = !text.contains(Self::SEPARATOR),
+        ensures: |ret| ret.is_some() == entry_is_bare,
+    )]
+    pub fn from_text(text: String) -> Option<Self>
+    {
+        if text.contains(Self::SEPARATOR) {
+            return None;
+        }
+        Some(Self(text))
+    }
+}
+
+impl AsRef<str> for NameSegment
+{
+    /// Borrow the segment's text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn as_ref(&self) -> &str
+    {
+        &self.0
+    }
+}
+
+/// A declaration's structured name: its segments, outermost first.
+///
+/// The name is identity for a reader and nothing more. A reference reads the
+/// admission position of what it names, so a declaration carries no name until
+/// a producer gives it one, and no check reads it.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StructuredName(Vec<NameSegment>);
+
+impl StructuredName
+{
+    /// The segments, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn segments(&self) -> &[NameSegment]
+    {
+        &self.0
+    }
+}
+
+impl From<Vec<NameSegment>> for StructuredName
+{
+    /// The name made of `segments`, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(segments: Vec<NameSegment>) -> Self
+    {
+        Self(segments)
+    }
+}
+
+/// A declaration: a level interface, its content roots, its sealing
+/// provenance, and its structured name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Declaration
 {
@@ -250,6 +348,9 @@ pub struct Declaration
     /// re-derives by walking it. Empty for every declaration no projection
     /// touched.
     provenance: Vec<ConstantIndex>,
+    /// The structured name the artifact's name record carries; empty for a
+    /// declaration no producer named.
+    name: StructuredName,
 }
 
 impl Declaration
@@ -297,6 +398,44 @@ impl Declaration
     pub fn provenance(&self) -> &[ConstantIndex]
     {
         &self.provenance
+    }
+
+    /// The structured name, empty for a declaration no producer named.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn name(&self) -> &StructuredName
+    {
+        &self.name
+    }
+
+    /// This declaration under `name`, its levels, content and provenance
+    /// unchanged.
+    ///
+    /// # Specification
+    /// - requires: nothing — a name is never a typing fact, so any name suits
+    ///   any declaration.
+    /// - ensures: returns the declaration carrying `name` as its structured
+    ///   name, every other field as it was.
+    /// - provides: the one way a producer names a declaration, after whichever
+    ///   finisher built it, so no finisher changes its signature for a name.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — generated names given to a definition, an axiom and
+    ///   an abstract type survive the round trip with the content beside them
+    ///   unchanged.
+    /// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
+    #[inline]
+    #[must_use]
+    pub fn named(
+        self,
+        name: StructuredName,
+    ) -> Self
+    {
+        Self { name, ..self }
     }
 }
 
@@ -518,6 +657,7 @@ impl<'arena> DeclarationBuilder<'arena>
             levels,
             content: DeclarationContent::Def { declared, body },
             provenance: Vec::new(),
+            name: StructuredName::default(),
         }
     }
 
@@ -550,6 +690,7 @@ impl<'arena> DeclarationBuilder<'arena>
             levels,
             content: DeclarationContent::Def { declared, body },
             provenance,
+            name: StructuredName::default(),
         }
     }
 
@@ -577,6 +718,7 @@ impl<'arena> DeclarationBuilder<'arena>
             levels,
             content: DeclarationContent::Axiom { declared },
             provenance: Vec::new(),
+            name: StructuredName::default(),
         }
     }
 
@@ -606,6 +748,7 @@ impl<'arena> DeclarationBuilder<'arena>
             levels,
             content: DeclarationContent::AbstractType { kind },
             provenance: Vec::new(),
+            name: StructuredName::default(),
         }
     }
 }

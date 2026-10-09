@@ -100,6 +100,8 @@ pub use crate::decl::LevelParamCount;
 pub use crate::decl::LevelSignature;
 pub use crate::decl::MarkedDeclaration;
 pub use crate::decl::MintedAtom;
+pub use crate::decl::NameSegment;
+pub use crate::decl::StructuredName;
 pub use crate::decode::DecodedArtifact;
 pub use crate::decode::decode;
 pub use crate::encode::encode;
