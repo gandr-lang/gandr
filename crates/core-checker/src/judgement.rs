@@ -3,11 +3,11 @@
 //!
 //! # The former decides the mode
 //!
-//! Every term former has one mode. Leaves and eliminations synthesise —
-//! their type is read out of the context, the signature table, an atom, the
-//! type they quote, or the type of the term they eliminate — and
-//! introductions check against a type handed in, because nothing in an
-//! introduction alone fixes its type:
+//! Every term former but the bind and the pair has one mode. Leaves and
+//! eliminations synthesise — their type is read out of the context, the
+//! signature table, an atom, the type they quote, or the type of the term
+//! they eliminate — and introductions check against a type handed in,
+//! because nothing in an introduction alone fixes its type:
 //!
 //! |Former|Mode|Rule|
 //! |---|---|---|
@@ -17,25 +17,43 @@
 //! |quote `⌜A⌝`, `⌜C⌝`|synthesise|the quoted type is formed; the quote has the universe of its family's sort at the type's level|
 //! |thunk|check against `U C`|its body checks against `C`|
 //! |force|synthesise|the forced value synthesises `U C`; the force has `C`|
-//! |application|synthesise|the head synthesises `A → C` or `(x : A) → C`, the argument checks against `A`; the application has `C`, instantiated at the argument for the dependent arrow|
+//! |application|synthesise|the head synthesises `A → C` or `(x : A) → C`, the argument checks against `A`; the application has `C`, instantiated at the argument for the dependent arrow; an argument at a static Pi must not normalize away|
 //! |bind|either|the bound computation synthesises `F A`; opens a binder of `A`; the body is judged in the bind's own mode, and the bind has what the body has, lowered out of the binder|
+//! |pair|either|synthesising, each component synthesises and the pair has their eager product; checking against `A × B`, each component checks against its factor|
 //! |lambda|check against `A → C` or `(x : A) → C`|opens a binder of `A`; the body checks against `C`|
+//! |static lambda|check against a static Pi `K ⇒ J`|opens a binder of `K`; the body checks against `J`|
+//! |static application|synthesise|the head synthesises one static Pi per argument; each argument checks against its Pi's domain; the application has the last codomain|
 //! |return|check against `F A`|the value checks against `A`|
 //!
-//! A bind is the one former of either mode: it eliminates the returner its
-//! bound computation synthesises, so that half synthesises, and it hands its
-//! type through from its body, so the body is judged in whichever mode the
-//! bind was asked for. A bound computation that only checks — a bare
-//! `return` — is refused as not synthesisable rather than given a guessed type,
-//! and a body type that mentions the bound name is refused as a dependent
-//! bind: the binder is opaque to types, so that type has no reading outside
-//! it.
+//! A bind and a pair are the formers of either mode. A bind eliminates the
+//! returner its bound computation synthesises, so that half synthesises, and
+//! it hands its type through from its body, so the body is judged in
+//! whichever mode the bind was asked for. A bound computation that only
+//! checks — a bare `return` — is refused as not synthesisable rather than
+//! given a guessed type, and a body type that mentions the bound name is
+//! refused as a dependent bind: the binder is opaque to types, so that type
+//! has no reading outside it. A pair synthesises when every component does
+//! and checks component-wise otherwise, so a thunk stands in a pair checked
+//! against a product.
 //!
 //! A synthesising term in checking position synthesises, then its type crosses
 //! the conversion boundary to the expected type; that is the only place a
 //! type meets a type. A checking form in synthesis position is refused, naming
 //! the form: the judgement never guesses a type an introduction did not
 //! carry.
+//!
+//! # Static operators
+//!
+//! A static application past its head's static Pis is refused as
+//! [`CheckRefusal::FamilyArity`], naming both counts; an argument whose
+//! classifier does not cross to its domain as
+//! [`CheckRefusal::FamilyArgumentClassifier`], naming its position and both
+//! classifiers, so a sort or level mismatch reads as the family's. A static
+//! lambda, or a static definition, handed to a static parameter normalizes
+//! away before the kernel sees it; handed to a dynamic one it would be a value
+//! the kernel types, which no kernel former is, so it is refused as
+//! [`CheckRefusal::StaticLambdaArgument`]. An opaque operator is a value the
+//! kernel types, and passes.
 //!
 //! # Types are read at their weak head
 //!
@@ -75,6 +93,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::BinderDepth;
 use gandr_core_term::Binders;
 use gandr_core_term::CompTypeId;
@@ -103,10 +122,12 @@ use crate::conversion::value_bridge;
 use crate::formation::FormedCompType;
 use crate::formation::FormedValueType;
 use crate::formation::level_of;
+use crate::refusal::ArgumentPosition;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
 use crate::refusal::CoreNode;
 use crate::refusal::ExpectedShape;
+use crate::refusal::StaticArity;
 use crate::refusal::TermNode;
 use crate::refusal::TypeNode;
 use crate::refusal::UnadmittedFormer;
@@ -488,12 +509,14 @@ enum Frame
         /// The argument still to check.
         argument: ValueId,
     },
-    /// An application waits on its argument's check; it then has the
-    /// codomain.
+    /// An application waits on its argument's check; an argument at a static
+    /// Pi must then be rigid, and the application has the codomain.
     ApplicationArgument
     {
         /// The argument, which a dependent codomain is instantiated at.
         argument: ValueId,
+        /// The domain the argument checked against.
+        domain: ValueTypeId,
         /// The codomain.
         codomain: Codomain,
     },
@@ -562,6 +585,68 @@ enum Frame
     /// A decode waits on the type its code synthesises, which then crosses the
     /// decode bridge.
     FormElement(TypeNode),
+    /// A static Pi waits on the formation of both its classifiers; each must
+    /// then be a static classifier — a universe or a static Pi — at its weak
+    /// head.
+    FormStaticPi(ValueTypeId),
+    /// A pair checked against an eager product waits on its first
+    /// component's check; the second then checks against the second factor.
+    PairSecond
+    {
+        /// The second component.
+        second: ValueId,
+        /// The second factor.
+        expected: ValueTypeId,
+    },
+    /// A synthesised pair waits on its first component's type; the second
+    /// component then synthesises.
+    PairFirstSynthesised
+    {
+        /// The second component.
+        second: ValueId,
+    },
+    /// A synthesised pair waits on its second component's type; the pair
+    /// then has the eager product of both.
+    PairSecondSynthesised
+    {
+        /// The first component's type.
+        first: ValueTypeId,
+    },
+    /// A static application waits on the type its head so far synthesises,
+    /// which must be a static Pi; the argument at `position` then meets its
+    /// domain.
+    StaticSpine
+    {
+        /// The whole application.
+        at: ValueId,
+        /// How many arguments stand before this one.
+        position: ArgumentPosition,
+        /// The argument.
+        argument: ValueId,
+        /// How many arguments the application spine applies.
+        spine: StaticArity,
+    },
+    /// A static application's argument waits on its synthesised type, which
+    /// then crosses the value bridge to the domain; the application so far
+    /// has the codomain.
+    StaticArgument
+    {
+        /// The argument.
+        argument: ValueId,
+        /// How many arguments stand before this one.
+        position: ArgumentPosition,
+        /// The static Pi's domain.
+        domain: ValueTypeId,
+        /// The static Pi's codomain.
+        codomain: ValueTypeId,
+    },
+    /// A static application's static-lambda argument waits on its check
+    /// against the domain; the application so far has the codomain.
+    StaticOperand
+    {
+        /// The static Pi's codomain.
+        codomain: ValueTypeId,
+    },
 }
 
 /// The machine's next move.
@@ -782,13 +867,32 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: a variable has the type its binder declared, shifted past the
     ///   binders opened since; a constant the type its declaration supplied;
     ///   the unit value and an integer or string literal their atom; a quote
-    ///   awaits its type's formation.
-    /// - fails: [`CheckRefusal::NotSynthesisable`] for a thunk;
-    ///   [`CheckRefusal::UnboundIndex`] for a variable past its zone's binders;
-    ///   [`CheckRefusal::UnknownConstant`] for a constant with no type;
-    ///   [`CheckRefusal::OutOfFragment`] for a numeric literal, a pair, an
-    ///   injection, a value lift, a static lambda or a static application.
+    ///   awaits its type's formation; a pair awaits its components' types and
+    ///   has their eager product; a static application awaits its head's type
+    ///   and meets each argument in turn. A leaf ascends with the frames as
+    ///   found; every other rule descends above a new frame.
+    /// - fails: [`CheckRefusal::NotSynthesisable`] for a thunk and a static
+    ///   lambda; [`CheckRefusal::UnboundIndex`] for a variable past its zone's
+    ///   binders; [`CheckRefusal::UnknownConstant`] for a constant with no
+    ///   type; [`CheckRefusal::OutOfFragment`] for a numeric literal, an
+    ///   injection and a value lift.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one value of every former synthesised, each to its
+    ///   exact type or refusal.
+    /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::a_pair_synthesises_its_eager_product_and_checks_against_one`
+    /// - witness: `judgement::tests::a_static_lambda_checks_only_against_a_static_pi`
+    /// - witness: `bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`
+    #[spec(
+        captures: depth = self.frames.len(),
+        ensures: |ret| match ret {
+            | Ok(Step::Ascend(_)) => self.frames.len() == depth,
+            | Ok(Step::Descend(_)) => self.frames.len() > depth,
+            | Err(_) => true,
+        },
+    )]
     fn synthesise_value(
         &mut self,
         term: ValueId,
@@ -841,13 +945,19 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Thunk(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Thunk(term),
             }),
-            | Value::Pair(..) => Err(unadmitted_value(term, UnadmittedFormer::Pair)),
+            | Value::Pair(first, second) => {
+                self.frames.push(Frame::PairFirstSynthesised { second });
+                Ok(Step::Descend(Goal::Value {
+                    term: first,
+                    direction: Direction::Synthesise,
+                }))
+            },
             | Value::Injection(..) => Err(unadmitted_value(term, UnadmittedFormer::Injection)),
             | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
-            | Value::StaticLambda(_) => Err(unadmitted_value(term, UnadmittedFormer::StaticLambda)),
-            | Value::StaticApplication(..) => {
-                Err(unadmitted_value(term, UnadmittedFormer::StaticApplication))
-            },
+            | Value::StaticLambda(_) => Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::StaticLambda(term),
+            }),
+            | Value::StaticApplication(..) => self.static_application(term),
         }
     }
 
@@ -870,15 +980,31 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - requires: `expected` is formed.
     /// - ensures: a thunk's body checks against the body of a thunk type at
-    ///   `expected`'s weak head; a synthesising value synthesises, then crosses
-    ///   the value bridge to `expected`.
+    ///   `expected`'s weak head; a pair's components check against the factors
+    ///   of an eager product there; a static lambda opens a binder of the
+    ///   domain of a static Pi there and its body checks against the codomain
+    ///   shifted past the binder; a synthesising value synthesises, then
+    ///   crosses the value bridge to `expected`. Every rule descends.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a thunk against no thunk
-    ///   type; [`CheckRefusal::OutOfFragment`] for a pair, an injection, a
-    ///   value lift, a static lambda or a static application.
+    ///   type, a pair against no eager product, a static lambda against no
+    ///   static Pi; [`CheckRefusal::OutOfFragment`] for an injection and a
+    ///   value lift.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one value of every former checked, against its own
+    ///   former and another.
+    /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::a_pair_synthesises_its_eager_product_and_checks_against_one`
+    /// - witness: `judgement::tests::a_static_lambda_checks_only_against_a_static_pi`
     ///
     /// # Judgement
     /// - expected: `expected`
+    #[spec(
+        captures: depth = self.frames.len(),
+        ensures: |ret| ret.is_err()
+            || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() >= depth),
+    )]
     fn check_value(
         &mut self,
         term: ValueId,
@@ -893,25 +1019,169 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(body_type),
                 }))
             },
+            | Value::Pair(first, second) => {
+                let (first_factor, second_factor) = self.product_expected(term, expected)?;
+                self.frames.push(Frame::PairSecond {
+                    second,
+                    expected: second_factor,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: first,
+                    direction: Direction::Check(first_factor),
+                }))
+            },
+            | Value::StaticLambda(body) => {
+                let (domain, codomain) = self.static_pi_expected(term, expected)?;
+                self.context.binders().open(Zone::Intuitionistic, domain);
+                self.frames.push(Frame::LambdaBody);
+                Ok(Step::Descend(Goal::Value {
+                    term: body,
+                    direction: Direction::Check(codomain),
+                }))
+            },
             | Value::Variable { .. }
             | Value::Constant(_)
             | Value::Unit
             | Value::Literal(_)
             | Value::Quote(_)
-            | Value::QuoteComputation(_) => {
+            | Value::QuoteComputation(_)
+            | Value::StaticApplication(..) => {
                 self.frames.push(Frame::ValueBridge { at: term, expected });
                 Ok(Step::Descend(Goal::Value {
                     term,
                     direction: Direction::Synthesise,
                 }))
             },
-            | Value::Pair(..) => Err(unadmitted_value(term, UnadmittedFormer::Pair)),
             | Value::Injection(..) => Err(unadmitted_value(term, UnadmittedFormer::Injection)),
             | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
-            | Value::StaticLambda(_) => Err(unadmitted_value(term, UnadmittedFormer::StaticLambda)),
-            | Value::StaticApplication(..) => {
-                Err(unadmitted_value(term, UnadmittedFormer::StaticApplication))
+        }
+    }
+
+    /// Start the static application `at`: the root head's synthesis is the
+    /// next goal, with one frame per argument awaiting the type the spine so
+    /// far has, the first argument's innermost.
+    ///
+    /// # Specification
+    /// - requires: `at` is a static application.
+    /// - ensures: the frames, outermost last, name each argument with its
+    ///   position and the spine's length; the head's synthesis is the step,
+    ///   above at least one new frame.
+    /// - fails: [`CheckRefusal::DanglingNode`] for a node the arena does not
+    ///   hold; [`CheckRefusal::MachineInvariant`] for a spine past the `u32`
+    ///   ceiling.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop descends the spine's heads, and the `for`
+    ///   loop walks the arguments it collected, not recursion.
+    /// - measure: the arena position of the head, which a static application
+    ///   holds below its own; then the arguments left.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a saturated instance, one past its
+    ///   arity, one of a code that is no operator, and one whose argument
+    ///   misses its classifier at either position.
+    /// - witness: `bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`
+    /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
+    #[spec(
+        captures: depth = self.frames.len(),
+        ensures: |ret| ret.is_err()
+            || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len() > depth),
+    )]
+    fn static_application(
+        &mut self,
+        at: ValueId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        let mut arguments = Vec::new();
+        let mut head = at;
+        while let Value::StaticApplication(function, argument) = *self.value(head)? {
+            arguments.push(argument);
+            head = function;
+        }
+        let length =
+            u32::try_from(arguments.len()).map_err(|_overflow| CheckRefusal::MachineInvariant)?;
+        let spine = StaticArity::from(length);
+        let mut position = length;
+        for argument in arguments {
+            position = position
+                .checked_sub(1)
+                .ok_or(CheckRefusal::MachineInvariant)?;
+            self.frames.push(Frame::StaticSpine {
+                at,
+                position: ArgumentPosition::from(position),
+                argument,
+                spine,
+            });
+        }
+        Ok(Step::Descend(Goal::Value {
+            term: head,
+            direction: Direction::Synthesise,
+        }))
+    }
+
+    /// Whether the argument `argument` a computation applies at a static Pi is
+    /// rigid: a static lambda, a static definition and an unsaturated
+    /// instance of one normalize away, and the kernel has no static lambda.
+    ///
+    /// # Specification
+    /// - requires: `argument` checked against a static Pi.
+    /// - ensures: success when `argument`, reduced at its head, is a spine
+    ///   whose root is neither a static lambda nor a code constant with a body.
+    /// - fails: [`CheckRefusal::StaticLambdaArgument`] at `argument` otherwise;
+    ///   the unfolding's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop descends the spine's heads, not
+    ///   recursion.
+    /// - measure: the arena position of the head, which a static application
+    ///   holds below its own.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a static lambda, a static definition and
+    ///   an opaque operator, each at a dynamic parameter.
+    /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::StaticLambdaArgument { at }) => at == argument,
+        | Ok(()) | Err(_) => true,
+    })]
+    fn rigid_operator(
+        &mut self,
+        argument: ValueId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let mut root = self.context.whnf_code(argument)?;
+        while let Value::StaticApplication(function, _) = *self.value(root)? {
+            root = function;
+        }
+        let normalizes_away = match *self.value(root)? {
+            | Value::StaticLambda(_) => true,
+            | Value::Constant(constant) => {
+                matches!(self.context.definitions().body(constant), Maybe::Present(_))
             },
+            | Value::Variable { .. }
+            | Value::Unit
+            | Value::Literal(_)
+            | Value::Pair(..)
+            | Value::Injection(..)
+            | Value::Thunk(_)
+            | Value::Lift { .. }
+            | Value::Quote(_)
+            | Value::QuoteComputation(_)
+            | Value::StaticApplication(..) => false,
+        };
+        if normalizes_away {
+            Err(CheckRefusal::StaticLambdaArgument { at: argument })
+        }
+        else {
+            Ok(())
         }
     }
 
@@ -1082,12 +1352,119 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | ValueTypeView::Unit
             | ValueTypeView::Universe { .. }
             | ValueTypeView::Lift { .. }
-            | ValueTypeView::Element { .. } => Err(CheckRefusal::ShapeMismatch {
+            | ValueTypeView::Element { .. }
+            | ValueTypeView::Product(..)
+            | ValueTypeView::StaticPi { .. } => Err(CheckRefusal::ShapeMismatch {
                 at: TermNode::Value(at),
                 wanted: ExpectedShape::Thunk,
                 found: TypeNode::Value(expected),
             }),
         }
+    }
+
+    /// The factors a pair's components check against: the expected type's,
+    /// when it is an eager product at its weak head.
+    ///
+    /// # Specification
+    /// - requires: `expected` is formed.
+    /// - ensures: both factors of `expected` when it is `A × B` at its weak
+    ///   head, each resolving in the arena.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting an eager
+    ///   product, for any other former; the unfolding's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a pair against a product and against an
+    ///   atom.
+    /// - witness: `judgement::tests::a_pair_synthesises_its_eager_product_and_checks_against_one`
+    ///
+    /// # Judgement
+    /// - expected: `expected`
+    #[spec(ensures: |ret| match ret {
+        | Ok((first, second)) => {
+            self.context.arena().value_type(first).is_some()
+                && self.context.arena().value_type(second).is_some()
+        },
+        | Err(CheckRefusal::ShapeMismatch { at: shaped, wanted, found }) => {
+            shaped == TermNode::Value(at)
+                && wanted == ExpectedShape::Product
+                && found == TypeNode::Value(expected)
+        },
+        | Err(_) => true,
+    })]
+    fn product_expected(
+        &mut self,
+        at: ValueId,
+        expected: ValueTypeId,
+    ) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(expected)?;
+        if let ValueTypeView::Product(first, second) = value_type_view(self.context.arena(), head)?
+        {
+            return Ok((first, second));
+        }
+        Err(CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(at),
+            wanted: ExpectedShape::Product,
+            found: TypeNode::Value(expected),
+        })
+    }
+
+    /// The domain and codomain a static lambda's body checks against: the
+    /// expected type's, when it is a static Pi at its weak head.
+    ///
+    /// # Specification
+    /// - requires: `expected` is formed.
+    /// - ensures: the domain of `expected`, and its codomain shifted past the
+    ///   lambda's binder: a static Pi's codomain stands in the ambient context.
+    ///   Both resolve in the arena.
+    /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a static Pi,
+    ///   for any other former; the unfolding's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a static lambda against a static Pi and
+    ///   against an atom.
+    /// - witness: `judgement::tests::a_static_lambda_checks_only_against_a_static_pi`
+    ///
+    /// # Judgement
+    /// - expected: `expected`
+    #[spec(ensures: |ret| match ret {
+        | Ok((domain, codomain)) => {
+            self.context.arena().value_type(domain).is_some()
+                && self.context.arena().value_type(codomain).is_some()
+        },
+        | Err(CheckRefusal::ShapeMismatch { at: shaped, wanted, found }) => {
+            shaped == TermNode::Value(at)
+                && wanted == ExpectedShape::StaticPi
+                && found == TypeNode::Value(expected)
+        },
+        | Err(_) => true,
+    })]
+    fn static_pi_expected(
+        &mut self,
+        at: ValueId,
+        expected: ValueTypeId,
+    ) -> Result<(ValueTypeId, ValueTypeId), CheckRefusal>
+    {
+        let head = self.context.whnf_value_type(expected)?;
+        if let ValueTypeView::StaticPi { domain, codomain } =
+            value_type_view(self.context.arena(), head)?
+        {
+            let scoped = shift_value_type(self.context.arena_mut(), codomain, Binders::from(1_u32));
+            return Ok((domain, scoped));
+        }
+        Err(CheckRefusal::ShapeMismatch {
+            at: TermNode::Value(at),
+            wanted: ExpectedShape::StaticPi,
+            found: TypeNode::Value(expected),
+        })
     }
 
     /// The domain and codomain a lambda's body checks against: the expected
@@ -1166,11 +1543,28 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - ensures: an atom and the unit type are formed; a thunk type forms its
     ///   body; a universe is formed below the greatest level; a lift forms its
     ///   type, then awaits the raise; a decode awaits its code's synthesised
-    ///   type.
+    ///   type; an eager product forms both factors; a static Pi forms both
+    ///   classifiers, then awaits their check as static classifiers. A former
+    ///   formed at once leaves the frames as found; one that descends leaves
+    ///   them no shorter.
     /// - fails: the view's refusal for a former outside the fragment or a
     ///   dangling id; [`CheckRefusal::OutOfFragment`] naming
     ///   [`UnadmittedFormer::TopUniverse`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one type of every former, formed or refused, through
+    ///   the public faces.
+    /// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
+    /// - witness: `bridge::tests::a_static_pi_over_a_type_that_classifies_no_codes_is_refused_by_name`
+    #[spec(
+        captures: depth = self.frames.len(),
+        ensures: |ret| match ret {
+            | Ok(Step::Ascend(_)) => self.frames.len() == depth,
+            | Ok(Step::Descend(_)) => self.frames.len() >= depth,
+            | Err(_) => true,
+        },
+    )]
     fn form_value_type(
         &mut self,
         at: ValueTypeId,
@@ -1202,6 +1596,15 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     term: code,
                     direction: Direction::Synthesise,
                 }))
+            },
+            | ValueTypeView::Product(first, second) => {
+                self.frames.push(Frame::FormNext(TypeNode::Value(second)));
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(first))))
+            },
+            | ValueTypeView::StaticPi { domain, codomain } => {
+                self.frames.push(Frame::FormStaticPi(at));
+                self.frames.push(Frame::FormNext(TypeNode::Value(codomain)));
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
             },
         }
     }
@@ -1301,6 +1704,65 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }
     }
 
+    /// Whether the static Pi `at`, both classifiers formed, ranges over static
+    /// classifiers only.
+    ///
+    /// # Specification
+    /// - requires: `at` is a static Pi whose classifiers are formed.
+    /// - ensures: success exactly when its domain and its codomain are each, at
+    ///   the weak head, a universe or a static Pi.
+    /// - fails: [`CheckRefusal::StaticClassifierExpected`] naming `at` and the
+    ///   first classifier that is neither; [`CheckRefusal::MachineInvariant`]
+    ///   when `at` is no static Pi; the unfolding's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: the `for` loop visits the two classifiers, not recursion.
+    /// - measure: the classifiers left, at most two.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by classifiers that are universes and
+    ///   static Pis, a domain that is neither, and a codomain that is neither.
+    /// - witness: `bridge::tests::a_static_pi_over_a_type_that_classifies_no_codes_is_refused_by_name`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::StaticClassifierExpected { at: named, .. }) => named == at,
+        | Ok(()) | Err(_) => true,
+    })]
+    fn static_classifiers(
+        &mut self,
+        at: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let ValueTypeView::StaticPi { domain, codomain } =
+            value_type_view(self.context.arena(), at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        for classifier in [domain, codomain] {
+            let head = self.context.whnf_value_type(classifier)?;
+            match value_type_view(self.context.arena(), head)? {
+                | ValueTypeView::Universe { .. } | ValueTypeView::StaticPi { .. } => {},
+                | ValueTypeView::Integer
+                | ValueTypeView::String
+                | ValueTypeView::Unit
+                | ValueTypeView::Thunk(_)
+                | ValueTypeView::Lift { .. }
+                | ValueTypeView::Element { .. }
+                | ValueTypeView::Product(..) => {
+                    return Err(CheckRefusal::StaticClassifierExpected {
+                        at,
+                        found: classifier,
+                    });
+                },
+            }
+        }
+        Ok(())
+    }
+
     /// Cross the decode bridge for the decode `node`, whose code synthesised
     /// `synthesised`.
     ///
@@ -1328,7 +1790,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | ValueTypeView::Unit
                 | ValueTypeView::Thunk(_)
                 | ValueTypeView::Universe { .. }
-                | ValueTypeView::Lift { .. } => return Err(CheckRefusal::MachineInvariant),
+                | ValueTypeView::Lift { .. }
+                | ValueTypeView::Product(..)
+                | ValueTypeView::StaticPi { .. } => return Err(CheckRefusal::MachineInvariant),
             },
             | TypeNode::Computation(at) => match comp_type_view(arena, at)? {
                 | CompTypeView::Element { code, target } => {
@@ -1386,22 +1850,49 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// # Specification
     /// - requires: `frame` was pushed by a rule of this run.
     /// - ensures: a force has the body of its value's thunk type; an
-    ///   application checks its argument against its head's domain, then has
-    ///   the codomain, instantiated for a dependent arrow; a bind opens a
-    ///   binder of its bound computation's returned type and judges its body,
-    ///   then closes the binder and has what the body had, lowered out of the
-    ///   binder; a lambda closes its binder; a bridge frame crosses its bridge
-    ///   and the check succeeds; a quote has its universe; a formation frame
-    ///   forms the next child, closes its binder, checks a lift's raise or
-    ///   crosses the decode bridge. Every type read for its former is read at
+    ///   application checks its argument against its head's domain, refuses an
+    ///   argument at a static Pi that normalizes away, then has the codomain,
+    ///   instantiated for a dependent arrow; a bind opens a binder of its bound
+    ///   computation's returned type and judges its body, then closes the
+    ///   binder and has what the body had, lowered out of the binder; a lambda
+    ///   closes its binder; a bridge frame crosses its bridge and the check
+    ///   succeeds; a quote has its universe; a formation frame forms the next
+    ///   child, closes its binder, checks a lift's raise, crosses the decode
+    ///   bridge or checks a static Pi's classifiers; a pair checks or
+    ///   synthesises its second component after its first; a static application
+    ///   meets each argument at the domain of the static Pi its head so far
+    ///   has, and has the codomain. Every type read for its former is read at
     ///   its weak head.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a forced value of no thunk
     ///   type, a head of no arrow type, or a bound computation of no returner
     ///   type; [`CheckRefusal::DependentBind`] for a bind whose body's type
-    ///   mentions the bound name; the bridges' refusals;
-    ///   [`CheckRefusal::MachineInvariant`] when `produced` is not the kind the
-    ///   frame awaits.
+    ///   mentions the bound name; [`CheckRefusal::FamilyArity`] for a static
+    ///   application whose head opens fewer static Pis than it has arguments;
+    ///   [`CheckRefusal::FamilyArgumentClassifier`] for an argument whose type
+    ///   does not cross to its domain; [`CheckRefusal::StaticLambdaArgument`]
+    ///   for an argument at a dynamic application that normalizes away; the
+    ///   bridges' refusals; [`CheckRefusal::MachineInvariant`] when `produced`
+    ///   is not the kind the frame awaits.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every frame resumed by a term of its former through
+    ///   the public faces, each to its exact answer or refusal, beside a result
+    ///   of the wrong kind; an arity refusal names more arguments than the head
+    ///   opened.
+    /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::a_result_of_the_wrong_kind_is_a_machine_fault`
+    /// - witness: `judgement::tests::a_pair_synthesises_its_eager_product_and_checks_against_one`
+    /// - witness: `bridge::tests::family_applied_at_wrong_arity_raises_the_exact_variant`
+    /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
+    /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
+    #[spec(ensures: |ret| match ret {
+        | Err(CheckRefusal::FamilyArity { expected, actual, .. }) => {
+            u32::from(expected) < u32::from(actual)
+        },
+        | Ok(_) | Err(_) => true,
+    })]
     fn resume(
         &mut self,
         frame: Frame,
@@ -1418,7 +1909,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     | ValueTypeView::Unit
                     | ValueTypeView::Universe { .. }
                     | ValueTypeView::Lift { .. }
-                    | ValueTypeView::Element { .. } => Err(CheckRefusal::ShapeMismatch {
+                    | ValueTypeView::Element { .. }
+                    | ValueTypeView::Product(..)
+                    | ValueTypeView::StaticPi { .. } => Err(CheckRefusal::ShapeMismatch {
                         at: TermNode::Value(value),
                         wanted: ExpectedShape::Thunk,
                         found: TypeNode::Value(synthesised),
@@ -1442,16 +1935,33 @@ impl<'context, 'arena> Machine<'context, 'arena>
                         });
                     },
                 };
-                self.frames
-                    .push(Frame::ApplicationArgument { argument, codomain });
+                self.frames.push(Frame::ApplicationArgument {
+                    argument,
+                    domain,
+                    codomain,
+                });
                 Ok(Step::Descend(Goal::Value {
                     term: argument,
                     direction: Direction::Check(domain),
                 }))
             },
-            | (Frame::ApplicationArgument { argument, codomain }, Produced::Checked) => Ok(
-                Step::Ascend(Produced::CompType(self.applied(argument, codomain))),
-            ),
+            | (
+                Frame::ApplicationArgument {
+                    argument,
+                    domain,
+                    codomain,
+                },
+                Produced::Checked,
+            ) => {
+                let read = self.context.whnf_value_type(domain)?;
+                if let ValueTypeView::StaticPi { .. } = value_type_view(self.context.arena(), read)?
+                {
+                    self.rigid_operator(argument)?;
+                }
+                Ok(Step::Ascend(Produced::CompType(
+                    self.applied(argument, codomain),
+                )))
+            },
             | (
                 Frame::LambdaBody | Frame::FormBinder | Frame::BindBody { .. },
                 Produced::Checked,
@@ -1538,8 +2048,106 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 self.decodes(node, synthesised)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
+            | (Frame::FormStaticPi(at), Produced::Checked) => {
+                self.static_classifiers(at)?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            | (Frame::PairSecond { second, expected }, Produced::Checked) => {
+                Ok(Step::Descend(Goal::Value {
+                    term: second,
+                    direction: Direction::Check(expected),
+                }))
+            },
+            | (Frame::PairFirstSynthesised { second }, Produced::ValueType(first)) => {
+                self.frames.push(Frame::PairSecondSynthesised { first });
+                Ok(Step::Descend(Goal::Value {
+                    term: second,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | (Frame::PairSecondSynthesised { first }, Produced::ValueType(second)) => {
+                let product = self.context.arena_mut().value_type_product(first, second);
+                Ok(Step::Ascend(Produced::ValueType(product)))
+            },
             | (
-                Frame::Force { .. } | Frame::ValueBridge { .. } | Frame::FormElement(_),
+                Frame::StaticSpine {
+                    at,
+                    position,
+                    argument,
+                    spine,
+                },
+                Produced::ValueType(synthesised),
+            ) => {
+                let head = self.context.whnf_value_type(synthesised)?;
+                let ValueTypeView::StaticPi { domain, codomain } =
+                    value_type_view(self.context.arena(), head)?
+                else {
+                    return Err(CheckRefusal::FamilyArity {
+                        at,
+                        expected: StaticArity::from(u32::from(position)),
+                        actual: spine,
+                    });
+                };
+                if let Value::StaticLambda(_) = *self.value(argument)? {
+                    self.frames.push(Frame::StaticOperand { codomain });
+                    return Ok(Step::Descend(Goal::Value {
+                        term: argument,
+                        direction: Direction::Check(domain),
+                    }));
+                }
+                self.frames.push(Frame::StaticArgument {
+                    argument,
+                    position,
+                    domain,
+                    codomain,
+                });
+                Ok(Step::Descend(Goal::Value {
+                    term: argument,
+                    direction: Direction::Synthesise,
+                }))
+            },
+            | (
+                Frame::StaticArgument {
+                    argument,
+                    position,
+                    domain,
+                    codomain,
+                },
+                Produced::ValueType(synthesised),
+            ) => {
+                value_bridge(
+                    self.context,
+                    argument,
+                    synthesised,
+                    domain,
+                    &mut self.conversions,
+                )
+                .map_err(|refusal| match refusal {
+                    | CheckRefusal::TypeMismatch(_)
+                    | CheckRefusal::SortMismatch { .. }
+                    | CheckRefusal::LevelMismatch { .. } => {
+                        CheckRefusal::FamilyArgumentClassifier {
+                            at: argument,
+                            position,
+                            synthesised,
+                            expected: domain,
+                        }
+                    },
+                    | other => other,
+                })?;
+                Ok(Step::Ascend(Produced::ValueType(codomain)))
+            },
+            | (Frame::StaticOperand { codomain }, Produced::Checked) => {
+                Ok(Step::Ascend(Produced::ValueType(codomain)))
+            },
+            | (
+                Frame::Force { .. }
+                | Frame::ValueBridge { .. }
+                | Frame::FormElement(_)
+                | Frame::PairFirstSynthesised { .. }
+                | Frame::PairSecondSynthesised { .. }
+                | Frame::StaticSpine { .. }
+                | Frame::StaticArgument { .. },
                 Produced::CompType(_) | Produced::Checked,
             )
             | (
@@ -1553,7 +2161,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Frame::Quote(_)
                 | Frame::FormNext(_)
                 | Frame::FormPi { .. }
-                | Frame::FormLift(_),
+                | Frame::FormLift(_)
+                | Frame::FormStaticPi(_)
+                | Frame::PairSecond { .. }
+                | Frame::StaticOperand { .. },
                 Produced::ValueType(_) | Produced::CompType(_),
             )
             | (Frame::BindBody { .. }, Produced::ValueType(_)) => {
@@ -1688,7 +2299,6 @@ mod tests
         let numeric = arena.value_literal(numeric_literal());
         let returned = arena.computation_return(integer_value);
         let thunk = arena.value_thunk(returned);
-        let pair = arena.value_pair(unit, unit);
         let injection = arena.value_injection(Side::Left, unit);
         let lift = arena.value_lift(Level::zero(), unit);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
@@ -1704,7 +2314,7 @@ mod tests
             constant: ConstantIndex::from(9_usize),
         };
         let crossed_once = Ok(ConversionCount::from(1_usize));
-        let rows: [Row<ValueId, ValueTypeId>; 11] = [
+        let rows: [Row<ValueId, ValueTypeId>; 10] = [
             (variable, Err(unbound), integer, Err(unbound)),
             (known, Ok(thunk_arrow), thunk_arrow, crossed_once),
             (unknown, Err(not_known), integer, Err(not_known)),
@@ -1741,12 +2351,6 @@ mod tests
                 crossed_once,
             ),
             (
-                pair,
-                Err(unadmitted_value(pair, UnadmittedFormer::Pair)),
-                unit_type,
-                Err(unadmitted_value(pair, UnadmittedFormer::Pair)),
-            ),
-            (
                 injection,
                 Err(unadmitted_value(injection, UnadmittedFormer::Injection)),
                 unit_type,
@@ -1772,6 +2376,112 @@ mod tests
                 "{term:?} checks by its former's rule"
             );
         }
+    }
+
+    #[test]
+    fn a_pair_synthesises_its_eager_product_and_checks_against_one()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let unit_type = arena.value_type_unit();
+        let returns_integer = arena.comp_type_returner(integer);
+        let suspended = arena.value_type_thunk(returns_integer);
+        let product = arena.value_type_product(unit_type, integer);
+        let checking_only = arena.value_type_product(suspended, integer);
+        let unit = arena.value_unit();
+        let zero = arena.value_literal(integer_literal());
+        let returned = arena.computation_return(zero);
+        let thunk = arena.value_thunk(returned);
+        let pair = arena.value_pair(unit, zero);
+        let with_thunk = arena.value_pair(thunk, zero);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let synthesised = synthesise_value(&mut context, pair)
+            .map(|found| found.produced().id())
+            .unwrap();
+        let Some(&ValueType::Product(first, second)) = context.arena().value_type(synthesised)
+        else {
+            panic!("a pair synthesises an eager product");
+        };
+        assert_eq!(
+            (first, second),
+            (
+                context.atom(Atom::Unit).id(),
+                context.atom(Atom::Integer).id()
+            ),
+            "of its components' types, in order"
+        );
+        let product = form_value_type(&mut context, product).unwrap();
+        let checking_only = form_value_type(&mut context, checking_only).unwrap();
+        let integer = form_value_type(&mut context, integer).unwrap();
+        assert_eq!(
+            check_value(&mut context, pair, product).map(|evidence| evidence.conversions()),
+            Ok(ConversionCount::from(2_usize)),
+            "each component checks against its factor, crossing once"
+        );
+        assert_eq!(
+            check_value(&mut context, with_thunk, checking_only)
+                .map(|evidence| evidence.conversions()),
+            Ok(ConversionCount::from(2_usize)),
+            "a component that only checks is checked, not synthesised: the thunk's returned \
+             literal and the second component each cross once"
+        );
+        assert_eq!(
+            synthesise_value(&mut context, with_thunk).map(|found| found.produced().id()),
+            Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::Thunk(thunk),
+            }),
+            "while synthesis needs every component to synthesise"
+        );
+        assert_eq!(
+            check_value(&mut context, pair, integer).map(|evidence| evidence.conversions()),
+            Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(pair),
+                wanted: ExpectedShape::Product,
+                found: TypeNode::Value(integer.id()),
+            }),
+            "a pair against no eager product is a shape mismatch"
+        );
+    }
+
+    #[test]
+    fn a_static_lambda_checks_only_against_a_static_pi()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let operator_type = arena.value_type_static_pi(small, small);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let identity = arena.value_static_lambda(bound);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let operator_type = form_value_type(&mut context, operator_type).unwrap();
+        let integer = form_value_type(&mut context, integer).unwrap();
+        assert_eq!(
+            check_value(&mut context, identity, operator_type)
+                .map(|evidence| evidence.conversions()),
+            Ok(ConversionCount::from(1_usize)),
+            "the body checks against the codomain beneath a binder of the domain"
+        );
+        assert_eq!(
+            check_value(&mut context, identity, integer).map(|evidence| evidence.conversions()),
+            Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(identity),
+                wanted: ExpectedShape::StaticPi,
+                found: TypeNode::Value(integer.id()),
+            }),
+            "against any other former it is a shape mismatch"
+        );
+        assert_eq!(
+            synthesise_value(&mut context, identity).map(|found| found.produced().id()),
+            Err(CheckRefusal::NotSynthesisable {
+                form: CheckingForm::StaticLambda(identity),
+            }),
+            "and it synthesises nothing"
+        );
+        assert_eq!(
+            context.binders().depth(Zone::Intuitionistic),
+            BinderDepth::from(0_usize),
+            "every binder the checks opened is closed"
+        );
     }
 
     #[test]

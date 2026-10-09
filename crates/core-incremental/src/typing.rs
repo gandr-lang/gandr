@@ -12,6 +12,7 @@
 //! projected: it is the producer's coordinate for the item, echoed from the
 //! edited declaration, never reused from a checkpoint.
 
+use gandr_core_checker::ArgumentPosition;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
@@ -19,6 +20,7 @@ use gandr_core_checker::ConversionCount;
 use gandr_core_checker::CoreNode;
 use gandr_core_checker::ExpectedShape;
 use gandr_core_checker::Mismatch;
+use gandr_core_checker::StaticArity;
 use gandr_core_checker::TermNode;
 use gandr_core_checker::TypeNode;
 use gandr_core_checker::UnadmittedFormer;
@@ -60,6 +62,8 @@ pub enum Form
     Lambda(Site),
     /// A return.
     Return(Site),
+    /// A static lambda.
+    StaticLambda(Site),
     /// The item's own hole.
     Hole,
 }
@@ -171,6 +175,43 @@ pub enum Refusal
     {
         /// The code.
         at: Site,
+    },
+    /// A static application passed more arguments than its head takes.
+    FamilyArity
+    {
+        /// The static application.
+        at: Site,
+        /// The static Pis the head's type opens.
+        expected: StaticArity,
+        /// The arguments passed.
+        actual: StaticArity,
+    },
+    /// A static application passed an argument at the wrong classifier.
+    FamilyArgumentClassifier
+    {
+        /// The argument.
+        at: Site,
+        /// Its position among the arguments.
+        position: ArgumentPosition,
+        /// The classifier it synthesised.
+        synthesised: TypeContent,
+        /// The domain it was passed at.
+        expected: TypeContent,
+    },
+    /// A dynamic application passed a type operator that does not normalize
+    /// away.
+    StaticLambdaArgument
+    {
+        /// The argument.
+        at: Site,
+    },
+    /// A static Pi stood over a type that classifies no codes.
+    StaticClassifierExpected
+    {
+        /// The static Pi.
+        at: Site,
+        /// The child that classifies no codes.
+        found: TypeContent,
     },
 }
 
@@ -367,6 +408,9 @@ impl Projection<'_, '_, '_>
                         Form::Return(self.site(ArenaNode::Computation(id)))
                     },
                     | CheckingForm::Hole(_) => Form::Hole,
+                    | CheckingForm::StaticLambda(id) => {
+                        Form::StaticLambda(self.site(ArenaNode::Value(id)))
+                    },
                 },
             },
             | CheckRefusal::UnknownConstant { at, constant } => Refusal::UnknownConstant {
@@ -418,6 +462,35 @@ impl Projection<'_, '_, '_>
             },
             | CheckRefusal::Undecided { at } => Refusal::Undecided {
                 at: self.site(ArenaNode::Value(at)),
+            },
+            | CheckRefusal::FamilyArity {
+                at,
+                expected,
+                actual,
+            } => Refusal::FamilyArity {
+                at: self.site(ArenaNode::Value(at)),
+                expected,
+                actual,
+            },
+            | CheckRefusal::FamilyArgumentClassifier {
+                at,
+                position,
+                synthesised,
+                expected,
+            } => Refusal::FamilyArgumentClassifier {
+                at: self.site(ArenaNode::Value(at)),
+                position,
+                synthesised: self.value_type(synthesised),
+                expected: self.value_type(expected),
+            },
+            | CheckRefusal::StaticLambdaArgument { at } => Refusal::StaticLambdaArgument {
+                at: self.site(ArenaNode::Value(at)),
+            },
+            | CheckRefusal::StaticClassifierExpected { at, found } => {
+                Refusal::StaticClassifierExpected {
+                    at: self.site(ArenaNode::ValueType(at)),
+                    found: self.value_type(found),
+                }
             },
         }
     }
@@ -678,10 +751,10 @@ mod tests
 
         let mut arena = CoreArena::new();
         let unit = arena.value_type_unit();
-        let product = arena.value_type_product(unit, unit);
+        let sum = arena.value_type_sum(unit, unit);
         let (_verdict, typing) = judged(
             arena,
-            Maybe::Present(product),
+            Maybe::Present(sum),
             Maybe::Absent(body::Absent::Hole),
             CheckBudget::DEFAULT,
         );
@@ -689,7 +762,7 @@ mod tests
             typing,
             Typing::Refused(Refusal::OutOfFragment {
                 at: first,
-                former: UnadmittedFormer::Product,
+                former: UnadmittedFormer::Sum,
             }),
             "a former without a rule names the node carrying it"
         );

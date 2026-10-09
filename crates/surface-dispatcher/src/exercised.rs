@@ -403,11 +403,15 @@ fn checking_row(
             }
         },
         | CheckRefusal::ShapeMismatch {
-            wanted: ExpectedShape::Thunk | ExpectedShape::Arrow,
+            wanted:
+                ExpectedShape::Thunk
+                | ExpectedShape::Arrow
+                | ExpectedShape::Product
+                | ExpectedShape::StaticPi,
             ..
         }
         | CheckRefusal::NotSynthesisable {
-            form: CheckingForm::Return(_) | CheckingForm::Hole(_),
+            form: CheckingForm::Return(_) | CheckingForm::Hole(_) | CheckingForm::StaticLambda(_),
         }
         | CheckRefusal::TypeMismatch(_)
         | CheckRefusal::UnknownConstant { .. }
@@ -420,7 +424,11 @@ fn checking_row(
         | CheckRefusal::SortMismatch { .. }
         | CheckRefusal::LevelMismatch { .. }
         | CheckRefusal::DependentBind { .. }
-        | CheckRefusal::Undecided { .. } => {},
+        | CheckRefusal::Undecided { .. }
+        | CheckRefusal::FamilyArity { .. }
+        | CheckRefusal::FamilyArgumentClassifier { .. }
+        | CheckRefusal::StaticLambdaArgument { .. }
+        | CheckRefusal::StaticClassifierExpected { .. } => {},
     }
 }
 

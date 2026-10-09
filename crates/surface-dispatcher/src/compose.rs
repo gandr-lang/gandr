@@ -182,7 +182,8 @@ impl fmt::Display for ComposeFault<'_>
                     },
                     | bridge::Outcome::Defined { .. }
                     | bridge::Outcome::Assumed { .. }
-                    | bridge::Outcome::Marked(_) => f.write_str("it crossed"),
+                    | bridge::Outcome::Marked(_)
+                    | bridge::Outcome::Static => f.write_str("it crossed"),
                 }
             },
         }
@@ -402,7 +403,7 @@ pub fn judge_module(
         &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
         &declarations,
     );
-    let readmission = readmitted(&arena, &verdicts)?;
+    let readmission = readmitted(&mut arena, &verdicts)?;
     let kernel = readmission.export(module.structured_names());
     let mut program = Program::new(&arena, &module, &verdicts);
     let report =
@@ -554,9 +555,10 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 /// # Specification
 /// - requires: `verdicts` was judged over `arena`.
 /// - ensures: succeeds with the readmission when every accepted declaration
-///   crossed as a definition or an axiom; a refused declaration crosses as its
-///   mark, and a declaration withheld because it names a refused one carries
-///   that one's reason, so neither is a disagreement.
+///   crossed as a definition or an axiom, or stays on the checker's side as a
+///   static definition; a refused declaration crosses as its mark, and a
+///   declaration withheld because it names a refused one carries that one's
+///   reason, so none of these is a disagreement.
 /// - provides: the kernel's repetition of every acceptance a run reports, and
 ///   the environment the run's kernel artifact is exported from.
 /// - fails: [`ComposeFault::Readmission`] with the first declaration the kernel
@@ -573,7 +575,7 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 ///   declaration's ids dangle.
 /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
 fn readmitted(
-    arena: &CoreArena,
+    arena: &mut CoreArena,
     verdicts: &ModuleReport,
 ) -> Result<bridge::Readmission, ComposeFault<'static>>
 {
@@ -583,6 +585,7 @@ fn readmitted(
             | bridge::Outcome::Defined { .. }
             | bridge::Outcome::Assumed { .. }
             | bridge::Outcome::Marked(_)
+            | bridge::Outcome::Static
             | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }) => {},
             | bridge::Outcome::Refused(
                 bridge::Refusal::OutOfFragment { .. }
@@ -1011,7 +1014,7 @@ def h = 1 ;"#,
             &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
             &adapt(&module),
         );
-        let outcomes: Vec<bridge::Outcome> = bridge::readmit(&arena, &verdicts)
+        let outcomes: Vec<bridge::Outcome> = bridge::readmit(&mut arena, &verdicts)
             .readmitted()
             .iter()
             .map(|crossed| crossed.outcome().clone())
@@ -1025,13 +1028,13 @@ def h = 1 ;"#,
             "a definition, a mark and a withheld reference: {outcomes:?}"
         );
         assert!(
-            readmitted(&arena, &verdicts).is_ok(),
+            readmitted(&mut arena, &verdicts).is_ok(),
             "over its own arena every acceptance crosses, and a mark or a withheld reference is no \
              disagreement"
         );
 
-        let foreign = CoreArena::new();
-        let Err(ComposeFault::Readmission(fault)) = readmitted(&foreign, &verdicts)
+        let mut foreign = CoreArena::new();
+        let Err(ComposeFault::Readmission(fault)) = readmitted(&mut foreign, &verdicts)
         else {
             panic!("over a foreign arena the accepted ids dangle");
         };

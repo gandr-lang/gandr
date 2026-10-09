@@ -1356,8 +1356,10 @@ pub fn eval_comp_within(
 /// - ensures: on success the domain value of `term` read in `environment`,
 ///   paired with the fuel left over.
 /// - provides: the value twin of [`eval_comp_within`], which is how a readback
-///   reads a decode's code inside a quoted type: in the quote's environment,
-///   extended by the binders the type's own dependent arrows open.
+///   reads a decode's code inside a quoted type — in the quote's environment,
+///   extended by the binders the type's own dependent arrows open — and how a
+///   caller certifies a conversion between open values, their free binders read
+///   as rigid variables it supplies.
 /// - fails: every variant of [`EvalFault`].
 /// - panics: none.
 ///
@@ -1373,7 +1375,7 @@ pub fn eval_comp_within(
     || ret.as_ref().is_ok_and(|pair| {
         domain.value(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)
     }))]
-pub(crate) fn eval_value_within(
+pub fn eval_value_within(
     core: &CoreArena,
     domain: &mut DomainArena,
     definitions: Definitions<'_>,

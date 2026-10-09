@@ -68,6 +68,9 @@ enum Class
     Marked(RefusalName),
     /// The checker accepted it, and it names a declaration that did not cross.
     Withheld,
+    /// The checker accepted it as a type operator, which stays on the
+    /// checker's side for the instances that name it.
+    Static,
     /// The lowering refused it, under this name, and nothing was offered.
     NeverOffered(RefusalName),
 }
@@ -154,6 +157,9 @@ fn class_of(
             Verdict::Checked { .. } | Verdict::Synthesised { .. },
             &bridge::Outcome::Defined { .. },
         ) => Class::Defined,
+        | (Verdict::Checked { .. } | Verdict::Synthesised { .. }, &bridge::Outcome::Static) => {
+            Class::Static
+        },
         | (Verdict::Owed(_), &bridge::Outcome::Assumed { .. }) => Class::Assumed,
         | (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) if refusal == mark => {
             Class::Marked(Refusal::Checking(refusal).name())
@@ -208,7 +214,7 @@ fn export(
         &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
         &declarations(&module),
     );
-    let readmission = bridge::readmit(&arena, &verdicts);
+    let readmission = bridge::readmit(&mut arena, &verdicts);
     let names = module.structured_names();
     let mut judged = verdicts.judged().iter().zip(readmission.readmitted());
     let mut classes = Vec::new();

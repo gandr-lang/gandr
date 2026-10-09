@@ -71,6 +71,7 @@ default-features = false
 # Runtime enforcement is selected for the whole build graph with
 # `--cfg anodized_panic`, never inferred from the optimization profile.
 # consumers:
+# - core-checker
 # - core-nbe
 # - core-term
 # - kernel-check-memo
@@ -181,6 +182,7 @@ path = "crates/core-term"
 
 # The support-keyed check-memo seam, generic over consumer-owned types.
 # consumers:
+# - core-checker
 # - core-incremental
 # - core-nbe
 # - kernel-core

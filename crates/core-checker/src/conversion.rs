@@ -45,6 +45,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::Sort;
@@ -124,7 +125,7 @@ impl fmt::Display for ConversionCount
     }
 }
 
-/// A pair of type nodes of one sort, to be compared.
+/// A pair of nodes of one family, to be compared.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Pairing
 {
@@ -132,6 +133,8 @@ enum Pairing
     Values(ValueTypeId, ValueTypeId),
     /// Two computation types.
     Comps(CompTypeId, CompTypeId),
+    /// Two codes, each read at its head.
+    Codes(ValueId, ValueId),
 }
 
 /// The decision's verdict on a pair.
@@ -350,64 +353,14 @@ pub fn decode_bridge(
         | ValueTypeView::Unit
         | ValueTypeView::Thunk(_)
         | ValueTypeView::Lift { .. }
-        | ValueTypeView::Element { .. } => Err(CheckRefusal::TypeMismatch(Mismatch::Value {
+        | ValueTypeView::Element { .. }
+        | ValueTypeView::Product(..)
+        | ValueTypeView::StaticPi { .. } => Err(CheckRefusal::TypeMismatch(Mismatch::Value {
             at: code,
             synthesised: found,
             expected,
         })),
     }
-}
-
-/// Whether two rigid codes are one: the same node, the same variable, or the
-/// same constant.
-///
-/// # Specification
-/// - requires: both codes are the codes of decodes left rigid at the same
-///   binder depth.
-/// - ensures: [`Agreement::Convertible`] exactly when the ids agree, or both
-///   name the same variable of the same zone, or both name the same constant;
-///   [`Agreement::Apart`] otherwise.
-/// - fails: [`CheckRefusal::DanglingNode`] for a code that does not resolve.
-/// - panics: none.
-fn same_code(
-    context: &CheckingContext<'_>,
-    left: ValueId,
-    right: ValueId,
-) -> Result<Agreement, CheckRefusal>
-{
-    if left == right {
-        return Ok(Agreement::Convertible);
-    }
-    let read = |code: ValueId| {
-        context
-            .arena()
-            .value(code)
-            .ok_or(CheckRefusal::DanglingNode {
-                node: CoreNode::Term(TermNode::Value(code)),
-            })
-    };
-    let same = match (read(left)?, read(right)?) {
-        | (
-            &Value::Variable {
-                zone: left_zone,
-                index: left_index,
-            },
-            &Value::Variable {
-                zone: right_zone,
-                index: right_index,
-            },
-        ) => left_zone == right_zone && left_index == right_index,
-        | (&Value::Constant(left_constant), &Value::Constant(right_constant)) => {
-            left_constant == right_constant
-        },
-        | _ => false,
-    };
-    Ok(if same {
-        Agreement::Convertible
-    }
-    else {
-        Agreement::Apart
-    })
 }
 
 /// Decide whether the two types of `root` are the same tree at their weak
@@ -419,10 +372,14 @@ fn same_code(
 /// - ensures: [`Agreement::Convertible`] exactly when, reading each side at its
 ///   weak head at every position the walk reaches, both sides have the same
 ///   former, universes and lifts the same sort and level, and rigid decodes the
-///   same level and code; [`Agreement::Apart`] at the first position they
-///   differ.
+///   same level and the same code: two codes agree when, each reduced at its
+///   head, they are the same variable or constant, quotes of agreeing types,
+///   static applications of agreeing heads to agreeing arguments, or static
+///   lambdas over agreeing bodies; [`Agreement::Apart`] at the first position
+///   they differ.
 /// - fails: the refusal a view gives for a node outside the fragment or a
-///   dangling id, and the unfolding's refusal when a decode does not unfold.
+///   dangling id, and the unfolding's refusal when a decode or a code does not
+///   reduce.
 /// - panics: none.
 /// - intension: a pair of equal ids is accepted without reading the node, and a
 ///   pair already met is not compared again; a worklist, so no depth overflows
@@ -434,14 +391,23 @@ fn same_code(
 ///   against itself, two structurally equal trees at distinct ids, trees
 ///   differing at the root and beneath a thunk in either order, universes and
 ///   lifts differing only in level, two rigid decodes of different variables, a
-///   decode of a defined code against its body beneath a former, and a dangling
-///   id; the fast path is pinned against the structural decision by property.
+///   decode of a defined code against its body beneath a former, static
+///   instances rigid and defined, static lambdas alike and unlike, and a
+///   dangling id; the fast path is pinned against the structural decision by
+///   property.
 /// - witness: `conversion::tests::one_id_converts_without_being_read`
 /// - witness: `conversion::tests::equal_trees_at_distinct_ids_convert`
 /// - witness: `conversion::tests::differing_trees_are_apart_in_either_order`
 /// - witness: `conversion::tests::a_decode_of_a_defined_code_converts_with_its_body`
+/// - witness: `conversion::tests::static_codes_compare_by_head_argument_and_body`
 /// - witness: `conversion::tests::a_dangling_type_is_refused`
 /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
+#[spec(ensures: |ret| match root {
+    | Pairing::Values(left, right) if left == right => ret == Ok(Agreement::Convertible),
+    | Pairing::Comps(left, right) if left == right => ret == Ok(Agreement::Convertible),
+    | Pairing::Codes(left, right) if left == right => ret == Ok(Agreement::Convertible),
+    | Pairing::Values(..) | Pairing::Comps(..) | Pairing::Codes(..) => true,
+})]
 fn convert(
     context: &mut CheckingContext<'_>,
     root: Pairing,
@@ -453,6 +419,7 @@ fn convert(
         let reflexive = match pairing {
             | Pairing::Values(left, right) => left == right,
             | Pairing::Comps(left, right) => left == right,
+            | Pairing::Codes(left, right) => left == right,
         };
         if reflexive || !met.insert(pairing) {
             continue;
@@ -505,8 +472,26 @@ fn convert(
                             target: right_target,
                         },
                     ) => {
+                        pending.push(Pairing::Codes(left_code, right_code));
                         left_target == right_target
-                            && same_code(context, left_code, right_code)? == Agreement::Convertible
+                    },
+                    | (
+                        ValueTypeView::Product(left_first, left_second),
+                        ValueTypeView::Product(right_first, right_second),
+                    )
+                    | (
+                        ValueTypeView::StaticPi {
+                            domain: left_first,
+                            codomain: left_second,
+                        },
+                        ValueTypeView::StaticPi {
+                            domain: right_first,
+                            codomain: right_second,
+                        },
+                    ) => {
+                        pending.push(Pairing::Values(left_second, right_second));
+                        pending.push(Pairing::Values(left_first, right_first));
+                        true
                     },
                     | (
                         ValueTypeView::Integer
@@ -515,7 +500,9 @@ fn convert(
                         | ValueTypeView::Thunk(_)
                         | ValueTypeView::Universe { .. }
                         | ValueTypeView::Lift { .. }
-                        | ValueTypeView::Element { .. },
+                        | ValueTypeView::Element { .. }
+                        | ValueTypeView::Product(..)
+                        | ValueTypeView::StaticPi { .. },
                         _,
                     ) => false,
                 }
@@ -565,8 +552,8 @@ fn convert(
                             target: right_target,
                         },
                     ) => {
+                        pending.push(Pairing::Codes(left_code, right_code));
                         left_target == right_target
-                            && same_code(context, left_code, right_code)? == Agreement::Convertible
                     },
                     | (
                         CompTypeView::Returner(_)
@@ -575,6 +562,74 @@ fn convert(
                         | CompTypeView::Element { .. },
                         _,
                     ) => false,
+                }
+            },
+            | Pairing::Codes(left, right) => {
+                let left = context.whnf_code(left)?;
+                let right = context.whnf_code(right)?;
+                left == right || {
+                    let read = |code: ValueId| {
+                        context
+                            .arena()
+                            .value(code)
+                            .cloned()
+                            .ok_or(CheckRefusal::DanglingNode {
+                                node: CoreNode::Term(TermNode::Value(code)),
+                            })
+                    };
+                    match (read(left)?, read(right)?) {
+                        | (
+                            Value::Variable {
+                                zone: left_zone,
+                                index: left_index,
+                            },
+                            Value::Variable {
+                                zone: right_zone,
+                                index: right_index,
+                            },
+                        ) => left_zone == right_zone && left_index == right_index,
+                        | (Value::Constant(left_constant), Value::Constant(right_constant)) => {
+                            left_constant == right_constant
+                        },
+                        | (Value::Quote(left_quoted), Value::Quote(right_quoted)) => {
+                            pending.push(Pairing::Values(left_quoted, right_quoted));
+                            true
+                        },
+                        | (
+                            Value::QuoteComputation(left_quoted),
+                            Value::QuoteComputation(right_quoted),
+                        ) => {
+                            pending.push(Pairing::Comps(left_quoted, right_quoted));
+                            true
+                        },
+                        | (
+                            Value::StaticApplication(left_head, left_argument),
+                            Value::StaticApplication(right_head, right_argument),
+                        ) => {
+                            pending.push(Pairing::Codes(left_argument, right_argument));
+                            pending.push(Pairing::Codes(left_head, right_head));
+                            true
+                        },
+                        | (Value::StaticLambda(left_body), Value::StaticLambda(right_body)) => {
+                            pending.push(Pairing::Codes(left_body, right_body));
+                            true
+                        },
+                        | (
+                            Value::Variable { .. }
+                            | Value::Constant(_)
+                            | Value::Unit
+                            | Value::Literal(_)
+                            | Value::Pair(..)
+                            | Value::Injection(..)
+                            | Value::Thunk(_)
+                            | Value::Lift { .. }
+                            | Value::Quote(_)
+                            | Value::QuoteComputation(_)
+                            | Value::StaticApplication(..)
+                            | Value::StaticLambda(_),
+                            _,
+                        ) => false,
+                    }
                 }
             },
         };
@@ -703,6 +758,7 @@ mod tests
             let swapped = match pairing {
                 | Pairing::Values(left, right) => Pairing::Values(right, left),
                 | Pairing::Comps(left, right) => Pairing::Comps(right, left),
+                | Pairing::Codes(left, right) => Pairing::Codes(right, left),
             };
             assert_eq!(
                 convert(&mut context, pairing),
@@ -762,6 +818,86 @@ mod tests
             Ok(Agreement::Apart),
             "a code with no body stays rigid"
         );
+    }
+
+    /// Codes compare at their reduced heads: a static instance of a defined
+    /// operator by its reduct, a rigid one by head and argument, a static
+    /// lambda by its body.
+    #[test]
+    fn static_codes_compare_by_head_argument_and_body()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let operator_type = arena.value_type_static_pi(small, small);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded_bound = arena.value_type_element(bound, Level::zero());
+        let squared = arena.value_type_product(decoded_bound, decoded_bound);
+        let squared_code = arena.value_quote(squared);
+        let pair_body = arena.value_static_lambda(squared_code);
+        let pair = arena.value_constant(ConstantIndex::from(0_usize));
+        let integer_code = arena.value_quote(integer);
+        let string_code = arena.value_quote(string);
+        let instance = arena.value_static_application(pair, integer_code);
+        let decoded_instance = arena.value_type_element(instance, Level::zero());
+        let written = arena.value_type_product(integer, integer);
+        let rigid = |arena: &mut CoreArena, head: u32, argument| {
+            let head = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(head));
+            let applied = arena.value_static_application(head, argument);
+            arena.value_type_element(applied, Level::zero())
+        };
+        let at_integer = rigid(&mut arena, 0, integer_code);
+        let again = rigid(&mut arena, 0, integer_code);
+        let at_string = rigid(&mut arena, 0, string_code);
+        let other_head = rigid(&mut arena, 1, integer_code);
+        let identity = arena.value_static_lambda(bound);
+        let other_identity = arena.value_static_lambda(bound);
+        let constant_body = arena.value_static_lambda(integer_code);
+        let at_identity = rigid(&mut arena, 0, identity);
+        let at_other_identity = rigid(&mut arena, 0, other_identity);
+        let at_constant = rigid(&mut arena, 0, constant_body);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &[operator_type]);
+        context.define(
+            ConstantIndex::from(0_usize),
+            crate::formation::FormedValueType::derived(operator_type),
+            pair_body,
+        );
+        for (pairing, agreement, message) in [
+            (
+                Pairing::Values(decoded_instance, written),
+                Agreement::Convertible,
+                "an instance of a defined operator converts with its reduct",
+            ),
+            (
+                Pairing::Values(at_integer, again),
+                Agreement::Convertible,
+                "two rigid instances agree by head and argument",
+            ),
+            (
+                Pairing::Values(at_integer, at_string),
+                Agreement::Apart,
+                "a different argument is apart",
+            ),
+            (
+                Pairing::Values(at_integer, other_head),
+                Agreement::Apart,
+                "a different head is apart",
+            ),
+            (
+                Pairing::Values(at_identity, at_other_identity),
+                Agreement::Convertible,
+                "two static lambdas over one body agree",
+            ),
+            (
+                Pairing::Values(at_identity, at_constant),
+                Agreement::Apart,
+                "static lambdas over different bodies are apart",
+            ),
+        ] {
+            assert_eq!(convert(&mut context, pairing), Ok(agreement), "{message}");
+        }
     }
 
     #[test]

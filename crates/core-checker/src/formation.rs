@@ -265,9 +265,9 @@ enum Task
 ///   admissible input and refused.
 /// - ensures: zero for an atom and the unit type; the successor of its level
 ///   for a universe; its own level for a lift and a decode; its child's level
-///   for a thunk type and a returner; the join of its children's for an arrow
-///   and a dependent arrow, whose codomain's level does not depend on the
-///   binder.
+///   for a thunk type and a returner; the join of its children's for an eager
+///   product, a static Pi, an arrow and a dependent arrow, whose codomain's
+///   level does not depend on the binder.
 /// - provides: the level part of every classifier, and the level a code is
 ///   decoded at when the judgement unfolds a code constant.
 /// - fails: the view's refusal for a node outside the fragment or a dangling
@@ -320,6 +320,15 @@ pub fn level_of(
                 },
                 | ValueTypeView::Lift { target, .. } | ValueTypeView::Element { target, .. } => {
                     levels.push(target.clone());
+                },
+                | ValueTypeView::Product(first, second)
+                | ValueTypeView::StaticPi {
+                    domain: first,
+                    codomain: second,
+                } => {
+                    tasks.push(Task::Join);
+                    tasks.push(Task::Enter(TypeNode::Value(second)));
+                    tasks.push(Task::Enter(TypeNode::Value(first)));
                 },
             },
             | Task::Enter(TypeNode::Computation(at)) => match comp_type_view(arena, at)? {
@@ -484,10 +493,7 @@ mod tests
             ),
             (unit, Ok(value_at(zero))),
             (arena.value_type_thunk(returner), Ok(value_at(zero))),
-            (
-                arena.value_type_product(unit, unit),
-                Err(UnadmittedFormer::Product),
-            ),
+            (arena.value_type_product(unit, unit), Ok(value_at(zero))),
             (arena.value_type_sum(unit, unit), Err(UnadmittedFormer::Sum)),
             (small, Ok(value_at(one))),
             (arena.value_type_lift(unit, level(one)), Ok(value_at(one))),
@@ -499,10 +505,7 @@ mod tests
                 arena.value_type_abstract(ConstantIndex::from(0_usize)),
                 Err(UnadmittedFormer::Abstract),
             ),
-            (
-                arena.value_type_static_pi(small, small),
-                Err(UnadmittedFormer::StaticPi),
-            ),
+            (arena.value_type_static_pi(small, small), Ok(value_at(one))),
         ];
         let mut covered = [false; 10];
         for &(value_type, _) in &rows {
@@ -584,10 +587,6 @@ mod tests
                 arena.value_type_base(BaseType::Numeric),
                 UnadmittedFormer::NumericAtom,
             ),
-            (
-                arena.value_type_product(unit, unit),
-                UnadmittedFormer::Product,
-            ),
             (arena.value_type_sum(unit, unit), UnadmittedFormer::Sum),
             (
                 arena.value_type_abstract(ConstantIndex::from(0_usize)),
@@ -662,11 +661,10 @@ mod tests
         );
     }
 
-    /// The core vocabulary has no dependent pair and no package; the formers
-    /// that stand nearest them — the product a dependent pair generalises and
-    /// the sealed atom a package's abstract component is — are refused by
-    /// name, and the dependent arrow, refused beside them before universes
-    /// entered, now forms.
+    /// The core vocabulary has no dependent pair and no package; the sealed
+    /// atom a package's abstract component is stays refused by name, and the
+    /// eager product a dependent pair generalises and the dependent arrow,
+    /// refused beside it before, now form.
     #[test]
     fn sigma_and_package_are_refused_by_name()
     {
@@ -681,11 +679,9 @@ mod tests
         let pi = arena.comp_type_pi(small, returner);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         assert_eq!(
-            form_value_type(&mut context, product),
-            Err(CheckRefusal::OutOfFragment {
-                at: CoreNode::Type(TypeNode::Value(product)),
-                former: UnadmittedFormer::Product,
-            })
+            form_value_type(&mut context, product).map(super::FormedValueType::id),
+            Ok(product),
+            "the eager product forms over formed factors"
         );
         assert_eq!(
             form_value_type(&mut context, sealed),
@@ -740,15 +736,15 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let unit = arena.value_type_unit();
-        let product = arena.value_type_product(unit, unit);
-        let result = arena.comp_type_returner(product);
+        let sum = arena.value_type_sum(unit, unit);
+        let result = arena.comp_type_returner(sum);
         let arrow = arena.comp_type_arrow(unit, result);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         assert_eq!(
             form_comp_type(&mut context, arrow),
             Err(CheckRefusal::OutOfFragment {
-                at: CoreNode::Type(TypeNode::Value(product)),
-                former: UnadmittedFormer::Product,
+                at: CoreNode::Type(TypeNode::Value(sum)),
+                former: UnadmittedFormer::Sum,
             }),
             "formation reaches every node, not only the root"
         );

@@ -49,6 +49,29 @@
 //! [`Refusal::CertificateDeclined`], and the environment is left as it was.
 //! The replayed verdicts travel on each [`Readmitted`].
 //!
+//! # A static operator crosses as its static normal form
+//!
+//! The kernel has no static lambda and reduces no static application, so the
+//! bridge hands it neither. A definition whose type is a static Pi is
+//! [`Outcome::Static`]: the kernel is offered nothing, and its body stays for
+//! the instances that name it. Every static application the bridge erases is
+//! reduced — a saturated instance of a static definition by δ then β, a
+//! static lambda's redex by β — and the reduct, minted into the core arena,
+//! is erased in its place, until the term is a static normal form: a rigid
+//! head, an operator a hole owes or a variable, applied to normal arguments,
+//! which is the kernel's neutral static application. Each step is a
+//! [`Certificate`] the kernel replays, one per distinct instance a declaration
+//! meets, naming what it unfolded ([`Replayed::unfolded`]) and the content
+//! digest of the instance it reduced ([`Replayed::redex`]). A static step
+//! names operators the kernel's terms cannot hold, so each is numbered as a
+//! constant above the module's positions and given its body, verbatim, for
+//! that replay alone; a static lambda that reaches a binder outside itself
+//! stands for no closed constant and is refused as
+//! [`Refusal::OutOfFragment`] naming [`UnadmittedFormer::StaticLambda`]. The
+//! unfolding of a definition that crossed replays as the kernel's own δ-step
+//! at the constant it admitted, closed on the two normal forms, because the
+//! body it admitted is already normal.
+//!
 //! # An uncompleted signature enters as an axiom
 //!
 //! An owed hole is a declaration with a type and no body, which is exactly the
@@ -95,7 +118,9 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_nbe::TraceNode;
+use gandr_core_term::BinderDepth;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
@@ -105,6 +130,7 @@ use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_conversion_trace::ConversionDecision;
 use gandr_kernel_core::AxiomReport;
 use gandr_kernel_core::CheckedId;
@@ -112,11 +138,13 @@ use gandr_kernel_core::EngineClaim;
 use gandr_kernel_core::Environment;
 use gandr_kernel_core::KernelError;
 use gandr_kernel_core::KernelVerdict;
+use gandr_kernel_core::ParameterCount;
 use gandr_kernel_core::ReplayBudget;
 use gandr_kernel_core::ReplayNode;
 use gandr_kernel_core::ReplaySides;
 use gandr_kernel_core::Unfoldable;
 use gandr_kernel_core::Unfoldings;
+use gandr_kernel_core::content_digest;
 use gandr_kernel_core::replay;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::AdmissionMark;
@@ -137,6 +165,9 @@ use quenchant_shape::shape::Maybe;
 use crate::code::Certificate;
 use crate::code::CodeDefinitions;
 use crate::code::Lift;
+use crate::code::Unfolded;
+use crate::code::loose_reach;
+use crate::code::unfolding;
 use crate::declaration::OriginToken;
 use crate::module::ModuleReport;
 use crate::module::Verdict;
@@ -150,6 +181,45 @@ use crate::view::FragmentRefusal;
 use crate::view::ValueTypeView;
 use crate::view::comp_type_view;
 use crate::view::value_type_view;
+
+quenchant_shape::reason_enum! {
+    /// Why a certificate was not replayed again.
+    mod replay_entry {
+        /// The reason no verdict was recorded.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// An earlier certificate of the declaration unfolded the same
+            /// step at an instance of the same content.
+            Met,
+        }
+    }
+}
+
+/// The bridge's refusal for a fault the judgement's step machinery reported.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a dangling node stays a dangling node, naming the same node;
+///   every other refusal is a machine invariant, since a step over a judged
+///   arena meets nothing else.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two arms, separated by a dangling node and a refusal of
+///   another variant, each asserted exactly.
+/// - witness: `bridge::tests::a_step_fault_keeps_only_a_dangling_node`
+#[spec(ensures: |ret| match refusal {
+    | CheckRefusal::DanglingNode { node } => ret == Refusal::DanglingNode { node },
+    | _ => ret == Refusal::MachineInvariant,
+})]
+fn fault(refusal: CheckRefusal) -> Refusal
+{
+    match refusal {
+        | CheckRefusal::DanglingNode { node } => Refusal::DanglingNode { node },
+        | _ => Refusal::MachineInvariant,
+    }
+}
 
 /// Why the bridge offered the kernel nothing for a declaration the judgement
 /// accepted.
@@ -198,13 +268,13 @@ pub enum Refusal
         /// The node met again while its own erasure waited.
         node: CoreNode,
     },
-    /// The unfolding of a code constant was not certified: the normaliser's
+    /// A step of static reduction was not certified: the normaliser's
     /// conversion did not answer convertible, or the kernel's replay of its
     /// trace did not re-derive it.
     CertificateDeclined
     {
-        /// The module position of the constant unfolded.
-        constant: ConstantIndex,
+        /// What the step unfolded.
+        unfolded: Unfolded,
     },
     /// The machine's own bookkeeping disagreed with itself: a frame received
     /// an image of another family than it awaits. Unreachable while the
@@ -294,6 +364,11 @@ pub enum Outcome
     /// The judgement refused the declaration: the refusal is its mark, and the
     /// kernel was offered nothing.
     Marked(CheckRefusal),
+    /// The declaration is static: a type operator, classified by a static
+    /// Pi, whose body normalizes away at every use. The kernel was offered
+    /// nothing; each instance a later declaration reaches is reduced, and its
+    /// certificate replayed, there.
+    Static,
     /// The bridge refused to offer the declaration.
     Refused(Refusal),
     /// The kernel rejected the erased declaration: the judgement accepted what
@@ -301,28 +376,44 @@ pub enum Outcome
     Rejected(KernelError),
 }
 
-/// One certificate the kernel replayed for a declaration: the code constant
-/// unfolded and the kernel's verdict on its trace.
+/// One certificate the kernel replayed for a declaration: what its step
+/// unfolded, the content of the instance it fired at, and the kernel's
+/// verdict on its trace.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Replayed
 {
-    /// The module position of the constant unfolded.
-    constant: ConstantIndex,
+    /// What the step unfolded: a definition by its module position, or a
+    /// static lambda by its node.
+    unfolded: Unfolded,
+    /// The kernel content digest of the instance's image, read as it stands.
+    redex: ContentDigest,
     /// The kernel's verdict on the certificate's trace.
     verdict: KernelVerdict,
 }
 
 impl Replayed
 {
-    /// The module position of the constant unfolded.
+    /// What the step unfolded.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn constant(&self) -> ConstantIndex
+    pub const fn unfolded(&self) -> Unfolded
     {
-        self.constant
+        self.unfolded
+    }
+
+    /// The kernel content digest of the instance the step fired at: with
+    /// [`Self::unfolded`], the certificate's address within its declaration.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn redex(&self) -> ContentDigest
+    {
+        self.redex
     }
 
     /// The kernel's verdict on the certificate's trace.
@@ -579,16 +670,20 @@ impl Readmission
 ///   position and origin. A checked declaration is offered as a definition at
 ///   its declared type, an unsigned one at its synthesised type, and an owed
 ///   hole as an axiom at the type it owes; each crosses as [`Outcome::Defined`]
-///   or [`Outcome::Assumed`] when the kernel admits it. A refused declaration
-///   is [`Outcome::Marked`] with its refusal, and the kernel is offered nothing
+///   or [`Outcome::Assumed`] when the kernel admits it. A definition whose type
+///   is a static Pi is [`Outcome::Static`]: the kernel is offered nothing, and
+///   its body stays for later instances to reduce. A refused declaration is
+///   [`Outcome::Marked`] with its refusal, and the kernel is offered nothing
 ///   for it. An offer whose erasure refuses, or one of whose certificates the
 ///   kernel does not replay to convertible, is [`Outcome::Refused`], one the
 ///   kernel rejects [`Outcome::Rejected`], and either leaves the environment as
 ///   it was. A constant naming a declaration that crossed is erased to the
 ///   kernel position that declaration took; a code recorded with a lift is
 ///   erased to the kernel's lift of its decode; a decode of a constant that
-///   crossed as a definition is erased as the decode of its body, each such
-///   unfolding certified and replayed.
+///   crossed as a definition is erased as the decode of its body; a static
+///   application at a saturated instance of a static definition or at a static
+///   lambda is erased as its reduct, minted into `arena`, until none remains —
+///   each step certified and replayed once per distinct instance.
 /// - provides: the environment holding exactly the declarations that crossed,
 ///   and the [`ArtifactAudit`], whose axioms are the positions of the owed
 ///   holes the kernel admitted — empty exactly when the report's ledger is,
@@ -599,20 +694,23 @@ impl Readmission
 /// # Adequacy
 /// - hypothesis: L2/L3 — the kernel is the external oracle: every declaration
 ///   the judgement accepts over the generated well-typed and free fixture sets
-///   and over generated universe declarations crosses, every certificate a
-///   generated code constant's readmission records replays, and the artifact's
-///   axioms agree with the ledger entry for entry in both directions. The L3
-///   residues are the routing of each verdict, separated by one artifact
-///   holding a marked body and a marked signed hole the kernel alone admits, a
-///   hole in synthesis position and a reference to a marked declaration, beside
-///   a checked and an owed positive control; the position remapping, separated
-///   by a module whose later references would misresolve under any other map;
-///   the rollback, separated by a refusal met after part of a body was minted;
-///   a sorted universe, a lifted code and a code constant's unfolding, each
-///   readmitted; and a certificate whose trace was emptied, refused.
+///   and over generated universe and static declarations crosses, every
+///   certificate a generated code constant's readmission records replays, and
+///   the artifact's axioms agree with the ledger entry for entry in both
+///   directions. The L3 residues are the routing of each verdict, separated by
+///   one artifact holding a marked body and a marked signed hole the kernel
+///   alone admits, a hole in synthesis position and a reference to a marked
+///   declaration, beside a checked and an owed positive control; the position
+///   remapping, separated by a module whose later references would misresolve
+///   under any other map; the rollback, separated by a refusal met after part
+///   of a body was minted; a sorted universe, a lifted code and a code
+///   constant's unfolding, each readmitted; one static definition at two
+///   instances, two certificates; and a certificate whose trace was emptied,
+///   refused.
 /// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
 /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
 /// - witness: `bridge::tests::every_checked_universe_declaration_is_readmitted`
+/// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
 /// - witness: `bridge::tests::every_readmission_certificate_replays`
 /// - witness: `bridge::tests::marks_and_holes_are_refused_beside_their_positive_controls`
 /// - witness: `bridge::tests::an_empty_ledger_readmits_an_artifact_resting_on_no_axiom`
@@ -625,11 +723,13 @@ impl Readmission
 /// - witness: `bridge::tests::a_sorted_universe_readmits_at_its_level`
 /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
 /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+/// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
 /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| ret.readmitted().len() == report.judged().len())]
 pub fn readmit(
-    arena: &CoreArena,
+    arena: &mut CoreArena,
     report: &ModuleReport,
 ) -> Readmission
 {
@@ -647,8 +747,15 @@ pub fn readmit(
 ///   kernel decline it.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`readmit`], with the seam separated by the identity
+///   and by a certificate whose trace was emptied, refused.
+/// - witness: `bridge::tests::every_readmission_certificate_replays`
+/// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+#[spec(ensures: |ret| ret.readmitted().len() == report.judged().len())]
 fn readmit_with<Vouch>(
-    arena: &CoreArena,
+    arena: &mut CoreArena,
     report: &ModuleReport,
     vouch: Vouch,
 ) -> Readmission
@@ -657,54 +764,61 @@ where
 {
     let mut environment = Environment::new();
     let mut positions = Positions::default();
-    let mut admitted = Vec::new();
     let mut readmitted = Vec::with_capacity(report.judged().len());
+    let source = Source {
+        lifts: report.lifts(),
+        definitions: report.definitions(),
+    };
     for judged in report.judged() {
-        let source = Source {
-            arena,
-            lifts: report.lifts(),
-            definitions: report.definitions(),
+        let constant = judged.constant();
+        let definition = match judged.verdict() {
+            | Verdict::Checked { declared, body, .. } => Some((declared.id(), body)),
+            | Verdict::Synthesised { body, synthesised } => {
+                Some((synthesised.produced().id(), body))
+            },
+            | Verdict::Owed(_) | Verdict::Refused(_) => None,
         };
-        let (outcome, certificates) = match judged.verdict() {
-            | Verdict::Checked { declared, body, .. } => cross(
+        // A type operator — a definition whose type views as a static Pi — stays
+        // on the checker's side; a type the view refuses is not one, and its
+        // own erasure refuses it.
+        let (outcome, certificates) = match (definition, judged.verdict()) {
+            | (Some((declared, body)), _)
+                if matches!(
+                    value_type_view(arena, declared),
+                    Ok(ValueTypeView::StaticPi { .. })
+                ) =>
+            {
+                let defined = source.definitions.get(&constant).copied().unwrap_or(body);
+                positions.definitions.define(constant, defined);
+                (Outcome::Static, Vec::new())
+            },
+            | (Some((declared, body)), _) => cross(
                 &mut environment,
+                arena,
                 source,
                 &mut positions,
-                &mut admitted,
-                judged.constant(),
-                Offer::Definition {
-                    declared: declared.id(),
-                    body,
-                },
+                constant,
+                Offer::Definition { declared, body },
                 &vouch,
             ),
-            | Verdict::Synthesised { body, synthesised } => cross(
+            | (None, Verdict::Owed(entry)) => cross(
                 &mut environment,
+                arena,
                 source,
                 &mut positions,
-                &mut admitted,
-                judged.constant(),
-                Offer::Definition {
-                    declared: synthesised.produced().id(),
-                    body,
-                },
-                &vouch,
-            ),
-            | Verdict::Owed(entry) => cross(
-                &mut environment,
-                source,
-                &mut positions,
-                &mut admitted,
-                judged.constant(),
+                constant,
                 Offer::Axiom {
                     declared: entry.absence().declared().id(),
                 },
                 &vouch,
             ),
-            | Verdict::Refused(refusal) => (Outcome::Marked(refusal), Vec::new()),
+            | (None, Verdict::Refused(refusal)) => (Outcome::Marked(refusal), Vec::new()),
+            | (None, Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
+                (Outcome::Refused(Refusal::MachineInvariant), Vec::new())
+            },
         };
         readmitted.push(Readmitted {
-            constant: judged.constant(),
+            constant,
             origin: judged.origin(),
             outcome,
             certificates,
@@ -715,17 +829,15 @@ where
         environment,
         readmitted,
         audit,
-        admitted,
+        admitted: positions.exports,
     }
 }
 
-/// What every erasure reads besides the positions: the arena, the lifts the
-/// judgement recorded and the bodies it defined its constants as.
+/// What every erasure reads besides the arena and the positions: the lifts
+/// the judgement recorded and the bodies it defined its constants as.
 #[derive(Clone, Copy, Debug)]
 struct Source<'source>
 {
-    /// The arena every id resolves in.
-    arena: &'source CoreArena,
     /// The codes the judgement checked above their own universe, by node.
     lifts: &'source BTreeMap<ValueId, Lift>,
     /// The body each accepted declaration defines its constant as, elaborated
@@ -778,26 +890,29 @@ enum Erased
 ///
 /// # Specification
 /// - requires: `positions` holds the kernel position, and for a definition the
-///   bodies, of every module declaration that crossed so far, and `exports` the
-///   declarations they crossed as, in kernel admission order.
-/// - ensures: the offer erased into one staging session; every certificate the
-///   erasure collected, passed through `vouch`, replayed by the kernel in that
-///   session; and, when each replays to convertible, the offer admitted:
-///   [`Outcome::Defined`] for a definition and [`Outcome::Assumed`] for an
-///   axiom, each with the kernel's receipt and audit, when the kernel admits
-///   it, recorded in `positions` and its staged declaration appended to
-///   `exports`. A refused erasure or a declined certificate discards the
-///   session and a rejection is truncated by the kernel, so the environment is
-///   as it was on every outcome but an admission. The replayed verdicts are
-///   returned beside the outcome.
+///   bodies, of every module declaration that crossed so far, the bodies of the
+///   static definitions before it, and the declarations they crossed as, in
+///   kernel admission order.
+/// - ensures: the offer erased into one staging session, every reduct its
+///   static normal form needed minted into `arena`; every distinct certificate
+///   the erasure collected, passed through `vouch`, replayed by the kernel in
+///   that session against its static operators, numbered from past the
+///   environment's last position; and, when each replays to convertible, the
+///   offer admitted: [`Outcome::Defined`] for a definition and
+///   [`Outcome::Assumed`] for an axiom, each with the kernel's receipt and
+///   audit, when the kernel admits it, recorded in `positions` with its staged
+///   declaration appended to the exports. A refused erasure or a declined
+///   certificate discards the session and a rejection is truncated by the
+///   kernel, so the environment is as it was on every outcome but an admission.
+///   The replayed verdicts are returned beside the outcome.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
 fn cross<Vouch>(
     environment: &mut Environment,
+    arena: &mut CoreArena,
     source: Source<'_>,
     positions: &mut Positions,
-    exports: &mut Vec<KernelDeclaration>,
     constant: ConstantIndex,
     offer: Offer,
     vouch: &Vouch,
@@ -805,9 +920,10 @@ fn cross<Vouch>(
 where
     Vouch: Fn(Certificate) -> Certificate,
 {
+    let base = ConstantIndex::from(environment.entries().len().saturating_add(1));
     let mut staging = environment.stage();
     let erased = {
-        let mut erasure = Erasure::new(source, positions);
+        let mut erasure = Erasure::new(arena, source, positions, base);
         erasure
             .offer(staging.arena(), offer)
             .map_err(|refusal| (refusal, Vec::new()))
@@ -835,7 +951,7 @@ where
         | Ok(admitted) => admitted,
         | Err(error) => return (Outcome::Rejected(error), replayed),
     };
-    exports.push(staged_as);
+    positions.exports.push(staged_as);
     let audit = environment.audit(admitted);
     match (offer, erased) {
         | (Offer::Definition { body, .. }, Erased::Definition { body: image, .. }) => {
@@ -851,19 +967,22 @@ where
 }
 
 /// The kernel position each module declaration that crossed took, and the
-/// bodies the crossed definitions unfold to on either side.
+/// bodies the crossed and the static definitions unfold to on either side.
 #[derive(Clone, Debug, Default)]
 struct Positions
 {
     /// Module position to kernel position.
     admitted: BTreeMap<ConstantIndex, ConstantIndex>,
-    /// The crossed definitions' core bodies, by module position: what a decode
-    /// of a code naming one unfolds to, and what its certificate is asked
-    /// over.
+    /// The crossed and the static definitions' core bodies, by module
+    /// position: what a decode of a code naming one, or an instance of one,
+    /// reduces to, and what its certificate is asked over.
     definitions: CodeDefinitions,
     /// The crossed definitions' kernel bodies, by kernel position: what the
     /// kernel's replay may unfold.
     unfoldings: BTreeMap<ConstantIndex, gandr_kernel_term::ValueId>,
+    /// The declarations the kernel admitted, as they were staged, in kernel
+    /// admission order.
+    exports: Vec<KernelDeclaration>,
 }
 
 impl Positions
@@ -873,7 +992,7 @@ impl Positions
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Self::kernel_position`] answers `admitted`'s position for
+    /// - ensures: the crossed table answers `admitted`'s position for
     ///   `constant`; a decode of a code naming `constant` unfolds to `body`;
     ///   the kernel's replay may unfold `admitted` to `image`.
     /// - panics: none.
@@ -895,7 +1014,7 @@ impl Positions
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: [`Self::kernel_position`] answers `admitted`'s position for
+    /// - ensures: the crossed table answers `admitted`'s position for
     ///   `constant`, which stays rigid on both sides.
     /// - panics: none.
     fn assume(
@@ -907,64 +1026,71 @@ impl Positions
         self.admitted.insert(constant, admitted.position());
     }
 
-    /// The kernel position of the module declaration the constant `at` names.
+    /// The definitions the kernel's replay may unfold, by kernel position:
+    /// the crossed definitions' bodies, and the static operators one crossing
+    /// numbered past them.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the position recorded for `constant`.
-    /// - fails: [`Refusal::Withheld`] at `at` when no declaration at `constant`
-    ///   crossed.
-    /// - panics: none.
-    ///
-    /// # Errors
-    /// - [`Refusal::Withheld`] — the declaration did not cross.
-    fn kernel_position(
-        &self,
-        at: ValueId,
-        constant: ConstantIndex,
-    ) -> Result<ConstantIndex, Refusal>
-    {
-        match self.admitted.get(&constant) {
-            | Some(&position) => Ok(position),
-            | None => Err(Refusal::Withheld { at, constant }),
-        }
-    }
-
-    /// The definitions the kernel's replay may unfold, by kernel position.
-    ///
-    /// # Specification
-    /// - requires: nothing.
+    /// - requires: no position of `operators` is a crossed definition's.
     /// - ensures: [`Unfoldable::Body`] at each crossed definition's kernel
-    ///   position, [`Unfoldable::Opaque`] at every other position below the
-    ///   highest.
+    ///   position, the entry `operators` holds at each of its positions, and
+    ///   [`Unfoldable::Opaque`] at every other position below the highest.
     /// - panics: none.
-    fn unfoldings(&self) -> Unfoldings
+    ///
+    /// # Termination
+    /// - reason: the `for` loop over the merged entries, and the `while` loop
+    ///   padding up to each, not recursion.
+    /// - measure: the entries left, then the gap below the next.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a crossed definition alone and beside
+    ///   the static operators of one crossing.
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    #[spec(ensures: |ret| operators.iter().all(|(&position, &entry)| {
+        self.unfoldings.contains_key(&position) || ret.unfolding(position) == entry
+    }) && self.unfoldings.iter().all(|(&position, &body)| {
+        ret.unfolding(position) == Unfoldable::Body(body)
+    }))]
+    fn unfoldings(
+        &self,
+        operators: &BTreeMap<ConstantIndex, Unfoldable>,
+    ) -> Unfoldings
     {
-        let mut bodies = Vec::new();
+        let mut entries: BTreeMap<ConstantIndex, Unfoldable> = operators.clone();
         for (&position, &body) in &self.unfoldings {
+            entries.insert(position, Unfoldable::Body(body));
+        }
+        let mut bodies = Vec::new();
+        for (position, entry) in entries {
             while bodies.len() < usize::from(position) {
                 bodies.push(Unfoldable::Opaque);
             }
-            bodies.push(Unfoldable::Body(body));
+            bodies.push(entry);
         }
         Unfoldings::new(bodies)
     }
 
     /// The decision the kernel's replay reads for the normaliser's `decision`:
-    /// a constant that crossed at its kernel position, and every other node
-    /// opaque to the replay.
+    /// a constant that crossed at its kernel position, a static definition at
+    /// the position `operators` numbered it at, and every other node opaque to
+    /// the replay.
     ///
     /// # Specification
     /// trivial.
     fn kernel_decision(
         &self,
+        operators: &BTreeMap<Unfolded, ConstantIndex>,
         decision: ConversionDecision<TraceNode>,
     ) -> ConversionDecision<ReplayNode>
     {
         let node = |node: TraceNode| match node {
             | TraceNode::Constant(constant) => match self.admitted.get(&constant) {
                 | Some(&position) => ReplayNode::Constant(position),
-                | None => ReplayNode::Other,
+                | None => match operators.get(&Unfolded::Definition(constant)) {
+                    | Some(&position) => ReplayNode::Constant(position),
+                    | None => ReplayNode::Other,
+                },
             },
             | TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other,
         };
@@ -1160,6 +1286,86 @@ enum Frame
         /// The domain's image.
         domain: gandr_kernel_term::ValueTypeId,
     },
+    /// A static application at a reducible head, erased as its reduct,
+    /// awaiting the reduct's value.
+    Reduced
+    {
+        /// The static application.
+        at: ValueId,
+    },
+    /// A static application at a rigid head, awaiting its head's value.
+    StaticHead
+    {
+        /// The static application.
+        at: ValueId,
+        /// The argument, erased next.
+        argument: ValueId,
+    },
+    /// A static application at a rigid head, awaiting its argument's value.
+    StaticArgument
+    {
+        /// The static application.
+        at: ValueId,
+        /// The head's image.
+        head: gandr_kernel_term::ValueId,
+    },
+    /// A pair, awaiting its first component's value.
+    PairFirst
+    {
+        /// The pair.
+        at: ValueId,
+        /// The second component, erased next.
+        second: ValueId,
+    },
+    /// A pair, awaiting its second component's value.
+    PairSecond
+    {
+        /// The pair.
+        at: ValueId,
+        /// The first component's image.
+        first: gandr_kernel_term::ValueId,
+    },
+    /// An eager product, awaiting its first factor.
+    ProductFirst
+    {
+        /// The product.
+        at: ValueTypeId,
+        /// The second factor, erased next.
+        second: ValueTypeId,
+    },
+    /// An eager product, awaiting its second factor.
+    ProductSecond
+    {
+        /// The product.
+        at: ValueTypeId,
+        /// The first factor's image.
+        first: gandr_kernel_term::ValueTypeId,
+    },
+    /// A static Pi, awaiting its domain.
+    StaticPiDomain
+    {
+        /// The static Pi.
+        at: ValueTypeId,
+        /// The codomain, erased next.
+        codomain: ValueTypeId,
+    },
+    /// A static Pi, awaiting its codomain.
+    StaticPiCodomain
+    {
+        /// The static Pi.
+        at: ValueTypeId,
+        /// The domain's image.
+        domain: gandr_kernel_term::ValueTypeId,
+    },
+    /// A decode of a code that is a static application at a rigid head,
+    /// awaiting the code's value.
+    DecodeOf
+    {
+        /// The level the code is decoded at.
+        level: Level,
+        /// The sort of the universe the code inhabits.
+        sort: GroundSort,
+    },
 }
 
 /// The machine's next move.
@@ -1172,18 +1378,28 @@ enum Step
     Ascend(AnyNode),
 }
 
-/// One declaration's erasure: what it reads, the positions constants resolve
-/// through, the frames waiting, every node's image so far, and the
-/// certificates of the unfoldings it took.
-struct Erasure<'source, 'positions>
+/// How an erasure reads static content.
+///
+/// # Judgement
+/// - direction: an offer is erased normalizing, so the kernel receives static
+///   normal forms; a certificate's sides are erased verbatim, so the kernel's
+///   replay re-derives each step the trace names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Mode
 {
-    /// The arena and the recorded lifts.
-    source: Source<'source>,
-    /// The kernel positions and bodies of the declarations that crossed before
-    /// this one.
-    positions: &'positions Positions,
-    /// The rules waiting on children, innermost last.
-    frames: Vec<Frame>,
+    /// A static application at a reducible head is erased as its reduct, its
+    /// step certified; a decode of a constant with a body as the decode of
+    /// the body.
+    Normalizing,
+    /// Every node is erased as it stands: a static definition and a closed
+    /// static lambda as a static operator numbered past the environment.
+    Verbatim,
+}
+
+/// Every node one mode of an erasure reached, and its image.
+#[derive(Debug, Default)]
+struct Memo
+{
     /// The value nodes reached, and their images.
     values: BTreeMap<ValueId, Image<gandr_kernel_term::ValueId>>,
     /// The computation nodes reached, and their images.
@@ -1192,31 +1408,82 @@ struct Erasure<'source, 'positions>
     value_types: BTreeMap<ValueTypeId, Image<gandr_kernel_term::ValueTypeId>>,
     /// The computation-type nodes reached, and their images.
     comp_types: BTreeMap<CompTypeId, Image<gandr_kernel_term::CompTypeId>>,
-    /// The certificates of the unfoldings taken and not yet replayed.
+}
+
+/// One declaration's erasure: what it reads, the positions constants resolve
+/// through, the frames waiting, every node's image so far in each mode, the
+/// certificates of the steps it took and the static operators its
+/// certificates' sides name.
+struct Erasure<'source, 'positions>
+{
+    /// The arena every id resolves in, and every reduct is minted into.
+    arena: &'source mut CoreArena,
+    /// The recorded lifts and the definitions.
+    source: Source<'source>,
+    /// The kernel positions and bodies of the declarations that crossed before
+    /// this one, and the static definitions' bodies.
+    positions: &'positions Positions,
+    /// How static content is read now.
+    mode: Mode,
+    /// The rules waiting on children, innermost last.
+    frames: Vec<Frame>,
+    /// The images the normalizing mode minted.
+    normalized: Memo,
+    /// The images the verbatim mode minted.
+    verbatim: Memo,
+    /// The certificates of the steps taken and not yet replayed.
     certificates: Vec<Certificate>,
+    /// The first position a static operator is numbered at.
+    base: ConstantIndex,
+    /// The position each static operator a side names was numbered at.
+    operators: BTreeMap<Unfolded, ConstantIndex>,
+    /// The operators numbered whose bodies are not yet erased: the position,
+    /// the body beneath its static lambdas, and how many those are.
+    pending: Vec<(ConstantIndex, ValueId, u32)>,
+    /// The replay's entry at each operator position whose body is erased.
+    bodies: BTreeMap<ConstantIndex, Unfoldable>,
 }
 
 impl<'source, 'positions> Erasure<'source, 'positions>
 {
-    /// An erasure reading `source`, resolving constants through `positions`,
-    /// with nothing reached.
+    /// A normalizing erasure over `arena`, reading `source`, resolving
+    /// constants through `positions` and numbering static operators from
+    /// `base`, with nothing reached.
     ///
     /// # Specification
     /// trivial.
-    const fn new(
+    fn new(
+        arena: &'source mut CoreArena,
         source: Source<'source>,
         positions: &'positions Positions,
+        base: ConstantIndex,
     ) -> Self
     {
         Self {
+            arena,
             source,
             positions,
+            mode: Mode::Normalizing,
             frames: Vec::new(),
-            values: BTreeMap::new(),
-            computations: BTreeMap::new(),
-            value_types: BTreeMap::new(),
-            comp_types: BTreeMap::new(),
+            normalized: Memo::default(),
+            verbatim: Memo::default(),
             certificates: Vec::new(),
+            base,
+            operators: BTreeMap::new(),
+            pending: Vec::new(),
+            bodies: BTreeMap::new(),
+        }
+    }
+
+    /// The images the current mode minted.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn memo(&mut self) -> &mut Memo
+    {
+        match self.mode {
+            | Mode::Normalizing => &mut self.normalized,
+            | Mode::Verbatim => &mut self.verbatim,
         }
     }
 
@@ -1252,25 +1519,60 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         }
     }
 
-    /// Replay every certificate the erasure collected, each passed through
-    /// `vouch`, against the kernel's images of its constant and its body.
+    /// Replay every distinct certificate the erasure collected, each passed
+    /// through `vouch`, against the kernel's images of its redex and its
+    /// reduct.
     ///
     /// # Specification
     /// - requires: the offer was erased into `target`, the staging arena the
     ///   declaration is admitted from.
-    /// - ensures: one [`Replayed`] per certificate, in the order the erasure
-    ///   met the unfoldings, the certificates erasing a body collects replayed
-    ///   after it; each replays the certificate's trace, read at the kernel's
-    ///   positions, as a convertibility claim between the kernel constant and
-    ///   the body's image, unfolding only the crossed definitions. `target`
-    ///   holds the images minted and nothing the replay minted.
+    /// - ensures: one [`Replayed`] per certificate whose step and instance —
+    ///   what it unfolds and the content of its redex's image — no earlier
+    ///   certificate of this declaration had, in the order the erasure met the
+    ///   steps, the certificates erasing a reduct collects replayed after it. A
+    ///   step unfolding a definition that crossed replays between the kernel
+    ///   constant and the reduct erased normalizing, as the kernel admitted the
+    ///   body, by the kernel's own δ-step at that constant closed on the two
+    ///   α-equal normal forms: the body the kernel holds is that normal form,
+    ///   so the step is the whole derivation, where the normaliser's trace
+    ///   walks the unnormalized body and names operators the normal form no
+    ///   longer holds. Any other step replays between its redex and its reduct
+    ///   each erased verbatim, every static operator they name numbered and its
+    ///   body erased verbatim, the certificate's trace read at the kernel's
+    ///   positions, a static lambda's step prefixed by the unfolding of its
+    ///   operator. Each replays as a convertibility claim. `target` holds the
+    ///   images minted and nothing the replay minted.
     /// - fails: [`Refusal::CertificateDeclined`] naming the first certificate
     ///   that does not replay to convertible, beside the verdicts replayed up
-    ///   to it; the refusal erasing a body gives.
+    ///   to it; the refusal erasing a side gives.
     /// - panics: none.
     ///
     /// # Errors
     /// - [`Refusal`] — as above, beside the verdicts replayed before it.
+    ///
+    /// # Termination
+    /// - reason: the `loop` drains the certificate queue, and the `for` loop
+    ///   walks one batch, not recursion.
+    /// - measure: the reductions the normalizing erasure has left to take: a
+    ///   batch's reducts are erased in a memo shared with the offer, and each
+    ///   step consumes a redex of a well-formed code.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — the kernel's replay is the oracle: every
+    ///   certificate a readmission over generated code constants and static
+    ///   declarations records replays; the residue is one instance met twice,
+    ///   replayed once, two instances, replayed twice, and an emptied trace,
+    ///   declined.
+    /// - witness: `bridge::tests::every_readmission_certificate_replays`
+    /// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
+    /// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+    #[spec(ensures: |ret| match ret {
+        | Ok(ref entries) => {
+            self.certificates.is_empty()
+                && entries.iter().all(|entry| entry.verdict == KernelVerdict::Convertible)
+        },
+        | Err(_) => true,
+    })]
     fn replay_certificates<Vouch>(
         &mut self,
         target: &mut TermArena,
@@ -1279,8 +1581,8 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     where
         Vouch: Fn(Certificate) -> Certificate,
     {
-        let unfoldings = self.positions.unfoldings();
         let mut replayed = Vec::new();
+        let mut met = BTreeSet::new();
         loop {
             let pending = core::mem::take(&mut self.certificates);
             if pending.is_empty() {
@@ -1288,32 +1590,325 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             }
             for certificate in pending {
                 let certificate = vouch(certificate);
-                let constant = certificate.constant();
-                let left = match self.positions.kernel_position(certificate.body(), constant) {
-                    | Ok(position) => target.value_constant(position),
+                let unfolded = certificate.unfolded();
+                match self.replay_one(target, &certificate, &mut met) {
+                    | Ok(Maybe::Present(entry)) => {
+                        replayed.push(entry);
+                        if entry.verdict != KernelVerdict::Convertible {
+                            return Err((Refusal::CertificateDeclined { unfolded }, replayed));
+                        }
+                    },
+                    | Ok(Maybe::Absent(_)) => {},
                     | Err(refusal) => return Err((refusal, replayed)),
-                };
-                let right = match self.value(target, certificate.body()) {
-                    | Ok(image) => image,
-                    | Err(refusal) => return Err((refusal, replayed)),
-                };
-                let verdict = replay(
-                    target,
-                    &unfoldings,
-                    ReplaySides::Values(left, right),
-                    EngineClaim::Convertible,
-                    certificate
-                        .decisions()
-                        .iter()
-                        .map(|&decision| self.positions.kernel_decision(decision)),
-                    ReplayBudget::DEFAULT,
-                );
-                replayed.push(Replayed { constant, verdict });
-                if verdict != KernelVerdict::Convertible {
-                    return Err((Refusal::CertificateDeclined { constant }, replayed));
                 }
             }
         }
+    }
+
+    /// Replay `certificate`, unless `met` holds its step and instance.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::replay_certificates`].
+    /// - ensures: as [`Self::replay_certificates`] states of one certificate;
+    ///   `met` gains its step and instance; nothing when `met` held them.
+    /// - fails: the refusal erasing a side gives.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — a side did not erase.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — as [`Self::replay_certificates`].
+    /// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Maybe::Present(_))) || self.pending.is_empty())]
+    fn replay_one(
+        &mut self,
+        target: &mut TermArena,
+        certificate: &Certificate,
+        met: &mut BTreeSet<(Unfolded, ContentDigest)>,
+    ) -> Result<Maybe<Replayed, replay_entry::Absent>, Refusal>
+    {
+        let unfolded = certificate.unfolded();
+        let crossed = match unfolded {
+            | Unfolded::Definition(constant) => self.positions.admitted.get(&constant).copied(),
+            | Unfolded::Abstraction(_) => None,
+        };
+        let left = match crossed {
+            | Some(position) => target.value_constant(position),
+            | None => self.value_in(Mode::Verbatim, target, certificate.redex())?,
+        };
+        let redex = content_digest(target, AnyNode::Value(left));
+        if !met.insert((unfolded, redex)) {
+            return Ok(Maybe::Absent(replay_entry::Absent::Met));
+        }
+        let right = match crossed {
+            | Some(_) => self.value_in(Mode::Normalizing, target, certificate.reduct())?,
+            | None => self.value_in(Mode::Verbatim, target, certificate.reduct())?,
+        };
+        self.erase_operators(target)?;
+        let decisions =
+            match crossed {
+                | Some(position) => Vec::from([
+                    ConversionDecision::Unfold {
+                        constant: ReplayNode::Constant(position),
+                    },
+                    ConversionDecision::ReduceLeft {
+                        redex: ReplayNode::Constant(position),
+                    },
+                    ConversionDecision::ComparedShared {
+                        left: ReplayNode::Other,
+                        right: ReplayNode::Other,
+                    },
+                ]),
+                | None => {
+                    let mut decisions = Vec::new();
+                    if let Unfolded::Abstraction(_) = unfolded
+                        && let Some(&position) = self.operators.get(&unfolded)
+                    {
+                        decisions.push(ConversionDecision::Unfold {
+                            constant: ReplayNode::Constant(position),
+                        });
+                        decisions.push(ConversionDecision::ReduceLeft {
+                            redex: ReplayNode::Constant(position),
+                        });
+                    }
+                    decisions.extend(certificate.decisions().iter().map(|&decision| {
+                        self.positions.kernel_decision(&self.operators, decision)
+                    }));
+                    decisions
+                },
+            };
+        let verdict = replay(
+            target,
+            &self.positions.unfoldings(&self.bodies),
+            ReplaySides::Values(left, right),
+            EngineClaim::Convertible,
+            decisions,
+            ReplayBudget::DEFAULT,
+        );
+        Ok(Maybe::Present(Replayed {
+            unfolded,
+            redex,
+            verdict,
+        }))
+    }
+
+    /// Erase the value `root` into `target` in `mode`, then return to the
+    /// mode the machine was in.
+    ///
+    /// # Specification
+    /// - requires: no earlier erasure of this machine was refused.
+    /// - ensures: as [`Self::value`], read in `mode`.
+    /// - fails: as [`Self::value`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - any [`Refusal`] [`Self::value`] gives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both modes, reached by one certificate whose sides
+    ///   are erased verbatim beside an offer erased normalizing.
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    #[spec(captures: entry = self.mode, ensures: self.mode == entry)]
+    fn value_in(
+        &mut self,
+        mode: Mode,
+        target: &mut TermArena,
+        root: ValueId,
+    ) -> Result<gandr_kernel_term::ValueId, Refusal>
+    {
+        let previous = core::mem::replace(&mut self.mode, mode);
+        let image = self.value(target, root);
+        self.mode = previous;
+        image
+    }
+
+    /// Erase the body of every static operator numbered and not yet erased,
+    /// verbatim, into the replay's entry at its position.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::value`].
+    /// - ensures: every numbered operator has its entry: a body beneath no
+    ///   static lambda an [`Unfoldable::Body`], any other an
+    ///   [`Unfoldable::Operator`] over as many parameters as lambdas.
+    /// - fails: the refusal erasing a body gives.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - any [`Refusal`] [`Self::value`] gives.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop drains a queue, not recursion.
+    /// - measure: the static operators not yet numbered, finite since each
+    ///   definition and each node is numbered once.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by an operator with parameters and one
+    ///   without, each replayed.
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
+    #[spec(ensures: |ret| ret.is_err()
+        || (self.pending.is_empty()
+            && self.operators.values().all(|position| self.bodies.contains_key(position))))]
+    fn erase_operators(
+        &mut self,
+        target: &mut TermArena,
+    ) -> Result<(), Refusal>
+    {
+        while let Some((position, body, parameters)) = self.pending.pop() {
+            let image = self.value_in(Mode::Verbatim, target, body)?;
+            let entry = if parameters == 0 {
+                Unfoldable::Body(image)
+            }
+            else {
+                Unfoldable::Operator {
+                    parameters: ParameterCount::from(parameters),
+                    body: image,
+                }
+            };
+            self.bodies.insert(position, entry);
+        }
+        Ok(())
+    }
+
+    /// The position the static operator `unfolded`, of body `body`, is
+    /// numbered at: its first numbering queues its body, beneath its static
+    /// lambdas, for erasure.
+    ///
+    /// # Specification
+    /// - requires: `body` is the definition's body, or the static lambda
+    ///   itself.
+    /// - ensures: the same position for the same operator; a fresh one, past
+    ///   every other this erasure numbered, the first time.
+    /// - fails: [`Refusal::MachineInvariant`] past the position ceiling.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal::MachineInvariant`] — the position overflowed.
+    ///
+    /// # Termination
+    /// - reason: the `while let` loop strips a lambda chain, not recursion.
+    /// - measure: the arena position of the body, which a lambda holds below
+    ///   its own.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a first numbering and a repeat, separated by one
+    ///   operator named by both sides of a certificate.
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    #[spec(ensures: |ret| ret.is_err() || self.operators.get(&unfolded).copied() == ret.ok())]
+    fn operator(
+        &mut self,
+        unfolded: Unfolded,
+        body: ValueId,
+    ) -> Result<ConstantIndex, Refusal>
+    {
+        if let Some(&position) = self.operators.get(&unfolded) {
+            return Ok(position);
+        }
+        let mut stripped = body;
+        let mut parameters = 0_u32;
+        while let Some(&Value::StaticLambda(inner)) = self.arena.value(stripped) {
+            stripped = inner;
+            parameters = parameters.checked_add(1).ok_or(Refusal::MachineInvariant)?;
+        }
+        let position = usize::from(self.base)
+            .checked_add(self.operators.len())
+            .map(ConstantIndex::from)
+            .ok_or(Refusal::MachineInvariant)?;
+        self.operators.insert(unfolded, position);
+        self.pending.push((position, stripped, parameters));
+        Ok(position)
+    }
+
+    /// The kernel position the constant `at` names in the current mode: the
+    /// position its declaration crossed at, or, read verbatim, the static
+    /// operator a static definition is numbered at.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as above.
+    /// - fails: [`Refusal::Withheld`] at `at` for a constant that neither
+    ///   crossed nor, read verbatim, names a static definition.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal::Withheld`], or [`Self::operator`]'s refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — three arms, separated by a crossed constant, a static
+    ///   definition read verbatim, and one read normalizing, withheld.
+    /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    #[spec(ensures: |ret| ret.is_err()
+        || self.positions.admitted.get(&constant).copied() == ret.ok()
+        || (self.mode == Mode::Verbatim
+            && self.operators.get(&Unfolded::Definition(constant)).copied() == ret.ok()))]
+    fn constant_position(
+        &mut self,
+        at: ValueId,
+        constant: ConstantIndex,
+    ) -> Result<ConstantIndex, Refusal>
+    {
+        if let Some(&position) = self.positions.admitted.get(&constant) {
+            return Ok(position);
+        }
+        match (self.mode, self.positions.definitions.body(constant)) {
+            | (Mode::Verbatim, Maybe::Present(body)) => {
+                self.operator(Unfolded::Definition(constant), body)
+            },
+            | (Mode::Verbatim | Mode::Normalizing, _) => Err(Refusal::Withheld { at, constant }),
+        }
+    }
+
+    /// One certified step at `code`'s head, its certificate collected.
+    ///
+    /// # Specification
+    /// - requires: every body the positions hold lives in the arena.
+    /// - ensures: the reduct [`CodeDefinitions::reduce`] gives, minted, with
+    ///   the step's certificate queued for replay; nothing for a rigid code.
+    /// - fails: [`Refusal::CertificateDeclined`] for a step the normaliser does
+    ///   not certify; [`Refusal::DanglingNode`] for a node the arena does not
+    ///   hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — three arms, separated by a saturated instance, a
+    ///   rigid code, and a step the normaliser declines.
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(reduct)) => {
+            self.certificates.last().is_some_and(|certificate| certificate.reduct() == reduct)
+        },
+        | Ok(Maybe::Absent(_)) | Err(_) => true,
+    })]
+    fn step(
+        &mut self,
+        code: ValueId,
+    ) -> Result<Maybe<ValueId, unfolding::Absent>, Refusal>
+    {
+        let reduction = self
+            .positions
+            .definitions
+            .reduce(self.arena, code)
+            .map_err(fault)?;
+        let Maybe::Present(reduction) = reduction
+        else {
+            return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        };
+        let unfolded = reduction.unfolded();
+        let certificate = self
+            .positions
+            .definitions
+            .certify(self.arena, reduction)
+            .map_err(|_undecided| Refusal::CertificateDeclined { unfolded })?;
+        let reduct = certificate.reduct();
+        self.certificates.push(certificate);
+        Ok(Maybe::Present(reduct))
     }
 
     /// Erase the value type `root` into `target`.
@@ -1465,13 +2060,30 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - ensures: as [`Self::descend`]: a code with a recorded lift opens its
     ///   frame and decodes at its own level; otherwise an intuitionistic
     ///   variable, a constant that crossed, the unit value and an integer or
-    ///   string literal are minted, and a thunk and a quote open their frames.
+    ///   string literal are minted, and a thunk, a quote and a pair open their
+    ///   frames. A static application at a reducible head, read normalizing,
+    ///   takes its certified step and opens the frame awaiting its reduct; any
+    ///   other opens the frames of a kernel static application. Read verbatim,
+    ///   a constant naming a static definition and a closed static lambda are
+    ///   minted as the static operators they are numbered at. On success the
+    ///   current mode's memo holds `at`.
     /// - fails: [`Refusal::Cyclic`] for an open value;
     ///   [`Refusal::DanglingNode`]; [`Refusal::LinearVariable`];
-    ///   [`Refusal::Withheld`]; [`Refusal::OutOfFragment`] for a numeric
-    ///   literal, a pair, an injection, a value lift, a static lambda or a
-    ///   static application.
+    ///   [`Refusal::Withheld`]; [`Refusal::CertificateDeclined`] for a step the
+    ///   normaliser does not certify; [`Refusal::OutOfFragment`] for a numeric
+    ///   literal, an injection, a value lift, and a static lambda read
+    ///   normalizing or open.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::erase`], whose per-former table this is,
+    ///   with the static formers separated by a saturated instance erased to
+    ///   its reduct, a rigid instance erased as a kernel static application,
+    ///   and a certificate's side numbering its operators.
+    /// - witness: `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    #[spec(ensures: |ret| ret.is_err() || self.reached().values.contains_key(&at))]
     fn descend_value(
         &mut self,
         target: &mut TermArena,
@@ -1479,25 +2091,25 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ) -> Result<Step, Refusal>
     {
         let node = CoreNode::Term(TermNode::Value(at));
-        match self.values.get(&at) {
+        match self.memo().values.get(&at) {
             | Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::Value(erased))),
             | Some(&Image::Open) => return Err(Refusal::Cyclic { node }),
             | None => {},
         }
         if let Some(lift) = self.source.lifts.get(&at) {
-            self.values.insert(at, Image::Open);
+            self.memo().values.insert(at, Image::Open);
             self.frames.push(Frame::LiftedCode { at });
             self.frames.push(Frame::DecodeLift {
                 target: lift.target().clone(),
             });
             return self.decode(target, at, lift.natural().clone(), GroundSort::Value);
         }
-        let Some(value) = self.source.arena.value(at)
+        let Some(value) = self.arena.value(at).cloned()
         else {
             return Err(Refusal::DanglingNode { node });
         };
         let unadmitted = |former| Refusal::OutOfFragment { at: node, former };
-        let (frame, child) = match *value {
+        let (frame, child) = match value {
             | Value::Variable {
                 zone: Zone::Intuitionistic,
                 index,
@@ -1507,13 +2119,13 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 index,
             } => return Err(Refusal::LinearVariable { at, index }),
             | Value::Constant(constant) => {
-                let position = self.positions.kernel_position(at, constant)?;
+                let position = self.constant_position(at, constant)?;
                 return Ok(self.erased_value(at, target.value_constant(position)));
             },
             | Value::Unit => return Ok(self.erased_value(at, target.value_unit())),
-            | Value::Literal(ref literal) => match literal.base_type() {
+            | Value::Literal(literal) => match literal.base_type() {
                 | BaseType::Integer | BaseType::String => {
-                    return Ok(self.erased_value(at, target.value_literal(literal.clone())));
+                    return Ok(self.erased_value(at, target.value_literal(literal)));
                 },
                 | BaseType::Numeric => return Err(unadmitted(UnadmittedFormer::NumericLiteral)),
             },
@@ -1528,17 +2140,86 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 Frame::QuoteComputation { at },
                 CoreNode::Type(TypeNode::Computation(quoted)),
             ),
-            | Value::Pair(..) => return Err(unadmitted(UnadmittedFormer::Pair)),
+            | Value::Pair(first, second) => (
+                Frame::PairFirst { at, second },
+                CoreNode::Term(TermNode::Value(first)),
+            ),
             | Value::Injection(..) => return Err(unadmitted(UnadmittedFormer::Injection)),
             | Value::Lift { .. } => return Err(unadmitted(UnadmittedFormer::ValueLift)),
-            | Value::StaticLambda(_) => return Err(unadmitted(UnadmittedFormer::StaticLambda)),
-            | Value::StaticApplication(..) => {
-                return Err(unadmitted(UnadmittedFormer::StaticApplication));
+            | Value::StaticLambda(_) => {
+                let position = self.abstraction(at)?;
+                return Ok(self.erased_value(at, target.value_constant(position)));
+            },
+            | Value::StaticApplication(head, argument) => {
+                if self.mode == Mode::Normalizing
+                    && let Maybe::Present(reduct) = self.step(at)?
+                {
+                    self.memo().values.insert(at, Image::Open);
+                    self.frames.push(Frame::Reduced { at });
+                    return Ok(Step::Descend(CoreNode::Term(TermNode::Value(reduct))));
+                }
+                (
+                    Frame::StaticHead { at, argument },
+                    CoreNode::Term(TermNode::Value(head)),
+                )
             },
         };
-        self.values.insert(at, Image::Open);
+        self.memo().values.insert(at, Image::Open);
         self.frames.push(frame);
         Ok(Step::Descend(child))
+    }
+
+    /// The static operator the static lambda `at` is numbered at, read
+    /// verbatim.
+    ///
+    /// # Specification
+    /// - requires: `at` is a static lambda.
+    /// - ensures: [`Self::operator`]'s position for the lambda, whose body
+    ///   beneath its lambda chain is the operator's.
+    /// - fails: [`Refusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::StaticLambda`] when read normalizing — the kernel
+    ///   has no static lambda, and a static normal form holds none — or when
+    ///   the lambda reaches a binder outside itself, which no closed operator
+    ///   can stand for; the reach's fault, converted.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — three arms, separated by a closed lambda read
+    ///   verbatim, an open one, and one read normalizing.
+    /// - witness: `bridge::tests::a_static_lambda_crosses_only_as_a_closed_operator`
+    #[spec(ensures: |ret| ret.is_err()
+        || (self.mode == Mode::Verbatim
+            && self.operators.get(&Unfolded::Abstraction(at)).copied() == ret.ok()))]
+    fn abstraction(
+        &mut self,
+        at: ValueId,
+    ) -> Result<ConstantIndex, Refusal>
+    {
+        let refused = Refusal::OutOfFragment {
+            at: CoreNode::Term(TermNode::Value(at)),
+            former: UnadmittedFormer::StaticLambda,
+        };
+        if self.mode == Mode::Normalizing
+            || loose_reach(self.arena, at).map_err(fault)? != BinderDepth::default()
+        {
+            return Err(refused);
+        }
+        self.operator(Unfolded::Abstraction(at), at)
+    }
+
+    /// The images the current mode minted, read.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn reached(&self) -> &Memo
+    {
+        match self.mode {
+            | Mode::Normalizing => &self.normalized,
+            | Mode::Verbatim => &self.verbatim,
+        }
     }
 
     /// Start erasing the computation `at`.
@@ -1556,14 +2237,14 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ) -> Result<Step, Refusal>
     {
         let node = CoreNode::Term(TermNode::Computation(at));
-        match self.computations.get(&at) {
+        match self.memo().computations.get(&at) {
             | Some(&Image::Erased(erased)) => {
                 return Ok(Step::Ascend(AnyNode::Computation(erased)));
             },
             | Some(&Image::Open) => return Err(Refusal::Cyclic { node }),
             | None => {},
         }
-        let Some(computation) = self.source.arena.computation(at)
+        let Some(computation) = self.arena.computation(at)
         else {
             return Err(Refusal::DanglingNode { node });
         };
@@ -1585,7 +2266,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 });
             },
         };
-        self.computations.insert(at, Image::Open);
+        self.memo().computations.insert(at, Image::Open);
         self.frames.push(frame);
         Ok(Step::Descend(CoreNode::Term(child)))
     }
@@ -1595,8 +2276,9 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: as [`Self::descend`]: the integer and string atoms, the unit
-    ///   type and a universe are minted; a thunk type and a lift open their
-    ///   frames; a decode opens its frame and decodes its code.
+    ///   type and a universe are minted; a thunk type, a lift, an eager product
+    ///   and a static Pi open their frames; a decode opens its frame and
+    ///   decodes its code.
     /// - fails: [`Refusal::Cyclic`] for an open value type; whatever the view
     ///   or the decode refuses, converted.
     /// - panics: none.
@@ -1606,7 +2288,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         at: ValueTypeId,
     ) -> Result<Step, Refusal>
     {
-        match self.value_types.get(&at) {
+        match self.memo().value_types.get(&at) {
             | Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::ValueType(erased))),
             | Some(&Image::Open) => {
                 return Err(Refusal::Cyclic {
@@ -1615,7 +2297,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             },
             | None => {},
         }
-        let (frame, child) = match value_type_view(self.source.arena, at)? {
+        let (frame, child) = match value_type_view(self.arena, at)? {
             | ValueTypeView::Integer => {
                 return Ok(self.erased_value_type(at, target.value_type_base(BaseType::Integer)));
             },
@@ -1642,14 +2324,22 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 target: level,
             } => {
                 let level = level.clone();
-                self.value_types.insert(at, Image::Open);
+                self.memo().value_types.insert(at, Image::Open);
                 self.frames.push(Frame::Decoded {
                     at: TypeNode::Value(at),
                 });
                 return self.decode(target, code, level, GroundSort::Value);
             },
+            | ValueTypeView::Product(first, second) => (
+                Frame::ProductFirst { at, second },
+                CoreNode::Type(TypeNode::Value(first)),
+            ),
+            | ValueTypeView::StaticPi { domain, codomain } => (
+                Frame::StaticPiDomain { at, codomain },
+                CoreNode::Type(TypeNode::Value(domain)),
+            ),
         };
-        self.value_types.insert(at, Image::Open);
+        self.memo().value_types.insert(at, Image::Open);
         self.frames.push(frame);
         Ok(Step::Descend(child))
     }
@@ -1671,7 +2361,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         at: CompTypeId,
     ) -> Result<Step, Refusal>
     {
-        match self.comp_types.get(&at) {
+        match self.memo().comp_types.get(&at) {
             | Some(&Image::Erased(erased)) => return Ok(Step::Ascend(AnyNode::CompType(erased))),
             | Some(&Image::Open) => {
                 return Err(Refusal::Cyclic {
@@ -1680,7 +2370,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             },
             | None => {},
         }
-        let (frame, child) = match comp_type_view(self.source.arena, at)? {
+        let (frame, child) = match comp_type_view(self.arena, at)? {
             | CompTypeView::Returner(result) => (Frame::Returner { at }, result),
             | CompTypeView::Arrow { domain, codomain } => {
                 (Frame::ArrowDomain { at, codomain }, domain)
@@ -1691,38 +2381,61 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 target: level,
             } => {
                 let level = level.clone();
-                self.comp_types.insert(at, Image::Open);
+                self.memo().comp_types.insert(at, Image::Open);
                 self.frames.push(Frame::Decoded {
                     at: TypeNode::Computation(at),
                 });
                 return self.decode(target, code, level, GroundSort::Computation);
             },
         };
-        self.comp_types.insert(at, Image::Open);
+        self.memo().comp_types.insert(at, Image::Open);
         self.frames.push(frame);
         Ok(Step::Descend(CoreNode::Type(TypeNode::Value(child))))
     }
 
     /// Erase the decode of `code` at `level` into the type of `sort` it
-    /// denotes: unfold a constant that crossed with a body, collecting its
-    /// certificate, until the code is a quote, whose type is erased, or a
-    /// variable or a rigid constant, whose decode is minted.
+    /// denotes: read normalizing, step the code at its head, collecting each
+    /// certificate, until it is a quote, whose type is erased, or rigid, whose
+    /// decode is minted.
     ///
     /// # Specification
     /// - requires: `code` was checked at the universe of `sort` at `level`.
     /// - ensures: for a quote of a type of `sort`, the descent into that type;
-    ///   for a variable or a constant without a body, the kernel's decode of
-    ///   its image at `level`; for a constant with a body, its certificate
-    ///   collected and the decode of the body, which the judgement defined at
-    ///   the constant's own universe, so at `level` still.
-    /// - fails: [`Refusal::CertificateDeclined`] for an unfolding the
-    ///   normaliser does not certify; [`Refusal::Withheld`] for a constant that
-    ///   did not cross; [`Refusal::LinearVariable`]; [`Refusal::DanglingNode`];
-    ///   [`Refusal::OutOfFragment`] for a static application;
+    ///   for a variable or a constant, the kernel's decode of its image at
+    ///   `level`; for a static application, the descent into its image with the
+    ///   decode awaiting it. Read normalizing, a constant with a body or a
+    ///   reducible static application first takes its certified step, and the
+    ///   reduct is decoded in its place — the judgement defined a constant's
+    ///   body at the constant's own universe, and a step preserves the type, so
+    ///   at `level` still. A minted decode is of `sort`'s family.
+    /// - fails: [`Refusal::CertificateDeclined`] for a step the normaliser does
+    ///   not certify; [`Refusal::Withheld`] for a constant that did not cross;
+    ///   [`Refusal::LinearVariable`]; [`Refusal::DanglingNode`];
     ///   [`Refusal::MachineInvariant`] for a code that is no code.
     /// - panics: none.
-    /// - intension: a loop over the unfolding chain, which the admission order
-    ///   makes finite.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: the `loop` takes one certified step per turn, not recursion.
+    /// - measure: the code's distance to its static normal form, which each δ-
+    ///   or β-step of a well-formed code shortens; the admission order bounds a
+    ///   constant's unfolding chain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the arms, separated by a quote, a rigid constant, a
+    ///   code constant unfolded, a saturated instance reduced, a rigid instance
+    ///   decoded, and a code of the wrong sort.
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    #[spec(ensures: |ret| match ret {
+        | Err(_) | Ok(Step::Descend(_)) => true,
+        | Ok(Step::Ascend(AnyNode::ValueType(_))) => sort == GroundSort::Value,
+        | Ok(Step::Ascend(AnyNode::CompType(_))) => sort == GroundSort::Computation,
+        | Ok(Step::Ascend(AnyNode::Value(_) | AnyNode::Computation(_))) => false,
+    })]
     fn decode(
         &mut self,
         target: &mut TermArena,
@@ -1733,73 +2446,62 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     {
         let mut code = code;
         loop {
-            let Some(node) = self.source.arena.value(code)
+            let Some(node) = self.arena.value(code).cloned()
             else {
                 return Err(Refusal::DanglingNode {
                     node: CoreNode::Term(TermNode::Value(code)),
                 });
             };
+            if self.mode == Mode::Normalizing
+                && let Value::Constant(_) | Value::StaticApplication(..) = node
+                && let Maybe::Present(reduct) = self.step(code)?
+            {
+                code = reduct;
+                continue;
+            }
             let image = match (node, sort) {
-                | (&Value::Quote(quoted), GroundSort::Value) => {
+                | (Value::Quote(quoted), GroundSort::Value) => {
                     return Ok(Step::Descend(CoreNode::Type(TypeNode::Value(quoted))));
                 },
-                | (&Value::QuoteComputation(quoted), GroundSort::Computation) => {
+                | (Value::QuoteComputation(quoted), GroundSort::Computation) => {
                     return Ok(Step::Descend(CoreNode::Type(TypeNode::Computation(quoted))));
                 },
                 | (
-                    &Value::Variable {
+                    Value::Variable {
                         zone: Zone::Intuitionistic,
                         index,
                     },
                     _,
                 ) => target.value_variable(index),
                 | (
-                    &Value::Variable {
+                    Value::Variable {
                         zone: Zone::Linear,
                         index,
                     },
                     _,
                 ) => return Err(Refusal::LinearVariable { at: code, index }),
-                | (&Value::Constant(constant), _) => {
-                    if let Maybe::Present(body) = self.positions.definitions.body(constant) {
-                        let certificate = self
-                            .positions
-                            .definitions
-                            .certify(self.source.arena, code, constant)
-                            .map_err(|_undecided| Refusal::CertificateDeclined { constant })?;
-                        self.certificates.push(certificate);
-                        code = body;
-                        continue;
-                    }
-                    let position = self.positions.kernel_position(code, constant)?;
+                | (Value::Constant(constant), _) => {
+                    let position = self.constant_position(code, constant)?;
                     target.value_constant(position)
                 },
-                | (&Value::StaticApplication(..), _) => {
-                    return Err(Refusal::OutOfFragment {
-                        at: CoreNode::Term(TermNode::Value(code)),
-                        former: UnadmittedFormer::StaticApplication,
-                    });
+                | (Value::StaticApplication(..), _) => {
+                    self.frames.push(Frame::DecodeOf { level, sort });
+                    return Ok(Step::Descend(CoreNode::Term(TermNode::Value(code))));
                 },
-                | (&Value::Quote(_), GroundSort::Computation)
-                | (&Value::QuoteComputation(_), GroundSort::Value)
+                | (Value::Quote(_), GroundSort::Computation)
+                | (Value::QuoteComputation(_), GroundSort::Value)
                 | (
-                    &(Value::Unit
+                    Value::Unit
                     | Value::Literal(_)
                     | Value::Thunk(_)
                     | Value::Pair(..)
                     | Value::Injection(..)
                     | Value::Lift { .. }
-                    | Value::StaticLambda(_)),
+                    | Value::StaticLambda(_),
                     _,
                 ) => return Err(Refusal::MachineInvariant),
             };
-            let decoded = match sort {
-                | GroundSort::Value => AnyNode::ValueType(target.value_type_element(image, level)),
-                | GroundSort::Computation => {
-                    AnyNode::CompType(target.comp_type_element(image, level))
-                },
-            };
-            return Ok(Step::Ascend(decoded));
+            return Ok(Step::Ascend(decoded(target, image, level, sort)));
         }
     }
 
@@ -1807,32 +2509,50 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: for a code constant without a recorded lift whose unfolding
-    ///   reaches a quote, one certificate per constant on the chain, outermost
-    ///   first, and the descent into that quote, which records no image for the
-    ///   constant; for any other value, its descent.
+    /// - ensures: read normalizing, for a code constant without a recorded lift
+    ///   whose unfolding chain reaches a quote or a static application, one
+    ///   certificate per constant on the chain, outermost first, and the
+    ///   descent into the code the chain ends at, which records no image for
+    ///   the constant; for any other value, and read verbatim, its descent.
+    ///   Every success descends into a value.
     /// - provides: an instantiation at a code substitutes the type the code
     ///   stands for, so the kernel's types hold no decode of a constant with a
     ///   body.
     /// - fails: [`Refusal::CertificateDeclined`] for an unfolding the
     ///   normaliser does not certify.
     /// - panics: none.
-    /// - intension: two loops over the unfolding chain, which the admission
-    ///   order makes finite: the first finds the quote without collecting, so a
-    ///   chain ending at a rigid constant certifies nothing.
+    ///
+    /// # Errors
+    /// - [`Refusal`] — as above.
+    ///
+    /// # Termination
+    /// - reason: two `loop`s over the unfolding chain, not recursion: the first
+    ///   finds its end without collecting, so a chain ending at a rigid
+    ///   constant certifies nothing.
+    /// - measure: the admission position of the constant reached, which a body
+    ///   names only below its own.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a code constant unfolding to a quote, a
+    ///   chain ending at a rigid constant, and a lifted argument.
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `bridge::tests::every_readmission_certificate_replays`
+    #[spec(ensures: |ret| ret.is_err() || matches!(ret, Ok(Step::Descend(CoreNode::Term(TermNode::Value(_))))))]
     fn argument(
         &mut self,
         argument: ValueId,
     ) -> Result<Step, Refusal>
     {
         let descend = Step::Descend(CoreNode::Term(TermNode::Value(argument)));
-        if self.source.lifts.contains_key(&argument) {
+        if self.mode == Mode::Verbatim || self.source.lifts.contains_key(&argument) {
             return Ok(descend);
         }
         let mut reached = argument;
-        let quote = loop {
-            match self.source.arena.value(reached) {
-                | Some(&(Value::Quote(_) | Value::QuoteComputation(_))) => break reached,
+        loop {
+            match self.arena.value(reached) {
+                | Some(
+                    &(Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticApplication(..)),
+                ) => break,
                 | Some(&Value::Constant(constant)) => {
                     match self.positions.definitions.body(constant) {
                         | Maybe::Present(body) => reached = body,
@@ -1841,22 +2561,16 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 },
                 | _ => return Ok(descend),
             }
-        };
+        }
         let mut code = argument;
-        while let Some(&Value::Constant(constant)) = self.source.arena.value(code) {
-            let Maybe::Present(body) = self.positions.definitions.body(constant)
+        while let Some(&Value::Constant(_)) = self.arena.value(code) {
+            let Maybe::Present(reduct) = self.step(code)?
             else {
                 return Err(Refusal::MachineInvariant);
             };
-            let certificate = self
-                .positions
-                .definitions
-                .certify(self.source.arena, code, constant)
-                .map_err(|_undecided| Refusal::CertificateDeclined { constant })?;
-            self.certificates.push(certificate);
-            code = body;
+            code = reduct;
         }
-        Ok(Step::Descend(CoreNode::Term(TermNode::Value(quote))))
+        Ok(Step::Descend(CoreNode::Term(TermNode::Value(code))))
     }
 
     /// Hand `image` to the rule `frame` holds.
@@ -1865,12 +2579,24 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - requires: `frame` was pushed by this machine.
     /// - ensures: a frame awaiting its last child mints its node over the
     ///   children's images, records the image and ascends it; an application, a
-    ///   bind, an arrow or a dependent arrow awaiting its first child descends
-    ///   to its second; a decode records the type its code denotes; a lift a
-    ///   crossing added wraps the decode beneath it.
+    ///   bind, an arrow, a dependent arrow, a pair, an eager product, a static
+    ///   Pi or a rigid static application awaiting its first child descends to
+    ///   its second; a decode records the type its code denotes; a lift a
+    ///   crossing added wraps the decode beneath it; a static application
+    ///   erased as its reduct records the reduct's image as its own. A descent
+    ///   always leaves the frame awaiting it on the stack.
     /// - fails: [`Refusal::MachineInvariant`] when `image` is not of the family
     ///   the frame awaits.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`Self::erase`], whose frame table this is, with
+    ///   the static frames reached by a readmitted static instance, a rigid
+    ///   instance and an eager pair.
+    /// - witness: `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+    #[spec(ensures: |ret| !matches!(ret, Ok(Step::Descend(_))) || !self.frames.is_empty())]
     fn resume(
         &mut self,
         target: &mut TermArena,
@@ -1915,8 +2641,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 Ok(self.erased_value_type(at, target.value_type_thunk(body)))
             },
             | (Frame::TypeLift { at }, AnyNode::ValueType(inner)) => {
-                let ValueTypeView::Lift { target: level, .. } =
-                    value_type_view(self.source.arena, at)?
+                let ValueTypeView::Lift { target: level, .. } = value_type_view(self.arena, at)?
                 else {
                     return Err(Refusal::MachineInvariant);
                 };
@@ -1959,6 +2684,38 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             | (Frame::PiCodomain { at, domain }, AnyNode::CompType(codomain)) => {
                 Ok(self.erased_comp_type(at, target.comp_type_pi(domain, codomain)))
             },
+            | (Frame::Reduced { at }, AnyNode::Value(reduct)) => Ok(self.erased_value(at, reduct)),
+            | (Frame::StaticHead { at, argument }, AnyNode::Value(head)) => {
+                self.frames.push(Frame::StaticArgument { at, head });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Value(argument))))
+            },
+            | (Frame::StaticArgument { at, head }, AnyNode::Value(argument)) => {
+                Ok(self.erased_value(at, target.value_static_application(head, argument)))
+            },
+            | (Frame::PairFirst { at, second }, AnyNode::Value(first)) => {
+                self.frames.push(Frame::PairSecond { at, first });
+                Ok(Step::Descend(CoreNode::Term(TermNode::Value(second))))
+            },
+            | (Frame::PairSecond { at, first }, AnyNode::Value(second)) => {
+                Ok(self.erased_value(at, target.value_pair(first, second)))
+            },
+            | (Frame::ProductFirst { at, second }, AnyNode::ValueType(first)) => {
+                self.frames.push(Frame::ProductSecond { at, first });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Value(second))))
+            },
+            | (Frame::ProductSecond { at, first }, AnyNode::ValueType(second)) => {
+                Ok(self.erased_value_type(at, target.value_type_product(first, second)))
+            },
+            | (Frame::StaticPiDomain { at, codomain }, AnyNode::ValueType(domain)) => {
+                self.frames.push(Frame::StaticPiCodomain { at, domain });
+                Ok(Step::Descend(CoreNode::Type(TypeNode::Value(codomain))))
+            },
+            | (Frame::StaticPiCodomain { at, domain }, AnyNode::ValueType(codomain)) => {
+                Ok(self.erased_value_type(at, target.value_type_static_pi(domain, codomain)))
+            },
+            | (Frame::DecodeOf { level, sort }, AnyNode::Value(code)) => {
+                Ok(Step::Ascend(decoded(target, code, level, sort)))
+            },
             | (
                 Frame::Thunk { .. }
                 | Frame::ApplicationHead { .. }
@@ -1978,7 +2735,15 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 AnyNode::Value(_) | AnyNode::Computation(_) | AnyNode::ValueType(_),
             )
             | (
-                Frame::Force { .. } | Frame::ApplicationArgument { .. } | Frame::Return { .. },
+                Frame::Force { .. }
+                | Frame::ApplicationArgument { .. }
+                | Frame::Return { .. }
+                | Frame::Reduced { .. }
+                | Frame::StaticHead { .. }
+                | Frame::StaticArgument { .. }
+                | Frame::PairFirst { .. }
+                | Frame::PairSecond { .. }
+                | Frame::DecodeOf { .. },
                 AnyNode::Computation(_) | AnyNode::ValueType(_) | AnyNode::CompType(_),
             )
             | (
@@ -1989,6 +2754,10 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 | Frame::Returner { .. }
                 | Frame::ArrowDomain { .. }
                 | Frame::PiDomain { .. }
+                | Frame::ProductFirst { .. }
+                | Frame::ProductSecond { .. }
+                | Frame::StaticPiDomain { .. }
+                | Frame::StaticPiCodomain { .. }
                 | Frame::Decoded {
                     at: TypeNode::Value(_),
                 },
@@ -2007,7 +2776,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         erased: gandr_kernel_term::ValueId,
     ) -> Step
     {
-        self.values.insert(at, Image::Erased(erased));
+        self.memo().values.insert(at, Image::Erased(erased));
         Step::Ascend(AnyNode::Value(erased))
     }
 
@@ -2021,7 +2790,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         erased: gandr_kernel_term::ComputationId,
     ) -> Step
     {
-        self.computations.insert(at, Image::Erased(erased));
+        self.memo().computations.insert(at, Image::Erased(erased));
         Step::Ascend(AnyNode::Computation(erased))
     }
 
@@ -2035,7 +2804,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         erased: gandr_kernel_term::ValueTypeId,
     ) -> Step
     {
-        self.value_types.insert(at, Image::Erased(erased));
+        self.memo().value_types.insert(at, Image::Erased(erased));
         Step::Ascend(AnyNode::ValueType(erased))
     }
 
@@ -2050,8 +2819,39 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         erased: gandr_kernel_term::CompTypeId,
     ) -> Step
     {
-        self.comp_types.insert(at, Image::Erased(erased));
+        self.memo().comp_types.insert(at, Image::Erased(erased));
         Step::Ascend(AnyNode::CompType(erased))
+    }
+}
+
+/// The kernel's decode of the code `image` at `level`, in `sort`'s family.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a value type for the value sort and a computation type for the
+///   computation sort, each the decode of `image` at `level`, minted.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two arms, one per sort, each reached by a decode of a
+///   rigid code of that sort.
+/// - witness: `bridge::tests::a_sorted_universe_readmits_at_its_level`
+/// - witness: `bridge::tests::a_rigid_static_instance_crosses_as_a_kernel_application`
+#[spec(ensures: |ret| match sort {
+    | GroundSort::Value => matches!(ret, AnyNode::ValueType(_)),
+    | GroundSort::Computation => matches!(ret, AnyNode::CompType(_)),
+})]
+fn decoded(
+    target: &mut TermArena,
+    image: gandr_kernel_term::ValueId,
+    level: Level,
+    sort: GroundSort,
+) -> AnyNode
+{
+    match sort {
+        | GroundSort::Value => AnyNode::ValueType(target.value_type_element(image, level)),
+        | GroundSort::Computation => AnyNode::CompType(target.comp_type_element(image, level)),
     }
 }
 
@@ -2068,10 +2868,13 @@ mod tests
     use gandr_core_term::Sort;
     use gandr_core_term::SortParameter;
     use gandr_core_term::ValueId;
+    use gandr_core_term::ValueType;
     use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
+    use gandr_kernel_check_memo::ContentDigest;
     use gandr_kernel_core::Environment;
     use gandr_kernel_core::KernelVerdict;
+    use gandr_kernel_core::content_digest;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
     use gandr_kernel_term::AdmissionMark;
@@ -2098,15 +2901,19 @@ mod tests
 
     use super::Erasure;
     use super::Frame;
+    use super::Mode as Reading;
     use super::Outcome;
     use super::Positions;
     use super::Readmission;
+    use super::Readmitted;
     use super::Refusal;
     use super::Replayed;
     use super::Source;
+    use super::fault;
     use super::readmit;
     use super::readmit_with;
     use crate::code::Lift;
+    use crate::code::Unfolded;
     use crate::context::CheckBudget;
     use crate::context::CheckingContext;
     use crate::declaration::Declaration;
@@ -2133,6 +2940,7 @@ mod tests
     use crate::refusal::CheckingForm;
     use crate::refusal::CoreNode;
     use crate::refusal::Mismatch;
+    use crate::refusal::StaticArity;
     use crate::refusal::TermNode;
     use crate::refusal::TypeNode;
     use crate::refusal::UnadmittedFormer;
@@ -2200,7 +3008,7 @@ mod tests
     /// # Specification
     /// trivial.
     fn erase(
-        arena: &CoreArena,
+        arena: &mut CoreArena,
         root: CoreNode,
     ) -> (TermArena, Result<AnyNode, Refusal>)
     {
@@ -2209,12 +3017,37 @@ mod tests
         let definitions = alloc::collections::BTreeMap::new();
         let mut target = TermArena::new();
         let source = Source {
-            arena,
             lifts: &lifts,
             definitions: &definitions,
         };
-        let image = Erasure::new(source, &positions).erase(&mut target, root);
+        let image = Erasure::new(arena, source, &positions, ConstantIndex::from(0_usize))
+            .erase(&mut target, root);
         (target, image)
+    }
+
+    /// What each certificate `entry` replayed unfolded, beside its verdict.
+    ///
+    /// # Specification
+    /// trivial.
+    fn steps(entry: &Readmitted) -> Vec<(Unfolded, KernelVerdict)>
+    {
+        entry
+            .certificates()
+            .iter()
+            .map(|replayed| (replayed.unfolded(), replayed.verdict()))
+            .collect()
+    }
+
+    /// A convertible replay of the definition at `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn convertible(position: At) -> (Unfolded, KernelVerdict)
+    {
+        (
+            Unfolded::Definition(ConstantIndex::from(position.0)),
+            KernelVerdict::Convertible,
+        )
     }
 
     /// The kernel position the entry at `position` crossed at.
@@ -2230,7 +3063,7 @@ mod tests
             | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } => {
                 admitted.position()
             },
-            | Outcome::Marked(_) | Outcome::Refused(_) | Outcome::Rejected(_) => {
+            | Outcome::Marked(_) | Outcome::Static | Outcome::Refused(_) | Outcome::Rejected(_) => {
                 panic!("the declaration at this position crosses")
             },
         }
@@ -2320,7 +3153,7 @@ mod tests
         let mut arena = CoreArena::new();
         let zero = arena.value_literal(integer_literal());
         let returned = arena.computation_return(zero);
-        let (target, image) = erase(&arena, CoreNode::Term(TermNode::Computation(returned)));
+        let (target, image) = erase(&mut arena, CoreNode::Term(TermNode::Computation(returned)));
         let Ok(AnyNode::Computation(image)) = image
         else {
             panic!("a returned literal erases to a computation");
@@ -2342,7 +3175,7 @@ mod tests
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
         let returner = arena.comp_type_returner(integer);
-        let (target, image) = erase(&arena, CoreNode::Type(TypeNode::Computation(returner)));
+        let (target, image) = erase(&mut arena, CoreNode::Type(TypeNode::Computation(returner)));
         let Ok(AnyNode::CompType(image)) = image
         else {
             panic!("a returner erases to a computation type");
@@ -2365,7 +3198,7 @@ mod tests
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let returned = arena.computation_return(bound);
         let lambda = arena.computation_lambda(returned);
-        let (target, image) = erase(&arena, CoreNode::Term(TermNode::Computation(lambda)));
+        let (target, image) = erase(&mut arena, CoreNode::Term(TermNode::Computation(lambda)));
         let Ok(AnyNode::Computation(image)) = image
         else {
             panic!("a lambda erases to a computation");
@@ -2613,18 +3446,14 @@ mod tests
                 judged.verdict()
             );
         }
-        let convertible = |position: usize| Replayed {
-            constant: ConstantIndex::from(position),
-            verdict: KernelVerdict::Convertible,
-        };
         assert_eq!(
-            readmission.readmitted()[2].certificates(),
-            [convertible(0)],
+            steps(&readmission.readmitted()[2]),
+            [convertible(At(0))],
             "the kernel replays the one unfolding the erasure of `Num` took"
         );
         assert_eq!(
-            readmission.readmitted()[3].certificates(),
-            [convertible(1), convertible(0)],
+            steps(&readmission.readmitted()[3]),
+            [convertible(At(1)), convertible(At(0))],
             "a chain unfolds one certificate per constant, outermost first"
         );
         for entry in readmission.readmitted() {
@@ -2691,50 +3520,56 @@ mod tests
                 entry.outcome()
             );
         }
-        let convertible = Replayed {
-            constant: ConstantIndex::from(0_usize),
-            verdict: KernelVerdict::Convertible,
-        };
         assert_eq!(
-            readmission.readmitted()[3].certificates(),
-            [convertible, convertible],
-            "the argument unfolds in term position and the declared type at its decode, \
-             each certified"
+            steps(&readmission.readmitted()[3]),
+            [convertible(At(0))],
+            "the argument unfolds in term position and the declared type at its decode: \
+             one instance, certified once"
         );
     }
 
     #[test]
     fn a_declining_certificate_faults_the_declaration()
     {
-        // def Num : Type = Integer ; def n : Num = 0 ;
+        // def Pair : Type -> Type = \X. El X * El X ;
+        // def instance : Type = Pair Integer ;
+        //
+        // A static step replays the normaliser's trace, so emptying it leaves
+        // the kernel no unfolding to take.
         let mut arena = CoreArena::new();
+        let small = small(&mut arena);
+        let operator_type = arena.value_type_static_pi(small, small);
+        let operator = pair_operator(&mut arena);
         let integer = arena.value_type_base(BaseType::Integer);
-        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
-        let code = arena.value_quote(integer);
-        let num = arena.value_constant(ConstantIndex::from(0_usize));
-        let decoded = arena.value_type_element(num, Level::zero());
-        let zero = arena.value_literal(integer_literal());
+        let integer_code = arena.value_quote(integer);
+        let pair = arena.value_constant(ConstantIndex::from(0_usize));
+        let instance = arena.value_static_application(pair, integer_code);
         let module = [
-            declaration(At(0), Maybe::Present(small), Maybe::Present(code)),
-            declaration(At(1), Maybe::Present(decoded), Maybe::Present(zero)),
+            declaration(
+                At(0),
+                Maybe::Present(operator_type),
+                Maybe::Present(operator),
+            ),
+            declaration(At(1), Maybe::Present(small), Maybe::Present(instance)),
         ];
         let report = {
             let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
             check_module(&mut context, &module)
         };
-        let readmission = readmit_with(&arena, &report, |certificate| {
+        let readmission = readmit_with(&mut arena, &report, |certificate| {
             certificate.with_decisions(Vec::new())
         });
-        let [ref defined, ref faulted] = *readmission.readmitted()
+        let [ref operator_entry, ref faulted] = *readmission.readmitted()
         else {
             panic!("one outcome per declaration");
         };
-        assert!(
-            matches!(*defined.outcome(), Outcome::Defined { .. }),
-            "the code constant itself needs no unfolding"
+        assert_eq!(
+            operator_entry.outcome(),
+            &Outcome::Static,
+            "the operator itself replays nothing"
         );
         let refusal = Refusal::CertificateDeclined {
-            constant: ConstantIndex::from(0_usize),
+            unfolded: Unfolded::Definition(ConstantIndex::from(0_usize)),
         };
         assert_eq!(
             faulted.outcome(),
@@ -2753,9 +3588,8 @@ mod tests
             FailureClass::EngineFault,
             "a decline is the engine's"
         );
-        assert_eq!(
-            readmission.environment().entries().len(),
-            1_usize,
+        assert!(
+            readmission.environment().entries().is_empty(),
             "the refused declaration left the environment as it was"
         );
     }
@@ -2766,7 +3600,7 @@ mod tests
         let mut arena = CoreArena::new();
         let atom = arena.value_type_abstract(ConstantIndex::from(3_usize));
         let at = CoreNode::Type(TypeNode::Value(atom));
-        let (target, image) = erase(&arena, at);
+        let (target, image) = erase(&mut arena, at);
         assert_eq!(
             image,
             Err(Refusal::OutOfFragment {
@@ -2950,10 +3784,6 @@ mod tests
         let returned = arena.computation_return(unit);
         let rows = [
             (
-                CoreNode::Term(TermNode::Value(arena.value_pair(unit, unit))),
-                UnadmittedFormer::Pair,
-            ),
-            (
                 CoreNode::Term(TermNode::Value(arena.value_injection(Side::Left, unit))),
                 UnadmittedFormer::Injection,
             ),
@@ -2976,12 +3806,6 @@ mod tests
                 UnadmittedFormer::NumericAtom,
             ),
             (
-                CoreNode::Type(TypeNode::Value(
-                    arena.value_type_product(unit_type, unit_type),
-                )),
-                UnadmittedFormer::Product,
-            ),
-            (
                 CoreNode::Type(TypeNode::Value(arena.value_type_sum(unit_type, unit_type))),
                 UnadmittedFormer::Sum,
             ),
@@ -2995,7 +3819,7 @@ mod tests
         ];
         for (at, former) in rows {
             assert_eq!(
-                erase(&arena, at).1,
+                erase(&mut arena, at).1,
                 Err(Refusal::OutOfFragment { at, former }),
                 "{former:?} is refused by name, at its node"
             );
@@ -3026,7 +3850,7 @@ mod tests
             (
                 Refusal::OutOfFragment {
                     at: CoreNode::Term(TermNode::Value(first_value)),
-                    former: UnadmittedFormer::Pair,
+                    former: UnadmittedFormer::StaticLambda,
                 },
                 Refusal::OutOfFragment {
                     at: CoreNode::Type(TypeNode::Computation(returner)),
@@ -3065,10 +3889,10 @@ mod tests
             ),
             (
                 Refusal::CertificateDeclined {
-                    constant: ConstantIndex::from(0_usize),
+                    unfolded: Unfolded::Definition(ConstantIndex::from(0_usize)),
                 },
                 Refusal::CertificateDeclined {
-                    constant: ConstantIndex::from(4_usize),
+                    unfolded: Unfolded::Abstraction(second_value),
                 },
                 FailureClass::EngineFault,
             ),
@@ -3109,20 +3933,20 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
-        let product = arena.value_type_product(integer, integer);
+        let sum = arena.value_type_sum(integer, integer);
         let zero = arena.value_literal(integer_literal());
-        let pair = arena.value_pair(zero, zero);
+        let injection = arena.value_injection(Side::Left, zero);
         let text = arena.value_literal(text_literal());
         let mismatched = arena.value_constant(ConstantIndex::from(5_usize));
         let module = [
             // def control : Integer = 0 ;
             declaration(At(0), Maybe::Present(integer), Maybe::Present(zero)),
-            // def marked_body : Integer * Integer = (0, 0) ;
-            declaration(At(1), Maybe::Present(product), Maybe::Present(pair)),
+            // def marked_body : Integer + Integer = inl 0 ;
+            declaration(At(1), Maybe::Present(sum), Maybe::Present(injection)),
             // def owed : Integer ;
             declaration(At(2), Maybe::Present(integer), HOLE),
-            // def marked_hole : Integer * Integer ;
-            declaration(At(3), Maybe::Present(product), HOLE),
+            // def marked_hole : Integer + Integer ;
+            declaration(At(3), Maybe::Present(sum), HOLE),
             // def hole ;
             declaration(At(4), UNSIGNED, HOLE),
             // def mismatched : Integer = "" ;
@@ -3150,9 +3974,9 @@ mod tests
         else {
             panic!("one outcome per declaration");
         };
-        let product_mark = CheckRefusal::OutOfFragment {
-            at: CoreNode::Type(TypeNode::Value(product)),
-            former: UnadmittedFormer::Product,
+        let sum_mark = CheckRefusal::OutOfFragment {
+            at: CoreNode::Type(TypeNode::Value(sum)),
+            former: UnadmittedFormer::Sum,
         };
         assert!(
             matches!(*control.outcome(), Outcome::Defined { .. }),
@@ -3164,12 +3988,12 @@ mod tests
         );
         assert_eq!(
             marked_body.outcome(),
-            &Outcome::Marked(product_mark),
+            &Outcome::Marked(sum_mark),
             "a marked body crosses as nothing, though the kernel alone admits it"
         );
         assert_eq!(
             marked_hole.outcome(),
-            &Outcome::Marked(product_mark),
+            &Outcome::Marked(sum_mark),
             "a marked signed hole crosses as no axiom, though the kernel alone admits one"
         );
         assert_eq!(
@@ -3222,10 +4046,10 @@ mod tests
         let mut staging = kernel.stage();
         let target = staging.arena();
         let kernel_integer = target.value_type_base(BaseType::Integer);
-        let kernel_product = target.value_type_product(kernel_integer, kernel_integer);
+        let kernel_sum = target.value_type_sum(kernel_integer, kernel_integer);
         let kernel_zero = target.value_literal(integer_literal());
-        let kernel_pair = target.value_pair(kernel_zero, kernel_zero);
-        let definition = staging.def(LevelSignature::monomorphic(), kernel_product, kernel_pair);
+        let kernel_injection = target.value_injection(Side::Left, kernel_zero);
+        let definition = staging.def(LevelSignature::monomorphic(), kernel_sum, kernel_injection);
         assert!(
             kernel.add_decl(definition).is_ok(),
             "the kernel admits the marked body's content"
@@ -3233,8 +4057,8 @@ mod tests
         let mut staging = kernel.stage();
         let target = staging.arena();
         let kernel_integer = target.value_type_base(BaseType::Integer);
-        let kernel_product = target.value_type_product(kernel_integer, kernel_integer);
-        let axiom = staging.axiom(LevelSignature::monomorphic(), kernel_product);
+        let kernel_sum = target.value_type_sum(kernel_integer, kernel_integer);
+        let axiom = staging.axiom(LevelSignature::monomorphic(), kernel_sum);
         assert!(
             kernel.add_decl(axiom).is_ok(),
             "the kernel admits the marked hole's content as an axiom"
@@ -3245,19 +4069,19 @@ mod tests
     fn an_empty_ledger_readmits_an_artifact_resting_on_no_axiom()
     {
         // def answer : Integer = 0 ; def copy = answer ;
-        // def pair : Integer * Integer ;
+        // def either : Integer + Integer ;
         //
         // The signed hole's signature does not form, so it is marked rather
         // than owed, and the ledger is empty.
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
-        let product = arena.value_type_product(integer, integer);
+        let sum = arena.value_type_sum(integer, integer);
         let zero = arena.value_literal(integer_literal());
         let answer = arena.value_constant(ConstantIndex::from(0_usize));
         let (report, readmission) = judge_and_readmit(&mut arena, &[
             declaration(At(0), Maybe::Present(integer), Maybe::Present(zero)),
             declaration(At(1), UNSIGNED, Maybe::Present(answer)),
-            declaration(At(2), Maybe::Present(product), HOLE),
+            declaration(At(2), Maybe::Present(sum), HOLE),
         ]);
         assert!(
             report.ledger().entries().is_empty(),
@@ -3309,7 +4133,10 @@ mod tests
                 | Outcome::Defined { ref audit, .. } | Outcome::Assumed { ref audit, .. } => {
                     audit.axioms().to_vec()
                 },
-                | Outcome::Marked(_) | Outcome::Refused(_) | Outcome::Rejected(_) => {
+                | Outcome::Marked(_)
+                | Outcome::Static
+                | Outcome::Refused(_)
+                | Outcome::Rejected(_) => {
                     panic!("every declaration crosses")
                 },
             })
@@ -3409,7 +4236,7 @@ mod tests
         let head = arena.computation_lambda(inner);
         let first = arena.computation_application(head, zero);
         let second = arena.computation_application(first, zero);
-        let (target, image) = erase(&arena, CoreNode::Term(TermNode::Computation(second)));
+        let (target, image) = erase(&mut arena, CoreNode::Term(TermNode::Computation(second)));
         let Ok(AnyNode::Computation(image)) = image
         else {
             panic!("an application erases to a computation");
@@ -3436,7 +4263,7 @@ mod tests
         let mut arena = CoreArena::new();
         let linear = arena.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
         assert_eq!(
-            erase(&arena, CoreNode::Term(TermNode::Value(linear))).1,
+            erase(&mut arena, CoreNode::Term(TermNode::Value(linear))).1,
             Err(Refusal::LinearVariable {
                 at: linear,
                 index: DeBruijnIndex::from(0_u32),
@@ -3445,13 +4272,13 @@ mod tests
         );
         let dangling = CoreNode::Term(TermNode::Value(dangling_value()));
         assert_eq!(
-            erase(&arena, dangling).1,
+            erase(&mut arena, dangling).1,
             Err(Refusal::DanglingNode { node: dangling }),
             "a dangling term is refused, not read"
         );
         let dangling = CoreNode::Type(TypeNode::Value(dangling_value_type()));
         assert_eq!(
-            erase(&arena, dangling).1,
+            erase(&mut arena, dangling).1,
             Err(Refusal::DanglingNode { node: dangling }),
             "a dangling type is refused through the view"
         );
@@ -3466,7 +4293,7 @@ mod tests
         assert_eq!(force, ahead, "the force takes the id the thunk names");
         let node = CoreNode::Term(TermNode::Value(thunk));
         assert_eq!(
-            erase(&cyclic, node).1,
+            erase(&mut cyclic, node).1,
             Err(Refusal::Cyclic { node }),
             "a node that is its own descendant is refused, not erased forever"
         );
@@ -3477,18 +4304,727 @@ mod tests
         let unit = target.value_unit();
         let returned = arena.computation_return(linear);
         let source = Source {
-            arena: &arena,
             lifts: &lifts,
             definitions: &definitions,
         };
         assert_eq!(
-            Erasure::new(source, &positions).resume(
+            Erasure::new(&mut arena, source, &positions, ConstantIndex::from(0_usize)).resume(
                 &mut target,
                 Frame::Lambda { at: returned },
                 AnyNode::Value(unit),
             ),
             Err(Refusal::MachineInvariant),
             "a frame handed an image of another family reports the miscount"
+        );
+    }
+
+    /// The small value universe `Type`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn small(arena: &mut CoreArena) -> ValueTypeId
+    {
+        arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero())
+    }
+
+    /// `\X. El X * El X`, an operator of one parameter over small codes.
+    ///
+    /// # Specification
+    /// trivial.
+    fn pair_operator(arena: &mut CoreArena) -> ValueId
+    {
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded = arena.value_type_element(bound, Level::zero());
+        let product = arena.value_type_product(decoded, decoded);
+        let code = arena.value_quote(product);
+        arena.value_static_lambda(code)
+    }
+
+    /// The content digest of each exported definition's body, in export
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    fn exported_bodies(readmission: &Readmission) -> Vec<ContentDigest>
+    {
+        let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+        artifact
+            .declarations()
+            .iter()
+            .filter_map(|marked| match *marked.declaration().content() {
+                | DeclarationContent::Def { body, .. } => {
+                    Some(content_digest(artifact.arena(), AnyNode::Value(body)))
+                },
+                | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => {
+                    None
+                },
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_step_fault_keeps_only_a_dangling_node()
+    {
+        let node = CoreNode::Term(TermNode::Value(dangling_value()));
+        assert_eq!(
+            fault(CheckRefusal::DanglingNode { node }),
+            Refusal::DanglingNode { node },
+            "a dangling node stays one, at the same node"
+        );
+        for refusal in [
+            CheckRefusal::Undecided {
+                at: dangling_value(),
+            },
+            CheckRefusal::BudgetExceeded {
+                budget: CheckBudget::DEFAULT,
+            },
+        ] {
+            assert_eq!(
+                fault(refusal),
+                Refusal::MachineInvariant,
+                "a step over a judged arena meets no other fault"
+            );
+        }
+    }
+
+    #[test]
+    fn family_applied_at_wrong_arity_raises_the_exact_variant()
+    {
+        // def Pair : Type -> Type = \X. El X * El X ;
+        // def Num : Type = Integer ;
+        // def over : Type = Pair Integer Integer ;
+        // def nullary : Type = Num Integer ;
+        // def control : Type = Pair Integer ;
+        let mut arena = CoreArena::new();
+        let small = small(&mut arena);
+        let operator_type = arena.value_type_static_pi(small, small);
+        let operator = pair_operator(&mut arena);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let integer_code = arena.value_quote(integer);
+        let pair = arena.value_constant(ConstantIndex::from(0_usize));
+        let num = arena.value_constant(ConstantIndex::from(1_usize));
+        let control = arena.value_static_application(pair, integer_code);
+        let over = arena.value_static_application(control, integer_code);
+        let nullary = arena.value_static_application(num, integer_code);
+        let (report, _) = judge_and_readmit(&mut arena, &[
+            declaration(
+                At(0),
+                Maybe::Present(operator_type),
+                Maybe::Present(operator),
+            ),
+            declaration(At(1), Maybe::Present(small), Maybe::Present(integer_code)),
+            declaration(At(2), Maybe::Present(small), Maybe::Present(over)),
+            declaration(At(3), Maybe::Present(small), Maybe::Present(nullary)),
+            declaration(At(4), Maybe::Present(small), Maybe::Present(control)),
+        ]);
+        let arity = |count: u32| StaticArity::from(count);
+        assert_eq!(
+            report.judged()[2].verdict(),
+            Verdict::Refused(CheckRefusal::FamilyArity {
+                at: over,
+                expected: arity(1),
+                actual: arity(2),
+            }),
+            "an operator of one parameter at two arguments names both counts, at the whole \
+             application"
+        );
+        assert_eq!(
+            report.judged()[3].verdict(),
+            Verdict::Refused(CheckRefusal::FamilyArity {
+                at: nullary,
+                expected: arity(0),
+                actual: arity(1),
+            }),
+            "a code that is no operator takes no argument"
+        );
+        assert!(
+            matches!(report.judged()[4].verdict(), Verdict::Checked { .. }),
+            "the saturated instance checks: {:?}",
+            report.judged()[4].verdict()
+        );
+    }
+
+    #[test]
+    fn family_argument_at_wrong_classifier_raises_the_exact_variant()
+    {
+        // def Both : Type -> Type -> Type = \A. \B. El A * El B ;
+        // def literal : Type = Both Integer 0 ;
+        // def negative : Type = Both (F Integer) Integer ;
+        // def control : Type = Both Integer String ;
+        let mut arena = CoreArena::new();
+        let small = small(&mut arena);
+        let inner_type = arena.value_type_static_pi(small, small);
+        let operator_type = arena.value_type_static_pi(small, inner_type);
+        let outer = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let inner = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let first = arena.value_type_element(outer, Level::zero());
+        let second = arena.value_type_element(inner, Level::zero());
+        let product = arena.value_type_product(first, second);
+        let code = arena.value_quote(product);
+        let inner_lambda = arena.value_static_lambda(code);
+        let operator = arena.value_static_lambda(inner_lambda);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let integer_code = arena.value_quote(integer);
+        let string_code = arena.value_quote(string);
+        let returns = arena.comp_type_returner(integer);
+        let action_code = arena.value_quote_computation(returns);
+        let zero = arena.value_literal(integer_literal());
+        let both = arena.value_constant(ConstantIndex::from(0_usize));
+        let at_integer = arena.value_static_application(both, integer_code);
+        let literal = arena.value_static_application(at_integer, zero);
+        let at_action = arena.value_static_application(both, action_code);
+        let negative = arena.value_static_application(at_action, integer_code);
+        let control = arena.value_static_application(at_integer, string_code);
+        let (report, _) = judge_and_readmit(&mut arena, &[
+            declaration(
+                At(0),
+                Maybe::Present(operator_type),
+                Maybe::Present(operator),
+            ),
+            declaration(At(1), Maybe::Present(small), Maybe::Present(literal)),
+            declaration(At(2), Maybe::Present(small), Maybe::Present(negative)),
+            declaration(At(3), Maybe::Present(small), Maybe::Present(control)),
+        ]);
+        let refused = |position: usize| match report.judged()[position].verdict() {
+            | Verdict::Refused(CheckRefusal::FamilyArgumentClassifier {
+                at,
+                position,
+                synthesised,
+                expected,
+            }) => (
+                at,
+                u32::from(position),
+                arena.value_type(synthesised).cloned(),
+                expected,
+            ),
+            | verdict => panic!("refused at the argument's classifier: {verdict:?}"),
+        };
+        assert_eq!(
+            refused(1),
+            (zero, 1_u32, Some(ValueType::Base(BaseType::Integer)), small),
+            "a value where a code stands names the argument, its position from the head, and \
+             both classifiers"
+        );
+        assert_eq!(
+            refused(2),
+            (
+                action_code,
+                0_u32,
+                Some(ValueType::Universe {
+                    sort: Sort::Ground(GroundSort::Computation),
+                    level: Level::zero(),
+                }),
+                small
+            ),
+            "a code of the other sort names the universe it synthesised, sort and level"
+        );
+        assert!(
+            matches!(report.judged()[3].verdict(), Verdict::Checked { .. }),
+            "both arguments at their classifiers check: {:?}",
+            report.judged()[3].verdict()
+        );
+    }
+
+    #[test]
+    fn a_static_pi_over_a_type_that_classifies_no_codes_is_refused_by_name()
+    {
+        // def from : Integer -> Type ;
+        // def into : Type -> Integer ;
+        let mut arena = CoreArena::new();
+        let small = small(&mut arena);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let from = arena.value_type_static_pi(integer, small);
+        let into = arena.value_type_static_pi(small, integer);
+        let (report, _) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), Maybe::Present(from), HOLE),
+            declaration(At(1), Maybe::Present(into), HOLE),
+        ]);
+        let verdicts: Vec<Verdict> = report.judged().iter().map(Judged::verdict).collect();
+        assert_eq!(
+            verdicts,
+            [
+                Verdict::Refused(CheckRefusal::StaticClassifierExpected {
+                    at: from,
+                    found: integer,
+                }),
+                Verdict::Refused(CheckRefusal::StaticClassifierExpected {
+                    at: into,
+                    found: integer,
+                }),
+            ],
+            "a domain and a codomain that classify no codes are each named"
+        );
+    }
+
+    #[test]
+    fn a_static_lambda_at_a_static_parameter_normalizes_away()
+    {
+        // def Apply : (Type -> Type) -> Type -> Type = \F. \X. F X ;
+        // def applied : Type = Apply (\Y. El Y * El Y) Integer ;
+        // def written : Type = Integer * Integer ;
+        let mut arena = CoreArena::new();
+        let small = small(&mut arena);
+        let operator_type = arena.value_type_static_pi(small, small);
+        let tail = arena.value_type_static_pi(small, small);
+        let apply_type = arena.value_type_static_pi(operator_type, tail);
+        let function = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let argument = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let applied_variable = arena.value_static_application(function, argument);
+        let inner = arena.value_static_lambda(applied_variable);
+        let apply = arena.value_static_lambda(inner);
+        let operator = pair_operator(&mut arena);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let integer_code = arena.value_quote(integer);
+        let head = arena.value_constant(ConstantIndex::from(0_usize));
+        let partial = arena.value_static_application(head, operator);
+        let applied = arena.value_static_application(partial, integer_code);
+        let product = arena.value_type_product(integer, integer);
+        let written = arena.value_quote(product);
+        let (report, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), Maybe::Present(apply_type), Maybe::Present(apply)),
+            declaration(At(1), Maybe::Present(small), Maybe::Present(applied)),
+            declaration(At(2), Maybe::Present(small), Maybe::Present(written)),
+        ]);
+        for judged in report.judged() {
+            assert!(
+                matches!(judged.verdict(), Verdict::Checked { .. }),
+                "the lambda checks at the static parameter: {:?}",
+                judged.verdict()
+            );
+        }
+        assert_eq!(
+            readmission.readmitted()[0].outcome(),
+            &Outcome::Static,
+            "the operator stays on the checker's side"
+        );
+        assert!(
+            matches!(steps(&readmission.readmitted()[1]).as_slice(), [
+                (Unfolded::Definition(position), KernelVerdict::Convertible),
+                (Unfolded::Abstraction(_), KernelVerdict::Convertible),
+            ] if *position == ConstantIndex::from(0_usize)),
+            "the definition unfolds, then the lambda it was handed, each certified: {:?}",
+            steps(&readmission.readmitted()[1])
+        );
+        let bodies = exported_bodies(&readmission);
+        assert_eq!(
+            bodies.len(),
+            2_usize,
+            "the instance and the written type cross, the operator does not"
+        );
+        assert_eq!(
+            bodies.first(),
+            bodies.last(),
+            "the instance crosses as the static normal form, the lambda gone"
+        );
+    }
+
+    #[test]
+    fn a_static_lambda_at_a_dynamic_parameter_is_refused_by_name()
+    {
+        // def use : U ((F : Type -> Type) -> F Unit) ;
+        // def Pair : Type -> Type = \X. El X * El X ;
+        // def G : Type -> Type ;
+        // def lambda : U (F Unit) = thunk ((force use) (\X. X)) ;
+        // def named : U (F Unit) = thunk ((force use) Pair) ;
+        // def rigid : U (F Unit) = thunk ((force use) G) ;
+        let mut arena = CoreArena::new();
+        let small = small(&mut arena);
+        let operator_type = arena.value_type_static_pi(small, small);
+        let unit_type = arena.value_type_unit();
+        let returns_unit = arena.comp_type_returner(unit_type);
+        let takes_operator = arena.comp_type_pi(operator_type, returns_unit);
+        let use_type = arena.value_type_thunk(takes_operator);
+        let suspended = arena.value_type_thunk(returns_unit);
+        let operator = pair_operator(&mut arena);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let identity = arena.value_static_lambda(bound);
+        let used = arena.value_constant(ConstantIndex::from(0_usize));
+        let pair = arena.value_constant(ConstantIndex::from(1_usize));
+        let opaque = arena.value_constant(ConstantIndex::from(2_usize));
+        let forced = arena.computation_force(used);
+        let mut thunk_of = |argument: ValueId| {
+            let applied = arena.computation_application(forced, argument);
+            arena.value_thunk(applied)
+        };
+        let lambda = thunk_of(identity);
+        let named = thunk_of(pair);
+        let rigid = thunk_of(opaque);
+        let (report, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), Maybe::Present(use_type), HOLE),
+            declaration(
+                At(1),
+                Maybe::Present(operator_type),
+                Maybe::Present(operator),
+            ),
+            declaration(At(2), Maybe::Present(operator_type), HOLE),
+            declaration(At(3), Maybe::Present(suspended), Maybe::Present(lambda)),
+            declaration(At(4), Maybe::Present(suspended), Maybe::Present(named)),
+            declaration(At(5), Maybe::Present(suspended), Maybe::Present(rigid)),
+        ]);
+        assert_eq!(
+            report.judged()[3].verdict(),
+            Verdict::Refused(CheckRefusal::StaticLambdaArgument { at: identity }),
+            "a static lambda handed to a dynamic parameter is refused at the lambda"
+        );
+        assert_eq!(
+            report.judged()[4].verdict(),
+            Verdict::Refused(CheckRefusal::StaticLambdaArgument { at: pair }),
+            "so is a static definition that unfolds to one"
+        );
+        assert!(
+            matches!(report.judged()[5].verdict(), Verdict::Checked { .. }),
+            "an opaque operator is a value the kernel types: {:?}",
+            report.judged()[5].verdict()
+        );
+        assert!(
+            matches!(
+                *readmission.readmitted()[5].outcome(),
+                Outcome::Defined { .. }
+            ),
+            "and the kernel admits it: {:?}",
+            readmission.readmitted()[5].outcome()
+        );
+    }
+
+    #[test]
+    fn one_static_definition_at_two_instances_records_two_certificates()
+    {
+        // def Pair : Type -> Type = \X. El X * El X ;
+        // def both : Type = El (Pair Integer) * El (Pair String) ;
+        // def twice : Type = El (Pair Integer) * El (Pair Integer) ;
+        let mut arena = CoreArena::new();
+        let small = small(&mut arena);
+        let operator_type = arena.value_type_static_pi(small, small);
+        let operator = pair_operator(&mut arena);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let integer_code = arena.value_quote(integer);
+        let again = arena.value_quote(integer);
+        let string_code = arena.value_quote(string);
+        let pair = arena.value_constant(ConstantIndex::from(0_usize));
+        let at_integer = arena.value_static_application(pair, integer_code);
+        let at_string = arena.value_static_application(pair, string_code);
+        let at_again = arena.value_static_application(pair, again);
+        let first = arena.value_type_element(at_integer, Level::zero());
+        let second = arena.value_type_element(at_string, Level::zero());
+        let repeated = arena.value_type_element(at_again, Level::zero());
+        let both = arena.value_type_product(first, second);
+        let twice = arena.value_type_product(first, repeated);
+        let both_code = arena.value_quote(both);
+        let twice_code = arena.value_quote(twice);
+        let (report, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(
+                At(0),
+                Maybe::Present(operator_type),
+                Maybe::Present(operator),
+            ),
+            declaration(At(1), Maybe::Present(small), Maybe::Present(both_code)),
+            declaration(At(2), Maybe::Present(small), Maybe::Present(twice_code)),
+        ]);
+        for judged in report.judged() {
+            assert!(
+                matches!(judged.verdict(), Verdict::Checked { .. }),
+                "every declaration checks: {:?}",
+                judged.verdict()
+            );
+        }
+        let [ref operator_entry, ref both_entry, ref twice_entry] = *readmission.readmitted()
+        else {
+            panic!("one outcome per declaration");
+        };
+        assert_eq!(
+            operator_entry.outcome(),
+            &Outcome::Static,
+            "the operator itself crosses as nothing"
+        );
+        assert_eq!(
+            steps(both_entry),
+            [convertible(At(0)), convertible(At(0))],
+            "two instances of one definition each record a certificate naming it: {:?}",
+            both_entry.outcome()
+        );
+        let [ref at_one, ref at_other] = *both_entry.certificates()
+        else {
+            panic!("two certificates");
+        };
+        assert_ne!(
+            at_one.redex(),
+            at_other.redex(),
+            "each certificate is addressed by its own instance"
+        );
+        assert_eq!(
+            steps(twice_entry),
+            [convertible(At(0))],
+            "one instance written twice is certified once, whatever its nodes"
+        );
+        for entry in [both_entry, twice_entry] {
+            assert!(
+                matches!(*entry.outcome(), Outcome::Defined { .. }),
+                "{:?} is admitted",
+                entry.outcome()
+            );
+        }
+    }
+
+    #[test]
+    fn a_rigid_static_instance_crosses_as_a_kernel_application()
+    {
+        // def G : Type -> Type ;
+        // def applied : Type = G Integer ;
+        let mut arena = CoreArena::new();
+        let small = small(&mut arena);
+        let operator_type = arena.value_type_static_pi(small, small);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let integer_code = arena.value_quote(integer);
+        let opaque = arena.value_constant(ConstantIndex::from(0_usize));
+        let applied = arena.value_static_application(opaque, integer_code);
+        let (report, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), Maybe::Present(operator_type), HOLE),
+            declaration(At(1), Maybe::Present(small), Maybe::Present(applied)),
+        ]);
+        assert!(
+            matches!(report.judged()[1].verdict(), Verdict::Checked { .. }),
+            "an instance of an opaque operator checks"
+        );
+        let [ref axiom, ref instance] = *readmission.readmitted()
+        else {
+            panic!("one outcome per declaration");
+        };
+        assert!(
+            matches!(*axiom.outcome(), Outcome::Assumed { .. })
+                && matches!(*instance.outcome(), Outcome::Defined { .. }),
+            "the opaque operator crosses as an axiom and its instance as a definition: {:?}",
+            instance.outcome()
+        );
+        assert!(
+            instance.certificates().is_empty(),
+            "nothing unfolds at a rigid head"
+        );
+        let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+        let body = artifact
+            .declarations()
+            .iter()
+            .find_map(|marked| match *marked.declaration().content() {
+                | DeclarationContent::Def { body, .. } => Some(body),
+                | DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => {
+                    None
+                },
+            })
+            .unwrap();
+        let Some(&KernelValue::StaticApplication(head, argument)) = artifact.arena().value(body)
+        else {
+            panic!("the instance crosses as the kernel's static application");
+        };
+        assert_eq!(
+            artifact.arena().value(head),
+            Some(&KernelValue::Constant(crossed_at(&readmission, At(0)))),
+            "its head is the axiom's position"
+        );
+        let Some(&KernelValue::Quote(quoted)) = artifact.arena().value(argument)
+        else {
+            panic!("its argument is a quote");
+        };
+        assert_eq!(
+            artifact.arena().value_type(quoted),
+            Some(&KernelValueType::Base(BaseType::Integer)),
+            "of the atom it was applied at"
+        );
+    }
+
+    #[test]
+    fn a_static_lambda_crosses_only_as_a_closed_operator()
+    {
+        let mut arena = CoreArena::new();
+        let closed = pair_operator(&mut arena);
+        let free = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let open = arena.value_static_lambda(free);
+        let positions = Positions::default();
+        let lifts = alloc::collections::BTreeMap::new();
+        let definitions = alloc::collections::BTreeMap::new();
+        let source = Source {
+            lifts: &lifts,
+            definitions: &definitions,
+        };
+        let base = ConstantIndex::from(3_usize);
+        let mut erasure = Erasure::new(&mut arena, source, &positions, base);
+        let refused = |at: ValueId| {
+            Err(Refusal::OutOfFragment {
+                at: CoreNode::Term(TermNode::Value(at)),
+                former: UnadmittedFormer::StaticLambda,
+            })
+        };
+        assert_eq!(
+            erasure.abstraction(closed),
+            refused(closed),
+            "a static normal form holds no lambda"
+        );
+        erasure.mode = Reading::Verbatim;
+        assert_eq!(
+            erasure.abstraction(closed),
+            Ok(base),
+            "a closed lambda read verbatim is the first operator, numbered from the base"
+        );
+        assert_eq!(
+            erasure.abstraction(closed),
+            Ok(base),
+            "and keeps its number when met again"
+        );
+        assert_eq!(
+            erasure.abstraction(open),
+            refused(open),
+            "a lambda reaching a binder outside itself stands for no closed operator"
+        );
+    }
+
+    #[test]
+    fn every_checked_static_declaration_is_readmitted()
+    {
+        // def RawRelMonad : (Type -> Type[-]) -> Type -> Type -> Type ;
+        // def RawRelMonad = \T. \A. \B.
+        //   U (El A -> T A) * U (U (T A) -> U (El A -> T B) -> T B) ;
+        // def Witness : Type = RawRelMonad (\X. F (El X * El X)) Integer Integer ;
+        // def Elided : Type =
+        //   U (Integer -> F (Integer * Integer))
+        //   * U (U (F (Integer * Integer)) -> U (Integer -> F (Integer * Integer)) -> F
+        //     (Integer * Integer)) ;
+        // def unit_and_bind : El Witness ;
+        //
+        // The kernel is the oracle: the instance crosses as the same content
+        // the elided spelling does, every step it took replays, and a hole at
+        // its decode is an axiom of the normal form.
+        let mut arena = CoreArena::new();
+        let small = small(&mut arena);
+        let negative =
+            arena.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
+        let family_type = arena.value_type_static_pi(small, negative);
+        let last = arena.value_type_static_pi(small, small);
+        let middle = arena.value_type_static_pi(small, last);
+        let monad_type = arena.value_type_static_pi(family_type, middle);
+        let result = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let carrier = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let family = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let element = arena.value_type_element(carrier, Level::zero());
+        let at_carrier = arena.value_static_application(family, carrier);
+        let at_result = arena.value_static_application(family, result);
+        let acts_on_carrier = arena.comp_type_element(at_carrier, Level::zero());
+        let acts_on_result = arena.comp_type_element(at_result, Level::zero());
+        let unit_arrow = arena.comp_type_arrow(element, acts_on_carrier);
+        let unit_thunk = arena.value_type_thunk(unit_arrow);
+        let suspended_carrier = arena.value_type_thunk(acts_on_carrier);
+        let continuation_arrow = arena.comp_type_arrow(element, acts_on_result);
+        let continuation = arena.value_type_thunk(continuation_arrow);
+        let bind_tail = arena.comp_type_arrow(continuation, acts_on_result);
+        let bind_arrow = arena.comp_type_arrow(suspended_carrier, bind_tail);
+        let bind_thunk = arena.value_type_thunk(bind_arrow);
+        let monad_product = arena.value_type_product(unit_thunk, bind_thunk);
+        let monad_code = arena.value_quote(monad_product);
+        let over_result = arena.value_static_lambda(monad_code);
+        let over_carrier = arena.value_static_lambda(over_result);
+        let monad = arena.value_static_lambda(over_carrier);
+
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded = arena.value_type_element(bound, Level::zero());
+        let squared = arena.value_type_product(decoded, decoded);
+        let returns_squared = arena.comp_type_returner(squared);
+        let squared_code = arena.value_quote_computation(returns_squared);
+        let squaring = arena.value_static_lambda(squared_code);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let carrier_code = arena.value_quote(integer);
+        let result_code = arena.value_quote(integer);
+        let head = arena.value_constant(ConstantIndex::from(0_usize));
+        let at_family = arena.value_static_application(head, squaring);
+        let at_carrier_code = arena.value_static_application(at_family, carrier_code);
+        let witness = arena.value_static_application(at_carrier_code, result_code);
+
+        let pair = arena.value_type_product(integer, integer);
+        let returns_pair = arena.comp_type_returner(pair);
+        let unit_spelled = arena.comp_type_arrow(integer, returns_pair);
+        let unit_spelled = arena.value_type_thunk(unit_spelled);
+        let suspended_pair = arena.value_type_thunk(returns_pair);
+        let continuation_spelled = arena.comp_type_arrow(integer, returns_pair);
+        let continuation_spelled = arena.value_type_thunk(continuation_spelled);
+        let bind_tail_spelled = arena.comp_type_arrow(continuation_spelled, returns_pair);
+        let bind_spelled = arena.comp_type_arrow(suspended_pair, bind_tail_spelled);
+        let bind_spelled = arena.value_type_thunk(bind_spelled);
+        let elided_product = arena.value_type_product(unit_spelled, bind_spelled);
+        let elided = arena.value_quote(elided_product);
+        let witness_constant = arena.value_constant(ConstantIndex::from(1_usize));
+        let decoded_witness = arena.value_type_element(witness_constant, Level::zero());
+
+        let (report, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), Maybe::Present(monad_type), Maybe::Present(monad)),
+            declaration(At(1), Maybe::Present(small), Maybe::Present(witness)),
+            declaration(At(2), Maybe::Present(small), Maybe::Present(elided)),
+            declaration(At(3), Maybe::Present(decoded_witness), HOLE),
+        ]);
+        assert!(
+            matches!(
+                report
+                    .judged()
+                    .iter()
+                    .map(Judged::verdict)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                [
+                    Verdict::Checked { .. },
+                    Verdict::Checked { .. },
+                    Verdict::Checked { .. },
+                    Verdict::Owed(_),
+                ]
+            ),
+            "the operator, its instance and the elided spelling check, and the hole is owed: \
+             {:?}",
+            report
+                .judged()
+                .iter()
+                .map(Judged::verdict)
+                .collect::<Vec<_>>()
+        );
+        let [ref operator, ref instance, ref spelled, ref hole] = *readmission.readmitted()
+        else {
+            panic!("one outcome per declaration");
+        };
+        assert_eq!(
+            operator.outcome(),
+            &Outcome::Static,
+            "the operator stays on the checker's side"
+        );
+        assert!(
+            matches!(*instance.outcome(), Outcome::Defined { .. })
+                && matches!(*spelled.outcome(), Outcome::Defined { .. })
+                && matches!(*hole.outcome(), Outcome::Assumed { .. }),
+            "the instance and the spelling cross as definitions and the hole as an axiom: \
+             {:?}",
+            readmission.readmitted()
+        );
+        assert!(
+            matches!(steps(instance).first(), Some(&(Unfolded::Definition(position), _))
+                if position == ConstantIndex::from(0_usize)),
+            "the instance unfolds the operator first: {:?}",
+            steps(instance)
+        );
+        for entry in [instance, hole] {
+            assert!(
+                !entry.certificates().is_empty()
+                    && entry
+                        .certificates()
+                        .iter()
+                        .all(|replayed| replayed.verdict() == KernelVerdict::Convertible),
+                "every step the kernel replays converts: {:?}",
+                steps(entry)
+            );
+        }
+        let bodies = exported_bodies(&readmission);
+        assert_eq!(
+            bodies.len(),
+            2_usize,
+            "the instance and the spelling are the definitions that cross"
+        );
+        assert_eq!(
+            bodies.first(),
+            bodies.last(),
+            "the instance crosses as exactly the content the elided spelling writes"
         );
     }
 
@@ -3790,7 +5326,7 @@ mod tests
                         certificate.verdict(),
                         KernelVerdict::Convertible,
                         "the kernel re-derives the unfolding of {:?}",
-                        certificate.constant()
+                        certificate.unfolded()
                     );
                 }
             }

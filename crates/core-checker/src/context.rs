@@ -39,6 +39,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Context;
 use gandr_core_term::CoreArena;
@@ -53,6 +54,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::code::CodeDefinitions;
 use crate::code::Lift;
+use crate::code::Unfolded;
 use crate::code::unfolding;
 use crate::formation::FormedValueType;
 use crate::formation::level_of;
@@ -575,38 +577,88 @@ impl<'arena> CheckingContext<'arena>
         }
     }
 
-    /// The body the code `code` unfolds to, certified.
+    /// The reduct of one certified step at the code `code`'s head.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the body of the constant `code` names when it is a constant
-    ///   with a body, its unfolding certified by the normaliser's conversion
-    ///   and the constant logged as consulted; nothing for any other code.
+    /// - requires: `code` stands beneath the binders the judgement is under.
+    /// - ensures: the reduct [`CodeDefinitions::reduce`] gives `code` — a
+    ///   constant's body, a static definition at a saturated instance, a static
+    ///   redex — its step certified by the normaliser's conversion beneath the
+    ///   context's binders and an unfolded definition logged as consulted;
+    ///   nothing for any other code. A reduct is another node than `code`, and
+    ///   resolves.
     /// - fails: [`CheckRefusal::Undecided`] when the machine does not certify
-    ///   the unfolding; [`CheckRefusal::DanglingNode`] for a code that does not
+    ///   the step; [`CheckRefusal::DanglingNode`] for a code that does not
     ///   resolve.
     /// - panics: none.
-    fn unfold(
+    ///
+    /// # Errors
+    /// - [`CheckRefusal`] — as above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a constant's δ-step, a static instance's
+    ///   δβ-step, and a rigid code; the certification is the normaliser's,
+    ///   witnessed where it is defined.
+    /// - witness: `conversion::tests::a_decode_of_a_defined_code_converts_with_its_body`
+    /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
+    /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Maybe::Present(reduct)) => reduct != code && self.arena.value(reduct).is_some(),
+        | Ok(Maybe::Absent(_)) | Err(_) => true,
+    })]
+    pub(crate) fn unfold(
         &mut self,
         code: ValueId,
     ) -> Result<Maybe<ValueId, unfolding::Absent>, CheckRefusal>
     {
-        let Some(node) = self.arena.value(code)
-        else {
-            return Err(CheckRefusal::DanglingNode {
-                node: CoreNode::Term(TermNode::Value(code)),
-            });
-        };
-        let &Value::Constant(constant) = node
+        let Maybe::Present(step) = self.definitions.reduce(self.arena, code)?
         else {
             return Ok(Maybe::Absent(unfolding::Absent::Rigid));
         };
-        if let Maybe::Absent(rigid) = self.definitions.body(constant) {
-            return Ok(Maybe::Absent(rigid));
+        let certificate = self.definitions.certify(self.arena, step)?;
+        if let Unfolded::Definition(constant) = certificate.unfolded() {
+            let _answer = self.consult(constant);
         }
-        let certificate = self.definitions.certify(self.arena, code, constant)?;
-        let _answer = self.consult(constant);
-        Ok(Maybe::Present(certificate.body()))
+        Ok(Maybe::Present(certificate.reduct()))
+    }
+
+    /// The code `code` reduces to at its head: [`Self::unfold`] taken until
+    /// it gives nothing.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::unfold`].
+    /// - ensures: `code` itself when no step fires at its head, otherwise the
+    ///   last reduct of the chain of certified steps; the result resolves in
+    ///   the arena. That no step fires at the result is not restated
+    ///   executably: deciding it is another step, which mints into the arena.
+    /// - fails: as [`Self::unfold`].
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// - reason: the `loop` below takes one certified step per turn, not
+    ///   recursion.
+    /// - measure: the static normal form's distance: each step reduces a δ- or
+    ///   β-redex of a well-formed code, and the judgement's step allowance
+    ///   bounds every certificate's evaluation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a rigid head, a chain of two constants,
+    ///   and a static definition that does not reduce short of its arguments.
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `bridge::tests::a_static_lambda_at_a_dynamic_parameter_is_refused_by_name`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|head| self.arena.value(head).is_some()))]
+    pub(crate) fn whnf_code(
+        &mut self,
+        code: ValueId,
+    ) -> Result<ValueId, CheckRefusal>
+    {
+        let mut head = code;
+        loop {
+            match self.unfold(head)? {
+                | Maybe::Present(reduct) => head = reduct,
+                | Maybe::Absent(_) => return Ok(head),
+            }
+        }
     }
 
     /// The level of the universe a closed code `code` inhabits, read off the
@@ -646,7 +698,9 @@ impl<'arena> CheckingContext<'arena>
                     | ValueTypeView::Unit
                     | ValueTypeView::Thunk(_)
                     | ValueTypeView::Lift { .. }
-                    | ValueTypeView::Element { .. } => Ok(otherwise.clone()),
+                    | ValueTypeView::Element { .. }
+                    | ValueTypeView::Product(..)
+                    | ValueTypeView::StaticPi { .. } => Ok(otherwise.clone()),
                 },
                 | Maybe::Absent(_) => Ok(otherwise.clone()),
             },
