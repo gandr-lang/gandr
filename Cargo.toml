@@ -4,6 +4,7 @@ members = [
   "crates/core-checker",
   "crates/core-incremental",
   "crates/core-nbe",
+  "crates/core-sequent",
   "crates/core-term",
   "crates/kernel-check-memo",
   "crates/kernel-conversion-trace",
@@ -131,6 +132,7 @@ path = "crates/core-checker"
 # - core-checker
 # - core-incremental
 # - core-nbe
+# - core-sequent
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -166,6 +168,7 @@ path = "crates/kernel-core"
 # - core-checker (dev)
 # - core-incremental
 # - core-nbe
+# - core-sequent
 # - core-term
 # - kernel-core
 # - kernel-term
@@ -178,6 +181,7 @@ path = "crates/kernel-strata"
 # - core-checker
 # - core-incremental
 # - core-nbe
+# - core-sequent
 # - core-term
 # - kernel-core
 # - surface-corpus
@@ -290,6 +294,7 @@ path = "crates/surface-syntax"
 # The cell-shape substrate: command patterns, matching, the reduction order,
 # the cell alphabet and its store.
 # consumers:
+# - core-sequent
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras
 # - theory-coherent-resolutions
@@ -370,6 +375,7 @@ default-features = false
 # consumers:
 # - core-checker (dev)
 # - core-incremental (dev)
+# - core-sequent (dev)
 # - kernel-strata (dev)
 # - storage-records (dev)
 # - storage-values (dev)

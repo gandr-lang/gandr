@@ -230,6 +230,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-core-sequent"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-term",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "gandr-theory-cell-complexes",
+ "proptest",
+]
+
+[[package]]
 name = "gandr-core-term"
 version = "0.0.0"
 dependencies = [

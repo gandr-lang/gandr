@@ -1,0 +1,35 @@
+[package]
+name = "gandr-core-sequent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The command IL a call-by-push-value program is focused into, its two-region store, and the abstract machine that runs it"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["call-by-push-value", "gandr", "no-std", "sequent-calculus"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The IL is stated over the core language's vocabulary: its zones from the
+# core syntax, its literals, indices and injection sides from the kernel's
+# term crate, its lift levels from the level oracle, and its cut polarity from
+# the cell substrate, so a cell pattern's polarity reaches a command unchanged.
+[dependencies]
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-cell-complexes.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
