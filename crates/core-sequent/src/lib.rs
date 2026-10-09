@@ -8,6 +8,14 @@
 //!   [`CommandArena::truncate_to`] the rollback a refused build takes.
 //!   Covariables are de Bruijn indices ([`CovariableIndex`]); nothing mints a
 //!   continuation name.
+//! - [`focus_computation`], [`focus_value`] and [`focus_top_value`] translate
+//!   core terms into the IL, recording each created command's [`FocusOrigin`]
+//!   in a [`Provenance`] table; [`unfocus_command`] and [`unfocus_value`] read
+//!   the IL back, their left inverse.
+//! - [`check_command`] is the typed-IL check: reference integrity, arity, focus
+//!   and polarity, answering a command's [`FreeSet`].
+//! - [`render_command`], [`render_producer`] and [`render_consumer`] write the
+//!   IL's notation.
 //! - [`Store`] is the machine's two-region store: the heap region of
 //!   [`HeapValue`]s, memo cells and environment chains, and the walkable frame
 //!   region of [`Frame`]s addressed by [`ContinuationMark`]s.
@@ -22,14 +30,28 @@
 extern crate alloc;
 
 mod boundary;
+mod check;
+mod focus;
 mod il;
+mod pretty;
 mod store;
+mod unfocus;
 
 pub use crate::boundary::ConsumerArity;
 pub use crate::boundary::FrameHeight;
 pub use crate::boundary::FrameSerial;
 pub use crate::boundary::NodeCount;
 pub use crate::boundary::ProducerArity;
+pub use crate::check::ArityHead;
+pub use crate::check::CheckRefusal;
+pub use crate::check::FreeSet;
+pub use crate::check::check_command;
+pub use crate::focus::FocusOrigin;
+pub use crate::focus::FocusRefusal;
+pub use crate::focus::Provenance;
+pub use crate::focus::focus_computation;
+pub use crate::focus::focus_top_value;
+pub use crate::focus::focus_value;
 pub use crate::il::CommandArena;
 pub use crate::il::CommandId;
 pub use crate::il::CommandNode;
@@ -45,6 +67,9 @@ pub use crate::il::PatternArm;
 pub use crate::il::ProducerId;
 pub use crate::il::ProducerNode;
 pub use crate::il::SequentWatermark;
+pub use crate::pretty::render_command;
+pub use crate::pretty::render_consumer;
+pub use crate::pretty::render_producer;
 pub use crate::store::CellId;
 pub use crate::store::ContinuationMark;
 pub use crate::store::CovalueBindingId;
@@ -60,3 +85,6 @@ pub use crate::store::Store;
 pub use crate::store::StoreFault;
 pub use crate::store::ValueBindingId;
 pub use crate::store::ValueScope;
+pub use crate::unfocus::UnfocusRefusal;
+pub use crate::unfocus::unfocus_command;
+pub use crate::unfocus::unfocus_value;

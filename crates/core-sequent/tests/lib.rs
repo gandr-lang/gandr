@@ -6,4 +6,10 @@
 extern crate alloc;
 
 #[cfg(test)]
+mod compare;
+#[cfg(test)]
 mod csl_fibration;
+#[cfg(test)]
+mod focus_properties;
+#[cfg(test)]
+mod generate;

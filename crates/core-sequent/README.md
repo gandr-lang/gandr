@@ -11,6 +11,9 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - [Examples](#examples)
 - [Covariables are indices](#covariables-are-indices)
 - [Children before parents](#children-before-parents)
+- [Focusing names only what is not a tail](#focusing-names-only-what-is-not-a-tail)
+- [Unfocusing is the left inverse](#unfocusing-is-the-left-inverse)
+- [The typed-IL check](#the-typed-il-check)
 - [The polarity is the cell substrate's](#the-polarity-is-the-cell-substrates)
 - [Two regions](#two-regions)
 - [The store owns the cell protocol](#the-store-owns-the-cell-protocol)
@@ -20,7 +23,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 
 ## Synopsis
 
-**What.** `CommandArena` holds the three node families of a polarized sequent calculus — producers, consumers and commands — over the core language's vocabulary: a command `⟨p |ε c⟩` cuts a producer against a consumer at a polarity, constructor and destructor heads (`ConstructorTag`, `DestructorTag`) declare their own arities, and variables and covariables are de Bruijn indices. `Store` is the two-region store an environment machine over that IL runs in: an append-only heap of values, memo cells and environment chains, and a walkable region of continuation frames addressed by marks.
+**What.** `CommandArena` holds the three node families of a polarized sequent calculus — producers, consumers and commands — over the core language's vocabulary: a command `⟨p |ε c⟩` cuts a producer against a consumer at a polarity, constructor and destructor heads (`ConstructorTag`, `DestructorTag`) declare their own arities, and variables and covariables are de Bruijn indices. `focus_computation` and `focus_value` translate a core term into that IL and `unfocus_command` and `unfocus_value` read it back; `check_command` holds a command to the IL's typing discipline. `Store` is the two-region store an environment machine over that IL runs in: an append-only heap of values, memo cells and environment chains, and a walkable region of continuation frames addressed by marks.
 
 **Why.** A call-by-push-value term has its evaluation order implicit in its syntax; a command makes it explicit, as a cut whose two sides say what is sent where. That is the form an abstract machine steps without a search for the next redex, the form a cell rule from the rewriting stack already speaks, and the form whose frames an effect handler will later need to walk. Fixing the IL and the store first fixes the contract every later piece — focusing, the machine, the bridge from cells — is written against.
 
@@ -43,11 +46,16 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - `Store` with `HeapValue`, `HeapValueId` and `CellId`: the heap region of immutable values and nominal memo cells, with `ForceEntry` and `MemoState` the cell protocol, `StoreFault` its refusals. Witnesses: `store::tests::cell_write_back_is_shared_and_nominal`, `tests::csl_fibration::frame_preservation_under_forcing`, `tests::csl_fibration::nominal_identity_freshness_and_alias_coherence`, `tests::csl_fibration::black_hole_discipline_under_reentry`, `tests::csl_fibration::write_back_purity_caches_the_exact_probe_allocation`.
 - `Environment`, `ValueScope`, `CovalueScope`: persistent environment chains in the heap region, read innermost first. Witness: `store::tests::environments_bind_innermost_first`.
 - `Frame`, `ContinuationMark` and `Store::shrink_to`: the walkable frame region, marks refused once stale, and the decline of every forcing a shrink abandons. Witness: `store::tests::frames_shrink_to_a_mark`.
+- `focus_computation`, `focus_value` and `focus_top_value`, recording each created command's `FocusOrigin` in a `Provenance` table: total on closed well-typed core terms, every image well formed and closed, every covariable the innermost one, and a refused translation leaving the arena and the table at their marks. Witnesses: `tests::focus_properties::focusing_is_total_on_generated_computations`, `tests::focus_properties::hand_built_cases_cover_every_former`, `tests::focus_properties::top_level_value_focuses_against_top`, `focus::tests::focusing_mints_no_name`, `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`.
+- `unfocus_command` and `unfocus_value`: the left inverse of focusing, refusing IL outside its image by name with `UnfocusRefusal` and leaving the core arena at its mark. Witnesses: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`, `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`, `unfocus::tests::an_escaping_covariable_is_refused_and_rolled_back`, `unfocus::tests::a_capture_standing_as_a_value_is_outside_the_image`.
+- `check_command` with `CheckRefusal`, `ArityHead` and `FreeSet`: reference integrity, arity from the head, focus, polarity, and the free variables and covariables of a command. Witnesses: `check::tests::terminal_cut_is_wellformed`, `check::tests::scope_tracks_binders`, `check::tests::dangling_reference_is_rejected`, `check::tests::non_value_argument_is_rejected`, `check::tests::polarity_mismatch_is_rejected`, `check::tests::constructor_arity_is_checked`, `check::tests::constructor_consumer_arity_is_checked`, `check::tests::destructor_consumer_arity_is_checked`, `check::tests::consumer_arity_follows_the_head_not_a_constant`, `check::tests::a_head_answered_twice_is_rejected`.
+- `render_command`, `render_producer` and `render_consumer`: the IL's notation, binders shown with their indices. Witnesses: `pretty::tests::renders_terminal_cut`, `pretty::tests::renders_lambda_cocase`, `pretty::tests::renders_structural_heads`.
 
 ## Expected features
 
 - **Addresses from the same arena or store.** An address is a position in one arena or store; one from another resolves to an unrelated node or to nothing. Lookups fail closed on a dangling address, and nothing checks provenance beyond that.
 - **Truncation by the minting party.** `CommandArena::truncate_to` drops nodes, not references to them; the caller that takes a mark is the one that may truncate to it, after dropping every address minted since.
+- **Well-typed input to focusing.** Focusing translates the formers it is given and refuses only a dangling id or a full arena; it does not type-check. Totality and closedness of the image are stated for closed terms the core's checker accepts, and an ill-typed term focuses to whatever its formers say.
 
 ## Examples
 
@@ -73,6 +81,32 @@ assert!(matches!(arena.command(cut), Some(CommandNode::Cut { .. })));
 # Ok::<(), gandr_core_sequent::MintRefusal>(())
 ```
 
+Focus `return ()`, render the command, and read it back.
+
+```rust
+use gandr_core_sequent::CommandArena;
+use gandr_core_sequent::FreeSet;
+use gandr_core_sequent::Provenance;
+use gandr_core_sequent::check_command;
+use gandr_core_sequent::focus_computation;
+use gandr_core_sequent::render_command;
+use gandr_core_sequent::unfocus_command;
+use gandr_core_term::CoreArena;
+
+let mut core = CoreArena::new();
+let unit = core.value_unit();
+let returned = core.computation_return(unit);
+
+let mut arena = CommandArena::new();
+let mut provenance = Provenance::new();
+let command = focus_computation(&core, returned, &mut arena, &mut provenance).expect("a closed term focuses");
+assert_eq!("⟨() |+ ★⟩", render_command(&arena, command));
+assert_eq!(Ok(FreeSet::default()), check_command(&arena, command));
+
+let mut decoded = CoreArena::new();
+assert!(unfocus_command(&arena, command, &mut decoded).is_ok());
+```
+
 Run the tests:
 
 ```sh
@@ -90,6 +124,39 @@ The alternatives were named covariables drawn from a fresh-name supply, which is
 Every `mint_*` call checks that each child it is given resolves in the arena before appending, so each node's children were minted strictly before it, across all three families, and the arena is acyclic by construction. A `SequentWatermark` records the three family lengths; truncating to it keeps exactly the nodes minted before it, and since those name only earlier nodes, truncation never leaves a dangling child inside the arena. A build that mints several nodes and then refuses truncates to the mark it took on entry, so a refusal leaves the arena as it found it. The earlier implementation of this design returned an error from a half-built translation with its partial nodes still in the arena.
 
 The alternatives were unchecked minting, which admits a forward reference and with it a cycle every walk would then need a depth limit against, and a staging buffer committed at the end of a build, which copies every node twice. The choice reverses if a measured build shows the per-child check dominating minting.
+
+## Focusing names only what is not a tail
+
+Focusing translates a computation `M` under a continuation `c` into a command, `𝓕⟦M⟧c`, and a value `v` into a producer, `𝓥⟦v⟧`:
+
+```text
+𝓥⟦x⟧ = x        𝓥⟦thunk M⟧ = {force(α) ⇒ 𝓕⟦M⟧α}        𝓥⟦()⟧, 𝓥⟦(v, w)⟧, 𝓥⟦inj v⟧, 𝓥⟦lift v⟧ = the constructor
+
+𝓕⟦return v⟧c        = ⟨𝓥⟦v⟧ |+ c⟩
+𝓕⟦force v⟧c         = ⟨𝓥⟦v⟧ |+ force(c)⟩
+𝓕⟦M v⟧c             = 𝓕⟦M⟧(apply(𝓥⟦v⟧; c))
+𝓕⟦λ. M⟧c            = ⟨cocase {apply(x; α) ⇒ 𝓕⟦M⟧α} |− c⟩
+𝓕⟦x ← M; N⟧c        = 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧c)                         c a tail
+                    = ⟨μα. 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧α) |ε c⟩                otherwise
+𝓕⟦case v {l, r}⟧c   = ⟨𝓥⟦v⟧ |+ case {inl(x) ⇒ 𝓕⟦l⟧c | inr(x) ⇒ 𝓕⟦r⟧c}⟩   c a tail
+                    = ⟨μα. ⟨𝓥⟦v⟧ |+ case {… 𝓕⟦·⟧α …}⟩ |ε c⟩        otherwise
+```
+
+A tail is a covariable or `★`. A bind and a case open a producer binder, and a continuation that is not a tail — a frame, a `μ̃` — carries producers whose indices would have to shift under it; so such a continuation is named once with a `μ`, at the polarity of what it observes, and the binder sees only the tail `α0`. Every continuation that crosses a binder is then a tail, nothing is shifted or copied, every focused covariable is index `0`, and two focusings of one term build identical arenas. A core value is never a `μ`, so every frame argument and constructor field of an image is a value. `Provenance` records, for each command focusing creates, the core former it was created for. A refused translation truncates the arena and the provenance table to the marks it took on entry.
+
+The earlier implementation of this design passed the continuation under the binder unchanged, `𝓕⟦x ← M; N⟧α = 𝓕⟦M⟧(μ̃x. 𝓕⟦N⟧α)` for any `α`, which named covariables make sound and indices do not. The alternatives were that rule with a shift of the continuation's producers under every binder, which copies a frame subtree per binder it crosses, and named covariables, which the section above rejects. The cost of the choice is one extra cut and one bound mark for a bind or case that is not in tail position. It reverses if a measured run shows that cut to matter, at which point a shift memoised per frame becomes the cheaper rule.
+
+## Unfocusing is the left inverse
+
+`unfocus_command` and `unfocus_value` read the image of focusing back into a core arena, rule by rule in reverse: a cut against the return point is a `return`, a force frame a `force`, an application frame an application, a copattern object of one `apply` arm a `λ`, a `μ̃` a bind, a match on the two injections a `case`, and a `μ` cut the bind or case it names, under the frame it was named for. The return point is `★` at the root and `α0` under the nearest covariable binder; a covariable reaching past it is a jump the core cannot state and is refused as `UnfocusRefusal::EscapingContinuation`. A `μ` in value position, a match on anything but the two injections and every other node outside the image is refused by name, and a refused reading truncates the core arena to its mark. Over closed well-typed terms `unfocus ∘ focus` is the identity up to the core's structure, which the round-trip properties check node by node across the two arenas.
+
+The walk is a loop over an explicit task stack, and its one implementation serves both the public inverse and the machine's readback, which closes a terminal's free variables by index from its environment. The earlier implementation of this design answered `None` for anything it could not read and recursed over owned terms, substituting a named environment value by value. The alternative was a readback of its own for the machine, which would be a second decoder for the same image to keep in step. The choice reverses if the machine's terminals grow a form focusing never produces.
+
+## The typed-IL check
+
+`check_command` walks a command and every node below it and refuses, by name, an address the arena does not hold; a constructor or destructor whose producer or consumer children contradict the counts its head declares; a match or copattern object answering one head twice; a `μ` standing where only a value may; and a cut whose producer or consumer observes the other polarity. Constructors, literals, thunks, matches and force frames are positive, copattern objects and application frames negative, and variables, constants, `μ`, covariables, `μ̃` and `★` take the cut's polarity. On success it answers the command's free variables and covariables, counted from the command, so a caller asks for a closed command by asking for an empty `FreeSet`.
+
+The arena is acyclic by construction, so the walk is a loop with no depth limit. The earlier implementation of this design recursed with a depth guard against cyclic input, checked a cut's polarity on the producer side alone, and admitted a head answered twice. The alternative was a full two-sided type check, which needs the source types the IL does not carry; the check covers what is decidable from a command alone. The choice reverses if the IL comes to carry types.
 
 ## The polarity is the cell substrate's
 
