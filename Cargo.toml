@@ -15,6 +15,7 @@ members = [
   "crates/surface-driver",
   "crates/surface-grammar",
   "crates/surface-syntax",
+  "crates/theory-cell-complexes",
   "crates/theory-graphs",
   "crates/theory-orders",
 ]
@@ -159,6 +160,7 @@ default-features = false
 # consumers:
 # - kernel-strata (dev)
 # - storage-records (dev)
+# - theory-cell-complexes (dev)
 # - theory-graphs (dev)
 # - theory-orders (dev)
 [workspace.dependencies.proptest]
@@ -176,11 +178,12 @@ git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"
 default-features = false
 
-# Named non-failure absence, sealed at each kernel decision site.
+# Named non-failure absence, sealed at each decision site.
 # features:
 # - none: core-only shapes without instrumentation
 # consumers:
 # - kernel-core
+# - theory-cell-complexes
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"

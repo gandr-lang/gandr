@@ -282,6 +282,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-cell-complexes"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-theory-graphs"
 version = "0.0.0"
 dependencies = [

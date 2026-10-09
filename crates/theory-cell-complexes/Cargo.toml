@@ -1,0 +1,28 @@
+[package]
+name = "gandr-theory-cell-complexes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The cell-shape substrate for gandr's rewriting stack: flat command patterns, matching and unification, the reduction order, the cell-alphabet trait with its sequent inhabitant, the cell store, and the linearity admission"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "no-std", "rewriting", "unification"]
+categories = ["algorithms", "data-structures", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[dependencies]
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

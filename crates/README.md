@@ -23,6 +23,7 @@ One row per directory: the directory, its package, and what it is.
 
 ```text
 crates/
+├── theory-cell-complexes/     gandr-theory-cell-complexes     command patterns, matching, the reduction order, the cell alphabet and store
 ├── theory-graphs/             gandr-theory-graphs             the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-orders/             gandr-theory-orders             order maintenance with constant-time comparison
 ├── kernel-strata/             gandr-kernel-strata             the universe-level oracle with checkable order evidence
