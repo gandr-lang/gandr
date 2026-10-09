@@ -34,7 +34,7 @@ use crate::report::report_span;
 
 quenchant_shape::reason_enum! {
     /// Why a context slot holds no annotation.
-    pub mod context {
+    pub mod report_context {
         /// The reason a context slot is empty.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
@@ -111,13 +111,13 @@ pub struct Annotations
     /// The locus the report is about.
     pub primary: Maybe<Annotation, report_span::Absent>,
     /// The loci that explain it, in the order the refusal names them.
-    pub context: [Maybe<Annotation, context::Absent>; 2_usize],
+    pub context: [Maybe<Annotation, report_context::Absent>; 2_usize],
 }
 
 /// No context locus.
-const UNNAMED: [Maybe<Annotation, context::Absent>; 2_usize] = [
-    Maybe::Absent(context::Absent::Unnamed),
-    Maybe::Absent(context::Absent::Unnamed),
+const UNNAMED: [Maybe<Annotation, report_context::Absent>; 2_usize] = [
+    Maybe::Absent(report_context::Absent::Unnamed),
+    Maybe::Absent(report_context::Absent::Unnamed),
 ];
 
 impl Annotations
@@ -181,11 +181,11 @@ impl Annotations
             | LoweringRefusal::IllTypedPayload { .. }
             | LoweringRefusal::BudgetExceeded { .. }
             | LoweringRefusal::GrammarMismatch { .. }
-            | LoweringRefusal::UnknownMold { .. } => Maybe::Absent(context::Absent::Unnamed),
+            | LoweringRefusal::UnknownMold { .. } => Maybe::Absent(report_context::Absent::Unnamed),
         };
         Self {
             primary,
-            context: [first, Maybe::Absent(context::Absent::Unnamed)],
+            context: [first, Maybe::Absent(report_context::Absent::Unnamed)],
         }
     }
 
@@ -258,7 +258,7 @@ fn checked(
         | CheckRefusal::ShapeMismatch { at, wanted, found } => {
             (node(origins, CoreNode::Term(at)), [
                 annotated(node(origins, CoreNode::Type(found)), Label::Met(wanted)),
-                Maybe::Absent(context::Absent::Unnamed),
+                Maybe::Absent(report_context::Absent::Unnamed),
             ])
         },
         | CheckRefusal::NotSynthesisable {
@@ -338,12 +338,12 @@ fn node(
 fn annotated(
     span: Maybe<ByteSpan, node_span::Absent>,
     label: Label,
-) -> Maybe<Annotation, context::Absent>
+) -> Maybe<Annotation, report_context::Absent>
 {
     match span {
         | Maybe::Present(span) => Maybe::Present(Annotation { span, label }),
         | Maybe::Absent(node_span::Absent::Unrecorded) => {
-            Maybe::Absent(context::Absent::Unrecorded)
+            Maybe::Absent(report_context::Absent::Unrecorded)
         },
     }
 }

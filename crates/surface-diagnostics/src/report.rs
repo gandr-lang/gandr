@@ -22,6 +22,7 @@ use annotate_snippets::renderer::DecorStyle;
 use gandr_core_term::FailureClass;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Refusal;
+use gandr_surface_corpus::RefusalSpelling;
 use gandr_surface_corpus::Surviving;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
@@ -33,7 +34,7 @@ use crate::locus::Annotation;
 use crate::locus::Annotations;
 use crate::locus::Checked;
 use crate::locus::Label;
-use crate::locus::context;
+use crate::locus::report_context;
 use crate::style::RenderStyle;
 use crate::style::Rendered;
 
@@ -53,6 +54,19 @@ quenchant_shape::reason_enum! {
             /// The span the producer recorded lies outside the source's text,
             /// or splits one of its characters.
             OutsideText,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a report carries no identifier.
+    pub mod report_identifier {
+        /// The reason a report names no refusal.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The report states what a declaration states and produced: it
+            /// carries no refusal to name, and its title is its statement.
+            Statement,
         }
     }
 }
@@ -272,6 +286,94 @@ impl<'step> Report<'step>
         }
     }
 
+    /// The vocabulary name of the refusal the report is about: the identifier
+    /// its snippet's first line carries.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a refused declaration names the refusal it produced, and a
+    ///   source refused as a whole the lowering's refusal, each spelled as a
+    ///   `refuses` payload spells it.
+    /// - provides: the identifier [`Report::render`] writes, for a face that
+    ///   carries it beside the message rather than in a snippet.
+    /// - fails: never; an unsettled declaration and a goal carry no refusal to
+    ///   name, the [`report_identifier::Absent::Statement`] absence.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a checker refusal, a lowering refusal and a goal are
+    ///   each asserted at their exact spelling or absence, against the
+    ///   identifier the same report renders.
+    /// - witness: `diagnostics::diagnostics::a_report_names_and_titles_what_it_renders`
+    #[inline]
+    pub fn identifier(&self) -> Maybe<RefusalSpelling, report_identifier::Absent>
+    {
+        match self.subject {
+            | Subject::Refused { refusal, .. } => Maybe::Present(refusal.name().spelling()),
+            | Subject::Source(refusal) => {
+                Maybe::Present(Refusal::Lowering(refusal).name().spelling())
+            },
+            | Subject::Unsettled { .. } | Subject::Goal(_) => {
+                Maybe::Absent(report_identifier::Absent::Statement)
+            },
+        }
+    }
+
+    /// The report's title: what its snippet's first line says after the level
+    /// and the identifier.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the title [`Report::render`] writes: the producer's message
+    ///   for a refusal, what the declaration states and produced for an
+    ///   unsettled declaration or a goal, and the lowering's refusal for a
+    ///   source refused as a whole.
+    /// - provides: the message a face shows beside the report's span.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refusal and a goal are each asserted at their exact
+    ///   title, and at the first line of the same report's rendering.
+    /// - witness: `diagnostics::diagnostics::a_report_names_and_titles_what_it_renders`
+    #[inline]
+    #[must_use]
+    pub const fn title(&self) -> Title<'step>
+    {
+        Title(self.subject)
+    }
+
+    /// The loci that explain the report beside its primary one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the two context slots, in the order the refusal names them:
+    ///   the first occurrence a duplicate repeats; the type a term is checked
+    ///   against, then the type it synthesises; the type a former met. Each
+    ///   locus keeps its producer's span and its own label.
+    /// - provides: the context loci [`Report::render`] marks, for a face that
+    ///   shows them as related locations.
+    /// - fails: never; an empty slot is the [`report_context::Absent`] absence:
+    ///   [`Unnamed`] for a slot the refusal names no locus for, [`Unrecorded`]
+    ///   for a node the origin table holds nothing for, [`OutsideText`] for a
+    ///   span the text cannot answer.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a type mismatch, whose synthesised type has no
+    ///   origin, and a duplicate signature are each asserted at their exact
+    ///   slots; a goal at two unnamed slots.
+    /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
+    ///
+    /// [`Unnamed`]: report_context::Absent::Unnamed
+    /// [`Unrecorded`]: report_context::Absent::Unrecorded
+    /// [`OutsideText`]: report_context::Absent::OutsideText
+    #[inline]
+    pub fn context(&self) -> [Maybe<Annotation, report_context::Absent>; 2_usize]
+    {
+        self.annotations().context
+    }
+
     /// The report as a source snippet, laid out in `style`.
     ///
     /// # Specification
@@ -314,27 +416,21 @@ impl<'step> Report<'step>
     ) -> Rendered
     {
         let annotations = self.annotations();
-        let title = Title(self.subject).to_string();
+        let title = self.title().to_string();
         let level = match self.subject {
             | Subject::Goal(_) => Level::INFO.with_name("goal"),
             | Subject::Refused { .. } | Subject::Unsettled { .. } | Subject::Source(_) => {
                 Level::ERROR
             },
         };
-        let spelling = match self.subject {
-            | Subject::Refused { refusal, .. } => Maybe::Present(refusal.name().spelling()),
-            | Subject::Source(refusal) => {
-                Maybe::Present(Refusal::Lowering(refusal).name().spelling())
-            },
-            | Subject::Unsettled { .. } | Subject::Goal(_) => {
-                Maybe::Absent(unnamed::Absent::Statement)
-            },
-        };
-        let message = match spelling {
+        let identifier = self.identifier();
+        let message = match identifier {
             | Maybe::Present(ref spelling) => {
                 level.primary_title(title.as_str()).id(spelling.as_ref())
             },
-            | Maybe::Absent(unnamed::Absent::Statement) => level.primary_title(title.as_str()),
+            | Maybe::Absent(report_identifier::Absent::Statement) => {
+                level.primary_title(title.as_str())
+            },
         };
         let origin = if self.path.as_os_str().is_empty() {
             PATHLESS.to_owned()
@@ -398,7 +494,8 @@ impl<'step> Report<'step>
     ///   locus the text cannot answer becomes the
     ///   [`report_span::Absent::OutsideText`] absence, and such a context locus
     ///   is dropped.
-    /// - provides: the only loci [`Report::span`] and [`Report::render`] read.
+    /// - provides: the only loci [`Report::span`], [`Report::context`] and
+    ///   [`Report::render`] read.
     /// - fails: never.
     /// - panics: none.
     fn annotations(&self) -> Annotations
@@ -436,7 +533,7 @@ impl<'step> Report<'step>
         };
         let [first, second] = annotations.context.map(|annotation| match annotation {
             | Maybe::Present(annotation) if inside(&annotation) => Maybe::Present(annotation),
-            | Maybe::Present(_) => Maybe::Absent(context::Absent::OutsideText),
+            | Maybe::Present(_) => Maybe::Absent(report_context::Absent::OutsideText),
             | Maybe::Absent(reason) => Maybe::Absent(reason),
         });
         Annotations {
@@ -447,9 +544,9 @@ impl<'step> Report<'step>
 }
 
 quenchant_shape::reason_enum! {
-    /// Why a report carries no identifier or note.
+    /// Why a report carries no note.
     mod unnamed {
-        /// The reason a report part is absent.
+        /// The reason a report closes with no note.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
             /// The report states what a declaration states and produced: it
@@ -473,10 +570,11 @@ where
     }
 }
 
-/// A report's title.
+/// A report's title: the producer's message for a refusal, what the
+/// declaration states and produced otherwise.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-struct Title<'step>(Subject<'step>);
+pub struct Title<'step>(Subject<'step>);
 
 impl fmt::Display for Title<'_>
 {

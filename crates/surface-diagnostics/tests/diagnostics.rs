@@ -14,14 +14,18 @@ mod diagnostics
     use std::path::PathBuf;
 
     use gandr_core_term::FailureClass;
+    use gandr_surface_diagnostics::Annotation;
     use gandr_surface_diagnostics::Class;
     use gandr_surface_diagnostics::Entry;
+    use gandr_surface_diagnostics::Label;
     use gandr_surface_diagnostics::RenderStyle;
     use gandr_surface_diagnostics::Rendered;
     use gandr_surface_diagnostics::Report;
     use gandr_surface_diagnostics::TerminalCapability;
     use gandr_surface_diagnostics::Unsettlement;
     use gandr_surface_diagnostics::entries;
+    use gandr_surface_diagnostics::report_context;
+    use gandr_surface_diagnostics::report_identifier;
     use gandr_surface_diagnostics::report_span;
     use gandr_surface_dispatcher::Composed;
     use gandr_surface_dispatcher::Goals;
@@ -547,6 +551,114 @@ def broken = missing ;
                 "strict/whole.gandr: report: unrepresentable".to_owned(),
             ],
             "test adds the settled fixture and the pending refusal as ledger lines"
+        );
+    }
+
+    #[test]
+    fn a_report_names_and_titles_what_it_renders()
+    {
+        let cases = [
+            (
+                MISMATCH,
+                Verb::Check(Goals::Gated),
+                Maybe::Present("TypeMismatch"),
+                "the type this term synthesises does not convert to the type it is checked \
+                 against",
+            ),
+            (
+                "def broken = missing ;\n",
+                Verb::Check(Goals::Gated),
+                Maybe::Present("UnresolvedName"),
+                "no declaration or binder answers `missing` at 13..20",
+            ),
+            (
+                "def hole : Integer ;\n",
+                Verb::Check(Goals::Reported),
+                Maybe::Absent(report_identifier::Absent::Statement),
+                "`hole` states checks owing 0; produced checks owing 1",
+            ),
+        ];
+        for (source, verb, identifier, title) in cases {
+            let text = SourceText::from(source);
+            let step = unsettled(Path::new("named.gandr"), SourceRoot::Strict, text);
+            let reports = reports(&step, verb);
+            assert_eq!(reports.len(), 1_usize, "one report for {source:?}");
+            let report = reports[0];
+            let named = match report.identifier() {
+                | Maybe::Present(spelling) => Maybe::Present(spelling.to_string()),
+                | Maybe::Absent(reason) => Maybe::Absent(reason),
+            };
+            let expected = match identifier {
+                | Maybe::Present(spelling) => Maybe::Present(spelling.to_owned()),
+                | Maybe::Absent(reason) => Maybe::Absent(reason),
+            };
+            assert_eq!(named, expected, "the identifier of {source:?}");
+            assert_eq!(report.title().to_string(), title, "the title of {source:?}");
+            let rendered = report.render(RenderStyle::Plain).to_string();
+            let first = match named {
+                | Maybe::Present(ref spelling) => format!("error[{spelling}]: {title}"),
+                | Maybe::Absent(report_identifier::Absent::Statement) => format!("goal: {title}"),
+            };
+            assert_eq!(
+                rendered.lines().next(),
+                Some(first.as_str()),
+                "the rendering opens with the same identifier and title"
+            );
+        }
+    }
+
+    #[test]
+    fn a_report_exposes_the_context_it_marks()
+    {
+        let mismatch = SourceText::from(MISMATCH);
+        let step = unsettled(Path::new("mismatch.gandr"), SourceRoot::Strict, mismatch);
+        let found = reports(&step, Verb::Check(Goals::Gated));
+        assert_eq!(found.len(), 1_usize, "one mismatch, one report");
+        assert_eq!(
+            found[0].context(),
+            [
+                Maybe::Present(Annotation {
+                    span: span_of(mismatch, SourceText::from("Integer")),
+                    label: Label::Expected,
+                }),
+                Maybe::Absent(report_context::Absent::Unrecorded),
+            ],
+            "the signature stands as the expected type; the synthesised type has no origin"
+        );
+
+        let duplicate = SourceText::from(
+            r"def a : Integer ;
+def a : Integer ;
+def a = 1 ;
+",
+        );
+        let step = unsettled(Path::new("duplicate.gandr"), SourceRoot::Strict, duplicate);
+        let found = reports(&step, Verb::Check(Goals::Gated));
+        assert_eq!(found.len(), 1_usize, "one duplicate, one report");
+        assert_eq!(
+            found[0].context(),
+            [
+                Maybe::Present(Annotation {
+                    span: ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(17_usize))
+                        .expect("the first signature's span is ordered"),
+                    label: Label::First,
+                }),
+                Maybe::Absent(report_context::Absent::Unnamed),
+            ],
+            "the first signature is the duplicate's one context locus"
+        );
+
+        let hole = SourceText::from("def hole : Integer ;\n");
+        let step = unsettled(Path::new("hole.gandr"), SourceRoot::Strict, hole);
+        let found = reports(&step, Verb::Check(Goals::Reported));
+        assert_eq!(found.len(), 1_usize, "one goal, one report");
+        assert_eq!(
+            found[0].context(),
+            [
+                Maybe::Absent(report_context::Absent::Unnamed),
+                Maybe::Absent(report_context::Absent::Unnamed),
+            ],
+            "a goal names no context"
         );
     }
 }
