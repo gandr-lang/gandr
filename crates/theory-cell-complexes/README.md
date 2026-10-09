@@ -135,7 +135,7 @@ cargo nextest run -p gandr-theory-cell-complexes
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-cell-complexes
 ```
 
-Items that cannot be instrumented without changing their interface state an `executable: none` reason beside the specification: const functions, abstract alphabet declarations, opaque iterator or strategy returns, and consumed one-shot inputs. Formatting and the assertion-driven depth witness expose no readable result state for an exit predicate. These items retain explicit adequacy witnesses rather than weakening their contracts to satisfy instrumentation.
+Items that cannot be instrumented without changing their interface state an `executable: none` reason beside the specification: const functions, abstract alphabet declarations, opaque iterator or strategy returns, and consumed one-shot paths. Renaming checks colliding images against the captured reserved-name set even though its input iterator is consumed. Formatting and the assertion-driven depth witness expose no readable result state for an exit predicate. These items retain explicit adequacy witnesses rather than weakening their contracts to satisfy instrumentation.
 
 ## Polarity
 
