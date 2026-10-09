@@ -41,6 +41,15 @@ impl ByteSpan
     /// - provides: the shape a caller states its record edges in.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the pinned instrument cannot expand in this const
+    ///   constructor without breaking const callers.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on arbitrary position pairs, witnessed by ordered,
+    ///   equal and inverted edges; partition results and exact rejection
+    ///   variants distinguish swapped endpoints and premature normalization.
+    /// - witness: `tests::gear::span_lists_that_are_not_a_partition_are_refused`
+    /// - witness: `tests::gear::empty_records_keep_their_record_positions`
     #[inline]
     #[must_use]
     pub const fn new(
