@@ -3,7 +3,6 @@
 The gandr surface parser: source text in, a molded syntax tree and its completion obligations out — a lossless labeler, a molder choosing each token's mold by the obligations it would leave, and a resumable push-machine melder over the checked grammar.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
@@ -12,6 +11,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Completion obligations in place of error recovery](#completion-obligations-in-place-of-error-recovery)
 - [Completion obligations are not typing obligations](#completion-obligations-are-not-typing-obligations)
 - [Label, mold, meld](#label-mold-meld)
+- [A closer with a required operand after it is a mid tile](#a-closer-with-a-required-operand-after-it-is-a-mid-tile)
 - [The tree the melder commits](#the-tree-the-melder-commits)
 - [The completion query is a bound](#the-completion-query-is-a-bound)
 - [Checkpoints](#checkpoints)
@@ -21,7 +21,6 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [The corpus every molding is checked against](#the-corpus-every-molding-is-checked-against)
 - [Grammar contracts witnessed by a parse](#grammar-contracts-witnessed-by-a-parse)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -41,9 +40,9 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 
 - `label`, `Token` and `Lexeme`: the total lossless labeler. Witnesses: `label::tests::span_tiling_is_total_and_gapless`, `label::tests::stray_bytes_are_unknown_never_a_panic`, `label::tests::multi_byte_operators_munch_maximally`, `label::tests::bridge_tiles_end_where_their_letter_does`.
 - `Molder`, `candidate_labels`, `CandidateLabel` and `TokenText`: per-token mold choice by least obligation delta, deterministic across runs. Witnesses: `mold::tests::picks_the_obligation_minimum_mold`, `mold::tests::molding_is_deterministic_across_runs`, `mold::tests::unmoldable_token_takes_the_unmolded_path`.
-- `MeldState`, `MoldedTile`, `TileText`, `SpaceText` and `MeldError`: the total push machine and its commit into a molded tree. Witnesses: `meld::tests::infix_reduces_after_precedence`, `meld::tests::brackets_close_on_the_matching_delimiter`, `meld::tests::a_foreign_source_is_refused_at_commit`, `tests::contracts::arbitrary_real_mold_streams_parse_totally`, `tests::contracts::trace_precedence_climbs_like_figure_23`.
+- `MeldState`, `MoldedTile`, `TileText`, `SpaceText` and `MeldError`: the total push machine and its commit into a molded tree. Witnesses: `meld::tests::infix_reduces_after_precedence`, `meld::tests::brackets_close_on_the_matching_delimiter`, `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`, `meld::tests::a_foreign_source_is_refused_at_commit`, `tests::contracts::arbitrary_real_mold_streams_parse_totally`, `tests::contracts::trace_precedence_climbs_like_figure_23`.
 - `Frontier`, `MoldAdmissibility`, `FormContinuation`, `OperandContinuation`, `HeadOperandPresence` and `OpenFormPresence`: the slope-head queries the molder ranks candidates by. Witnesses: `meld::tests::admits_a_form_first_mid_at_a_fresh_slot`, `meld::tests::admits_rejects_a_stray_closer`, `meld::tests::expected_sort_reads_the_open_slot`.
-- `Completion`, `CompletionStatus` and `Expected`: the non-destructive completion query. Witnesses: `meld::tests::finalize_is_non_destructive`, `tests::acceptance::expected_agrees_with_committed_finalize`, `tests::acceptance::expected_completion_names_the_next_tile_or_hole`.
+- `Completion`, `CompletionStatus` and `Expected`: the non-destructive completion query. Witnesses: `meld::tests::finalize_is_non_destructive`, `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`, `tests::acceptance::expected_agrees_with_committed_finalize`, `tests::acceptance::expected_completion_names_the_next_tile_or_hole`.
 - `Checkpoint`, `CheckpointBytes`, `CheckpointBytesRef`, `CheckpointError` and `Mark`: serializable continuation and in-place transaction. Witnesses: `meld::tests::checkpoint_resume_is_equivalent`, `meld::tests::minted_close_round_trips_and_refuses_unknown_class`, `meld::tests::mark_rollback_restores_state_exactly`, `tests::contracts::checkpoint_resume_equals_uninterrupted`.
 - `Oblig`, `ObligationInstance`, `Delta`, `DeltaEmptyStatus`, `ObligClassIndex`, `ObligationCount` and `OBLIG_CLASS_COUNT`: the completion-obligation taxonomy and its minimization order. Witnesses: `oblig::tests::severity_ladder_is_low_to_high`, `oblig::tests::higher_severity_class_dominates_the_order`, `oblig::tests::minimization_never_prefers_ambiguous_prec`.
 - `parse`, `ParseResult` and `ParseCleanStatus`: the batch entry point. Witnesses: `tests::acceptance::corpus_molds_to_zero_obligations`, `parse::tests::parse_is_lossless_and_hash_stable`, `parse::tests::arbitrary_source_parses_totally`.
@@ -100,6 +99,14 @@ The labeler classifies lexemes and stops there. A lowercase word could be an ide
 The molder's candidates for a token are the union of the grammar's molds for each label the token could carry, visited in ascending `MoldId` order. The pre-filter drops every candidate the slope head cannot admit — a closer with no matching open form, an operator with no left operand — and most tokens are left with one, taken without a dry-run. The survivors are dry-run in a `Mark` / `rollback_to` transaction and ranked by their obligation delta, then form continuation, then sort compatibility, then the completion cost `finalize` reports, then the smaller `MoldId`; a bounded lookahead settles the families whose openers tie and diverge only at a later tile. Nothing process-dependent reaches the choice, so molding is a function of the token stream.
 
 The melder follows the paper's push rules. Shift pushes a tile whose precedence the head yields to; Reduce closes the head operator or form when the incoming tile takes precedence; Degrout completes an incomparable pair with grout and an `AmbiguousPrec` obligation. Grout is comparable to everything and sits at the bottom of the precedence order, which is what makes every push conclude.
+
+## A closer with a required operand after it is a mid tile
+
+A tile with a same-form predecessor and no same-form successor ends its form in the paper's classification. The `]` of `+U[ω] C` and of `package [ T ] C` cannot: the grammar requires an operand after it. The melder classifies such a tile as a mid tile, so the form stays open until its operand arrives and closes around it; a closing bracket with nothing required after it, the `]` of `Type[+, 1]`, still ends its form. Read as an end, the bracket closed the bridge at its grade, and a parenthesised operand after it became a juxtaposed sibling that the lowering refused as a malformed form.
+
+The completion query and the molder follow. `finalize` charges no tile to a required-tail frontier whose operand is written or already opened, because the commit's force-close mints none there. The lookahead window settles and bounds each token at its declaration as the stream does, so a tied opener is judged on the frontier the stream would leave. Without them, the mid-tile bracket made `package [ T ] Integer;` followed by another declaration rank the package reading below an instantiation of a type variable named `package`.
+
+The alternative was a grammar change: spell the graded bridge as a prefix operator whose operand is its argument, keeping the three-way classification. It splits one form into two and moves the grade off the bridge's tile, and `package [ T ]` would need the same split. Reversal: if a grammar form ever needs a closing bracket that ends it while an operand still follows, the tail moves into an enclosing form and this case becomes a grammar check.
 
 ## The tree the melder commits
 

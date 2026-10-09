@@ -490,6 +490,10 @@ primitive_copy_wrapper!(
     struct FormLastMembership(bool);
 );
 primitive_copy_wrapper!(
+    /// Whether a required-tail frontier's tail is one form already under way.
+    struct TailUnderWay(bool);
+);
+primitive_copy_wrapper!(
     /// Whether a mold would continue the nearest open form.
     pub struct FormContinuation(bool);
 );
@@ -1920,6 +1924,50 @@ impl<'pbg> MeldState<'pbg>
             .then_some(StackIndex::from(content_index))
     }
 
+    /// Whether the open required-tail frontier at `frontier`, of mold `mold`,
+    /// has its tail under way as one form of the hole's sort: a single operand
+    /// above it, or an inner form starting right above it, whose whole run a
+    /// commit collapses into that one operand before closing the frontier.
+    ///
+    /// # Specification
+    /// - requires: `mold` is the mold of the frontier cell at `frontier`.
+    /// - ensures: true exactly when `mold` carries a required tail, the hole's
+    ///   sort is known, and the cell above the frontier is either the last cell
+    ///   and an operand of that sort or the start tile of a form of that sort;
+    ///   false otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tail that is one operand, a tail that is an open
+    ///   inner form and an absent tail separate the query, each observed
+    ///   through the obligations `finalize` reports.
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    fn tail_is_under_way(
+        &self,
+        frontier: FrontierIndex,
+        mold: MoldId,
+    ) -> TailUnderWay
+    {
+        let frontier_index = usize::from(frontier);
+        let under_way = bool::from(self.pbg.mold_has_required_tail(mold))
+            && self.frontier_hole_sort(mold).is_some_and(|expected| {
+                let content_index = frontier_index.saturating_add(1);
+                self.stack
+                    .get(content_index)
+                    .is_some_and(|content| match content.role {
+                        | Role::Operand => {
+                            self.stack.len() == content_index.saturating_add(1)
+                                && content.sort == expected
+                        },
+                        | Role::FormTile {
+                            start: true, sort, ..
+                        } => sort == expected,
+                        | Role::FormTile { start: false, .. } | Role::Operator { .. } => false,
+                    })
+            });
+        TailUnderWay::from(under_way)
+    }
+
     /// Clean-close every topmost completable frontier the **upcoming** token —
     /// with candidate labels `labels` — cannot `≐`-continue, before that token
     /// is molded.
@@ -2368,10 +2416,25 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// A tile that participates in the same-form `≐` relation is a form tile
     /// (start / mid / end); otherwise its precedence bounds give a bare operand
-    /// or a single-tile prefix / infix / postfix operator.
+    /// or a single-tile prefix / infix / postfix operator. A tile with a
+    /// `≐`-predecessor and no `≐`-successor ends its form only when nothing
+    /// is required after it: one followed by a required sort hole — the `]`
+    /// of `+U[r] C` — is a mid tile, and the form closes once its trailing
+    /// operand arrives.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a form tile with a successor is a start or a mid by whether
+    ///   it has a predecessor; a form tile with a predecessor and no successor
+    ///   is a mid when its mold carries a required tail and an end otherwise;
+    ///   any other tile is an operand or an operator by its bounds.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closing bracket followed by a required operand is
+    ///   separated from one that ends its form, each observed through the form
+    ///   its trailing operand lands in.
+    /// - witness: `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`
     fn classify(
         &self,
         mold: MoldId,
@@ -2385,6 +2448,7 @@ impl<'pbg> MeldState<'pbg>
             | (false, true) => Kind::FormStart {
                 absorb_left: left_hole,
             },
+            | (true, false) if bool::from(self.pbg.mold_has_required_tail(mold)) => Kind::FormMid,
             | (true, false) => Kind::FormEnd,
             | (true, true) => Kind::FormMid,
             | (false, false) => {
@@ -3122,6 +3186,14 @@ impl<'pbg> MeldState<'pbg>
                     // reports neither an expected tile nor an obligation for it
                     // — mirroring `force_close_form`.
                     if bool::from(FormTable::is_form_last(self.pbg, mold)) {
+                        continue;
+                    }
+                    // A required-tail frontier whose tail is one form already
+                    // under way — a single operand, or an inner form starting
+                    // right above it — closes cleanly once commit has collapsed
+                    // that form: no tile is expected and no obligation is its
+                    // own, mirroring `force_close_form`.
+                    if bool::from(self.tail_is_under_way(FrontierIndex::from(index), mold)) {
                         continue;
                     }
                     // An open form frontier expects its `≐`-continuation; commit
@@ -4811,6 +4883,8 @@ mod tests
 {
     use alloc::borrow::ToOwned as _;
     use alloc::boxed::Box;
+    use alloc::format;
+    use alloc::string::String;
     use alloc::vec;
     use alloc::vec::Vec;
     use core::error::Error;
@@ -5631,6 +5705,124 @@ mod tests
             1,
             children(&tree, group_children[1]).len(),
             "the hole meld carries only `?`, not the enclosing `)`"
+        );
+        Ok(())
+    }
+
+    /// A closing bracket followed by a required operand is a mid tile: the
+    /// type after `+U[r]` is the bridge's operand, however it is spaced, and a
+    /// package's operand after `package [ T ]` stays the package's when a
+    /// declaration follows. A closing bracket that ends its form still ends it:
+    /// the arrow after a universe's `]` takes the universe as its domain.
+    #[test]
+    fn a_bracket_before_a_required_tail_keeps_its_form_open() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        let spans_of = |source: &'static str, kind: &str| -> Result<Vec<String>, Box<dyn Error>> {
+            let result = crate::parse::parse(&pbg, SourceText::from(source))?;
+            assert!(bool::from(result.is_clean()), "{source} reads cleanly");
+            let tree = result.into_tree();
+            let mut spans = Vec::new();
+            for position in tree.positions() {
+                if let Some(NodeLabel::Meld(mold)) = label(&tree, position)
+                    && pbg.named_kind(mold)?.0 == kind
+                    && let Some(text) = tree.fragment(position)
+                {
+                    spans.push(AsRef::<str>::as_ref(&text).to_owned());
+                }
+            }
+            Ok(spans)
+        };
+        for source in [
+            "def g : +U[ω] (-F Integer) ;",
+            "def g : +U[ω](-F Integer) ;",
+        ] {
+            let bridge = source.trim_start_matches("def g : ").trim_end_matches(" ;");
+            assert_eq!(
+                vec![bridge.to_owned()],
+                spans_of(source, "u_type")?,
+                "the bridge in {source} spans its operand"
+            );
+        }
+        assert_eq!(
+            vec!["+U[1] Integer -> -F Integer".to_owned()],
+            spans_of("def g : +U[1] Integer -> -F Integer ;", "function_type")?,
+            "an operand after the grade is the bridge's, below the arrow"
+        );
+        assert_eq!(
+            vec!["package [ T ] Integer".to_owned()],
+            spans_of(
+                "def bad : package [ T ] Integer;\ndef bad = ret 1;",
+                "package_type"
+            )?,
+            "a package's operand stays its own when another declaration follows"
+        );
+        assert_eq!(
+            vec!["Type[+, 1] -> -F Integer".to_owned()],
+            spans_of("def g : +U (Type[+, 1] -> -F Integer) ;", "function_type")?,
+            "a universe's closing bracket ends it, so the arrow takes it as its domain"
+        );
+        Ok(())
+    }
+
+    /// `finalize` charges a required-tail frontier only when commit would:
+    /// against a bridge with no operand yet, one whose operand is a written
+    /// type owes one tile fewer, and one whose operand is an inner form already
+    /// opened owes the same — the parenthesis's closer replaces the tail.
+    #[test]
+    fn finalize_charges_a_required_tail_only_when_it_is_absent() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        let mold_of = |text: &'static str, kind: &str| -> Result<MoldId, Box<dyn Error>> {
+            let label = match text {
+                | "g" => "identifier",
+                | other => other,
+            };
+            pbg.candidates(TileLabel(label))
+                .iter()
+                .copied()
+                .find(|&mold| pbg.named_kind(mold).is_ok_and(|named| named.0 == kind))
+                .ok_or_else(|| format!("no {kind} mold for {text}").into())
+        };
+        let owed = |tiles: &[(&'static str, &'static str)]| -> Result<usize, Box<dyn Error>> {
+            let mut state = MeldState::new(&pbg);
+            for (position, &(text, kind)) in tiles.iter().enumerate() {
+                if position > 0 {
+                    state.space(SpaceText::from(" "));
+                }
+                state.push(&MoldedTile::new(mold_of(text, kind)?, TileText::from(text)));
+            }
+            Ok(state
+                .finalize()
+                .obligations()
+                .iter()
+                .filter(|obligation| obligation.class == Oblig::MissingTile)
+                .count())
+        };
+        let head = [
+            ("def", "def_value"),
+            ("g", "def_value"),
+            (":", "def_value"),
+            ("+U", "u_type"),
+            ("[", "u_type"),
+            ("ω", "u_type"),
+            ("]", "u_type"),
+        ];
+        let bare = owed(&head)?;
+        let with = |tail: (&'static str, &'static str)| {
+            let mut tiles = head.to_vec();
+            tiles.push(tail);
+            tiles
+        };
+        assert_eq!(
+            bare.saturating_sub(1),
+            owed(&with(("Integer", "primitive_type")))?,
+            "a written operand fills the tail, and the bridge owes nothing of its own"
+        );
+        assert_eq!(
+            bare,
+            owed(&with(("(", "parenthesized_type")))?,
+            "an opened operand fills the tail, and only its `)` is owed in its place"
         );
         Ok(())
     }

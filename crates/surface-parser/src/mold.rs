@@ -1345,12 +1345,15 @@ impl<'pbg> Molder<'pbg>
     ///
     /// The window molds each token with the completion-aware greedy
     /// [`choose`](Self::choose) (no nested lookahead), so its cost is bounded
-    /// at one greedy pass per tied candidate — beam width one. Nested
-    /// shared-prefix families inside a window still mold correctly because
-    /// the pre-filter, with the spurious form-first helper molds folded
-    /// away, leaves a lone admissible candidate at the common positions;
-    /// the window only exists to expose whether a tied opener's own form
-    /// completes.
+    /// at one greedy pass per tied candidate — beam width one. Each token is
+    /// settled, gathered and bounded at its declaration exactly as
+    /// [`mold`](Self::mold) does, so a frontier the stream would close before
+    /// the token — a filled required tail, a bare hole — is closed in the
+    /// window too. Nested shared-prefix families inside a window still mold
+    /// correctly because the pre-filter, with the spurious form-first helper
+    /// molds folded away, leaves a lone admissible candidate at the common
+    /// positions; the window only exists to expose whether a tied opener's own
+    /// form completes.
     ///
     /// # Specification
     /// trivial.
@@ -1375,7 +1378,9 @@ impl<'pbg> Molder<'pbg>
             }
             else {
                 let text = TokenText::from(AsRef::<str>::as_ref(&slice));
+                self.settle_shadowing(state, token, source);
                 self.gather(state, token, source);
+                state.settle_declaration_boundary(&self.candidates);
                 let choice = self.choose(state, text);
                 Self::push_choice(state, choice, text);
                 molded = molded.saturating_add(1);

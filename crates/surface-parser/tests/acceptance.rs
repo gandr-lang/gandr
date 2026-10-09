@@ -1531,7 +1531,7 @@ fn unknown_type_molds_zero_obligation() -> Result<(), Box<dyn Error>>
     let clean: &[&str] = &[
         // Bare ascription: the sort-free signature position.
         "def f : ?;",
-        // The returner payload is a value position: `F ?` is the pure
+        // The returner payload is a value position: `-F ?` is the pure
         // returner over the value unknown, NOT the computation top.
         "def f : -F ?;",
         // Arrow result, thunk body, lazy-product member: computation

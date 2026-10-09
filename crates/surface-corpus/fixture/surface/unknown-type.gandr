@@ -1,0 +1,30 @@
+@[ refuses("OutOfFragment") ]
+def anything : ?;
+
+@[ refuses("OutOfFragment") ]
+def pure_unknown : -F ?;
+@[ refuses("OutOfFragment") ]
+def legacy_pure_unknown : -F Unknown;
+
+@[ refuses("OutOfFragment") ]
+def partial : Integer -> ?;
+@[ refuses("OutOfFragment") ]
+def suspended : +U ?;
+@[ refuses("OutOfFragment") ]
+def choice : -F Unit & ?;
+
+@[ refuses("OutOfFragment") ]
+def pair_left : ? * Integer;
+@[ refuses("OutOfFragment") ]
+def takes_unknown : ? -> -F Unit;
+
+@[ refuses("OutOfFragment") ]
+def parenthesized : Integer -> (?);
+
+@[ refuses("OutOfFragment") ]
+def session_receive : ? Integer . end;
+
+@[ refuses("OutOfFragment") ]
+def term_hole = ?;
+@[ refuses("OutOfFragment") ]
+def named_term_hole = ?goal;

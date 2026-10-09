@@ -1444,6 +1444,7 @@
 1815 Keyword dup_expression dup L[] R[(]
 1816 Other dup_expression ( L[dup] R[<expression>]
 1817 Other dup_expression ) L[<expression>] R[]
+1824 Constructor constructor constructor L[] R[]
 1825 Boolean boolean true L[] R[]
 1826 Boolean boolean false L[] R[]
 1827 Number number number L[] R[]
