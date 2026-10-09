@@ -84,14 +84,17 @@ impl BuilderIdCounter
     ///   constructor exists only under `cfg(test)`.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the specification evaluator is not const; this test
-    ///   constructor preserves compile-time initialization.
     #[cfg(test)]
     /// # Adequacy
     /// - hypothesis: L3 — the final issuable identity and two successive
     ///   refusals distinguish the seed, the saturation boundary and identity
     ///   reuse.
     /// - witness: `build::tests::builder_id_exhaustion_is_typed`
+    #[spec(ensures: |Self(mut counter)| {
+        let value = counter.into_inner();
+        counter = AtomicUsize::new(value);
+        value == usize::MAX.wrapping_sub(1_usize)
+    })]
     #[inline]
     const fn nearly_exhausted() -> Self
     {

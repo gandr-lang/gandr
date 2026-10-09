@@ -67,6 +67,19 @@ pub use crate::tree::NodeIndex;
 pub use crate::tree::NodeIndices;
 pub use crate::tree::SyntaxTree;
 
+/// Equality observed without invoking a non-const trait method.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConstEquality
+{
+    /// Both represented values agree.
+    Equal,
+    /// The represented values differ.
+    Unequal,
+}
+
 #[cfg(test)]
 mod test_support
 {
