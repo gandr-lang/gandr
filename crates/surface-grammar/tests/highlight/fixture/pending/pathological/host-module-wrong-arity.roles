@@ -1,0 +1,8 @@
+0..2 Variable "fs"
+2..3 Other "."
+3..8 Member "write"
+8..9 Other "("
+9..10 StringLit "\""
+10..26 StringLit "/tmp/only-a-path"
+26..27 StringLit "\""
+27..28 Other ")"

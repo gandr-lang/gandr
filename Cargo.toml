@@ -102,6 +102,15 @@ version = "4.6.6"
 default-features = false
 features = ["derive", "error-context", "help", "std", "usage"]
 
+# Snapshot comparison for the highlighter's role golden: a file compared
+# whole, a diff on mismatch, and a rewrite under `UPDATE_EXPECT=1`. It has no
+# features to leave off.
+# consumers:
+# - surface-grammar (dev)
+[workspace.dependencies.expect-test]
+version = "1.5.1"
+default-features = false
+
 # The checking judgement: the name-free declaration input, the verdicts, the
 # obligation ledger and the refusal vocabulary.
 # consumers:
@@ -229,6 +238,7 @@ path = "crates/surface-lowering"
 # consumers:
 # - surface-corpus (dev)
 # - surface-dispatcher
+# - surface-grammar (dev)
 # - surface-lowering (dev)
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
@@ -238,6 +248,7 @@ path = "crates/surface-parser"
 # features:
 # - serde: the wire image the codec witnesses round-trip, so the gate runs them
 # consumers:
+# - surface-grammar
 # - surface-render-remote (dev)
 [workspace.dependencies.gandr-surface-render-remote]
 path = "crates/surface-render-remote"

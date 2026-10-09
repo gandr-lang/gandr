@@ -8,6 +8,8 @@ extern crate alloc;
 #[cfg(test)]
 mod closing_class;
 #[cfg(test)]
+mod highlight;
+#[cfg(test)]
 mod pbg;
 #[cfg(test)]
 mod regex;

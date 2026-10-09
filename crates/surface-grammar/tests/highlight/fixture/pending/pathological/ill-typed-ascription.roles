@@ -1,0 +1,7 @@
+0..1 Other "("
+1..2 StringLit "\""
+2..6 StringLit "five"
+6..7 StringLit "\""
+8..9 Other ":"
+10..17 TypeBuiltin "Integer"
+17..18 Other ")"

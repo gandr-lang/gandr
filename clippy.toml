@@ -7,9 +7,18 @@ allow-panic-in-tests = true
 allow-print-in-tests = true
 allow-unwrap-in-tests = true
 
-# `multiple_crate_versions` stays denied for every split but this one:
-# petgraph 0.8.3 pins `hashbrown` 0.15, while the `indexmap` release it
-# resolves to depends on `hashbrown` 0.17; nothing this workspace owns can
-# unify them. Reversal: remove the entry when a petgraph release carries its
-# `hashbrown` 0.17 bump (petgraph/petgraph#991, on its main branch).
-allowed-duplicate-crates = ["hashbrown"]
+# `multiple_crate_versions` stays denied for every split but these two.
+#
+# `hashbrown`: petgraph 0.8.3 pins `hashbrown` 0.15, while the `indexmap`
+# release it resolves to depends on `hashbrown` 0.17; nothing this workspace
+# owns can unify them. Reversal: remove the entry when a petgraph release
+# carries its `hashbrown` 0.17 bump (petgraph/petgraph#991, on its main
+# branch).
+#
+# `syn`: the `anodized` specification macros build on `syn` 2 and
+# `serde_derive` on `syn` 3. The lint reads the workspace metadata, where the
+# renderer seam's own test build switches its `serde` feature on, so every
+# crate that depends on the seam appears to reach both majors; each proc-macro
+# links one, and no artifact links both. Reversal: remove the entry when
+# `anodized` moves to `syn` 3.
+allowed-duplicate-crates = ["hashbrown", "syn"]

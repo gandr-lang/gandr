@@ -180,9 +180,9 @@ The language's sources live beside the library that settles them, under the two 
 | `fixture/model/`, `fixture/pathological/`, `fixture/surface/` | the language's earlier sources whose declarations the lowering reads, each verdict stated | `refuses` or `checks` on each declaration |
 | `fixture/pending/` | the language's earlier sources the fragment does not yet cover | none: membership by location ([below](#the-pending-set)) |
 
-The earlier sources are the language's own surface programs: the model programs, the pathological cases and the surface families, kept in their own subdirectories with their commentary removed. The parser reads every source here as its zero-obligation gate.
+The earlier sources are the language's own surface programs: the model programs, the pathological cases and the surface families, kept in their own subdirectories with their commentary removed. The parser reads every source here as its zero-obligation gate, and the highlighter's role golden in `gandr-surface-grammar` mirrors every source: a source added, moved between roots or removed is followed by `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-grammar`, which rewrites the golden to match.
 
-No count is pinned. The runner's report says how many sources each root holds, how many declarations settled, the ledger size and the seal, and its tests assert that each root holds declarations and that every row of the fragment's exercised table is carried. Adding a source changes a count and reddens nothing; a source that stops settling reddens its root.
+No count is pinned. The runner's report says how many sources each root holds, how many declarations settled, the ledger size and the seal, and its tests assert that each root holds declarations and that every row of the fragment's exercised table is carried. Adding a source changes a count and reddens no root; a source that stops settling reddens its root.
 
 ## The pending set
 

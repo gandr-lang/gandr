@@ -1,0 +1,6 @@
+0..3 Other "#!{"
+4..8 Path "true"
+9..11 Operator "&&"
+12..17 Path "false"
+17..18 Operator ";"
+19..20 Other "}"

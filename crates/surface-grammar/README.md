@@ -1,6 +1,6 @@
 # gandr-surface-grammar
 
-The checked precedence-bounded grammar of the gandr surface: rules over a precedence DAG, three build-time gates, the mold table a parser reads, the walk index over it, and the built-in surface.
+The checked precedence-bounded grammar of the gandr surface: rules over a precedence DAG, three build-time gates, the mold table a parser reads, the walk index over it, the built-in surface, and the mold highlighter.
 
 <!-- toc -->
 
@@ -17,6 +17,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Walk index and comparison table](#walk-index-and-comparison-table)
 - [Built-in surface](#built-in-surface)
 - [Named-kind inventory](#named-kind-inventory)
+- [Highlighter](#highlighter)
 - [Fingerprint](#fingerprint)
 - [License](#license)
 
@@ -24,7 +25,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 
 ## Synopsis
 
-**What.** A `Pbg` is a set of `Rule`s, each a `Regex` over tiles and sort holes at one `Sort` and one precedence group, that has passed three gates: Operator Form, Unique Tiles and Assumption 3. Building it assigns every tile occurrence a mold — its position in its rule's form — with precedence bounds, zipper steps, same-form adjacency, form-membership flags and a closing class precomputed, and folds the tables into a `GrammarFingerprint`. `walk_index` instantiates the theory-graphs walk machine over the molds; `comparison_table` reads the operator-precedence relation off it. `built_in` is the gandr surface itself. The crate is `no_std` over `core` and `alloc` and depends on `gandr-surface-syntax` and `gandr-theory-graphs`.
+**What.** A `Pbg` is a set of `Rule`s, each a `Regex` over tiles and sort holes at one `Sort` and one precedence group, that has passed three gates: Operator Form, Unique Tiles and Assumption 3. Building it assigns every tile occurrence a mold — its position in its rule's form — with precedence bounds, zipper steps, same-form adjacency, form-membership flags and a closing class precomputed, and folds the tables into a `GrammarFingerprint`. `walk_index` instantiates the theory-graphs walk machine over the molds; `comparison_table` reads the operator-precedence relation off it. `built_in` is the gandr surface itself. `RoleTable` is the mold highlighter: one highlight role per mold, and a molded tree's spans read through it. The crate is `no_std` over `core` and `alloc` and depends on `gandr-surface-render-remote`, `gandr-surface-syntax` and `gandr-theory-graphs`.
 
 **Why.** A tile-based parser asks, for every token, which molds its label can take and how two adjacent molds relate. Both answers are fixed once the grammar is, so they are computed once at build and read by index, and the gates refuse at build any grammar for which a parser's local choice would be ambiguous. A parser's tree stores `MoldId`s, which mean something only under the table that numbered them, so the table carries a fingerprint a consumer stores beside them.
 
@@ -48,12 +49,14 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - `Pbg::fingerprint`: the grammar's identity, pinned for the built-in surface. Witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`.
 - `walk_index`, `reachable_molds`, `comparison_table`, `seen_key_verdict`, `GrammarWalkSym`, `MAX_WALK_CHAIN_LEN`: the walk machine over a grammar and the relations read off it. Witnesses: `tests::walk::walk_index_projects_every_mold_once`, `tests::walk::comparison_table_is_conflict_free`, `tests::walk::comparison_table_coheres_with_precedence`, `tests::walk::seen_key_verdict_is_recorded`, `tests::walk::walk_lengths_respect_the_chain_cap`.
 - `built_in`, `built_in_prec_table`, `PrecTable`: the gandr surface and its named precedence groups. Witnesses: `tests::surface::built_in_precedence_bands_are_exact`, `tests::surface::built_in_adaptations_name_their_rules`, `tests::closing_class::built_in_builds_fast_enough_for_process_per_test_suites`, `surface::tests::precedence_helper_failures_preserve_named_context`.
+- `RoleTable`, `HighlightError`: the role of every mold, read off a grammar, and the highlight spans of a tree molded under it; a tree under another grammar and a tile past the table are refused. Witnesses: `tests::highlight::every_mold_has_a_role`, `tests::highlight::corpus_roles_match_the_golden`, `tests::highlight::spans_partition_the_tile_bytes`, `tests::highlight::layout_takes_a_role_only_as_a_comment_or_a_shebang`, `tests::highlight::a_tree_under_another_grammar_is_refused`, `tests::highlight::a_tile_past_the_table_is_refused`, `highlight::tests::mold_provenance_alignment`, `highlight::tests::role_of_pins_context_free_classes`.
 - `named_kind_parity`, `named_kind_realization`, `TREE_SITTER_NAMED_KINDS`, `PBG_ONLY_KINDS`: how every named node kind is realised. Witness: `tests::surface::named_kind_coverage_is_semantic`.
 
 ## Expected features
 
 - **A labeler speaking the grammar's labels.** A parser asks for a token's molds by `TileLabel`; a label is a spelling (`(`, `def`, `->`) or a lexeme class (`identifier`, `type_identifier`, `string_fragment`). A token labelled with a label no rule declares has no candidates.
 - **Mold ids read under their fingerprint.** A `MoldId` is a position in one grammar's table; a consumer that stores ids stores the `GrammarFingerprint` beside them and refuses ids under a different one.
+- **Layout cut by the labeler.** The highlighter reads a tree's layout as the labeler cut it: one node per comment, per shebang line and per run of whitespace, a comment opening with `//` or `/*` and a shebang with `#!`.
 
 ## Examples
 
@@ -106,7 +109,7 @@ cargo nextest run -p gandr-surface-grammar
 
 ## Scope
 
-The crate holds the grammar and what is computed from it; it parses nothing. A highlighter and its role vocabulary are not here: a role is a renderer's question, and the vocabulary enters with the first renderer that reads it. The contract suite that drives a parser over the built-in surface is not here either: it needs the parser, and it lives with the parser crate. User-declared operators are not in the grammar: the built-in surface's `operator_declaration` rule parses a fixity declaration so the elaborator can decline it by name, and a grammar is never extended at run time. Adding them adds an extension entry point together with its fixity vocabulary.
+The crate holds the grammar and what is computed from it; it parses nothing. The highlighter is here because a role is read off the mold table alone; the role vocabulary is not, since every renderer reads it, and it lives in the renderer seam, `gandr-surface-render-remote`. The contract suite that drives a parser over the built-in surface is not here either: it needs the parser, and it lives with the parser crate; the highlighter's corpus suite runs the parser as a dev-dependency. User-declared operators are not in the grammar: the built-in surface's `operator_declaration` rule parses a fixity declaration so the elaborator can decline it by name, and a grammar is never extended at run time. Adding them adds an extension entry point together with its fixity vocabulary.
 
 ## Regex layout
 
@@ -150,6 +153,33 @@ Each rule's tiles form a graph under adjacency. Every tile in one strongly conne
 `TREE_SITTER_NAMED_KINDS` lists, ascending, the 124 named node kinds of the surface's tree-sitter grammar; `PBG_ONLY_KINDS` lists the kinds only this grammar has, disjoint from them. `named_kind_parity` classifies every listed kind: `source_file` is the file root, realised by the item forms, and every other kind is realised by a rule's provenance or an adaptation's surface form. A kind is never grammar semantics: forms range over tiles and holes only, and the inventory is how coverage of the named kinds is checked.
 
 A molded syntax tree names each form and tile by its `MoldId`; `Pbg::named_kind` reads the kind back as the provenance of the rule the mold was numbered for. The table records each mold's rule as it numbers the molds, so the lookup is total over the table and refuses only an id past it, as `Pbg::mold` does. The record is not folded into the fingerprint, which keys the mold table a parser reads: two grammars with one mold table and different rule provenance share a fingerprint, so a consumer reads kinds from the grammar it holds, after checking the tree's fingerprint against it. Reversal: fold each mold's provenance into the fingerprint once a consumer keys stored kinds by fingerprint alone.
+
+## Highlighter
+
+`RoleTable::build` reads one `HlRole` per mold off a grammar, and `RoleTable::highlight` reads a molded tree's tiles through it into `HlSpan`s over `ByteRange`, the renderer seam's vocabulary. A mold is a tile occurrence's zipper into its form, so a role is a function of the mold alone: its label, the named kind of its rule, the symbols its form places beside it, and the bracket of its form it stands inside. Every role is decided once, at build, and a span costs one table read. A tree molded under another grammar is refused with both fingerprints, and a tile past the table with its id; like `Pbg::named_kind`, the table reads rule provenance the fingerprint does not fold, so it is read under the grammar it was built from.
+
+The classification, in order:
+
+- The comment and shebang rules' tiles are `Comment` and `Directive`; every tile of a shell list separator or a redirection is `Operator`.
+- Literals, string pieces, escapes, constructors, type names, type variables, hole names, shell variables, environment assignments and shell words take their class by label; keywords, operators and primitive types take theirs by spelling.
+- A label several rules share is told apart by its rule or its neighbours: `?` is a `Hole`, the gradual type or a receive; `!` is part of `fork!` and an operator elsewhere; `_` is a parameter inside a parenthesised list and a variable elsewhere.
+- An `identifier` takes the role of its place: a definition after `def`, `rec`, `op`, `oper`, `rule` or `data`; a binding after `as`, `for`, `leta`, `unpack`, `module`, `node` or `feed`; a parameter inside a parenthesised list or an implicit `@[…]` binder; a member after `.`, inside a record `#{…}` or a block of fields; a label for a world, a session branch or a `select`'s label; a call for the operation a circuit node applies; a number for a grade in `U[…]` and `thunk[…]`; an attribute or decoration name is `Other`.
+- Every other tile — a bracket, a separator, a delimiter — is `Other`.
+
+Layout has no mold: a layout node opening with `//` or `/*` is a `Comment`, one opening with `#!` a `Directive`, and whitespace, grout and a minted close take no span. Every tile is one span, and adjacent spans of one role stay two. The enclosing bracket is read by one walk over the rules' forms in mold-id order, the order the mold table numbers them, with the open brackets of the current form on a stack: an opener pushes, a closer pops, and each branch of an alternative starts from the brackets open before it. The walk is checked against the mold table occurrence by occurrence.
+
+Every mold of the built-in surface has a role, 2364 of 2364. Four places the grammar does not tell apart take a coarse role, which a semantic overlay refines: a definition's name is a `FunctionDef` whether it names a function or a value; the head of an application `f(x)` is an expression atom, so a `Variable`; a shell command's head and its arguments are one `shell_word` class, so all `Path`; and the first field of a record expression `#{ x = 1, … }` is an expression atom where later fields are `Member`s.
+
+- Alternatives: a table keyed by a token's lexeme class, which cannot tell a definition's name from a reference, or `?` the hole from `?` the receive, since each pair is one label; tree-sitter highlight queries over the surface's tree-sitter grammar, which keep a second parser and its query files in step with this grammar by hand and cannot read the molded tree the pipeline holds.
+- Reversal: a role that depends on more than the mold — a name's resolved kind, a binding's uses — belongs to a semantic overlay over these spans; the classification leaves the grammar when the grammar stops determining it, as user-declared operators would make an operator's spelling a run-time fact. Punctuation is `Other`; a renderer that styles it apart adds a role to the seam.
+
+Consumers: the language server's semantic tokens, the REPL's echoed input and the terminal renderer's paint read these spans, each mapping a role to its own style.
+
+The role golden under `tests/highlight/` mirrors the corpus: one `.roles` file per source, both roots and the pending set, with a line per span — `start..end Role "text"` — and `unexercised.roles`, which names every mold no corpus tile exercises with its role, rule and neighbours, so every mold's role stands in a reviewed line. A source added to the corpus, moved between roots or removed moves its golden with it: `UPDATE_EXPECT=1 cargo nextest run -p gandr-surface-grammar` rewrites the goldens and deletes those whose source is gone, and without it a missing, stale or orphaned golden fails the suite.
+
+- Choice: `expect-test` compares and rewrites the goldens, a file compared whole with a diff on mismatch.
+- Alternatives: `insta`, whose review tool and snapshot metadata this suite does not need and whose dependency tree is several times larger; a hand-written comparison, which reports no diff.
+- Reversal: a golden that needs redaction or per-snapshot metadata.
 
 ## Fingerprint
 

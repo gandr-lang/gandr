@@ -1,0 +1,5 @@
+0..222 Comment "/*\n  Block comments are ordinary whitespace to the parser. They are useful when a\n  note needs more room than a line comment, and they do not change the program:\n  the last value is still the string returned just below.\n*/"
+223..226 Keyword "ret"
+227..228 StringLit "\""
+228..240 StringLit "hello, gandr"
+240..241 StringLit "\""

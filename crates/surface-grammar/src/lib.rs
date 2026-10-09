@@ -17,10 +17,13 @@
 //!   the term, type-and-shell and circuit forms.
 //! - [`named_kind_parity`] is the inventory of how each named kind of the
 //!   surface's tree-sitter grammar is realised.
+//! - [`RoleTable`] is the mold highlighter: one highlight role per mold, read
+//!   off the grammar, and the spans of a molded tree's tiles read through it.
 //!
 //! The crate is `no_std` and depends on `core`, `alloc`,
-//! `gandr-surface-syntax` and `gandr-theory-graphs`. It parses nothing: a
-//! parser reads a [`Pbg`].
+//! `gandr-surface-render-remote`, `gandr-surface-syntax` and
+//! `gandr-theory-graphs`. It parses nothing: a parser reads a [`Pbg`], and the
+//! highlighter reads the tree a parser committed.
 //!
 //! [`MoldId`]: gandr_surface_syntax::MoldId
 
@@ -29,6 +32,7 @@
 extern crate alloc;
 
 mod check;
+mod highlight;
 mod model;
 mod mold;
 mod parity;
@@ -38,6 +42,8 @@ mod walk;
 pub use crate::check::validate_assumption_3;
 pub use crate::check::validate_operator_form;
 pub use crate::check::validate_unique_tiles;
+pub use crate::highlight::HighlightError;
+pub use crate::highlight::RoleTable;
 pub use crate::model::Adaptation;
 pub use crate::model::AdaptationReason;
 pub use crate::model::CandidateCount;

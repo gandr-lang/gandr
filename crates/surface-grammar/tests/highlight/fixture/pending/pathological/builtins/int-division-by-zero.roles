@@ -1,0 +1,8 @@
+0..3 Variable "int"
+3..4 Other "."
+4..7 Member "div"
+7..8 Other "("
+8..9 Number "1"
+9..10 Other ","
+11..12 Number "0"
+12..13 Other ")"
