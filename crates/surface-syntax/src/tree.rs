@@ -255,8 +255,6 @@ impl Node
     ///   walks are wrong rather than a refusal, which is what confines the
     ///   constructor to one caller.
     /// - panics: none.
-    /// - executable: none — the specification evaluator is not const; this
-    ///   constructor or accessor retains its compile-time availability.
     ///
     /// [`TreeBuilder`]: crate::TreeBuilder
     ///
@@ -267,6 +265,10 @@ impl Node
     /// - witness: `build::tests::children_are_contiguous_and_in_source_order`
     /// - witness: `build::tests::a_node_names_the_fragment_it_spans`
     /// - witness: `build::tests::the_same_subtree_in_two_sources_shares_its_digest`
+    #[spec(ensures: |ret| ret.first_child.0 == first_child.0 && ret.child_count.0 == child_count.0
+        && matches!(ret.label.const_eq(label), crate::ConstEquality::Equal)
+        && matches!(ret.span.const_eq(span), crate::ConstEquality::Equal)
+        && matches!(ret.digest.const_eq(digest), crate::ConstEquality::Equal))]
     #[inline]
     pub(crate) const fn new(
         label: NodeLabel,
@@ -324,14 +326,13 @@ impl NodeIndices
     ///   rather than as a panic.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the specification evaluator is not const; this
-    ///   constructor or accessor retains its compile-time availability.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an empty range yields no positions and has exact zero
     ///   size before and after repeated polls; a spurious element or nonzero
     ///   hint changes those observations.
     /// - witness: `tree::tests::index_ranges_advance_exactly_and_stay_exhausted`
+    #[spec(ensures: |ret| ret.next == ret.end)]
     #[inline]
     const fn empty() -> Self
     {
@@ -467,8 +468,6 @@ impl<'source> SyntaxTree<'source>
     ///   walks are wrong rather than a refusal, which is what confines the
     ///   constructor to one caller.
     /// - panics: none.
-    /// - executable: none — the specification evaluator is not const; this
-    ///   internal constructor preserves compile-time construction.
     ///
     /// [`TreeBuilder::finish`]: crate::TreeBuilder::finish
     ///
@@ -480,6 +479,22 @@ impl<'source> SyntaxTree<'source>
     /// - witness: `build::tests::the_root_is_the_first_position`
     /// - witness: `build::tests::children_are_contiguous_and_in_source_order`
     /// - witness: `build::tests::a_node_names_the_fragment_it_spans`
+    #[spec(ensures: |ref ret| {
+        let mut nodes = ret.nodes.as_slice();
+        let count = nodes.len();
+        let mut position = 0_usize;
+        let mut valid = matches!(ret.source.const_eq(source), crate::ConstEquality::Equal)
+            && matches!(ret.grammar.const_eq(grammar), crate::ConstEquality::Equal);
+        while let Some((node, tail)) = nodes.split_first() {
+            let first = node.first_child.0;
+            let children = node.child_count.0;
+            valid = valid && (children == 0_usize
+                || (first > position && first <= count && children <= count.saturating_sub(first)));
+            position = position.saturating_add(1_usize);
+            nodes = tail;
+        }
+        valid
+    })]
     #[inline]
     pub(crate) const fn from_layout(
         source: SourceText<'source>,
@@ -530,8 +545,6 @@ impl<'source> SyntaxTree<'source>
     ///   non-empty tree would have to discharge.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the specification evaluator is not const; this
-    ///   constructor or accessor retains its compile-time availability.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — populated and empty layouts both designate zero; the
@@ -539,6 +552,7 @@ impl<'source> SyntaxTree<'source>
     ///   fabricated empty node changes these observations.
     /// - witness: `build::tests::the_root_is_the_first_position`
     /// - witness: `tree::tests::an_empty_layout_has_no_resolvable_positions`
+    #[spec(ensures: |ret| ret.0 == 0_usize)]
     #[inline]
     #[must_use]
     pub const fn root(&self) -> NodeIndex

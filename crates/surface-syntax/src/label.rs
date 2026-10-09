@@ -129,6 +129,52 @@ pub enum NodeLabel
 
 impl NodeLabel
 {
+    /// Compare represented values during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> crate::ConstEquality
+    {
+        if match (self, other) {
+            | (Self::Wald, Self::Wald) | (Self::Space, Self::Space) => true,
+            | (Self::Meld(a), Self::Meld(b)) | (Self::Tile(a), Self::Tile(b)) => {
+                matches!(a.const_eq(b), crate::ConstEquality::Equal)
+            },
+            | (Self::Grout { sort: a, shape: sa }, Self::Grout { sort: b, shape: sb }) => {
+                matches!(a.const_eq(b), crate::ConstEquality::Equal)
+                    && matches!(
+                        (sa, sb),
+                        (GroutShape::Convex, GroutShape::Convex)
+                            | (GroutShape::Prefix, GroutShape::Prefix)
+                            | (GroutShape::Postfix, GroutShape::Postfix)
+                            | (GroutShape::Infix, GroutShape::Infix)
+                    )
+            },
+            | (
+                Self::GhostClose { sort: a, class: ca },
+                Self::GhostClose { sort: b, class: cb },
+            ) => {
+                matches!(a.const_eq(b), crate::ConstEquality::Equal)
+                    && matches!(
+                        (ca, cb),
+                        (ClosingClass::Paren, ClosingClass::Paren)
+                            | (ClosingClass::Bracket, ClosingClass::Bracket)
+                            | (ClosingClass::Brace, ClosingClass::Brace)
+                    )
+            },
+            | _ => false,
+        } {
+            crate::ConstEquality::Equal
+        }
+        else {
+            crate::ConstEquality::Unequal
+        }
+    }
+
     /// The tag this label contributes to a content digest.
     ///
     /// # Specification
@@ -140,8 +186,6 @@ impl NodeLabel
     ///   half is written beside it by the digest.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the specification evaluator is not const; adding it
-    ///   would remove this callable's public compile-time availability.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the vocabulary is a finite class, enumerated
@@ -150,6 +194,10 @@ impl NodeLabel
     ///   pinned values, and a duplicated row breaks distinctness.
     /// - witness: `label::tests::every_digest_tag_is_pinned`
     /// - witness: `label::tests::the_digest_tags_are_pairwise_distinct`
+    #[anodized::spec(ensures: |ret| ret.0 == match self {
+        Self::Wald => 1_u8, Self::Meld(_) => 2_u8, Self::Tile(_) => 3_u8,
+        Self::Grout { .. } => 4_u8, Self::GhostClose { .. } => 5_u8, Self::Space => 6_u8,
+    })]
     #[inline]
     #[must_use]
     pub const fn tag(self) -> LabelTag
@@ -178,14 +226,13 @@ impl NodeLabel
     /// - provides: the text half of a node's digest preimage.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the specification evaluator is not const; adding it
-    ///   would remove this callable's public compile-time availability.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the vocabulary is a finite class, enumerated
     ///   exhaustively with each variant's exact answer asserted, so promoting
     ///   or demoting any single variant breaks one assertion.
     /// - witness: `label::tests::only_leaves_carry_text`
+    #[anodized::spec(ensures: |ret| ret.0 == matches!(self, Self::Tile(_) | Self::Grout { .. } | Self::GhostClose { .. } | Self::Space))]
     #[inline]
     #[must_use]
     pub const fn carries_text(self) -> CarriesText
@@ -202,14 +249,13 @@ impl NodeLabel
     ///   folding their digests, so layout never reaches an ancestor's identity.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the specification evaluator is not const; adding it
-    ///   would remove this callable's public compile-time availability.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the vocabulary is a finite class, enumerated
     ///   exhaustively with each variant's exact answer asserted; changing the
     ///   boundary between layout and content flips an observed answer.
     /// - witness: `label::tests::only_layout_is_insignificant`
+    #[anodized::spec(ensures: |ret| ret.0 != matches!(self, Self::Space))]
     #[inline]
     #[must_use]
     pub const fn significance(self) -> Significance
