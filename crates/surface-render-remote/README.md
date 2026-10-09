@@ -1,6 +1,6 @@
 # gandr-surface-render-remote
 
-The renderer seam of the gandr surface: highlight and mark spans, diagnostic and goal cards, transcript blocks and the byte-to-position projection a renderer reads, and the versioned render-bus frame that carries them across a process boundary.
+The renderer seam of the gandr surface: highlight and mark spans, diagnostic and goal cards, transcript blocks and the byte-to-position projections a renderer reads, and the versioned render-bus frame that carries them across a process boundary.
 
 <!-- toc -->
 
@@ -13,7 +13,7 @@ The renderer seam of the gandr surface: highlight and mark spans, diagnostic and
 - [A leaf beside the pipeline](#a-leaf-beside-the-pipeline)
 - [Serialization behind a feature](#serialization-behind-a-feature)
 - [Validated byte ranges](#validated-byte-ranges)
-- [Columns count characters](#columns-count-characters)
+- [Two column units](#two-column-units)
 - [Plain data built by name](#plain-data-built-by-name)
 - [Stable diagnostic codes](#stable-diagnostic-codes)
 - [The frame](#the-frame)
@@ -24,11 +24,11 @@ The renderer seam of the gandr surface: highlight and mark spans, diagnostic and
 
 ## Synopsis
 
-**What.** Three modules of owned data. `present` holds `HlSpan` and `MarkSpan` over a validated `ByteRange`, `DiagCard` and `GoalCard`, `TranscriptBlock` with its `OutKind` lines, and `pos_of_byte` and `byte_of_pos`, the projection between a `ByteOffset` and a zero-based `Pos` of row and character column. `diagnostic` holds `DiagnosticCode`, the registry of stable codes with their localizable `DiagnosticTemplate`s, and `DiagnosticMessage`, a code's typed arguments. `wire` holds `RenderFrame`: a `FrameBody` — `Hello`, `Frame` carrying a `ReportView`, `Resync`, `Detach` — routed by a `FrameScope` to the connection or to one `DocId`, under `WIRE_SCHEMA_VERSION`. The crate is `no_std` over `core` and `alloc` and depends on no other workspace crate.
+**What.** Three modules of owned data. `present` holds `HlSpan` and `MarkSpan` over a validated `ByteRange`, `DiagCard` and `GoalCard`, `TranscriptBlock` with its `OutKind` lines, `pos_of_byte` and `byte_of_pos`, the projection between a `ByteOffset` and a zero-based `Pos` of row and character column, and `LineIndex`, the projection between a `ByteOffset` and a zero-based `Utf16Pos` of row and UTF-16 column. `diagnostic` holds `DiagnosticCode`, the registry of stable codes with their localizable `DiagnosticTemplate`s, and `DiagnosticMessage`, a code's typed arguments. `wire` holds `RenderFrame`: a `FrameBody` — `Hello`, `Frame` carrying a `ReportView`, `Resync`, `Detach` — routed by a `FrameScope` to the connection or to one `DocId`, under `WIRE_SCHEMA_VERSION`. The crate is `no_std` over `core` and `alloc` and depends on no other workspace crate.
 
 **Why.** A highlighter, a checker's report and a session loop each produce something a terminal, a language server or an agent paints, and each renderer must read the same vocabulary or the renderers fork. Putting that vocabulary in a crate that parses, lowers, types and marks nothing lets every renderer link it without linking the pipeline, and lets the pipeline project into it once. The frame is the same vocabulary for a renderer in another process.
 
-**How.** Every type is owned data — strings, validated ranges and closed enums — so it crosses a thread channel as it is. The default-off `serde` feature derives a serde image for every type; the decode of a range and of a frame validates, so a decoded value holds every invariant a constructed one does. The projection walks the text's characters once per query.
+**How.** Every type is owned data — strings, validated ranges and closed enums — so it crosses a thread channel as it is. The default-off `serde` feature derives a serde image for every type; the decode of a range and of a frame validates, so a decoded value holds every invariant a constructed one does. The character projection walks the text once per query; the line index records each row's start once and walks one row per query.
 
 ## References
 
@@ -45,6 +45,7 @@ The renderer seam of the gandr surface: highlight and mark spans, diagnostic and
 - `DiagCard` and `GoalCard`: a refusal with its code, message, optional range, offending expression, elaboration note and derivation chain; a hole with its label, note, expected type, local context and range.
 - `TranscriptBlock` and `OutKind`: an echoed submission, its highlights, and its result lines by kind.
 - `SourceText`, `Pos`, `PositionRow`, `PositionColumn`, `pos_of_byte`, `byte_of_pos` and `PosOfByteError`: the projection. Witnesses: `present::tests::positions_round_trip_on_ascii`, `present::tests::positions_round_trip_on_multibyte_text`, `present::tests::positions_count_characters_not_bytes`, `present::tests::pos_of_byte_rejects_interior_multibyte_offsets`, `present::tests::out_of_range_positions_clamp`, `present::tests::the_empty_source_has_one_position`, `present::tests::the_end_of_the_source_is_a_position`.
+- `LineIndex`, `Utf16Pos` and `Utf16Column`: the UTF-16 projection, over rows ended by `\n`, `\r\n` and a lone `\r`. Witnesses: `present::tests::utf16_columns_count_code_units_across_a_multibyte_boundary`, `present::tests::utf16_rows_end_at_every_protocol_terminator`, `present::tests::utf16_positions_clamp_past_the_end`.
 - `DiagnosticCode`, `DIAGNOSTIC_CODES`, `DiagnosticTemplate`, `UnknownDiagnosticCode` and `DiagnosticMessage`: the code registry and the typed arguments. Witnesses: `diagnostic::tests::registry_codes_are_dense_unique_and_round_trip`, `diagnostic::tests::one_message_kind_has_one_code_independent_of_arguments`, `diagnostic::tests::code_wire_image_is_its_stable_spelling`.
 - `RenderFrame`, `FrameScope`, `FrameBody`, `ReportView`, `DocId`, `DocumentUri`, `DocVersion`, `WireSchemaVersion` and `WIRE_SCHEMA_VERSION`: the frame. Witnesses: `wire::tests::document_scoped_constructors_populate_routing_keys`, `wire::tests::connection_scoped_constructors_omit_routing_keys`, `wire::tests::every_body_variant_round_trips_through_json`, `wire::tests::a_frame_is_refused_at_another_schema_version`, `wire::tests::deserialize_rejects_doc_uri_doc_version_lockstep_violations`, `wire::tests::deserialize_rejects_body_routing_mismatches`, `wire::tests::frame_body_is_adjacently_tagged_on_the_wire`.
 - `serde`, off by default: the serde image of every type above, with the validating decode of `ByteRange` and `RenderFrame`.
@@ -114,9 +115,10 @@ Each form here has a reader that lands with it or next:
 | Form | Reader |
 | ---- | ------ |
 | `HlRole`, `HlSpan`, `ByteOffset`, `ByteRange` | the mold highlighter in `gandr-surface-grammar`, which classifies each tile by its mold; then the language server's semantic tokens, the read-evaluate loop's echo and the terminal face's paint |
-| `DiagCard`, `DiagnosticCode`, `DiagnosticMessage` | the language server's diagnostics, and the session report that maps refusals onto codes |
+| `DiagCard`, `DiagnosticCode`, `DiagnosticMessage` | the session report that maps refusals onto codes, and the language server's diagnostics once they carry that report's codes |
 | `TranscriptBlock`, `OutKind` | the read-evaluate loop's transcript encoder and the terminal face that draws it |
 | `SourceText`, `Pos`, `pos_of_byte`, `byte_of_pos` | a renderer that addresses rows and columns: the terminal face's cursor, the language server's ranges |
+| `LineIndex`, `Utf16Pos`, `Utf16Column` | the language server's diagnostic ranges, related locations and semantic tokens |
 | `MarkSpan`, `GoalCard`, `RenderFrame` | a renderer in another process, through the frame's report |
 
 ## A leaf beside the pipeline
@@ -137,11 +139,13 @@ An in-process renderer pays for no serialization machinery. The alternatives wer
 
 The alternative was the standard half-open `Range` with public fields, which admits an inverted range every renderer must defend against on every read. The choice reverses if a producer needs a directed range — a selection with an anchor — which would be a separate type rather than a relaxation of this one.
 
-## Columns count characters
+## Two column units
 
 `pos_of_byte` counts the newlines before an offset for its row and the characters after the last of them for its column; a newline belongs to the row it ends. An offset at or past the end of the text is the position after its last character, so the empty text has the one position `0:0`. An offset strictly inside a multi-byte character is refused with `PosOfByteError`. `byte_of_pos` inverts it on every character start, clamping a column past its row's end to that row's newline and a row past the last to the end of the text.
 
-A character column is what an editor widget addresses. The alternatives were UTF-16 code units, the language server protocol's default, which the language server converts to at its own boundary, and byte columns, which no editor widget addresses. The choice reverses if every reader comes to count UTF-16 units. Each query walks the text up to its target; a renderer projecting many offsets over one text keeps its own line index.
+`LineIndex` records the offset each row of one text starts at and projects against those starts in UTF-16 code units. `utf16_pos_of_byte` finds an offset's row by binary search and counts the units of the characters between the row's start and the offset, two for a character beyond the basic plane; an offset inside a character is refused with `PosOfByteError`, and one at or past the end is the position after the last character. `byte_of_utf16_pos` inverts it on every character start, resolving a column between the two units of such a character to its first byte, a column past its row's end to the row's terminator, and a row past the last to the end of the text. Its rows end at `\n`, `\r\n` and a lone `\r`, the three terminators the language server protocol fixes, where `pos_of_byte` ends a row at `\n` alone; `row_bytes` gives a row's bytes without its terminator, the extent a span crossing rows is split by.
+
+A character column is what an editor widget addresses; a UTF-16 column is what the language server protocol addresses by default and what every client accepts. Both projections live here so the language server reads its positions off the seam rather than re-deriving them. The alternatives were the language server converting character columns at its own boundary, which re-derives the projection in a second crate and walks each row twice, and one UTF-16 projection for every reader, which no editor widget addresses. The line index is built once per text because a language server projects every span of a document against the same text; `pos_of_byte` stays a per-query walk for a reader that projects one offset. The UTF-16 unit reverses if the language server negotiates UTF-8 or UTF-32 positions with a client that offers them, which adds that unit's column here.
 
 ## Plain data built by name
 

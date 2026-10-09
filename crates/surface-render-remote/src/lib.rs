@@ -7,7 +7,8 @@
 //!
 //! - `present`: highlight and mark spans over validated byte ranges, diagnostic
 //!   and goal cards, transcript blocks, and the projection from a byte offset
-//!   to a zero-based row and character column.
+//!   to a zero-based row and column: a character column for an editor widget, a
+//!   UTF-16 column over a line index for a language server.
 //! - `diagnostic`: the registry of stable diagnostic codes, each with its
 //!   localizable message template, and the typed message arguments.
 //! - `wire`: the render-bus [`RenderFrame`] — a document-scoped or
@@ -94,6 +95,7 @@ pub use crate::present::GoalCard;
 pub use crate::present::HlRole;
 pub use crate::present::HlSpan;
 pub use crate::present::InvertedRange;
+pub use crate::present::LineIndex;
 pub use crate::present::MarkKind;
 pub use crate::present::MarkSpan;
 pub use crate::present::OutKind;
@@ -103,6 +105,8 @@ pub use crate::present::PositionColumn;
 pub use crate::present::PositionRow;
 pub use crate::present::SourceText;
 pub use crate::present::TranscriptBlock;
+pub use crate::present::Utf16Column;
+pub use crate::present::Utf16Pos;
 pub use crate::present::byte_of_pos;
 pub use crate::present::pos_of_byte;
 pub use crate::wire::DocId;

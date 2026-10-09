@@ -10,6 +10,7 @@
 //! [`RenderFrame`]: crate::wire::RenderFrame
 
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -671,6 +672,267 @@ pub fn byte_of_pos(
     ByteOffset(text.0.len())
 }
 
+/// A zero-based column within a row, counted in UTF-16 code units: the column
+/// a language server addresses.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(transparent))]
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Utf16Column(usize);
+
+impl From<usize> for Utf16Column
+{
+    /// Read a `usize` as a UTF-16 column.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(column: usize) -> Self
+    {
+        Self(column)
+    }
+}
+
+impl From<Utf16Column> for usize
+{
+    /// Read the column back out as a `usize`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(column: Utf16Column) -> Self
+    {
+        column.0
+    }
+}
+
+/// The row and UTF-16 column of a byte offset, both zero-based.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Utf16Pos
+{
+    /// The zero-based row.
+    pub row: PositionRow,
+    /// The zero-based column within the row, in UTF-16 code units.
+    pub col: Utf16Column,
+}
+
+/// One text with the byte offset each of its rows starts at: the projection a
+/// renderer reads when it addresses many offsets of one text in UTF-16 code
+/// units.
+///
+/// # Specification
+/// - ensures: rows end at `\n`, at `\r\n` and at a `\r` no `\n` follows, the
+///   three terminators the language server protocol fixes; a terminator belongs
+///   to the row it ends. The index is read off its own text, so no offset is
+///   ever projected against another.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LineIndex<'source>
+{
+    /// The text the rows are read off.
+    text: &'source str,
+    /// The offset of the first byte of every row, ascending; the first is 0.
+    starts: Vec<ByteOffset>,
+}
+
+impl<'source> LineIndex<'source>
+{
+    /// Index the rows of `text`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one row per terminator plus one, each starting just past the
+    ///   terminator before it; the empty text has one row.
+    /// - provides: the index every projection of `text` reads.
+    /// - fails: never.
+    /// - panics: none.
+    /// - intension: one pass over the text's bytes; a terminator is ASCII, so
+    ///   no byte of a multi-byte character is mistaken for one.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a text with each of the three terminators and a final
+    ///   row without one, each row asserted at its exact bytes.
+    /// - witness: `present::tests::utf16_rows_end_at_every_protocol_terminator`
+    #[inline]
+    #[must_use]
+    pub fn new(text: SourceText<'source>) -> Self
+    {
+        let bytes = text.0.as_bytes();
+        let mut starts = vec![ByteOffset(0)];
+        // No trait yields a text's terminators with their offsets, so the
+        // pass reads the bytes here, the one site that needs both.
+        for (offset, &byte) in bytes.iter().enumerate() {
+            let next = offset.saturating_add(1);
+            let ends_row = match byte {
+                | b'\n' => true,
+                | b'\r' => bytes.get(next) != Some(&b'\n'),
+                | _ => false,
+            };
+            if ends_row {
+                starts.push(ByteOffset(next));
+            }
+        }
+        Self {
+            text: text.0,
+            starts,
+        }
+    }
+
+    /// The position of `byte`, its column counted in UTF-16 code units.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for an offset at a character's first byte, the row it sits in
+    ///   and the UTF-16 code units of the characters between that row's start
+    ///   and it: one for a character of the basic plane, two for one beyond it.
+    ///   An offset at or past the end of the text is the position after its
+    ///   last character.
+    /// - provides: the position a language server sends for a byte offset.
+    /// - fails: [`PosOfByteError`], carrying the offset, when `byte` lies
+    ///   strictly inside a multi-byte character.
+    /// - panics: none.
+    /// - intension: a binary search for the row, then one walk from the row's
+    ///   start to `byte`.
+    ///
+    /// # Errors
+    /// [`PosOfByteError`] when `byte` is inside a character.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are an offset at a character's
+    ///   start on either side of one-, two-, three- and four-byte characters,
+    ///   each interior byte, a row start after each terminator, the end and
+    ///   past it; each separated by an exact position or the exact refusal.
+    /// - witness: `present::tests::utf16_columns_count_code_units_across_a_multibyte_boundary`
+    /// - witness: `present::tests::utf16_rows_end_at_every_protocol_terminator`
+    /// - witness: `present::tests::utf16_positions_clamp_past_the_end`
+    #[inline]
+    pub fn utf16_pos_of_byte(
+        &self,
+        byte: ByteOffset,
+    ) -> Result<Utf16Pos, PosOfByteError>
+    {
+        let row = self
+            .starts
+            .partition_point(|start| *start <= byte)
+            .saturating_sub(1);
+        let start = self.starts.get(row).copied().unwrap_or_default();
+        let tail = self.text.get(start.0 ..).unwrap_or_default();
+        // No trait yields a text's characters with their byte offsets, so the
+        // walk reads the string here, the one site that needs both.
+        let mut col = 0_usize;
+        for (offset, character) in tail.char_indices() {
+            let at = ByteOffset(start.0.saturating_add(offset));
+            if at == byte {
+                return Ok(Utf16Pos {
+                    row: PositionRow(row),
+                    col: Utf16Column(col),
+                });
+            }
+            if at > byte {
+                return Err(PosOfByteError { byte });
+            }
+            col = col.saturating_add(character.len_utf16());
+        }
+        if byte < ByteOffset(self.text.len()) {
+            return Err(PosOfByteError { byte });
+        }
+
+        Ok(Utf16Pos {
+            row: PositionRow(row),
+            col: Utf16Column(col),
+        })
+    }
+
+    /// The byte offset of `pos`, its column counted in UTF-16 code units.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the offset of the character whose code units cover `pos`'s
+    ///   column, so a column between the two units of a character beyond the
+    ///   basic plane is that character's first byte; a column past the end of
+    ///   its row is the offset of the row's terminator, or of the end of the
+    ///   text on the last row; a row past the last is the end of the text. On
+    ///   every character start `b`, `byte_of_utf16_pos(utf16_pos_of_byte(b)) ==
+    ///   b`.
+    /// - provides: the byte offset a language server position addresses.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are an exact hit, a column
+    ///   inside a surrogate pair, a column past its row's end at each
+    ///   terminator, a row past the last and the empty text, each separated by
+    ///   an exact offset, and the inverse of [`LineIndex::utf16_pos_of_byte`]
+    ///   on every character start.
+    /// - witness: `present::tests::utf16_columns_count_code_units_across_a_multibyte_boundary`
+    /// - witness: `present::tests::utf16_rows_end_at_every_protocol_terminator`
+    /// - witness: `present::tests::utf16_positions_clamp_past_the_end`
+    #[inline]
+    #[must_use]
+    pub fn byte_of_utf16_pos(
+        &self,
+        pos: Utf16Pos,
+    ) -> ByteOffset
+    {
+        let row = self.row_bytes(pos.row);
+        let content = self.text.get(row.start.0 .. row.end.0).unwrap_or_default();
+        let mut col = 0_usize;
+        for (offset, character) in content.char_indices() {
+            let next = col.saturating_add(character.len_utf16());
+            if pos.col.0 < next {
+                return ByteOffset(row.start.0.saturating_add(offset));
+            }
+            col = next;
+        }
+
+        row.end
+    }
+
+    /// The bytes of `row`, its terminator excluded.
+    ///
+    /// # Specification
+    /// - requires: nothing; a row past the last is admissible input.
+    /// - ensures: the range from the row's first byte up to its terminator, or
+    ///   to the end of the text on the last row; a row past the last is the
+    ///   empty range at the end of the text.
+    /// - provides: the extent a renderer splits a span spanning rows by.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a row ended by each terminator, the last row and a
+    ///   row past it, each asserted at its exact range.
+    /// - witness: `present::tests::utf16_rows_end_at_every_protocol_terminator`
+    #[inline]
+    #[must_use]
+    pub fn row_bytes(
+        &self,
+        row: PositionRow,
+    ) -> ByteRange
+    {
+        let end_of_text = ByteOffset(self.text.len());
+        let Some(&start) = self.starts.get(row.0)
+        else {
+            return ByteRange {
+                start: end_of_text,
+                end: end_of_text,
+            };
+        };
+        let end = match self.starts.get(row.0.saturating_add(1)) {
+            | Some(&next) => {
+                let bytes = self.text.as_bytes();
+                let last = next.0.saturating_sub(1);
+                let before = last.checked_sub(1);
+                let crlf = bytes.get(last) == Some(&b'\n')
+                    && before.and_then(|before| bytes.get(before)) == Some(&b'\r');
+                ByteOffset(if crlf { last.saturating_sub(1) } else { last })
+            },
+            | None => end_of_text,
+        };
+        ByteRange { start, end }
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
@@ -685,6 +947,7 @@ mod tests
     use super::HlRole;
     use super::HlSpan;
     use super::InvertedRange;
+    use super::LineIndex;
     use super::MarkKind;
     use super::MarkSpan;
     use super::OutKind;
@@ -694,6 +957,8 @@ mod tests
     use super::PositionRow;
     use super::SourceText;
     use super::TranscriptBlock;
+    use super::Utf16Column;
+    use super::Utf16Pos;
     use super::byte_of_pos;
     use super::pos_of_byte;
     use crate::diagnostic::DiagnosticCode;
@@ -723,6 +988,161 @@ mod tests
             row: PositionRow::from(row),
             col: PositionColumn::from(col),
         }
+    }
+
+    /// The UTF-16 position an [`At`] pair spells.
+    ///
+    /// # Specification
+    /// trivial.
+    fn utf16(At(row, col): At) -> Utf16Pos
+    {
+        Utf16Pos {
+            row: PositionRow::from(row),
+            col: Utf16Column::from(col),
+        }
+    }
+
+    #[test]
+    fn utf16_columns_count_code_units_across_a_multibyte_boundary()
+    {
+        // Bytes: a=1 at 0, é=2 at 1, €=3 at 3, 𝄞=4 at 6, b=1 at 10, \n at 11,
+        // z at 12. UTF-16 units: a, é and € one each, 𝄞 two, b one.
+        let source = "aé€𝄞b\nz";
+        let index = LineIndex::new(SourceText::from(source));
+        let starts = [
+            (0_usize, At(0, 0)),
+            (1, At(0, 1)),
+            (3, At(0, 2)),
+            (6, At(0, 3)),
+            (10, At(0, 5)),
+            (11, At(0, 6)),
+            (12, At(1, 0)),
+            (13, At(1, 1)),
+        ];
+        for (byte, at) in starts {
+            let expected = utf16(at);
+            assert_eq!(
+                Ok(expected),
+                index.utf16_pos_of_byte(ByteOffset::from(byte)),
+                "byte {byte} projects to its UTF-16 position"
+            );
+            assert_eq!(
+                ByteOffset::from(byte),
+                index.byte_of_utf16_pos(expected),
+                "byte {byte} round-trips"
+            );
+        }
+        for interior in [2_usize, 4, 5, 7, 8, 9] {
+            assert_eq!(
+                Err(PosOfByteError {
+                    byte: ByteOffset::from(interior),
+                }),
+                index.utf16_pos_of_byte(ByteOffset::from(interior)),
+                "byte {interior} is inside a character"
+            );
+        }
+        assert_eq!(
+            ByteOffset::from(6_usize),
+            index.byte_of_utf16_pos(utf16(At(0, 4))),
+            "a column between the two units of 𝄞 resolves to its first byte"
+        );
+    }
+
+    #[test]
+    fn utf16_rows_end_at_every_protocol_terminator()
+    {
+        // Rows: "a" ended by \r\n, "b" by a lone \r, "c" by \n, then "d".
+        let source = "a\r\nb\rc\nd";
+        let index = LineIndex::new(SourceText::from(source));
+        let rows = [
+            (0_usize, Bytes(0, 1)),
+            (1, Bytes(3, 4)),
+            (2, Bytes(5, 6)),
+            (3, Bytes(7, 8)),
+            (4, Bytes(8, 8)),
+        ];
+        for (row, bytes) in rows {
+            assert_eq!(
+                range(bytes),
+                index.row_bytes(PositionRow::from(row)),
+                "row {row} spans its content, its terminator excluded"
+            );
+        }
+        assert_eq!(
+            Ok(utf16(At(1, 0))),
+            index.utf16_pos_of_byte(ByteOffset::from(3_usize)),
+            "the byte after \\r\\n opens the next row"
+        );
+        assert_eq!(
+            Ok(utf16(At(2, 0))),
+            index.utf16_pos_of_byte(ByteOffset::from(5_usize)),
+            "the byte after a lone \\r opens the next row"
+        );
+        assert_eq!(
+            Ok(utf16(At(0, 2))),
+            index.utf16_pos_of_byte(ByteOffset::from(2_usize)),
+            "the \\n of \\r\\n belongs to the row it ends"
+        );
+        assert_eq!(
+            ByteOffset::from(1_usize),
+            index.byte_of_utf16_pos(utf16(At(0, 9))),
+            "a column past a row ended by \\r\\n is its \\r"
+        );
+        assert_eq!(
+            ByteOffset::from(4_usize),
+            index.byte_of_utf16_pos(utf16(At(1, 9))),
+            "a column past a row ended by a lone \\r is that \\r"
+        );
+        assert_eq!(
+            ByteOffset::from(6_usize),
+            index.byte_of_utf16_pos(utf16(At(2, 9))),
+            "a column past a row ended by \\n is that \\n"
+        );
+    }
+
+    #[test]
+    fn utf16_positions_clamp_past_the_end()
+    {
+        let index = LineIndex::new(SourceText::from("ab\ncd"));
+        assert_eq!(
+            Ok(utf16(At(1, 2))),
+            index.utf16_pos_of_byte(ByteOffset::from(999_usize)),
+            "an offset past the end is the final position"
+        );
+        assert_eq!(
+            ByteOffset::from(5_usize),
+            index.byte_of_utf16_pos(utf16(At(1, 99))),
+            "a column past the last row's end is the end of the text"
+        );
+        assert_eq!(
+            ByteOffset::from(5_usize),
+            index.byte_of_utf16_pos(utf16(At(9, 0))),
+            "a row past the last is the end of the text"
+        );
+
+        let empty = LineIndex::new(SourceText::from(""));
+        assert_eq!(
+            Ok(utf16(At(0, 0))),
+            empty.utf16_pos_of_byte(ByteOffset::from(0_usize)),
+            "the empty text has the one position 0:0"
+        );
+        assert_eq!(
+            ByteOffset::from(0_usize),
+            empty.byte_of_utf16_pos(utf16(At(2, 4))),
+            "any position of the empty text is offset 0"
+        );
+        assert_eq!(
+            range(Bytes(0, 0)),
+            empty.row_bytes(PositionRow::from(0_usize)),
+            "the empty text's one row is empty"
+        );
+
+        let trailing = LineIndex::new(SourceText::from("ab\n"));
+        assert_eq!(
+            Ok(utf16(At(1, 0))),
+            trailing.utf16_pos_of_byte(ByteOffset::from(3_usize)),
+            "after a trailing newline the end opens an empty row"
+        );
     }
 
     #[test]
