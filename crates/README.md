@@ -27,6 +27,7 @@ crates/
 ├── theory-cell-complexes-tools/   gandr-theory-cell-complexes-tools   the toy alphabet and the adversary frame engine suites test against (dev only)
 ├── theory-circuit-algebras/       gandr-theory-circuit-algebras       the diagram view, the spine reading of a command pattern, embedding matching with its convexity check, the diagram normal form
 ├── theory-coherent-resolutions/   gandr-theory-coherent-resolutions   firing, critical pairs, replayable coherence certificates, budgeted completion
+├── theory-computads/              gandr-theory-computads              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed, the convexity supply point
 ├── theory-deep-inference/         gandr-theory-deep-inference         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web, the flow projection
 ├── theory-graphs/                 gandr-theory-graphs                 the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-levitation/             gandr-theory-levitation             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face

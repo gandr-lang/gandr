@@ -25,6 +25,7 @@ members = [
   "crates/theory-cell-complexes-tools",
   "crates/theory-circuit-algebras",
   "crates/theory-coherent-resolutions",
+  "crates/theory-computads",
   "crates/theory-deep-inference",
   "crates/theory-graphs",
   "crates/theory-levitation",
@@ -270,6 +271,7 @@ path = "crates/surface-syntax"
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras
 # - theory-coherent-resolutions
+# - theory-computads
 # - theory-deep-inference
 [workspace.dependencies.gandr-theory-cell-complexes]
 path = "crates/theory-cell-complexes"
@@ -278,6 +280,7 @@ path = "crates/theory-cell-complexes"
 # dev-dependency only, which its workspace test checks.
 # consumers:
 # - theory-coherent-resolutions (dev)
+# - theory-computads (dev)
 # - theory-deep-inference (dev)
 [workspace.dependencies.gandr-theory-cell-complexes-tools]
 path = "crates/theory-cell-complexes-tools"
@@ -285,9 +288,17 @@ path = "crates/theory-cell-complexes-tools"
 # The rewriting engine: firing, the overlap enumerator and its support,
 # replayable coherence certificates, budgeted completion.
 # consumers:
+# - theory-computads
 # - theory-deep-inference
 [workspace.dependencies.gandr-theory-coherent-resolutions]
 path = "crates/theory-coherent-resolutions"
+
+# The identity relations on derivations: earned shift equivalence and the
+# guard it is earned against, the causal order, the certificate normal form.
+# consumers:
+# - theory-computads
+[workspace.dependencies.gandr-theory-deep-inference]
+path = "crates/theory-deep-inference"
 
 # The precedence DAG, the walk machine, and the graph algorithms they read.
 # consumers:
@@ -295,6 +306,13 @@ path = "crates/theory-coherent-resolutions"
 # - surface-parser
 [workspace.dependencies.gandr-theory-graphs]
 path = "crates/theory-graphs"
+
+# The levitated description table: codes, rule faces, circuit rules and their
+# occurrence record, bridge arities.
+# consumers:
+# - theory-computads
+[workspace.dependencies.gandr-theory-levitation]
+path = "crates/theory-levitation"
 
 # Graph storage and algorithms. Reached only through `theory-graphs`, which
 # owns the dependency and exposes none of its types; the grammar's
@@ -352,6 +370,7 @@ default-features = false
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras
 # - theory-coherent-resolutions
+# - theory-computads
 # - theory-deep-inference
 # - theory-levitation
 [workspace.dependencies.quenchant-shape]

@@ -433,6 +433,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-computads"
+version = "0.0.0"
+dependencies = [
+ "gandr-theory-cell-complexes",
+ "gandr-theory-cell-complexes-tools",
+ "gandr-theory-coherent-resolutions",
+ "gandr-theory-deep-inference",
+ "gandr-theory-levitation",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-theory-deep-inference"
 version = "0.0.0"
 dependencies = [

@@ -1,0 +1,32 @@
+[package]
+name = "gandr-theory-computads"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The elaborator seam of gandr's cell-rewriting stack: levitated descriptions elaborated into command cells at the declaration's polarity, and circuit rules instantiated where their shift question is well-posed, with the convexity re-check supplied by the caller"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["computads", "gandr", "no-std", "rewriting"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[dependencies]
+gandr-theory-cell-complexes.workspace = true
+gandr-theory-coherent-resolutions.workspace = true
+gandr-theory-deep-inference.workspace = true
+gandr-theory-levitation.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+gandr-theory-cell-complexes-tools.workspace = true
+
+[lints]
+workspace = true
