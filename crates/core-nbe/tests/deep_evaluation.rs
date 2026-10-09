@@ -22,10 +22,10 @@ mod deep_evaluation
     use gandr_core_nbe::DomainComp;
     use gandr_core_nbe::DomainValue;
     use gandr_core_nbe::Fuel;
+    use gandr_core_nbe::LoweredChain;
     use gandr_core_nbe::eval_computation;
     use gandr_core_nbe::eval_value;
     use gandr_core_term::CoreArena;
-    use gandr_core_term::DefinitionChain;
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::Zone;
     use gandr_kernel_term::DeBruijnIndex;
@@ -79,7 +79,7 @@ mod deep_evaluation
                     remaining = remaining.saturating_sub(1);
                 }
 
-                let chain = DefinitionChain::new();
+                let chain = LoweredChain::new();
                 let environment = DefinitionalEnvironment::new();
                 let scope = environment.root();
                 let mut domain = DomainArena::new();
@@ -140,7 +140,7 @@ mod deep_evaluation
             remaining = remaining.saturating_sub(1);
         }
 
-        let chain = DefinitionChain::new();
+        let chain = LoweredChain::new();
         let environment = DefinitionalEnvironment::new();
         let scope = environment.root();
         let mut domain = DomainArena::new();
@@ -188,7 +188,7 @@ mod deep_evaluation
                     remaining = remaining.saturating_sub(1);
                 }
 
-                let chain = DefinitionChain::new();
+                let chain = LoweredChain::new();
                 let environment = DefinitionalEnvironment::new();
                 let scope = environment.root();
                 let mut domain = DomainArena::new();

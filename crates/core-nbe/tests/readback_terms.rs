@@ -24,6 +24,7 @@ mod readback_terms
     use gandr_core_nbe::Definitions;
     use gandr_core_nbe::DomainArena;
     use gandr_core_nbe::Fuel;
+    use gandr_core_nbe::LoweredChain;
     use gandr_core_nbe::ReadbackMode;
     use gandr_core_nbe::eval_computation;
     use gandr_core_nbe::eval_value;
@@ -32,7 +33,6 @@ mod readback_terms
     use gandr_core_term::Computation;
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
-    use gandr_core_term::DefinitionChain;
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::Value;
     use gandr_core_term::ValueId;
@@ -242,9 +242,9 @@ mod readback_terms
     /// - provides: the definition side of every fixture that is about
     ///   rebuilding rather than unfolding.
     /// - panics: none.
-    fn nothing_unfolds() -> (DefinitionChain, DefinitionalEnvironment)
+    fn nothing_unfolds() -> (LoweredChain, DefinitionalEnvironment)
     {
-        (DefinitionChain::new(), DefinitionalEnvironment::new())
+        (LoweredChain::new(), DefinitionalEnvironment::new())
     }
 
     #[test]

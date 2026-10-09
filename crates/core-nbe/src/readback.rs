@@ -9,18 +9,22 @@
 //! - [`ReadbackMode::ZeroUnfold`] prefers the **term face**. A value whose face
 //!   is [`TermFace::Source`] hands back the core node it came from, so an
 //!   unreduced subterm costs one id and rebuilds nothing, and the sharing the
-//!   core arena already carried survives the round trip. It never **spends** a
-//!   neutral's unfolding face — the face is read, because the mode's own arm is
-//!   what declines to act on it, and forced under neither mode — so an
-//!   [`Unfolding::Unforced`] body is still unforced when the readback returns,
-//!   which is the property a conversion stands on when it compares neutral
-//!   forms before it falls back to unfolding.
+//!   core arena already carried survives the round trip. It never **spends** or
+//!   forces a neutral's unfolding face — the face is read, because the mode's
+//!   own arm is what declines to act on it — so an [`Unfolding::Unforced`] body
+//!   is still unforced when the readback returns, which is the property a
+//!   conversion stands on when it compares neutral forms before it falls back
+//!   to unfolding.
 //! - [`ReadbackMode::Unfolding`] ignores the term face and rebuilds from the
 //!   domain node, so the result is in canonical binder form and two results are
-//!   comparable by structure alone. It spends a neutral's unfolding face where
-//!   one has already been forced, and refuses a body this run holds no lowering
-//!   for rather than answering the neutral form under a name that promised
-//!   otherwise.
+//!   comparable by structure alone. It spends a neutral's unfolding face,
+//!   forcing an unforced body first: the body's lowering is read from the run's
+//!   [`LoweredChain`](crate::LoweredChain), evaluated in the empty environment
+//!   from the readback's own budget, and recorded on the neutral, so a neutral
+//!   met twice evaluates its body once. Every body the chain holds is lowered,
+//!   so the only body it can refuse is one no entry of the chain names — a
+//!   neutral minted by hand or by another run's definitions — rather than
+//!   answering the neutral form under a mode that promised to unfold it.
 //!
 //! The two modes are one nominal input rather than a flag, because a caller
 //! that passed the wrong boolean would get a *different term*, not a slower
@@ -61,18 +65,20 @@
 //! Readback resolves domain ids constantly and reads **no** core node: it mints
 //! into the core arena and splices ids the domain already holds. So a
 //! domain-arena miss arrives as [`ReadbackFault::Domain`] carrying the domain's
-//! own refusal, and the only way a core-arena miss can arise is inside the
-//! evaluation an opened closure performs — where it arrives as
-//! [`ReadbackFault::Eval`] carrying [`EvalFault::DanglingTerm`]. Neither is
-//! translated into the other's vocabulary.
+//! own refusal, and the only way a core-arena miss can arise is inside an
+//! evaluation the readback drives — opening a closure or forcing a lowered
+//! body — where it arrives as [`ReadbackFault::Eval`] carrying
+//! [`EvalFault::DanglingTerm`]. Neither is translated into the other's
+//! vocabulary.
 //!
 //! # Fuel, because readback drives evaluation
 //!
-//! Going under a binder evaluates the closure's body to weak head, so readback
-//! is a normalizer and inherits every way normalization fails to stop. The
-//! machine carries a [`Fuel`] budget, spends one unit per task it pops, and
-//! hands the remainder to each evaluation it drives so the two share one budget
-//! rather than each holding its own.
+//! Going under a binder evaluates the closure's body to weak head, and forcing
+//! a body evaluates its lowering, so readback is a normalizer and inherits
+//! every way normalization fails to stop. The machine carries a [`Fuel`]
+//! budget, spends one unit per task it pops, and hands the remainder to each
+//! evaluation it drives so the two share one budget rather than each holding
+//! its own.
 
 use alloc::vec::Vec;
 
@@ -104,6 +110,7 @@ use crate::domain::Unfolding;
 use crate::eval::Definitions;
 use crate::eval::EvalFault;
 use crate::eval::Fuel;
+use crate::eval::eval_closed_value;
 use crate::eval::eval_comp_within;
 
 /// Which of the domain's two faces a readback spends.
@@ -118,10 +125,11 @@ pub enum ReadbackMode
     /// [`TermFace::Source`] hands back that core node, and a neutral is always
     /// read through its neutral form, whatever its unfolding face holds.
     ZeroUnfold,
-    /// Ignore the term face and rebuild, spending a neutral's unfolding face
-    /// where one has already been forced. A body named unforced is refused,
-    /// because this crate holds no lowering from a canonical subterm-table
-    /// entry index into a core arena.
+    /// Ignore the term face and rebuild, spending a neutral's unfolding face:
+    /// a forced one is spent as it stands, and an unforced one is forced from
+    /// the lowering the run's [`LoweredChain`](crate::LoweredChain) holds. A
+    /// body no entry of the chain names is refused with
+    /// [`ReadbackFault::UnloweredBody`].
     Unfolding,
 }
 
@@ -165,10 +173,12 @@ pub enum ReadbackFault
         /// The zone whose binders reached the ceiling.
         zone: Zone,
     },
-    /// A mode that spends unfoldings met a body named by its canonical
-    /// subterm-table entry index and never forced. Lowering that entry into a
-    /// core arena is the normalizer's job and this crate does not do it, so the
-    /// readback declines rather than silently answering the neutral form.
+    /// A mode that spends unfoldings met a body named by a canonical
+    /// subterm-table entry index, never forced, that no entry of the run's
+    /// [`LoweredChain`](crate::LoweredChain) names. Every body the chain holds
+    /// is lowered by construction, so this is a neutral minted by hand or by
+    /// another run's definitions; the readback declines rather than silently
+    /// answering the neutral form.
     UnloweredBody
     {
         /// The body's canonical subterm-table entry index.
@@ -1011,9 +1021,10 @@ fn head_term(
 /// - ensures: on success a core value the domain node denotes. Under
 ///   [`ReadbackMode::ZeroUnfold`] an unreduced node is answered by the very id
 ///   it was evaluated from, no core node is minted for it, and no unfolding
-///   face is forced; under [`ReadbackMode::Unfolding`] every node is rebuilt
-///   and every binder comes out as an index counted from a level, so two
-///   results are comparable by structure alone.
+///   face is forced; under [`ReadbackMode::Unfolding`] every node is rebuilt,
+///   every unforced body the run holds a lowering for is forced and spent, and
+///   every binder comes out as an index counted from a level, so two results
+///   are comparable by structure alone.
 /// - provides: the value half of readback, which is the consumer the domain's
 ///   two faces were populated for. The clause states that a successful result
 ///   resolves in `core`; which core value it is, and the per-mode reading
@@ -1058,7 +1069,8 @@ fn head_term(
 /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
 /// - witness: `readback::tests::the_zero_unfold_mode_leaves_an_unforced_body_unforced`
 /// - witness: `readback::tests::the_unfolding_mode_spends_a_body_already_forced`
-/// - witness: `readback::tests::the_unfolding_mode_refuses_a_body_it_cannot_lower`
+/// - witness: `readback::tests::the_unfolding_mode_refuses_a_body_no_chain_entry_names`
+/// - witness: `readback::tests::a_lowered_definition_body_unfolds_through_readback`
 /// - witness: `readback::tests::a_level_outside_the_open_binders_is_refused`
 /// - witness: `readback::tests::a_value_from_another_domain_arena_is_refused`
 /// - witness: `readback::tests::an_opened_closure_reports_the_evaluations_own_fault`
@@ -1593,6 +1605,62 @@ fn step_comp(
     }
 }
 
+/// Force the body a neutral's unfolding face names, recording the force on the
+/// neutral.
+///
+/// # Specification
+/// - requires: `neutral` carries [`Unfolding::Unforced`] naming `body`.
+/// - ensures: on success the lowered body evaluated in the empty environment,
+///   recorded on `neutral` as [`Unfolding::Forced`], with the evaluation's cost
+///   taken off the machine's own budget.
+/// - provides: the one place a readback lowers nothing and still unfolds: the
+///   lowering is the run's, read from the bundle's
+///   [`LoweredChain`](crate::LoweredChain), and the force is recorded once, so
+///   a neutral read twice evaluates its body once.
+/// - fails: [`ReadbackFault::UnloweredBody`] when no entry of the chain names
+///   `body`, [`ReadbackFault::Eval`] carrying the evaluation's own refusal —
+///   [`EvalFault::UnboundVariable`] for a lowering that is not closed — and
+///   [`ReadbackFault::Domain`] when the record is refused.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ReadbackFault::UnloweredBody`] — no entry of the chain names `body`.
+/// - [`ReadbackFault::Eval`] — evaluating the lowering refused.
+/// - [`ReadbackFault::Domain`] — recording the force was refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surfaces are the lowering lookup, the
+///   evaluation and the recorded force, separated by a body with no lowering, a
+///   lowered body whose own value holds a second unforced definition, and the
+///   neutral reading as forced once the readback returns.
+/// - witness: `readback::tests::the_unfolding_mode_refuses_a_body_no_chain_entry_names`
+/// - witness: `readback::tests::a_lowered_definition_body_unfolds_through_readback`
+#[spec(
+    captures: entry_fuel = u32::from(machine.fuel),
+    ensures: |ret| ret.is_err() || u32::from(machine.fuel) <= entry_fuel,
+)]
+fn force_body(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    neutral: NeutralId,
+    body: GlobalIndex,
+) -> Result<Glued, ReadbackFault>
+{
+    let Some(lowered) = machine.definitions.bodies().get(&body).copied()
+    else {
+        return Err(ReadbackFault::UnloweredBody { body });
+    };
+    let evaluated = eval_closed_value(core, domain, machine.definitions, machine.fuel, lowered);
+    let (value, remaining) = evaluated.map_err(ReadbackFault::Eval)?;
+    machine.fuel = remaining;
+    let glued = Glued::Value(value);
+    domain
+        .force_neutral(neutral, glued)
+        .map_err(ReadbackFault::Domain)?;
+    Ok(glued)
+}
+
 /// Start reading a neutral: choose the head, then queue the spine fold.
 ///
 /// # Specification
@@ -1601,21 +1669,24 @@ fn step_comp(
 ///   glued form standing in the same scope, which for a definition body is the
 ///   empty one, because the chain admits no definition with a free occurrence.
 /// - ensures: under a mode that spends nothing, the head is read as a value
-///   term and the fold starts at value polarity. Under the spending mode, a
-///   forced unfolding replaces the head by the glued form it was forced to and
-///   the fold starts at that form's polarity — which is the reading the
-///   unfolding face carries: the face names the **head's** body, so the
-///   neutral's own value is that body with this spine re-applied.
+///   term and the fold starts at value polarity. Under the spending mode, an
+///   unforced unfolding is forced first; a forced unfolding then replaces the
+///   head by the glued form it was forced to and the fold starts at that form's
+///   polarity — which is the reading the unfolding face carries: the face names
+///   the **head's** body, so the neutral's own value is that body with this
+///   spine re-applied.
 /// - provides: the one site the unfolding face is **spent**, and the site the
 ///   zero-unfold mode is defined by not spending it. Both modes read the face —
 ///   the read is one match on a `Copy` field and the mode's own arm is what
-///   declines to act on it — and neither forces one. The clause states the
-///   queued fold and, under the mode that spends nothing, the head pushed as
-///   one value term; the polarity the fold starts at rides in the queued task
-///   rather than in any stack state, and the witnesses below carry it.
+///   declines to act on it — and only the spending mode forces one. The clause
+///   states the queued fold and, under the mode that spends nothing, the head
+///   pushed as one value term; the polarity the fold starts at rides in the
+///   queued task rather than in any stack state, and the witnesses below carry
+///   it.
 /// - fails: [`ReadbackFault::Domain`] when the neutral does not resolve,
-///   [`ReadbackFault::UnloweredBody`] when the spending mode meets a body never
-///   forced, and whatever reading the head refuses.
+///   whatever forcing an unforced body refuses —
+///   [`ReadbackFault::UnloweredBody`] among it — and whatever reading the head
+///   refuses.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -1623,7 +1694,8 @@ fn step_comp(
 ///   the starting polarity, separated by each of the three unfolding states
 ///   under each mode, and by a body forced to each polarity.
 /// - witness: `readback::tests::the_zero_unfold_mode_leaves_an_unforced_body_unforced`
-/// - witness: `readback::tests::the_unfolding_mode_refuses_a_body_it_cannot_lower`
+/// - witness: `readback::tests::the_unfolding_mode_refuses_a_body_no_chain_entry_names`
+/// - witness: `readback::tests::a_lowered_definition_body_unfolds_through_readback`
 /// - witness: `readback::tests::the_unfolding_mode_spends_a_body_already_forced`
 /// - witness: `readback::tests::a_spine_that_misses_its_polarity_is_refused`
 #[spec(
@@ -1640,7 +1712,7 @@ fn step_comp(
 )]
 fn step_neutral(
     core: &mut CoreArena,
-    domain: &DomainArena,
+    domain: &mut DomainArena,
     machine: &mut Machine<'_>,
     neutral: NeutralId,
     wanted: Polarity,
@@ -1658,7 +1730,10 @@ fn step_neutral(
         | ReadbackMode::ZeroUnfold => None,
         | ReadbackMode::Unfolding => match unfolding {
             | Unfolding::Rigid => None,
-            | Unfolding::Unforced(body) => return Err(ReadbackFault::UnloweredBody { body }),
+            | Unfolding::Unforced(body) => {
+                let forced = force_body(core, domain, machine, neutral, body)?;
+                Some(forced)
+            },
             | Unfolding::Forced(glued) => Some(glued),
         },
     };
@@ -1831,6 +1906,7 @@ fn step_spine(
 mod tests
 {
     use alloc::vec::Vec;
+    use core::convert::Infallible;
 
     use gandr_core_term::Computation;
     use gandr_core_term::ComputationId;
@@ -1865,6 +1941,7 @@ mod tests
     use crate::domain::BinderLevel;
     use crate::domain::CompTermFace;
     use crate::domain::DomainComp;
+    use crate::domain::DomainValue;
     use crate::domain::Elimination;
     use crate::domain::Glued;
     use crate::domain::NeutralHead;
@@ -1873,6 +1950,7 @@ mod tests
     use crate::eval::Definitions;
     use crate::eval::EvalFault;
     use crate::eval::Fuel;
+    use crate::eval::LoweredChain;
     use crate::eval::eval_computation;
     use crate::eval::eval_value;
 
@@ -1909,9 +1987,9 @@ mod tests
     /// - provides: the definition side of every fixture that is about
     ///   rebuilding rather than unfolding.
     /// - panics: none.
-    fn nothing_unfolds() -> (DefinitionChain, DefinitionalEnvironment)
+    fn nothing_unfolds() -> (LoweredChain, DefinitionalEnvironment)
     {
-        (DefinitionChain::new(), DefinitionalEnvironment::new())
+        (LoweredChain::new(), DefinitionalEnvironment::new())
     }
 
     /// The number of bind links in the body each suspension of the
@@ -2940,7 +3018,7 @@ mod tests
     }
 
     #[test]
-    fn the_unfolding_mode_refuses_a_body_it_cannot_lower()
+    fn the_unfolding_mode_refuses_a_body_no_chain_entry_names()
     {
         let mut core = CoreArena::new();
         let (chain, environment) = nothing_unfolds();
@@ -2970,9 +3048,8 @@ mod tests
                 ample(),
                 stood,
             ),
-            "the spending mode declines a body named only by its canonical subterm-table \
-             entry index rather than answering the neutral form under a mode that promised \
-             to unfold it"
+            "the spending mode declines a body no entry of the run's chain names rather \
+             than answering the neutral form under a mode that promised to unfold it"
         );
     }
 
@@ -3032,6 +3109,104 @@ mod tests
             Some(&Value::Unit),
             core.value(spent),
             "while the spending mode answers with the body it was forced to"
+        );
+    }
+
+    #[test]
+    fn a_lowered_definition_body_unfolds_through_readback()
+    {
+        let mut core = CoreArena::new();
+        let inner = ConstantIndex::from(0_usize);
+        let outer = ConstantIndex::from(1_usize);
+        let inner_entry = GlobalIndex::from(3_u32);
+        let outer_entry = GlobalIndex::from(7_u32);
+
+        // `inner := ⟨⟩` and `outer := (inner, ⟨⟩)`, both lowered into `core`.
+        let unit = core.value_unit();
+        let mention = core.value_constant(inner);
+        let outer_body = core.value_pair(mention, unit);
+        let reference = core.value_constant(outer);
+
+        let mut chain = DefinitionChain::new();
+        let defined = chain.define(inner, inner_entry, Transparency::Manifest, &[]);
+        assert!(defined.is_ok());
+        let defined = chain.define(outer, outer_entry, Transparency::Manifest, &[inner]);
+        assert!(defined.is_ok());
+        let environment = DefinitionalEnvironment::new();
+        let scope = environment.root();
+        let chain = LoweredChain::lower(chain, |entry| match entry.constant() {
+            | position if position == inner => Ok(unit),
+            | position if position == outer => Ok(outer_body),
+            | position => Err(position),
+        })
+        .expect("both bodies lower");
+        let definitions = Definitions::new(&chain, &environment, scope);
+
+        let mut domain = DomainArena::new();
+        let evaluated = eval_value(&core, &mut domain, definitions, ample(), reference)
+            .expect("a constant evaluates to a neutral");
+        let Some(&DomainValue::Neutral { neutral, .. }) = domain.value(evaluated)
+        else {
+            panic!("a manifest constant is stuck until a readback spends it");
+        };
+
+        let kept = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::ZeroUnfold,
+            ample(),
+            evaluated,
+        )
+        .expect("the zero-unfold mode reads the neutral form");
+        assert_eq!(
+            Some(&Value::Constant(outer)),
+            core.value(kept),
+            "a held lowering changes nothing for the mode that spends nothing"
+        );
+
+        let before = domain.watermark();
+        let mut marks = [before; 2];
+        for (attempt, mark) in ["first", "second"].into_iter().zip(marks.iter_mut()) {
+            let unfolded = readback_value(
+                &mut core,
+                &mut domain,
+                definitions,
+                ReadbackMode::Unfolding,
+                ample(),
+                evaluated,
+            )
+            .expect("the spending mode forces both lowered bodies");
+            let Some(&Value::Pair(first, second)) = core.value(unfolded)
+            else {
+                panic!("the {attempt} reading is the outer body's pair");
+            };
+            assert_ne!(
+                outer_body, unfolded,
+                "the {attempt} reading is rebuilt from the domain rather than spliced from \
+                 the lowering's id"
+            );
+            assert_eq!(
+                (Some(&Value::Unit), Some(&Value::Unit)),
+                (core.value(first), core.value(second)),
+                "and in the {attempt} reading the inner constant unfolded too, through its \
+                 own lowering"
+            );
+            let held = domain.neutral(neutral).expect("the neutral resolves");
+            assert!(
+                matches!(held.unfolding(), Unfolding::Forced(Glued::Value(_))),
+                "the force is recorded on the neutral, not discarded with the readback"
+            );
+            *mark = domain.watermark();
+        }
+        let [first_mark, second_mark] = marks;
+        assert_ne!(
+            before, first_mark,
+            "the first reading evaluated the lowered bodies"
+        );
+        assert_eq!(
+            first_mark, second_mark,
+            "and the second reading evaluates neither body again"
         );
     }
 
@@ -3252,11 +3427,14 @@ mod tests
         let mut core = CoreArena::new();
         let position = ConstantIndex::from(0_usize);
         let reference = core.value_constant(position);
+        let unfolded = core.value_unit();
 
         let mut chain = DefinitionChain::new();
         let body = GlobalIndex::from(9_u32);
         let defined = chain.define(position, body, Transparency::Manifest, &[]);
         assert_eq!(Ok(()), defined.map(|_| ()), "the definition is admitted");
+        let chain =
+            LoweredChain::lower(chain, |_| Ok::<_, Infallible>(unfolded)).expect("the body lowers");
         let environment = DefinitionalEnvironment::new();
         let scope = environment.root();
         let definitions = Definitions::new(&chain, &environment, scope);

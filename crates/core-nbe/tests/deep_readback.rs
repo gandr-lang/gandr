@@ -28,6 +28,7 @@ mod deep_readback
     use gandr_core_nbe::Definitions;
     use gandr_core_nbe::DomainArena;
     use gandr_core_nbe::Fuel;
+    use gandr_core_nbe::LoweredChain;
     use gandr_core_nbe::ReadbackMode;
     use gandr_core_nbe::eval_computation;
     use gandr_core_nbe::eval_value;
@@ -35,7 +36,6 @@ mod deep_readback
     use gandr_core_nbe::readback_value;
     use gandr_core_term::Computation;
     use gandr_core_term::CoreArena;
-    use gandr_core_term::DefinitionChain;
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::Value;
 
@@ -85,7 +85,7 @@ mod deep_readback
                     remaining = remaining.saturating_sub(1);
                 }
 
-                let chain = DefinitionChain::new();
+                let chain = LoweredChain::new();
                 let environment = DefinitionalEnvironment::new();
                 let scope = environment.root();
                 let definitions = Definitions::new(&chain, &environment, scope);
@@ -152,7 +152,7 @@ mod deep_readback
                     remaining = remaining.saturating_sub(1);
                 }
 
-                let chain = DefinitionChain::new();
+                let chain = LoweredChain::new();
                 let environment = DefinitionalEnvironment::new();
                 let scope = environment.root();
                 let definitions = Definitions::new(&chain, &environment, scope);

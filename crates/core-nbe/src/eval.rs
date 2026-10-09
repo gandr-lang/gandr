@@ -67,6 +67,8 @@
 //! runs out. Refusing is the fail-closed posture; a decline is a correct answer
 //! at this surface and a divergence is not.
 
+use alloc::collections::BTreeMap;
+use alloc::collections::btree_map::Entry;
 use alloc::vec::Vec;
 
 use anodized::spec;
@@ -74,6 +76,7 @@ use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::DefinitionChain;
+use gandr_core_term::DefinitionEntry;
 use gandr_core_term::DefinitionalEnvironment;
 use gandr_core_term::ScopeId;
 use gandr_core_term::Transparency;
@@ -82,6 +85,7 @@ use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::GlobalIndex;
 use gandr_kernel_term::Side;
 
 use crate::arena::DomainArena;
@@ -182,6 +186,107 @@ pub enum EvalFault
     MachineInvariant,
 }
 
+/// A definition chain with every body lowered into the core arena a run
+/// evaluates against.
+///
+/// The chain names a body by its canonical subterm-table entry index, which is
+/// arena-independent and so names no core term; unfolding needs the body as a
+/// core term. A run lowers the chain into its own arena in one pass, in
+/// admission order, and this is the pass's result: the chain together with one
+/// core value per distinct entry index it names. Every body the chain holds is
+/// lowered by construction, so a readback forcing a body of this chain never
+/// meets one it cannot read.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct LoweredChain
+{
+    /// The definitions, in admission order.
+    chain: DefinitionChain,
+    /// Each body's core value, keyed by its canonical entry index.
+    bodies: BTreeMap<GlobalIndex, ValueId>,
+}
+
+impl LoweredChain
+{
+    /// The empty chain, which lowers nothing.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self
+    {
+        Self::default()
+    }
+
+    /// Lower every body of `chain`, in admission order, through `lowering`.
+    ///
+    /// # Specification
+    /// - requires: `lowering` answers, for one entry, a closed core value in
+    ///   the arena the run evaluates against, spelling the body the entry's
+    ///   index names; a free variable in it surfaces as
+    ///   [`EvalFault::UnboundVariable`] when the body is forced.
+    /// - ensures: on success every entry's body index reads as lowered, and
+    ///   `lowering` was called once per distinct entry index, in admission
+    ///   order, so two definitions the canonical table gave one body share one
+    ///   lowering.
+    /// - provides: the one pass that turns the chain's arena-independent bodies
+    ///   into this run's terms, and the completeness that makes
+    ///   [`ReadbackFault::UnloweredBody`](crate::ReadbackFault::UnloweredBody)
+    ///   unreachable for a definition the chain holds. Reading one table entry
+    ///   as a core term is the caller's, because the caller holds the table.
+    /// - fails: the first refusal `lowering` returns, unchanged; no partial
+    ///   chain is returned.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Whatever `lowering` refuses, at the first entry it refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are the per-index lowering and
+    ///   the refusal, separated by two definitions sharing one body index
+    ///   lowered by one call, and a lowering that refuses the second entry.
+    /// - witness: `eval::tests::a_chain_lowers_each_body_once_in_admission_order`
+    /// - witness: `eval::tests::a_refused_lowering_returns_no_chain`
+    #[inline]
+    pub fn lower<Lowering, Refusal>(
+        chain: DefinitionChain,
+        mut lowering: Lowering,
+    ) -> Result<Self, Refusal>
+    where
+        Lowering: FnMut(DefinitionEntry) -> Result<ValueId, Refusal>,
+    {
+        let mut bodies = BTreeMap::new();
+        for &entry in chain.entries() {
+            if let Entry::Vacant(vacant) = bodies.entry(entry.body()) {
+                let lowered = lowering(entry)?;
+                vacant.insert(lowered);
+            }
+        }
+        Ok(Self { chain, bodies })
+    }
+
+    /// The definitions, in admission order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn chain(&self) -> &DefinitionChain
+    {
+        &self.chain
+    }
+
+    /// Each body's core value, keyed by its canonical entry index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn bodies(&self) -> &BTreeMap<GlobalIndex, ValueId>
+    {
+        &self.bodies
+    }
+}
+
 /// What a run may unfold, and where it is reading from.
 ///
 /// The three travel together because the answer to "is this definition manifest
@@ -190,8 +295,8 @@ pub enum EvalFault
 #[derive(Clone, Copy, Debug)]
 pub struct Definitions<'run>
 {
-    /// Every definition's body and height.
-    chain: &'run DefinitionChain,
+    /// Every definition's body, height and lowering.
+    chain: &'run LoweredChain,
     /// Which definitions are manifest in which scope.
     environment: &'run DefinitionalEnvironment,
     /// The scope this run reads from.
@@ -215,7 +320,7 @@ impl<'run> Definitions<'run>
     #[inline]
     #[must_use]
     pub fn new(
-        chain: &'run DefinitionChain,
+        chain: &'run LoweredChain,
         environment: &'run DefinitionalEnvironment,
         scope: ScopeId,
     ) -> Self
@@ -225,6 +330,16 @@ impl<'run> Definitions<'run>
             environment,
             scope,
         }
+    }
+
+    /// Each body's core value, keyed by its canonical entry index.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn bodies(&self) -> &'run BTreeMap<GlobalIndex, ValueId>
+    {
+        self.chain.bodies()
     }
 
     /// The unfolding face a neutral headed by `constant` carries here.
@@ -254,7 +369,7 @@ impl<'run> Definitions<'run>
     /// - witness: `eval::tests::a_sealed_definition_is_rigid`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| match self.chain.entry(constant) {
+    #[spec(ensures: |ret| match self.chain.chain().entry(constant) {
         | Some(entry) => {
             match self.environment.transparency(self.scope, constant, entry.declared()) {
                 | Ok(Transparency::Manifest) => ret == Unfolding::Unforced(entry.body()),
@@ -268,7 +383,7 @@ impl<'run> Definitions<'run>
         constant: ConstantIndex,
     ) -> Unfolding
     {
-        let Some(entry) = self.chain.entry(constant)
+        let Some(entry) = self.chain.chain().entry(constant)
         else {
             return Unfolding::Rigid;
         };
@@ -866,11 +981,49 @@ pub fn eval_value(
     term: ValueId,
 ) -> Result<DomainValueId, EvalFault>
 {
+    let (value, _remaining) = eval_closed_value(core, domain, definitions, fuel, term)?;
+    Ok(value)
+}
+
+/// Evaluate a closed core value, reporting the budget the run did not spend.
+///
+/// # Specification
+/// - requires: `term` resolves in `core` and is closed.
+/// - ensures: on success the value `term` evaluates to, paired with the fuel
+///   left over — one unit per task the run popped, subtracted from `fuel`.
+/// - provides: the entry a readback forces a lowered body through, spending
+///   from its own budget rather than from a fresh one. The clause states that
+///   the produced value resolves in `domain` and that the reported remainder
+///   does not exceed `fuel`.
+/// - fails: every variant of [`EvalFault`]; [`EvalFault::UnboundVariable`] when
+///   `term` is not closed.
+/// - panics: none.
+///
+/// # Errors
+/// Every variant of [`EvalFault`]; see its documentation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the decision surface is the reported remainder, separated
+///   by a forced body whose cost the readback's remainder carries.
+/// - witness: `readback::tests::a_lowered_definition_body_unfolds_through_readback`
+#[spec(ensures: |ret| ret.is_err()
+    || ret.as_ref().is_ok_and(|pair| {
+        domain.value(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)
+    }))]
+pub fn eval_closed_value(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    fuel: Fuel,
+    term: ValueId,
+) -> Result<(DomainValueId, Fuel), EvalFault>
+{
     let mut machine = Machine::new(definitions, fuel);
     let env = Machine::root_env();
     machine.tasks.push(Task::Value { term, env });
     run(core, domain, &mut machine)?;
-    machine.pop_value()
+    let value = machine.pop_value()?;
+    Ok((value, machine.fuel))
 }
 
 /// Evaluate a core computation to weak head in the empty environment.
@@ -1622,11 +1775,15 @@ fn step_case(
 #[cfg(test)]
 mod tests
 {
+    use alloc::vec::Vec;
+    use core::convert::Infallible;
+
     use gandr_core_term::CoreArena;
     use gandr_core_term::DefinitionChain;
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::ScopeId;
     use gandr_core_term::Transparency;
+    use gandr_core_term::ValueId;
     use gandr_core_term::Zone;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::ConstantIndex;
@@ -1641,6 +1798,7 @@ mod tests
     use super::Definitions;
     use super::EvalFault;
     use super::Fuel;
+    use super::LoweredChain;
     use super::eval_comp_within;
     use super::eval_computation;
     use super::eval_value;
@@ -1689,9 +1847,28 @@ mod tests
     /// - provides: the definition side of every fixture that is about reduction
     ///   rather than unfolding.
     /// - panics: none.
-    fn nothing_unfolds() -> (DefinitionChain, DefinitionalEnvironment)
+    fn nothing_unfolds() -> (LoweredChain, DefinitionalEnvironment)
     {
-        (DefinitionChain::new(), DefinitionalEnvironment::new())
+        (LoweredChain::new(), DefinitionalEnvironment::new())
+    }
+
+    /// Lower every body of `chain` to one core value.
+    ///
+    /// # Specification
+    /// - requires: `lowered` resolves in the arena the fixture evaluates
+    ///   against.
+    /// - ensures: a lowered chain whose every body is `lowered`.
+    /// - provides: the lowering side of every fixture that reads an unfolding
+    ///   face without forcing it, where what the body lowers to is not what is
+    ///   asserted.
+    /// - panics: none.
+    fn lowered_to(
+        chain: DefinitionChain,
+        lowered: ValueId,
+    ) -> LoweredChain
+    {
+        let Ok(chain) = LoweredChain::lower(chain, |_| Ok::<_, Infallible>(lowered));
+        chain
     }
 
     #[test]
@@ -2199,6 +2376,7 @@ mod tests
         let body = GlobalIndex::from(9_u32);
         let defined = chain.define(constant, body, Transparency::Manifest, &[]);
         assert!(defined.is_ok());
+        let chain = lowered_to(chain, reference);
         let environment = DefinitionalEnvironment::new();
         let scope = environment.root();
 
@@ -2243,6 +2421,7 @@ mod tests
             &[],
         );
         assert!(defined.is_ok());
+        let chain = lowered_to(chain, reference);
         let mut environment = DefinitionalEnvironment::new();
         let outer = environment.root();
         let inner = environment.open_scope(outer).expect("the root resolves");
@@ -2386,6 +2565,79 @@ mod tests
                 omega,
             ),
             "beta and force alone loop, so the machine declines within its budget"
+        );
+    }
+
+    #[test]
+    fn a_chain_lowers_each_body_once_in_admission_order()
+    {
+        let mut core = CoreArena::new();
+        let mut chain = DefinitionChain::new();
+        let shared = GlobalIndex::from(5_u32);
+        let own = GlobalIndex::from(6_u32);
+        for (position, body) in [(0_usize, shared), (1_usize, own), (2_usize, shared)] {
+            let defined = chain.define(
+                ConstantIndex::from(position),
+                body,
+                Transparency::Manifest,
+                &[],
+            );
+            assert!(defined.is_ok());
+        }
+
+        let mut asked = Vec::new();
+        let Ok(lowered) = LoweredChain::lower(chain, |entry| {
+            let lowered = core.value_unit();
+            asked.push((entry.constant(), lowered));
+            Ok::<_, Infallible>(lowered)
+        });
+        let &[(first, first_lowering), (second, second_lowering)] = asked.as_slice()
+        else {
+            panic!(
+                "the pass asks once per distinct body index, so the third definition reuses \
+                 the first one's lowering"
+            );
+        };
+        assert_eq!(
+            (ConstantIndex::from(0_usize), ConstantIndex::from(1_usize)),
+            (first, second),
+            "and it asks in admission order"
+        );
+        assert_eq!(
+            (Some(&first_lowering), Some(&second_lowering)),
+            (lowered.bodies().get(&shared), lowered.bodies().get(&own)),
+            "each index reads as the lowering it was asked for"
+        );
+    }
+
+    #[test]
+    fn a_refused_lowering_returns_no_chain()
+    {
+        let mut chain = DefinitionChain::new();
+        for (position, body) in [(0_usize, 0_u32), (1_usize, 1_u32)] {
+            let defined = chain.define(
+                ConstantIndex::from(position),
+                GlobalIndex::from(body),
+                Transparency::Manifest,
+                &[],
+            );
+            assert!(defined.is_ok());
+        }
+
+        let mut core = CoreArena::new();
+        let refused = LoweredChain::lower(chain, |entry| {
+            if entry.constant() == ConstantIndex::from(1_usize) {
+                Err(entry.constant())
+            }
+            else {
+                Ok(core.value_unit())
+            }
+        });
+        assert_eq!(
+            Err(ConstantIndex::from(1_usize)),
+            refused,
+            "the first refusal is the answer, unchanged, and no partly lowered chain \
+             escapes"
         );
     }
 }
