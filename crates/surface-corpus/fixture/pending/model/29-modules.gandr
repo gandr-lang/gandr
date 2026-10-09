@@ -1,0 +1,15 @@
+def seed = 40;
+
+module Facts : #{ inner: #{ answer: Integer }, total: Integer } {
+  def hidden_reply = #!{ printf 'hidden module member ran\n'; };
+  def base = seed + hidden_reply.exit_code + 1;
+  module inner : #{ answer: Integer } {
+    def hidden = base;
+    def answer = base + 1;
+  }
+  def total = inner.answer + 1;
+}
+
+def after = Facts.total + 1;
+
+#{after = after, total = Facts.total}

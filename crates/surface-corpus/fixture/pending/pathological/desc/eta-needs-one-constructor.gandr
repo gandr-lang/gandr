@@ -1,0 +1,6 @@
+data NatPred : Type {
+  Zero : NatPred;
+  Succ : (n : NatPred) --> NatPred;
+  oper pred(n : NatPred) -> NatPred;
+  rule pred(Succ(m)) ==> m;
+}

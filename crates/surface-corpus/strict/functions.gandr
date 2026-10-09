@@ -1,0 +1,17 @@
+def identity : U (Integer -> F Integer) ;
+def identity = thunk { fn (x) { ret x } } ;
+
+def first : U (Integer -> Integer -> F Integer) ;
+def first = thunk { fn (x) { fn (y) { ret x } } } ;
+
+def answer : Integer ;
+def answer = 42 ;
+
+def applied : U (F Integer) ;
+def applied = thunk { (force identity)(answer) } ;
+
+def chosen : U (F Integer) ;
+def chosen = thunk { ((force first)(answer))(7) } ;
+
+def delayed : U (F String) ;
+def delayed = thunk { ret "later" } ;

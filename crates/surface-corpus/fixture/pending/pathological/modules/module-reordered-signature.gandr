@@ -1,0 +1,8 @@
+module Ordered : #{ third: Integer, first: Integer, second: Integer } {
+  def first = 1;
+  def hidden = 99;
+  def second = first + 1;
+  def third = second + 1;
+}
+
+#{a = Ordered.first, b = Ordered.second, c = Ordered.third}

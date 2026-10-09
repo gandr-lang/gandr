@@ -1,0 +1,11 @@
+@[ refuses("OutOfFragment") ]
+def product_chain : Integer * Unit * Boolean * String;
+def product_chain = ret 1;
+
+@[ refuses("OutOfFragment") ]
+def sum_chain : Integer + Unit + Boolean + String;
+def sum_chain = ret 1;
+
+@[ refuses("OutOfFragment") ]
+def lazy_chain : F Integer & F Unit & F Boolean & F String;
+def lazy_chain = ret 1;

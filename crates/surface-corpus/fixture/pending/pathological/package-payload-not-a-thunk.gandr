@@ -1,0 +1,4 @@
+def bad : package [ T ] Integer;
+def bad = ret 1;
+
+bad

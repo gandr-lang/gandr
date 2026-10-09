@@ -1,0 +1,11 @@
+data Color3 : Type {
+  RGB : (r : Integer, g : Integer, b : Integer) --> Color3;
+}
+
+def green_channel() -> F Integer {
+  case (RGB(10, 20, 30) : Color3) {
+    RGB(r, g, b) => ret g
+  }
+}
+
+green_channel()

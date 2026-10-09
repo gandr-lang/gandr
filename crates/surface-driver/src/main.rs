@@ -2,47 +2,121 @@
 //!
 //! Installs as `gandr`. The driver owns the argument surface and the process
 //! boundary: it parses an invocation, routes it through the surface
-//! dispatcher, and renders the outcome. It accepts `--help` and `--version`;
-//! a bare invocation prints the dispatcher's status report.
+//! dispatcher, renders the outcome, and reports the run through its exit
+//! code.
+//!
+//! # Exit codes
+//!
+//! - `0`: every declaration settled; also `--help`, `--version` and a bare
+//!   invocation.
+//! - `1`: at least one declaration is unsettled, or a source was not read as
+//!   its root expects.
+//! - `2`: an engine fault, an unreadable source or a path naming none, a
+//!   malformed invocation, or output the driver could not write.
 
 use std::io::Write as _;
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Goals;
+use gandr_surface_dispatcher::Invocation;
+use gandr_surface_dispatcher::Outcome;
+use gandr_surface_dispatcher::RunVerdict;
+use gandr_surface_dispatcher::Shown;
+use gandr_surface_dispatcher::Standing;
+use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::Verb;
+use gandr_surface_dispatcher::Walk;
+use gandr_surface_dispatcher::shown;
+use quenchant_shape::shape::Maybe;
+
+/// The exit code of a run with an unsettled declaration.
+const UNSETTLED: u8 = 1;
+
+/// The exit code of a fault: the engine's, a path's, the invocation's or the
+/// output's.
+const FAULTED: u8 = 2;
 
 /// gandr language toolchain driver.
 #[derive(Debug, clap::Parser)]
 #[command(name = "gandr", version, about)]
-struct Cli;
+#[repr(transparent)]
+struct Cli
+{
+    /// The verb; with none, the driver prints its status.
+    #[command(subcommand)]
+    command: Option<Command>,
+}
+
+/// The driver's verbs.
+#[derive(Debug, clap::Subcommand)]
+enum Command
+{
+    /// Check every declaration of the sources under each path.
+    ///
+    /// Exits 0 when every declaration settles, 1 when one does not, and 2 on
+    /// an engine fault or a path that cannot be read.
+    Check
+    {
+        /// Print a declaration unsettled by its obligations alone as a goal,
+        /// rather than failing the run.
+        #[arg(long)]
+        goals: bool,
+        /// Source files, and directories searched for `.gandr` sources.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+    },
+    /// Run the corpus under each path: the same pass as `check`, printing
+    /// every fixture.
+    ///
+    /// Exits as `check` does.
+    Test
+    {
+        /// Source files, and directories searched for `.gandr` sources.
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+    },
+}
 
 /// Parse the driver's arguments, route the invocation, render the outcome.
 ///
 /// # Specification
 /// - requires: nothing of the caller; the arguments come from the process
-///   environment and every accepted form is argument-free.
-/// - ensures: [`Cli`] parses before anything is written, so `--help`,
-///   `--version`, and an argument error take clap's own exit path and the
-///   dispatcher is reached only on a bare `gandr` invocation.
-/// - provides: one status line on standard output naming the driver version and
-///   the dispatcher's status report, flushed before the process returns. The
-///   postcondition stays prose: it orders the driver's own exit paths — the
-///   argument surface parses before anything is written — which is a property
-///   of the run rather than a predicate over one entry state and one returned
-///   value, and the status line is an effect on standard output rather than an
-///   observation this call can make. With `tracing`, a thread-local subscriber
-///   reports dispatch spans and successful output completion to standard error
-///   after argument parsing.
-/// - fails: returns the write or flush error when standard output is closed,
-///   full, or otherwise unwritable; the runtime reports it and exits nonzero.
-/// - panics: none. The status line goes through a locked handle and the
-///   fallible `writeln!` rather than `println!`, whose internal write-failure
-///   path aborts. Clap leaves by process exit rather than by panic on `--help`,
-///   `--version`, and argument errors, and its command-definition assertions
-///   fire only under `debug_assertions`.
+///   environment.
+/// - ensures: [`Cli`] parses before anything else is written. `--help` and
+///   `--version` print and exit `0`; any other argument error prints its usage
+///   message and exits `2`. A bare invocation prints one status line and exits
+///   `0`. `check` and `test` walk their paths, print what [`render`] prints,
+///   and exit `0`, `1` or `2` as the run settled, was unsettled or faulted.
+///   Output the driver cannot write is noted on standard error, when that is
+///   writable, and exits `2`.
+/// - provides: the exit code as the run's verdict. The postcondition stays
+///   prose: the exit code and the lines written are effects on the process, not
+///   a value this call returns to a caller that could observe them. With
+///   `tracing`, a thread-local subscriber reports dispatch spans to standard
+///   error after argument parsing.
+/// - fails: never by panic or abort; every failure is an exit code.
+/// - panics: none. Output goes through locked handles and the fallible
+///   `writeln!`, never `println!`, whose write-failure path panics. Clap's
+///   command-definition assertions fire only under `debug_assertions`.
 ///
-/// # Errors
-/// - [`std::io::Error`]: the underlying failure from writing the status line to
-///   standard output, or from the flush that follows it.
-fn main() -> Result<(), std::io::Error>
+/// # Adequacy
+/// - hypothesis: L2 — the binary is spawned on inputs triggering each exit
+///   code, the code and the lines asserted; output to a pipe with no reader is
+///   the unwritable case.
+/// - witness: `cli::cli::a_settled_run_exits_zero`
+/// - witness: `cli::cli::an_unsettled_run_exits_one`
+/// - witness: `cli::cli::an_unreadable_path_exits_two`
+/// - witness: `cli::cli::a_malformed_invocation_exits_two`
+/// - witness: `cli::cli::unwritable_standard_output_exits_two`
+/// - witness: `cli::cli::a_bare_invocation_prints_the_status`
+fn main() -> ExitCode
 {
-    let _cli = <Cli as clap::Parser>::parse();
+    let cli = match <Cli as clap::Parser>::try_parse() {
+        | Ok(cli) => cli,
+        | Err(error) => return usage(&error),
+    };
     #[cfg(feature = "tracing")]
     let _subscriber = tracing::subscriber::set_default(
         tracing_subscriber::fmt()
@@ -52,12 +126,191 @@ fn main() -> Result<(), std::io::Error>
     );
     #[cfg(feature = "tracing")]
     let _span = tracing::info_span!("driver").entered();
-    let outcome = gandr_surface_dispatcher::dispatch(gandr_surface_dispatcher::Invocation::Status);
-    let gandr_surface_dispatcher::Outcome::Status(report) = outcome;
+    let invocation = match cli.command {
+        | None => Invocation::Status,
+        | Some(Command::Check { goals, paths }) => Invocation::Check {
+            goals: if goals { Goals::Reported } else { Goals::Gated },
+            paths,
+        },
+        | Some(Command::Test { paths }) => Invocation::Test { paths },
+    };
     let mut stdout = std::io::stdout().lock();
-    writeln!(stdout, "gandr {} — {report}", env!("CARGO_PKG_VERSION"))?;
-    stdout.flush()?;
-    #[cfg(feature = "tracing")]
-    tracing::info!("status output flushed");
-    Ok(())
+    let mut stderr = std::io::stderr().lock();
+    let rendered = render(
+        gandr_surface_dispatcher::dispatch(invocation),
+        &mut stdout,
+        &mut stderr,
+    );
+    let flushed = rendered.and_then(|exit| stdout.flush().map(|()| exit));
+    match flushed {
+        | Ok(exit) => {
+            #[cfg(feature = "tracing")]
+            tracing::info!("output flushed");
+            exit
+        },
+        | Err(error) => match writeln!(stderr, "gandr: cannot write the output: {error}") {
+            // When standard error is unwritable too, the exit code is the one
+            // channel left.
+            | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        },
+    }
+}
+
+/// Print clap's message for `error` and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a help or version request prints to standard output and exits
+///   `0`; any other argument error prints its usage message to standard error
+///   and exits `2`, as does a message that cannot be printed.
+/// - provides: the exit of an invocation clap did not accept.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — help, an unknown verb and a verb without paths, each
+///   spawned and its exit code asserted.
+/// - witness: `cli::cli::a_malformed_invocation_exits_two`
+/// - witness: `cli::cli::help_exits_zero`
+fn usage(error: &clap::Error) -> ExitCode
+{
+    match (error.print(), error.use_stderr()) {
+        | (Ok(()), false) => ExitCode::SUCCESS,
+        | (Ok(()), true) | (Err(_), _) => ExitCode::from(FAULTED),
+    }
+}
+
+/// Render `outcome` and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the status prints one line naming the driver's version. A walk
+///   prints, for each source, the lines its verb shows: a declaration's report
+///   prefixed with its path, as a goal when it is one; a source refused as a
+///   whole where its root expects declarations; a pending source the lowering
+///   reads; under `test`, each pending source with its refusal. Each path the
+///   walk cannot carry through the pipeline is a line on standard error. The
+///   run's report and its verdict close standard output, and the exit code is
+///   the verdict's.
+/// - provides: the one renderer both verbs share.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the binary is spawned on a settled, an unsettled, a
+///   goal-only, a pending and an unreadable input under each verb, and the
+///   lines and exit code asserted.
+/// - witness: `cli::cli::a_settled_run_exits_zero`
+/// - witness: `cli::cli::an_unsettled_run_exits_one`
+/// - witness: `cli::cli::goals_report_an_obligation_without_failing`
+/// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
+/// - witness: `cli::cli::an_unreadable_path_exits_two`
+fn render(
+    outcome: Outcome,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> std::io::Result<ExitCode>
+{
+    match outcome {
+        | Outcome::Status(report) => {
+            writeln!(stdout, "gandr {} — {report}", env!("CARGO_PKG_VERSION"))?;
+            Ok(ExitCode::SUCCESS)
+        },
+        | Outcome::Run { verb, walk } => run(verb, walk, stdout, stderr),
+    }
+}
+
+/// Walk `walk` under `verb`, printing each step, then the report and the
+/// verdict.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+fn run(
+    verb: Verb,
+    mut walk: Walk,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> std::io::Result<ExitCode>
+{
+    while let Maybe::Present(step) = walk.step() {
+        match step {
+            | Step::Source {
+                path,
+                composed,
+                standing,
+                ..
+            } => {
+                let path = path.display();
+                match (standing, composed) {
+                    | (Standing::Pending, Composed::Refused(refusal)) => {
+                        if verb == Verb::Test {
+                            writeln!(stdout, "{path}: pending: {refusal}")?;
+                        }
+                    },
+                    | (Standing::Pending, Composed::Settled { unstatable, .. }) => {
+                        if verb == Verb::Test {
+                            for refusal in unstatable {
+                                writeln!(stdout, "{path}: pending: {refusal}")?;
+                            }
+                        }
+                    },
+                    | (
+                        Standing::Settled
+                        | Standing::Unsettled
+                        | Standing::Refused
+                        | Standing::Lowered,
+                        Composed::Refused(refusal),
+                    ) => writeln!(
+                        stdout,
+                        "{path}: unsettled: the lowering refused the source as a whole: {refusal} ({})",
+                        refusal.classify()
+                    )?,
+                    | (
+                        Standing::Settled
+                        | Standing::Unsettled
+                        | Standing::Refused
+                        | Standing::Lowered,
+                        Composed::Settled { report, .. },
+                    ) => {
+                        if standing == Standing::Lowered {
+                            writeln!(
+                                stdout,
+                                "{path}: unsettled: a pending source whose every expectation can be stated; \
+                                 it belongs under the fixture root"
+                            )?;
+                        }
+                        for declaration in report.declarations() {
+                            match shown(declaration, verb) {
+                                | Shown::Counted => {},
+                                | Shown::Line => {
+                                    writeln!(stdout, "{path}: {declaration}")?;
+                                },
+                                | Shown::Goal => {
+                                    writeln!(stdout, "{path}: goal: {declaration}")?;
+                                },
+                            }
+                        }
+                    },
+                }
+            },
+            | Step::Fault { path, fault } => {
+                writeln!(stderr, "gandr: {}: {fault}", path.display())?;
+            },
+        }
+    }
+    let report = walk.report();
+    let verdict = report.verdict(verb);
+    writeln!(stdout, "{report}")?;
+    writeln!(stdout, "verdict: {verdict}")?;
+    Ok(match verdict {
+        | RunVerdict::Settled => ExitCode::SUCCESS,
+        | RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
+        | RunVerdict::Faulted => ExitCode::from(FAULTED),
+    })
 }

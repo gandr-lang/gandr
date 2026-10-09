@@ -235,7 +235,7 @@ impl<'source> ParseResult<'source>
 /// Returns [`MeldError::Build`] when the flat arena cannot be assembled.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the example sources (zero obligations), arbitrary byte
+/// - hypothesis: L3 — the corpus sources (zero obligations), arbitrary byte
 ///   soup (totality), incomplete input (statement-local obligations), and
 ///   losslessness each exercise a distinct property.
 /// - witness: `parse::tests::corpus_parses_totally`
@@ -325,13 +325,13 @@ mod tests
     #[test]
     fn corpus_parses_totally() -> Result<(), Box<dyn Error>>
     {
-        // Every example source parses totally — no panic, a well-formed tree
+        // Every corpus source parses totally — no panic, a well-formed tree
         // recording the grammar fingerprint, and its leaves reconstruct the
         // source. The stronger zero-obligation gate is
         // `acceptance::corpus_molds_to_zero_obligations`; this is the floor.
         let pbg = built_in()?;
-        let files = gandr_files(&examples_root());
-        assert!(!files.is_empty(), "the example sources are present");
+        let files = gandr_files(&corpus_root());
+        assert!(!files.is_empty(), "the corpus sources are present");
 
         for path in &files {
             let src = read_source(path)?;
@@ -375,13 +375,13 @@ mod tests
         out
     }
 
-    /// The crate's example sources.
+    /// The language's source corpus, which the corpus crate owns.
     ///
     /// # Specification
     /// trivial.
-    fn examples_root() -> PathBuf
+    fn corpus_root() -> PathBuf
     {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("examples")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus")
     }
 
     /// Read a source file while retaining path context in the error.

@@ -1,0 +1,7 @@
+def dbl(x: Integer) -> F Integer {
+  ret (x + x)
+}
+
+def refuted(x: Integer) -> F Path(Integer, dbl(x), x) {
+  ret 5
+}

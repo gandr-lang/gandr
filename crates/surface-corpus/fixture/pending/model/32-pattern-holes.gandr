@@ -1,0 +1,27 @@
+data Color : Type {
+  Red : Color;
+  Green : Color;
+  Blue : Color;
+}
+
+def classify(c : Color) -> F Integer {
+  case c {
+    Red => ret 0,
+    ? => ret 1,
+    Blue => ret 2
+  }
+}
+
+data Maybe : Type {
+  Nothing : Maybe;
+  Just : (x : Integer) --> Maybe;
+}
+
+def describe(m : Maybe) -> F Integer {
+  case m {
+    Just(?) => ret 100,
+    Nothing => ret 200
+  }
+}
+
+describe(Nothing)

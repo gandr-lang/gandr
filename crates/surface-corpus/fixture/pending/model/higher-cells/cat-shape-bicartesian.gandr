@@ -1,0 +1,58 @@
+data Empty : Type {}
+
+data EmptyHom(a : Empty, b : Empty) : Type {}
+
+def empty_id(a : Empty) -> F EmptyHom(a, a) {
+  case a {}
+}
+
+data UnitOb : Type {
+  Star : UnitOb;
+}
+
+data UnitHom(a : UnitOb, b : UnitOb) : Type {
+  UnitId : UnitHom(a, b);
+}
+
+def unit_id(a : UnitOb) -> F UnitHom(a, a) {
+  ret UnitId
+}
+
+data PairOb(a : Type, b : Type) : Type {
+  Pair : (x : a, y : b) --> PairOb(a, b);
+}
+
+data SumOb(a : Type, b : Type) : Type {
+  Inl : (x : a) --> SumOb(a, b);
+  Inr : (y : b) --> SumOb(a, b);
+}
+
+data HomPlus(l : Type, r : Type, x : SumOb(l, r), y : SumOb(l, r)) : Type {
+  HomInl : (a : l, b : l, f : Integer) --> HomPlus(l, r, Inl(a), Inl(b));
+  HomInr : (c : r, d : r, g : Integer) --> HomPlus(l, r, Inr(c), Inr(d));
+}
+
+data ProdHom(a : PairOb(Integer, String), b : PairOb(Integer, String)) : Type {
+  PairHom : (f : Integer, g : Integer) --> ProdHom(a, b);
+}
+
+def prod_id(x : PairOb(Integer, String)) -> F ProdHom(x, x) {
+  case x {
+    Pair(l, r) => ret PairHom(0, 0)
+  }
+}
+
+def coprod_id(x : SumOb(Integer, String)) -> F HomPlus(Integer, String, x, x) {
+  case x {
+    Inl(a) => ret HomInl(a, a, 0),
+    Inr(b) => ret HomInr(b, b, 0)
+  }
+}
+
+def mixed_elim(a : Integer, b : String, h : HomPlus(Integer, String, Inl(a), Inr(b))) -> F Integer {
+  case h {}
+}
+
+def empty_probe() -> F EmptyHom(Star, Star) {
+  empty_id(Star)
+}

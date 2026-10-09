@@ -1,0 +1,1 @@
+module Bad : #{ present: Integer, absent: Integer } { def present = 1; }

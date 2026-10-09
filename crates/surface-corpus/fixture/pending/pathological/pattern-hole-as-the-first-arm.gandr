@@ -1,0 +1,13 @@
+data Color : Type {
+  Red : Color;
+  Green : Color;
+  Blue : Color;
+}
+
+def classify(c : Color) -> F Integer {
+  case c {
+    ?branch => ret 1
+  }
+}
+
+classify

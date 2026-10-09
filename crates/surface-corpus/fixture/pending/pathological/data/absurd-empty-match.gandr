@@ -1,0 +1,5 @@
+data Empty : Type {}
+
+def absurd(v: Empty) -> F Integer {
+  case v {}
+}

@@ -1,0 +1,8 @@
+sign Copy {
+  sort Nat : Type;
+  oper add : (l : Nat, r : Nat) --> (s : Nat);
+
+  rule copy2 : (data x : Nat) ==> (z : Nat) {
+    node : add(x, x) --> (z);
+  };
+}

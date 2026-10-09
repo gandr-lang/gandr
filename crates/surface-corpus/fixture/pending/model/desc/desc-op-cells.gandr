@@ -1,0 +1,7 @@
+data NatAdd : Type {
+  Zero : NatAdd;
+  Succ : (n : NatAdd) --> NatAdd;
+  oper add(m : NatAdd, n : NatAdd) -> NatAdd;
+  rule add(Zero, n) ==> n;
+  rule add(Succ(m), n) ==> Succ(add(m, n));
+}

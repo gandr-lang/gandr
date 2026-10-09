@@ -18,7 +18,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [Commit reads the caller's source](#commit-reads-the-callers-source)
 - [Repair stops at the declaration boundary](#repair-stops-at-the-declaration-boundary)
 - [No recursion over input](#no-recursion-over-input)
-- [Example sources and the count lock](#example-sources-and-the-count-lock)
+- [The corpus every molding is checked against](#the-corpus-every-molding-is-checked-against)
 - [Grammar contracts witnessed by a parse](#grammar-contracts-witnessed-by-a-parse)
 - [License](#license)
 
@@ -107,9 +107,9 @@ The melder follows the paper's push rules. Shift pushes a tile whose precedence 
 
 ## The completion query is a bound
 
-`finalize` (and its interaction-surface name `expected`) reports the material and the obligations closing the input here would introduce, without mutating the state. It reads the slope as it stands rather than replaying the commit, so it is a bound: every obligation a commit inserts is among those it names, and its only excess is a `MissingMeld` for an operator whose operand is a form still open, which the commit's force-close then turns into that operand. The molder uses this cost as one of its ranking keys, so the bound is part of the molding the example sources lock.
+`finalize` (and its interaction-surface name `expected`) reports the material and the obligations closing the input here would introduce, without mutating the state. It reads the slope as it stands rather than replaying the commit, so it is a bound: every obligation a commit inserts is among those it names, and its only excess is a `MissingMeld` for an operator whose operand is a form still open, which the commit's force-close then turns into that operand. The molder uses this cost as one of its ranking keys, so the bound is part of the molding the corpus sources check.
 
-The alternative was an exact query: replay the commit on a copy of the slope. It costs a slope clone and a collapse per query, which the molder pays once per surviving candidate per token. Reversal: if a consumer needs the exact obligations at a prefix, it commits a checkpointed copy; if the molder's ranking ever needs exactness, the query replays, and the example sources say whether any molding moved.
+The alternative was an exact query: replay the commit on a copy of the slope. It costs a slope clone and a collapse per query, which the molder pays once per surviving candidate per token. Reversal: if a consumer needs the exact obligations at a prefix, it commits a checkpointed copy; if the molder's ranking ever needs exactness, the query replays, and the corpus sources say whether any molding moved.
 
 ## Checkpoints
 
@@ -133,9 +133,9 @@ Known bound: a container whose own member carries the damage — `module M { def
 
 Every walk over caller-controlled input is a loop over an explicit worklist or the slope: collapse picks the highest reducible cell — an operator or an open form — until none remains above its floor, so a form's content is reduced before the form is force-closed, and closing a form wraps a contiguous run of cells. The `recursion_forbidden` lint holds the crate to it. Nested input therefore costs heap, never stack.
 
-## Example sources and the count lock
+## The corpus every molding is checked against
 
-`examples/` holds the language's surface fixtures, one file per surface family — shell blocks and quoting, string interpolation, typed holes, circuit and data declarations, modules, control flow — with their commentary removed. `tests::acceptance::corpus_molds_to_zero_obligations` is the count lock: every example molds to zero obligations, and there are exactly 22 of them. The live corpus gate over the language's whole example corpus arrives with `surface-corpus`, which owns that corpus; until then these examples are the lock. `tests/fixtures/` holds two incomplete sources that must carry obligations.
+The language's sources live in `gandr-surface-corpus` (`crates/surface-corpus/`), under its strict root and its fixture root. `tests::acceptance::corpus_molds_to_zero_obligations` reads every one of them and requires each to mold to zero obligations; the parse-totality, minimization and latency tests read the same set. No count is pinned: the corpus grows and shrinks with the language, and the corpus crate's runner reports how many sources each root holds. `tests/fixtures/` holds two incomplete sources that must carry obligations.
 
 ## Grammar contracts witnessed by a parse
 

@@ -110,6 +110,17 @@ run = "typos"
 description = "Unit and integration tests over every target"
 run = "cargo nextest run --workspace --locked"
 
+# The corpus's two roots, run through the driver as an author runs them: the
+# strict root under `check`, every declaration checking and owing nothing;
+# the fixture root under `test`, every fixture settled and every pending
+# source still pending. A red root exits nonzero and fails the gate.
+["check:corpus"]
+description = "The strict root under `gandr check`, the fixture root under `gandr test`"
+run = [
+  "cargo run --locked --quiet --package gandr-lang -- check crates/surface-corpus/strict",
+  "cargo run --locked --quiet --package gandr-lang -- test crates/surface-corpus/fixture",
+]
+
 # Git writes conflict markers as EXACTLY seven marker characters followed by
 # end-of-line or whitespace plus a label (`<<<<<<< HEAD`, bare `=======`).
 # Anchoring on `([[:space:]]|$)` keeps real markers matched while rejecting

@@ -1,0 +1,9 @@
+sign Wheel {
+  sort Nat : Type;
+  oper zip : (s : Nat, t : Nat) --> (u : Nat);
+
+  rule spin : (data stream : Nat) ==> (out : Nat) {
+    node : zip(stream, state) --> (out);
+    feed : (out) --> (state);
+  };
+}

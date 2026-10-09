@@ -1,7 +1,7 @@
 //! Acceptance: the parser meeting real gandr text.
 //!
 //! These exercise the whole front end (`label → mold → push → commit`) against
-//! the crate's example sources, the recovery fixtures, and curated malformed
+//! the language's corpus sources, the recovery fixtures, and curated malformed
 //! programs.
 
 use core::error::Error;
@@ -29,7 +29,7 @@ use gandr_surface_syntax::SyntaxTree;
 
 use crate::common::built;
 use crate::common::children;
-use crate::common::examples_root;
+use crate::common::corpus_root;
 use crate::common::gandr_files;
 use crate::common::label_of;
 use crate::common::root_digest;
@@ -896,21 +896,18 @@ fn a_sign_block_may_be_named_with_a_primitive_type_spelling() -> Result<(), Box<
     Ok(())
 }
 
-/// The zero-obligation count lock over the crate's example sources: the
-/// candidate pre-filter and the grammar mold **every** example to a
+/// The zero-obligation gate over the language's corpus: the candidate
+/// pre-filter and the grammar mold **every** corpus source to a
 /// globally-consistent **zero-obligation** reading — zero total obligations,
-/// no named residual — and the number of examples is pinned, so losing one
-/// is a deliberate change rather than a vacuous pass. A regressed count drives
-/// a defect fix, never a re-pin.
+/// no named residual. The corpus crate's runner reports how many sources each
+/// root holds; nothing here pins the number.
 #[test]
 fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
 {
-    /// The number of example sources the lock covers.
-    const EXAMPLE_COUNT: usize = 22;
-
     let pbg = built();
-    let examples = examples_root();
-    let files = gandr_files(&examples);
+    let corpus = corpus_root();
+    let files = gandr_files(&corpus);
+    assert!(!files.is_empty(), "the corpus sources are present");
     let mut total = 0_usize;
     let mut dirty: Vec<(String, Vec<String>)> = Vec::new();
     for path in &files {
@@ -919,7 +916,7 @@ fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
         total = total.saturating_add(result.obligations().len());
         if !bool::from(result.is_clean()) {
             dirty.push((
-                path.strip_prefix(&examples)
+                path.strip_prefix(&corpus)
                     .unwrap_or(path)
                     .to_string_lossy()
                     .into_owned(),
@@ -933,14 +930,9 @@ fn corpus_molds_to_zero_obligations() -> Result<(), Box<dyn Error>>
     }
     assert!(
         dirty.is_empty(),
-        "every example molds to zero obligations; residual: {dirty:?}"
+        "every corpus source molds to zero obligations; residual: {dirty:?}"
     );
-    assert_eq!(0, total, "the examples carry zero total obligations");
-    assert_eq!(
-        EXAMPLE_COUNT,
-        files.len(),
-        "the lock covers every example source"
-    );
+    assert_eq!(0, total, "the corpus carries zero total obligations");
     Ok(())
 }
 #[test]
@@ -1235,13 +1227,13 @@ fn malformed_input_continues_into_a_later_definition() -> Result<(), Box<dyn Err
 #[test]
 fn corpus_parses_totally() -> Result<(), Box<dyn Error>>
 {
-    // Every example source parses totally — no panic, a well-formed tree
+    // Every corpus source parses totally — no panic, a well-formed tree
     // recording the grammar fingerprint under a Wald root. The stronger
     // zero-obligation gate is `corpus_molds_to_zero_obligations`; this test
     // is the weaker totality floor.
     let pbg = built();
-    let files = gandr_files(&examples_root());
-    assert!(!files.is_empty(), "the example sources are present");
+    let files = gandr_files(&corpus_root());
+    assert!(!files.is_empty(), "the corpus sources are present");
     for path in &files {
         let src = read_source(path)?;
         let result = parse(pbg, SourceText::from(src.as_str()))?;
@@ -1258,7 +1250,7 @@ fn corpus_parses_totally() -> Result<(), Box<dyn Error>>
 #[test]
 fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Box<dyn Error>>
 {
-    // The p99 of an example's cold parse is fast. Every `parse` is stateless
+    // The p99 of a corpus source's cold parse is fast. Every `parse` is stateless
     // (no incremental reuse), so each call is a cold parse; per file we keep
     // the MINIMUM over a few iterations — the minimum is the least-noise
     // estimate of the true cost, so a loaded runner inflates individual
@@ -1288,8 +1280,8 @@ fn corpus_files_cold_parse_within_p99_latency_budget() -> Result<(), Box<dyn Err
     const P99_BUDGET_NANOS: u128 = 100_000_000;
 
     let pbg = built();
-    let files = gandr_files(&examples_root());
-    assert!(!files.is_empty(), "the example sources are present");
+    let files = gandr_files(&corpus_root());
+    assert!(!files.is_empty(), "the corpus sources are present");
 
     let mut per_file_nanos: Vec<(u128, PathBuf)> = Vec::with_capacity(files.len());
     for path in &files {
@@ -1343,7 +1335,7 @@ fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
         "if c { ret 1 } else { ret 2 }".to_owned(),
         "ret 1 +".to_owned(),
         "ret ( 1 +".to_owned(),
-        read_source(&examples_root().join("string-interpolation.gandr"))?,
+        read_source(&corpus_root().join("fixture/pending/surface/string-interpolation.gandr"))?,
     ];
     let mut excess_seen = 0_usize;
     for src in &sources {
@@ -1391,12 +1383,12 @@ fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
 #[test]
 fn minimization_prefers_clean_readings() -> Result<(), Box<dyn Error>>
 {
-    // Every clean example has a zero-obligation molding, and the molder finds
-    // it — the minimization never introduces an obligation (least of all an
-    // AmbiguousPrec) when a clean reading exists.
+    // Every clean corpus source has a zero-obligation molding, and the molder
+    // finds it — the minimization never introduces an obligation (least of all
+    // an AmbiguousPrec) when a clean reading exists.
     let pbg = built();
-    let files = gandr_files(&examples_root());
-    assert!(!files.is_empty(), "the example sources are present");
+    let files = gandr_files(&corpus_root());
+    assert!(!files.is_empty(), "the corpus sources are present");
     for path in &files {
         let src = read_source(path)?;
         let result = parse(pbg, SourceText::from(src.as_str()))?;

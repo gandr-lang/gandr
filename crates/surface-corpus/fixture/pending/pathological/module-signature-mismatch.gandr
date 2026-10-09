@@ -1,0 +1,1 @@
+module Bad : #{ x: String } { def x = 1; }

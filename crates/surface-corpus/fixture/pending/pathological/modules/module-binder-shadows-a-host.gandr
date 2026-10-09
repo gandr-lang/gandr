@@ -1,0 +1,3 @@
+def lookup(env: Integer) -> F String {
+  env.get("HOME")
+}

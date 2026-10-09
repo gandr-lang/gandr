@@ -1,0 +1,21 @@
+@[ refuses("OutOfFragment") ]
+def anon = ?;
+
+@[ refuses("OutOfFragment") ]
+def named = ?goal;
+
+@[ refuses("OutOfFragment") ]
+def in_infix = ? + 1;
+@[ refuses("OutOfFragment") ]
+def named_infix = ?lhs + ?rhs;
+
+@[ refuses("OutOfFragment") ]
+def in_call = f(?, 2);
+
+@[ refuses("OutOfFragment") ]
+def in_thunk = thunk { ? };
+@[ refuses("OutOfFragment") ]
+def seeded = thunk { ret ?seed };
+
+@[ refuses("OutOfFragment") ]
+def pair_hole = (?, ?slot);

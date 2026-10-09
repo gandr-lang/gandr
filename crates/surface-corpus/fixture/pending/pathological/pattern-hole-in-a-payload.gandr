@@ -1,0 +1,13 @@
+data Maybe : Type {
+  Nothing : Maybe;
+  Just : (x : Integer) --> Maybe;
+}
+
+def describe(m : Maybe) -> F Integer {
+  case m {
+    Just(?) => ret 100,
+    Nothing => ret 200
+  }
+}
+
+describe(Just(3))

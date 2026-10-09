@@ -1,0 +1,12 @@
+data Maybe(a : Type) : Type {
+  None : Maybe(a);
+  Some : (x : a) --> Maybe(a);
+}
+
+def unwrap() -> F Integer {
+  case (None : Maybe(Integer)) {
+    Some(x) => ret x
+  }
+}
+
+unwrap()

@@ -1,0 +1,5 @@
+extern "c" from "testlib" {
+  def gandr_test_strlen(s: CStr) -> u64;
+}
+
+testlib.gandr_test_strlen("a\0b")

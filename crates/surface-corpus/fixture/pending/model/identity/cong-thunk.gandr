@@ -1,0 +1,13 @@
+def double(x: Integer) -> F Integer {
+  ret (x + x)
+}
+
+def cong_double = thunk {
+  fn(p: Path(Integer, 4, 4)) {
+    walk(p,
+      fn(x, y, q) { Path(?, thunk { double(x) }, thunk { double(y) }) },
+      fn(x) { ret here(thunk { double(x) }) })
+  }
+};
+
+cong_double(here(4))

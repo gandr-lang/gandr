@@ -1,0 +1,12 @@
+def not_small = bool.not(1 < 2);
+
+def quotient = int.div(7, 2);
+def remainder = int.mod(-7, 2);
+
+def size = list.length([1, 2, 3]);
+def second = list.get([10, 20, 30], 1);
+
+def slogan = string.append("types are ", "machines");
+def letters = string.length(slogan);
+
+string.append(slogan, "!")

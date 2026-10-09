@@ -106,13 +106,14 @@ pub fn root_digest(tree: &SyntaxTree<'_>) -> Option<NodeDigest>
     tree.node(tree.root()).map(Node::digest)
 }
 
-/// The crate's example sources.
+/// The language's source corpus, which the corpus crate owns: the strict
+/// root, the fixture root and its pending set.
 ///
 /// # Specification
 /// trivial.
-pub fn examples_root() -> PathBuf
+pub fn corpus_root() -> PathBuf
 {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("examples")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../surface-corpus")
 }
 
 /// Every `.gandr` file under `dir`, sorted.

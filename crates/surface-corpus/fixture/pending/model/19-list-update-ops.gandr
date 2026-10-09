@@ -1,0 +1,11 @@
+def xs = ([10, 20, 30] : List(Integer));
+
+def replaced = list.set(xs, 1, 99);
+def bumped = list.update_at(xs, 0, thunk { fn(n) { n + 1 } });
+def inserted = list.insert_at(xs, 1, 15);
+def removed = list.remove_at(xs, 0);
+def grown = list.push(xs, 40);
+def joined = list.append(xs, [40, 50]);
+def flattened = list.concat([xs, [40, 50]]);
+
+list.update_where(thunk { fn(n) { n > 15 } }, thunk { fn(n) { n * 2 } }, xs)

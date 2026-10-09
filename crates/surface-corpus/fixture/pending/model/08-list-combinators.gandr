@@ -1,0 +1,11 @@
+def doubled = list.each(thunk { fn(x) { x * 2 } }, [1, 2, 3]);
+
+def big = list.where(thunk { fn(x) { x > 2 } }, doubled);
+
+def total = list.reduce(thunk { fn(acc, x) { acc + x } }, 0, big);
+
+def any_big = list.any(thunk { fn(x) { x > 5 } }, big);
+def all_even = list.all(thunk { fn(x) { x > 1 } }, doubled);
+def flattened = list.flatten([[3, 1], [2, 2]]);
+
+list.sort(list.uniq(flattened))

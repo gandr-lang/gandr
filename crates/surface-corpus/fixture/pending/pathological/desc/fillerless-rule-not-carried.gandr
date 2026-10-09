@@ -1,0 +1,5 @@
+sign Invertible {
+  sort Bit : Type;
+  oper flip : (b : Bit) --> (c : Bit);
+  rule involutive : (b : Bit) <=> (c : Bit);
+}

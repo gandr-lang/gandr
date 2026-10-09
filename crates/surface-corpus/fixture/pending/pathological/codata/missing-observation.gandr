@@ -1,0 +1,8 @@
+codata Point : Type {
+  x : Integer;
+  depth : Integer;
+}
+
+def rec incomplete() -> Point {
+  .x => 0
+}

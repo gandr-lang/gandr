@@ -1,0 +1,9 @@
+def caps = regex.extract("^(?<stem>.*)\\.(?<ext>gandr)$", "examples/demo.gandr");
+
+def joined = path.join("examples", "demo.gandr");
+
+def leaf = path.basename(joined);
+
+def suffix = path.extension(joined);
+
+#{ capture = caps, leaf = leaf, path_ext = suffix }

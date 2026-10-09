@@ -1,0 +1,11 @@
+def slogan = "types are machines";
+
+string.contains(slogan, "machine");
+
+string.eq(slogan, "types are machines");
+
+def has_prefix = string.starts_with(slogan, "types");
+def has_suffix = string.ends_with(slogan, "machines");
+def escaped = string.escape("a+b.txt");
+
+string.split("alpha,beta", ",")

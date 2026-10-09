@@ -1,0 +1,3 @@
+@[ refuses("NotSynthesisable") ]
+def applied : U (F Integer) ;
+def applied = thunk { (fn (x) { ret x })(3) } ;

@@ -1,0 +1,42 @@
+data Color : Type {
+  Red : Color;
+  Green : Color;
+  Blue : Color;
+}
+
+def rank(c : Color) -> F Integer {
+  case c {
+    Red => ret 0,
+    _ => ret 1
+  }
+}
+
+def warm(c : Color) -> F Integer {
+  case c {
+    Red | Green => ret 1,
+    Blue => ret 0
+  }
+}
+
+data Inner : Type {
+  No : Inner;
+  Yes : (n : Integer) --> Inner;
+}
+
+data Outer : Type {
+  None : Outer;
+  Some : (i : Inner) --> Outer;
+}
+
+def depth(m : Outer) -> F Integer {
+  case m {
+    Some(Yes(n)) => ret n,
+    Some(No) => ret 0,
+    None => ret 0
+  }
+}
+
+def inner = (Yes(41) : Inner);
+def answer = (Some(inner) : Outer);
+
+depth(answer)

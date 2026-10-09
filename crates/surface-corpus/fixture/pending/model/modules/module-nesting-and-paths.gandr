@@ -1,0 +1,18 @@
+module Config {
+  def name = "gandr";
+  module limits {
+    def soft = 10;
+    module hard {
+      def value = 100;
+      module detail {
+        def note = "the innermost component";
+      }
+    }
+  }
+}
+
+def hard_limit = Config.limits.hard.value;
+def note = Config.limits.hard.detail.note;
+def soft_limit = Config.limits.soft;
+
+#{hard = hard_limit, soft = soft_limit, note = note}

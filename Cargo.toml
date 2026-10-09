@@ -93,6 +93,7 @@ features = ["derive", "error-context", "help", "std", "usage"]
 # obligation ledger and the refusal vocabulary.
 # consumers:
 # - surface-corpus
+# - surface-dispatcher
 [workspace.dependencies.gandr-core-checker]
 path = "crates/core-checker"
 
@@ -102,6 +103,7 @@ path = "crates/core-checker"
 # - core-checker
 # - core-nbe
 # - surface-corpus
+# - surface-dispatcher
 # - surface-lowering
 [workspace.dependencies.gandr-core-term]
 path = "crates/core-term"
@@ -164,7 +166,15 @@ path = "crates/storage-chunker"
 [workspace.dependencies.gandr-storage-records]
 path = "crates/storage-records"
 
-# Routes a driver invocation into the surface pipeline.
+# The expectation language: the expectation schemas, the strict and fixture
+# roots, the settle comparison and the report shape.
+# consumers:
+# - surface-dispatcher
+[workspace.dependencies.gandr-surface-corpus]
+path = "crates/surface-corpus"
+
+# Routes a driver invocation into the surface pipeline, and composes that
+# pipeline over the sources a verb walks.
 # consumers:
 # - surface-driver
 [workspace.dependencies.gandr-surface-dispatcher]
@@ -174,6 +184,7 @@ path = "crates/surface-dispatcher"
 # DAG and the built-in surface the melder pushes over.
 # consumers:
 # - surface-corpus (dev)
+# - surface-dispatcher
 # - surface-lowering
 # - surface-parser
 [workspace.dependencies.gandr-surface-grammar]
@@ -183,6 +194,7 @@ path = "crates/surface-grammar"
 # attribute side table, the origin table and the refusal classifier.
 # consumers:
 # - surface-corpus
+# - surface-dispatcher
 [workspace.dependencies.gandr-surface-lowering]
 path = "crates/surface-lowering"
 
@@ -190,6 +202,7 @@ path = "crates/surface-lowering"
 # and the push-machine melder that commit a molded tree.
 # consumers:
 # - surface-corpus (dev)
+# - surface-dispatcher
 # - surface-lowering (dev)
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
@@ -197,6 +210,7 @@ path = "crates/surface-parser"
 # The concrete syntax tree and the grammar-facing mold vocabulary it carries.
 # consumers:
 # - surface-corpus
+# - surface-dispatcher
 # - surface-grammar
 # - surface-lowering
 # - surface-parser
@@ -282,6 +296,8 @@ default-features = false
 # - core-checker
 # - kernel-core
 # - surface-corpus
+# - surface-dispatcher
+# - surface-driver
 # - surface-lowering
 # - theory-cell-complexes
 # - theory-cell-complexes-tools

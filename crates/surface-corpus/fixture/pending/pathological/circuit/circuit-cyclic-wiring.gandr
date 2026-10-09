@@ -1,0 +1,10 @@
+sign Loop {
+  sort Nat : Type;
+  oper f : (a : Nat) --> (b : Nat);
+  oper g : (a : Nat) --> (b : Nat);
+
+  rule spin : (data x : Nat) ==> (z : Nat) {
+    node : f(w) --> (z);
+    node : g(z) --> (w);
+  };
+}

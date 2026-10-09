@@ -1,0 +1,14 @@
+if true -> F Integer { ret 1 } else { ret 2 }
+
+case (Inl(41) : Integer + String) -> F Integer {
+  Inl(x) => ret (x + 1),
+  Inr(s) => ret 0
+}
+
+if false -> F Integer { ret 0 } else if true { ret 1 } else { ret 2 }
+
+{
+  run x : F Integer <- ret 40;
+  run y <- (ret 2 : F Integer);
+  ret (x + y)
+}

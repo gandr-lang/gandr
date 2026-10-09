@@ -1,0 +1,9 @@
+codata Scaled : Type {
+  doubled : Integer;
+}
+
+def rec scaled(n: Integer) -> Scaled {
+  .doubled => n + n
+}
+
+scaled(21).doubled

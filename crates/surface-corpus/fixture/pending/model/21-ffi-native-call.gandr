@@ -1,0 +1,10 @@
+extern "c" from "./testlib" as testlib {
+  def gandr_test_add(a: i64, b: i64) -> i64;
+  def gandr_test_strlen(s: CStr) -> u64;
+}
+
+{
+  run doubled <- testlib.gandr_test_add(21i64, 21i64);
+  run length <- testlib.gandr_test_strlen("hello");
+  ret (doubled, length)
+}

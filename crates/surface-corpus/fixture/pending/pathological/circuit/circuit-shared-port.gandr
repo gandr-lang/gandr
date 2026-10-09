@@ -1,0 +1,9 @@
+sign Shared {
+  sort Nat : Type;
+  oper f : (a : Nat) --> (b : Nat);
+
+  rule twice : (rule p : Nat ==> Nat, data x : Nat) ==> (o : Nat) {
+    node : p(x) ==> (m);
+    node : f(x) --> (m);
+  };
+}

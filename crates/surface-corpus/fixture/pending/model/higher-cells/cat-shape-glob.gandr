@@ -1,0 +1,11 @@
+codata Glob : Type {
+  cells : Type;
+  hom(x : cells, y : cells) : Glob;
+}
+
+def path_glob(A : Type) -> Glob {
+  glob {
+    cells = A;
+    hom(x, y) = path_glob(Path(A, x, y));
+  }
+}

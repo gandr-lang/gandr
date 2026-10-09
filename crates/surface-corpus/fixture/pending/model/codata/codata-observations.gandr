@@ -1,0 +1,11 @@
+codata Point : Type {
+  x : Integer;
+  y : Integer;
+}
+
+def rec origin() -> Point {
+  .x => 3,
+  .y => 4
+}
+
+origin.x + origin.y

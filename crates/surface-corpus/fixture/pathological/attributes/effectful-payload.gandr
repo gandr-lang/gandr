@@ -1,0 +1,3 @@
+@[ refuses("UnknownAttribute") ]
+@[doc(#!{ echo hi; })]
+def f = 42;

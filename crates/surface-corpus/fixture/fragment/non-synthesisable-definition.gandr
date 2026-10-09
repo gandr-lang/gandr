@@ -1,0 +1,2 @@
+@[ refuses("NotSynthesisable") ]
+def suspended = thunk { ret 3 } ;

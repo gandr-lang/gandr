@@ -1,0 +1,5 @@
+sign Stale {
+  sort Nat : Type;
+  data Zero : Nat;
+  oper add : (Nat, Nat) --> Nat;
+}

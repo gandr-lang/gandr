@@ -1,0 +1,13 @@
+data Either(a : Type, b : Type) : Type {
+  Left : (x : a) --> Either(a, b);
+  Right : (y : b) --> Either(a, b);
+}
+
+def from_left() -> F Integer {
+  case (Left(5) : Either(Integer, String)) {
+    Left(x) => ret x,
+    Right(y) => ret 0
+  }
+}
+
+from_left()

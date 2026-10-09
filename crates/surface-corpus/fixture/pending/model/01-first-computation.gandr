@@ -1,0 +1,6 @@
+/*
+  Block comments are ordinary whitespace to the parser. They are useful when a
+  note needs more room than a line comment, and they do not change the program:
+  the last value is still the string returned just below.
+*/
+ret "hello, gandr"

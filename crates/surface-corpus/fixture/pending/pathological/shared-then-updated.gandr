@@ -1,0 +1,6 @@
+def r = #{ x = 1, y = 2 };
+def a = r;
+def b = r;
+def updated = #{ r | x = 99 };
+
+a

@@ -1,0 +1,4 @@
+data Bit : Type {
+  Off : Bit;
+  On : Bit;
+}

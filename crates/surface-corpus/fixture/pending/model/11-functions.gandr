@@ -1,0 +1,10 @@
+def inc(x: Integer) -> F Integer {
+  ret (x + 1)
+}
+
+def twice(x: Integer) -> F Integer {
+  run y <- inc(x);
+  inc(y)
+}
+
+twice(40)

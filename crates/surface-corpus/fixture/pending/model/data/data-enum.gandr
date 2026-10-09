@@ -1,0 +1,15 @@
+data Color : Type {
+  Red : Color;
+  Green : Color;
+  Blue : Color;
+}
+
+def rank() -> F Integer {
+  case (Green : Color) {
+    Red => ret 0,
+    Green => ret 1,
+    Blue => ret 2
+  }
+}
+
+rank()

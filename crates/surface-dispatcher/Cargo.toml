@@ -3,14 +3,25 @@ name = "gandr-surface-dispatcher"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Routes a driver invocation into the gandr surface pipeline"
+description = "Routes a gandr driver invocation and composes the surface pipeline: parse, lower, check, settle"
 repository.workspace = true
 license.workspace = true
 keywords = ["gandr", "language", "toolchain"]
 categories = ["development-tools"]
 publish.workspace = true
 
+# The composition names every stage it runs: the grammar and the parser, the
+# lowering, the checker and the kernel bridge it carries, and the settle
+# comparison the corpus library owns.
 [dependencies]
+gandr-core-checker.workspace = true
+gandr-core-term.workspace = true
+gandr-surface-corpus.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-syntax.workspace = true
+quenchant-shape.workspace = true
 tracing = { workspace = true, optional = true }
 
 [features]

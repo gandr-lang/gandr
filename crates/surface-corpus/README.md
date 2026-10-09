@@ -1,6 +1,6 @@
 # gandr-surface-corpus
 
-The expectation language over a lowered module and its verdicts: the `checks`, `owes` and `refuses` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from.
+The expectation language over a lowered module and its verdicts — the `checks`, `owes` and `refuses` schemas, the strict and fixture corpus roots, the settle comparison, and the report a corpus runner reads its counts from — and the language's corpus itself, under `strict/` and `fixture/`.
 
 <!-- toc -->
 
@@ -18,6 +18,8 @@ The expectation language over a lowered module and its verdicts: the `checks`, `
 - [One expectation per name](#one-expectation-per-name)
 - [Lockstep with the checker](#lockstep-with-the-checker)
 - [Inputs, not a pipeline](#inputs-not-a-pipeline)
+- [The corpus](#the-corpus)
+- [The pending set](#the-pending-set)
 - [License](#license)
 
 <!-- tocstop -->
@@ -165,7 +167,28 @@ The alternative was pairing by origin token, which the driver issues and could i
 
 ## Inputs, not a pipeline
 
-This crate reads a lowered module and its verdicts and depends on neither the parser nor the dispatcher; adapting the lowering's declarations to the checker's input, walking the roots, and the exit contract belong to the driver. The suite depends on the parser and the grammar as development dependencies only: a `LoweredModule` and a `ModuleReport` have no public constructor that would let a test build one by hand, so each witness parses, lowers and checks a source the way a driver does, and adapts the declarations in the fixture exactly as the example above. The alternative was taking the source text and running the pipeline here, which would make this crate the driver. The choice reverses if the lowering and the checker gain a shared declaration type, at which point the adaptation, and with it the fixture's copy, goes away.
+This crate reads a lowered module and its verdicts and depends on neither the parser nor the dispatcher; adapting the lowering's declarations to the checker's input and walking the roots belong to the dispatcher, and the exit codes to the driver. The suite depends on the parser and the grammar as development dependencies only: a `LoweredModule` and a `ModuleReport` have no public constructor that would let a test build one by hand, so each witness parses, lowers and checks a source the way the dispatcher does, and adapts the declarations in the fixture exactly as the example above. The alternative was taking the source text and running the pipeline here, which would make this crate the driver. The choice reverses if the lowering and the checker gain a shared declaration type, at which point the adaptation, and with it the fixture's copy, goes away.
+
+## The corpus
+
+The language's sources live beside the library that settles them, under the two roots `settle` names. `gandr check crates/surface-corpus/strict` and `gandr test crates/surface-corpus/fixture` run them, and `mise run check:corpus` runs both as a gate; a red root fails it.
+
+| Directory | Holds | Expectations |
+| --------- | ----- | ------------ |
+| `strict/` | sources in the slice fragment: signatures and definitions, literals and the unit value, thunks, lambdas, returns, forces and applications | none: every declaration checks, owing nothing |
+| `fixture/fragment/` | one source per refusal the fragment's checker and lowering can raise at a declaration, and one owed signature | `refuses` or `owes` on each declaration |
+| `fixture/model/`, `fixture/pathological/`, `fixture/surface/` | the language's earlier sources whose declarations the lowering reads, each refusal stated | `refuses` on each declaration |
+| `fixture/pending/` | the language's earlier sources the fragment does not yet cover | none: membership by location ([below](#the-pending-set)) |
+
+The earlier sources are the language's own surface programs: the model programs, the pathological cases and the surface families, kept in their own subdirectories with their commentary removed. The parser reads every source here as its zero-obligation gate.
+
+No count is pinned. The runner's report says how many sources each root holds, how many declarations settled, the ledger size and the seal, and its tests assert that each root holds declarations and that every row of the fragment's exercised table is carried. Adding a source changes a count and reddens nothing; a source that stops settling reddens its root.
+
+## The pending set
+
+A source under `fixture/pending/` carries a refusal no expectation can state: the lowering refuses it as a whole — its root is not a list of declarations — or refuses one of its declarations at the declaration's own form, which files no half for an attribute to be read off. The runner counts such a source as pending and settles none of its declarations; `test` prints each such refusal. A pending source that carries none — the fragment grew, and every expectation it needs can now be stated — is unsettled, and moves to the fixture root with its expectations written.
+
+The alternatives were leaving these sources out, which loses them, and stating each one's refusal in an attribute, which the lowering cannot read for either kind of refusal. The choice reverses when the lowering files an attribute for a declaration refused at its form and a refusal of the whole module can carry an expectation; the pending set then empties into the fixture root.
 
 ## License
 

@@ -1,0 +1,3 @@
+@[ refuses("UnknownAttribute") ]
+@[dco("oops")]
+def f = 42;

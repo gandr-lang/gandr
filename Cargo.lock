@@ -246,6 +246,7 @@ version = "0.0.0"
 dependencies = [
  "clap",
  "gandr-surface-dispatcher",
+ "quenchant-shape",
  "tracing",
  "tracing-subscriber",
 ]
@@ -293,6 +294,14 @@ dependencies = [
 name = "gandr-surface-dispatcher"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-checker",
+ "gandr-core-term",
+ "gandr-surface-corpus",
+ "gandr-surface-grammar",
+ "gandr-surface-lowering",
+ "gandr-surface-parser",
+ "gandr-surface-syntax",
+ "quenchant-shape",
  "tracing",
 ]
 

@@ -1,0 +1,4 @@
+data NatDiv : Type {
+  Zero : NatDiv;
+  oper divmod(m : NatDiv, n : NatDiv) -> (q : NatDiv, r : NatDiv);
+}

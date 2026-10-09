@@ -1,0 +1,10 @@
+module Metrics : #{ type Ratio = Integer, base: Integer, double: Integer, scale: Ratio } {
+  def scratch = 2;
+  def double = scratch * 3;
+  def base = 7;
+  def scale = 1;
+}
+
+def visible = Metrics.base + Metrics.double + Metrics.scale;
+
+#{visible = visible}

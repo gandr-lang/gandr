@@ -45,9 +45,9 @@ crates/
 ├── surface-grammar/               gandr-surface-grammar               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
 ├── surface-parser/                gandr-surface-parser                the labeler, molder and resumable melder: source to molded tree with completion obligations
 ├── surface-lowering/              gandr-surface-lowering              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
-├── surface-corpus/                gandr-surface-corpus                the expectation schemas, the strict and fixture roots, the settle comparison and the report a runner reads its counts from
-├── surface-dispatcher/            gandr-surface-dispatcher            routes a driver invocation into the surface pipeline
-└── surface-driver/                gandr-lang                          the `gandr` driver binary
+├── surface-corpus/                gandr-surface-corpus                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
+├── surface-dispatcher/            gandr-surface-dispatcher            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
+└── surface-driver/                gandr-lang                          the `gandr` driver binary: `check`, `test` and the exit codes
 ```
 
 `workflow` has no member: the policy library and the gate binary come from [quenchant](https://github.com/gandr-lang/quenchant) at the revision the root `Cargo.toml` pins.

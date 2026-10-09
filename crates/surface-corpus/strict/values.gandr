@@ -1,0 +1,13 @@
+def answer : Integer ;
+def answer = 42 ;
+
+def greeting : String ;
+def greeting = "hello, gandr" ;
+
+def nothing : Unit ;
+def nothing = () ;
+
+def copy = answer ;
+
+def echo : Integer ;
+def echo = copy ;

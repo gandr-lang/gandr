@@ -1,0 +1,5 @@
+extern "c" from "m" {
+  def pow(base: f64, exp: f64) -> f64;
+}
+
+m.pow(2.0f64)

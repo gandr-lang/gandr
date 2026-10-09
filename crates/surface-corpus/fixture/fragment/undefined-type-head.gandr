@@ -1,0 +1,2 @@
+@[ refuses("UnresolvedTypeHead") ]
+def counted : Natural ;

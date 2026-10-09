@@ -1,0 +1,5 @@
+def base = #{name = "gandr", stars = 1};
+
+def extended = record.insert(base, "kind", "language");
+
+record.get(extended, "kind")

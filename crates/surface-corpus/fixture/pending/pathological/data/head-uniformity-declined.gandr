@@ -1,0 +1,3 @@
+data Bad(a : Type) : Type {
+  Mk : Bad(Integer);
+}

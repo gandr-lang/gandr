@@ -1,0 +1,23 @@
+def path_var(a : Type, x : a) -> F Path(a, x, x) {
+  ret here(x)
+}
+
+def path_fun(f : (Integer -> F Integer)) -> F Path((Integer -> F Integer), f, f) {
+  ret here(f)
+}
+
+def path_app(n : Integer) -> F Path(Integer, n + 1, n + 1) {
+  ret here(n + 1)
+}
+
+data Ix(n : Integer) : Type {
+  MkIx : Ix(n);
+}
+
+def ix_id(n : Integer, w : Ix(n)) -> F Ix(n) {
+  ret w
+}
+
+def ix_ctor(w : Ix(1)) -> F Ix(1) {
+  ret w
+}

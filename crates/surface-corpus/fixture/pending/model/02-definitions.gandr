@@ -1,0 +1,3 @@
+def greeting = "the value zone";
+
+ret greeting

@@ -1,0 +1,4 @@
+{
+  run probe <- #!{ test -d /tmp; };
+  (if probe.exit_code == 0 { ret "present" } else { ret "absent" } : F String)
+}

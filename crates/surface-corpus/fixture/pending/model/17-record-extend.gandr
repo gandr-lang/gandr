@@ -1,0 +1,3 @@
+def base = #{ a = 1 };
+
+#{ base | b = 2 }

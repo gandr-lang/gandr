@@ -1,0 +1,5 @@
+data Wrap : Type {
+  MkWrap : (n : Wrap) --> Wrap;
+  oper unwrap(w : Wrap) -> Wrap;
+  rule unwrap(MkWrap(x)) ==> x;
+}

@@ -1,0 +1,1 @@
+if true -> F String { ret 1 } else { ret 2 }

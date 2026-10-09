@@ -659,7 +659,7 @@ impl<'pbg> Molder<'pbg>
     ///   the live slope, in a single left-to-right pass with no backtracking.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the example sources (zero obligations across every
+    /// - hypothesis: L3 — the corpus sources (zero obligations across every
     ///   form variant), determinism, and the totality proptest each exercise
     ///   it.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`

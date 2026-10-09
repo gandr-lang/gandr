@@ -1,0 +1,4 @@
+{
+  run banner <- #!{ printf 'hello from gandr\n'; };
+  string.contains(banner.stdout, "gandr")
+}

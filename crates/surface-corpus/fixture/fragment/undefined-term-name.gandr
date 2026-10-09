@@ -1,0 +1,2 @@
+@[ refuses("UnresolvedName") ]
+def broken = missing ;

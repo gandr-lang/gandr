@@ -4,7 +4,17 @@ A programming language built on a small certified kernel. A call-by-push-value c
 
 ## Status
 
-`0.0.0`, pre-release. The kernel (universe levels, the term arena and its sharing format, the checking machine and conversion), the core language with normalization by evaluation, the concrete syntax tree, the authenticated record plane and the `gandr` driver stub exist. The driver parses its arguments and reports its version; nothing else is wired to it yet.
+`0.0.0`, pre-release. The kernel (universe levels, the term arena and its sharing format, the checking machine and conversion), the core language with normalization by evaluation and its bidirectional checker, the surface parser and its lowering into the core, the expectation language and the language's corpus, the authenticated record plane and the `gandr` driver exist. The driver checks a first fragment of the surface: signatures and definitions over integers, strings and the unit value, thunks, lambdas, returns, forces and applications.
+
+## Usage
+
+```sh
+cargo run -p gandr-lang -- check crates/surface-corpus/strict    # every declaration checks, owing nothing
+cargo run -p gandr-lang -- check --goals my-sources/              # owed signatures printed as goals
+cargo run -p gandr-lang -- test crates/surface-corpus/fixture     # every fixture and pending source printed
+```
+
+`gandr check` exits `0` when every declaration settles, `1` when one does not, and `2` on an engine fault, an unreadable path or a malformed invocation. The [driver](crates/surface-driver/README.md) states the verbs and the exit codes; the [corpus](crates/surface-corpus/README.md#the-corpus) states what the two roots hold.
 
 ## Crates
 
@@ -14,7 +24,7 @@ A programming language built on a small certified kernel. A call-by-push-value c
 
 ```sh
 mise install        # the pinned toolchain and tools
-mise run check      # every gate: format, clippy, dylint, rustdoc, specifications, tests, typos
+mise run check      # every gate: format, clippy, dylint, rustdoc, specifications, tests, the corpus roots, typos
 cargo build-dist    # the shipped binary: fat LTO, size-optimized std
 ```
 

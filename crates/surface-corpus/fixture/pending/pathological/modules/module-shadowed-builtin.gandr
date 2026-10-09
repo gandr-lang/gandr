@@ -1,0 +1,3 @@
+def list = #{each = 7};
+
+list.each

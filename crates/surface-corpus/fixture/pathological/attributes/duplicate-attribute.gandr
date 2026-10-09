@@ -1,0 +1,4 @@
+@[ refuses("UnknownAttribute") ]
+@[doc("first")]
+@[doc("second")]
+def f = 42;

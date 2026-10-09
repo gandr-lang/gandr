@@ -1,0 +1,3 @@
+@[ refuses("UnknownAttribute") ]
+@[doc("Returns a fixed greeting.")]
+def greet = "hello";

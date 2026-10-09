@@ -1,0 +1,19 @@
+{
+  run dir <- fs.tempdir();
+  run nested <- path.join(dir, "nested");
+  fs.mkdir(nested);
+  run file <- path.join(nested, "greeting.txt");
+  fs.write(file, "hello from gandr");
+  run content <- fs.read(file);
+  run matches <- fs.glob(path.join(nested, "*.txt"));
+  run stat <- fs.stat(file);
+  run cwd <- fs.cwd();
+  run tracked <- fs.ls_files(".");
+  run path_entries <- env.path();
+  ret #{
+    content = content,
+    name = path.basename(file),
+    ext = path.extension(file),
+    kind = stat.kind
+  }
+}

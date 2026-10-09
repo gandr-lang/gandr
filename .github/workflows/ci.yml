@@ -315,6 +315,10 @@ jobs:
         run: cargo build --locked --workspace --all-targets
       - name: test every workspace target
         run: cargo nextest run --locked --profile ci --workspace
+      # The corpus roots through the driver just built: a red root fails
+      # the lane.
+      - name: run the corpus roots
+        run: mise run check:corpus
       # Specifications execute as runtime checks only under the graph-wide
       # cfg, which reaches the host-built proc macro; the suite's runtime
       # sentinels refuse a build that silently stopped enforcing.

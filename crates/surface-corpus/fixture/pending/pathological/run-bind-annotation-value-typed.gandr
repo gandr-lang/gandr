@@ -1,0 +1,4 @@
+{
+  run x : Integer <- ret 1;
+  ret x
+}
