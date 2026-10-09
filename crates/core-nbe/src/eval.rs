@@ -1125,7 +1125,7 @@ fn composite_comp_face(
         | Err(_) => entry_form.is_none(),
     },
 )]
-pub(crate) fn extend_spine(
+pub fn extend_spine(
     domain: &mut DomainArena,
     neutral: NeutralId,
     elimination: Elimination,
@@ -1375,6 +1375,7 @@ pub fn eval_comp_within(
     || ret.as_ref().is_ok_and(|pair| {
         domain.value(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)
     }))]
+#[inline]
 pub fn eval_value_within(
     core: &CoreArena,
     domain: &mut DomainArena,
@@ -1419,7 +1420,7 @@ pub fn eval_value_within(
     || ret.as_ref().is_ok_and(|pair| {
         domain.value(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)
     }))]
-pub(crate) fn apply_static_within(
+pub fn apply_static_within(
     core: &CoreArena,
     domain: &mut DomainArena,
     definitions: Definitions<'_>,

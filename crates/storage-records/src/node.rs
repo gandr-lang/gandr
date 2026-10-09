@@ -373,6 +373,7 @@ impl InternalNode
 // what "never a child that could not hold it" rests on. Which child is the
 // right one is the separator comparison, and restating it here would be the
 // body again.
+#[inline]
 #[must_use]
 #[spec(ensures: |ret| ret.is_some() != children.is_empty()
     && ret.is_none_or(|index| usize::from(index) < children.len()))]
