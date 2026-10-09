@@ -73,6 +73,36 @@ const NODE_DOMAIN: &[u8] = b"gandr.surface-syntax.node.v2";
 #[derive(Clone, Copy, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeDigest([u8; NODE_DIGEST_LEN]);
 
+impl NodeDigest
+{
+    /// Compare represented values during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> crate::ConstEquality
+    {
+        let mut left = self.0.as_slice();
+        let mut right = other.0.as_slice();
+        let mut same = true;
+        while let (Some((a, rest_a)), Some((b, rest_b))) = (left.split_first(), right.split_first())
+        {
+            same = same && *a == *b;
+            left = rest_a;
+            right = rest_b;
+        }
+        if same {
+            crate::ConstEquality::Equal
+        }
+        else {
+            crate::ConstEquality::Unequal
+        }
+    }
+}
+
 impl From<[u8; NODE_DIGEST_LEN]> for NodeDigest
 {
     /// Read a fixed-width byte array as a node identity.

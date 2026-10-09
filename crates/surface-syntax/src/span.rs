@@ -189,6 +189,33 @@ impl fmt::Display for SourceText<'_>
 
 impl<'source> SourceText<'source>
 {
+    /// Compare represented values during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> crate::ConstEquality
+    {
+        let mut left = self.0.as_bytes();
+        let mut right = other.0.as_bytes();
+        let mut same = left.len() == right.len();
+        while let (Some((a, rest_a)), Some((b, rest_b))) = (left.split_first(), right.split_first())
+        {
+            same = same && *a == *b;
+            left = rest_a;
+            right = rest_b;
+        }
+        if same {
+            crate::ConstEquality::Equal
+        }
+        else {
+            crate::ConstEquality::Unequal
+        }
+    }
+
     /// The offset one byte past the last byte of this text.
     ///
     /// # Specification
@@ -471,6 +498,24 @@ impl fmt::Display for ByteSpan
 
 impl ByteSpan
 {
+    /// Compare represented values during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> crate::ConstEquality
+    {
+        if self.start.0 == other.start.0 && self.end.0 == other.end.0 {
+            crate::ConstEquality::Equal
+        }
+        else {
+            crate::ConstEquality::Unequal
+        }
+    }
+
     /// The span from `start` up to, and not including, `end`.
     ///
     /// # Specification
@@ -484,8 +529,6 @@ impl ByteSpan
     /// - fails: [`SyntaxError::InvertedSpan`], carrying both offered offsets,
     ///   when `end` is strictly below `start`.
     /// - panics: none.
-    /// - executable: none — the pinned specification evaluator is non-const;
-    ///   instrumentation would remove this constructor's const-callable API.
     ///
     /// # Errors
     /// [`SyntaxError::InvertedSpan`] when `end < start`.
@@ -498,6 +541,12 @@ impl ByteSpan
     /// - witness: `span::tests::an_ordinary_span_keeps_its_endpoints`
     /// - witness: `span::tests::an_empty_span_is_admitted`
     /// - witness: `span::tests::an_inverted_span_is_refused`
+    #[spec(ensures: |ref ret| match *ret {
+        Ok(span) => start.0 <= end.0 && span.start.0 == start.0 && span.end.0 == end.0,
+        Err(SyntaxError::InvertedSpan { start: actual_start, end: actual_end }) =>
+            end.0 < start.0 && actual_start.0 == start.0 && actual_end.0 == end.0,
+        Err(_) => false,
+    })]
     #[inline]
     pub const fn new(
         start: ByteOffset,
@@ -543,13 +592,12 @@ impl ByteSpan
     /// - provides: the width a renderer allots to a node.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the pinned specification evaluator is non-const;
-    ///   instrumentation would remove this method's const-callable API.
     ///
     /// # Adequacy
     /// - hypothesis: L3 only — one subtraction, separated by an empty span and
     ///   a multi-byte span, each asserted as an exact length.
     /// - witness: `span::tests::a_span_length_is_its_byte_extent`
+    #[spec(ensures: |ret| ret.0 == self.end.0.saturating_sub(self.start.0))]
     #[inline]
     #[must_use]
     pub const fn length(self) -> ByteLength

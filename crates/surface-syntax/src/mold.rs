@@ -18,6 +18,27 @@ use core::num::TryFromIntError;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MoldId(u32);
 
+impl MoldId
+{
+    /// Compare represented values during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> crate::ConstEquality
+    {
+        if self.0 == other.0 {
+            crate::ConstEquality::Equal
+        }
+        else {
+            crate::ConstEquality::Unequal
+        }
+    }
+}
+
 impl From<u32> for MoldId
 {
     /// Reads a table position as a mold id.
@@ -81,6 +102,27 @@ impl TryFrom<usize> for MoldId
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct GroutSort(u16);
 
+impl GroutSort
+{
+    /// Compare represented values during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> crate::ConstEquality
+    {
+        if self.0 == other.0 {
+            crate::ConstEquality::Equal
+        }
+        else {
+            crate::ConstEquality::Unequal
+        }
+    }
+}
+
 impl From<u16> for GroutSort
 {
     /// Reads a raw tag as a grout sort.
@@ -131,6 +173,27 @@ pub enum GroutShape
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct GrammarFingerprint(u64);
+
+impl GrammarFingerprint
+{
+    /// Compare represented values during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> crate::ConstEquality
+    {
+        if self.0 == other.0 {
+            crate::ConstEquality::Equal
+        }
+        else {
+            crate::ConstEquality::Unequal
+        }
+    }
+}
 
 impl From<u64> for GrammarFingerprint
 {
