@@ -28,6 +28,17 @@
 //! hand-built one node for node, and the unshared pipeline then evaluates and
 //! reads back both: equal domain arenas, equal core arenas after readback and
 //! equal rebuilt ids are what make the unshared pipeline the reference.
+//!
+//! # Each deep case is measured
+//!
+//! Each overlay is measured inside the same small stack, its five quantities
+//! asserted exactly, and its expansion size compared with the erased term's
+//! size walked as a tree: the nodes the unshared pipeline visits.
+
+/// The expansion oracle, shared with the measure's suite.
+#[cfg(test)]
+#[path = "support/unfolding.rs"]
+mod unfolding;
 
 /// The deep-readback cases, in a `cfg(test)` module so the crate's lint wall
 /// reads them as test code rather than as shipping code.
@@ -50,6 +61,7 @@ mod deep_readback
     use gandr_core_nbe::ShareDistance;
     use gandr_core_nbe::SharePosition;
     use gandr_core_nbe::Sharing;
+    use gandr_core_nbe::SharingMeasure;
     use gandr_core_nbe::ValueGraft;
     use gandr_core_nbe::ValueNode;
     use gandr_core_nbe::erase_computation;
@@ -64,6 +76,11 @@ mod deep_readback
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::Value;
     use gandr_core_term::ValueId;
+
+    use crate::unfolding::CoreNode;
+    use crate::unfolding::Quantities;
+    use crate::unfolding::Unfolded;
+    use crate::unfolding::unfolded;
 
     /// The number of links in each chain. Each contributes one node to the
     /// readback's task stack and one frame to the recursive presentation it
@@ -456,6 +473,73 @@ mod deep_readback
         assert!(
             compared.is_ok(),
             "validation, erasure, evaluation and readback all keep their depth on the heap"
+        );
+    }
+
+    #[test]
+    fn the_deep_readback_cases_measure_as_their_erasure_inside_a_small_stack()
+    {
+        let measured = std::thread::Builder::new()
+            .stack_size(SMALL_STACK_BYTES)
+            .spawn(|| {
+                let links = u64::try_from(CHAIN_LINKS).expect("the chain's length fits a counter");
+
+                let (overlay, root) = shared_value_chain();
+                let measured = SharingMeasure::of(&overlay, OverlayId::Value(root))
+                    .expect("the shared leaf validates and fits the counter");
+                assert_eq!(
+                    Quantities {
+                        shares: 1,
+                        occurrences: links.saturating_add(1),
+                        depth: 1,
+                        nodes: links.saturating_mul(2).saturating_add(3),
+                        expansion: links.saturating_mul(2).saturating_add(1),
+                    },
+                    Quantities::from(measured),
+                    "one leaf shared among one occurrence per link and one more stands for a \
+                     pair and a leaf per link and one more leaf"
+                );
+                let mut erased = CoreArena::new();
+                let before = erased.clone();
+                let erased_root = erase_value(&overlay, root, &mut erased)
+                    .expect("the shared leaf validates and erases");
+                assert_eq!(
+                    Unfolded(u64::from(measured.expansion())),
+                    unfolded(&erased, CoreNode::Value(erased_root), &before),
+                    "the value chain's expansion is its erasure walked as a tree"
+                );
+
+                let (overlay, root) = grafted_suspension_chain();
+                let measured = SharingMeasure::of(&overlay, OverlayId::Computation(root))
+                    .expect("the chain of grafts validates and fits the counter");
+                let size = links.saturating_mul(2).saturating_add(2);
+                assert_eq!(
+                    Quantities {
+                        shares: 0,
+                        occurrences: 0,
+                        depth: 0,
+                        nodes: size,
+                        expansion: size,
+                    },
+                    Quantities::from(measured),
+                    "a chain with no share stands for itself: a thunk and a returner per link \
+                     over a returned unit"
+                );
+                let mut erased = CoreArena::new();
+                let before = erased.clone();
+                let erased_root = erase_computation(&overlay, root, &mut erased)
+                    .expect("the chain of grafts validates and erases");
+                assert_eq!(
+                    Unfolded(u64::from(measured.expansion())),
+                    unfolded(&erased, CoreNode::Computation(erased_root), &before),
+                    "the suspension chain's expansion is its erasure walked as a tree"
+                );
+            })
+            .expect("the small-stack thread starts")
+            .join();
+        assert!(
+            measured.is_ok(),
+            "validation, the measure and erasure all keep their depth on the heap"
         );
     }
 }

@@ -24,7 +24,9 @@
 //! - [`Overlay`] holds sharing syntax over the core language in four flat
 //!   families, minted only over children it holds and checked by
 //!   [`Overlay::validate`] over a heap worklist; [`erase_value`] and its
-//!   siblings erase it, with no policy, back to the unshared core term.
+//!   siblings erase it, with no policy, back to the unshared core term, and
+//!   [`SharingMeasure::of`] measures one root of it — its shares, occurrences,
+//!   share depth, node count and expansion size — in one heap walk.
 //!
 //! The design, and what a caller must guarantee, is stated in this crate's
 //! `README.md`, § Synopsis and § Expected features, and in the sections they
@@ -42,6 +44,7 @@ mod domain;
 mod eval;
 mod guard;
 mod machine;
+mod measure;
 mod overlay;
 mod policy;
 mod readback;
@@ -99,6 +102,14 @@ pub use crate::machine::ProcessId;
 pub use crate::machine::StepBudget;
 pub use crate::machine::StepCount;
 pub use crate::machine::decide;
+pub use crate::measure::ExpansionSize;
+pub use crate::measure::MeasureFault;
+pub use crate::measure::MeasuredQuantity;
+pub use crate::measure::NodeCount;
+pub use crate::measure::OccurrenceCount;
+pub use crate::measure::ShareCount;
+pub use crate::measure::ShareDepth;
+pub use crate::measure::SharingMeasure;
 pub use crate::overlay::Bound;
 pub use crate::overlay::CompGraft;
 pub use crate::overlay::CompNode;

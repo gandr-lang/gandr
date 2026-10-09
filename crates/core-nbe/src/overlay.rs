@@ -1037,13 +1037,14 @@ impl Overlay
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the shape of the node `node` names.
-    /// - provides: the one family dispatch validation reads every node through.
+    /// - provides: the one family dispatch validation, erasure and the measure
+    ///   read every node through.
     /// - fails: [`OverlayRefusal::Unresolved`] when `node` names no node.
     /// - panics: none.
     ///
     /// # Errors
     /// - [`OverlayRefusal::Unresolved`] — `node` names no node.
-    fn shape(
+    pub(crate) fn shape(
         &self,
         node: OverlayId,
     ) -> Result<Shape, OverlayRefusal>
@@ -1139,7 +1140,7 @@ fn next_index(
 
 /// The children of one node, left to right, with no allocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Children
+pub enum Children
 {
     /// A leaf.
     Leaf,
@@ -1198,7 +1199,7 @@ impl Children
     ///   is the preorder an occurrence's position counts in.
     /// - fails: never.
     /// - panics: none.
-    fn push_reversed<Task>(
+    pub(crate) fn push_reversed<Task>(
         self,
         tasks: &mut Vec<Task>,
         enter: fn(OverlayId) -> Task,
@@ -1222,7 +1223,7 @@ impl Children
 
 /// A node's kind, with what a walk needs of it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Shape
+pub enum Shape
 {
     /// An opaque core node, by its core id.
     Opaque(CoreId),
@@ -1499,7 +1500,7 @@ fn occur(
 /// A core node of any family: what an opaque node holds and what erasure
 /// produces.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CoreId
+pub enum CoreId
 {
     /// A core value.
     Value(ValueId),

@@ -37,6 +37,20 @@
 //! naming the one below twice: a core DAG of one node per link. The erased
 //! arena is compared with that chain built by hand, node for node, inside the
 //! same small stack, and both arenas are then dropped there.
+//!
+//! # The deep overlay is measured
+//!
+//! Measured inside the same small stack, the chain of lifts stands for itself
+//! and its expansion is its erasure walked as a tree. The chain of shares
+//! doubles its expansion per link, so its measure is refused at the
+//! sixty-fourth link's pair, the first whose size passes a 64-bit counter:
+//! the walk descends the whole chain on the heap before it meets the
+//! overflow coming back up.
+
+/// The expansion oracle, shared with the measure's suite.
+#[cfg(test)]
+#[path = "support/unfolding.rs"]
+mod unfolding;
 
 /// The teardown case and its chain builder, in a `cfg(test)` module so the
 /// crate's lint wall reads them as test code rather than as shipping code.
@@ -48,6 +62,8 @@ mod teardown
     use gandr_core_nbe::DomainValueId;
     use gandr_core_nbe::Elimination;
     use gandr_core_nbe::Environment;
+    use gandr_core_nbe::MeasureFault;
+    use gandr_core_nbe::MeasuredQuantity;
     use gandr_core_nbe::NeutralHead;
     use gandr_core_nbe::Overlay;
     use gandr_core_nbe::OverlayId;
@@ -59,6 +75,7 @@ mod teardown
     use gandr_core_nbe::ShareDistance;
     use gandr_core_nbe::SharePosition;
     use gandr_core_nbe::Sharing;
+    use gandr_core_nbe::SharingMeasure;
     use gandr_core_nbe::TermFace;
     use gandr_core_nbe::Unfolding;
     use gandr_core_nbe::ValueGraft;
@@ -73,6 +90,11 @@ mod teardown
     use gandr_core_term::ValueTypeId;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::ConstantIndex;
+
+    use crate::unfolding::CoreNode;
+    use crate::unfolding::Quantities;
+    use crate::unfolding::Unfolded;
+    use crate::unfolding::unfolded;
 
     /// The number of links in one chain. Each link owns the one below it, so a
     /// per-node recursive destructor would need one frame per link.
@@ -343,6 +365,79 @@ mod teardown
             compared.is_ok(),
             "erasure and the release of all three arenas fit a stack too small for a \
              recursive walk"
+        );
+    }
+
+    /// The doubling link whose pair is the first to pass a 64-bit counter:
+    /// link `k` stands for `2^(k + 1) - 1` nodes.
+    const FIRST_OVERFLOWING_LINK: usize = 64;
+
+    #[test]
+    fn the_teardown_overlays_are_measured_inside_a_small_stack()
+    {
+        let measured = std::thread::Builder::new()
+            .stack_size(SMALL_STACK_BYTES)
+            .spawn(|| {
+                let (overlay, top, lifted) = deep_overlay();
+                let links = u64::try_from(CHAIN_LINKS).expect("the chain's length fits a counter");
+
+                let measured = SharingMeasure::of(&overlay, OverlayId::ValueType(lifted))
+                    .expect("the chain of lifts validates and fits the counter");
+                let size = links.saturating_add(1);
+                assert_eq!(
+                    Quantities {
+                        shares: 0,
+                        occurrences: 0,
+                        depth: 0,
+                        nodes: size,
+                        expansion: size,
+                    },
+                    Quantities::from(measured),
+                    "a chain with no share stands for itself: a lift per link over the unit type"
+                );
+                let mut erased = CoreArena::new();
+                let before = erased.clone();
+                let erased_lifted = erase_value_type(&overlay, lifted, &mut erased)
+                    .expect("the chain of lifts validates and erases");
+                assert_eq!(
+                    Unfolded(u64::from(measured.expansion())),
+                    unfolded(&erased, CoreNode::ValueType(erased_lifted), &before),
+                    "the chain of lifts' expansion is its erasure walked as a tree"
+                );
+
+                let mut link = top;
+                let mut remaining = CHAIN_LINKS.saturating_sub(FIRST_OVERFLOWING_LINK);
+                while remaining > 0 {
+                    let Some(&ValueNode::Shared(sharing)) = overlay.value(link)
+                    else {
+                        panic!("every link is a share");
+                    };
+                    let OverlayId::Value(below) = sharing.leg
+                    else {
+                        panic!("whose leg is the value link below it");
+                    };
+                    link = below;
+                    remaining = remaining.saturating_sub(1);
+                }
+                let Some(&ValueNode::Shared(sharing)) = overlay.value(link)
+                else {
+                    panic!("the sixty-fourth link is a share");
+                };
+                assert_eq!(
+                    Err(MeasureFault::Overflow {
+                        quantity: MeasuredQuantity::Expansion,
+                        node: OverlayId::Value(sharing.body),
+                    }),
+                    SharingMeasure::of(&overlay, OverlayId::Value(top)),
+                    "the chain of shares is refused at the sixty-fourth link's pair, whose \
+                     expansion is the first past the counter"
+                );
+            })
+            .expect("the small-stack thread starts")
+            .join();
+        assert!(
+            measured.is_ok(),
+            "validation, the measure and erasure all keep their depth on the heap"
         );
     }
 }

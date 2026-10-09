@@ -21,6 +21,17 @@
 //! equal domain arenas and equal results are what make the unshared pipeline
 //! the reference rather than a second implementation. Validation and erasure
 //! run inside the same small stack as the evaluation.
+//!
+//! # Each deep case is measured
+//!
+//! Each overlay is measured inside the same small stack, its five quantities
+//! asserted exactly, and its expansion size compared with the erased term's
+//! size walked as a tree: the nodes the unshared pipeline visits.
+
+/// The expansion oracle, shared with the measure's suite.
+#[cfg(test)]
+#[path = "support/unfolding.rs"]
+mod unfolding;
 
 /// The deep-evaluation cases, in a `cfg(test)` module so the crate's lint
 /// wall reads them as test code rather than as shipping code.
@@ -46,6 +57,7 @@ mod deep_evaluation
     use gandr_core_nbe::ShareDistance;
     use gandr_core_nbe::SharePosition;
     use gandr_core_nbe::Sharing;
+    use gandr_core_nbe::SharingMeasure;
     use gandr_core_nbe::ValueGraft;
     use gandr_core_nbe::ValueNode;
     use gandr_core_nbe::erase_computation;
@@ -58,6 +70,11 @@ mod deep_evaluation
     use gandr_core_term::ValueId;
     use gandr_core_term::Zone;
     use gandr_kernel_term::DeBruijnIndex;
+
+    use crate::unfolding::CoreNode;
+    use crate::unfolding::Quantities;
+    use crate::unfolding::Unfolded;
+    use crate::unfolding::unfolded;
 
     /// The number of links in each chain. Each contributes one task to the
     /// machine and one frame to the recursive presentation it replaces.
@@ -577,6 +594,98 @@ mod deep_evaluation
         assert!(
             compared.is_ok(),
             "validation, erasure and evaluation all keep their depth on the heap"
+        );
+    }
+
+    #[test]
+    fn the_deep_evaluation_cases_measure_as_their_erasure_inside_a_small_stack()
+    {
+        let measured = std::thread::Builder::new()
+            .stack_size(SMALL_STACK_BYTES)
+            .spawn(|| {
+                let links = u64::try_from(CHAIN_LINKS).expect("the chain's length fits a counter");
+                let arguments = u64::try_from(CURRIED_ARGUMENTS).expect("the arity fits a counter");
+
+                let (overlay, root) = shared_value_chain();
+                let measured = SharingMeasure::of(&overlay, OverlayId::Value(root))
+                    .expect("the shared leaf validates and fits the counter");
+                assert_eq!(
+                    Quantities {
+                        shares: 1,
+                        occurrences: links.saturating_add(1),
+                        depth: 1,
+                        nodes: links.saturating_mul(2).saturating_add(3),
+                        expansion: links.saturating_mul(2).saturating_add(1),
+                    },
+                    Quantities::from(measured),
+                    "one leaf shared among one occurrence per link and one more stands for a \
+                     pair and a leaf per link and one more leaf"
+                );
+                let mut erased = CoreArena::new();
+                let before = erased.clone();
+                let erased_root = erase_value(&overlay, root, &mut erased)
+                    .expect("the shared leaf validates and erases");
+                assert_eq!(
+                    Unfolded(u64::from(measured.expansion())),
+                    unfolded(&erased, CoreNode::Value(erased_root), &before),
+                    "the value chain's expansion is its erasure walked as a tree"
+                );
+
+                let (overlay, root) = shared_curried_application();
+                let measured = SharingMeasure::of(&overlay, OverlayId::Computation(root))
+                    .expect("the shared argument validates and fits the counter");
+                assert_eq!(
+                    Quantities {
+                        shares: 1,
+                        occurrences: arguments,
+                        depth: 1,
+                        nodes: arguments.saturating_mul(3).saturating_add(4),
+                        expansion: arguments.saturating_mul(3).saturating_add(2),
+                    },
+                    Quantities::from(measured),
+                    "one argument shared among every application stands for a lambda, an \
+                     application and an argument per arity, a returner and its variable"
+                );
+                let mut erased = CoreArena::new();
+                let before = erased.clone();
+                let erased_root = erase_computation(&overlay, root, &mut erased)
+                    .expect("the shared argument validates and erases");
+                assert_eq!(
+                    Unfolded(u64::from(measured.expansion())),
+                    unfolded(&erased, CoreNode::Computation(erased_root), &before),
+                    "the curried application's expansion is its erasure walked as a tree"
+                );
+
+                let (mut erased, overlay, root) = shared_bind_chain();
+                let measured = SharingMeasure::of(&overlay, OverlayId::Computation(root))
+                    .expect("the shared continuation validates and fits the counter");
+                assert_eq!(
+                    Quantities {
+                        shares: 1,
+                        occurrences: links,
+                        depth: 1,
+                        nodes: links.saturating_mul(2).saturating_add(4),
+                        expansion: links.saturating_mul(3).saturating_add(1),
+                    },
+                    Quantities::from(measured),
+                    "one two-node continuation shared among every bind stands for a bind and \
+                     the continuation per link over the opaque base, which counts once"
+                );
+                let before = erased.clone();
+                let erased_root = erase_computation(&overlay, root, &mut erased)
+                    .expect("the shared continuation validates and erases");
+                assert_eq!(
+                    Unfolded(u64::from(measured.expansion())),
+                    unfolded(&erased, CoreNode::Computation(erased_root), &before),
+                    "the bind chain's expansion is its erasure walked as a tree, the base held \
+                     before erasure counting once"
+                );
+            })
+            .expect("the small-stack thread starts")
+            .join();
+        assert!(
+            measured.is_ok(),
+            "validation, the measure and erasure all keep their depth on the heap"
         );
     }
 }
