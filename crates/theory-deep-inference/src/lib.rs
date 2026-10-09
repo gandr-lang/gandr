@@ -14,7 +14,9 @@
 //! ([`project_flow`]) and against a polarized footprint
 //! ([`footprint_independence`]). The causal order and the normal form depend
 //! on each other — an event's key digests its causal past, and the order is
-//! read back to schedule the normal form — so the crate encloses both.
+//! read back to schedule the normal form — so the crate encloses both. A
+//! family of certificates sharing one skeleton folds into one guarded
+//! template where that pays ([`anti_unify_tracelets`], [`GuardedTemplate`]).
 //!
 //! Replay in `gandr-theory-coherent-resolutions` is the semantic oracle: every
 //! relation here is sound below it, and a negative answer means "not
@@ -35,24 +37,36 @@ mod flow;
 mod footprint;
 mod normal_form;
 mod shift;
+mod template;
 
+pub use crate::boundary::AdmissionCount;
+pub use crate::boundary::CacheHitCount;
 pub use crate::boundary::CausalDepth;
+pub use crate::boundary::EntryIndex;
 pub use crate::boundary::EventConcurrency;
 pub use crate::boundary::EventCount;
 pub use crate::boundary::EventDependence;
 pub use crate::boundary::EventIndex;
 pub use crate::boundary::EventPrecedence;
+pub use crate::boundary::ExpansionFactor;
 pub use crate::boundary::FlowEquality;
 pub use crate::boundary::FlowPortIndex;
 pub use crate::boundary::FlowVertexIndex;
+pub use crate::boundary::GuardId;
+pub use crate::boundary::LegStepIndex;
+pub use crate::boundary::MemberCount;
+pub use crate::boundary::MemberIndex;
+pub use crate::boundary::NodeCount;
 pub use crate::boundary::NormalFormEquality;
 pub use crate::boundary::PeakOccurrenceIndex;
 pub use crate::boundary::PrimMultiplicity;
 pub use crate::boundary::ReplayLevel;
+pub use crate::boundary::ReplayStepCount;
 pub use crate::boundary::SchedulePosition;
 pub use crate::boundary::ShiftReplay;
 pub use crate::boundary::SliceStepCount;
 pub use crate::boundary::TranspositionCount;
+pub use crate::boundary::TripleCount;
 pub use crate::boundary::WebIndependence;
 pub use crate::boundary::WebPrecedence;
 pub use crate::boundary::WebVertex;
@@ -116,3 +130,18 @@ pub use crate::normal_form::tracelets_nf_equal;
 pub use crate::shift::ShiftEquivalence;
 pub use crate::shift::ShiftObstruction;
 pub use crate::shift::derive_shift_equivalence;
+pub use crate::template::ArmAddress;
+pub use crate::template::FamilyCostReport;
+pub use crate::template::GuardedTemplate;
+pub use crate::template::InheritanceCache;
+pub use crate::template::InheritanceKey;
+pub use crate::template::InheritanceVerdict;
+pub use crate::template::ProductionCounts;
+pub use crate::template::TemplateAddress;
+pub use crate::template::TemplateArm;
+pub use crate::template::TemplateEntry;
+pub use crate::template::TemplateLeg;
+pub use crate::template::TemplateObstruction;
+pub use crate::template::TemplateRefusal;
+pub use crate::template::anti_unify_tracelets;
+pub use crate::template::inheritance_lookup;

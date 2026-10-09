@@ -189,3 +189,74 @@ wrapper! {
     #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
     pub struct WebShapeValidity(bool);
 }
+
+wrapper! {
+    /// A size in pattern nodes, the one unit a template and the family it
+    /// replaces are both priced in: a term's node count, and one node per
+    /// recorded step and per guard.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct NodeCount(usize);
+}
+
+wrapper! {
+    /// How many times a template's size divides the size of the family it
+    /// replaces, rounded down.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct ExpansionFactor(usize);
+}
+
+wrapper! {
+    /// The index of one member in a family of certificates, in family order.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct MemberIndex(usize);
+}
+
+wrapper! {
+    /// How many certificates a family holds.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct MemberCount(usize);
+}
+
+wrapper! {
+    /// The index of one entry of a template: one point where its members
+    /// differ, in the order the generalization met it.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct EntryIndex(usize);
+}
+
+wrapper! {
+    /// The nominal atom that guards one arm of one entry, numbered in the
+    /// order the producer minted it.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct GuardId(usize);
+}
+
+wrapper! {
+    /// How many distinct inheritance triples a cache holds or a run checked.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct TripleCount(usize);
+}
+
+wrapper! {
+    /// How many inheritance lookups a cache answered without a check.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct CacheHitCount(usize);
+}
+
+wrapper! {
+    /// How many members of a family a template admitted.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct AdmissionCount(usize);
+}
+
+wrapper! {
+    /// How many recorded steps a replay fired, or would fire.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct ReplayStepCount(usize);
+}
+
+wrapper! {
+    /// The index of one recorded step along a leg, from the peak.
+    #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+    pub struct LegStepIndex(usize);
+}

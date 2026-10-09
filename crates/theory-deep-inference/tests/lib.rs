@@ -39,3 +39,5 @@ mod normal_form;
 mod oracle;
 #[cfg(test)]
 mod shift;
+#[cfg(test)]
+mod template;

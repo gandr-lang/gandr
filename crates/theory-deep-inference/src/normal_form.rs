@@ -1298,10 +1298,11 @@ where
 /// The crate needs a content address and has no hashing dependency:
 /// [`core::hash::Hash`] is pinned to structural content identity by the
 /// [`CellAlphabet`] contract, so streaming it through a fixed-seed hasher turns
-/// that guarantee into an orderable key.
+/// that guarantee into an orderable key. Every address of the crate is one
+/// such digest behind a domain separator of its own.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]
-struct ContentHasher
+pub struct ContentHasher
 {
     /// The accumulated digest state.
     state: u128,
@@ -1313,13 +1314,32 @@ impl ContentHasher
     ///
     /// # Specification
     /// trivial.
-    const fn new() -> Self
+    #[inline]
+    #[must_use]
+    pub const fn new() -> Self
     {
         Self {
             state: CONTENT_BASIS,
         }
     }
+
+    /// The digest accumulated so far, at its full width.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn digest(&self) -> ContentDigest
+    {
+        ContentDigest(self.state)
+    }
 }
+
+/// A full-width content digest, which an address type of the crate wraps
+/// under its own name.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ContentDigest(u128);
 
 impl core::hash::Hasher for ContentHasher
 {
