@@ -960,6 +960,30 @@ impl DomainArena
         self.alloc_value(DomainValue::Lift { target, body, face }, guard)
     }
 
+    /// Mint a code over an already-allocated value closure whose body is a
+    /// quote.
+    ///
+    /// A code's guard is flexible: whether two codes are apart depends on the
+    /// constants their types decode, which the comparison reads rather than a
+    /// content hash.
+    ///
+    /// # Specification
+    /// - requires: `code` names a live value closure of this arena whose body
+    ///   is a quote.
+    /// - ensures: a fresh value node carrying that closure id and `face`.
+    /// - provides: the domain form a quote evaluates to.
+    /// - fails: never — a closure that dangles surfaces where it is read.
+    /// - panics: none.
+    #[inline]
+    pub fn value_code(
+        &mut self,
+        code: ValueClosureId,
+        face: TermFace,
+    ) -> DomainValueId
+    {
+        self.alloc_value(DomainValue::Code { code, face }, Guard::Flexible)
+    }
+
     /// Mint a stuck **value** over an already-allocated neutral.
     ///
     /// # Specification

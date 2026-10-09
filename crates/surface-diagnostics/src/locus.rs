@@ -467,6 +467,7 @@ impl fmt::Display for Former
             | UnadmittedFormer::Universe => "a universe",
             | UnadmittedFormer::TypeLift => "an explicit lift of a value type",
             | UnadmittedFormer::Element => "the type a code denotes",
+            | UnadmittedFormer::Quote => "the code of a type",
             | UnadmittedFormer::Abstract => "a sealed abstract type",
             | UnadmittedFormer::Pi => "the dependent function type",
         })

@@ -7,7 +7,8 @@
 //!   [`TermFace`], and a neutral carries an [`Unfolding`] beside its neutral
 //!   form.
 //! - [`ValueClosure`] and [`CompClosure`] suspend a body over a two-zone
-//!   [`Environment`].
+//!   [`Environment`]; a quote evaluates to a code, a value closure over the
+//!   quote, since a type has no weak head.
 //! - [`SchedulingPolicy`], [`DuplicationPolicy`] and [`GranularityPolicy`] are
 //!   the parameters the domain and its conversion machine are written against.
 //! - [`eval_value`] and [`eval_computation`] evaluate to weak head;
@@ -20,7 +21,10 @@
 //!   evaluation channels, answering a [`MachineVerdict`] and emitting its
 //!   winning derivation through a trace sink. It re-shares the goals it starts
 //!   fresh through a check memo keyed by [`GoalSupport`], [`ResharingMemo`] on
-//!   the engine path, and reports the [`SupportEdges`] its entries rest on.
+//!   the engine path, and reports the [`SupportEdges`] its entries rest on. Two
+//!   codes are compared whole: α-equal or rigidly apart is answered as a shared
+//!   comparison, and anything that could still unfold inside a type is declined
+//!   with [`DeclineReason::UndecidedCodes`].
 //! - [`Overlay`] holds sharing syntax over the core language in four flat
 //!   families, minted only over children it holds and checked by
 //!   [`Overlay::validate`] over a heap worklist; [`erase_value`] and its
@@ -49,6 +53,7 @@ extern crate alloc;
 
 mod arena;
 mod closure;
+mod code;
 mod conv;
 mod derivation;
 mod domain;

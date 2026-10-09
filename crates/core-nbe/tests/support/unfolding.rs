@@ -123,6 +123,8 @@ pub fn unfolded(
                     pending.push(CoreNode::Value(body));
                 },
                 | Value::Thunk(body) => pending.push(CoreNode::Computation(body)),
+                | Value::Quote(quoted) => pending.push(CoreNode::ValueType(quoted)),
+                | Value::QuoteComputation(quoted) => pending.push(CoreNode::CompType(quoted)),
             },
             | CoreNode::Computation(id) => {
                 match *erased
@@ -159,7 +161,7 @@ pub fn unfolded(
                 {
                     | ValueType::Base(_)
                     | ValueType::Unit
-                    | ValueType::Universe(_)
+                    | ValueType::Universe { .. }
                     | ValueType::Abstract(_) => {},
                     | ValueType::Product(first, second) | ValueType::Sum(first, second) => {
                         pending.push(CoreNode::ValueType(first));
@@ -180,6 +182,7 @@ pub fn unfolded(
                         pending.push(CoreNode::ValueType(domain));
                         pending.push(CoreNode::CompType(codomain));
                     },
+                    | CompType::Element { code, .. } => pending.push(CoreNode::Value(code)),
                 }
             },
         }

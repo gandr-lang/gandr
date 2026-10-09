@@ -186,13 +186,15 @@ The append fast path and the alignment are gone: the memo recalls by content whe
 
 ## Tests: the floor, the held rows, the defects
 
-The prior implementation's 53 tests are the floor. Forty-nine exist here by name: the footprint's 5, the persistence suite's 14, the session's 2, the stream's 4, and the differential's 24 — 22 named edits and the two properties `incremental_equals_from_scratch` (one edit) and `edit_sequences_preserve_zero_drift` (one to four edits, each step resumed from the previous result and round-tripped through the codec). Each property runs 400 cases over programs of one to six statements named from a pool of six, with integer, string, thunk, reference and hole bodies and `Integer`, `String`, `U (F Integer)` and `El 0 name` ascriptions, under seven edit kinds: replace, insert, delete, a coordinated rename into a pool of eight names, swap, ascribe, and a value-only edit weighted three times the others.
+The prior implementation's 53 tests are the floor. Fifty exist here by name: the footprint's 5, the persistence suite's 15, the session's 2, the stream's 4, and the differential's 24 — 22 named edits and the two properties `incremental_equals_from_scratch` (one edit) and `edit_sequences_preserve_zero_drift` (one to four edits, each step resumed from the previous result and round-tripped through the codec). Each property runs 400 cases over programs of one to six statements named from a pool of six, with integer, string, thunk, reference and hole bodies and `Integer`, `String`, `U (F Integer)` and `El 0 name` ascriptions, under seven edit kinds: replace, insert, delete, a coordinated rename into a pool of eight names, swap, ascribe, and a value-only edit weighted three times the others.
 
-Four are held until the vocabulary they test exists, with the rows of a fifth:
+Three are held until the vocabulary they test exists, with the rows of a fourth:
 
-- `universe_sorts_and_levels_round_trip`, `typed_static_family_arguments_round_trip` and `legacy_checkpoint_identity_is_rejected_after_static_family_move`: until the checker admits universes and static families.
+- `typed_static_family_arguments_round_trip` and `legacy_checkpoint_identity_is_rejected_after_static_family_move`: until the checker admits static families.
 - `rung07_native_primitives_round_trip`: until the core vocabulary has native primitives.
 - The module and package rows of `nested_process_local_and_opaque_forms_report_exact_errors`: until modules and packages exist; the test covers every sort the vocabulary has today.
+
+The content table spells a universe's sort beside its level. The value universe keeps the tag it had before the sorts were spelled, and the computation universe and a universe at a sort parameter take fresh tags, so a checkpoint written before the families decodes the same after them; the two quotes and the computation decode take fresh tags beside their families. `universe_sorts_and_levels_round_trip` pins all three sorts at one level.
 
 The four defects are each witnessed absent in `tests/defects.rs`: `the_generator_reaches_value_only_edits_under_type_position_reads` (a deterministic census holds the property's generator to the class), `a_shadowing_program_under_a_type_position_read_checks_and_terminates`, `items_visited_for_a_head_edit_grow_linearly` (counted, not timed), and `a_failed_store_leaves_the_store_as_it_was` (memory and file).
 

@@ -63,6 +63,7 @@ use anodized::spec;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
@@ -418,6 +419,10 @@ pub enum ValueGraft
         /// The value lifted.
         body: OverlayValueId,
     },
+    /// The quote of a value type.
+    Quote(OverlayValueTypeId),
+    /// The quote of a computation type.
+    QuoteComputation(OverlayCompTypeId),
 }
 
 /// A core computation former whose children are overlay nodes, one arm per
@@ -462,8 +467,14 @@ pub enum ValueTypeGraft
     Sum(OverlayValueTypeId, OverlayValueTypeId),
     /// The thunk type of a computation type.
     Thunk(OverlayCompTypeId),
-    /// The universe at a level.
-    Universe(Level),
+    /// The universe of one sort at a level.
+    Universe
+    {
+        /// The family the universe classifies.
+        sort: Sort,
+        /// The level within that family.
+        level: Level,
+    },
     /// An explicit lift of a value type.
     Lift
     {
@@ -486,7 +497,7 @@ pub enum ValueTypeGraft
 
 /// A core computation-type former whose children are overlay nodes, one arm
 /// per former of [`gandr_core_term::CompType`].
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CompTypeGraft
 {
     /// The returner of a value type.
@@ -506,6 +517,14 @@ pub enum CompTypeGraft
         domain: OverlayValueTypeId,
         /// The codomain, under the domain's binder.
         codomain: OverlayCompTypeId,
+    },
+    /// The computation type a code denotes.
+    Element
+    {
+        /// The code.
+        code: OverlayValueId,
+        /// The universe the code is read out of.
+        target: Level,
     },
 }
 
@@ -1315,7 +1334,7 @@ impl CompTypeNode
             | Self::Opaque(id) => Shape::Opaque(CoreId::CompType(id)),
             | Self::Bound(bound) => Shape::Bound(bound),
             | Self::Shared(sharing) => Shape::Shared(sharing.widened()),
-            | Self::Grafted(graft) => Shape::Grafted(graft.children()),
+            | Self::Grafted(ref graft) => Shape::Grafted(graft.children()),
         }
     }
 }
@@ -1339,6 +1358,8 @@ impl ValueGraft
                 Children::One(OverlayId::Value(body))
             },
             | Self::Thunk(body) => Children::One(OverlayId::Computation(body)),
+            | Self::Quote(quoted) => Children::One(OverlayId::ValueType(quoted)),
+            | Self::QuoteComputation(quoted) => Children::One(OverlayId::CompType(quoted)),
         }
     }
 }
@@ -1382,7 +1403,9 @@ impl ValueTypeGraft
     fn children(&self) -> Children
     {
         match *self {
-            | Self::Base(_) | Self::Unit | Self::Universe(_) | Self::Abstract(_) => Children::Leaf,
+            | Self::Base(_) | Self::Unit | Self::Universe { .. } | Self::Abstract(_) => {
+                Children::Leaf
+            },
             | Self::Product(first, second) | Self::Sum(first, second) => {
                 Children::Two(OverlayId::ValueType(first), OverlayId::ValueType(second))
             },
@@ -1399,13 +1422,14 @@ impl CompTypeGraft
     ///
     /// # Specification
     /// trivial.
-    fn children(self) -> Children
+    fn children(&self) -> Children
     {
-        match self {
+        match *self {
             | Self::Returner(result) => Children::One(OverlayId::ValueType(result)),
             | Self::Arrow { domain, codomain } | Self::Pi { domain, codomain } => {
                 Children::Two(OverlayId::ValueType(domain), OverlayId::CompType(codomain))
             },
+            | Self::Element { code, .. } => Children::One(OverlayId::Value(code)),
         }
     }
 }
@@ -2051,7 +2075,11 @@ impl Erasure<'_>
                 Ok(CoreId::ValueType(value_type))
             },
             | OverlayId::CompType(id) => {
-                let Some(&CompTypeNode::Grafted(graft)) = overlay.comp_type(id)
+                let Some(held) = overlay.comp_type(id)
+                else {
+                    return Err(EraseFault::MachineInvariant);
+                };
+                let CompTypeNode::Grafted(ref graft) = *held
                 else {
                     return Err(EraseFault::MachineInvariant);
                 };
@@ -2099,6 +2127,14 @@ impl Erasure<'_>
             | ValueGraft::Lift { ref target, .. } => {
                 let body = self.value()?;
                 Ok(self.core.value_lift(target.clone(), body))
+            },
+            | ValueGraft::Quote(_) => {
+                let quoted = self.value_type()?;
+                Ok(self.core.value_quote(quoted))
+            },
+            | ValueGraft::QuoteComputation(_) => {
+                let quoted = self.comp_type()?;
+                Ok(self.core.value_quote_computation(quoted))
             },
         }
     }
@@ -2188,8 +2224,8 @@ impl Erasure<'_>
                 let body = self.comp_type()?;
                 Ok(self.core.value_type_thunk(body))
             },
-            | ValueTypeGraft::Universe(ref level) => {
-                Ok(self.core.value_type_universe(level.clone()))
+            | ValueTypeGraft::Universe { sort, ref level } => {
+                Ok(self.core.value_type_universe(sort, level.clone()))
             },
             | ValueTypeGraft::Lift { ref target, .. } => {
                 let inner = self.value_type()?;
@@ -2218,10 +2254,10 @@ impl Erasure<'_>
     /// - [`EraseFault::MachineInvariant`] — a child is missing.
     fn assemble_comp_type(
         &mut self,
-        graft: CompTypeGraft,
+        graft: &CompTypeGraft,
     ) -> Result<CompTypeId, EraseFault>
     {
-        match graft {
+        match *graft {
             | CompTypeGraft::Returner(_) => {
                 let result = self.value_type()?;
                 Ok(self.core.comp_type_returner(result))
@@ -2235,6 +2271,10 @@ impl Erasure<'_>
                 let codomain = self.comp_type()?;
                 let domain = self.value_type()?;
                 Ok(self.core.comp_type_pi(domain, codomain))
+            },
+            | CompTypeGraft::Element { ref target, .. } => {
+                let code = self.value()?;
+                Ok(self.core.comp_type_element(code, target.clone()))
             },
         }
     }
@@ -2330,11 +2370,13 @@ mod tests
     use alloc::string::String;
 
     use gandr_core_term::CoreArena;
+    use gandr_core_term::Sort;
     use gandr_core_term::Zone;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::IntegerLiteral;
     use gandr_kernel_term::Literal;
     use gandr_kernel_term::Magnitude;
@@ -2997,7 +3039,14 @@ mod tests
         let r_lift = reference.value_lift(target.clone(), r_lifted);
         let r_suspended = reference.value_pair(r_thunk, r_lift);
         let r_wrapped = reference.value_pair(r_injected, r_suspended);
-        let r_value = reference.value_pair(r_names, r_wrapped);
+        let r_quoted = reference.value_type_unit();
+        let r_quote = reference.value_quote(r_quoted);
+        let r_quoted_result = reference.value_type_unit();
+        let r_quoted_returner = reference.comp_type_returner(r_quoted_result);
+        let r_quote_computation = reference.value_quote_computation(r_quoted_returner);
+        let r_quotes = reference.value_pair(r_quote, r_quote_computation);
+        let r_rest = reference.value_pair(r_wrapped, r_quotes);
+        let r_value = reference.value_pair(r_names, r_rest);
 
         let r_leg = reference.value_unit();
         let r_force = reference.computation_force(r_leg);
@@ -3016,12 +3065,17 @@ mod tests
         let r_result = reference.value_type_unit();
         let r_returner = reference.comp_type_returner(r_result);
         let r_thunk_type = reference.value_type_thunk(r_returner);
-        let r_universe = reference.value_type_universe(target.clone());
+        let r_universe =
+            reference.value_type_universe(Sort::Ground(GroundSort::Computation), target.clone());
         let r_atom = reference.value_type_abstract(first);
         let r_lift_type = reference.value_type_lift(r_atom, target.clone());
         let r_code = reference.value_unit();
         let r_element = reference.value_type_element(r_code, target.clone());
-        let r_codes = reference.value_type_product(r_lift_type, r_element);
+        let r_comp_code = reference.value_unit();
+        let r_comp_element = reference.comp_type_element(r_comp_code, target.clone());
+        let r_suspended_element = reference.value_type_thunk(r_comp_element);
+        let r_decodes = reference.value_type_product(r_element, r_suspended_element);
+        let r_codes = reference.value_type_product(r_lift_type, r_decodes);
         let r_universes = reference.value_type_product(r_universe, r_codes);
         let r_thunks = reference.value_type_product(r_thunk_type, r_universes);
         let r_value_type = reference.value_type_product(r_sum, r_thunks);
@@ -3077,7 +3131,24 @@ mod tests
         );
         let o_suspended = pair(&mut overlay, o_thunk, o_lift);
         let o_wrapped = pair(&mut overlay, o_injected, o_suspended);
-        let o_value = pair(&mut overlay, o_names, o_wrapped);
+        let o_quoted = value_type(&mut overlay, ValueTypeNode::Grafted(ValueTypeGraft::Unit));
+        let o_quote = value(
+            &mut overlay,
+            ValueNode::Grafted(ValueGraft::Quote(o_quoted)),
+        );
+        let o_quoted_result =
+            value_type(&mut overlay, ValueTypeNode::Grafted(ValueTypeGraft::Unit));
+        let o_quoted_returner = comp_type(
+            &mut overlay,
+            CompTypeNode::Grafted(CompTypeGraft::Returner(o_quoted_result)),
+        );
+        let o_quote_computation = value(
+            &mut overlay,
+            ValueNode::Grafted(ValueGraft::QuoteComputation(o_quoted_returner)),
+        );
+        let o_quotes = pair(&mut overlay, o_quote, o_quote_computation);
+        let o_rest = pair(&mut overlay, o_wrapped, o_quotes);
+        let o_value = pair(&mut overlay, o_names, o_rest);
 
         let o_leg = unit(&mut overlay);
         let o_scrutinee = occurrence(&mut overlay, zero, SharePosition::from(0_u32));
@@ -3143,7 +3214,10 @@ mod tests
         );
         let o_universe = value_type(
             &mut overlay,
-            ValueTypeNode::Grafted(ValueTypeGraft::Universe(target.clone())),
+            ValueTypeNode::Grafted(ValueTypeGraft::Universe {
+                sort: Sort::Ground(GroundSort::Computation),
+                level: target.clone(),
+            }),
         );
         let o_atom = value_type(
             &mut overlay,
@@ -3161,12 +3235,28 @@ mod tests
             &mut overlay,
             ValueTypeNode::Grafted(ValueTypeGraft::Element {
                 code: o_code,
+                target: target.clone(),
+            }),
+        );
+        let o_comp_code = unit(&mut overlay);
+        let o_comp_element = comp_type(
+            &mut overlay,
+            CompTypeNode::Grafted(CompTypeGraft::Element {
+                code: o_comp_code,
                 target,
             }),
         );
+        let o_suspended_element = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Thunk(o_comp_element)),
+        );
+        let o_decodes = value_type(
+            &mut overlay,
+            ValueTypeNode::Grafted(ValueTypeGraft::Product(o_element, o_suspended_element)),
+        );
         let o_codes = value_type(
             &mut overlay,
-            ValueTypeNode::Grafted(ValueTypeGraft::Product(o_lift_type, o_element)),
+            ValueTypeNode::Grafted(ValueTypeGraft::Product(o_lift_type, o_decodes)),
         );
         let o_universes = value_type(
             &mut overlay,

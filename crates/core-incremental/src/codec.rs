@@ -30,6 +30,8 @@ use gandr_core_checker::UnadmittedFormer;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
 use gandr_core_term::BinderDepth;
+use gandr_core_term::Sort as TypeSort;
+use gandr_core_term::SortParameter;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
 use gandr_kernel_strata::LevelConstant;
@@ -39,6 +41,7 @@ use gandr_kernel_strata::LevelVarIndex;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FractionDigits;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
@@ -710,6 +713,14 @@ where
             write_level(writer, target)?;
             write_index(writer, body)?;
         },
+        | ContentNode::Quote(quoted) => {
+            writer.tag(Tag(0x09));
+            write_index(writer, quoted)?;
+        },
+        | ContentNode::QuoteComputation(quoted) => {
+            writer.tag(Tag(0x0A));
+            write_index(writer, quoted)?;
+        },
         | ContentNode::Lambda(body) => {
             writer.tag(Tag(0x10));
             write_index(writer, body)?;
@@ -765,8 +776,29 @@ where
             writer.tag(Tag(0x24));
             write_index(writer, body)?;
         },
-        | ContentNode::Universe(ref level) => {
+        // The value universe keeps the tag it had before the sorts were
+        // spelled, and the other two sorts take fresh tags, so a table
+        // written before the families reads the same after them.
+        | ContentNode::Universe {
+            sort: TypeSort::Ground(GroundSort::Value),
+            ref level,
+        } => {
             writer.tag(Tag(0x25));
+            write_level(writer, level)?;
+        },
+        | ContentNode::Universe {
+            sort: TypeSort::Ground(GroundSort::Computation),
+            ref level,
+        } => {
+            writer.tag(Tag(0x29));
+            write_level(writer, level)?;
+        },
+        | ContentNode::Universe {
+            sort: TypeSort::Parameter(parameter),
+            ref level,
+        } => {
+            writer.tag(Tag(0x2A));
+            writer.word(Word(u64::from(u32::from(parameter))));
             write_level(writer, level)?;
         },
         | ContentNode::TypeLift { inner, ref target } => {
@@ -796,6 +828,11 @@ where
             writer.tag(Tag(0x32));
             write_index(writer, domain)?;
             write_index(writer, codomain)?;
+        },
+        | ContentNode::ComputationElement { code, ref target } => {
+            writer.tag(Tag(0x33));
+            write_index(writer, code)?;
+            write_level(writer, target)?;
         },
         | ContentNode::Unresolved(sort) => {
             return Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(
@@ -863,6 +900,14 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let body = read_index(reader)?;
             ContentNode::ValueLift { target, body }
         },
+        | 0x09 => {
+            let quoted = read_index(reader)?;
+            ContentNode::Quote(quoted)
+        },
+        | 0x0A => {
+            let quoted = read_index(reader)?;
+            ContentNode::QuoteComputation(quoted)
+        },
         | 0x10 => {
             let body = read_index(reader)?;
             ContentNode::Lambda(body)
@@ -921,7 +966,10 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
         },
         | 0x25 => {
             let level = read_level(reader)?;
-            ContentNode::Universe(level)
+            ContentNode::Universe {
+                sort: TypeSort::Ground(GroundSort::Value),
+                level,
+            }
         },
         | 0x26 => {
             let inner = read_index(reader)?;
@@ -937,6 +985,22 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let reference = read_reference(reader)?;
             ContentNode::Abstract(reference)
         },
+        | 0x29 => {
+            let level = read_level(reader)?;
+            ContentNode::Universe {
+                sort: TypeSort::Ground(GroundSort::Computation),
+                level,
+            }
+        },
+        | 0x2A => {
+            let parameter = reader.word()?;
+            let parameter = u32::try_from(parameter.0).map_err(|_overflow| CodecError::Corrupt)?;
+            let level = read_level(reader)?;
+            ContentNode::Universe {
+                sort: TypeSort::Parameter(SortParameter::from(parameter)),
+                level,
+            }
+        },
         | 0x30 => {
             let result = read_index(reader)?;
             ContentNode::Returner(result)
@@ -950,6 +1014,11 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let domain = read_index(reader)?;
             let codomain = read_index(reader)?;
             ContentNode::Pi { domain, codomain }
+        },
+        | 0x33 => {
+            let code = read_index(reader)?;
+            let target = read_level(reader)?;
+            ContentNode::ComputationElement { code, target }
         },
         | _ => return Err(CodecError::Corrupt),
     };
@@ -1314,7 +1383,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in declaration order.
-const FORMERS: [UnadmittedFormer; 13] = [
+const FORMERS: [UnadmittedFormer; 14] = [
     UnadmittedFormer::Pair,
     UnadmittedFormer::Injection,
     UnadmittedFormer::ValueLift,
@@ -1328,6 +1397,7 @@ const FORMERS: [UnadmittedFormer; 13] = [
     UnadmittedFormer::Element,
     UnadmittedFormer::Abstract,
     UnadmittedFormer::Pi,
+    UnadmittedFormer::Quote,
 ];
 
 /// The shapes a rule can require, in declaration order.

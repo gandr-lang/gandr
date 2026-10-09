@@ -1343,6 +1343,14 @@ fn agreement(
             &ContentNode::Element {
                 target: ref right, ..
             },
+        )
+        | (
+            &ContentNode::ComputationElement {
+                target: ref left, ..
+            },
+            &ContentNode::ComputationElement {
+                target: ref right, ..
+            },
         ) => left == right,
         | _ if children(old).count == 0_usize => old == new,
         | _ => mem::discriminant(old) == mem::discriminant(new),
@@ -1408,18 +1416,21 @@ fn children(node: &ContentNode) -> Children
         | ContentNode::Literal(_)
         | ContentNode::Base(_)
         | ContentNode::UnitType
-        | ContentNode::Universe(_)
+        | ContentNode::Universe { .. }
         | ContentNode::Abstract(_)
         | ContentNode::Unresolved(_) => ([unused; 3], 0_usize),
         | ContentNode::Injection(_, only)
         | ContentNode::Thunk(only)
         | ContentNode::ValueLift { body: only, .. }
+        | ContentNode::Quote(only)
+        | ContentNode::QuoteComputation(only)
         | ContentNode::Lambda(only)
         | ContentNode::Return(only)
         | ContentNode::Force(only)
         | ContentNode::ThunkType(only)
         | ContentNode::TypeLift { inner: only, .. }
         | ContentNode::Element { code: only, .. }
+        | ContentNode::ComputationElement { code: only, .. }
         | ContentNode::Returner(only) => ([only, unused, unused], 1_usize),
         | ContentNode::Pair(first, second)
         | ContentNode::Application(first, second)
@@ -1462,7 +1473,7 @@ where
         | ContentNode::Literal(_)
         | ContentNode::Base(_)
         | ContentNode::UnitType
-        | ContentNode::Universe(_)
+        | ContentNode::Universe { .. }
         | ContentNode::Abstract(_)
         | ContentNode::Unresolved(_) => node.clone(),
         | ContentNode::Pair(first, second) => {
@@ -1475,6 +1486,8 @@ where
             target: target.clone(),
             body: image(body),
         },
+        | ContentNode::Quote(quoted) => ContentNode::Quote(image(quoted)),
+        | ContentNode::QuoteComputation(quoted) => ContentNode::QuoteComputation(image(quoted)),
         | ContentNode::Lambda(body) => ContentNode::Lambda(image(body)),
         | ContentNode::Application(head, argument) => {
             let head = image(head);
@@ -1513,6 +1526,10 @@ where
             target: target.clone(),
         },
         | ContentNode::Element { code, ref target } => ContentNode::Element {
+            code: image(code),
+            target: target.clone(),
+        },
+        | ContentNode::ComputationElement { code, ref target } => ContentNode::ComputationElement {
             code: image(code),
             target: target.clone(),
         },
@@ -1624,6 +1641,10 @@ where
             target: target.clone(),
             body: child(Root::Value(body)),
         },
+        | Some(&Value::Quote(quoted)) => ContentNode::Quote(child(Root::ValueType(quoted))),
+        | Some(&Value::QuoteComputation(quoted)) => {
+            ContentNode::QuoteComputation(child(Root::CompType(quoted)))
+        },
         | None => ContentNode::Unresolved(Sort::Value),
     }
 }
@@ -1693,7 +1714,10 @@ where
             ContentNode::Sum(first, child(Root::ValueType(second)))
         },
         | Some(&ValueType::Thunk(body)) => ContentNode::ThunkType(child(Root::CompType(body))),
-        | Some(&ValueType::Universe(ref level)) => ContentNode::Universe(level.clone()),
+        | Some(&ValueType::Universe { sort, ref level }) => ContentNode::Universe {
+            sort,
+            level: level.clone(),
+        },
         | Some(&ValueType::Lift { inner, ref target }) => ContentNode::TypeLift {
             inner: child(Root::ValueType(inner)),
             target: target.clone(),
@@ -1737,6 +1761,10 @@ where
                 domain,
                 codomain: child(Root::CompType(codomain)),
             }
+        },
+        | Some(&CompType::Element { code, ref target }) => ContentNode::ComputationElement {
+            code: child(Root::Value(code)),
+            target: target.clone(),
         },
         | None => ContentNode::Unresolved(Sort::CompType),
     }

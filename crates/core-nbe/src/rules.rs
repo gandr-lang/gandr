@@ -33,6 +33,9 @@ use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
+use crate::code::CodeComparison;
+use crate::code::ConstantReading;
+use crate::code::compare_codes;
 use crate::conv::ConversionFault;
 use crate::conv::Early;
 use crate::conv::early_comps;
@@ -43,6 +46,8 @@ use crate::domain::Elimination;
 use crate::domain::Glued;
 use crate::domain::NeutralHead;
 use crate::domain::Unfolding;
+use crate::eval::Definitions;
+use crate::machine::DeclineReason;
 
 /// A two-valued answer a rule gives on its own.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -289,6 +294,8 @@ pub enum Plan
     Step(Step),
     /// A choice point.
     Choose(Choice),
+    /// No rule applies at this rung: the goal declines.
+    Decline(DeclineReason),
 }
 
 /// The other side.
@@ -463,7 +470,8 @@ enum Arity
 ///   rule: a leaf for units, literals and mismatched formers, a decomposition
 ///   for agreeing formers and for two rigid neutrals of one head and spine
 ///   shape, a forcing step for thunks against thunks or stuck values, an η-step
-///   for a lambda against a rigid or frozen neutral.
+///   for a lambda against a rigid or frozen neutral, and for two codes a shared
+///   answer when they are α-equal or rigidly apart and a decline otherwise.
 /// - provides: the machine's whole rule table, read once per goal turn.
 /// - fails: [`ConversionFault::Polarity`] when the sides differ in polarity,
 ///   [`ConversionFault::Domain`] for a node that does not resolve, and
@@ -484,16 +492,21 @@ enum Arity
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
 /// - witness: `machine::tests::thunks_meet_by_forcing`
 /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
+/// - witness: `machine::tests::a_code_constant_unfolds_to_its_quote`
+/// - witness: `machine::tests::codes_that_could_unfold_inside_are_declined`
 pub fn plan(
     core: &CoreArena,
     domain: &DomainArena,
+    definitions: Definitions<'_>,
     frozen: &Frozen,
     left: Glued,
     right: Glued,
 ) -> Result<Plan, ConversionFault>
 {
     match (left, right) {
-        | (Glued::Value(one), Glued::Value(other)) => plan_values(core, domain, frozen, one, other),
+        | (Glued::Value(one), Glued::Value(other)) => {
+            plan_values(core, domain, definitions, frozen, one, other)
+        },
         | (Glued::Computation(one), Glued::Computation(other)) => {
             plan_comps(domain, frozen, one, other)
         },
@@ -670,7 +683,8 @@ fn value_neutrality(
         | DomainValue::Pair { .. }
         | DomainValue::Injection { .. }
         | DomainValue::Thunk { .. }
-        | DomainValue::Lift { .. } => Neutrality::Former,
+        | DomainValue::Lift { .. }
+        | DomainValue::Code { .. } => Neutrality::Former,
     })
 }
 
@@ -739,6 +753,7 @@ fn payload(
 fn plan_values(
     core: &CoreArena,
     domain: &DomainArena,
+    definitions: Definitions<'_>,
     frozen: &Frozen,
     left: DomainValueId,
     right: DomainValueId,
@@ -850,6 +865,29 @@ fn plan_values(
                 ..
             },
         ) => return plan_rigid(domain, left_neutral, right_neutral),
+        // Two codes compare whole: α-equal closes them as shared, rigid and
+        // α-distinct separates them as shared, and anything that could still
+        // unfold inside a type is declined rather than answered.
+        | (
+            DomainValue::Code {
+                code: left_code, ..
+            },
+            DomainValue::Code {
+                code: right_code, ..
+            },
+        ) => {
+            match compare_codes(
+                core,
+                domain,
+                ConstantReading::Read(definitions),
+                left_code,
+                right_code,
+            )? {
+                | CodeComparison::Equal => Plan::Shared(Settled::Convertible),
+                | CodeComparison::Apart => Plan::Shared(Settled::NotConvertible),
+                | CodeComparison::Undecided => Plan::Decline(DeclineReason::UndecidedCodes),
+            }
+        },
         | (
             DomainValue::Unit { .. }
             | DomainValue::Literal { .. }
@@ -857,7 +895,8 @@ fn plan_values(
             | DomainValue::Injection { .. }
             | DomainValue::Thunk { .. }
             | DomainValue::Lift { .. }
-            | DomainValue::Neutral { .. },
+            | DomainValue::Neutral { .. }
+            | DomainValue::Code { .. },
             _,
         ) => Plan::Leaf(Settled::NotConvertible),
     };

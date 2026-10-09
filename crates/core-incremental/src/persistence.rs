@@ -882,6 +882,7 @@ mod tests
     use gandr_kernel_strata::LevelVarIndex;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::GroundSort;
     use quenchant_shape::shape::Maybe;
 
     use super::BackendArtifact;
@@ -1194,6 +1195,59 @@ mod tests
     }
 
     #[test]
+    fn universe_sorts_and_levels_round_trip()
+    {
+        let level = Level::var(LevelVar::new(LevelVarIndex::from(37_u32)))
+            .succ()
+            .expect("far from the ceiling");
+        let mut arena = CoreArena::new();
+        let sorts = [
+            gandr_core_term::Sort::Ground(GroundSort::Value),
+            gandr_core_term::Sort::Ground(GroundSort::Computation),
+            gandr_core_term::Sort::Parameter(gandr_core_term::SortParameter::from(2_u32)),
+        ];
+        let items = sorts
+            .into_iter()
+            .enumerate()
+            .map(|(position, sort)| {
+                let universe = arena.value_type_universe(sort, level.clone());
+                Item::new(
+                    ItemKey::from(format!("universe-{position}").as_str()),
+                    declaration(
+                        Position(position),
+                        Maybe::Present(universe),
+                        Maybe::Absent(body::Absent::Hole),
+                    ),
+                )
+            })
+            .collect();
+        let checkpoints = checked(&mut Program::new(arena, items).expect("positions ascend"));
+        let tables: Vec<Vec<ContentNode>> = checkpoints
+            .items()
+            .iter()
+            .map(|checkpoint| checkpoint.content().nodes().to_vec())
+            .collect();
+        let expected: Vec<Vec<ContentNode>> = sorts
+            .into_iter()
+            .map(|sort| {
+                vec![ContentNode::Universe {
+                    sort,
+                    level: level.clone(),
+                }]
+            })
+            .collect();
+        assert_eq!(
+            expected, tables,
+            "each signature's content is its universe, sort and level both"
+        );
+        assert_eq!(
+            decoded(&bytes_of(&checkpoints)),
+            Ok(checkpoints),
+            "and each sort and its level round trip"
+        );
+    }
+
+    #[test]
     fn oversized_level_offset_is_refused_with_exact_error()
     {
         let at_offset = |offset: u64| {
@@ -1202,7 +1256,8 @@ mod tests
                 level = level.succ().expect("far from the ceiling");
             }
             let mut arena = CoreArena::new();
-            let universe = arena.value_type_universe(level);
+            let universe =
+                arena.value_type_universe(gandr_core_term::Sort::Ground(GroundSort::Value), level);
             let mut program = Program::new(arena, vec![Item::new(
                 ItemKey::from("universe"),
                 declaration(

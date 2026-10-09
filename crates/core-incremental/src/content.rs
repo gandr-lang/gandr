@@ -156,6 +156,10 @@ pub enum ContentNode
         /// The value lifted.
         body: NodeIndex,
     },
+    /// The code of a value type.
+    Quote(NodeIndex),
+    /// The code of a computation type.
+    QuoteComputation(NodeIndex),
     /// A lambda over its body.
     Lambda(NodeIndex),
     /// An application of a computation to a value.
@@ -186,8 +190,14 @@ pub enum ContentNode
     Sum(NodeIndex, NodeIndex),
     /// A thunk type.
     ThunkType(NodeIndex),
-    /// A universe.
-    Universe(Level),
+    /// A universe of one sort.
+    Universe
+    {
+        /// The family it classifies.
+        sort: gandr_core_term::Sort,
+        /// Its level within that family.
+        level: Level,
+    },
     /// A lift of a value type.
     TypeLift
     {
@@ -223,6 +233,14 @@ pub enum ContentNode
         domain: NodeIndex,
         /// The codomain, under the domain's binder.
         codomain: NodeIndex,
+    },
+    /// The computation type a code denotes.
+    ComputationElement
+    {
+        /// The code.
+        code: NodeIndex,
+        /// The level it is read at.
+        target: Level,
     },
     /// An id of this sort the arena resolves to nothing.
     Unresolved(Sort),
@@ -296,7 +314,9 @@ impl ContentNode
             | Self::Pair(..)
             | Self::Injection(..)
             | Self::Thunk(_)
-            | Self::ValueLift { .. } => Sort::Value,
+            | Self::ValueLift { .. }
+            | Self::Quote(_)
+            | Self::QuoteComputation(_) => Sort::Value,
             | Self::Lambda(_)
             | Self::Application(..)
             | Self::Return(_)
@@ -308,11 +328,14 @@ impl ContentNode
             | Self::Product(..)
             | Self::Sum(..)
             | Self::ThunkType(_)
-            | Self::Universe(_)
+            | Self::Universe { .. }
             | Self::TypeLift { .. }
             | Self::Element { .. }
             | Self::Abstract(_) => Sort::ValueType,
-            | Self::Returner(_) | Self::Arrow { .. } | Self::Pi { .. } => Sort::CompType,
+            | Self::Returner(_)
+            | Self::Arrow { .. }
+            | Self::Pi { .. }
+            | Self::ComputationElement { .. } => Sort::CompType,
             | Self::Unresolved(sort) => sort,
         }
     }
@@ -337,7 +360,7 @@ impl ContentNode
             | Self::Literal(_)
             | Self::Base(_)
             | Self::UnitType
-            | Self::Universe(_)
+            | Self::Universe { .. }
             | Self::Abstract(_)
             | Self::Unresolved(_) => Children::default(),
             | Self::Pair(first, second) => Children::of(&[(first, V), (second, V)]),
@@ -358,7 +381,11 @@ impl ContentNode
             },
             | Self::ThunkType(body) => Children::of(&[(body, C)]),
             | Self::TypeLift { inner, .. } | Self::Returner(inner) => Children::of(&[(inner, A)]),
-            | Self::Element { code, .. } => Children::of(&[(code, V)]),
+            | Self::Element { code, .. } | Self::ComputationElement { code, .. } => {
+                Children::of(&[(code, V)])
+            },
+            | Self::Quote(quoted) => Children::of(&[(quoted, A)]),
+            | Self::QuoteComputation(quoted) => Children::of(&[(quoted, C)]),
             | Self::Arrow { domain, codomain } | Self::Pi { domain, codomain } => {
                 Children::of(&[(domain, A), (codomain, C)])
             },
@@ -393,12 +420,15 @@ impl ContentNode
             | Self::Product(..)
             | Self::Sum(..)
             | Self::ThunkType(_)
-            | Self::Universe(_)
+            | Self::Universe { .. }
             | Self::TypeLift { .. }
             | Self::Element { .. }
             | Self::Returner(_)
             | Self::Arrow { .. }
             | Self::Pi { .. }
+            | Self::Quote(_)
+            | Self::QuoteComputation(_)
+            | Self::ComputationElement { .. }
             | Self::Unresolved(_) => Maybe::Absent(referencing::Absent::NotAReference),
         }
     }
@@ -881,6 +911,12 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                 target: target.clone(),
                 body: self.discover(ArenaNode::Value(body)),
             },
+            | Value::Quote(quoted) => {
+                ContentNode::Quote(self.discover(ArenaNode::ValueType(quoted)))
+            },
+            | Value::QuoteComputation(quoted) => {
+                ContentNode::QuoteComputation(self.discover(ArenaNode::CompType(quoted)))
+            },
         }
     }
 
@@ -950,7 +986,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
             | ValueType::Thunk(body) => {
                 ContentNode::ThunkType(self.discover(ArenaNode::CompType(body)))
             },
-            | ValueType::Universe(ref level) => ContentNode::Universe(level.clone()),
+            | ValueType::Universe { sort, ref level } => ContentNode::Universe {
+                sort,
+                level: level.clone(),
+            },
             | ValueType::Lift { inner, ref target } => ContentNode::TypeLift {
                 inner: self.discover(ArenaNode::ValueType(inner)),
                 target: target.clone(),
@@ -989,6 +1028,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
                     domain,
                     codomain: self.discover(ArenaNode::CompType(codomain)),
                 }
+            },
+            | CompType::Element { code, ref target } => ContentNode::ComputationElement {
+                code: self.discover(ArenaNode::Value(code)),
+                target: target.clone(),
             },
         }
     }
@@ -1055,7 +1098,7 @@ where
         | ContentNode::Literal(_)
         | ContentNode::Base(_)
         | ContentNode::UnitType
-        | ContentNode::Universe(_)
+        | ContentNode::Universe { .. }
         | ContentNode::Abstract(_)
         | ContentNode::Unresolved(_) => node.clone(),
         | ContentNode::Pair(first, second) => {
@@ -1123,6 +1166,12 @@ where
                 domain,
                 codomain: image(codomain),
             }
+        },
+        | ContentNode::Quote(quoted) => ContentNode::Quote(image(quoted)),
+        | ContentNode::QuoteComputation(quoted) => ContentNode::QuoteComputation(image(quoted)),
+        | ContentNode::ComputationElement { code, ref target } => ContentNode::ComputationElement {
+            code: image(code),
+            target: target.clone(),
         },
     }
 }
@@ -1276,9 +1325,9 @@ fn mint_node(
     match *node {
         | ContentNode::Base(base) => Maybe::Present(Minted::ValueType(arena.value_type_base(base))),
         | ContentNode::UnitType => Maybe::Present(Minted::ValueType(arena.value_type_unit())),
-        | ContentNode::Universe(ref level) => {
-            Maybe::Present(Minted::ValueType(arena.value_type_universe(level.clone())))
-        },
+        | ContentNode::Universe { sort, ref level } => Maybe::Present(Minted::ValueType(
+            arena.value_type_universe(sort, level.clone()),
+        )),
         | ContentNode::Abstract(ref reference) => match place(layout, reference) {
             | Maybe::Present(position) => {
                 Maybe::Present(Minted::ValueType(arena.value_type_abstract(position)))
@@ -1349,6 +1398,7 @@ fn mint_node(
         },
         | ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
         | ContentNode::Element { .. }
+        | ContentNode::ComputationElement { .. }
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)
         | ContentNode::Unit
@@ -1357,6 +1407,8 @@ fn mint_node(
         | ContentNode::Injection(..)
         | ContentNode::Thunk(_)
         | ContentNode::ValueLift { .. }
+        | ContentNode::Quote(_)
+        | ContentNode::QuoteComputation(_)
         | ContentNode::Lambda(_)
         | ContentNode::Application(..)
         | ContentNode::Return(_)

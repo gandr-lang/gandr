@@ -8,8 +8,11 @@
 //! paths is answered once and the walk costs the DAG, never its unfolding. A
 //! binder's body contributes its indices one lower, the binder's own index
 //! dropped: a lambda's body, a bind's continuation and each branch of a case
-//! bind one intuitionistic variable. No former binds into the linear zone, so a
-//! linear index passes every binder unchanged.
+//! bind one intuitionistic variable. A quote carries a type into a term, and a
+//! type reads indices through the codes its decodes hold, so the walk descends
+//! through the quoted type too, a dependent arrow's codomain binding one
+//! variable. No former binds into the linear zone, so a linear index passes
+//! every binder unchanged.
 //!
 //! # A set is a sorted vector
 //!
@@ -24,11 +27,15 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
 
@@ -313,9 +320,9 @@ pub enum FreeFault
 enum Visit
 {
     /// Answer a node, or queue its children and its assembly.
-    Enter(CoreTerm),
+    Enter(Reached),
     /// Assemble a node's answer from its children's.
-    Assemble(CoreTerm),
+    Assemble(Reached),
 }
 
 /// The free indices of every core term asked, each node computed once.
@@ -323,8 +330,8 @@ enum Visit
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct FreeIndices
 {
-    /// One answer per node reached so far.
-    answered: BTreeMap<CoreTerm, Free>,
+    /// One answer per node reached so far, a quoted type's nodes included.
+    answered: BTreeMap<Reached, Free>,
 }
 
 impl FreeIndices
@@ -364,10 +371,13 @@ impl FreeIndices
         term: CoreTerm,
     ) -> Result<&Free, FreeFault>
     {
-        if !self.answered.contains_key(&term) {
-            self.answer(core, term)?;
+        let reached = Reached::Term(term);
+        if !self.answered.contains_key(&reached) {
+            self.answer(core, reached)?;
         }
-        self.answered.get(&term).ok_or(FreeFault::MachineInvariant)
+        self.answered
+            .get(&reached)
+            .ok_or(FreeFault::MachineInvariant)
     }
 
     /// Answer `term` and everything beneath it not yet answered.
@@ -384,7 +394,7 @@ impl FreeIndices
     fn answer(
         &mut self,
         core: &CoreArena,
-        term: CoreTerm,
+        term: Reached,
     ) -> Result<(), FreeFault>
     {
         let mut visits = Vec::from([Visit::Enter(term)]);
@@ -430,11 +440,11 @@ impl FreeIndices
     fn assemble(
         &self,
         core: &CoreArena,
-        node: CoreTerm,
+        node: Reached,
     ) -> Result<Free, FreeFault>
     {
         let mut free = Free::default();
-        if let CoreTerm::Value(id) = node {
+        if let Reached::Term(CoreTerm::Value(id)) = node {
             let held = core.value(id).ok_or(FreeFault::Dangling)?;
             if let Value::Variable { zone, index } = *held {
                 free = Free::variable(zone, index);
@@ -462,21 +472,33 @@ impl FreeIndices
     /// - [`FreeFault::MachineInvariant`] — `child` is not answered.
     fn read(
         &self,
-        child: CoreTerm,
+        child: Reached,
     ) -> Result<&Free, FreeFault>
     {
         self.answered.get(&child).ok_or(FreeFault::MachineInvariant)
     }
 }
 
-/// A core term's children, left to right, each with the intuitionistic binders
-/// it stands under.
+/// A node the walk reaches: a term, or a type a quote carries into one.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Reached
+{
+    /// A core value or computation.
+    Term(CoreTerm),
+    /// A value type inside a quote.
+    ValueType(ValueTypeId),
+    /// A computation type inside a quote.
+    CompType(CompTypeId),
+}
+
+/// A node's children, left to right, each with the intuitionistic binders it
+/// stands under.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Children
 {
     /// Up to three children, the absent ones last.
-    listed: [Option<(CoreTerm, Lowering)>; 3],
+    listed: [Option<(Reached, Lowering)>; 3],
 }
 
 impl Children
@@ -486,8 +508,10 @@ impl Children
     /// # Specification
     /// - requires: nothing.
     /// - ensures: each child the core former names, left to right: a lambda's
-    ///   body, a bind's continuation and a case's branches under one binder,
-    ///   every other child under none, and a leaf none.
+    ///   body, a bind's continuation, a case's branches and a dependent arrow's
+    ///   codomain under one binder, every other child under none, and a leaf
+    ///   none. A quote's child is its type and a decode's its code, so the
+    ///   indices a type reads through a code are the quote's own.
     /// - provides: the one reading of the core formers' arity and binding the
     ///   walk and the assembly share.
     /// - fails: [`FreeFault::Dangling`] when `node` does not resolve.
@@ -497,62 +521,94 @@ impl Children
     /// - [`FreeFault::Dangling`] — `node` does not resolve.
     fn of(
         core: &CoreArena,
-        node: CoreTerm,
+        node: Reached,
     ) -> Result<Self, FreeFault>
     {
+        let one = |child: Reached, binders: Lowering| [Some((child, binders)), None, None];
+        let two = |first: Reached, second: Reached, binders: Lowering| {
+            [Some((first, Lowering::NONE)), Some((second, binders)), None]
+        };
+        let value = |id: ValueId| Reached::Term(CoreTerm::Value(id));
+        let computation = |id: ComputationId| Reached::Term(CoreTerm::Computation(id));
         let listed = match node {
-            | CoreTerm::Value(id) => {
+            | Reached::Term(CoreTerm::Value(id)) => {
                 let held = core.value(id).ok_or(FreeFault::Dangling)?;
                 match *held {
                     | Value::Variable { .. }
                     | Value::Constant(_)
                     | Value::Unit
                     | Value::Literal(_) => [None, None, None],
-                    | Value::Pair(first, second) => [
-                        Some((CoreTerm::Value(first), Lowering::NONE)),
-                        Some((CoreTerm::Value(second), Lowering::NONE)),
-                        None,
-                    ],
-                    | Value::Injection(_, body) | Value::Lift { body, .. } => {
-                        [Some((CoreTerm::Value(body), Lowering::NONE)), None, None]
+                    | Value::Pair(first, second) => {
+                        two(value(first), value(second), Lowering::NONE)
                     },
-                    | Value::Thunk(body) => [
-                        Some((CoreTerm::Computation(body), Lowering::NONE)),
-                        None,
-                        None,
-                    ],
+                    | Value::Injection(_, body) | Value::Lift { body, .. } => {
+                        one(value(body), Lowering::NONE)
+                    },
+                    | Value::Thunk(body) => one(computation(body), Lowering::NONE),
+                    | Value::Quote(quoted) => one(Reached::ValueType(quoted), Lowering::NONE),
+                    | Value::QuoteComputation(quoted) => {
+                        one(Reached::CompType(quoted), Lowering::NONE)
+                    },
                 }
             },
-            | CoreTerm::Computation(id) => {
+            | Reached::Term(CoreTerm::Computation(id)) => {
                 let held = core.computation(id).ok_or(FreeFault::Dangling)?;
                 match *held {
-                    | Computation::Lambda(body) => [
-                        Some((CoreTerm::Computation(body), Lowering::ONE)),
-                        None,
-                        None,
-                    ],
-                    | Computation::Application(head, argument) => [
-                        Some((CoreTerm::Computation(head), Lowering::NONE)),
-                        Some((CoreTerm::Value(argument), Lowering::NONE)),
-                        None,
-                    ],
-                    | Computation::Return(value) | Computation::Force(value) => {
-                        [Some((CoreTerm::Value(value), Lowering::NONE)), None, None]
+                    | Computation::Lambda(body) => one(computation(body), Lowering::ONE),
+                    | Computation::Application(head, argument) => {
+                        two(computation(head), value(argument), Lowering::NONE)
                     },
-                    | Computation::Bind(bound, body) => [
-                        Some((CoreTerm::Computation(bound), Lowering::NONE)),
-                        Some((CoreTerm::Computation(body), Lowering::ONE)),
-                        None,
-                    ],
+                    | Computation::Return(value_term) | Computation::Force(value_term) => {
+                        one(value(value_term), Lowering::NONE)
+                    },
+                    | Computation::Bind(bound, body) => {
+                        two(computation(bound), computation(body), Lowering::ONE)
+                    },
                     | Computation::Case {
                         scrutinee,
                         on_left,
                         on_right,
                     } => [
-                        Some((CoreTerm::Value(scrutinee), Lowering::NONE)),
-                        Some((CoreTerm::Computation(on_left), Lowering::ONE)),
-                        Some((CoreTerm::Computation(on_right), Lowering::ONE)),
+                        Some((value(scrutinee), Lowering::NONE)),
+                        Some((computation(on_left), Lowering::ONE)),
+                        Some((computation(on_right), Lowering::ONE)),
                     ],
+                }
+            },
+            | Reached::ValueType(id) => {
+                let held = core.value_type(id).ok_or(FreeFault::Dangling)?;
+                match *held {
+                    | ValueType::Base(_)
+                    | ValueType::Unit
+                    | ValueType::Universe { .. }
+                    | ValueType::Abstract(_) => [None, None, None],
+                    | ValueType::Product(first, second) | ValueType::Sum(first, second) => two(
+                        Reached::ValueType(first),
+                        Reached::ValueType(second),
+                        Lowering::NONE,
+                    ),
+                    | ValueType::Thunk(body) => one(Reached::CompType(body), Lowering::NONE),
+                    | ValueType::Lift { inner, .. } => {
+                        one(Reached::ValueType(inner), Lowering::NONE)
+                    },
+                    | ValueType::Element { code, .. } => one(value(code), Lowering::NONE),
+                }
+            },
+            | Reached::CompType(id) => {
+                let held = core.comp_type(id).ok_or(FreeFault::Dangling)?;
+                match *held {
+                    | CompType::Returner(result) => one(Reached::ValueType(result), Lowering::NONE),
+                    | CompType::Arrow { domain, codomain } => two(
+                        Reached::ValueType(domain),
+                        Reached::CompType(codomain),
+                        Lowering::NONE,
+                    ),
+                    | CompType::Pi { domain, codomain } => two(
+                        Reached::ValueType(domain),
+                        Reached::CompType(codomain),
+                        Lowering::ONE,
+                    ),
+                    | CompType::Element { code, .. } => one(value(code), Lowering::NONE),
                 }
             },
         };

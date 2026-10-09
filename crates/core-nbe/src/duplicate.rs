@@ -126,6 +126,15 @@ pub enum DuplicationFault
         /// The opaque node.
         node: OverlayId,
     },
+    /// The root reaches a quote grafted with its type: a type inside a term,
+    /// which the stance's calculus has no rule to distribute. A producer
+    /// carries a quote as an opaque node instead, read whole wherever it
+    /// stands.
+    Quote
+    {
+        /// The quote's node.
+        node: OverlayId,
+    },
     /// The walk's own stacks disagreed with the validated overlay. Unreachable
     /// while every frame is opened beneath the body that reads it and every
     /// graft is rebuilt over the children its own tasks left; kept so the walk
@@ -390,6 +399,9 @@ impl Under
                         None,
                         None,
                     ],
+                    | ValueGraft::Quote(_) | ValueGraft::QuoteComputation(_) => {
+                        return Err(DuplicationFault::Quote { node });
+                    },
                 }
             },
             | OverlayId::Computation(id) => {
@@ -1766,6 +1778,10 @@ impl Walk<'_>
                     | ValueGraft::Lift { target, .. } => {
                         let body = self.value()?;
                         ValueGraft::Lift { target, body }
+                    },
+                    // `Under::of` refuses a quote before its assembly is queued.
+                    | ValueGraft::Quote(_) | ValueGraft::QuoteComputation(_) => {
+                        return Err(DuplicationFault::MachineInvariant);
                     },
                 };
                 let minted = self

@@ -243,7 +243,7 @@ const fn kind(node: &ContentNode) -> Kind
         | ContentNode::Product(..)
         | ContentNode::Sum(..)
         | ContentNode::ThunkType(_)
-        | ContentNode::Universe(_)
+        | ContentNode::Universe { .. }
         | ContentNode::TypeLift { .. }
         | ContentNode::Element { .. }
         | ContentNode::Abstract(_)
@@ -251,6 +251,7 @@ const fn kind(node: &ContentNode) -> Kind
         | ContentNode::Returner(_)
         | ContentNode::Arrow { .. }
         | ContentNode::Pi { .. }
+        | ContentNode::ComputationElement { .. }
         | ContentNode::Unresolved(Sort::CompType) => Kind::Type(Polarity::Computation),
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)
@@ -260,6 +261,8 @@ const fn kind(node: &ContentNode) -> Kind
         | ContentNode::Injection(..)
         | ContentNode::Thunk(_)
         | ContentNode::ValueLift { .. }
+        | ContentNode::Quote(_)
+        | ContentNode::QuoteComputation(_)
         | ContentNode::Lambda(_)
         | ContentNode::Application(..)
         | ContentNode::Return(_)
@@ -467,10 +470,11 @@ fn expand(
         | ContentNode::Abstract(Reference::Unoccupied)
         | ContentNode::Product(..)
         | ContentNode::Sum(..)
-        | ContentNode::Universe(_)
+        | ContentNode::Universe { .. }
         | ContentNode::TypeLift { .. }
         | ContentNode::Element { .. }
         | ContentNode::Pi { .. }
+        | ContentNode::ComputationElement { .. }
         | ContentNode::Unresolved(_)
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)
@@ -480,6 +484,8 @@ fn expand(
         | ContentNode::Injection(..)
         | ContentNode::Thunk(_)
         | ContentNode::ValueLift { .. }
+        | ContentNode::Quote(_)
+        | ContentNode::QuoteComputation(_)
         | ContentNode::Lambda(_)
         | ContentNode::Application(..)
         | ContentNode::Return(_)

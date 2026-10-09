@@ -54,6 +54,7 @@ use crate::arena::CompClosureId;
 use crate::arena::DomainCompId;
 use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
+use crate::arena::ValueClosureId;
 
 /// A de Bruijn **level**: binders counted inward from the empty context, so a
 /// level names the same binder however deep the reader has gone.
@@ -448,6 +449,21 @@ pub enum DomainValue
         /// The term face.
         face: TermFace,
     },
+    /// A code: a quote of a value or computation type, closed over the
+    /// environment the type's free variables stand in.
+    ///
+    /// A quote carries a type into a term, and a type reads the variables its
+    /// decodes' codes name, so a quote is suspended as a value closure whose
+    /// body is the quote itself rather than evaluated: a type has no weak head
+    /// to reach, and the codes inside it are evaluated where a readback or a
+    /// comparison reads them.
+    Code
+    {
+        /// The quote, closed over its environment.
+        code: ValueClosureId,
+        /// The term face.
+        face: TermFace,
+    },
 }
 
 impl DomainValue
@@ -474,7 +490,8 @@ impl DomainValue
             | Self::Injection { face, .. }
             | Self::Thunk { face, .. }
             | Self::Lift { face, .. }
-            | Self::Neutral { face, .. } => face,
+            | Self::Neutral { face, .. }
+            | Self::Code { face, .. } => face,
         }
     }
 }

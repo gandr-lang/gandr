@@ -12,6 +12,7 @@ use gandr_core_checker::OriginToken;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
@@ -23,6 +24,7 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::FractionDigits;
+use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::IntegerLiteral;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Magnitude;
@@ -306,7 +308,7 @@ pub fn every_former(noise: Noise) -> Program
                 .expect("small offsets"),
         )
         .max(&Level::var(LevelVar::new(LevelVarIndex::from(1_u32))));
-    let universe = arena.value_type_universe(level);
+    let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), level);
     push("universe", Maybe::Present(universe), hole());
 
     // 5: a lift of the unit type, by a lifted unit.
@@ -362,6 +364,44 @@ pub fn every_former(noise: Noise) -> Program
     // 14: Integer, owed.
     let integer_type = arena.value_type_base(BaseType::Integer);
     push("owed", Maybe::Present(integer_type), hole());
+
+    // 15: the computation universe at zero, owed.
+    let computation_universe =
+        arena.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
+    push(
+        "computation-universe",
+        Maybe::Present(computation_universe),
+        hole(),
+    );
+
+    // 16: U (El⁻ 0 (computation-universe)), owed: a computation type read off
+    // an item.
+    let code = arena.value_constant(ConstantIndex::from(15_usize));
+    let element = arena.comp_type_element(code, Level::zero());
+    let element_thunk = arena.value_type_thunk(element);
+    push("computation-element", Maybe::Present(element_thunk), hole());
+
+    // 17: the code of Integer at the value universe.
+    let value_universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let quote = arena.value_quote(integer_type);
+    push(
+        "quote",
+        Maybe::Present(value_universe),
+        Maybe::Present(quote),
+    );
+
+    // 18: the code of F Integer at the computation universe.
+    let computation_universe =
+        arena.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
+    let integer_type = arena.value_type_base(BaseType::Integer);
+    let returner = arena.comp_type_returner(integer_type);
+    let quoted = arena.value_quote_computation(returner);
+    push(
+        "computation-quote",
+        Maybe::Present(computation_universe),
+        Maybe::Present(quoted),
+    );
 
     Program::new(arena, items).expect("positions ascend")
 }

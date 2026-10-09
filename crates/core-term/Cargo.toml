@@ -18,11 +18,15 @@ publish.workspace = true
 # so a former the kernel refuses to represent can enter here without touching
 # the kernel's grammar.
 # The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled in this no_std library.
+# logic/BigInt stays disabled in this no_std library. The quenchant shapes
+# give the rewrite machines their clamped index arithmetic and their named
+# absence.
 [dependencies]
 anodized.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+quenchant-arith.workspace = true
+quenchant-shape.workspace = true
 
 [lints]
 workspace = true

@@ -41,6 +41,7 @@ use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 
+use crate::classifier::Sort;
 use crate::syntax::CompType;
 use crate::syntax::Computation;
 use crate::syntax::Value;
@@ -532,6 +533,42 @@ impl CoreArena
         self.alloc_value(Value::Lift { target, body })
     }
 
+    /// Mint the quote of an already-allocated value type: its code.
+    ///
+    /// # Specification
+    /// - requires: `quoted` names a value-type node already allocated in this
+    ///   arena.
+    /// - ensures: appends the quote and returns a fresh value id.
+    /// - provides: the only way to mint this former; the child is in the
+    ///   value-type family, so the two id spaces stay independent.
+    /// - panics: none.
+    #[inline]
+    pub fn value_quote(
+        &mut self,
+        quoted: ValueTypeId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Quote(quoted))
+    }
+
+    /// Mint the quote of an already-allocated computation type: its code.
+    ///
+    /// # Specification
+    /// - requires: `quoted` names a computation-type node already allocated in
+    ///   this arena.
+    /// - ensures: appends the quote and returns a fresh value id.
+    /// - provides: the only way to mint this former; the child is in the
+    ///   computation-type family, so the two id spaces stay independent.
+    /// - panics: none.
+    #[inline]
+    pub fn value_quote_computation(
+        &mut self,
+        quoted: CompTypeId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::QuoteComputation(quoted))
+    }
+
     // Computation constructors.
 
     /// Mint a lambda over an already-allocated computation body.
@@ -735,17 +772,18 @@ impl CoreArena
         self.alloc_value_type(ValueType::Thunk(body))
     }
 
-    /// Mint a universe value type at a canonical level.
+    /// Mint the universe of one sort at a canonical level.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     pub fn value_type_universe(
         &mut self,
+        sort: Sort,
         level: Level,
     ) -> ValueTypeId
     {
-        self.alloc_value_type(ValueType::Universe(level))
+        self.alloc_value_type(ValueType::Universe { sort, level })
     }
 
     /// Mint a reference to a sealed abstract type by its declaration's
@@ -771,19 +809,31 @@ impl CoreArena
         self.alloc_value_type(ValueType::Abstract(atom))
     }
 
-    /// Mint the type a code denotes, over an already-allocated code value.
+    /// Mint the value type a code denotes, over an already-allocated code
+    /// value, decoding a quote on the spot.
     ///
-    /// Minting checks neither the code nor the level: that the code inhabits
-    /// `Universe target` is a typing fact rather than a representation one.
+    /// Decode-on-mint is the one computation rule types obey by construction:
+    /// `El ⌜A⌝` is `A`, so a decode whose code is a value-type quote answers
+    /// the quoted type itself and no node is minted. Every other code — a
+    /// variable, a constant, a computation-type quote of the wrong sort — is
+    /// represented as it stands, and whether it inhabits `Type[+, target]` is
+    /// a typing fact rather than a representation one.
     ///
     /// # Specification
     /// - requires: `code` names a value node already allocated in this arena;
-    ///   that it inhabits the universe at `target` is a typing fact this
-    ///   constructor does not decide.
-    /// - ensures: appends the element type and returns a fresh value-type id.
-    /// - provides: the type a code denotes, with its inhabitation left to the
-    ///   judgement that owns it.
+    ///   that it inhabits `Type[+, target]` is a typing fact this constructor
+    ///   does not decide.
+    /// - ensures: the quoted type when `code` resolves to a value-type quote,
+    ///   and a freshly appended element type otherwise.
+    /// - provides: the type a code denotes, with decoding a quote total and
+    ///   inhabitation left to the judgement that owns it.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one decision surface, the code's former: a quote of
+    ///   the matching sort decodes, a quote of the other sort and a non-quote
+    ///   code are minted as they stand.
+    /// - witness: `arena::tests::a_decoded_quote_is_the_quoted_type`
     #[inline]
     pub fn value_type_element(
         &mut self,
@@ -791,6 +841,9 @@ impl CoreArena
         target: Level,
     ) -> ValueTypeId
     {
+        if let Some(&Value::Quote(quoted)) = self.value(code) {
+            return quoted;
+        }
         self.alloc_value_type(ValueType::Element { code, target })
     }
 
@@ -881,18 +934,146 @@ impl CoreArena
     {
         self.alloc_comp_type(CompType::Pi { domain, codomain })
     }
+
+    /// Mint the computation type a code denotes, over an already-allocated
+    /// code value, decoding a quote on the spot.
+    ///
+    /// The computation-sort twin of [`Self::value_type_element`]: a code that
+    /// is a computation-type quote answers the quoted type, and every other
+    /// code is represented as it stands.
+    ///
+    /// # Specification
+    /// - requires: `code` names a value node already allocated in this arena;
+    ///   that it inhabits `Type[-, target]` is a typing fact this constructor
+    ///   does not decide.
+    /// - ensures: the quoted computation type when `code` resolves to a
+    ///   computation-type quote, and a freshly appended element type otherwise.
+    /// - provides: the computation decode, with decoding a quote total and
+    ///   inhabitation left to the judgement that owns it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the same decision surface as the value decode, over
+    ///   the other sort's quote.
+    /// - witness: `arena::tests::a_decoded_quote_is_the_quoted_type`
+    #[inline]
+    pub fn comp_type_element(
+        &mut self,
+        code: ValueId,
+        target: Level,
+    ) -> CompTypeId
+    {
+        if let Some(&Value::QuoteComputation(quoted)) = self.value(code) {
+            return quoted;
+        }
+        self.alloc_comp_type(CompType::Element { code, target })
+    }
 }
 
 #[cfg(test)]
 mod tests
 {
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::BaseType;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
 
     use super::ArenaWatermark;
     use super::CoreArena;
     use super::ValueId;
+    use crate::classifier::Sort;
+    use crate::syntax::CompType;
     use crate::syntax::Value;
+    use crate::syntax::ValueType;
     use crate::syntax::Zone;
+
+    #[test]
+    fn flat_arena_distinguishes_type_plus_zero_and_type_minus_zero()
+    {
+        let mut arena = CoreArena::new();
+        let value_universe =
+            arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let computation_universe =
+            arena.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
+        assert_ne!(
+            value_universe, computation_universe,
+            "the two families at one level are two nodes"
+        );
+        assert_ne!(
+            arena.value_type(value_universe),
+            arena.value_type(computation_universe),
+            "and two different nodes, not two ids over one"
+        );
+    }
+
+    #[test]
+    fn flat_arena_round_trips_universe_classifier_and_level()
+    {
+        let mut arena = CoreArena::new();
+        let one = Level::zero().succ().expect("one is representable");
+        let value_universe =
+            arena.value_type_universe(Sort::Ground(GroundSort::Value), one.clone());
+        let computation_universe =
+            arena.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
+        assert_eq!(
+            Some(&ValueType::Universe {
+                sort: Sort::Ground(GroundSort::Value),
+                level: one,
+            }),
+            arena.value_type(value_universe),
+            "the value universe reads back with its sort and level"
+        );
+        assert_eq!(
+            Some(&ValueType::Universe {
+                sort: Sort::Ground(GroundSort::Computation),
+                level: Level::zero(),
+            }),
+            arena.value_type(computation_universe),
+            "and so does the computation universe"
+        );
+    }
+
+    #[test]
+    fn a_decoded_quote_is_the_quoted_type()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returner = arena.comp_type_returner(integer);
+        let value_code = arena.value_quote(integer);
+        let computation_code = arena.value_quote_computation(returner);
+        let mark = arena.watermark();
+        assert_eq!(
+            integer,
+            arena.value_type_element(value_code, Level::zero()),
+            "the value decode of a value quote is the quoted type"
+        );
+        assert_eq!(
+            returner,
+            arena.comp_type_element(computation_code, Level::zero()),
+            "the computation decode of a computation quote is the quoted type"
+        );
+        assert_eq!(mark, arena.watermark(), "neither decode minted a node");
+
+        let mismatched = arena.comp_type_element(value_code, Level::zero());
+        assert_eq!(
+            Some(&CompType::Element {
+                code: value_code,
+                target: Level::zero(),
+            }),
+            arena.comp_type(mismatched),
+            "a quote of the other sort is not decoded"
+        );
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let neutral = arena.value_type_element(variable, Level::zero());
+        assert_eq!(
+            Some(&ValueType::Element {
+                code: variable,
+                target: Level::zero(),
+            }),
+            arena.value_type(neutral),
+            "a code that is not a quote stands"
+        );
+    }
 
     #[test]
     fn a_child_id_is_strictly_below_its_parent()

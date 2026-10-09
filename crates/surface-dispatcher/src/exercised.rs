@@ -500,11 +500,15 @@ fn formers(
                 },
                 | Some(&Value::Injection(_, injected)) => worklist.push(Node::Value(injected)),
                 | Some(&Value::Lift { body: lifted, .. }) => worklist.push(Node::Value(lifted)),
+                // A quote carries a type, whose codes are values that hold no
+                // computation former, so it marks no row.
                 | Some(
                     &(Value::Variable { .. }
                     | Value::Constant(_)
                     | Value::Unit
-                    | Value::Literal(_)),
+                    | Value::Literal(_)
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_)),
                 )
                 | None => {},
             },

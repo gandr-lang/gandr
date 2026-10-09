@@ -83,10 +83,16 @@
 use alloc::vec::Vec;
 
 use anodized::spec;
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::GlobalIndex;
 use gandr_kernel_term::Side;
@@ -97,6 +103,7 @@ use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
+use crate::closure::Environment;
 use crate::domain::BinderLevel;
 use crate::domain::CompTermFace;
 use crate::domain::DomainComp;
@@ -112,6 +119,7 @@ use crate::eval::EvalFault;
 use crate::eval::Fuel;
 use crate::eval::eval_closed_value;
 use crate::eval::eval_comp_within;
+use crate::eval::eval_value_within;
 
 /// Which of the domain's two faces a readback spends.
 ///
@@ -559,10 +567,80 @@ enum Task
     Bind,
     /// Assemble a sum elimination over the value term and the two branches.
     Case,
+    /// Read back a value type a quote carries, in a frame.
+    QuotedValueType
+    {
+        /// The core value type.
+        quoted: ValueTypeId,
+        /// The environment its codes read.
+        frame: Frame,
+        /// The binders open where it stands.
+        binders: OpenBinders,
+    },
+    /// Read back a computation type a quote carries, in a frame.
+    QuotedCompType
+    {
+        /// The core computation type.
+        quoted: CompTypeId,
+        /// The environment its codes read.
+        frame: Frame,
+        /// The binders open where it stands.
+        binders: OpenBinders,
+    },
+    /// Evaluate a decode's code in a frame, then read the value back.
+    QuotedCode
+    {
+        /// The core code.
+        code: ValueId,
+        /// The environment it reads.
+        frame: Frame,
+        /// The binders open where it stands.
+        binders: OpenBinders,
+    },
+    /// Assemble a value-type quote from the type on the stack.
+    Quote,
+    /// Assemble a computation-type quote from the type on the stack.
+    QuoteComputation,
+    /// Assemble a product type from the two types on the stack.
+    Product,
+    /// Assemble a sum type from the two types on the stack.
+    Sum,
+    /// Assemble a thunk type from the computation type on the stack.
+    ThunkType,
+    /// Assemble a type lift over the level the domain holds.
+    LiftType
+    {
+        /// The held level.
+        target: LiftTarget,
+    },
+    /// Assemble a value decode over the code on the value stack.
+    Element
+    {
+        /// The held level.
+        target: LiftTarget,
+    },
+    /// Assemble a computation decode over the code on the value stack.
+    CompElement
+    {
+        /// The held level.
+        target: LiftTarget,
+    },
+    /// Assemble a returner type from the value type on the stack.
+    Returner,
+    /// Assemble an arrow from the two types on the stacks.
+    Arrow,
+    /// Assemble a dependent arrow from the two types on the stacks.
+    Pi,
 }
 
-/// The running machine: the task stack, the two result stacks, and the run's
-/// parameters.
+/// An environment a quoted type is read in, by its position in the machine's
+/// frame table.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct Frame(usize);
+
+/// The running machine: the task stack, the result stacks, the frames quoted
+/// types are read in, and the run's parameters.
 struct Machine<'run>
 {
     /// Work still to do, most recent last.
@@ -571,6 +649,13 @@ struct Machine<'run>
     values: Vec<ValueId>,
     /// Core computation results, most recent last.
     comps: Vec<ComputationId>,
+    /// Core value-type results of a quoted type, most recent last.
+    value_types: Vec<ValueTypeId>,
+    /// Core computation-type results of a quoted type, most recent last.
+    comp_types: Vec<CompTypeId>,
+    /// The environments quoted types are read in: a quote's own, and one more
+    /// per dependent arrow its type opens.
+    frames: Vec<Environment>,
     /// What may be unfolded, and where from, for the evaluations this readback
     /// drives.
     definitions: Definitions<'run>,
@@ -587,8 +672,8 @@ impl<'run> Machine<'run>
     /// # Specification
     /// - requires: nothing; `fuel` may be zero, which refuses at the first
     ///   step, and `mode` selects which faces the run may spend.
-    /// - ensures: a machine holding no task and no result, carrying exactly the
-    ///   definitions, mode, and budget offered.
+    /// - ensures: a machine holding no task, no result and no frame, carrying
+    ///   exactly the definitions, mode, and budget offered.
     /// - provides: the entry state every readback run starts from, with the
     ///   budget shared with the evaluations the run drives rather than refilled
     ///   per evaluation.
@@ -604,10 +689,83 @@ impl<'run> Machine<'run>
             tasks: Vec::new(),
             values: Vec::new(),
             comps: Vec::new(),
+            value_types: Vec::new(),
+            comp_types: Vec::new(),
+            frames: Vec::new(),
             definitions,
             mode,
             fuel,
         }
+    }
+
+    /// Hold an environment a quoted type is read in, and name it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn hold_frame(
+        &mut self,
+        environment: Environment,
+    ) -> Frame
+    {
+        self.frames.push(environment);
+        Frame(self.frames.len().saturating_sub(1_usize))
+    }
+
+    /// The environment a frame names, or fail closed.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the environment `frame` names.
+    /// - provides: the checked read of the frame table.
+    /// - fails: [`ReadbackFault::MachineInvariant`] when `frame` names no
+    ///   frame, which only a task this machine did not push could hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ReadbackFault::MachineInvariant`] — the frame does not resolve.
+    fn frame(
+        &self,
+        frame: Frame,
+    ) -> Result<&Environment, ReadbackFault>
+    {
+        self.frames
+            .get(frame.0)
+            .ok_or(ReadbackFault::MachineInvariant)
+    }
+
+    /// Pop one value-type result, or fail closed.
+    ///
+    /// # Specification
+    /// - requires: nothing — an empty result stack is admissible input.
+    /// - ensures: the most recent value type, which is no longer on the stack.
+    /// - provides: the one read of the value-type result stack.
+    /// - fails: [`ReadbackFault::MachineInvariant`] when the stack is empty.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ReadbackFault::MachineInvariant`] — the stack was empty.
+    fn pop_value_type(&mut self) -> Result<ValueTypeId, ReadbackFault>
+    {
+        self.value_types
+            .pop()
+            .ok_or(ReadbackFault::MachineInvariant)
+    }
+
+    /// Pop one computation-type result, or fail closed.
+    ///
+    /// # Specification
+    /// - requires: nothing — an empty result stack is admissible input.
+    /// - ensures: the most recent computation type, which is no longer on the
+    ///   stack.
+    /// - provides: the one read of the computation-type result stack.
+    /// - fails: [`ReadbackFault::MachineInvariant`] when the stack is empty.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`ReadbackFault::MachineInvariant`] — the stack was empty.
+    fn pop_comp_type(&mut self) -> Result<CompTypeId, ReadbackFault>
+    {
+        self.comp_types.pop().ok_or(ReadbackFault::MachineInvariant)
     }
 
     /// Pop one value result, or fail closed.
@@ -1407,7 +1565,323 @@ fn step(
                 .push(core.computation_case(scrutinee, on_left, on_right));
             Ok(())
         },
+        | Task::QuotedValueType {
+            quoted,
+            frame,
+            binders,
+        } => step_quoted_value_type(core, domain, machine, quoted, frame, binders),
+        | Task::QuotedCompType {
+            quoted,
+            frame,
+            binders,
+        } => step_quoted_comp_type(core, domain, machine, quoted, frame, binders),
+        | Task::QuotedCode {
+            code,
+            frame,
+            binders,
+        } => {
+            let environment = machine.frame(frame)?.clone();
+            let evaluated = eval_value_within(
+                core,
+                domain,
+                machine.definitions,
+                machine.fuel,
+                code,
+                environment,
+            );
+            let (value, remaining) = evaluated.map_err(ReadbackFault::Eval)?;
+            machine.fuel = remaining;
+            machine.tasks.push(Task::Value { value, binders });
+            Ok(())
+        },
+        | Task::Quote => {
+            let quoted = machine.pop_value_type()?;
+            machine.values.push(core.value_quote(quoted));
+            Ok(())
+        },
+        | Task::QuoteComputation => {
+            let quoted = machine.pop_comp_type()?;
+            machine.values.push(core.value_quote_computation(quoted));
+            Ok(())
+        },
+        | Task::Product => {
+            let second = machine.pop_value_type()?;
+            let first = machine.pop_value_type()?;
+            machine
+                .value_types
+                .push(core.value_type_product(first, second));
+            Ok(())
+        },
+        | Task::Sum => {
+            let second = machine.pop_value_type()?;
+            let first = machine.pop_value_type()?;
+            machine.value_types.push(core.value_type_sum(first, second));
+            Ok(())
+        },
+        | Task::ThunkType => {
+            let body = machine.pop_comp_type()?;
+            machine.value_types.push(core.value_type_thunk(body));
+            Ok(())
+        },
+        | Task::LiftType { target } => {
+            let inner = machine.pop_value_type()?;
+            let level = held_level(domain, target)?;
+            machine.value_types.push(core.value_type_lift(inner, level));
+            Ok(())
+        },
+        | Task::Element { target } => {
+            let code = machine.pop_value()?;
+            let level = held_level(domain, target)?;
+            machine
+                .value_types
+                .push(core.value_type_element(code, level));
+            Ok(())
+        },
+        | Task::CompElement { target } => {
+            let code = machine.pop_value()?;
+            let level = held_level(domain, target)?;
+            machine.comp_types.push(core.comp_type_element(code, level));
+            Ok(())
+        },
+        | Task::Returner => {
+            let result = machine.pop_value_type()?;
+            machine.comp_types.push(core.comp_type_returner(result));
+            Ok(())
+        },
+        | Task::Arrow => {
+            let codomain = machine.pop_comp_type()?;
+            let domain_type = machine.pop_value_type()?;
+            machine
+                .comp_types
+                .push(core.comp_type_arrow(domain_type, codomain));
+            Ok(())
+        },
+        | Task::Pi => {
+            let codomain = machine.pop_comp_type()?;
+            let domain_type = machine.pop_value_type()?;
+            machine
+                .comp_types
+                .push(core.comp_type_pi(domain_type, codomain));
+            Ok(())
+        },
     }
+}
+
+/// The level a held lift target names.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a copy of the level `target` names.
+/// - provides: the one read of the level table the type frames share.
+/// - fails: [`ReadbackFault::Domain`] when `target` names no level.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ReadbackFault::Domain`] — the target dangles.
+fn held_level(
+    domain: &DomainArena,
+    target: LiftTarget,
+) -> Result<Level, ReadbackFault>
+{
+    domain
+        .level(target)
+        .map(|held| held.level().clone())
+        .ok_or(ReadbackFault::Domain(DomainFault::Dangling))
+}
+
+/// Read one value type a quote carries.
+///
+/// A type has no weak head and no face: it is rebuilt former by former, a
+/// leaf that holds no code is spliced as it stands, and a decode's code is
+/// evaluated in the frame and read back, so a code that unfolds comes back as
+/// what it unfolds to and a decode of a quote comes back as the quoted type.
+///
+/// # Specification
+/// - requires: `frame` binds every variable `quoted` reads past its own
+///   dependent arrows, and `binders` counts the binders open where it stands.
+/// - ensures: a leaf pushes itself; a composite pushes its children's tasks and
+///   its own assembly frame; a decode pushes its code's evaluation.
+/// - provides: the value-type half of reading a quote back.
+/// - fails: [`ReadbackFault::MachineInvariant`] when `quoted` does not resolve.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ReadbackFault::MachineInvariant`] — the type does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one case per former, separated by a quote of a leaf, a
+///   quote whose decode unfolds, and a quote over a dependent arrow.
+/// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
+/// - witness: `readback::tests::a_quoted_decode_unfolds_to_the_quoted_type`
+fn step_quoted_value_type(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    quoted: ValueTypeId,
+    frame: Frame,
+    binders: OpenBinders,
+) -> Result<(), ReadbackFault>
+{
+    let node = core
+        .value_type(quoted)
+        .cloned()
+        .ok_or(ReadbackFault::MachineInvariant)?;
+    let at = |quoted: ValueTypeId| Task::QuotedValueType {
+        quoted,
+        frame,
+        binders,
+    };
+    match node {
+        | ValueType::Base(_)
+        | ValueType::Unit
+        | ValueType::Universe { .. }
+        | ValueType::Abstract(_) => {
+            machine.value_types.push(quoted);
+        },
+        | ValueType::Product(first, second) => {
+            machine.tasks.push(Task::Product);
+            machine.tasks.push(at(second));
+            machine.tasks.push(at(first));
+        },
+        | ValueType::Sum(first, second) => {
+            machine.tasks.push(Task::Sum);
+            machine.tasks.push(at(second));
+            machine.tasks.push(at(first));
+        },
+        | ValueType::Thunk(body) => {
+            machine.tasks.push(Task::ThunkType);
+            machine.tasks.push(Task::QuotedCompType {
+                quoted: body,
+                frame,
+                binders,
+            });
+        },
+        | ValueType::Lift { inner, target } => {
+            let target = domain.hold_level(target);
+            machine.tasks.push(Task::LiftType { target });
+            machine.tasks.push(at(inner));
+        },
+        | ValueType::Element { code, target } => {
+            let target = domain.hold_level(target);
+            machine.tasks.push(Task::Element { target });
+            machine.tasks.push(Task::QuotedCode {
+                code,
+                frame,
+                binders,
+            });
+        },
+    }
+    Ok(())
+}
+
+/// Read one computation type a quote carries.
+///
+/// A dependent arrow opens a fresh variable for its codomain, exactly as a
+/// lambda's body is opened: the codomain is read in a new frame, the quote's
+/// environment extended by that variable, one binder further in.
+///
+/// # Specification
+/// - requires: as [`step_quoted_value_type`].
+/// - ensures: a composite pushes its children's tasks and its own assembly
+///   frame, a dependent arrow's codomain in a frame extended by a fresh
+///   variable at the level `binders` has open; a decode pushes its code's
+///   evaluation.
+/// - provides: the computation-type half of reading a quote back.
+/// - fails: [`ReadbackFault::MachineInvariant`] when `quoted` or `frame` does
+///   not resolve, [`ReadbackFault::BinderCeiling`] at the level ceiling, and
+///   [`ReadbackFault::Domain`] when the fresh variable cannot be minted.
+/// - panics: none.
+///
+/// # Errors
+/// As above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the dependent arrow is the one arm that opens a binder,
+///   separated by a quote whose codomain reads it.
+/// - witness: `readback::tests::a_quoted_dependent_arrow_reads_its_binder_as_an_index`
+fn step_quoted_comp_type(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    machine: &mut Machine<'_>,
+    quoted: CompTypeId,
+    frame: Frame,
+    binders: OpenBinders,
+) -> Result<(), ReadbackFault>
+{
+    let node = core
+        .comp_type(quoted)
+        .cloned()
+        .ok_or(ReadbackFault::MachineInvariant)?;
+    match node {
+        | CompType::Returner(result) => {
+            machine.tasks.push(Task::Returner);
+            machine.tasks.push(Task::QuotedValueType {
+                quoted: result,
+                frame,
+                binders,
+            });
+        },
+        | CompType::Arrow {
+            domain: from,
+            codomain,
+        } => {
+            machine.tasks.push(Task::Arrow);
+            machine.tasks.push(Task::QuotedCompType {
+                quoted: codomain,
+                frame,
+                binders,
+            });
+            machine.tasks.push(Task::QuotedValueType {
+                quoted: from,
+                frame,
+                binders,
+            });
+        },
+        | CompType::Pi {
+            domain: from,
+            codomain,
+        } => {
+            let zone = Zone::Intuitionistic;
+            let Some(deeper) = binders.opened(zone)
+            else {
+                return Err(ReadbackFault::BinderCeiling { zone });
+            };
+            let level = binders.fresh(zone);
+            let minted = domain.neutral_node(
+                NeutralHead::Variable { zone, level },
+                Vec::new(),
+                Unfolding::Rigid,
+            );
+            let neutral = minted.map_err(ReadbackFault::Domain)?;
+            let bound = domain
+                .value_neutral(neutral, TermFace::Reduced)
+                .map_err(ReadbackFault::Domain)?;
+            let mut extended = machine.frame(frame)?.clone();
+            extended.extend(zone, bound);
+            let inside = machine.hold_frame(extended);
+            machine.tasks.push(Task::Pi);
+            machine.tasks.push(Task::QuotedCompType {
+                quoted: codomain,
+                frame: inside,
+                binders: deeper,
+            });
+            machine.tasks.push(Task::QuotedValueType {
+                quoted: from,
+                frame,
+                binders,
+            });
+        },
+        | CompType::Element { code, target } => {
+            let target = domain.hold_level(target);
+            machine.tasks.push(Task::CompElement { target });
+            machine.tasks.push(Task::QuotedCode {
+                code,
+                frame,
+                binders,
+            });
+        },
+    }
+    Ok(())
 }
 
 /// Perform one value task: read one domain value node.
@@ -1525,6 +1999,34 @@ fn step_value(
         },
         | DomainValue::Neutral { neutral, .. } => {
             step_neutral(core, domain, machine, neutral, Polarity::Value, binders)
+        },
+        | DomainValue::Code { code, .. } => {
+            let Some(closure) = domain.value_closure(code)
+            else {
+                return Err(ReadbackFault::Domain(DomainFault::Dangling));
+            };
+            let body = closure.body();
+            let frame = machine.hold_frame(closure.environment().clone());
+            match core.value(body) {
+                | Some(&Value::Quote(quoted)) => {
+                    machine.tasks.push(Task::Quote);
+                    machine.tasks.push(Task::QuotedValueType {
+                        quoted,
+                        frame,
+                        binders,
+                    });
+                },
+                | Some(&Value::QuoteComputation(quoted)) => {
+                    machine.tasks.push(Task::QuoteComputation);
+                    machine.tasks.push(Task::QuotedCompType {
+                        quoted,
+                        frame,
+                        binders,
+                    });
+                },
+                | Some(_) | None => return Err(ReadbackFault::MachineInvariant),
+            }
+            Ok(())
         },
     }
 }
@@ -1908,6 +2410,7 @@ mod tests
     use alloc::vec::Vec;
     use core::convert::Infallible;
 
+    use gandr_core_term::CompType;
     use gandr_core_term::Computation;
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
@@ -1915,6 +2418,7 @@ mod tests
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::Transparency;
     use gandr_core_term::Value;
+    use gandr_core_term::ValueType;
     use gandr_core_term::Zone;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::ConstantIndex;
@@ -3207,6 +3711,213 @@ mod tests
         assert_eq!(
             first_mark, second_mark,
             "and the second reading evaluates neither body again"
+        );
+    }
+
+    #[test]
+    fn a_quote_reads_back_through_its_environment()
+    {
+        // `λ. return ⌜El(#0)⌝`: the quote reads the lambda's binder.
+        let mut core = CoreArena::new();
+        let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
+        let decoded = core.value_type_element(occurrence, Level::zero());
+        let quote = core.value_quote(decoded);
+        let returned = core.computation_return(quote);
+        let lambda = core.computation_lambda(returned);
+
+        let (chain, environment) = nothing_unfolds();
+        let scope = environment.root();
+        let definitions = Definitions::new(&chain, &environment, scope);
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), lambda)
+            .expect("a lambda is already a weak head");
+        let read = readback_computation(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the lambda reads back");
+
+        let Some(&Computation::Lambda(body)) = core.computation(read)
+        else {
+            panic!("the rebuilt computation is a lambda");
+        };
+        let Some(&Computation::Return(value)) = core.computation(body)
+        else {
+            panic!("its body is a returner");
+        };
+        assert_ne!(quote, value, "the quote was rebuilt, not spliced");
+        let Some(&Value::Quote(quoted)) = core.value(value)
+        else {
+            panic!("the returned value is a quote");
+        };
+        let Some(&ValueType::Element { code, ref target }) = core.value_type(quoted)
+        else {
+            panic!("the quoted type is a decode");
+        };
+        assert_eq!(&Level::zero(), target, "at the level it was written at");
+        assert_eq!(
+            Some(&Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: innermost(),
+            }),
+            core.value(code),
+            "and its code is the lambda's binder again, read through the quote's environment"
+        );
+    }
+
+    #[test]
+    fn a_quoted_decode_unfolds_to_the_quoted_type()
+    {
+        // `code := ⌜Unit⌝`, and the quote `⌜El(code)⌝` reads it.
+        let mut core = CoreArena::new();
+        let code = ConstantIndex::from(0_usize);
+        let unit = core.value_type_unit();
+        let body = core.value_quote(unit);
+        let mention = core.value_constant(code);
+        let decoded = core.value_type_element(mention, Level::zero());
+        let quote = core.value_quote(decoded);
+
+        let mut chain = DefinitionChain::new();
+        let defined = chain.define(code, GlobalIndex::from(0_u32), Transparency::Manifest, &[]);
+        assert!(defined.is_ok());
+        let environment = DefinitionalEnvironment::new();
+        let scope = environment.root();
+        let chain = LoweredChain::lower(chain, |_| Ok::<_, Infallible>(body))
+            .unwrap_or_else(|never| match never {});
+        let definitions = Definitions::new(&chain, &environment, scope);
+
+        let mut domain = DomainArena::new();
+        let evaluated = eval_value(&core, &mut domain, definitions, ample(), quote)
+            .expect("a closed quote evaluates");
+        let kept = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::ZeroUnfold,
+            ample(),
+            evaluated,
+        )
+        .expect("the zero-unfold mode reads the quote");
+        assert_eq!(quote, kept, "a closed quote still denotes its source");
+
+        let unfolded = readback_value(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the unfolding mode reads the quote");
+        let Some(&Value::Quote(quoted)) = core.value(unfolded)
+        else {
+            panic!("the read value is a quote");
+        };
+        assert_eq!(
+            Some(&ValueType::Unit),
+            core.value_type(quoted),
+            "the decode's code unfolded to a quote, and decoding it on mint left the quoted type"
+        );
+    }
+
+    #[test]
+    fn a_quoted_dependent_arrow_reads_its_binder_as_an_index()
+    {
+        // `λ. return ⌜Thunk(Π(_ : El(#0)). El(#0) ⊸ El(#1))⌝`, written with
+        // the codomain's `#1` naming the lambda's binder past the arrow's.
+        let mut core = CoreArena::new();
+        let outer = core.value_variable(Zone::Intuitionistic, innermost());
+        let from = core.value_type_element(outer, Level::zero());
+        let bound = core.value_variable(Zone::Intuitionistic, innermost());
+        let near = core.value_type_element(bound, Level::zero());
+        let past = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let far = core.comp_type_element(past, Level::zero());
+        let arrow = core.comp_type_arrow(near, far);
+        let pi = core.comp_type_pi(from, arrow);
+        let thunk = core.value_type_thunk(pi);
+        let quote = core.value_quote(thunk);
+        let returned = core.computation_return(quote);
+        let lambda = core.computation_lambda(returned);
+
+        let (chain, environment) = nothing_unfolds();
+        let scope = environment.root();
+        let definitions = Definitions::new(&chain, &environment, scope);
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), lambda)
+            .expect("a lambda is already a weak head");
+        let read = readback_computation(
+            &mut core,
+            &mut domain,
+            definitions,
+            ReadbackMode::Unfolding,
+            ample(),
+            evaluated,
+        )
+        .expect("the lambda reads back");
+
+        let Some(&Computation::Lambda(body)) = core.computation(read)
+        else {
+            panic!("a lambda");
+        };
+        let Some(&Computation::Return(value)) = core.computation(body)
+        else {
+            panic!("returning");
+        };
+        let Some(&Value::Quote(quoted)) = core.value(value)
+        else {
+            panic!("a quote");
+        };
+        let Some(&ValueType::Thunk(suspended)) = core.value_type(quoted)
+        else {
+            panic!("of a thunk type");
+        };
+        let Some(&CompType::Pi {
+            domain: read_from,
+            codomain,
+        }) = core.comp_type(suspended)
+        else {
+            panic!("over a dependent arrow");
+        };
+        let Some(&CompType::Arrow {
+            domain: read_near,
+            codomain: read_far,
+        }) = core.comp_type(codomain)
+        else {
+            panic!("whose codomain is an arrow");
+        };
+        let code_of_value = |core: &CoreArena, ty| match core.value_type(ty) {
+            | Some(&ValueType::Element { code, .. }) => core.value(code).cloned(),
+            | _ => None,
+        };
+        let variable = |index: u32| {
+            Some(Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(index),
+            })
+        };
+        assert_eq!(
+            variable(0_u32),
+            code_of_value(&core, read_from),
+            "outside the arrow's binder, the lambda's is innermost"
+        );
+        assert_eq!(
+            variable(0_u32),
+            code_of_value(&core, read_near),
+            "inside it, the arrow's own binder is innermost"
+        );
+        let Some(&CompType::Element { code: far_code, .. }) = core.comp_type(read_far)
+        else {
+            panic!("the arrow's codomain is a decode");
+        };
+        assert_eq!(
+            variable(1_u32).as_ref(),
+            core.value(far_code),
+            "and the lambda's binder is one further out, so the fresh variable the readback \
+             opened for the arrow counts as a binder"
         );
     }
 

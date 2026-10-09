@@ -1010,6 +1010,9 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             | Value::Pair(..) => return Err(unadmitted(UnadmittedFormer::Pair)),
             | Value::Injection(..) => return Err(unadmitted(UnadmittedFormer::Injection)),
             | Value::Lift { .. } => return Err(unadmitted(UnadmittedFormer::ValueLift)),
+            | Value::Quote(_) | Value::QuoteComputation(_) => {
+                return Err(unadmitted(UnadmittedFormer::Quote));
+            },
         };
         Ok(self.erased_value(at, erased))
     }
@@ -1273,6 +1276,7 @@ mod tests
 
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
+    use gandr_core_term::Sort;
     use gandr_core_term::ValueId;
     use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
@@ -1282,6 +1286,7 @@ mod tests
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelSignature;
     use gandr_kernel_term::Side;
     use gandr_kernel_term::TermArena;
@@ -1693,7 +1698,7 @@ mod tests
     fn value_universe_rejects_with_universe_type()
     {
         let mut arena = CoreArena::new();
-        let universe = arena.value_type_universe(Level::zero());
+        let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
         let at = CoreNode::Type(TypeNode::Value(universe));
         let (_, image) = erase(&arena, at);
         assert_eq!(

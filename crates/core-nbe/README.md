@@ -21,6 +21,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 - [Readback modes](#readback-modes)
 - [Conversion steps 1 through 3](#conversion-steps-1-through-3)
 - [Conversion machine](#conversion-machine)
+- [Codes](#codes)
 - [Termination](#termination)
 - [Process re-sharing](#process-re-sharing)
 - [The cached word](#the-cached-word)
@@ -153,7 +154,7 @@ A stuck value and a stuck computation share a head and differ in what is stacked
 
 ## Closure spaces
 
-`ValueClosure` suspends a value body and `CompClosure` a computation body: a lambda, a thunk, a bind continuation and a case branch are computation closures. No former in the core vocabulary produces a value closure; it is the shape a code under a binder takes. Both spaces close over the same `Environment`, so entering either is one operation: extend the captured environment and evaluate the body. The environment has the typing context's two zones, because an occurrence names its zone and one stack could not answer a linear occurrence. Its entries are `Copy` ids, so capturing an environment clones two flat vectors.
+`ValueClosure` suspends a value body and `CompClosure` a computation body: a lambda, a thunk, a bind continuation and a case branch are computation closures, and a quote is the one former that produces a value closure ([Codes](#codes)). Both spaces close over the same `Environment`, so entering either is one operation: extend the captured environment and evaluate the body. The environment has the typing context's two zones, because an occurrence names its zone and one stack could not answer a linear occurrence. Its entries are `Copy` ids, so capturing an environment clones two flat vectors.
 
 ## Per-run arena
 
@@ -206,6 +207,16 @@ The rule table reads the two heads. A defined head the goal has not frozen again
 η applies only in the two cases §6.2 shows safe and profitable. A lambda against a rigid or frozen neutral expands the neutral: `EtaExpand` names the fresh variable at the goal's depth, the neutral is applied to it and the lambda's body opened under it. A lambda against a defined neutral is a choice: freeze the constant and expand, beside the authoritative unfolding. A thunk against a thunk or a stuck value forces both sides. Alternatives: η at every lambda against any neutral, which expands before an unfolding that would have answered and duplicates work the choice shares; and no η, which refutes two η-convertible functions. Reversal: a measured family where the frozen expansion consistently loses to the unfolding beside it, which would drop the second case.
 
 A refuted decomposition records `NegativeSubgoal` with the position of the first premise in subgoal order that refuted, and its derivation is that premise's alone; an agreeing one records nothing, and its derivation is its premises' in order. When the search-free steps settle an agreeing structural decomposition equal, the emission closes it with one `ComparedShared` in place of its premises, which is the reading `gandr-kernel-core`'s `replay` gives a `ComparedShared` met at a decomposable goal it can close. A shortcut's decomposition is never closed that way, because the `ConstShortcut` before it names it. The trace is emitted once the root answers, as the winning derivation in preorder; a derivation two goals share is emitted under each, so the replay reads a tree, and a decline emits nothing. The null sink records nothing, and the run keeps no derivation, because every store of the derivation is guarded on the sink's activity.
+
+## Codes
+
+A quote `⌜A⌝` carries a type, and a type has no weak head: nothing in it reduces until something reads it. Evaluation therefore suspends the whole quote over the environment its codes read, as `DomainValue::Code` over a value closure, flexible because the closure is. Readback rebuilds the quoted type former by former: a leaf holding no code is spliced as it stands, a decode's code is evaluated in the quote's environment and read back, and a dependent arrow opens a fresh variable for its codomain the way a lambda's body is opened. Under `ReadbackMode::Unfolding` a code constant therefore unfolds, and a decode of the quote it unfolds to is decoded on mint, so a code reads back in normal form.
+
+Conversion compares two codes whole, in two passes. α-equality walks both types in lockstep, matching a bound variable by the binder it names and reading a free one through its quote's environment. Rigidity separates two α-distinct codes only when neither holds a constant with a body, a stuck elimination, or a value no code reads as. The search-free steps read every constant as one that could unfold, and defer; the machine reads the definitions, closes an equal or a rigidly apart pair as one `ComparedShared`, and declines anything else with `DeclineReason::UndecidedCodes`. The kernel's replay closes a shared comparison as equal when the sides are α-equal and separates it only when both are rigid, so an answer here is one the kernel re-derives on its own terms.
+
+Alternatives: a domain of types with weak-head formers, compared by the rule table, which is type-level reduction this language does not have and a second domain the replay would need a reading of; and codes compared by identity alone, which refutes two quotes of one type written twice. Reversal: a type former that reduces, such as a large elimination, needs types evaluated; codes then become weak heads the rule table decomposes, and the decline goes.
+
+The duplication walk refuses a quote graft by name, `DuplicationFault::Quote`: no producer shares inside a type, so the overlay carries quotes for erasure alone. Reversal: a producer that shares across a type, which makes the type families ribs of the walk.
 
 ## Termination
 

@@ -269,6 +269,8 @@ dependencies = [
  "anodized",
  "gandr-kernel-strata",
  "gandr-kernel-term",
+ "quenchant-arith",
+ "quenchant-shape",
 ]
 
 [[package]]

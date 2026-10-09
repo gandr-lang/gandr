@@ -715,6 +715,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Pair(..) => Err(unadmitted_value(term, UnadmittedFormer::Pair)),
             | Value::Injection(..) => Err(unadmitted_value(term, UnadmittedFormer::Injection)),
             | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
+            | Value::Quote(_) | Value::QuoteComputation(_) => {
+                Err(unadmitted_value(term, UnadmittedFormer::Quote))
+            },
         }
     }
 
@@ -756,6 +759,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Pair(..) => Err(unadmitted_value(term, UnadmittedFormer::Pair)),
             | Value::Injection(..) => Err(unadmitted_value(term, UnadmittedFormer::Injection)),
             | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
+            | Value::Quote(_) | Value::QuoteComputation(_) => {
+                Err(unadmitted_value(term, UnadmittedFormer::Quote))
+            },
         }
     }
 
@@ -1826,7 +1832,11 @@ mod tests
                             "a synthesising value checks exactly as it synthesises, then crosses the value bridge"
                         );
                     },
-                    | Value::Pair(..) | Value::Injection(..) | Value::Lift { .. } => {
+                    | Value::Pair(..)
+                    | Value::Injection(..)
+                    | Value::Lift { .. }
+                    | Value::Quote(_)
+                    | Value::QuoteComputation(_) => {
                         prop_assert!(false, "the recipe mints no former outside the fragment");
                     },
                 }

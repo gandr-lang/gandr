@@ -122,6 +122,8 @@ pub enum UnadmittedFormer
     TypeLift,
     /// The type a code denotes.
     Element,
+    /// A quote: the code of a value or a computation type.
+    Quote,
     /// A sealed abstract type.
     Abstract,
     /// The dependent function type.

@@ -173,6 +173,7 @@ pub use crate::term::DeBruijnIndex;
 pub use crate::term::Side;
 pub use crate::term::Value;
 pub use crate::types::CompType;
+pub use crate::types::GroundSort;
 pub use crate::types::ValueType;
 pub use crate::wire::ArtifactImage;
 pub use crate::wire::EncodedArtifact;

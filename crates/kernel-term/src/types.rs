@@ -38,6 +38,8 @@
 //! Children are typed arena ids and the derived relations are shallow, with the
 //! child-id-equality caveat stated once in [`crate::term`].
 
+use core::fmt;
+
 use gandr_kernel_strata::Level;
 
 use crate::arena::CompTypeId;
@@ -45,6 +47,42 @@ use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
 use crate::base::BaseType;
 use crate::term::ConstantIndex;
+
+/// One of the two ground sorts a universe family is indexed by: the value
+/// types and the computation types.
+///
+/// A sort is the first half of a classifier and the level is the second, so
+/// `Type[+, l]` and `Type[-, l]` are two families at one level rather than one
+/// family with a polarity flag on its members. The literal spellings are the
+/// positive and negative types of the polarized literature.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum GroundSort
+{
+    /// The value types, spelled `+`: the positive sort.
+    Value,
+    /// The computation types, spelled `-`: the negative sort.
+    Computation,
+}
+
+impl fmt::Display for GroundSort
+{
+    /// The sort's literal: `+` for the value sort, `-` for the computation
+    /// sort.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            | Self::Value => f.write_str("+"),
+            | Self::Computation => f.write_str("-"),
+        }
+    }
+}
 
 /// A value type: the positive fragment of the type vocabulary.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

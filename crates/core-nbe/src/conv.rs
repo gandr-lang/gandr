@@ -50,6 +50,9 @@ use crate::arena::DomainCompId;
 use crate::arena::DomainFault;
 use crate::arena::DomainValueId;
 use crate::arena::NeutralId;
+use crate::code::CodeComparison;
+use crate::code::ConstantReading;
+use crate::code::compare_codes;
 use crate::domain::CompTermFace;
 use crate::domain::DomainComp;
 use crate::domain::DomainValue;
@@ -748,6 +751,26 @@ impl<'run> Walk<'run>
                 Ok(Local::Agree)
             },
             | (
+                DomainValue::Code {
+                    code: left_code, ..
+                },
+                DomainValue::Code {
+                    code: right_code, ..
+                },
+            ) => Ok(
+                match compare_codes(
+                    self.core,
+                    self.domain,
+                    ConstantReading::Unread,
+                    left_code,
+                    right_code,
+                )? {
+                    | CodeComparison::Equal => Local::Agree,
+                    | CodeComparison::Apart => Local::Disagree,
+                    | CodeComparison::Undecided => Local::Defer(Deferral::Unfolding),
+                },
+            ),
+            | (
                 DomainValue::Neutral {
                     neutral: left_neutral,
                     ..
@@ -773,7 +796,8 @@ impl<'run> Walk<'run>
                 | DomainValue::Pair { .. }
                 | DomainValue::Injection { .. }
                 | DomainValue::Thunk { .. }
-                | DomainValue::Lift { .. },
+                | DomainValue::Lift { .. }
+                | DomainValue::Code { .. },
                 _,
             ) => Ok(Local::Disagree),
         }

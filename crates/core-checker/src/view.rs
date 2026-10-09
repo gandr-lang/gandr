@@ -141,7 +141,7 @@ pub fn value_type_view(
         | ValueType::Thunk(body) => Ok(ValueTypeView::Thunk(body)),
         | ValueType::Product(..) => Err(unadmitted(UnadmittedFormer::Product)),
         | ValueType::Sum(..) => Err(unadmitted(UnadmittedFormer::Sum)),
-        | ValueType::Universe(_) => Err(unadmitted(UnadmittedFormer::Universe)),
+        | ValueType::Universe { .. } => Err(unadmitted(UnadmittedFormer::Universe)),
         | ValueType::Lift { .. } => Err(unadmitted(UnadmittedFormer::TypeLift)),
         | ValueType::Element { .. } => Err(unadmitted(UnadmittedFormer::Element)),
         | ValueType::Abstract(_) => Err(unadmitted(UnadmittedFormer::Abstract)),
@@ -189,6 +189,10 @@ pub fn comp_type_view(
         | CompType::Pi { .. } => Err(FragmentRefusal::OutOfFragment {
             at,
             former: UnadmittedFormer::Pi,
+        }),
+        | CompType::Element { .. } => Err(FragmentRefusal::OutOfFragment {
+            at,
+            former: UnadmittedFormer::Element,
         }),
     }
 }

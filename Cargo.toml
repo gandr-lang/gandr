@@ -446,6 +446,7 @@ features = ["std"]
 # features:
 # - none: core-only arithmetic, without unsafe fast mode or instrumentation
 # consumers:
+# - core-term
 # - kernel-core
 [workspace.dependencies.quenchant-arith]
 git = "https://github.com/gandr-lang/quenchant"
@@ -458,6 +459,7 @@ default-features = false
 # consumers:
 # - core-checker
 # - core-incremental
+# - core-term
 # - kernel-core
 # - surface-corpus
 # - surface-diagnostics

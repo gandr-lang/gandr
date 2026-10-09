@@ -3,13 +3,15 @@
 The core call-by-push-value language: its syntax in a flat arena, the one unified typing context, the definition chain, and the per-scope definitional environment.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Kernel alphabet and core grammar](#kernel-alphabet-and-core-grammar)
+- [Universe families](#universe-families)
+- [Quotes and decode-on-mint](#quotes-and-decode-on-mint)
+- [Binder machines](#binder-machines)
 - [Zone-qualified variables](#zone-qualified-variables)
 - [Failure state](#failure-state)
 - [Definition heights](#definition-heights)
@@ -18,7 +20,6 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - [One failure vocabulary](#one-failure-vocabulary)
 - [Specification attributes](#specification-attributes)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -33,10 +34,14 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 - Paul Blain Levy. _Call-By-Push-Value: A Functional/Imperative Synthesis_. Semantics Structures in Computation 2, Kluwer Academic Publishers, 2003. `isbn:978-1-4020-1730-8`, `doi:10.1007/978-94-007-0954-6` — the polarity split that makes values and computations two vocabularies.
 - Nathanaëlle Courant and Xavier Leroy. "A Lazy, Concurrent Convertibility Checker." _Proceedings of the ACM on Programming Languages_ 10 (POPL), Article 53, January 2026. `doi:10.1145/3776695` — §6.4's hash-consed subterm DAG, whose entry index the definition chain carries as an arena-independent name for a body.
+- Pierre-Marie Pédrot and Nicolas Tabareau. "The Fire Triangle: How to Mix Substitution, Dependent Elimination, and Effects." _Proceedings of the ACM on Programming Languages_ 4 (POPL), 2020. `doi:10.1145/3371126` — ∂CBPV's two levelled universe towers, and no kind layer above them.
+- Josselin Poiret, Gaëtan Gilbert, Kenji Maillard, Pierre-Marie Pédrot, Matthieu Sozeau, Nicolas Tabareau and Éric Tanter. "All Your Base Are Belong to Us: Sort Polymorphism for Proof Assistants." _Proceedings of the ACM on Programming Languages_ 9 (POPL), 2025. `doi:10.1145/3704912` — the sort separated from the level and quantified over, which `Sort::Parameter` leaves room for.
 
 ## Provided features
 
-- `Value`, `Computation`, `ValueType` and `CompType`: the core vocabulary, including the dependent function type `CompType::Pi` and the code-reading former `ValueType::Element`.
+- `Value`, `Computation`, `ValueType` and `CompType`: the core vocabulary, including the dependent function type `CompType::Pi`, the two universe towers `ValueType::Universe`, the quotes `Value::Quote` and `Value::QuoteComputation`, and the code-reading formers `ValueType::Element` and `CompType::Element`.
+- `Classifier`, `Sort` and `SortParameter`: a type's ground sort and level, and the sort a universe is written at.
+- `shift_value_type`, `shift_comp_type`, `instantiate_comp_type` and `strengthen_comp_type`, with `Binders`: the binder machines over types.
 - `CoreArena` with `ValueId`, `ComputationId`, `ValueTypeId` and `CompTypeId`: one constructor per former, a checked lookup per family, and `ArenaWatermark` with `CoreArena::truncate_to`.
 - `Context`: `open`, `close`, `occurrence`, `declared`, `linear_use` and `depth` over `Zone::Intuitionistic` and `Zone::Linear`, refusing with `ContextError`.
 - `DefinitionChain`, `DefinitionEntry` and `DefinitionHeight`: `define`, `entry` and `entries`, refusing with `DefinitionError`.
@@ -113,6 +118,24 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest
 ## Kernel alphabet and core grammar
 
 Levels, base types, literals, sum sides, de Bruijn indices, admission positions and subterm-table entry indices come from `gandr-kernel-strata` and `gandr-kernel-term`. The two languages therefore agree on what a literal or a level is, and erasing a core term to a kernel term remaps ids without translating payloads; the erasure itself is not in this crate. The node enums, the arena and the context are this crate's own, so an elaboration-only former enters the core grammar without widening the closed vocabulary the kernel represents.
+
+## Universe families
+
+A type is classified by a `Classifier`: a ground sort, `GroundSort::Value` (`+`) or `GroundSort::Computation` (`-`), and a level from `gandr-kernel-strata`. There are two towers, `ValueType::Universe { sort, level }` for each sort, and both are value types: a universe classifies codes, and a code is a value whichever sort the type it names has, so `Type[+, l]` and `Type[-, l]` each live in `Type[+, l + 1]`. The ground sort is the kernel's, from `gandr-kernel-term`, so the two languages read one alphabet; the core's `Sort` adds `Sort::Parameter`, a sort variable, so that abstracting over a sort raises the exact variant the term would have needed. No producer writes a sort parameter, and the checker refuses one: it is the seat sort polymorphism arrives through, monomorphized away before the kernel.
+
+Alternatives: one universe tower with a polarity bit on each code, which makes every code-reading rule ask which side it is on and hides the sort from the level; and a kind layer above the two towers, which ∂CBPV shows is not needed. Reversal: a computation type that classifies codes, which would put a universe in the computation family.
+
+## Quotes and decode-on-mint
+
+`Value::Quote` names a value type as a code and `Value::QuoteComputation` a computation type; `ValueType::Element` and `CompType::Element` read a code back as the type it names. `CoreArena::value_type_element` and `CoreArena::comp_type_element` decode on mint: given a quote of the matching family as the code, they return the quoted type itself rather than minting a decode of it, so `El(⌜A⌝)` and `A` are one id and no conversion ever meets the redex. The level a decode carries is the code's universe level, and a decode of a quote ignores it: the quoted type has its own.
+
+Alternatives: a decode node kept over a quote and the β-rule left to conversion, which every comparison of a type then pays and the kernel would have to fire too. Reversal: a decode whose quote is only known after substitution still meets the rule, so a machine that substitutes a quote for a code variable re-mints the decode through the same constructor (`instantiate_comp_type` does).
+
+## Binder machines
+
+A dependent arrow's codomain stands under one binder, so the checker shifts and instantiates types. `shift_value_type` and `shift_comp_type` raise the free indices of the intuitionistic zone at or past a cutoff; `instantiate_comp_type` substitutes a value for the innermost index and lowers the rest; `strengthen_comp_type` lowers a type out of one binder or refuses with `strengthening::Absent::MentionsBinder` when the type mentions it. Each runs on a heap task stack, never recursing, and memoizes per node and binder depth, so a shared subterm is rewritten once per depth it is reached at. A replacement carried under a binder is shifted once per depth and recorded, so substitution avoids capture without renaming anything. The linear zone is left alone: no former in the vocabulary binds into it.
+
+Alternatives: recursive rewrites, which the workspace's recursion lint forbids and which a deep type would overflow; and explicit substitutions held lazily in the arena, which every reader would then have to push through. Reversal: a measured family whose cost is dominated by the eager rewrite, which would hold substitutions as closures the way the normalizer already does.
 
 ## Zone-qualified variables
 

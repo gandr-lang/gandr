@@ -183,6 +183,9 @@ pub enum FocusRefusal
     DanglingComputation(ComputationId),
     /// The command arena refused a node.
     Mint(MintRefusal),
+    /// A code: the command IL carries no types, so a quoted type has no
+    /// producer to become.
+    Code(ValueId),
     /// An internal invariant broke: a finishing task found no result where
     /// its own children should have left one. Unreachable while the
     /// translation's own pushes are the only source of tasks; reported rather
@@ -207,6 +210,7 @@ impl fmt::Display for FocusRefusal
             | Self::DanglingComputation(_) => f.write_str("a core computation id names no node"),
             | Self::Mint(refusal) => write!(f, "the command arena refused a node: {refusal}"),
             | Self::TranslationInvariant => f.write_str("the translation lost a result it pushed"),
+            | Self::Code(_) => f.write_str("a code has no producer in the command IL"),
         }
     }
 }
@@ -236,8 +240,8 @@ impl From<MintRefusal> for FocusRefusal
 /// - ensures: on success the command `𝓕⟦computation⟧★`, every command it
 ///   created recorded in `provenance`; equal inputs mint identical nodes.
 /// - provides: the entry of a computation into the IL.
-/// - fails: [`FocusRefusal`] at the first dangling core id or refused mint;
-///   `arena` and `provenance` are then exactly as they were on entry.
+/// - fails: [`FocusRefusal`] at the first dangling core id, code or refused
+///   mint; `arena` and `provenance` are then exactly as they were on entry.
 /// - panics: none.
 ///
 /// # Errors
@@ -252,6 +256,7 @@ impl From<MintRefusal> for FocusRefusal
 /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
 /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
 /// - witness: `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`
+/// - witness: `focus::tests::a_code_is_refused_by_name`
 /// - witness: `focus::tests::focusing_mints_no_name`
 #[inline]
 pub fn focus_computation(
@@ -627,7 +632,8 @@ impl<'run> Focusing<'run>
     /// - ensures: a leaf's producer is pushed; a composite's finishing task and
     ///   its children's tasks are scheduled, children left to right.
     /// - provides: the `𝓥` rows.
-    /// - fails: [`FocusRefusal::DanglingValue`] or a refused mint.
+    /// - fails: [`FocusRefusal::DanglingValue`], [`FocusRefusal::Code`] for a
+    ///   quote of either sort, or a refused mint.
     /// - panics: none.
     ///
     /// # Errors
@@ -672,6 +678,7 @@ impl<'run> Focusing<'run>
                 });
                 return Ok(());
             },
+            | Value::Quote(_) | Value::QuoteComputation(_) => return Err(FocusRefusal::Code(id)),
         };
         let producer = self.arena.mint_producer(leaf)?;
         self.producers.push(producer);
@@ -997,6 +1004,30 @@ mod tests
             provenance.origin(earlier),
             "the earlier translation is untouched"
         );
+    }
+
+    /// A code has no producer: `return ⌜Integer⌝` and `return ⌜F Integer⌝`
+    /// are each refused naming the quote, and the arena is left at its mark.
+    #[test]
+    fn a_code_is_refused_by_name()
+    {
+        let mut core = CoreArena::new();
+        let integer = core.value_type_base(gandr_kernel_term::BaseType::Integer);
+        let returns_integer = core.comp_type_returner(integer);
+        let quoted = core.value_quote(integer);
+        let quoted_computation = core.value_quote_computation(returns_integer);
+        for code in [quoted, quoted_computation] {
+            let term = core.computation_return(code);
+            let mut arena = CommandArena::new();
+            let mut provenance = Provenance::new();
+            let mark = arena.watermark();
+            assert_eq!(
+                focus_computation(&core, term, &mut arena, &mut provenance),
+                Err(FocusRefusal::Code(code)),
+                "the quote is refused by name"
+            );
+            assert_eq!(mark, arena.watermark(), "the arena is back at its mark");
+        }
     }
 
     /// Focusing threads no name supply: one term focused into two fresh

@@ -46,6 +46,7 @@ use crate::arena::CompTypeId;
 use crate::arena::ComputationId;
 use crate::arena::ValueId;
 use crate::arena::ValueTypeId;
+use crate::classifier::Sort;
 
 /// The zone of the unified context a binder or an occurrence belongs to.
 ///
@@ -102,6 +103,13 @@ pub enum Value
         /// The value being lifted.
         body: ValueId,
     },
+    /// The quote `⌜A⌝` of a value type: the code of `A`, inhabiting
+    /// `Type[+, l]` where `l` is `A`'s level.
+    Quote(ValueTypeId),
+    /// The quote `⌜C⌝` of a computation type: the code of `C`, inhabiting
+    /// `Type[-, l]` where `l` is `C`'s level. A computation type's code is a
+    /// value like any other code: quoting suspends nothing.
+    QuoteComputation(CompTypeId),
 }
 
 /// A computation: the negative fragment of the core term vocabulary.
@@ -148,9 +156,16 @@ pub enum ValueType
     Sum(ValueTypeId, ValueTypeId),
     /// The thunk type `U C` of a computation type `C`.
     Thunk(CompTypeId),
-    /// The universe former at a canonical level `l`, whose own level is `l +
-    /// 1`.
-    Universe(Level),
+    /// The universe of one sort at a canonical level `l`: `Type[+, l]`
+    /// classifies the value types at `l` and `Type[-, l]` the computation
+    /// types. Both are value types, whose own level is `l + 1`.
+    Universe
+    {
+        /// The family the universe classifies.
+        sort: Sort,
+        /// The level within that family.
+        level: Level,
+    },
     /// An explicit lift of a value type into a strictly higher universe.
     Lift
     {
@@ -159,13 +174,16 @@ pub enum ValueType
         /// The target universe level, which is the lifted type's level.
         target: Level,
     },
-    /// The type a code denotes: `El l v`, where `v` is a value of type
-    /// `Universe l`. It is the one former whose child crosses from the type
-    /// language into the term language, which is what lets a dependent codomain
-    /// mention its binder at all.
+    /// The value type a code denotes: `El l v`, where `v` is a value of type
+    /// `Type[+, l]`. It is one of the two formers whose child crosses from the
+    /// type language into the term language, which is what lets a dependent
+    /// codomain mention its binder at all.
+    ///
+    /// A decode of a quote is the quoted type: the arena mints the type
+    /// itself rather than this node, so `El ⌜A⌝` is never represented.
     Element
     {
-        /// The code: a value whose type is `Universe target`.
+        /// The code: a value whose type is `Type[+, target]`.
         code: ValueId,
         /// The universe the code is read out of, which is this type's own
         /// level.
@@ -204,5 +222,18 @@ pub enum CompType
         domain: ValueTypeId,
         /// The computation-type codomain, under the domain's binder.
         codomain: CompTypeId,
+    },
+    /// The computation type a code denotes: `El l v`, where `v` is a value of
+    /// type `Type[-, l]`.
+    ///
+    /// Like its value counterpart, a decode of a computation quote is the
+    /// quoted computation type and is never represented as this node.
+    Element
+    {
+        /// The code: a value whose type is `Type[-, target]`.
+        code: ValueId,
+        /// The universe the code is read out of, which is this type's own
+        /// level.
+        target: Level,
     },
 }

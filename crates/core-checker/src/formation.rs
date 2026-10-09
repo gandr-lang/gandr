@@ -210,10 +210,12 @@ fn walk(
 mod tests
 {
     use gandr_core_term::CoreArena;
+    use gandr_core_term::Sort;
     use gandr_core_term::ValueTypeId;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::GroundSort;
 
     use super::form_comp_type;
     use super::form_value_type;
@@ -266,7 +268,7 @@ mod tests
             ),
             (arena.value_type_sum(unit, unit), Err(UnadmittedFormer::Sum)),
             (
-                arena.value_type_universe(Level::zero()),
+                arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero()),
                 Err(UnadmittedFormer::Universe),
             ),
             (

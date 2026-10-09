@@ -5,15 +5,14 @@
 //! The core language has two term families, so a suspended body is one of two
 //! things:
 //!
-//! - [`ValueClosure`] suspends a **value** body: the shape a code standing
-//!   under a binder takes.
+//! - [`ValueClosure`] suspends a **value** body: the shape a quote takes, its
+//!   type suspended whole over the environment its codes read.
 //! - [`CompClosure`] suspends a **computation** body: the shape a lambda, a
 //!   thunk, a bind continuation and a case branch all take.
 //!
-//! No former in the core vocabulary produces a value closure. Both spaces close
-//! over the same [`Environment`], so entering a closure is one operation over
-//! either, for the same reason the two faces of [the domain] are named on one
-//! type.
+//! Both spaces close over the same [`Environment`], so entering a closure is
+//! one operation over either, for the same reason the two faces of [the
+//! domain] are named on one type.
 //!
 //! # The environment mirrors the context's two zones
 //!

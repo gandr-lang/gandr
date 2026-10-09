@@ -1341,6 +1341,49 @@ pub fn eval_comp_within(
     Ok((produced, machine.fuel))
 }
 
+/// Evaluate a core value in `environment`, reporting the budget the run did
+/// not spend.
+///
+/// # Specification
+/// - requires: `term` resolves in `core`; `environment` binds every occurrence
+///   `term` counts past its own binders, in the zone that occurrence names.
+/// - ensures: on success the domain value of `term` read in `environment`,
+///   paired with the fuel left over.
+/// - provides: the value twin of [`eval_comp_within`], which is how a readback
+///   reads a decode's code inside a quoted type: in the quote's environment,
+///   extended by the binders the type's own dependent arrows open.
+/// - fails: every variant of [`EvalFault`].
+/// - panics: none.
+///
+/// # Errors
+/// Every variant of [`EvalFault`]; see its documentation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the supplied environment is the one decision surface,
+///   separated by a quoted decode whose code is a variable the environment
+///   binds.
+/// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
+#[spec(ensures: |ret| ret.is_err()
+    || ret.as_ref().is_ok_and(|pair| {
+        domain.value(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)
+    }))]
+pub(crate) fn eval_value_within(
+    core: &CoreArena,
+    domain: &mut DomainArena,
+    definitions: Definitions<'_>,
+    fuel: Fuel,
+    term: ValueId,
+    environment: Environment,
+) -> Result<(DomainValueId, Fuel), EvalFault>
+{
+    let mut machine = Machine::new(definitions, fuel);
+    let env = machine.hold_env(environment);
+    machine.tasks.push(Task::Value { term, env });
+    run(core, domain, &mut machine)?;
+    let produced = machine.pop_value()?;
+    Ok((produced, machine.fuel))
+}
+
 /// Evaluate a closed core term to weak head in the empty environment, sharing
 /// each leg of `legs` across the occurrences that read it in one
 /// configuration.
@@ -1847,16 +1890,18 @@ fn step(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is the seven-arm match plus the
+/// - hypothesis: L3 — the decision surface is the eight-arm match plus the
 ///   variable and constant lookups, separated by one case per arm — the leaf
 ///   arms and the lift arm included, the last being the only one that holds a
 ///   level and so the only producer of the level family — an index past the
-///   environment, and a constant at each unfolding stance.
+///   environment, a constant at each unfolding stance, and a quote over the
+///   empty environment and over a captured one.
 /// - witness: `eval::tests::an_unreduced_composite_keeps_its_source_face`
 /// - witness: `eval::tests::the_leaf_and_lift_arms_evaluate_and_keep_their_faces`
 /// - witness: `eval::tests::a_lift_over_a_substituted_body_loses_its_face`
 /// - witness: `eval::tests::a_variable_resolves_out_of_the_environment`
 /// - witness: `eval::tests::a_manifest_definition_carries_its_body_unforced`
+/// - witness: `eval::tests::a_quote_is_suspended_over_its_environment`
 #[spec(
     requires: env.0 < machine.envs.len(),
     captures: [
@@ -1935,6 +1980,17 @@ fn step_value(
             let target = domain.hold_level(target.clone());
             machine.tasks.push(Task::Lift { term, target });
             machine.tasks.push(Task::Value { term: body, env });
+            Ok(())
+        },
+        // A quote is suspended whole over the environment its type reads: a
+        // type has no weak head, so the codes inside it are evaluated where a
+        // readback or a comparison reaches them.
+        | Value::Quote(_) | Value::QuoteComputation(_) => {
+            let captured = machine.capture(env)?;
+            let closed = capture_keeps_source(&captured);
+            let closure = domain.value_closure_node(term, captured);
+            let face = composite_face(closed, term);
+            machine.values.push(domain.value_code(closure, face));
             Ok(())
         },
     }
@@ -2104,7 +2160,8 @@ fn step_force(
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
         | DomainValue::Injection { .. }
-        | DomainValue::Lift { .. } => Err(EvalFault::ForcedNonThunk),
+        | DomainValue::Lift { .. }
+        | DomainValue::Code { .. } => Err(EvalFault::ForcedNonThunk),
     }
 }
 
@@ -2334,7 +2391,8 @@ fn step_case(
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
         | DomainValue::Thunk { .. }
-        | DomainValue::Lift { .. } => Err(EvalFault::CasedNonInjection),
+        | DomainValue::Lift { .. }
+        | DomainValue::Code { .. } => Err(EvalFault::CasedNonInjection),
     }
 }
 
@@ -2447,7 +2505,8 @@ fn step_case_closures(
         | DomainValue::Literal { .. }
         | DomainValue::Pair { .. }
         | DomainValue::Thunk { .. }
-        | DomainValue::Lift { .. } => Err(EvalFault::CasedNonInjection),
+        | DomainValue::Lift { .. }
+        | DomainValue::Code { .. } => Err(EvalFault::CasedNonInjection),
     }
 }
 
@@ -2484,6 +2543,7 @@ mod tests
     use super::eval_comp_within;
     use super::eval_computation;
     use super::eval_value;
+    use super::eval_value_within;
     use super::face_of;
     use crate::arena::DomainArena;
     use crate::closure::Environment;
@@ -3222,6 +3282,61 @@ mod tests
             ),
             "and the same body over the empty environment is refused, so the binding is what \
              answered it"
+        );
+    }
+
+    #[test]
+    fn a_quote_is_suspended_over_its_environment()
+    {
+        let mut core = CoreArena::new();
+        let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
+        let decoded = core.value_type_element(occurrence, Level::zero());
+        let open = core.value_quote(decoded);
+        let unit = core.value_type_unit();
+        let closed = core.value_quote(unit);
+
+        let (chain, environment) = nothing_unfolds();
+        let scope = environment.root();
+        let definitions = Definitions::new(&chain, &environment, scope);
+        let mut domain = DomainArena::new();
+        let bound = domain.value_unit(TermFace::Reduced);
+        let mut supplied = Environment::new();
+        supplied.extend(Zone::Intuitionistic, bound);
+
+        let (produced, _) =
+            eval_value_within(&core, &mut domain, definitions, ample(), open, supplied)
+                .expect("the supplied environment holds the quote's one free variable");
+        let Some(&DomainValue::Code { code, face }) = domain.value(produced)
+        else {
+            panic!("a quote evaluates to a code");
+        };
+        assert_eq!(
+            TermFace::Reduced,
+            face,
+            "a quote over a non-empty environment no longer denotes its source alone"
+        );
+        let suspended = domain
+            .value_closure(code)
+            .expect("the code's closure resolves");
+        assert_eq!(
+            open,
+            suspended.body(),
+            "the closure suspends the quote itself"
+        );
+        assert_eq!(
+            Some(bound),
+            suspended
+                .environment()
+                .lookup(Zone::Intuitionistic, innermost()),
+            "and holds the environment the quoted type reads"
+        );
+
+        let produced = eval_value(&core, &mut domain, definitions, ample(), closed)
+            .expect("a closed quote evaluates");
+        assert_eq!(
+            Some(TermFace::Source(closed)),
+            face_of(&domain, produced),
+            "a quote over the empty environment still denotes its source"
         );
     }
 

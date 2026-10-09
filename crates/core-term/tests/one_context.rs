@@ -17,20 +17,23 @@ mod one_context
     use gandr_core_term::DefinitionChain;
     use gandr_core_term::DefinitionHeight;
     use gandr_core_term::DefinitionalEnvironment;
+    use gandr_core_term::Sort;
     use gandr_core_term::Transparency;
     use gandr_core_term::Zone;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GlobalIndex;
+    use gandr_kernel_term::GroundSort;
 
     #[test]
     fn a_dependent_codomain_is_checked_under_its_own_binder()
     {
-        // `Π (A : U 0). F (El 0 A)` — the smallest type whose codomain reads its
-        // binder, which is what makes the two zones' index arithmetic observable.
+        // `Π (A : Type[+, 0]). F (El A)` — the smallest type whose codomain reads
+        // its binder, which is what makes the two zones' index arithmetic
+        // observable.
         let mut arena = CoreArena::new();
-        let universe = arena.value_type_universe(Level::zero());
+        let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
         let code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
         let element = arena.value_type_element(code, Level::zero());
         let returner = arena.comp_type_returner(element);

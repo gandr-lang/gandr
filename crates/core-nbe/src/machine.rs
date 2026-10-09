@@ -365,6 +365,10 @@ pub enum DeclineReason
     Cycle,
     /// The run spent its step budget.
     Budget,
+    /// Two codes are not α-equal and one of them decodes something that could
+    /// still unfold: telling them apart needs reduction inside a type, which
+    /// this rung does not perform.
+    UndecidedCodes,
 }
 
 /// What the machine found.
@@ -1733,7 +1737,14 @@ where
     ) -> Result<Turn, ConversionFault>
     {
         self.charge(StepCount::ONE);
-        let planned = plan(self.core, self.domain, &goal.frozen, pair.0, pair.1)?;
+        let planned = plan(
+            self.core,
+            self.domain,
+            self.definitions,
+            &goal.frozen,
+            pair.0,
+            pair.1,
+        )?;
         let height = self.pair_height(pair)?;
         let share = self.share_at(height);
         self.process_mut(id)?.share = share;
@@ -1767,6 +1778,10 @@ where
                 Ok(Turn::Again)
             },
             | Plan::Choose(choice) => self.choose(id, goal, choice),
+            | Plan::Decline(reason) => {
+                self.finish(id, Outcome::Declined(reason))?;
+                Ok(Turn::Done)
+            },
         }
     }
 
@@ -2089,7 +2104,8 @@ where
                 | DomainValue::Literal { .. }
                 | DomainValue::Pair { .. }
                 | DomainValue::Injection { .. }
-                | DomainValue::Lift { .. } => return Err(ConversionFault::MachineInvariant),
+                | DomainValue::Lift { .. }
+                | DomainValue::Code { .. } => return Err(ConversionFault::MachineInvariant),
             }
         }
         Ok(())
@@ -2775,6 +2791,8 @@ mod tests
     use gandr_kernel_core::Unfoldable;
     use gandr_kernel_core::Unfoldings;
     use gandr_kernel_core::replay;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GlobalIndex;
@@ -3253,9 +3271,12 @@ mod tests
     {
         match node {
             | CoreTerm::Value(id) => match *core.value(id).expect("a reached value resolves") {
-                | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
-                    Vec::new()
-                },
+                | Value::Variable { .. }
+                | Value::Constant(_)
+                | Value::Unit
+                | Value::Literal(_)
+                | Value::Quote(_)
+                | Value::QuoteComputation(_) => Vec::new(),
                 | Value::Pair(first, second) => {
                     Vec::from([CoreTerm::Value(first), CoreTerm::Value(second)])
                 },
@@ -3354,7 +3375,9 @@ mod tests
                                     | leaf @ (Value::Variable { .. }
                                     | Value::Constant(_)
                                     | Value::Unit
-                                    | Value::Literal(_)) => leaf,
+                                    | Value::Literal(_)
+                                    | Value::Quote(_)
+                                    | Value::QuoteComputation(_)) => leaf,
                                 };
                             match values.iter().find(|entry| entry.0 == key) {
                                 | Some(&(_, representative)) => representative,
@@ -3614,6 +3637,9 @@ mod tests
                                     target: target.clone(),
                                     body: value(0),
                                 },
+                                | Value::Quote(_) | Value::QuoteComputation(_) => {
+                                    panic!("the duplication fixtures carry no quote")
+                                },
                             };
                             OverlayId::Value(
                                 overlay
@@ -3813,7 +3839,9 @@ mod tests
                         | &(Value::Variable { .. }
                         | Value::Constant(_)
                         | Value::Unit
-                        | Value::Literal(_)) => Vec::new(),
+                        | Value::Literal(_)
+                        | Value::Quote(_)
+                        | Value::QuoteComputation(_)) => Vec::new(),
                     }
                 },
                 | Node::Computation(computation) => {
@@ -3892,6 +3920,9 @@ mod tests
                         | &Value::Thunk(body) => {
                             let body = computation(self, body);
                             self.arena.value_thunk(body)
+                        },
+                        | &(Value::Quote(_) | Value::QuoteComputation(_)) => {
+                            panic!("the kernel copy of a quote arrives with the kernel's quotes")
                         },
                         | &Value::Lift { ref target, body } => {
                             let body = value(self, body);
@@ -4259,6 +4290,75 @@ mod tests
                 ConversionDecision::ComparedShared { .. },
             ] if constant == named(Name::Zero) && redex == named(Name::Zero)),
             "and the unit and the pair it meets are refuted by their guards: {decisions:?}"
+        );
+    }
+
+    #[test]
+    fn a_code_constant_unfolds_to_its_quote()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let body = core.value_quote(unit);
+        let reference = core.value_constant(Name::Zero.constant());
+        let same = core.value_type_unit();
+        let written = core.value_quote(same);
+        let integer = core.value_type_base(BaseType::Integer);
+        let other = core.value_quote(integer);
+        let world = World::new(core, &[(Name::Zero, body)]);
+
+        let (verdict, decisions) = world.traced(Sides::Values(reference, written));
+        assert_eq!(MachineVerdict::Convertible, verdict);
+        assert!(
+            matches!(decisions.as_slice(), &[
+                ConversionDecision::Unfold { constant },
+                ConversionDecision::ReduceLeft { redex },
+                ConversionDecision::ComparedShared { .. },
+            ] if constant == named(Name::Zero) && redex == named(Name::Zero)),
+            "the constant unfolds to a code, and two codes of one type close as shared: \
+             {decisions:?}"
+        );
+
+        let (verdict, decisions) = world.traced(Sides::Values(reference, other));
+        assert_eq!(
+            MachineVerdict::NotConvertible,
+            verdict,
+            "and two codes of rigidly different types are apart"
+        );
+        assert!(
+            matches!(
+                decisions.last(),
+                Some(&ConversionDecision::ComparedShared { .. })
+            ),
+            "by a shared comparison the kernel separates on its own terms: {decisions:?}"
+        );
+    }
+
+    #[test]
+    fn codes_that_could_unfold_inside_are_declined()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let body = core.value_quote(unit);
+        let defined = core.value_constant(Name::Zero.constant());
+        let decodes_defined = core.value_type_element(defined, Level::zero());
+        let flexible = core.value_quote(decodes_defined);
+        let opaque = core.value_constant(Name::Rigid.constant());
+        let decodes_opaque = core.value_type_element(opaque, Level::zero());
+        let rigid = core.value_quote(decodes_opaque);
+        let plain = core.value_type_unit();
+        let written = core.value_quote(plain);
+        let world = World::new(core, &[(Name::Zero, body)]);
+
+        assert_eq!(
+            MachineVerdict::Declined(DeclineReason::UndecidedCodes),
+            world.traced(Sides::Values(flexible, written)).0,
+            "the decode names a constant with a body, which could unfold to the very code \
+             it is compared against, and nothing reduces inside a type at this rung"
+        );
+        assert_eq!(
+            MachineVerdict::NotConvertible,
+            world.traced(Sides::Values(rigid, written)).0,
+            "while a decode of a constant with no body cannot, so the codes are apart"
         );
     }
 
