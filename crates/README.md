@@ -45,13 +45,14 @@ crates/
 ├── storage-records/               gandr-storage-records               the authenticated ordered-record plane
 ├── storage-values/                gandr-storage-values                the content-addressed value plane: typed chunk DAG and content pointers
 ├── surface-syntax/                gandr-surface-syntax                the molded concrete syntax tree and the mold references a grammar and a parser exchange
-├── surface-render-remote/         gandr-surface-render-remote         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projection, the versioned render-bus frame
+├── surface-render-remote/         gandr-surface-render-remote         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
 ├── surface-grammar/               gandr-surface-grammar               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
 ├── surface-parser/                gandr-surface-parser                the labeler, molder and resumable melder: source to molded tree with completion obligations
 ├── surface-lowering/              gandr-surface-lowering              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
 ├── surface-corpus/                gandr-surface-corpus                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
 ├── surface-dispatcher/            gandr-surface-dispatcher            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
 ├── surface-diagnostics/           gandr-surface-diagnostics           renders what a dispatcher step prints: a refusal, an unsettled declaration and a goal as a located source snippet, the ledger lines as text
+├── surface-lsp/                   gandr-surface-lsp                   the language server: the base protocol over byte streams, diagnostics from the renderer's reports, semantic tokens from the highlighter's roles
 └── surface-driver/                gandr-lang                          the `gandr` driver binary: `check`, `test` and the exit codes
 ```
 

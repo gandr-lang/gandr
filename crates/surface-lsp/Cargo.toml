@@ -1,0 +1,32 @@
+[package]
+name = "gandr-surface-lsp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The gandr language server: diagnostics and semantic tokens over the Language Server Protocol"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language", "lsp"]
+categories = ["development-tools"]
+publish.workspace = true
+
+# The server reads the pipeline's own faces: the dispatcher's composition and
+# root classification, the settle comparison's verdict, the renderer's
+# reports, the grammar's highlighter over the parser's tree, and the renderer
+# seam's UTF-16 projection. The wire is JSON, decoded and encoded through
+# serde; a `file` URI's path is percent-decoded.
+[dependencies]
+gandr-surface-corpus.workspace = true
+gandr-surface-diagnostics.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-parser.workspace = true
+gandr-surface-render-remote.workspace = true
+gandr-surface-syntax.workspace = true
+percent-encoding.workspace = true
+quenchant-shape.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

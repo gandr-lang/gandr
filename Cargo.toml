@@ -19,6 +19,7 @@ members = [
   "crates/surface-driver",
   "crates/surface-grammar",
   "crates/surface-lowering",
+  "crates/surface-lsp",
   "crates/surface-parser",
   "crates/surface-render-remote",
   "crates/surface-syntax",
@@ -203,6 +204,7 @@ path = "crates/storage-records"
 # consumers:
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-lsp
 [workspace.dependencies.gandr-surface-corpus]
 path = "crates/surface-corpus"
 
@@ -210,6 +212,7 @@ path = "crates/surface-corpus"
 # source snippets, and the ledger lines a verb prints beside them.
 # consumers:
 # - surface-driver
+# - surface-lsp
 [workspace.dependencies.gandr-surface-diagnostics]
 path = "crates/surface-diagnostics"
 
@@ -218,6 +221,7 @@ path = "crates/surface-diagnostics"
 # consumers:
 # - surface-diagnostics
 # - surface-driver
+# - surface-lsp
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
 
@@ -228,6 +232,7 @@ path = "crates/surface-dispatcher"
 # - surface-diagnostics (dev)
 # - surface-dispatcher
 # - surface-lowering
+# - surface-lsp
 # - surface-parser
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
@@ -248,15 +253,17 @@ path = "crates/surface-lowering"
 # - surface-dispatcher
 # - surface-grammar (dev)
 # - surface-lowering (dev)
+# - surface-lsp
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
 
 # The renderer seam: presentation spans, cards and transcript blocks, the
-# byte-to-position projection and the versioned render-bus frame.
+# byte-to-position projections and the versioned render-bus frame.
 # features:
 # - serde: the wire image the codec witnesses round-trip, so the gate runs them
 # consumers:
 # - surface-grammar
+# - surface-lsp
 # - surface-render-remote (dev)
 [workspace.dependencies.gandr-surface-render-remote]
 path = "crates/surface-render-remote"
@@ -268,6 +275,7 @@ path = "crates/surface-render-remote"
 # - surface-dispatcher
 # - surface-grammar
 # - surface-lowering
+# - surface-lsp
 # - surface-parser
 [workspace.dependencies.gandr-surface-syntax]
 path = "crates/surface-syntax"
@@ -328,6 +336,17 @@ path = "crates/theory-levitation"
 [workspace.dependencies.gandr-theory-orders]
 path = "crates/theory-orders"
 
+# Percent-decoding: the path a `file` URI names. The choice and its reversal
+# are in the language server's README.
+# features:
+# - alloc: the decoded path as an owned string
+# consumers:
+# - surface-lsp
+[workspace.dependencies.percent-encoding]
+version = "2.3.2"
+default-features = false
+features = ["alloc"]
+
 # Graph storage and algorithms. Reached only through `theory-graphs`, which
 # owns the dependency and exposes none of its types; the grammar's
 # closing-class derivation reads its strongly-connected-component
@@ -382,6 +401,7 @@ default-features = false
 # - surface-dispatcher
 # - surface-driver
 # - surface-lowering
+# - surface-lsp
 # - theory-cell-complexes
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras
@@ -394,21 +414,25 @@ git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"
 default-features = false
 
-# The serialization framework the render-bus wire image derives through.
+# The serialization framework the render-bus wire image and the language
+# server's protocol messages derive through.
 # features:
 # - alloc: the owned strings and vectors, and the tagged enums' buffered content
 # - derive: the `Serialize` and `Deserialize` derives
 # consumers:
+# - surface-lsp
 # - surface-render-remote
 [workspace.dependencies.serde]
 version = "1.0.229"
 default-features = false
 features = ["alloc", "derive"]
 
-# JSON, the format the render-bus codec witnesses round-trip through.
+# JSON: the language server's wire format, and the format the render-bus codec
+# witnesses round-trip through.
 # features:
 # - alloc: the owned value tree and the string encoder without std
 # consumers:
+# - surface-lsp
 # - surface-render-remote (dev)
 [workspace.dependencies.serde_json]
 version = "1.0.151"
