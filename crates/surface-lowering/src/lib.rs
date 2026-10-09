@@ -1,9 +1,10 @@
 //! **Lowering the gandr surface into the core language**: the type-head and
 //! term-name resolution tables, the module collection pass that pairs
-//! signatures with definitions, the reserved-form decline, the attribute
-//! registry with its five diagnostics and its side table, the origin table
-//! over terms and types alike, the failure classifier every refusal answers
-//! to, and the [`namespace`] engine the module's imports and outermost names
+//! signatures with definitions and flattens module declarations to named
+//! members, the reserved-form decline, the attribute registry with its five
+//! diagnostics and its side table, the origin table over terms and types
+//! alike, the failure classifier every refusal answers to, and the
+//! [`namespace`] engine the module's imports, outermost names and module paths
 //! are bound by.
 //!
 //! The crate reads the molded tree the parser builds and writes a core arena.
@@ -18,7 +19,7 @@
 //! where the source wrote no term, a closing delimiter the source never wrote —
 //! is reported where it stands rather than lowered around.
 //!
-//! # Six decisions that interlock
+//! # Seven decisions that interlock
 //!
 //! **Names resolve through tables with no fallthrough.** `Unit`, `Integer`,
 //! `String`, `+U` and `-F` answer from a type-head table indexed by arity, and
@@ -31,6 +32,13 @@
 //! pairs with its definition wherever the two sit, so the
 //! signature-then-definition form stays spellable; references still resolve by
 //! admission position, so self-reference and mutual reference are refused.
+//!
+//! **A module declaration flattens to named members.** Each member of
+//! `module M { … }`, at every depth, is one declaration admitted in source
+//! order under its structured name, the enclosing modules' names then its
+//! own; a path is governed by the module that binds it, and an inline
+//! signature reorders the exports and hides what it omits, checking each
+//! component at its member.
 //!
 //! **A signature no definition completes is what an artifact owes.** That case
 //! is its own outcome, because it is the producer an obligation ledger reads —
@@ -125,6 +133,7 @@ pub use crate::attribute::RegisteredAttribute;
 pub use crate::attribute::payload_form;
 pub use crate::attribute::payload_verdict;
 pub use crate::classify::FailureClass;
+pub use crate::error::AscriptionForm;
 pub use crate::error::FormFault;
 pub use crate::error::FragmentBoundary;
 pub use crate::error::FragmentSort;
@@ -140,10 +149,18 @@ pub use crate::import::ModuleImports;
 pub use crate::lower::Fuel;
 pub use crate::lower::LoweringBudget;
 pub use crate::lower::lower_module;
+pub use crate::module::Coerced;
+pub use crate::module::Container;
 pub use crate::module::DeclarationCount;
 pub use crate::module::DeclarationOutcome;
 pub use crate::module::LoweredDeclaration;
 pub use crate::module::LoweredModule;
+pub use crate::module::LoweredStructure;
+pub use crate::module::ManifestComponent;
+pub use crate::module::Role;
+pub use crate::module::StructureIndex;
+pub use crate::module::ValueComponent;
+pub use crate::module::manifest_type;
 pub use crate::origin::Insertion;
 pub use crate::origin::Origin;
 pub use crate::origin::OriginCount;

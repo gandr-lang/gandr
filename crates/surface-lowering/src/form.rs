@@ -74,7 +74,7 @@ impl FormName
 {
     /// Every form name the lowering spells itself, rather than reading it off
     /// a mold.
-    pub const ALL: [Self; 25_usize] = [
+    pub const ALL: [Self; 26_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -100,6 +100,7 @@ impl FormName
         Self::FORK_STATEMENT,
         Self::FORK_SHARED_STATEMENT,
         Self::EXPRESSION_STATEMENT,
+        Self::MODULE,
     ];
     /// The statement `acquire …;`, inlined into its block.
     pub const ACQUIRE_STATEMENT: Self = Self("acquire_statement");
@@ -130,6 +131,8 @@ impl FormName
     pub const LETA_STATEMENT: Self = Self("leta_statement");
     /// The statement `val p = e ;`, inlined into its block.
     pub const LET_STATEMENT: Self = Self("let_statement");
+    /// The module family `module M …`, its members included.
+    pub const MODULE: Self = Self("module_declaration");
     /// One typed parameter `name : T`, folded into its parameter list.
     pub const PARAMETER: Self = Self("parameter");
     /// A parameter list, explicit `( … )` or implicit `@[ … ]`, folded into the
@@ -232,6 +235,8 @@ impl TileName
     pub const COMMA: Self = Self(",");
     /// The declaration keyword `def`.
     pub const DEF: Self = Self("def");
+    /// The selection dot `.` of a path.
+    pub const DOT: Self = Self(".");
     /// The lambda keyword `fn`.
     pub const FN: Self = Self("fn");
     /// The force keyword `force`.
@@ -252,6 +257,8 @@ impl TileName
     pub const LETA: Self = Self("leta");
     /// The sort literal `-` of a universe: the computation types.
     pub const MINUS: Self = Self("-");
+    /// The module keyword `module`.
+    pub const MODULE: Self = Self("module");
     /// A numeral written as one of a form's own tiles: a universe's level or a
     /// bridge's grade.
     pub const NUMBER: Self = Self("number");
@@ -268,6 +275,8 @@ impl TileName
     pub const QUOTE: Self = Self("\"");
     /// The recursion keyword `rec`.
     pub const REC: Self = Self("rec");
+    /// The record and signature opener `#{`.
+    pub const RECORD: Self = Self("#{");
     /// The receive keyword `recv`, opening a statement.
     pub const RECV: Self = Self("recv");
     /// The release keyword `release`, opening a statement.
@@ -276,12 +285,16 @@ impl TileName
     pub const RET: Self = Self("ret");
     /// The bind keyword `run`, opening a statement.
     pub const RUN: Self = Self("run");
+    /// The opaque ascription `:>`.
+    pub const SEAL: Self = Self(":>");
     /// The semicolon `;` closing a declaration or a statement.
     pub const SEMICOLON: Self = Self(";");
     /// A run of plain text inside a string's own tiles.
     pub const STRING_FRAGMENT: Self = Self("string_fragment");
     /// The thunk keyword `thunk`.
     pub const THUNK: Self = Self("thunk");
+    /// The type-component keyword `type` of a module signature.
+    pub const TYPE: Self = Self("type");
     /// A type identifier written as one of a form's own tiles.
     pub const TYPE_IDENTIFIER: Self = Self("type_identifier");
     /// A type variable written as one of a form's own tiles.
@@ -337,6 +350,9 @@ pub enum Former
     Force,
     /// The application `c(v)`.
     Call,
+    /// A selection `e.name`: a static path when its head names a module, and
+    /// a record projection the fragment does not admit otherwise.
+    Projection,
     /// A bare type head: a primitive, a type identifier or a type variable.
     TypeHead,
     /// The universe `Type[s, l]`, its sort and level each defaulted when left
@@ -360,6 +376,10 @@ pub enum Former
     AttributeBlock,
     /// The import `import "URI" as name ;`.
     Import,
+    /// The module family `module M …`: a module declaration, and each member
+    /// of its body — a definition or a nested module — which the grammar
+    /// files under the same kind.
+    Module,
     /// Every other kind: a form the fragment does not admit.
     Unadmitted,
 }
@@ -367,7 +387,7 @@ pub enum Former
 impl Former
 {
     /// Every former, in declaration order.
-    pub const ALL: [Self; 22_usize] = [
+    pub const ALL: [Self; 24_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Number,
@@ -378,6 +398,7 @@ impl Former
         Self::Return,
         Self::Force,
         Self::Call,
+        Self::Projection,
         Self::TypeHead,
         Self::Universe,
         Self::TypeApplication,
@@ -389,12 +410,13 @@ impl Former
         Self::Declaration,
         Self::AttributeBlock,
         Self::Import,
+        Self::Module,
         Self::Unadmitted,
     ];
 }
 
 /// The named kinds the lowering reads, with the former each is read as.
-pub const FORMERS: [(&str, Former); 23_usize] = [
+pub const FORMERS: [(&str, Former); 25_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("number", Former::Number),
@@ -405,6 +427,7 @@ pub const FORMERS: [(&str, Former); 23_usize] = [
     ("ret_expression", Former::Return),
     ("force_expression", Former::Force),
     ("call_expression", Former::Call),
+    ("projection_expression", Former::Projection),
     ("primitive_type", Former::TypeHead),
     ("type_identifier", Former::TypeHead),
     ("type_variable", Former::TypeHead),
@@ -418,6 +441,7 @@ pub const FORMERS: [(&str, Former); 23_usize] = [
     ("def_value", Former::Declaration),
     ("attribute_block", Former::AttributeBlock),
     ("import_declaration", Former::Import),
+    ("module_declaration", Former::Module),
 ];
 
 /// The former a form of named kind `kind` is read as.
@@ -1407,6 +1431,7 @@ mod tests
             ("ret_expression", Former::Return),
             ("force_expression", Former::Force),
             ("call_expression", Former::Call),
+            ("projection_expression", Former::Projection),
             ("primitive_type", Former::TypeHead),
             ("type_identifier", Former::TypeHead),
             ("type_variable", Former::TypeHead),
@@ -1420,6 +1445,7 @@ mod tests
             ("def_value", Former::Declaration),
             ("attribute_block", Former::AttributeBlock),
             ("import_declaration", Former::Import),
+            ("module_declaration", Former::Module),
         ];
         for (kind, former) in expected {
             assert_eq!(

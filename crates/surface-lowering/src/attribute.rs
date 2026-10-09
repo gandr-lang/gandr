@@ -415,6 +415,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Return
         | Former::Force
         | Former::Call
+        | Former::Projection
         | Former::TypeHead
         | Former::Universe
         | Former::TypeApplication
@@ -426,6 +427,7 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Declaration
         | Former::AttributeBlock
         | Former::Import
+        | Former::Module
         | Former::Unadmitted => PayloadForm::OtherValue,
     }
 }
@@ -949,6 +951,7 @@ mod tests
                 | Former::Return
                 | Former::Force
                 | Former::Call
+                | Former::Projection
                 | Former::TypeHead
                 | Former::Universe
                 | Former::TypeApplication
@@ -960,6 +963,7 @@ mod tests
                 | Former::Declaration
                 | Former::AttributeBlock
                 | Former::Import
+                | Former::Module
                 | Former::Unadmitted => PayloadForm::OtherValue,
             };
             assert_eq!(

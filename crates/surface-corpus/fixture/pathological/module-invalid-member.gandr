@@ -1,0 +1,4 @@
+module Bad {
+  @[ owes(1) ]
+  def missing : Integer;
+}

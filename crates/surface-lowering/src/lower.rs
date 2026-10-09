@@ -75,6 +75,7 @@
 //! in the allowance, and running out is an engine fault rather than a wrong
 //! answer.
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
@@ -134,17 +135,31 @@ use crate::form::read_pieces;
 use crate::form::shape_of;
 use crate::import::ModuleImports;
 use crate::module::Collected;
+use crate::module::ComponentScope;
+use crate::module::Container;
 use crate::module::DeclarationOutcome;
 use crate::module::DeclarationParts;
 use crate::module::DeclarationSlot;
+use crate::module::Half;
 use crate::module::LoweredDeclaration;
 use crate::module::LoweredModule;
+use crate::module::LoweredStructure;
+use crate::module::ManifestComponent;
+use crate::module::Member;
 use crate::module::Operand;
 use crate::module::Payload;
+use crate::module::Role;
+use crate::module::SlotIndex;
+use crate::module::StructureIndex;
+use crate::module::ValueComponent;
 use crate::module::WrittenAttribute;
 use crate::module::collect;
+use crate::module::declaration_half;
+use crate::module::manifest_type;
+use crate::module::slot_refusal;
 use crate::namespace::Binding;
 use crate::namespace::NamePath;
+use crate::namespace::PathResolution;
 use crate::namespace::Recognition;
 use crate::namespace::RecognitionSite;
 use crate::namespace::Recognized;
@@ -205,6 +220,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The tile is no statement's keyword.
             NotAKeyword,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a node sees no manifest type component.
+    pub mod scoped {
+        /// The node lies in no module signature.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No signature type encloses the node.
+            Unscoped,
         }
     }
 }
@@ -435,7 +462,8 @@ const fn family_of(former: Former) -> Family
         | Former::Lambda
         | Former::Return
         | Former::Force
-        | Former::Call => Family::Term,
+        | Former::Call
+        | Former::Projection => Family::Term,
         | Former::TypeHead
         | Former::Universe
         | Former::TypeApplication
@@ -444,9 +472,11 @@ const fn family_of(former: Former) -> Family
         | Former::ArrowType
         | Former::ProductType
         | Former::ParenthesizedType => Family::Type,
-        | Former::Declaration | Former::AttributeBlock | Former::Import | Former::Unadmitted => {
-            Family::Neither
-        },
+        | Former::Declaration
+        | Former::AttributeBlock
+        | Former::Import
+        | Former::Module
+        | Former::Unadmitted => Family::Neither,
     }
 }
 
@@ -808,6 +838,16 @@ struct Lowerer<'run, 'source>
     lowered: Vec<Maybe<Lowered, lowered::Absent>>,
     /// Which nodes lie inside an attribute payload.
     payload: Vec<InPayload>,
+    /// The manifest type components each node sees, where it lies in a
+    /// module signature.
+    scopes: Vec<Maybe<ComponentScope, scoped::Absent>>,
+    /// Each type head that named a manifest type component, with the held
+    /// slot owning that component's type.
+    manifests: Vec<(SlotIndex, NodeIndex)>,
+    /// Each exported value component's full path, with the member's slot.
+    exported: BTreeMap<NamePath, SlotIndex>,
+    /// Each witness's body, by slot.
+    witnessed: BTreeMap<SlotIndex, ValueId>,
     /// The arguments every planned application reads, stretch by stretch.
     operands: Vec<NodeIndex>,
     /// The statements every planned block reads, stretch by stretch.
@@ -980,6 +1020,7 @@ pub fn lower_module<'source>(
     let empty = |outermost| {
         LoweredModule::new(
             Vec::new(),
+            Vec::new(),
             AttributeTable::new(),
             OriginTable::new(),
             ModuleImports::new(),
@@ -1015,6 +1056,7 @@ pub fn lower_module<'source>(
     lowerer.declare();
     lowerer.seed()?;
     lowerer.classify()?;
+    lowerer.propagate_manifests();
     let mut origins = OriginTable::new();
     lowerer.mint(&mut Sink {
         arena,
@@ -1023,6 +1065,7 @@ pub fn lower_module<'source>(
     let mut attributes = AttributeTable::new();
     lowerer.attribute(&mut attributes)?;
     let declarations = lowerer.assemble(&mut origins);
+    let structures = lowerer.structures();
     let Lowerer {
         collected,
         recognition,
@@ -1031,6 +1074,7 @@ pub fn lower_module<'source>(
 
     Ok(LoweredModule::new(
         declarations,
+        structures,
         attributes,
         origins,
         collected.imports,
@@ -1063,6 +1107,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         lowered.resize(count, Maybe::Absent(lowered::Absent::Unminted));
         let mut payload = Vec::new();
         payload.resize(count, InPayload(false));
+        let mut scopes = Vec::new();
+        scopes.resize(count, Maybe::Absent(scoped::Absent::Unscoped));
 
         Self {
             pbg,
@@ -1073,6 +1119,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             bridges,
             lowered,
             payload,
+            scopes,
+            manifests: Vec::new(),
+            exported: BTreeMap::new(),
+            witnessed: BTreeMap::new(),
             operands: Vec::new(),
             statements: Vec::new(),
             parameters: Vec::new(),
@@ -1084,29 +1134,43 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// Declare every declared name over the outermost scope, in admission
-    /// order.
+    /// Declare every top-level name over the outermost scope: each top-level
+    /// declaration, then each top-level module with the namespace it exports.
     ///
     /// # Specification
     /// - requires: the collection pass has run.
-    /// - ensures: each name is declared as a definition tagged with its name
-    ///   tile's bytes, displacing the builtin subtree it lands on; a
-    ///   declaration the shadow policy refuses holds
+    /// - ensures: each top-level declaration is declared as a definition, and
+    ///   each top-level module as a namespace governing exactly the components
+    ///   it exports — a value component as a component, a nested module as a
+    ///   namespace of its own, walked by an explicit worklist — each tagged
+    ///   with its name tile's bytes and displacing the builtin subtree it lands
+    ///   on; every exported value component's full path is recorded with its
+    ///   member. A declaration the shadow policy refuses holds
     ///   [`LoweringRefusal::ShadowedBuiltin`] at its name, offered at its
-    ///   declaration form, and the scope keeps the builtin.
-    /// - provides: the outermost half of the module's names.
+    ///   declaration form, and a module so refused files a held slot carrying
+    ///   it; the scope keeps the builtin. Module members and hidden members are
+    ///   declared nowhere in the outermost scope.
+    /// - provides: the outermost half of the module's names, and the governance
+    ///   of every module path.
     /// - fails: never; a refusal is carried by its declaration.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a declaration over a builtin under each policy and
-    ///   over nothing, asserted as the exact record, outcome and resolution.
+    ///   over nothing, asserted as the exact record, outcome and resolution; a
+    ///   module exporting a component, hiding a member and exporting a nested
+    ///   module, each path asserted as the exact resolution.
     /// - witness: `recognition::recognition::a_shadowed_builtin_is_reported_as_a_warning`
     /// - witness: `recognition::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
     /// - witness: `recognition::recognition::user_shadowing_is_the_only_observable_delta`
+    /// - witness: `modules::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
+    /// - witness: `modules::modules::a_hidden_member_is_admitted_and_absent_from_the_namespace`
     fn declare(&mut self)
     {
         for slot in &mut self.collected.slots {
+            if slot.container != Container::TopLevel || slot.role != Role::Declared {
+                continue;
+            }
             let site = slot.named.span;
             let mut subtree = Trie::empty();
             let _fresh = subtree.insert(
@@ -1122,6 +1186,107 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     name: slot.name,
                 });
             }
+        }
+        let tops: Vec<StructureIndex> = self
+            .collected
+            .structures
+            .iter()
+            .enumerate()
+            .filter(|&(_position, structure)| structure.container == Container::TopLevel)
+            .map(|(position, _structure)| StructureIndex::from(position))
+            .collect();
+        for top in tops {
+            self.declare_module(top);
+        }
+    }
+
+    /// Declare the top-level module at `top` with the namespace it exports.
+    ///
+    /// # Specification
+    /// - requires: `top` names a closed top-level module.
+    /// - ensures: as [`Self::declare`] for one module.
+    /// - provides: the per-module half of [`Self::declare`].
+    /// - fails: never.
+    /// - panics: none.
+    fn declare_module(
+        &mut self,
+        top: StructureIndex,
+    )
+    {
+        let Some(module) = self.collected.structures.get(usize::from(top))
+        else {
+            return;
+        };
+        let (name, named, declared_by) = (module.name, module.named, module.declared_by);
+        let root = NamePath::from(Vec::from([Segment::from(name.as_ref())]));
+        let mut subtree = Trie::empty();
+        let _root = subtree.insert(
+            &NamePath::root(),
+            Binding::new(
+                Recognized::ModuleNamespace,
+                RecognitionSite::Source(named.span),
+            ),
+        );
+        let mut work = Vec::from([(top, NamePath::root())]);
+        while let Some((structure, relative)) = work.pop() {
+            let Some(entry) = self.collected.structures.get(usize::from(structure))
+            else {
+                continue;
+            };
+            for &export in &entry.exports {
+                let (segment, site, recognized) = match export {
+                    | Member::Slot(slot) => {
+                        let Some(member) = self.collected.slots.get(usize::from(slot))
+                        else {
+                            continue;
+                        };
+                        (member.name, member.named.span, Recognized::ModuleComponent)
+                    },
+                    | Member::Module(nested) => {
+                        let Some(member) = self.collected.structures.get(usize::from(nested))
+                        else {
+                            continue;
+                        };
+                        (member.name, member.named.span, Recognized::ModuleNamespace)
+                    },
+                };
+                let path = relative.extended(&NamePath::from(Vec::from([Segment::from(
+                    segment.as_ref(),
+                )])));
+                let _fresh = subtree.insert(
+                    &path,
+                    Binding::new(recognized, RecognitionSite::Source(site)),
+                );
+                match export {
+                    | Member::Slot(slot) => {
+                        let _replaced = self.exported.insert(root.extended(&path), slot);
+                    },
+                    | Member::Module(nested) => work.push((nested, path)),
+                }
+            }
+        }
+        let declared = self
+            .recognition
+            .declare(Segment::from(name.as_ref()), subtree, named.span);
+        if let Err(_refused) = declared {
+            let held = SlotIndex::from(self.collected.slots.len());
+            let mut slot = DeclarationSlot {
+                name,
+                container: Container::TopLevel,
+                role: Role::Held,
+                constant: ConstantIndex::from(usize::from(held)),
+                introduced_by: declared_by,
+                named,
+                signature: Maybe::Absent(declaration_half::Absent::Unwritten),
+                definition: Maybe::Absent(declaration_half::Absent::Unwritten),
+                attributes: Vec::new(),
+                refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
+            };
+            slot.refuse(declared_by.node, LoweringRefusal::ShadowedBuiltin {
+                span: named.span,
+                name,
+            });
+            self.collected.slots.push(slot);
         }
     }
 
@@ -1168,10 +1333,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: the collection pass has run.
     /// - ensures: a signature's type is read as a value type, a definition's
     ///   body as a value in the outermost frame, a function tail's declaration
-    ///   form as a function, which reads both halves it wrote at once, and an
-    ///   attribute's payload as a value when its form can stand as one; every
-    ///   other node stays unread. Every written payload is marked as one,
-    ///   whatever its form.
+    ///   form as a function, which reads both halves it wrote at once, a
+    ///   manifest type component's type as a value type, and an attribute's
+    ///   payload as a value when its form can stand as one; a witness's body, a
+    ///   member rather than a form, is read nowhere. Every other node stays
+    ///   unread. Every written payload is marked as one, whatever its form, and
+    ///   every signature type's root with the manifest components it sees.
     /// - provides: the entry points of the ascending sweep.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a payload of a mold the
     ///   grammar does not hold.
@@ -1183,6 +1350,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         let mut seeds: Vec<(NodeIndex, Reading)> = Vec::new();
         let mut payloads: Vec<NodeIndex> = Vec::new();
+        for structure in &self.collected.structures {
+            for manifest in &structure.types {
+                seeds.push((manifest.defined.node, Reading::ValueType(Frame::Outermost)));
+            }
+        }
+        for &(root, seen) in &self.collected.scopes {
+            if let Some(held) = self.scopes.get_mut(usize::from(root)) {
+                *held = Maybe::Present(seen);
+            }
+        }
         for slot in &self.collected.slots {
             if let Maybe::Present(half) = slot.signature
                 && let Operand::Written(operand) = half.operand
@@ -1190,10 +1367,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 seeds.push((operand.node, Reading::ValueType(Frame::Outermost)));
             }
             if let Maybe::Present(half) = slot.definition {
-                seeds.push(match half.operand {
-                    | Operand::Written(operand) => (operand.node, Reading::Value(Frame::Outermost)),
-                    | Operand::Function => (half.declaration.node, Reading::Function),
-                });
+                match half.operand {
+                    | Operand::Written(operand) => {
+                        seeds.push((operand.node, Reading::Value(Frame::Outermost)));
+                    },
+                    | Operand::Function => {
+                        seeds.push((half.declaration.node, Reading::Function));
+                    },
+                    | Operand::Member(_) => {},
+                }
             }
             for written in &slot.attributes {
                 let Payload::Written(payload) = written.payload
@@ -1266,6 +1448,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             self.fuel.spend()?;
             self.inherit_owner(position);
             self.inherit_payload(position);
+            self.inherit_scope(position);
             if let Err(refusal) = self.classify_node(position) {
                 if refusal.classify() == FailureClass::EngineFault {
                     return Err(refusal);
@@ -1277,13 +1460,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Give every child of `position` the declaration its parent belongs to.
+    /// Give every unowned child of `position` the declaration its parent
+    /// belongs to.
     ///
     /// # Specification
     /// - requires: `position` is visited in ascending arena order, so its own
     ///   owner is already set when its children are reached.
-    /// - ensures: every child of an owned node is owned by the same slot, so a
-    ///   refusal anywhere under a declaration reaches the declaration.
+    /// - ensures: every child of an owned node is owned by the same slot,
+    ///   unless the collection pass gave it an owner of its own — a signature
+    ///   type written inside a member signature it does not type — so a refusal
+    ///   anywhere under a declaration reaches the declaration its type or body
+    ///   belongs to.
     /// - provides: the ownership half of the one-refusal-per-declaration rule.
     /// - fails: never.
     /// - panics: none.
@@ -1297,7 +1484,38 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return;
         };
         for child in self.tree.children(position) {
-            self.collected.own(child, slot);
+            if let Maybe::Absent(_) = self.collected.owner_of(child) {
+                self.collected.own(child, slot);
+            }
+        }
+    }
+
+    /// Give every child of `position` the manifest type components `position`
+    /// sees.
+    ///
+    /// # Specification
+    /// - requires: `position` is visited in ascending arena order, so its own
+    ///   scope is already set when its children are reached.
+    /// - ensures: every node under a signature type's root sees that root's
+    ///   manifest components, an inner root keeping its own.
+    /// - provides: the scope a type head inside a signature resolves against.
+    /// - fails: never.
+    /// - panics: none.
+    fn inherit_scope(
+        &mut self,
+        position: NodeIndex,
+    )
+    {
+        let Some(&Maybe::Present(seen)) = self.scopes.get(usize::from(position))
+        else {
+            return;
+        };
+        for child in self.tree.children(position) {
+            if let Some(held) = self.scopes.get_mut(usize::from(child))
+                && let Maybe::Absent(_) = *held
+            {
+                *held = Maybe::Present(seen);
+            }
         }
     }
 
@@ -1430,6 +1648,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::Return => self.keyed(site, cursor, TileName::RET),
             | Former::Force => self.keyed(site, cursor, TileName::FORCE),
             | Former::Call => self.call(site, cursor),
+            | Former::Projection => self.projection(site, pieces),
             | Former::TypeHead => self.type_head(site),
             | Former::Universe => self.universe(site, cursor),
             | Former::TypeApplication => self.type_application(site, cursor),
@@ -1437,7 +1656,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::ArrowType => self.arrow(site, cursor),
             | Former::ProductType => Err(site.out(FragmentBoundary::Reserved)),
             | Former::ParenthesizedType => self.parenthesized_type(site, cursor),
-            | Former::Declaration => self.function(site, cursor),
+            | Former::Declaration | Former::Module => self.function(site, cursor),
             | Former::AttributeBlock | Former::Import | Former::Unadmitted => {
                 Err(site.out(FragmentBoundary::WrongSort))
             },
@@ -1506,21 +1725,36 @@ impl<'run, 'source> Lowerer<'run, 'source>
 
     /// What `name`, written at `site` under `frame`, resolves to: the
     /// innermost binder carrying it, else a declaration strictly earlier than
-    /// the one `site` belongs to.
+    /// the one `site` belongs to, searched from that declaration's own module
+    /// outward to the top level.
     ///
     /// # Specification
     /// - requires: `site` is the name's own node.
-    /// - ensures: the binder with its index and its written type, or the
-    ///   earlier declaration with its admission position and its signature's
-    ///   written type; the unresolved absence when neither scope answers.
+    /// - ensures: the binder with its index and its written type; else the
+    ///   first module, innermost first, whose body declares the name: its
+    ///   member when that member's admission position is strictly earlier, and
+    ///   the forward-member refusal when it is not; else a top-level
+    ///   declaration strictly earlier, with its admission position and its
+    ///   signature's written type; the unresolved absence when nothing answers.
     /// - provides: the one resolution term names, capitalised names and type
     ///   heads share.
-    /// - fails: propagates [`LoweringRefusal::BudgetExceeded`] from the binder
-    ///   walk.
+    /// - fails: [`LoweringRefusal::ForwardMemberReference`] for a member of an
+    ///   enclosing module declared at or after the referring declaration;
+    ///   propagates [`LoweringRefusal::BudgetExceeded`] from the binder walk.
     /// - panics: none.
     ///
     /// # Errors
-    /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
+    /// [`LoweringRefusal::ForwardMemberReference`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a member named by an earlier sibling, by a later one,
+    ///   by itself, from a nested module and from the top level, each asserted
+    ///   as the exact constant or refusal.
+    /// - witness: `modules::modules::a_forward_member_reference_is_refused_by_position`
+    /// - witness: `modules::modules::a_backward_member_reference_resolves`
+    /// - witness: `lower::tests::a_self_reference_is_unresolved`
+    /// - witness: `lower::tests::an_earlier_declaration_resolves_as_a_constant`
     fn resolve_name(
         &mut self,
         site: Site,
@@ -1531,26 +1765,53 @@ impl<'run, 'source> Lowerer<'run, 'source>
         if let Maybe::Present(bound) = self.scope.resolve(frame, name, &mut self.fuel)? {
             return Ok(Maybe::Present(Resolved::Binder(bound)));
         }
-        let target = self.collected.by_name.get(&name).copied();
-        let own = self.collected.owner_of(site.at.node);
-        if let (Some(target), Maybe::Present(own)) = (target, own)
-            && usize::from(target) < usize::from(own)
-            && let Some(entry) = self.collected.slots.get(usize::from(target))
-        {
-            let declared = match entry.signature {
-                | Maybe::Present(half) => match half.operand {
-                    | Operand::Written(written) => Maybe::Present(written.node),
-                    | Operand::Function => Maybe::Absent(binder_type::Absent::Untyped),
-                },
-                | Maybe::Absent(_) => Maybe::Absent(binder_type::Absent::Untyped),
+        let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+        else {
+            return Ok(Maybe::Absent(named::Absent::Unresolved));
+        };
+        let mut container = self
+            .collected
+            .slots
+            .get(usize::from(own))
+            .map_or(Container::TopLevel, |slot| slot.container);
+        loop {
+            self.fuel.spend()?;
+            if let Some(&target) = self.collected.by_name.get(&(container, name))
+                && let Some(entry) = self.collected.slots.get(usize::from(target))
+            {
+                if target < own {
+                    let declared = match entry.signature {
+                        | Maybe::Present(Half {
+                            operand: Operand::Written(written),
+                            ..
+                        }) => Maybe::Present(written.node),
+                        | Maybe::Present(_) | Maybe::Absent(_) => {
+                            Maybe::Absent(binder_type::Absent::Untyped)
+                        },
+                    };
+                    return Ok(Maybe::Present(Resolved::Declaration {
+                        constant: entry.constant,
+                        declared,
+                    }));
+                }
+                if let Container::Module(_) = container {
+                    return Err(LoweringRefusal::ForwardMemberReference {
+                        span: site.at.span,
+                        name,
+                        declared: entry.named.span,
+                    });
+                }
+            }
+            let Container::Module(module) = container
+            else {
+                return Ok(Maybe::Absent(named::Absent::Unresolved));
             };
-            return Ok(Maybe::Present(Resolved::Declaration {
-                constant: entry.constant,
-                declared,
-            }));
+            container = self
+                .collected
+                .structures
+                .get(usize::from(module))
+                .map_or(Container::TopLevel, |structure| structure.container);
         }
-
-        Ok(Maybe::Absent(named::Absent::Unresolved))
     }
 
     /// Classify a term name.
@@ -2246,19 +2507,206 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
+    /// Classify a selection `e.name`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a projection; `pieces` is its reading.
+    /// - ensures: a chain of selections whose head is a capitalised name is a
+    ///   path, resolved through the outermost scope at the depth that binds it:
+    ///   a path ending at an exported value component stands as that member's
+    ///   constant when the member is declared strictly before the declaration
+    ///   the path is written in. The chain is walked by an explicit loop, and
+    ///   its links are left unread.
+    /// - provides: the governed reading of a module path.
+    /// - fails: yields [`LoweringRefusal::UnknownMember`], naming the module as
+    ///   the path spells it and the member, for a selection a governing module
+    ///   does not export; the forward-member refusal for a member declared at
+    ///   or after the referring declaration; the wrong-sort refusal for a path
+    ///   ending at a module, which is not a value; the wrong-sort refusal
+    ///   outside value position; and the unadmitted refusal for a selection no
+    ///   module governs, a record projection the fragment does not admit.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The selection's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a path to an exported component at depth two and at
+    ///   depth nine, to a hidden member, to an absent member at each depth, to
+    ///   a module, to a member declared later, and a selection off a free name,
+    ///   each asserted as the exact constant or refusal.
+    /// - witness: `modules::modules::a_user_module_selection_is_governed_and_a_free_target_still_projects`
+    /// - witness: `modules::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
+    /// - witness: `modules::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
+    /// - witness: `modules::modules::a_module_namespace_is_not_a_projectable_record`
+    /// - witness: `modules::modules::a_hidden_or_absent_user_module_component_is_declined_as_a_hole`
+    fn projection(
+        &mut self,
+        site: Site,
+        pieces: &Pieces,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let _frame = self.require(site, Produced::Value)?;
+        let mut links: Vec<(Placed, Placed)> = Vec::new();
+        let (mut target, member) = Self::link(site, &pieces.pieces, site.at.span)?;
+        links.push((target, member));
+        let mut chain = Pieces::new();
+        let head = loop {
+            self.fuel.spend()?;
+            let Some(node) = self.tree.node(target.node)
+            else {
+                return Err(site.out(FragmentBoundary::Unadmitted));
+            };
+            match shape_of(self.pbg, node)? {
+                | Shape::Form {
+                    former: Former::Projection,
+                    ..
+                } => {
+                    read_pieces(self.pbg, self.tree, target.node, &mut chain)?;
+                    if let Maybe::Present(repaired) = chain.repair {
+                        return Err(site.fault(repaired.span, FormFault::Repaired(repaired.repair)));
+                    }
+                    let (inner, selected) = Self::link(site, &chain.pieces, target.span)?;
+                    links.push((inner, selected));
+                    target = inner;
+                },
+                | Shape::Form {
+                    former: Former::Constructor,
+                    ..
+                } => break target,
+                | Shape::Form { .. } | Shape::Root | Shape::Repair(_) | Shape::Layout => {
+                    return Err(site.out(FragmentBoundary::Unadmitted));
+                },
+            }
+        };
+        let mut segments = Vec::with_capacity(links.len().saturating_add(1_usize));
+        segments.push(Segment::from(self.text_at(head).as_ref()));
+        for &(_prefix, selected) in links.iter().rev() {
+            segments.push(Segment::from(self.text_at(selected).as_ref()));
+        }
+        let path = NamePath::from(segments);
+        match self.recognition.resolve_path(&path) {
+            | PathResolution::Complete(Recognized::ModuleComponent) => {
+                let Some(&exported) = self.exported.get(&path)
+                else {
+                    return Err(site.out(FragmentBoundary::Unadmitted));
+                };
+                self.select(site, exported)
+            },
+            | PathResolution::Complete(Recognized::ModuleNamespace) => {
+                Err(site.out(FragmentBoundary::WrongSort))
+            },
+            | PathResolution::UnknownMember { depth, .. } => {
+                let Some(&(prefix, selected)) = links
+                    .len()
+                    .checked_sub(usize::from(depth))
+                    .and_then(|link| links.get(link))
+                else {
+                    return Err(site.out(FragmentBoundary::Unadmitted));
+                };
+                Err(LoweringRefusal::UnknownMember {
+                    span: selected.span,
+                    module: self.name_at(prefix),
+                    member: self.name_at(selected),
+                })
+            },
+            | PathResolution::Complete(_) | PathResolution::Ungoverned => {
+                Err(site.out(FragmentBoundary::Unadmitted))
+            },
+        }
+    }
+
+    /// The target and the selected name of one selection, read from its
+    /// pieces.
+    ///
+    /// # Specification
+    /// - requires: `pieces` is the reading of a projection covering `span`.
+    /// - ensures: the operand the selection is taken from and the name tile
+    ///   after its dot.
+    /// - provides: the one-link half of [`Self::projection`].
+    /// - fails: yields the misplaced-tile refusal when the pieces are not an
+    ///   operand, a dot and a name.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] for a malformed selection.
+    fn link(
+        site: Site,
+        pieces: &[Piece],
+        span: ByteSpan,
+    ) -> Result<(Placed, Placed), LoweringRefusal<'source>>
+    {
+        let mut cursor = Cursor::new(pieces, span);
+        let Maybe::Present(Piece::Operand(target)) = cursor.read()
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let (Maybe::Present(_dot), Maybe::Present(selected)) = (
+            cursor.tile(TileName::DOT),
+            cursor.tile(TileName::IDENTIFIER),
+        )
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+
+        Ok((target, selected))
+    }
+
+    /// Plan the selection at `site` as the exported member at `target`.
+    ///
+    /// # Specification
+    /// - requires: `target` is the member an exported path resolved to.
+    /// - ensures: the member's constant, when the member is declared strictly
+    ///   before the declaration `site` belongs to.
+    /// - provides: the position rule for a path.
+    /// - fails: yields [`LoweringRefusal::ForwardMemberReference`] for a member
+    ///   declared at or after it.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::ForwardMemberReference`].
+    fn select(
+        &mut self,
+        site: Site,
+        target: SlotIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(entry) = self.collected.slots.get(usize::from(target))
+        else {
+            return Err(site.out(FragmentBoundary::Unadmitted));
+        };
+        let (constant, name, declared) = (entry.constant, entry.name, entry.named.span);
+        if let Maybe::Present(own) = self.collected.owner_of(site.at.node)
+            && target >= own
+        {
+            return Err(LoweringRefusal::ForwardMemberReference {
+                span: site.at.span,
+                name,
+                declared,
+            });
+        }
+        self.plan(site, Plan::Constant(constant));
+
+        Ok(())
+    }
+
     /// Classify a bare type head.
     ///
     /// # Specification
     /// - requires: `site` is a primitive type, a type identifier or a type
     ///   variable in type position.
-    /// - ensures: a head a binder or an earlier declaration answers is that
-    ///   code, decoded in the universe its type was written at — the value
-    ///   types at the fuss-free level when it was written at none — and stands
-    ///   at the sort of that universe; a binder so named is recorded as
-    ///   mentioned by a type. Any other head resolves against the nullary table
-    ///   and is planned as its atom.
-    /// - provides: the type-head half of resolution, and the decode of a value
-    ///   name in type position.
+    /// - ensures: inside a module signature, a head naming a manifest type
+    ///   component written before the head's own component stands for the type
+    ///   that component names, adopted as it lowered. Otherwise a head a binder
+    ///   or an earlier declaration answers is that code, decoded in the
+    ///   universe its type was written at — the value types at the fuss-free
+    ///   level when it was written at none — and stands at the sort of that
+    ///   universe; a binder so named is recorded as mentioned by a type. Any
+    ///   other head resolves against the nullary table and is planned as its
+    ///   atom.
+    /// - provides: the type-head half of resolution, the expansion of a
+    ///   manifest type component, and the decode of a value name in type
+    ///   position.
     /// - fails: yields the wrong-sort refusal for a head whose sort does not
     ///   suit the position and the unresolved-head refusal for a head nothing
     ///   answers.
@@ -2269,18 +2717,34 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a binder written at the bare universe, a binder
-    ///   written at a sorted and levelled one, a declaration and an atom, each
-    ///   asserted as the exact core type read back out of the arena.
+    ///   written at a sorted and levelled one, a declaration, an atom and a
+    ///   manifest component, each asserted as the exact core type read back out
+    ///   of the arena.
     /// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::every_type_atom_lowers_to_its_core_type`
+    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     fn type_head(
         &mut self,
         site: Site,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let name = self.name_at(site.at);
+        if let Some(&Maybe::Present(seen)) = self.scopes.get(usize::from(site.at.node))
+            && let Some(manifest) = self
+                .collected
+                .structures
+                .get(usize::from(seen.structure))
+                .and_then(|structure| structure.types.get(.. seen.before))
+                .and_then(|visible| visible.iter().rev().find(|manifest| manifest.name == name))
+        {
+            let (held, defined) = (manifest.held, manifest.defined.node);
+            let _frame = self.require(site, Produced::ValueType)?;
+            self.manifests.push((held, site.at.node));
+            self.plan(site, Plan::Transparent(defined));
+            return Ok(());
+        }
         let from = site.reading.frame();
         if let Maybe::Present(resolved) = self.resolve_name(site, from, name)? {
             let (code, declared) = match resolved {
@@ -2803,16 +3267,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Specification
     /// - requires: the classification has run.
-    /// - ensures: every planned node is minted, with its children already
-    ///   minted because the level-order layout puts them at strictly higher
-    ///   positions; every minted node gets an origin naming the syntax node
-    ///   that produced it, terms and types alike, while an adopted child keeps
-    ///   its own. A node whose position bridges its sort has the bridge minted
-    ///   over its own core node, with the same syntax node's origin marked as
-    ///   inserted. A node under a declaration that refused is not minted, and
-    ///   neither is any node above it, unless it lies inside an attribute
-    ///   payload: the side table files a payload whatever its declaration's
-    ///   outcome, so an expectation about a refused declaration stays readable.
+    /// - ensures: every manifest type component's type is minted first, one
+    ///   component at a time in signature order, each subtree descending, so a
+    ///   type head that stands for a component adopts a type already minted
+    ///   wherever it sits. Every other planned node is then minted, with its
+    ///   children already minted because the level-order layout puts them at
+    ///   strictly higher positions; every minted node gets an origin naming the
+    ///   syntax node that produced it, terms and types alike, while an adopted
+    ///   child keeps its own. A node whose position bridges its sort has the
+    ///   bridge minted over its own core node, with the same syntax node's
+    ///   origin marked as inserted. A node under a declaration that refused is
+    ///   not minted, and neither is any node above it, unless it lies inside an
+    ///   attribute payload: the side table files a payload whatever its
+    ///   declaration's outcome, so an expectation about a refused declaration
+    ///   stays readable. Last, the body of every witness whose member and own
+    ///   type are unrefused is minted as that member's constant, its origin the
+    ///   form that stated the second type.
     /// - provides: the whole allocation half of the lowering.
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the sweep outruns the
     ///   allowance; nothing else, because every decision was made ascending.
@@ -2820,37 +3290,108 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a manifest component named before and after its own
+    ///   position in the tree, and a witness agreeing and disagreeing with its
+    ///   member, each asserted through the checker's verdict.
+    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
     fn mint(
         &mut self,
         sink: &mut Sink<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        let mut manifests: Vec<NodeIndex> = self
+            .collected
+            .structures
+            .iter()
+            .flat_map(|structure| structure.types.iter().map(|manifest| manifest.defined.node))
+            .collect();
+        manifests.reverse();
+        let mut subtree: Vec<NodeIndex> = Vec::new();
+        let mut work: Vec<NodeIndex> = Vec::new();
+        while let Some(root) = manifests.pop() {
+            subtree.clear();
+            work.push(root);
+            while let Some(position) = work.pop() {
+                self.fuel.spend()?;
+                subtree.push(position);
+                work.extend(self.tree.children(position));
+            }
+            subtree.sort_unstable_by(|left, right| right.cmp(left));
+            for &position in &subtree {
+                self.mint_at(position, sink);
+            }
+        }
         let mut remaining = usize::from(self.tree.node_count());
         while let Some(next) = remaining.checked_sub(1_usize) {
             remaining = next;
             self.fuel.spend()?;
-            let position = NodeIndex::from(next);
-            if self.collected.refused(position).0 && !self.in_payload(position).0 {
-                continue;
-            }
-            let Some(planned) = self.plans.get_mut(next)
-            else {
-                continue;
-            };
-            let plan = core::mem::replace(planned, Plan::Unplanned);
-            let Maybe::Present(origin) = self.origin_at(position)
-            else {
-                continue;
-            };
-            let bridge = self.bridges.get(next).copied().unwrap_or(Bridge::Bare);
-            let minted = self.mint_plan(plan, sink, origin);
-            let bridged = sink.bridge(minted, bridge, origin);
-            if let Some(held) = self.lowered.get_mut(next) {
-                *held = bridged;
+            self.mint_at(NodeIndex::from(next), sink);
+        }
+        for (position, slot) in self.collected.slots.iter().enumerate() {
+            if let Maybe::Present(Half {
+                declaration,
+                operand: Operand::Member(target),
+            }) = slot.definition
+                && let Maybe::Absent(_) = slot.refusal
+                && let Some(member) = self.collected.slots.get(usize::from(target))
+                && let Maybe::Absent(_) = member.refusal
+                && let Maybe::Present(origin) = self.origin_at(declaration.node)
+            {
+                let id = sink.arena.value_constant(member.constant);
+                let _minted = sink.value(id, origin);
+                let _replaced = self.witnessed.insert(SlotIndex::from(position), id);
             }
         }
 
         Ok(())
+    }
+
+    /// Mint the node at `position` by its plan, once.
+    ///
+    /// # Specification
+    /// - requires: every node the plan names is already minted or absent.
+    /// - ensures: the node's plan is taken and minted, its bridge written over
+    ///   it and the result kept as the node's lowered core node; a node with no
+    ///   plan left, or under a refused declaration outside a payload, is left
+    ///   as it is.
+    /// - provides: the per-position half of [`Self::mint`].
+    /// - fails: never.
+    /// - panics: none.
+    fn mint_at(
+        &mut self,
+        position: NodeIndex,
+        sink: &mut Sink<'_>,
+    )
+    {
+        if self.collected.refused(position).0 && !self.in_payload(position).0 {
+            return;
+        }
+        let Some(planned) = self.plans.get_mut(usize::from(position))
+        else {
+            return;
+        };
+        let plan = core::mem::replace(planned, Plan::Unplanned);
+        if plan == Plan::Unplanned {
+            return;
+        }
+        let Maybe::Present(origin) = self.origin_at(position)
+        else {
+            return;
+        };
+        let bridge = self
+            .bridges
+            .get(usize::from(position))
+            .copied()
+            .unwrap_or(Bridge::Bare);
+        let minted = self.mint_plan(plan, sink, origin);
+        let bridged = sink.bridge(minted, bridge, origin);
+        if let Some(held) = self.lowered.get_mut(usize::from(position)) {
+            *held = bridged;
+        }
     }
 
     /// The origin of a core node the syntax node at `position` wrote.
@@ -3606,14 +4147,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   have all run.
     /// - ensures: a slot holding a refusal yields the refused outcome; a slot
     ///   whose signature and definition both lowered yields the completed
-    ///   outcome; a signature alone yields the uncompleted outcome, which is
-    ///   the obligation this module owes; a definition alone yields the
-    ///   bodiless outcome. Each declaration takes its own origin token, handed
-    ///   out in admission order.
+    ///   outcome — a witness's definition being the member it re-states; a
+    ///   signature alone yields the uncompleted outcome, which is the
+    ///   obligation this module owes; a definition alone yields the bodiless
+    ///   outcome. A held slot holding no refusal yields nothing, and neither
+    ///   does a witness whose member refused: there is no member to state a
+    ///   second type for. Each declaration keeps its container and its role,
+    ///   and takes its own origin token, handed out in admission order.
     /// - provides: the declaration list a checker drives.
     /// - fails: never — a slot with neither half lowered and no refusal
-    ///   contributes no declaration, which the classification makes
-    ///   unreachable.
+    ///   contributes no declaration, which the classification makes unreachable
+    ///   for every slot but a held one.
     /// - panics: none.
     fn assemble(
         &self,
@@ -3621,8 +4165,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ) -> Vec<LoweredDeclaration<'source>>
     {
         let mut declarations = Vec::with_capacity(self.collected.slots.len());
-        for slot in &self.collected.slots {
-            let Maybe::Present(outcome) = self.outcome(slot)
+        for (position, slot) in self.collected.slots.iter().enumerate() {
+            let Maybe::Present(outcome) = self.outcome(SlotIndex::from(position), slot)
             else {
                 continue;
             };
@@ -3634,6 +4178,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
             ));
             declarations.push(LoweredDeclaration::from(DeclarationParts {
                 name: slot.name,
+                container: slot.container,
+                role: slot.role,
                 constant: slot.constant,
                 span: introduced.span,
                 origin,
@@ -3650,22 +4196,36 @@ impl<'run, 'source> Lowerer<'run, 'source>
         declarations
     }
 
-    /// What one slot's declarations amount to.
+    /// What the slot at `position` amounts to.
     ///
     /// # Specification
     /// trivial.
     fn outcome(
         &self,
+        position: SlotIndex,
         slot: &DeclarationSlot<'source>,
     ) -> Maybe<DeclarationOutcome<'source>, lowered::Absent>
     {
         if let Maybe::Present((_at, refusal)) = slot.refusal {
             return Maybe::Present(DeclarationOutcome::Refused(refusal));
         }
+        if let Maybe::Present(Half {
+            operand: Operand::Member(target),
+            ..
+        }) = slot.definition
+            && let Some(Maybe::Present(_)) = self
+                .collected
+                .slots
+                .get(usize::from(target))
+                .map(|member| member.refusal)
+        {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        }
         let declared = match slot.signature {
             | Maybe::Present(half) => match half.operand {
                 | Operand::Written(written) => self.value_type_at(written.node),
                 | Operand::Function => self.signature_at(half.declaration.node),
+                | Operand::Member(_) => Maybe::Absent(lowered::Absent::Unminted),
             },
             | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
@@ -3673,6 +4233,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Maybe::Present(half) => match half.operand {
                 | Operand::Written(written) => self.value_at(written.node),
                 | Operand::Function => self.function_body_at(half.declaration.node),
+                | Operand::Member(_) => self
+                    .witnessed
+                    .get(&position)
+                    .copied()
+                    .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
             },
             | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
@@ -3691,6 +4256,103 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             | (Maybe::Absent(reason), Maybe::Absent(_)) => Maybe::Absent(reason),
         }
+    }
+
+    /// Carry each refused manifest type component's refusal to every
+    /// declaration whose type names it.
+    ///
+    /// # Specification
+    /// - requires: the classification has run.
+    /// - ensures: a declaration owning a type head that stands for a manifest
+    ///   component whose type refused holds that refusal too, at the head's
+    ///   position, so it keeps the lowest-positioned refusal it has; the
+    ///   components are taken in signature order, so a component naming an
+    ///   earlier refused one passes the refusal on.
+    /// - provides: the rule that a declaration is not minted over a type that
+    ///   did not lower.
+    /// - fails: never.
+    /// - panics: none.
+    fn propagate_manifests(&mut self)
+    {
+        let mut named = core::mem::take(&mut self.manifests);
+        named.sort_by_key(|&(held, _head)| held);
+        for &(held, head) in &named {
+            let Some(Maybe::Present((_at, refusal))) = self
+                .collected
+                .slots
+                .get(usize::from(held))
+                .map(|slot| slot.refusal)
+            else {
+                continue;
+            };
+            let Maybe::Present(owner) = self.collected.owner_of(head)
+            else {
+                continue;
+            };
+            if let Some(slot) = self.collected.slots.get_mut(usize::from(owner)) {
+                slot.refuse(head, refusal);
+            }
+        }
+        self.manifests = named;
+    }
+
+    /// One stratum item per module, in pre-order.
+    ///
+    /// # Specification
+    /// - requires: the mint sweep has run.
+    /// - ensures: each module's path, its form's bytes, the value components
+    ///   and nested modules it exports in export order, each manifest type
+    ///   component with the type it lowered to, and whether matching coerced
+    ///   its body; a hidden member appears in no item.
+    /// - provides: the stratum half of [`LoweredModule`].
+    /// - fails: never.
+    /// - panics: none.
+    fn structures(&self) -> Vec<LoweredStructure<'source>>
+    {
+        let mut lowered = Vec::with_capacity(self.collected.structures.len());
+        for (position, structure) in self.collected.structures.iter().enumerate() {
+            let mut values = Vec::new();
+            let mut modules = Vec::new();
+            for &export in &structure.exports {
+                match export {
+                    | Member::Slot(slot) => {
+                        if let Some(member) = self.collected.slots.get(usize::from(slot)) {
+                            values.push(ValueComponent {
+                                name: member.name,
+                                constant: member.constant,
+                            });
+                        }
+                    },
+                    | Member::Module(nested) => {
+                        if let Some(member) = self.collected.structures.get(usize::from(nested)) {
+                            modules.push(member.name);
+                        }
+                    },
+                }
+            }
+            let types = structure
+                .types
+                .iter()
+                .map(|manifest| ManifestComponent {
+                    name: manifest.name,
+                    defined: match self.value_type_at(manifest.defined.node) {
+                        | Maybe::Present(defined) => Maybe::Present(defined),
+                        | Maybe::Absent(_) => Maybe::Absent(manifest_type::Absent::Unlowered),
+                    },
+                })
+                .collect();
+            lowered.push(LoweredStructure::new(
+                self.collected
+                    .path(Container::Module(StructureIndex::from(position))),
+                structure.declared_by.span,
+                values,
+                modules,
+                types,
+                structure.coerced,
+            ));
+        }
+
+        lowered
     }
 }
 
@@ -4084,6 +4746,7 @@ fn parse_literal(
         | Former::Return
         | Former::Force
         | Former::Call
+        | Former::Projection
         | Former::TypeHead
         | Former::Universe
         | Former::TypeApplication
@@ -4095,6 +4758,7 @@ fn parse_literal(
         | Former::Declaration
         | Former::AttributeBlock
         | Former::Import
+        | Former::Module
         | Former::Unadmitted => return Maybe::Absent(literal::Absent::NotALiteral),
     };
 

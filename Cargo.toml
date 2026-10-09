@@ -129,6 +129,7 @@ default-features = false
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-lowering (dev)
 # - surface-session
 [workspace.dependencies.gandr-core-checker]
 path = "crates/core-checker"

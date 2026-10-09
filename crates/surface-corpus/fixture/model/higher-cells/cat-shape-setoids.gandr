@@ -1,25 +1,32 @@
 module SetoidCat {
+  @[ runs("<fun>") ]
   def ident(t : Type, x : t) -> -F t { ret x }
 
+  @[ runs("<fun>") ]
   def compose(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v), x : t) -> -F v {
     run y <- f(x);
     g(y)
   }
 
+  @[ runs("<fun>") ]
   def id(t : Type) -> -F (+U[ω] (t -> -F t)) { ret thunk { ident(t) } }
 
+  @[ runs("<fun>") ]
   def comp(t : Type, u : Type, v : Type, f : +U[ω] (t -> -F u), g : +U[ω] (u -> -F v)) -> -F (+U[ω] (t -> -F v)) {
     ret thunk { compose(t, u, v, f, g) }
   }
 
+  @[ refuses("OutOfFragment") ]
   def unitL(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, p, q, id(p), f), f) {
     ret here(f)
   }
 
+  @[ refuses("OutOfFragment") ]
   def unitR(p : Type, q : Type, f : +U[ω] (p -> -F q)) -> -F Path((+U[ω] (p -> -F q)), comp(p, q, q, f, id(q)), f) {
     ret here(f)
   }
 
+  @[ refuses("OutOfFragment") ]
   def assoc(p : Type, q : Type, r : Type, s : Type, f : +U[ω] (p -> -F q), g : +U[ω] (q -> -F r), h : +U[ω] (r -> -F s)) -> -F Path((+U[ω] (p -> -F s)), comp(p, r, s, comp(p, q, r, f, g), h), comp(p, q, s, f, comp(q, r, s, g, h))) {
     ret here(thunk { compose(p, q, s, f, thunk { compose(q, r, s, g, h) }) })
   }

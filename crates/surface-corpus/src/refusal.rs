@@ -178,6 +178,14 @@ pub enum RefusalName
     NonValuePayload,
     /// An attribute payload whose form its schema does not admit.
     IllTypedPayload,
+    /// A module member named at or after the member naming it.
+    ForwardMemberReference,
+    /// A selection or a signature component a module does not supply.
+    UnknownMember,
+    /// A module ascription form the fragment does not read yet.
+    UnreadAscription,
+    /// A top-level module named with a lowercase initial.
+    LowercaseModuleName,
     /// A work allowance ran out, the lowering's or the checker's.
     BudgetExceeded,
     /// A tree lowered under another grammar than it was molded under.
@@ -215,7 +223,7 @@ pub enum RefusalName
 impl RefusalName
 {
     /// Every name of the vocabulary, in declaration order.
-    pub const VOCABULARY: [Self; 31_usize] = [
+    pub const VOCABULARY: [Self; 35_usize] = [
         Self::UnresolvedName,
         Self::UnresolvedTypeHead,
         Self::DuplicateSignature,
@@ -231,6 +239,10 @@ impl RefusalName
         Self::MissingPayload,
         Self::NonValuePayload,
         Self::IllTypedPayload,
+        Self::ForwardMemberReference,
+        Self::UnknownMember,
+        Self::UnreadAscription,
+        Self::LowercaseModuleName,
         Self::BudgetExceeded,
         Self::GrammarMismatch,
         Self::UnknownMold,
@@ -286,6 +298,10 @@ impl RefusalName
             | Self::MissingPayload => "MissingPayload",
             | Self::NonValuePayload => "NonValuePayload",
             | Self::IllTypedPayload => "IllTypedPayload",
+            | Self::ForwardMemberReference => "ForwardMemberReference",
+            | Self::UnknownMember => "UnknownMember",
+            | Self::UnreadAscription => "UnreadAscription",
+            | Self::LowercaseModuleName => "LowercaseModuleName",
             | Self::BudgetExceeded => "BudgetExceeded",
             | Self::GrammarMismatch => "GrammarMismatch",
             | Self::UnknownMold => "UnknownMold",
@@ -444,6 +460,10 @@ const fn lowering_name(refusal: LoweringRefusal<'_>) -> RefusalName
         | LoweringRefusal::MissingPayload { .. } => RefusalName::MissingPayload,
         | LoweringRefusal::NonValuePayload { .. } => RefusalName::NonValuePayload,
         | LoweringRefusal::IllTypedPayload { .. } => RefusalName::IllTypedPayload,
+        | LoweringRefusal::ForwardMemberReference { .. } => RefusalName::ForwardMemberReference,
+        | LoweringRefusal::UnknownMember { .. } => RefusalName::UnknownMember,
+        | LoweringRefusal::UnreadAscription { .. } => RefusalName::UnreadAscription,
+        | LoweringRefusal::LowercaseModuleName { .. } => RefusalName::LowercaseModuleName,
         | LoweringRefusal::BudgetExceeded { .. } => RefusalName::BudgetExceeded,
         | LoweringRefusal::GrammarMismatch { .. } => RefusalName::GrammarMismatch,
         | LoweringRefusal::UnknownMold { .. } => RefusalName::UnknownMold,
@@ -498,6 +518,7 @@ mod tests
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::StringLiteral;
     use gandr_surface_grammar::NamedKind;
+    use gandr_surface_lowering::AscriptionForm;
     use gandr_surface_lowering::AttributeRegistry;
     use gandr_surface_lowering::AttributeSchema;
     use gandr_surface_lowering::FormFault;
@@ -672,6 +693,41 @@ mod tests
                     written: PayloadForm::Text,
                 },
                 "IllTypedPayload",
+                FailureClass::MalformedSource,
+            ),
+            (
+                LoweringRefusal::ForwardMemberReference {
+                    span: empty,
+                    name: SurfaceName::from("later"),
+                    declared: empty,
+                },
+                "ForwardMemberReference",
+                FailureClass::MalformedSource,
+            ),
+            (
+                LoweringRefusal::UnknownMember {
+                    span: empty,
+                    module: SurfaceName::from("Facts"),
+                    member: SurfaceName::from("hidden"),
+                },
+                "UnknownMember",
+                FailureClass::MalformedSource,
+            ),
+            (
+                LoweringRefusal::UnreadAscription {
+                    span: empty,
+                    name: SurfaceName::from("M"),
+                    form: AscriptionForm::Opaque,
+                },
+                "UnreadAscription",
+                FailureClass::Unrepresentable,
+            ),
+            (
+                LoweringRefusal::LowercaseModuleName {
+                    span: empty,
+                    name: SurfaceName::from("natAdd"),
+                },
+                "LowercaseModuleName",
                 FailureClass::MalformedSource,
             ),
             (
