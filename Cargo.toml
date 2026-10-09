@@ -203,7 +203,7 @@ path = "crates/kernel-strata"
 # - kernel-core
 # - surface-corpus
 # - surface-lowering
-# - surface-session (dev)
+# - surface-session
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
 

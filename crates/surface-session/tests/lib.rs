@@ -13,6 +13,8 @@ mod checkpoint;
 #[cfg(test)]
 mod corpus;
 #[cfg(test)]
+mod edit;
+#[cfg(test)]
 mod incremental;
 #[cfg(test)]
 mod items;

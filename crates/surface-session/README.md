@@ -16,6 +16,8 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - [The item source](#the-item-source)
 - [Checkpoints](#checkpoints)
 - [The import scope persists across submissions](#the-import-scope-persists-across-submissions)
+- [Edits are a diff of the lowered core](#edits-are-a-diff-of-the-lowered-core)
+- [Localization descends extents](#localization-descends-extents)
 - [Tests: the floor, the deferred rows, the defects](#tests-the-floor-the-deferred-rows-the-defects)
 - [License](#license)
 
@@ -23,7 +25,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 
 ## Synopsis
 
-**What.** A `Session` takes successive revisions of one source through `Session::submit`. Each revision is lowered once; the dispatcher's `judge_module` judges, readmits and settles the lowered module, and the same declarations, offered by the item source as a `Program`, go to the incremental checker, which adopts every checkpoint that still answers, judges the rest and persists the set. The `Submission` carries the dispatcher's `Composed` and `Standing` for the text, the resume's census and whether the checkpoints were stored, and turns into the dispatcher's `Step` so a face renders it through the same renderer the batch verbs use. `Session::reopen` restores a session over the checkpoints an earlier one wrote.
+**What.** A `Session` takes successive revisions of one source through `Session::submit`. Each revision is lowered once; the dispatcher's `judge_module` judges, readmits and settles the lowered module, and the same declarations, offered by the item source as a `Program`, go to the incremental checker, which adopts every checkpoint that still answers, judges the rest and persists the set. The `Submission` carries the dispatcher's `Composed` and `Standing` for the text, the resume's census and whether the checkpoints were stored, and the edit actions from the latest accepted revision, and turns into the dispatcher's `Step` so a face renders it through the same renderer the batch verbs use. `Session::reopen` restores a session over the checkpoints an earlier one wrote.
 
 **Why.** The REPL, the language server and a terminal interface all need what the batch pipeline does not keep: the latest resume to adopt from, a checkpoint store that outlives the process, and the import scope of the last revision that lowered. Holding that state once, below every face, means each face is a loop over `submit` and a renderer of steps, and every face's verdicts are the batch pipeline's.
 
@@ -32,6 +34,8 @@ The interactive session: each revision of one source lowered, judged exactly as 
 ## References
 
 - Microsoft. "Language Server Protocol Specification, version 3.17." 2022. <https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/> — full-document synchronisation, the shape a submission takes: the client owns the buffer and sends it whole.
+- Porter et al. "Incremental Bidirectional Typing via Order Maintenance." arXiv:2504.08946, 2025. <https://arxiv.org/abs/2504.08946> — an incremental checker that consumes structured edit actions rather than text, the input edit reconstruction produces.
+- Hunt, J. W., and Szymanski, T. G. "A Fast Algorithm for Computing Longest Common Subsequences." Communications of the ACM 20(5), 1977. — the reduction of a longest common subsequence over distinct keys to a longest increasing subsequence, which item alignment uses.
 
 ## Provided features
 
@@ -40,6 +44,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - **Checkpoints across processes.** `Session::reopen`, `Reopened`, `reopened::Absent`. Witnesses: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`, `tests::checkpoint::a_store_holding_nothing_reopens_fresh`, `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`.
 - **The import scope.** `Session::resolve_import`, `ImportRow`, `import::Absent`. Witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`.
 - **The item source.** `program`, `SurfaceItems` (an `ItemSource`), `Revision`, `RevisionFault`, `fault_span::Absent`. Witnesses: `tests::items::each_unrefused_declaration_is_one_item_keyed_by_its_name`, `tests::items::the_item_source_offers_a_revision_or_names_its_fault`.
+- **Edit-action reconstruction.** `Snapshot` (`of`, `items`, `node`, `span`, `localize`, `edit_locus`), `diff`, `apply`, `EditScript`, `Action`, `CorePath`, `ChildSlot`, `Tree`, `ItemTree`, `SourceEdit`, the reasons `addressed`, `spanned`, `located` and `body_path`; `Submission::edits`, `Session::snapshot`. Witnesses: `tests::edit::apply_of_diff_reproduces_new`, `tests::edit::literal_edit_is_one_set_int`, `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`, `tests::edit::a_submission_carries_the_edits_from_the_last_accepted_revision`, `edit::tests::descent_agrees_with_the_linear_stab_oracle`.
 
 ## Expected features
 
@@ -67,7 +72,8 @@ let mut session = Session::new(
 let _first = session.submit(SourceText::from("def x = 40 ;"))?;
 let second = session.submit(SourceText::from("def x = 40 ;\ndef y = x ;"))?;
 // `second.composed()` is what `gandr check` reports for the text; its resume
-// adopted the checkpoint of `x` and judged `y`.
+// adopted the checkpoint of `x` and judged `y`, and `second.edits()` holds the
+// one action inserting `y`.
 ```
 
 The crate's tests run with `cargo nextest run -p gandr-surface-session`.
@@ -106,6 +112,16 @@ Every accepted submission persists its checkpoints under its program's content a
 
 The session keeps the import rows and alias scope of the last revision the lowering read, owned so they outlive its text. A revision the lowering refuses — one that declares an alias twice among them — leaves the scope of the revision before it, so a face resolving `parse` keeps its answer while the author repairs the collision.
 
+## Edits are a diff of the lowered core
+
+Each accepted submission carries the `EditScript` from the latest accepted revision: the `diff` of their `Snapshot`s. A snapshot reads each item's signature and body out of the arena as a `Tree` of the incremental checker's `ContentNode`s, numbered breadth-first, each constant read as the `Reference` it resolves to, so two revisions lowered into two arenas compare node by node. Items align by reference — key and occurrence — keeping the largest set whose order both revisions share; each kept pair's bodies are walked together, a changed literal, variable or constant becoming one in-place action and any other change one `Replace` of the old subtree. `apply` of a diff to the old items reproduces the new ones exactly: soundness is total, localization is partial. A path names an item and the child slots from its body's root; an action anchored in the old revision carries the old ordinal, an insertion the new one.
+
+The recorded design is this contract over the prior implementation's named surface core, with actions for grades, injection sides, binder names and annotations, and items aligned by a longest common subsequence of their names in an `n·m` table. The core here carries none of those payloads — binders are de Bruijn indices, so renaming one reconstructs to no action — and its actions are the core's own leaves. Because references are unique within a revision, the longest common subsequence is the longest increasing run of matched old ordinals, which patience sorting finds in `n log n`. The alternatives were a text diff, which names bytes rather than terms, and a diff of content-addressed tables, which numbers nodes and loses the path a face surfaces. The choice reverses when the lowering emits structured edits itself; the session would then forward them.
+
+## Localization descends extents
+
+`Snapshot::localize` returns the body node whose span encloses a range with the fewest bytes, the outermost of a shared span and the leftmost at one depth — the prior implementation's rule, so a contiguous edit's locus is the common ancestor of the changes it induces. The prior implementation descended the nesting of its origin map. Here a node's recorded origin need not enclose its children: a function's lambda records its parameter. A snapshot therefore spans each node by its extent, the hull of its own origin and its children's extents, which nests by construction. The descent examines the children of the enclosing nodes alone, level by level, so its work follows the locus's depth; it keeps every enclosing sibling rather than the first, which keeps it exact where a point touches two siblings. A linear scan of every node is its oracle. The extent step retires if the lowering's origins come to nest, when each extent equals its origin.
+
 ## Tests: the floor, the deferred rows, the defects
 
 The prior implementation's session, incremental, edit, diagnostics and goals suites, with the tests beside their source, are the floor: 162 tests. A row over a former the fragment does not have is deferred by name with that former.
@@ -115,20 +131,34 @@ The prior implementation's session, incremental, edit, diagnostics and goals sui
 | session, beside the source | 9 | 3 | 6 |
 | session | 42 | 9 | 33 |
 | incremental | 13 | 9 | 4 |
+| edit, beside the source | 3 | 3 | 0 |
+| edit | 52 | 14 | 38 |
+| edit, extra | 3 | 0 | 3 |
 
 The ported rows keep their names. A row whose prior form also evaluated its item keeps its typing half here; evaluation is deferred with the machine. `scalar_literals_carry_their_types` covers integer and string literals; the suffixed numeric literal is outside the fragment. The incremental property `incremental_equals_from_scratch` runs a chain of one to four edits per case, 200 cases, over revisions of one to six statements from a pool of six names with integer, string, reference, thunk, function-applying thunk, function-tail and signature-only bodies and `Integer`, `String` and `U (F Integer)` signatures, under replace, insert, delete, coordinated rename, swap, ascribe and value-only edits; each step's report must equal the dispatcher's and its typings the checker's module entry.
+
+The edit rows take the fragment's formers. `literal_edit_is_one_set_int` and the localization rows run over the incremental fixture pair, `item_insertion_leaves_neighbours_untouched` over the stale-relocation pair rewritten without operators; the changed former of `constructor_change_is_one_replace` is a literal becoming a thunk, of `comp_constructor_change_is_one_replace` a return becoming an application; `hole_fill_and_erase` fills and erases an owed declaration's body; `multi_point_edit_localizes_to_the_common_ancestor` changes a callee and its argument. `step_comp_child_order_matches_diff_and_rebuild` pins the child order over a hand-built arena holding the core's multi-child formers — `case`, bind, application, pair — since the effect formers it was written over are absent. The properties `apply_of_diff_reproduces_new` and `self_diff_is_identity` run 200 cases each over the incremental generator's revisions.
 
 Deferred, with the former each needs:
 
 - Path types and definitional unfolding: `a_definition_reaches_the_typing_context_chain`, `a_law_over_a_definition_types_from_source`, `a_law_over_a_definition_types_when_both_arrive_in_one_source`, `a_law_over_a_definition_that_returns_otherwise_is_refused`.
 - Graded thunk types: `a_graded_bridge_signature_is_an_abstention_not_a_refusal`.
 - Dependent binders at the surface: `a_dependent_signature_is_an_abstention_not_a_refusal`.
-- Sum types and `case`: `one_part_case_bodied_function_checks_and_evaluates`, `erased_sum_definition_is_consumed_by_a_later_case`.
+- Sum types and `case`: `one_part_case_bodied_function_checks_and_evaluates`, `erased_sum_definition_is_consumed_by_a_later_case`, `case_arm_rename_targets_the_right_slot`, `case_second_arm_rename_targets_the_snd_slot`, `case_both_arms_renamed_at_once`, `case_scrutinee_edit_descends_to_one_set_int`.
+- Injections at the surface: `injection_side_flip_is_one_set_side`.
+- Pair elimination: `split_first_binder_rename_targets_the_fst_slot`, `split_second_binder_rename_targets_the_snd_slot`, `split_both_binders_renamed_at_once`, `split_scrutinee_edit_descends_to_one_set_int`.
+- Lazy products, their projections and computation holes: `projection_side_flip_is_one_set_side`, `projection_target_edit_descends_to_one_set_int`, `with_field_edit_is_one_set_int`, `with_second_field_edit_is_one_set_int`, `a_vanishing_or_appearing_computation_hole_is_erase_or_fill`.
+- Grades: `grade_bump_is_one_set_grade`, `attribute_and_nested_child_edit_compose`, `grade_op_value_edits_localize`.
+- Named binders, which the core's de Bruijn indices do not keep: `binder_rename_composes_rebind_and_setvar`.
+- Annotations: `value_ascription_change_is_one_set_annotation`, `binder_annotation_added_is_one_set_annotation`, `binder_annotation_dropped_is_one_set_annotation`.
+- A computation-rooted declaration body: `cross_sort_root_replace_is_reconstructed`.
+- Effects, handlers and delimited control: `resume_computation_edit_localizes`, `reified_stack_is_opaque_but_sound`, `handle_scrutinee_edit_localizes`, `handle_return_body_edit_localizes`, `perform_op_change_is_replace`, `handle_skeleton_change_is_replace`, `shift_binder_rebind_and_body_edit_compose`, `handle_skeleton_dimensions_are_replace`, `handle_clause_body_edit_localizes`, `resume_stack_edit_localizes`, `cross_constructor_change_is_replace`, `perform_signature_change_is_replace`, `perform_payload_edit_localizes`, `reset_body_edit_localizes`, `handle_second_clause_body_edit_localizes`, `handle_body_edits_round_trip`, `effect_control_pairs_round_trip`.
 - Evaluation: `integer_literal_types_and_evaluates`, `nullary_function_call_evaluates`, `holes_decline_evaluation` (with typed holes).
 - The unknown type, absent by construction: `computation_top_result_types_binds_and_applies`, `value_unknown_ascription_types_and_evaluates`.
 - Operators and the builtin prelude: `arithmetic_operators_type_check_and_evaluate`, `operator_definition_carries_across_lines`, `module_builtins_type_and_evaluate`, `comparison_operators_type_check_and_evaluate`, `boolean_operators_type_check_and_evaluate`, `string_builtin_type_and_evaluate`, `string_contains_scans_conflict_marker_text`, `rung07_builtins_type_check_and_evaluate`, `rung07_builtin_failures_are_gradual_blame`, `rung07_wrong_shape_calls_are_static_type_errors`, `regex_builtin_type_and_evaluate`, `regex_extract_failures_are_gradual_blame`, `an_unknown_prelude_member_is_declined_as_a_hole`.
 - Lists: `list_concat_type_checks_and_evaluates`, `lists_need_an_annotation_then_evaluate`, `list_each_maps_a_closure_over_a_list`, `list_reduce_folds_a_list`, `list_functional_update_builtins_evaluate`, `out_of_bounds_list_update_blames`, `list_any_and_sort_evaluate`, `list_where_filters_by_a_predicate`.
 - Records: `record_get_and_insert_evaluate`, `record_update_rebuilds_a_fresh_record`.
+- Lists and records together: `same_shape_containers_descend_and_apply_rebuilds_them`, `shape_changes_replace_wholesale_and_apply_installs_the_subtree`.
 - Computation ascription in expression position: `computation_ascription_types_and_evaluates_check_only_forms`.
 - Foreign declarations: `extern_declaration_carries_across_lines_and_a_foreign_call_blames_without_a_handler`.
 - Module declarations: `a_hidden_or_absent_user_module_component_is_declined_as_a_hole`.

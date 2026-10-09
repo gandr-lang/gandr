@@ -1,0 +1,9 @@
+def alpha(x: Integer) -> F Integer {
+  ret 1
+}
+def target(y: Integer) -> F Integer {
+  ret y
+}
+def omega(z: Integer) -> F Integer {
+  ret z
+}

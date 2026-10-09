@@ -53,7 +53,7 @@ crates/
 ├── surface-corpus/                gandr-surface-corpus                the expectation schemas, the strict and fixture roots, the settle comparison, the runner's report shape, and the language's corpus
 ├── surface-dispatcher/            gandr-surface-dispatcher            routes a driver invocation; composes parse, lower, check and settle over the sources a verb walks
 ├── surface-diagnostics/           gandr-surface-diagnostics           renders what a dispatcher step prints: a refusal, an unsettled declaration and a goal as a located source snippet, the ledger lines as text
-├── surface-session/               gandr-surface-session               the interactive session: each revision lowered, judged, resumed through the incremental checker and checkpointed, for the REPL, language server and terminal faces
+├── surface-session/               gandr-surface-session               the interactive session: each revision lowered, judged, resumed through the incremental checker and checkpointed, with the edit actions from the revision before, for the REPL, language server and terminal faces
 ├── surface-lsp/                   gandr-surface-lsp                   the language server: the base protocol over byte streams, diagnostics from the renderer's reports, semantic tokens from the highlighter's roles
 └── surface-driver/                gandr-lang                          the `gandr` driver binary: `check`, `test` and the exit codes
 ```

@@ -50,6 +50,9 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::edit::EditScript;
+use crate::edit::Snapshot;
+use crate::edit::diff;
 use crate::item_source::program;
 
 quenchant_shape::reason_enum! {
@@ -268,6 +271,8 @@ pub struct Submission<'text>
     standing: Standing,
     /// What the incremental checker made of it.
     resumed: Maybe<Resumed, resumed::Absent>,
+    /// The edits from the latest accepted revision before it.
+    edits: Maybe<EditScript, resumed::Absent>,
 }
 
 impl<'text> Submission<'text>
@@ -324,6 +329,20 @@ impl<'text> Submission<'text>
     pub const fn resumed(&self) -> Maybe<Resumed, resumed::Absent>
     {
         self.resumed
+    }
+
+    /// The edits from the latest accepted revision before this one to this
+    /// one: from no items at all when none was accepted before.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn edits(&self) -> Maybe<&EditScript, resumed::Absent>
+    {
+        match self.edits {
+            | Maybe::Present(ref edits) => Maybe::Present(edits),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
     }
 
     /// The submission as the walk step of a source at `path`: the shape every
@@ -468,6 +487,8 @@ pub struct Session<Store>
     incremental: IncrementalSession<Store>,
     /// The import scope of the latest accepted revision.
     imports: Imports,
+    /// The lowered core of the latest accepted revision.
+    snapshot: Snapshot,
     /// Every lowering the session performed.
     lowerings: LoweringCount,
 }
@@ -515,6 +536,7 @@ impl<Store> Session<Store>
             root,
             incremental: IncrementalSession::new(store, backend, CheckBudget::DEFAULT),
             imports: Imports::empty(),
+            snapshot: Snapshot::default(),
             lowerings: LoweringCount::default(),
         }
     }
@@ -528,7 +550,8 @@ impl<Store> Session<Store>
     ///   and `store` holds checkpoints `backend` judged for its program, the
     ///   session resumes from them and their item count is reported; otherwise
     ///   the session is fresh, as [`Self::new`] makes it, and the reason is
-    ///   reported. Either way the session's import scope is the revision's.
+    ///   reported. Either way the session's import scope and snapshot are the
+    ///   revision's.
     /// - provides: a session that outlives the process that wrote its
     ///   checkpoints: its next submission adopts every restored checkpoint that
     ///   still answers.
@@ -564,9 +587,10 @@ impl<Store> Session<Store>
         let mut lowerings = LoweringCount::default();
         let lowering =
             lower_source(&grammar, revision, &mut lowerings).map_err(SessionFault::Compose)?;
-        let (imports, restored) = match lowering.into_lowered() {
+        let (imports, snapshot, restored) = match lowering.into_lowered() {
             | Lowered::Refused(_) => (
                 Imports::empty(),
+                Snapshot::default(),
                 Maybe::Absent(reopened::Absent::RefusedWhole),
             ),
             | Lowered::Module { module, arena } => {
@@ -583,7 +607,11 @@ impl<Store> Session<Store>
                     },
                     | Maybe::Absent(reason) => Maybe::Absent(unrestored(reason)),
                 };
-                (Imports::of(&module), restored)
+                (
+                    Imports::of(&module),
+                    Snapshot::of(&program, module.origins()),
+                    restored,
+                )
             },
         };
         let (incremental, restored) = match restored {
@@ -602,6 +630,7 @@ impl<Store> Session<Store>
                 root,
                 incremental,
                 imports,
+                snapshot,
                 lowerings,
             },
             restored,
@@ -618,12 +647,14 @@ impl<Store> Session<Store>
     ///   [`judge_module`] — the composition `gandr check` gives the same text
     ///   under the same root — and the same declarations are submitted to the
     ///   incremental checker, which resumes from the latest accepted revision
-    ///   and persists the new checkpoints; the session then holds the
-    ///   revision's resume and import scope. A revision the lowering refuses as
-    ///   a whole is reported as [`Composed::Refused`] with no resume, and the
-    ///   session is unchanged.
+    ///   and persists the new checkpoints; the submission carries the [`diff`]
+    ///   of the latest accepted revision's snapshot and this one's, and the
+    ///   session then holds the revision's resume, import scope and snapshot. A
+    ///   revision the lowering refuses as a whole is reported as
+    ///   [`Composed::Refused`] with no resume and no edits, and the session is
+    ///   unchanged.
     /// - provides: a report whose verdicts are the batch pipeline's, beside the
-    ///   census of what the resume adopted.
+    ///   census of what the resume adopted and the edits that led to it.
     /// - fails: [`SessionFault::Compose`] when the composition faults, with the
     ///   session unchanged; [`SessionFault::Unordered`] when the lowered
     ///   positions do not ascend, unchanged; [`SessionFault::Resume`] when the
@@ -631,7 +662,8 @@ impl<Store> Session<Store>
     ///   next revision is judged whole.
     /// - panics: none.
     /// - economy: the lowered arena is cloned once per accepted revision, so
-    ///   the judgement and the resume each check over their own copy.
+    ///   the judgement and the resume each check over their own copy; the
+    ///   snapshot and its diff are each one walk of the revision's terms.
     ///
     /// # Errors
     /// As above. A failure to persist is not an error: the submission
@@ -648,6 +680,7 @@ impl<Store> Session<Store>
     /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
     /// - witness: `tests::session::successful_submissions_publish_whole_program_synthesis`
     /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
+    /// - witness: `tests::edit::a_submission_carries_the_edits_from_the_last_accepted_revision`
     #[inline]
     pub fn submit<'text>(
         &mut self,
@@ -668,6 +701,7 @@ impl<Store> Session<Store>
                     standing: Standing::of(self.root, &composed),
                     composed,
                     resumed: Maybe::Absent(resumed::Absent::RefusedWhole),
+                    edits: Maybe::Absent(resumed::Absent::RefusedWhole),
                 });
             },
         };
@@ -676,6 +710,7 @@ impl<Store> Session<Store>
         // whole-module judgement and this copy with it.
         let mut items = program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
         let imports = Imports::of(&module);
+        let snapshot = Snapshot::of(&items, module.origins());
         let composed =
             judge_module(self.root.corpus_root(), module, arena).map_err(SessionFault::Compose)?;
         let (census, persistence) = match self.incremental.submit(&mut items, &mut Quiet) {
@@ -689,7 +724,9 @@ impl<Store> Session<Store>
                 | Maybe::Absent(_) => return Err(SessionFault::Store(error)),
             },
         };
+        let edits = diff(&self.snapshot, &snapshot);
         self.imports = imports;
+        self.snapshot = snapshot;
         Ok(Submission {
             root: self.root,
             text: revision,
@@ -699,6 +736,7 @@ impl<Store> Session<Store>
                 census,
                 persistence,
             }),
+            edits: Maybe::Present(edits),
         })
     }
 
@@ -781,6 +819,18 @@ impl<Store> Session<Store>
     ) -> Maybe<&ImportRow, import::Absent>
     {
         self.imports.resolve(path)
+    }
+
+    /// The lowered core of the latest accepted revision, empty before any:
+    /// what a source range of that revision is localized against.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn snapshot(&self) -> &Snapshot
+    {
+        &self.snapshot
     }
 
     /// The checkpoint store, once the session is done.

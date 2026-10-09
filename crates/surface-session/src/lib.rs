@@ -22,12 +22,37 @@
 //! lowered declarations, through [`program`], to the incremental checker,
 //! which adopts what still answers and persists the checkpoints.
 //!
+//! # Edits are reconstructed from the lowered core
+//!
+//! Each accepted [`Submission`] carries the [`EditScript`] from the latest
+//! accepted revision before it: [`diff`] of their [`Snapshot`]s, the id-free
+//! image of each revision's lowered core. The session keeps the latest
+//! snapshot, so a face localizes a source range against it with
+//! [`Snapshot::localize`].
+//!
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in this crate's `README.md`.
 
+extern crate alloc;
+
+mod edit;
 mod item_source;
 mod session;
 
+pub use crate::edit::Action;
+pub use crate::edit::ChildSlot;
+pub use crate::edit::CorePath;
+pub use crate::edit::EditScript;
+pub use crate::edit::ItemTree;
+pub use crate::edit::Snapshot;
+pub use crate::edit::SourceEdit;
+pub use crate::edit::Tree;
+pub use crate::edit::addressed;
+pub use crate::edit::apply;
+pub use crate::edit::body_path;
+pub use crate::edit::diff;
+pub use crate::edit::located;
+pub use crate::edit::spanned;
 pub use crate::item_source::Revision;
 pub use crate::item_source::RevisionFault;
 pub use crate::item_source::SurfaceItems;

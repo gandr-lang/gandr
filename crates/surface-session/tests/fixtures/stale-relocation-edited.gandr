@@ -1,0 +1,12 @@
+def inserted(n: Integer) -> F Integer {
+  ret n
+}
+def alpha(x: Integer) -> F Integer {
+  ret 2
+}
+def target(y: Integer) -> F Integer {
+  ret y
+}
+def omega(z: Integer) -> F Integer {
+  ret z
+}
