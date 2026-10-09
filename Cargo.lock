@@ -278,6 +278,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-surface-lowering"
+version = "0.0.0"
+dependencies = [
+ "gandr-core-term",
+ "gandr-kernel-term",
+ "gandr-surface-grammar",
+ "gandr-surface-parser",
+ "gandr-surface-syntax",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-surface-parser"
 version = "0.0.0"
 dependencies = [

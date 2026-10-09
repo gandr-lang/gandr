@@ -14,6 +14,7 @@ members = [
   "crates/surface-dispatcher",
   "crates/surface-driver",
   "crates/surface-grammar",
+  "crates/surface-lowering",
   "crates/surface-parser",
   "crates/surface-syntax",
   "crates/theory-cell-complexes",
@@ -89,6 +90,7 @@ features = ["derive", "error-context", "help", "std", "usage"]
 # chain and the per-scope definitional environment.
 # consumers:
 # - core-nbe
+# - surface-lowering
 [workspace.dependencies.gandr-core-term]
 path = "crates/core-term"
 
@@ -128,6 +130,7 @@ path = "crates/kernel-strata"
 # - core-nbe
 # - core-term
 # - kernel-core
+# - surface-lowering
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
 
@@ -154,13 +157,22 @@ path = "crates/surface-dispatcher"
 # The checked precedence-bounded grammar: its mold table, its precedence
 # DAG and the built-in surface the melder pushes over.
 # consumers:
+# - surface-lowering
 # - surface-parser
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
 
+# The surface parser: the lossless labeler, the obligation-minimizing molder
+# and the push-machine melder that commit a molded tree.
+# consumers:
+# - surface-lowering (dev)
+[workspace.dependencies.gandr-surface-parser]
+path = "crates/surface-parser"
+
 # The concrete syntax tree and the grammar-facing mold vocabulary it carries.
 # consumers:
 # - surface-grammar
+# - surface-lowering
 # - surface-parser
 [workspace.dependencies.gandr-surface-syntax]
 path = "crates/surface-syntax"
@@ -230,6 +242,7 @@ default-features = false
 # - none: core-only shapes without instrumentation
 # consumers:
 # - kernel-core
+# - surface-lowering
 # - theory-cell-complexes
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras

@@ -1,0 +1,25 @@
+[package]
+name = "gandr-surface-lowering"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Lowering the gandr surface into the core: resolution tables, module collection, the attribute side table, the origin table and the refusal classifier"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["call-by-push-value", "gandr", "lowering", "no-std"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+
+[dependencies]
+gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-syntax.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+gandr-surface-parser.workspace = true
+
+[lints]
+workspace = true

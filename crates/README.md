@@ -42,6 +42,7 @@ crates/
 ├── surface-syntax/                gandr-surface-syntax                the molded concrete syntax tree and the mold references a grammar and a parser exchange
 ├── surface-grammar/               gandr-surface-grammar               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
 ├── surface-parser/                gandr-surface-parser                the labeler, molder and resumable melder: source to molded tree with completion obligations
+├── surface-lowering/              gandr-surface-lowering              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
 ├── surface-dispatcher/            gandr-surface-dispatcher            routes a driver invocation into the surface pipeline
 └── surface-driver/                gandr-lang                          the `gandr` driver binary
 ```
