@@ -224,8 +224,10 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
     "unpack_statement",
     "rec_block",
     "sign_declaration",
+    "static_abstraction",
     "unknown_type",
     "universe_type",
+    "value_function_type",
     "while_expression",
     // reserved / folded / diverged member surfaces (adaptation surfaces)
     "bare_type_params",

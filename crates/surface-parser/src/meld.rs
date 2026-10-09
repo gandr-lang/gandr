@@ -32,6 +32,7 @@ use core::fmt;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
 use gandr_surface_grammar::StepSym;
+use gandr_surface_grammar::TileLabel;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::ClosingClass;
@@ -494,6 +495,14 @@ primitive_copy_wrapper!(
     struct TailUnderWay(bool);
 );
 primitive_copy_wrapper!(
+    /// Whether an incoming tile continues a required-tail form's tail.
+    struct TailExtension(bool);
+);
+primitive_copy_wrapper!(
+    /// Whether a required-tail frontier's tail is a whole operand run.
+    struct TailWhole(bool);
+);
+primitive_copy_wrapper!(
     /// Whether a mold would continue the nearest open form.
     pub struct FormContinuation(bool);
 );
@@ -550,6 +559,17 @@ enum CollapseStep
     ReduceOperator(OperatorIndex),
     /// Force-close an open form frontier.
     ForceCloseForm(FrontierIndex),
+}
+
+/// What arrives after a required-tail form's tail: the tile being pushed,
+/// or a token whose mold the molder has yet to choose.
+#[derive(Clone, Copy, Debug)]
+enum Incoming<'labels>
+{
+    /// The molded tile `push` is about to place.
+    Tile(MoldId),
+    /// The labels of the token the molder is about to gather.
+    Token(CandidateLabels<'labels>),
 }
 primitive_copy_wrapper!(
     /// One checkpoint wire byte.
@@ -1158,9 +1178,9 @@ impl<'pbg> MeldState<'pbg>
         self.settle_completable(tile.mold);
         // A prefix form may have an optional tile-bearing branch followed by a
         // required sort hole. It cannot close before that operand arrives, but
-        // once one matching operand is present it is a complete form even
-        // without a terminal tile.
-        self.settle_filled_required_tail();
+        // once its tail is whole it is a complete form even without a terminal
+        // tile, unless this tile continues the tail.
+        self.settle_filled_required_tail(Incoming::Tile(tile.mold));
         let span = self.append_source(SourceFragment::from(tile.text()));
         let tile_emit = self.emit_token(NodeLabel::Tile(tile.mold), span);
         let cell = Cell {
@@ -1878,22 +1898,198 @@ impl<'pbg> MeldState<'pbg>
             self.close_form(StackIndex::from(frontier));
         }
     }
-    /// Clean-close a required-tail form once its one trailing sort operand is
-    /// present. Unlike [`settle_completable`](Self::settle_completable), this
-    /// path is stateful: the form's LAST tile is not yet completable while its
-    /// required operand is absent.
+    /// Clean-close each required-tail form whose tail is whole and which the
+    /// incoming tile does not continue.
+    ///
+    /// A form ending in a required sort hole — `forall a . T`, `\A. T`, `+U[r]
+    /// C` — has no tile to end it. It closes once its tail is whole, every
+    /// operator above the frontier holding the operands it wants, and the
+    /// incoming tile does not continue that tail: an infix or postfix
+    /// operator, or a left-absorbing form start, of the hole's sort continues
+    /// it exactly when the form's own group yields to the tile, the precedence
+    /// a prefix operator at that group would give it. So `forall a . a * b`
+    /// keeps the product inside the quantifier and `\A. -F A` keeps the
+    /// returner inside the abstraction, while `+U[r] C * D` closes the bridge
+    /// before the product. Unlike
+    /// [`settle_completable`](Self::settle_completable), this path is
+    /// stateful: the form's LAST tile is not completable while its required
+    /// operand is absent.
     ///
     /// # Specification
-    /// trivial.
-    fn settle_filled_required_tail(&mut self)
+    /// - requires: nothing.
+    /// - ensures: closes, innermost first, every open required-tail frontier
+    ///   whose tail is whole and which `incoming` does not continue, reducing
+    ///   the tail's operators into one operand first; stops at the first
+    ///   frontier that is not; flags no obligation.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a tail ending in a prefix operator's operand, a tail
+    ///   an operator tighter than the form continues, and a tail a looser
+    ///   operator follows separate the settlement, each observed through the
+    ///   form the commit builds.
+    /// - witness: `meld::tests::a_required_tail_runs_as_far_as_its_group_yields`
+    /// - witness: `tests::grammar::every_type_operator_spelling_reads_cleanly`
+    ///
+    /// # Termination
+    /// Each pass closes the nearest open frontier, which drops it from the
+    /// frontier cache, or stops; the inner loop reduces one operator above
+    /// the frontier per step.
+    fn settle_filled_required_tail(
+        &mut self,
+        incoming: Incoming<'_>,
+    )
     {
         while let Some(frontier) = self.nearest_open_form() {
+            if !bool::from(self.tail_is_whole(frontier))
+                || bool::from(self.extends_tail(frontier, incoming))
+            {
+                break;
+            }
+            // The frontier tile is a barrier, so only the tail's operators are
+            // reduced, topmost first.
+            while let Some(operator) = self.topmost_operator_index() {
+                self.reduce_operator(operator);
+            }
             let Some(end) = self.required_tail_operand(frontier)
             else {
                 break;
             };
             self.close_form(end);
         }
+    }
+
+    /// Whether the open frontier at `frontier` carries a required tail that
+    /// is whole: a run of its hole's sort of prefix operators, operands,
+    /// postfix and infix operators, each operator holding the operands it
+    /// wants, ending in an operand.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when the frontier's mold carries a required tail
+    ///   with a known hole sort, every cell above the frontier is an operand or
+    ///   an operator of that sort, no operand stands beside another and no
+    ///   operator lacks an operand it wants, and the run is non-empty.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through
+    ///   [`settle_filled_required_tail`](Self::settle_filled_required_tail): a
+    ///   prefix operator with its operand is whole, one without it is not.
+    /// - witness: `meld::tests::a_required_tail_runs_as_far_as_its_group_yields`
+    ///
+    /// # Termination
+    /// One step per cell above the frontier.
+    fn tail_is_whole(
+        &self,
+        frontier: FrontierIndex,
+    ) -> TailWhole
+    {
+        let frontier_index = usize::from(frontier);
+        let Some(Role::FormTile { mold, .. }) =
+            self.stack.get(frontier_index).map(|cell| cell.role)
+        else {
+            return TailWhole::from(false);
+        };
+        let Some(expected) = self
+            .frontier_hole_sort(mold)
+            .filter(|_sort| bool::from(self.pbg.mold_has_required_tail(mold)))
+        else {
+            return TailWhole::from(false);
+        };
+        let tail = frontier_index
+            .checked_add(1)
+            .and_then(|start| self.stack.get(start ..))
+            .unwrap_or(&[]);
+        let mut wants_operand = true;
+        for cell in tail {
+            if cell.sort != expected {
+                return TailWhole::from(false);
+            }
+            let fits = match cell.role {
+                | Role::Operand
+                | Role::Operator {
+                    shape: OpShape::Prefix,
+                    ..
+                } => wants_operand,
+                | Role::Operator {
+                    shape: OpShape::Infix | OpShape::Postfix,
+                    ..
+                } => !wants_operand,
+                | Role::FormTile { .. } => false,
+            };
+            if !fits {
+                return TailWhole::from(false);
+            }
+            wants_operand = matches!(cell.role, Role::Operator {
+                shape: OpShape::Prefix | OpShape::Infix,
+                ..
+            });
+        }
+        TailWhole::from(!tail.is_empty() && !wants_operand)
+    }
+
+    /// Whether `incoming` continues the tail of the required-tail form whose
+    /// frontier is at `frontier`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when the frontier's hole sort is known and
+    ///   `incoming` — the tile, or any mold a label of the token may take — is
+    ///   an infix or postfix operator or a left-absorbing form start of that
+    ///   sort whose group the form's group yields to.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — through
+    ///   [`settle_filled_required_tail`](Self::settle_filled_required_tail): an
+    ///   operator tighter than the form and one looser separate the answer.
+    /// - witness: `meld::tests::a_required_tail_runs_as_far_as_its_group_yields`
+    ///
+    /// # Termination
+    /// One step per mold a label of the token may take.
+    fn extends_tail(
+        &self,
+        frontier: FrontierIndex,
+        incoming: Incoming<'_>,
+    ) -> TailExtension
+    {
+        let Some((form, hole)) = self
+            .stack
+            .get(usize::from(frontier))
+            .and_then(|cell| match cell.role {
+                | Role::FormTile { mold, .. } => Some(mold),
+                | Role::Operand | Role::Operator { .. } => None,
+            })
+            .and_then(|mold| {
+                Some((
+                    self.pbg.mold(mold).ok()?.prec,
+                    self.frontier_hole_sort(mold)?,
+                ))
+            })
+        else {
+            return TailExtension::from(false);
+        };
+        let continues = |tile: MoldId| {
+            self.pbg.mold(tile).is_ok_and(|def| {
+                def.sort == hole
+                    && matches!(
+                        self.classify(tile),
+                        Kind::Operator(OpShape::Infix | OpShape::Postfix)
+                            | Kind::FormStart { absorb_left: true }
+                    )
+                    && bool::from(self.pbg.dag().lt(form, def.prec, Assoc::Right))
+            })
+        };
+        TailExtension::from(match incoming {
+            | Incoming::Tile(tile) => continues(tile),
+            | Incoming::Token(labels) => <&[&str]>::from(labels).iter().any(|&label| {
+                self.pbg
+                    .candidates(TileLabel(label))
+                    .iter()
+                    .any(|&tile| continues(tile))
+            }),
+        })
     }
 
     /// Return the trailing operand index when an open required-tail form has
@@ -2004,7 +2200,7 @@ impl<'pbg> MeldState<'pbg>
         labels: CandidateLabels<'_>,
     )
     {
-        self.settle_filled_required_tail();
+        self.settle_filled_required_tail(Incoming::Token(labels));
         while let Some(frontier) = self.nearest_open_form() {
             let Some(Role::FormTile {
                 mold: head_mold, ..
@@ -5761,6 +5957,52 @@ mod tests
             vec!["Type[+, 1] -> -F Integer".to_owned()],
             spans_of("def g : +U (Type[+, 1] -> -F Integer) ;", "function_type")?,
             "a universe's closing bracket ends it, so the arrow takes it as its domain"
+        );
+        Ok(())
+    }
+
+    /// A form ending in a required sort hole closes where a prefix operator at
+    /// its group would: an operator its group yields to stays inside the
+    /// tail, a prefix operator's operand completes it, and an operator its
+    /// group takes from stands outside.
+    #[test]
+    fn a_required_tail_runs_as_far_as_its_group_yields() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built_in()?;
+        let spans_of = |source: &'static str, kind: &str| -> Result<Vec<String>, Box<dyn Error>> {
+            let result = crate::parse::parse(&pbg, SourceText::from(source))?;
+            assert!(bool::from(result.is_clean()), "{source} reads cleanly");
+            let tree = result.into_tree();
+            let mut spans = Vec::new();
+            for position in tree.positions() {
+                if let Some(NodeLabel::Meld(mold)) = label(&tree, position)
+                    && pbg.named_kind(mold)?.0 == kind
+                    && let Some(text) = tree.fragment(position)
+                {
+                    spans.push(AsRef::<str>::as_ref(&text).to_owned());
+                }
+            }
+            Ok(spans)
+        };
+        assert_eq!(
+            vec!["forall a . a * b".to_owned()],
+            spans_of("def g : forall a . a * b ;", "forall_type")?,
+            "a product binds tighter than the quantifier and stays in its body"
+        );
+        assert_eq!(
+            vec!["forall a . -F a".to_owned()],
+            spans_of("def g : forall a . -F a ;", "forall_type")?,
+            "a prefix operator's operand completes the body before the `;`"
+        );
+        assert_eq!(
+            vec![r"\A. A => \B. B".to_owned(), r"\B. B".to_owned()],
+            spans_of(r"def g : \A. A => \B. B ;", "static_abstraction")?,
+            "an arrow of the abstraction's own right-associative group stays in its body"
+        );
+        assert_eq!(
+            vec!["+U[1] C".to_owned()],
+            spans_of("def g : +U[1] C * D ;", "u_type")?,
+            "a bridge binds tighter than the product, which takes it as an operand"
         );
         Ok(())
     }

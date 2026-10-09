@@ -1115,7 +1115,10 @@ fn scan_one(
         | b'#' => scan_hash(bytes, pos),
         | b'"' => ScanResult::new(Lexeme::Quote, pos.advance(ByteWidth::ONE)),
         | b'\'' => scan_character(bytes, pos),
-        | b'\\' => scan_escape(bytes, pos),
+        // In code a backslash is the static abstraction's lead `\A. T`, one
+        // tile; escape sequences belong to strings and characters, whose
+        // scanners read them.
+        | b'\\' => ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::ONE)),
         | b'0' ..= b'9' => scan_number(bytes, pos),
         | b'.' => scan_dot(bytes, pos),
         | b'_' => scan_word_or_underscore(bytes, pos),
@@ -2418,6 +2421,35 @@ mod tests
             lexed("+U′"),
             vec![punct("+"), upper("U′")],
             "and the sign before it is the sum"
+        );
+    }
+    #[test]
+    fn a_backslash_in_code_is_one_tile_and_an_escape_in_a_string()
+    {
+        let lexed = |src: &str| tiles(SourceFragment::from(src), &label(SourceFragment::from(src)));
+        let punct = |text: &str| (Lexeme::Punct, text.to_owned());
+        let upper = |text: &str| (Lexeme::UpperWord, text.to_owned());
+        assert_eq!(
+            lexed(r"\T.\A. T"),
+            vec![
+                punct("\\"),
+                upper("T"),
+                punct("."),
+                punct("\\"),
+                upper("A"),
+                punct("."),
+                upper("T"),
+            ],
+            "the abstraction's lead stands apart from the binder it introduces"
+        );
+        assert_eq!(
+            lexed(r#""\T""#),
+            vec![
+                (Lexeme::Quote, "\"".to_owned()),
+                (Lexeme::EscapeSequence, "\\T".to_owned()),
+                (Lexeme::Quote, "\"".to_owned()),
+            ],
+            "inside a string the backslash still begins an escape"
         );
     }
     #[test]

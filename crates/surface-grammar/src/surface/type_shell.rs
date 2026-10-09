@@ -101,6 +101,35 @@ fn add_type_rules(
         type_arrow,
         Regex::seq([Regex::sort(ty), tile(TileLabel("->")), Regex::sort(ty)]),
     ));
+    // The value function space `A => B`, the alias of the thunked arrow `+U (A
+    // -> -F B)`, and its n-ary form `(A, B) => C`, whose parenthesized domain
+    // list is `parenthesized_type`'s. It shares `->`'s group, so the two
+    // arrows nest to the right of each other. `=>` also separates a case arm's
+    // pattern from its answer, but that tile follows a pattern and this one a
+    // type, so the two never compete for one slot.
+    rules.push(binary_infix_rule(
+        RuleName("value_function_type"),
+        ty,
+        type_arrow,
+        TileLabel("=>"),
+    ));
+    // The static abstraction `\A. T`, a type operator's body over its one
+    // binder; a binder is a type name or a type variable, and the body runs as
+    // far right as `forall`'s does.
+    rules.push(rule(
+        RuleName("static_abstraction"),
+        ty,
+        type_arrow,
+        Regex::seq([
+            tile(TileLabel("\\")),
+            Regex::alt([
+                tile(TileLabel("type_identifier")),
+                tile(TileLabel("type_variable")),
+            ]),
+            tile(TileLabel(".")),
+            Regex::sort(ty),
+        ]),
+    ));
     rules.push(binary_infix_rule(
         RuleName("union_type"),
         ty,
@@ -243,11 +272,19 @@ fn add_type_rules(
             tile(TileLabel(")")),
         ]),
     ));
+    // A parenthesized type holds one type or, as the domain of the n-ary `=>`,
+    // a list of them. One rule, so `(` keeps a single type-sort mold and the
+    // molder never needs a lookahead window to tell the two apart; the
+    // lowering refuses a list anywhere but before `=>`.
     rules.push(rule(
         RuleName("parenthesized_type"),
         ty,
         type_atom,
-        Regex::seq([tile(TileLabel("(")), Regex::sort(ty), tile(TileLabel(")"))]),
+        Regex::seq([
+            tile(TileLabel("(")),
+            comma1(Regex::sort(ty)),
+            tile(TileLabel(")")),
+        ]),
     ));
     // The `record_type_field` (`id : T`) helper is inline-only. Referencing it as
     // a `tile(TileLabel("record_type_field"))` left an unmatchable placeholder
