@@ -223,9 +223,55 @@ struct DeclMeta
     provenance: Vec<ConstantIndex>,
 }
 
-/// A fully decoded artifact: the arena its declarations' content lives in, the
-/// admission-ordered declaration sequence addressing it, and the deterministic
-/// budget metrics computed en route.
+/// Where the decoder found an artifact's segments, as offsets into the image it
+/// read: the end of the header and the end of each declaration segment.
+///
+/// The header is the magic, the version, the minted-atom table and the
+/// declaration count; segment `i` runs from the end before it — the header's
+/// for the first — to its own end. The offsets are the reader's: a consumer
+/// that stores the segments apart takes their boundaries from a decode, never
+/// from the writer that handed it the bytes.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SegmentLayout
+{
+    /// The offset one past the header's last byte.
+    header_end: ByteOffset,
+    /// The offset one past each declaration segment's last byte, in admission
+    /// order.
+    declaration_ends: Vec<ByteOffset>,
+}
+
+impl SegmentLayout
+{
+    /// The offset one past the header's last byte.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn header_end(&self) -> ByteOffset
+    {
+        self.header_end
+    }
+
+    /// The offset one past each declaration segment's last byte, in admission
+    /// order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn declaration_ends(&self) -> &[ByteOffset]
+    {
+        &self.declaration_ends
+    }
+}
+
+/// A fully decoded artifact.
+///
+/// It holds the arena its declarations' content lives in, the
+/// admission-ordered declaration sequence addressing it, the deterministic
+/// budget metrics computed en route, and where each segment sat in the bytes.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DecodedArtifact
 {
@@ -235,6 +281,8 @@ pub struct DecodedArtifact
     declarations: Vec<MarkedDeclaration>,
     /// The deterministic decode-budget metrics.
     metrics: DecodeMetrics,
+    /// Where the header and each declaration segment ended.
+    segments: SegmentLayout,
 }
 
 impl DecodedArtifact
@@ -271,6 +319,18 @@ impl DecodedArtifact
     {
         self.metrics
     }
+
+    /// Where the header and each declaration segment ended in the decoded
+    /// image.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn segments(&self) -> &SegmentLayout
+    {
+        &self.segments
+    }
 }
 
 /// Decode an artifact image into its declaration sequence and shared arena.
@@ -284,13 +344,15 @@ impl DecodedArtifact
 ///   constraints and literals rebuild through their constructors. The returned
 ///   arena retains the format's sharing, so a table index referenced twice
 ///   resolves to one id; the metrics are functions of the canonical bytes
-///   alone.
+///   alone; the segment layout holds one end per declaration, each strictly
+///   past the one before it, the first strictly past the header's, and the last
+///   — the header's when there is no declaration — at the image's end.
 /// - provides: the re-checkable decode: a total parser over a closed vocabulary
 ///   whose acceptance is a bounded-work guarantee for everything downstream.
-///   The clause checks the returned work bounds. Full canonical acceptance,
-///   sharing and metric derivation stay prose: replaying decode would recurse,
-///   and re-encoding would allocate another image rather than independently
-///   validate the graph-to-bytes relation.
+///   The clause checks the returned work bounds and the segment layout's shape.
+///   Full canonical acceptance, sharing and metric derivation stay prose:
+///   replaying decode would recurse, and re-encoding would allocate another
+///   image rather than independently validate the graph-to-bytes relation.
 /// - fails: [`DecodeError`] — the rejection triple, a reserved declaration
 ///   kind, a reserved slot or a refuted minted-atom table, or an unsupported
 ///   version. It never panics and never loops unboundedly.
@@ -310,6 +372,7 @@ impl DecodedArtifact
 ///   canonical-form violations, both work budgets, the entry cap and the level
 ///   offset — pinned by goldens whose shape is derived from the constants.
 /// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+/// - witness: `sharing_format::sharing_format::each_segment_ends_where_its_bytes_end`
 /// - witness: `sharing_format::sharing_format::truncation_at_every_prefix_is_refused_without_panicking`
 /// - witness: `sharing_format::sharing_format::arbitrary_bytes_never_panic`
 /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
@@ -323,7 +386,14 @@ impl DecodedArtifact
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|artifact|
     artifact.metrics.table_entries() <= MAX_TABLE_ENTRIES
         && artifact.metrics.max_declaration_expanded_work() <= MAX_EXPANDED_TERM_WORK
-        && artifact.metrics.artifact_expanded_work() <= MAX_ARTIFACT_EXPANDED_WORK))]
+        && artifact.metrics.artifact_expanded_work() <= MAX_ARTIFACT_EXPANDED_WORK
+        && artifact.segments.declaration_ends.len() == artifact.declarations.len()
+        && core::iter::once(artifact.segments.header_end)
+            .chain(artifact.segments.declaration_ends.iter().copied())
+            .zip(artifact.segments.declaration_ends.iter().copied())
+            .all(|(start, end)| start < end)
+        && artifact.segments.declaration_ends.last().copied()
+            .unwrap_or(artifact.segments.header_end) == image.length()))]
 pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
 {
     let mut reader = ByteReader::new(image);
@@ -331,12 +401,15 @@ pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
     reader.expect_version()?;
     let declared_atoms = reader.read_minted_atom_table()?;
     let count = reader.read_uvarint()?;
+    let header_end = reader.position;
     let mut table = Table::new();
     let mut metas: Vec<DeclMeta> = Vec::new();
+    let mut declaration_ends: Vec<ByteOffset> = Vec::new();
     let mut remaining = u64::from(count);
     while remaining > 0_u64 {
         let meta = decode_declaration(&mut reader, &mut table)?;
         metas.push(meta);
+        declaration_ends.push(reader.position);
         remaining = remaining.wrapping_sub(1_u64);
     }
     if reader.position < image.length() {
@@ -357,6 +430,10 @@ pub fn decode(image: ArtifactImage<'_>) -> Result<DecodedArtifact, DecodeError>
         arena: table.arena,
         declarations,
         metrics,
+        segments: SegmentLayout {
+            header_end,
+            declaration_ends,
+        },
     })
 }
 
