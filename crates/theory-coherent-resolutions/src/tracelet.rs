@@ -17,6 +17,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
@@ -137,11 +138,15 @@ impl<A: CellAlphabet> ReplayTrace<A>
     /// # Adequacy
     /// - hypothesis: L3 — a fused certificate's trace over its own store is
     ///   positive, and the same certificate over a permuted store, stuck on its
-    ///   first step, is negative.
+    ///   first step, is negative. L3 — either leg may miss independently, and
+    ///   empty paths reach only the skolemized starting term. Ignoring a leg,
+    ///   target or failure changes the verdict.
     /// - witness: `tests::differential::replay_is_pure_over_a_fixed_certificate_and_store`
     /// - witness: `tests::differential::store_permutation_is_not_an_indexed_certificate_invariant`
+    /// - witness: `tracelet::tests::replay_records_only_the_successful_prefix`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| bool::from(output) == (bool::from(reached(&self.path_a.outcome, &self.joins_at)) && bool::from(reached(&self.path_b.outcome, &self.joins_at))))]
     pub fn verdict(&self) -> TraceletReplay
     {
         TraceletReplay::from(
@@ -171,13 +176,17 @@ impl<A: CellAlphabet> Tracelet<A>
     /// # Adequacy
     /// - hypothesis: L1 — a certificate is evidence checked by replay: fused
     ///   and confluence certificates replay over their stores, and one
-    ///   retargeted at a join its paths do not reach fails.
+    ///   retargeted at a join its paths do not reach fails. Wrong boundaries, a
+    ///   stuck leg or a lost application change acceptance; empty derivations
+    ///   test the identity boundary.
     /// - witness: `tracelet::tests::a_fused_cell_certificate_replays`
     /// - witness: `tracelet::tests::a_derivation_that_misses_its_boundary_is_not_self_equivalent`
     /// - witness: `tests::differential::the_fused_cell_certificate_replays_over_the_store`
     /// - witness: `tests::differential::completion_certificates_replay`
+    /// - witness: `tracelet::tests::both_equivalence_boundaries_matter`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output == replay_from_peak(store, &self.overlap.peak, &self.joins_at, &self.path_a, &self.path_b))]
     pub fn replay(
         &self,
         store: &CellStore<A>,
@@ -212,12 +221,16 @@ impl<A: CellAlphabet> Tracelet<A>
     ///   an append-only extension keeps the trace, and a permutation that
     ///   rebinds a recorded identifier shows the exact step it stops at; L2 —
     ///   every one of those traces' verdicts agrees with the non-tracing
-    ///   replay.
+    ///   replay. Typed failures after a successful step and empty paths expose
+    ///   wrong starts, truncated recordings and fabricated successful outcomes.
     /// - witness: `tests::differential::replay_is_pure_over_a_fixed_certificate_and_store`
     /// - witness: `tests::differential::append_only_store_extension_preserves_replay_trace`
     /// - witness: `tests::differential::store_permutation_is_not_an_indexed_certificate_invariant`
+    /// - witness: `tracelet::tests::replay_records_only_the_successful_prefix`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output.path_a.started_at == A::skolemize(&self.overlap.peak) && output.path_b.started_at == output.path_a.started_at
+        && output.joins_at == A::skolemize(&self.joins_at) && output.verdict() == self.replay(store))]
     pub fn replay_trace(
         &self,
         store: &CellStore<A>,
@@ -257,10 +270,19 @@ impl<A: CellAlphabet> Tracelet<A>
 /// - hypothesis: L3 — one recorded path pair, replayed from its peak, is
 ///   separated by the join alone: positive against the join both paths reach,
 ///   negative against a retargeted join, and negative when one path is
-///   truncated so it stops short of the join.
+///   truncated so it stops short of the join. Either leg may be the shorter or
+///   failing one. Empty paths test the identity boundary; dropping either
+///   conjunct or accepting a stuck path changes acceptance.
 /// - witness: `tracelet::tests::replay_from_peak_separates_a_reached_join_from_a_missed_one`
+/// - witness: `tracelet::tests::replay_records_only_the_successful_prefix`
 #[inline]
 #[must_use]
+#[spec(ensures: |output| {
+    let start = A::skolemize(peak);
+    let target = A::skolemize(joins_at);
+    bool::from(output) == (bool::from(reached(&run_path(store, start.clone(), path_a, &mut Discard), &target))
+        && bool::from(reached(&run_path(store, start, path_b, &mut Discard), &target)))
+})]
 pub fn replay_from_peak<A>(
     store: &CellStore<A>,
     peak: &A::Cmd,
@@ -297,12 +319,17 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — a fused certificate is equivalent to itself and to the
 ///   structurally distinct certificate that takes the two-step path twice, and
-///   a certificate that misses its join is not equivalent even to itself.
+///   a certificate that misses its join is not equivalent even to itself. Two
+///   independently replaying certificates with different peaks or different
+///   joins remain distinct. Ignoring either boundary or making equivalence
+///   reflexive on a bad proof changes the result.
 /// - witness: `tracelet::tests::a_certificate_is_replay_equivalent_to_itself`
 /// - witness: `tracelet::tests::distinct_derivations_of_one_boundary_are_replay_equivalent`
 /// - witness: `tracelet::tests::a_derivation_that_misses_its_boundary_is_not_self_equivalent`
+/// - witness: `tracelet::tests::both_equivalence_boundaries_matter`
 #[inline]
 #[must_use]
+#[spec(ensures: |output| bool::from(output) == (a.overlap.peak == b.overlap.peak && a.joins_at == b.joins_at && bool::from(a.replay(store)) && bool::from(b.replay(store))))]
 pub fn replay_equivalent<A>(
     a: &Tracelet<A>,
     b: &Tracelet<A>,
@@ -356,10 +383,18 @@ quenchant_shape::reason_enum! {
 ///
 /// # Adequacy
 /// - hypothesis: L1 — every certificate completion emits for a joinable pair is
-///   this certificate, and replays over the completed store.
+///   this certificate, and replays over the completed store. L3 — wrong kind
+///   precedes missing identity, either starved reduct precedes unequal normal
+///   forms, and exact joins preserve both root steps. Wrong refusal precedence
+///   or one-sided normalization changes the outcome.
 /// - witness: `tests::differential::completion_certificates_replay`
 /// - witness: `tests::second_inhabitant::completion_orients_and_certifies_over_the_toy_alphabet`
+/// - witness: `tracelet::tests::joining_refusals_and_fusion_retries_preserve_boundaries`
 #[inline]
+#[spec(ensures: |output| if overlap.kind == OverlapKind::Confluence { match overlap.left_reduct(store) {
+    Err(reason) => output == Err(reason),
+    Ok(reduct) => output == Ok(joined(overlap, normalize(store, &reduct, budget), normalize(store, &overlap.right_reduct(), budget))),
+} } else { output == Err(OverlapRefusal::NotAConfluence) })]
 pub fn confluence_tracelet<A>(
     overlap: &Overlap<A>,
     store: &CellStore<A>,
@@ -389,6 +424,23 @@ where
 ///   stopped by its budget; [`confluence_join::Absent::NormalFormsDiffer`] when
 ///   the normal forms differ.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — both orientations of a joinable critical pair preserve
+///   the exact root-prefixed paths; either exhausted normalization wins before
+///   unequal terms. A missing prefix, swapped reason or one-sided exhaustion
+///   check changes the result.
+/// - witness: `tracelet::tests::joining_refusals_and_fusion_retries_preserve_boundaries`
+#[spec(captures: before = (left.clone(), right.clone()), ensures: |output| match output {
+    Maybe::Absent(confluence_join::Absent::BudgetExhausted) => bool::from(before.0.exhausted) || bool::from(before.1.exhausted),
+    Maybe::Absent(confluence_join::Absent::NormalFormsDiffer) => !bool::from(before.0.exhausted) && !bool::from(before.1.exhausted) && before.0.normal != before.1.normal,
+    Maybe::Present(ref certificate) => !bool::from(before.0.exhausted) && !bool::from(before.1.exhausted) && before.0.normal == before.1.normal
+        && certificate.overlap == *overlap && certificate.joins_at == before.0.normal
+        && certificate.path_a.len() == before.0.path.len().saturating_add(1) && certificate.path_b.len() == before.1.path.len().saturating_add(1)
+        && certificate.path_a.first().is_some_and(|head| head.cell == overlap.left && head.at == A::root_position())
+        && certificate.path_b.first().is_some_and(|head| head.cell == overlap.right && head.at == A::root_position())
+        && certificate.path_a.iter().skip(1).eq(before.0.path.iter()) && certificate.path_b.iter().skip(1).eq(before.1.path.iter()),
+})]
 pub fn joined<A>(
     overlap: &Overlap<A>,
     left: Normalization<A>,
@@ -452,11 +504,27 @@ where
 /// - hypothesis: L3 — the frame and successor cells fuse into a certificate of
 ///   a two-step and a one-step path that replays, over the sequent alphabet and
 ///   the toy alphabet; L2 — the fused cell agrees with the two-step derivation
-///   on generated ground instances.
+///   on generated ground instances. A second derivation reuses the same
+///   identifier and certificate; wrong-kind and off-term refusals leave the
+///   store unchanged. Duplicate insertion, wrong tags or mutation before
+///   refusal changes those observations.
 /// - witness: `tracelet::tests::a_fused_cell_certificate_replays`
 /// - witness: `tests::second_inhabitant::the_enumerator_finds_the_toy_composition_overlap`
 /// - witness: `tests::differential::fused_equals_two_step`
+/// - witness: `tracelet::tests::joining_refusals_and_fusion_retries_preserve_boundaries`
 #[inline]
+#[spec(captures: before = store.clone(), ensures: |output| match output {
+    Err(ref reason) => *store == before && matches!(overlap.composite(&before), Err(ref expected) if expected == reason),
+    Ok(ref fused) => before.iter().all(|(id, cell)| store.get(id) == Maybe::Present(cell))
+        && matches!(store.get(fused.0), Maybe::Present(cell) if cell.lhs() == &overlap.peak
+            && cell.orient() == A::derived_orientation() && cell.provenance() == A::derived_provenance()
+            && matches!(overlap.composite(&before), Ok(ref composite) if cell.rhs() == composite && fused.1.joins_at == *composite)
+            && usize::from(store.len()) == usize::from(before.len()).saturating_add(usize::from(!before.iter().any(|(_, old)| old == cell))))
+        && fused.1.overlap == *overlap && fused.1.path_a.len() == 2 && fused.1.path_b.len() == 1
+        && fused.1.path_a.first().is_some_and(|step| step.cell == overlap.left && step.at == A::root_position())
+        && fused.1.path_a.get(1).is_some_and(|step| step.cell == overlap.right && step.at == overlap.seam)
+        && fused.1.path_b.first().is_some_and(|step| step.cell == fused.0 && step.at == A::root_position()),
+})]
 pub fn derive_fused<A>(
     overlap: &Overlap<A>,
     store: &mut CellStore<A>,
@@ -496,7 +564,16 @@ where
 /// Whether a replayed path reached `target`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: positive exactly for a reached outcome equal to the target; a
+///   stuck outcome is negative even if its last successful term matched.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty paths reach their starting term, not another
+///   target; an issued step followed by a failure stays stuck. Ignoring the
+///   outcome variant or target equality changes the verdict.
+/// - witness: `tracelet::tests::replay_records_only_the_successful_prefix`
+#[spec(ensures: |output| bool::from(output) == matches!(*outcome, ReplayPathOutcome::Reached(ref term) if term == target))]
 fn reached<A>(
     outcome: &ReplayPathOutcome<A>,
     target: &A::Cmd,
@@ -569,6 +646,22 @@ impl<A: CellAlphabet> StepRecord<A> for Vec<ReplayStep<A>>
 ///   its position, with that reason.
 /// - ensures: `record` receives exactly the steps that fired, in order.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and successful paths reach exact terms, while
+///   missing identifiers, failed matches and off-term positions stop at the
+///   first failure. The recording observer contains only the successful prefix;
+///   continuing, dropping or duplicating notifications changes it.
+/// - witness: `tracelet::tests::replay_records_only_the_successful_prefix`
+#[spec(captures: initial = start.clone(), ensures: |output| match path.iter().try_fold(initial.clone(), |current, step| {
+    match store.get(step.cell) {
+        Maybe::Absent(_) => Err(ReplayPathOutcome::Stuck { application: step.clone(), reason: StuckStep::UnissuedCell }),
+        Maybe::Present(cell) => match rewrite_at(cell, &current, &step.at) {
+            Maybe::Present(result) => Ok(result),
+            Maybe::Absent(reason) => Err(ReplayPathOutcome::Stuck { application: step.clone(), reason: StuckStep::DoesNotFire(reason) }),
+        },
+    }
+}) { Ok(term) => output == ReplayPathOutcome::Reached(term), Err(expected) => output == expected })]
 fn run_path<A, R>(
     store: &CellStore<A>,
     start: A::Cmd,
@@ -609,6 +702,30 @@ where
 /// - ensures: [`ReplayPath::started_at`] is `start`; the steps and the outcome
 ///   are [`run_path`]'s over the same inputs.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — concrete terms, applications and outcomes expose every
+///   successful step before a typed failure, including failure after a success
+///   and at the first step. A wrong start, lost step, bad result or fabricated
+///   final success changes the trace.
+/// - witness: `tracelet::tests::replay_records_only_the_successful_prefix`
+#[spec(captures: initial = start.clone(), ensures: |output| {
+    let final_term = output.steps.last().map_or(&initial, |step| &step.result);
+    output.started_at == initial && output.steps.len() <= path.len()
+        && output.steps.iter().zip(path).all(|(step, application)| step.application == *application)
+        && output.steps.iter().enumerate().all(|(index, step)| {
+            let previous = index.checked_sub(1).and_then(|i| output.steps.get(i)).map_or(&initial, |prior| &prior.result);
+            matches!(store.get(step.application.cell), Maybe::Present(cell) if matches!(rewrite_at(cell, previous, &step.application.at), Maybe::Present(ref result) if *result == step.result))
+        })
+        && match output.outcome {
+            ReplayPathOutcome::Reached(ref term) => output.steps.len() == path.len() && term == final_term,
+            ReplayPathOutcome::Stuck { ref application, reason } => path.get(output.steps.len()) == Some(application)
+                && match store.get(application.cell) {
+                    Maybe::Absent(_) => reason == StuckStep::UnissuedCell,
+                    Maybe::Present(cell) => matches!(rewrite_at(cell, final_term, &application.at), Maybe::Absent(actual) if reason == StuckStep::DoesNotFire(actual)),
+                },
+        }
+})]
 fn trace_path<A>(
     store: &CellStore<A>,
     start: A::Cmd,
@@ -679,6 +796,14 @@ mod tests
     /// # Specification
     /// - panics: when the composition is not found or does not fuse, which is a
     ///   fixture defect.
+    /// - ensures: a composition certificate that replays over its store.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the concrete frame and successor composition produces
+    ///   a replayable certificate. Missing the composition, wrong cell
+    ///   identities or a non-replayable derivation changes the witness.
+    /// - witness: `tracelet::tests::a_fused_cell_certificate_replays`
+    #[spec(ensures: |output| output.1.overlap.kind == OverlapKind::Composition && bool::from(output.1.replay(&output.0)))]
     fn fused_fixture() -> (CellStore, Tracelet)
     {
         let mut store = CellStore::new();
@@ -872,5 +997,308 @@ mod tests
             );
         }
         assert_eq!(covered, [true; 2]);
+    }
+
+    #[test]
+    fn replay_records_only_the_successful_prefix()
+    {
+        let mut store = CellStore::new();
+        let id = store.insert(toy_cell(Toy::succ(Toy::var("x")), Toy::var("x")));
+        let step = CellApp {
+            cell: id,
+            at: ToyAlphabet::root_position(),
+        };
+        let missing = CellApp {
+            cell: CellId::from(1_usize),
+            at: ToyAlphabet::root_position(),
+        };
+        let one = Toy::succ(Toy::zero());
+        let start = Toy::succ(one.clone());
+        let empty = trace_path(&store, start.clone(), &[]);
+        assert_eq!(
+            ReplayPath {
+                started_at: start.clone(),
+                steps: Vec::new(),
+                outcome: ReplayPathOutcome::Reached(start.clone())
+            },
+            empty
+        );
+        assert!(bool::from(reached(&empty.outcome, &start)));
+        assert!(!bool::from(reached(&empty.outcome, &Toy::zero())));
+        let successful = [step.clone(), step.clone()];
+        let complete = trace_path(&store, start.clone(), &successful);
+        assert_eq!(
+            ReplayPath {
+                started_at: start.clone(),
+                steps: alloc::vec![
+                    ReplayStep {
+                        application: step.clone(),
+                        result: one.clone()
+                    },
+                    ReplayStep {
+                        application: step.clone(),
+                        result: Toy::zero()
+                    }
+                ],
+                outcome: ReplayPathOutcome::Reached(Toy::zero())
+            },
+            complete
+        );
+        let failing = [step.clone(), missing.clone(), step.clone()];
+        let stopped = trace_path(&store, start.clone(), &failing);
+        assert_eq!(
+            ReplayPath {
+                started_at: start.clone(),
+                steps: alloc::vec![ReplayStep {
+                    application: step.clone(),
+                    result: one.clone()
+                }],
+                outcome: ReplayPathOutcome::Stuck {
+                    application: missing.clone(),
+                    reason: StuckStep::UnissuedCell
+                }
+            },
+            stopped
+        );
+        assert!(!bool::from(reached(&stopped.outcome, &one)));
+        let sentinel = ReplayStep {
+            application: missing,
+            result: start.clone(),
+        };
+        let mut recorded = alloc::vec![sentinel.clone()];
+        assert_eq!(
+            stopped.outcome,
+            run_path(&store, start.clone(), &failing, &mut recorded)
+        );
+        assert_eq!(
+            alloc::vec![sentinel, ReplayStep {
+                application: step.clone(),
+                result: one
+            }],
+            recorded
+        );
+        assert_eq!(
+            ReplayPath {
+                started_at: Toy::zero(),
+                steps: Vec::new(),
+                outcome: ReplayPathOutcome::Stuck {
+                    application: step.clone(),
+                    reason: StuckStep::DoesNotFire(firing::Absent::NoMatch)
+                }
+            },
+            trace_path(&store, Toy::zero(), core::slice::from_ref(&step))
+        );
+        let off_term = CellApp {
+            cell: id,
+            at: ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
+        };
+        assert_eq!(
+            ReplayPath {
+                started_at: Toy::zero(),
+                steps: Vec::new(),
+                outcome: ReplayPathOutcome::Stuck {
+                    application: off_term.clone(),
+                    reason: StuckStep::DoesNotFire(firing::Absent::NoCommand(
+                        gandr_theory_cell_complexes::command_subterm::Absent::OffTerm
+                    ))
+                }
+            },
+            trace_path(&store, Toy::zero(), core::slice::from_ref(&off_term))
+        );
+        assert!(bool::from(replay_from_peak(
+            &store,
+            &start,
+            &start,
+            &[],
+            &[]
+        )));
+        assert!(bool::from(replay_from_peak(
+            &store,
+            &start,
+            &Toy::zero(),
+            &successful,
+            &successful
+        )));
+        for (left, right) in [
+            (&successful[..], &[][..]),
+            (&[][..], &successful[..]),
+            (&failing[..], &successful[..]),
+            (&successful[..], &failing[..]),
+        ] {
+            assert!(!bool::from(replay_from_peak(
+                &store,
+                &start,
+                &Toy::zero(),
+                left,
+                right
+            )));
+            let trace = ReplayTrace {
+                path_a: trace_path(&store, start.clone(), left),
+                path_b: trace_path(&store, start.clone(), right),
+                joins_at: Toy::zero(),
+            };
+            assert!(!bool::from(trace.verdict()));
+        }
+    }
+
+    #[test]
+    fn joining_refusals_and_fusion_retries_preserve_boundaries()
+    {
+        let mut store = CellStore::new();
+        let shrink = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
+        let identity = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::succ(Toy::zero())));
+        let shrink_step = CellApp {
+            cell: shrink,
+            at: ToyAlphabet::root_position(),
+        };
+        let identity_step = CellApp {
+            cell: identity,
+            at: ToyAlphabet::root_position(),
+        };
+        let overlaps = enumerate_overlaps(&store);
+        for (left, right, expected_a, expected_b) in [
+            (
+                shrink,
+                identity,
+                alloc::vec![shrink_step.clone()],
+                alloc::vec![identity_step.clone(), shrink_step.clone()],
+            ),
+            (
+                identity,
+                shrink,
+                alloc::vec![identity_step, shrink_step.clone()],
+                alloc::vec![shrink_step],
+            ),
+        ] {
+            let overlap = overlaps
+                .iter()
+                .find(|item| {
+                    item.kind == OverlapKind::Confluence && item.left == left && item.right == right
+                })
+                .expect("the two ordered confluence pairs exist");
+            assert_eq!(
+                Ok(Maybe::Absent(confluence_join::Absent::BudgetExhausted)),
+                confluence_tracelet(overlap, &store, NormalizationBudget::from(0_usize))
+            );
+            let Ok(Maybe::Present(certificate)) =
+                confluence_tracelet(overlap, &store, NormalizationBudget::from(1_usize))
+            else {
+                panic!("one normalization step joins these reducts");
+            };
+            assert_eq!(expected_a, certificate.path_a);
+            assert_eq!(expected_b, certificate.path_b);
+            assert_eq!(Toy::zero(), certificate.joins_at);
+            assert!(bool::from(certificate.replay(&store)));
+            assert_eq!(
+                Err(OverlapRefusal::UnissuedCell(left)),
+                confluence_tracelet(
+                    overlap,
+                    &CellStore::new(),
+                    NormalizationBudget::from(0_usize)
+                )
+            );
+            let mut wrong_kind = overlap.clone();
+            wrong_kind.kind = OverlapKind::Composition;
+            assert_eq!(
+                Err(OverlapRefusal::NotAConfluence),
+                confluence_tracelet(
+                    &wrong_kind,
+                    &CellStore::new(),
+                    NormalizationBudget::from(0_usize)
+                )
+            );
+        }
+        let mut divergent = CellStore::new();
+        let _zero = divergent.insert(toy_cell(Toy::add(Toy::zero(), Toy::zero()), Toy::zero()));
+        let _one = divergent.insert(toy_cell(
+            Toy::add(Toy::zero(), Toy::zero()),
+            Toy::succ(Toy::zero()),
+        ));
+        let divergent_pair = enumerate_overlaps(&divergent)
+            .into_iter()
+            .find(|overlap| overlap.kind == OverlapKind::Confluence)
+            .expect("the common left-hand side overlaps");
+        assert_eq!(
+            Ok(Maybe::Absent(confluence_join::Absent::NormalFormsDiffer)),
+            confluence_tracelet(
+                &divergent_pair,
+                &divergent,
+                NormalizationBudget::from(0_usize)
+            )
+        );
+        let mut composition_store = CellStore::new();
+        let first = composition_store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
+        let second = composition_store.insert(toy_cell(Toy::zero(), Toy::succ(Toy::zero())));
+        let composition = enumerate_overlaps(&composition_store)
+            .into_iter()
+            .find(|overlap| {
+                overlap.kind == OverlapKind::Composition
+                    && overlap.left == first
+                    && overlap.right == second
+            })
+            .expect("the first reduct is the second redex");
+        let fused =
+            derive_fused(&composition, &mut composition_store).expect("the composition fuses");
+        assert_eq!(CellId::from(2_usize), fused.0);
+        assert!(bool::from(fused.1.replay(&composition_store)));
+        let before = composition_store.clone();
+        assert_eq!(
+            Ok(fused),
+            derive_fused(&composition, &mut composition_store)
+        );
+        assert_eq!(before, composition_store);
+        let mut wrong_kind = composition.clone();
+        wrong_kind.kind = OverlapKind::Confluence;
+        assert_eq!(
+            Err(OverlapRefusal::NotAComposition),
+            derive_fused(&wrong_kind, &mut composition_store)
+        );
+        assert_eq!(before, composition_store);
+        let mut off_term = composition.clone();
+        off_term.seam = ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]);
+        assert_eq!(
+            Err(OverlapRefusal::SeamSplice(
+                gandr_theory_cell_complexes::CommandSpliceRefusal::OffTerm
+            )),
+            derive_fused(&off_term, &mut composition_store)
+        );
+        assert_eq!(before, composition_store);
+        let mut empty = CellStore::new();
+        assert_eq!(
+            Err(OverlapRefusal::UnissuedCell(first)),
+            derive_fused(&composition, &mut empty)
+        );
+        assert_eq!(CellStore::new(), empty);
+    }
+
+    #[test]
+    fn both_equivalence_boundaries_matter()
+    {
+        let (store, original) = fused_fixture();
+        let mut identity_at_start = original.clone();
+        identity_at_start.path_a.clear();
+        identity_at_start.path_b.clear();
+        identity_at_start.joins_at = original.overlap.peak.clone();
+        let mut identity_at_end = original.clone();
+        identity_at_end.path_a.clear();
+        identity_at_end.path_b.clear();
+        identity_at_end.overlap.peak = original.joins_at.clone();
+        assert!(bool::from(identity_at_start.replay(&store)));
+        assert!(bool::from(identity_at_end.replay(&store)));
+        assert!(!bool::from(replay_equivalent(
+            &original,
+            &identity_at_start,
+            &store
+        )));
+        assert!(!bool::from(replay_equivalent(
+            &original,
+            &identity_at_end,
+            &store
+        )));
+        let mut invalid = original.clone();
+        invalid.path_b.clear();
+        assert!(!bool::from(invalid.replay(&store)));
+        assert!(!bool::from(replay_equivalent(&original, &invalid, &store)));
+        assert!(!bool::from(replay_equivalent(&invalid, &original, &store)));
     }
 }
