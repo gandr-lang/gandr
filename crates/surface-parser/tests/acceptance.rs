@@ -1335,7 +1335,7 @@ fn expected_agrees_with_committed_finalize() -> Result<(), Box<dyn Error>>
         "if c { ret 1 } else { ret 2 }".to_owned(),
         "ret 1 +".to_owned(),
         "ret ( 1 +".to_owned(),
-        read_source(&corpus_root().join("fixture/pending/surface/string-interpolation.gandr"))?,
+        read_source(&corpus_root().join("fixture/surface/string-interpolation.gandr"))?,
     ];
     let mut excess_seen = 0_usize;
     for src in &sources {

@@ -80,6 +80,8 @@ pub enum FragmentSort
     Value,
     /// A computation, reached under a thunk and to an application's left.
     Computation,
+    /// A pattern, the binder of a `run` statement.
+    Pattern,
 }
 
 impl fmt::Display for FragmentSort
@@ -101,6 +103,7 @@ impl fmt::Display for FragmentSort
             | Self::CompType => f.write_str("a computation type"),
             | Self::Value => f.write_str("a value"),
             | Self::Computation => f.write_str("a computation"),
+            | Self::Pattern => f.write_str("a pattern"),
         }
     }
 }
@@ -790,6 +793,16 @@ mod tests
             (FormName::INTERPOLATION, "`string_interpolation`"),
             (FormName::ATTRIBUTE, "`attribute`"),
             (FormName::DECLARATION, "`def_value`"),
+            (FormName::BIND_STATEMENT, "`bind_statement`"),
+            (FormName::LET_STATEMENT, "`let_statement`"),
+            (FormName::UNPACK_STATEMENT, "`unpack_statement`"),
+            (FormName::LETA_STATEMENT, "`leta_statement`"),
+            (FormName::RECV_STATEMENT, "`recv_statement`"),
+            (FormName::ACQUIRE_STATEMENT, "`acquire_statement`"),
+            (FormName::RELEASE_STATEMENT, "`release_statement`"),
+            (FormName::FORK_STATEMENT, "`fork_statement`"),
+            (FormName::FORK_SHARED_STATEMENT, "`fork_shared_statement`"),
+            (FormName::EXPRESSION_STATEMENT, "`expression_statement`"),
         ];
 
         for (name, rendering) in expected {
@@ -832,6 +845,7 @@ mod tests
             (FragmentSort::CompType, "a computation type"),
             (FragmentSort::Value, "a value"),
             (FragmentSort::Computation, "a computation"),
+            (FragmentSort::Pattern, "a pattern"),
         ];
 
         for (sort, rendering) in expected {
@@ -843,7 +857,7 @@ mod tests
         }
         assert_eq!(
             expected.len(),
-            6_usize,
+            7_usize,
             "the pinned table covers every sort a node is read at"
         );
     }

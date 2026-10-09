@@ -1,14 +1,17 @@
+@[ refuses("MalformedForm") ]
 def comp(a : Type, b : Type, c : Type, f : U[ω] (a -> F b), g : U[ω] (b -> F c), x : a) -> F c {
   run y <- f(x);
   g(y)
 }
 
+@[ refuses("MalformedForm") ]
 def collide(a : Type, b : Type, c : Type, d : Type, u : U[ω] (a -> F c), h : U[ω] (c -> F d))
   -> F (U[ω] (a -> F d))
 {
   ret thunk { comp(a, c, d, u, h) }
 }
 
+@[ refuses("MalformedForm") ]
 def clean(p : Type, q : Type, r : Type, s : Type, u : U[ω] (p -> F r), h : U[ω] (r -> F s))
   -> F (U[ω] (p -> F s))
 {

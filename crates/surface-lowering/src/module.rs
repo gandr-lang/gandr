@@ -26,11 +26,19 @@
 //!
 //! The grammar writes every declaration as one form, `def name …`, whose tail
 //! decides what it is: `: T ;` a signature, `= e ;` a definition, and a
-//! parameter list, an implicit telescope or `rec` a function the fragment
-//! does not admit. Attributes written before `def` are tiles of that same
-//! form, so a declaration's attributes are read with it, and an attribute
-//! block standing on its own — after the last declaration — decorates nothing
-//! and refuses the module.
+//! parameter list `(params) -> T? { … }` a function, which writes a definition
+//! and, when every parameter and the result carry a type, a signature too. An
+//! implicit telescope or `rec` is a form the fragment does not admit.
+//! Attributes written before `def` are tiles of that same form, so a
+//! declaration's attributes are read with it, and an attribute block standing
+//! on its own — after the last declaration — decorates nothing and refuses the
+//! module.
+//!
+//! The collection pass reads a function tail only as far as the halves it
+//! writes: the parameter list, the result and the block are the function's own
+//! reading, which the classification makes over the declaration form once the
+//! halves are filed, so a refusal inside the function leaves its expectation
+//! readable.
 //!
 //! # One refusal per declaration, and the run continues
 //!
@@ -175,15 +183,26 @@ impl From<DeclarationCount> for usize
     }
 }
 
-/// One half of a declared name: the declaration form that wrote it and the
-/// operand its tail holds.
+/// What one half of a declared name lowers from.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Operand
+{
+    /// The one form written in the hole of `: T ;` or `= e ;`.
+    Written(Placed),
+    /// The function tail `(params) -> T? { … }`, lowered at the declaration
+    /// form itself.
+    Function,
+}
+
+/// One half of a declared name: the declaration form that wrote it and what
+/// it lowers from.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Half
 {
     /// The declaration form.
     pub declaration: Placed,
     /// The declared type of a signature, or the body of a definition.
-    pub operand: Placed,
+    pub operand: Operand,
 }
 
 /// The payload an attribute was written with.
@@ -399,12 +418,27 @@ enum HalfKind
     Definition,
 }
 
+/// Whether a function tail states its type: every parameter and the result
+/// carry one.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Signing
+{
+    /// The tail states every type its declared type is built from, so it
+    /// writes a signature beside its definition.
+    Signed,
+    /// A parameter or the result is untyped, so the tail writes a definition
+    /// alone, whose body must synthesise or meet a signature written apart.
+    Unsigned,
+}
+
 /// What one declaration form's tail wrote.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Tail<'source>
 {
     /// A signature or a definition over this operand.
     Wrote(HalfKind, Placed),
+    /// A function tail: a definition, and a signature when it is signed.
+    Function(Signing),
     /// The first fault of the form.
     Refused(LoweringRefusal<'source>),
 }
@@ -804,9 +838,12 @@ impl<'source> Collector<'_, 'source>
     /// # Specification
     /// - requires: `slot` names a live slot; `declaration` is the form read.
     /// - ensures: a fault is offered to the slot at the form itself; a clean
-    ///   form's half is recorded unless the slot already holds one of its kind,
-    ///   which offers the duplicate refusal naming the first instead; a clean
-    ///   form's attributes join the slot's in source order.
+    ///   form's halves — one for a signature or a definition, the definition
+    ///   for a function tail and its signature too when the tail is signed —
+    ///   are recorded unless the slot already holds one of their kinds, which
+    ///   offers the duplicate refusal naming the first instead and records none
+    ///   of them; a clean form's attributes join the slot's in source order,
+    ///   once whatever the halves it writes.
     /// - provides: the filing half of [`Self::declaration`].
     /// - fails: never.
     /// - panics: none.
@@ -822,32 +859,52 @@ impl<'source> Collector<'_, 'source>
         else {
             return;
         };
-        let (kind, operand) = match tail {
-            | Tail::Wrote(kind, operand) => (kind, operand),
+        let (operand, kinds): (Operand, &[HalfKind]) = match tail {
+            | Tail::Wrote(HalfKind::Signature, operand) => {
+                (Operand::Written(operand), &[HalfKind::Signature])
+            },
+            | Tail::Wrote(HalfKind::Definition, operand) => {
+                (Operand::Written(operand), &[HalfKind::Definition])
+            },
+            | Tail::Function(Signing::Signed) => (Operand::Function, &[
+                HalfKind::Signature,
+                HalfKind::Definition,
+            ]),
+            | Tail::Function(Signing::Unsigned) => (Operand::Function, &[HalfKind::Definition]),
             | Tail::Refused(refusal) => {
                 entry.refuse(declaration.node, refusal);
                 return;
             },
         };
-        let held = match kind {
-            | HalfKind::Signature => &mut entry.signature,
-            | HalfKind::Definition => &mut entry.definition,
-        };
-        if let Maybe::Present(first) = *held {
-            let (span, name, first) = (declaration.span, entry.name, first.declaration.span);
-            let refusal = match kind {
-                | HalfKind::Signature => LoweringRefusal::DuplicateSignature { span, name, first },
-                | HalfKind::Definition => {
-                    LoweringRefusal::DuplicateDefinition { span, name, first }
-                },
+        for &kind in kinds {
+            let held = match kind {
+                | HalfKind::Signature => entry.signature,
+                | HalfKind::Definition => entry.definition,
             };
-            entry.refuse(declaration.node, refusal);
-            return;
+            if let Maybe::Present(first) = held {
+                let (span, name, first) = (declaration.span, entry.name, first.declaration.span);
+                let refusal = match kind {
+                    | HalfKind::Signature => {
+                        LoweringRefusal::DuplicateSignature { span, name, first }
+                    },
+                    | HalfKind::Definition => {
+                        LoweringRefusal::DuplicateDefinition { span, name, first }
+                    },
+                };
+                entry.refuse(declaration.node, refusal);
+                return;
+            }
         }
-        *held = Maybe::Present(Half {
-            declaration,
-            operand,
-        });
+        for &kind in kinds {
+            let held = match kind {
+                | HalfKind::Signature => &mut entry.signature,
+                | HalfKind::Definition => &mut entry.definition,
+            };
+            *held = Maybe::Present(Half {
+                declaration,
+                operand,
+            });
+        }
         entry.attributes.extend(attributes);
     }
 
@@ -908,9 +965,10 @@ impl<'source> Collector<'_, 'source>
 /// - requires: `header` stands just past the form's name.
 /// - ensures: the half the tail writes, when it is a signature or a definition
 ///   whose hole holds exactly one form and which closes with `;` and nothing
-///   after it; every other tail yields its first fault — an implicit telescope
-///   or a parameter list declined by the folded form's own name, an empty or
-///   overfull hole, or a tile out of place.
+///   after it; a function tail, opening on `(`, with whether it is signed;
+///   every other tail yields its first fault — an implicit telescope declined
+///   by the folded form's own name, an empty or overfull hole, or a tile out of
+///   place.
 /// - provides: the tail half of a declaration form.
 /// - fails: never; a fault is yielded rather than raised.
 /// - panics: none.
@@ -919,6 +977,9 @@ fn read_tail<'source>(
     declaration: Placed,
 ) -> Tail<'source>
 {
+    if let Maybe::Present(_) = header.at(TileName::PAREN_OPEN) {
+        return Tail::Function(signing(header.clone()));
+    }
     let kind = if let Maybe::Present(_) = header.tile(TileName::COLON) {
         HalfKind::Signature
     }
@@ -949,14 +1010,56 @@ fn read_tail<'source>(
     Tail::Refused(misplaced(header.here()))
 }
 
-/// The refusal a tail that is neither a signature nor a definition earns.
+/// Whether the function tail at `header` states its type.
 ///
 /// # Specification
-/// - requires: `header` stands just past the form's name, at no `:` or `=`.
-/// - ensures: an implicit telescope and a parameter list are declined as forms
-///   the fragment does not admit, by the folded form's own name; an operand is
-///   one the form does not take; every other piece is a misplaced tile.
-/// - provides: the decline of the function family of declarations.
+/// - requires: `header` stands at the tail's `(`.
+/// - ensures: signed exactly when every binder tile before the parameter list's
+///   own `)` is followed by `:`, and the `)` by `->`; unsigned otherwise, a
+///   list with no `)` included. Only the tiles are read: whether each type and
+///   the result hold exactly one form is the function's own reading, decided
+///   where the classification reads the declaration.
+/// - provides: which halves a function tail writes.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the two conditions separated by a fully typed tail, a
+///   tail missing its result type, and a tail with one untyped parameter, each
+///   asserted through the halves the lowered declaration reports.
+/// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+/// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
+fn signing(mut header: Cursor<'_>) -> Signing
+{
+    let _open = header.tile(TileName::PAREN_OPEN);
+    loop {
+        match header.read() {
+            | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => break,
+            | Maybe::Present(Piece::Tile { label, .. }) if TileName::BINDERS.contains(&label) => {
+                if let Maybe::Absent(_) = header.at(TileName::COLON) {
+                    return Signing::Unsigned;
+                }
+            },
+            | Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) => {},
+            | Maybe::Absent(_) => return Signing::Unsigned,
+        }
+    }
+    match header.at(TileName::ARROW) {
+        | Maybe::Present(_) => Signing::Signed,
+        | Maybe::Absent(_) => Signing::Unsigned,
+    }
+}
+
+/// The refusal a tail that is neither a signature, a definition nor a function
+/// earns.
+///
+/// # Specification
+/// - requires: `header` stands just past the form's name, at no `:`, `=` or
+///   `(`.
+/// - ensures: an implicit telescope is declined as a form the fragment does not
+///   admit, by the folded form's own name; an operand is one the form does not
+///   take; every other piece is a misplaced tile.
+/// - provides: the decline of the declaration tails the fragment does not read.
 /// - fails: never.
 /// - panics: none.
 fn unadmitted_tail<'source>(
@@ -966,9 +1069,6 @@ fn unadmitted_tail<'source>(
 {
     if let Maybe::Present(_) = header.at(TileName::ATTRIBUTES) {
         return unadmitted(declaration, FormName::PARAMETERS);
-    }
-    if let Maybe::Present(_) = header.at(TileName::PAREN_OPEN) {
-        return unadmitted(declaration, FormName::FUNCTION);
     }
     if let Maybe::Present(Piece::Operand(stray)) = header.peek() {
         return extra_operand(FormName::DECLARATION, stray);

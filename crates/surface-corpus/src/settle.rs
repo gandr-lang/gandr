@@ -602,7 +602,8 @@ pub fn settle<'source>(
 }
 
 /// The attributes filed under `lowered`'s halves in `table`: the signature's,
-/// then the definition's.
+/// then the definition's; a form that wrote both halves, a signed function
+/// tail, has its attributes read once.
 ///
 /// # Specification
 /// trivial.
@@ -611,8 +612,14 @@ fn attributes<'table>(
     lowered: &LoweredDeclaration<'_>,
 ) -> impl Iterator<Item = &'table AttributeEntry>
 {
-    [lowered.signature(), lowered.definition()]
+    let signature = lowered.signature();
+    let definition = match lowered.definition() {
+        | Maybe::Present(digest) if signature == Maybe::Present(digest) => None,
+        | written => Some(written),
+    };
+    [Some(signature), definition]
         .into_iter()
+        .flatten()
         .filter_map(|half| match half {
             | Maybe::Present(digest) => Some(digest),
             | Maybe::Absent(_) => None,
@@ -748,6 +755,11 @@ mod tests
             (
                 r#"@[ refuses("ShapeMismatch") ] def a : Integer ; def a = "three" ;"#,
                 Settlement::Unsettled,
+                (0_usize, 0_usize),
+            ),
+            (
+                r#"@[ checks ] def f(x: Integer) -> F Integer { ret x }"#,
+                Settlement::Settled,
                 (0_usize, 0_usize),
             ),
             (

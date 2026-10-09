@@ -1,3 +1,4 @@
+@[ refuses("UnknownAttribute") ]
 @[doc("Squares its argument.")]
 @[deprecated(#{ since = "0.2", note = "use square_checked" })]
 def square(x: Integer) -> F Integer {

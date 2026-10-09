@@ -1,6 +1,6 @@
 //! The origin side table: [`Origin`], the [`OriginToken`] a declaration
 //! carries, and the [`OriginTable`] mapping every minted core node back to the
-//! syntax node that produced it.
+//! syntax node that produced it, written or inserted.
 //!
 //! # Types have origins from the first landing
 //!
@@ -17,6 +17,15 @@
 //! survives the tree. A diagnostic wants the first, a checkpoint keyed across
 //! runs wants the second, and an origin that carried only one would force the
 //! other consumer back to the tree.
+//!
+//! # An inserted node says so
+//!
+//! The lowering writes three bridges the source did not spell — a force, a
+//! thunk and a returner — at checked sites, by the sort of the position. Each
+//! carries the origin of the syntax node whose position demanded it, marked
+//! [`Provenance::Inserted`] with the [`Insertion`] it is, so a printer or a
+//! diagnostic can show the cast a reader did not write, and every node the
+//! source did write is [`Provenance::Written`].
 //!
 //! # The token is opaque on purpose
 //!
@@ -50,6 +59,30 @@ quenchant_shape::reason_enum! {
     }
 }
 
+/// One of the three bridges the lowering writes at a checked site.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Insertion
+{
+    /// A force over a value standing in an elimination head.
+    Force,
+    /// A thunk over a function's body, a computation standing where the
+    /// declaration takes a value.
+    Thunk,
+    /// A returner over a value type standing in a function's result position.
+    Returner,
+}
+
+/// Whether the source wrote a minted core node or the lowering inserted it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Provenance
+{
+    /// The source wrote the form the node lowers.
+    Written,
+    /// The lowering wrote the node at a checked site, by the sort of the
+    /// position the syntax node stands in.
+    Inserted(Insertion),
+}
+
 /// Where one minted core node came from.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Origin
@@ -60,11 +93,14 @@ pub struct Origin
     digest: NodeDigest,
     /// The bytes of the source that node covers.
     span: ByteSpan,
+    /// Whether the source wrote the core node or the lowering inserted it.
+    provenance: Provenance,
 }
 
 impl Origin
 {
-    /// The origin naming `node`, identified by `digest`, covering `span`.
+    /// The origin of a node the source wrote at `node`, identified by
+    /// `digest`, covering `span`.
     ///
     /// # Specification
     /// trivial.
@@ -76,7 +112,30 @@ impl Origin
         span: ByteSpan,
     ) -> Self
     {
-        Self { node, digest, span }
+        Self {
+            node,
+            digest,
+            span,
+            provenance: Provenance::Written,
+        }
+    }
+
+    /// The same syntax node, as the origin of the bridge `insertion` the
+    /// lowering wrote at it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn inserted(
+        self,
+        insertion: Insertion,
+    ) -> Self
+    {
+        Self {
+            provenance: Provenance::Inserted(insertion),
+            ..self
+        }
     }
 
     /// The arena position of the syntax node that produced the core node.
@@ -110,6 +169,17 @@ impl Origin
     pub const fn span(&self) -> ByteSpan
     {
         self.span
+    }
+
+    /// Whether the source wrote the core node or the lowering inserted it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn provenance(&self) -> Provenance
+    {
+        self.provenance
     }
 }
 

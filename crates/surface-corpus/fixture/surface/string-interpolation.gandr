@@ -1,11 +1,14 @@
+@[ refuses("OutOfFragment") ]
 def greet(name: String) -> F String {
   ret "hello ${ name }!"
 }
 
+@[ refuses("OutOfFragment") ]
 def describe(user: String, count: Integer) -> F String {
   ret "user=${ user }\trow=${ #{ n = count } }\n"
 }
 
+@[ refuses("OutOfFragment") ]
 def price() -> F String {
   ret "total: $5.00 for ${ count } items"
 }

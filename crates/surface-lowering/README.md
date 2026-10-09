@@ -14,6 +14,9 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - [Names resolve through tables with no fallthrough](#names-resolve-through-tables-with-no-fallthrough)
 - [A module is collected by name and resolved by position](#a-module-is-collected-by-name-and-resolved-by-position)
 - [A form's sort is decided by its own form](#a-forms-sort-is-decided-by-its-own-form)
+- [A function tail is a thunked chain of lambdas](#a-function-tail-is-a-thunked-chain-of-lambdas)
+- [A block binds each statement over the next](#a-block-binds-each-statement-over-the-next)
+- [Three insertions, by the sort of the position](#three-insertions-by-the-sort-of-the-position)
 - [Four ways out of the fragment](#four-ways-out-of-the-fragment)
 - [Literals mean their decoded value](#literals-mean-their-decoded-value)
 - [One refusal per declaration](#one-refusal-per-declaration)
@@ -42,7 +45,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 
 ## Provided features
 
-- `lower_module`, `LoweringBudget` and `Fuel`: the whole surface-to-core step under one allowance. Witnesses: `lower::tests::a_completed_declaration_lowers_both_halves`, `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`, `lower::tests::force_and_application_lower_over_their_children`, `lower::tests::a_refused_declaration_leaves_the_others_lowered`, `lower::tests::a_module_past_the_allowance_is_refused`.
+- `lower_module`, `LoweringBudget` and `Fuel`: the whole surface-to-core step under one allowance. Witnesses: `lower::tests::a_completed_declaration_lowers_both_halves`, `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`, `lower::tests::force_and_application_lower_over_their_children`, `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`, `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`, `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`, `lower::tests::a_block_binds_each_statement_over_the_next`, `lower::tests::a_call_applies_its_arguments_left_to_right`, `lower::tests::a_refused_declaration_leaves_the_others_lowered`, `lower::tests::a_module_past_the_allowance_is_refused`.
 - `LoweredModule`, `LoweredDeclaration`, `DeclarationOutcome` and `DeclarationCount`: one declaration per name, in admission order. Witnesses: `lower::tests::an_uncompleted_signature_is_the_obligation_producer`, `lower::tests::a_bodiless_definition_lowers_its_body_alone`, `module::tests::a_signature_pairs_with_its_definition`, `module::tests::a_definition_pairs_with_a_later_signature`.
 - `type_atom`, `type_former`, `TypeAtom`, `TypeFormer`, `HeadArity` and `OperandCount`: the type-head tables by arity. Witnesses: `resolve::tests::every_nullary_type_head_answers_its_atom`, `resolve::tests::every_unary_type_head_answers_its_former`, `lower::tests::an_applied_head_no_former_answers_is_refused`.
 - `Scope`, `ScopeId`, `Frame` and `SurfaceName`: the flat binder chain term names resolve through. Witnesses: `resolve::tests::an_inner_binder_shadows_an_outer_one`, `resolve::tests::sibling_extensions_of_one_scope_are_independent`, `resolve::tests::a_chain_walk_past_the_allowance_is_refused`.
@@ -51,6 +54,7 @@ Lowering the gandr surface into the core language: the molded syntax tree the pa
 - `LoweringRefusal::classify` and `FailureClass`, the latter re-exported from `gandr-core-term`, which every producer of refusals in the core pipeline classifies into: the classifier. Witnesses: `classify::tests::every_refusal_carries_its_pinned_class`, `classify::tests::the_absence_class_has_no_inhabitant`.
 - `AttributeRegistry`, `AttributeSchema`, `RegisteredAttribute`, `EditDistance`, `PayloadForm`, `PayloadVerdict`, `payload_form`, `payload_verdict`, `AttributeEntry`, `AttributeTable` and `AttributedCount`: the closed registry, its five diagnostics and the side table, filed for refused declarations too. Witnesses: `attribute::tests::every_registered_attribute_answers_its_schema`, `attribute::tests::a_near_misspelling_suggests_its_attribute`, `attribute::tests::the_payload_verdict_table_is_pinned`, `lower::tests::an_attribute_is_filed_under_its_declaration_digest`, `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`, `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`.
 - `Origin`, `OriginTable`, `OriginToken` and `OriginCount`: the origin of every minted node and every declaration. Witnesses: `origin::tests::each_family_answers_its_own_recorded_origins`, `lower::tests::every_minted_node_has_an_origin`, `lower::tests::a_grouping_lowers_to_what_it_wraps`.
+- `Provenance` and `Insertion`: whether a minted node was written by the author or inserted by the lowering, and which bridge an insertion is. Witnesses: `lower::tests::a_value_head_is_forced_and_marked_inserted`, `lower::tests::an_author_written_force_is_not_marked_inserted`, `lower::tests::a_positive_result_gains_a_returner_once`, `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`.
 
 ## Expected features
 
@@ -89,7 +93,7 @@ The same example is the crate-level doctest. `cargo nextest run -p gandr-surface
 
 ## Dispatch on the grammar's named kinds
 
-The lowering reads the molded tree directly. A node's form is the named kind the grammar resolves its mold to, and a fixed table (`former_of`) pairs the kinds the fragment reads with the former each is read as; every other kind is unadmitted. A form's own tiles are the child tiles whose mold belongs to the form's own grammar rule, matched by label, and every other written child is an operand. A variant the grammar folds into one form — the unit `()`, a grouping, the reserved pair and the annotation into the parenthesised expression; the signature, definition and function tails into the declaration; a block into the thunk or lambda that opens it — is told apart by its own tiles and named in a diagnostic by its folded kind (`FormName`).
+The lowering reads the molded tree directly. A node's form is the named kind the grammar resolves its mold to, and a fixed table (`former_of`) pairs the kinds the fragment reads with the former each is read as; every other kind is unadmitted. A form's own tiles are the child tiles whose mold belongs to the form's own grammar rule, matched by label, and every other written child is an operand. A variant the grammar folds into one form — the unit `()`, a grouping, the reserved pair and the annotation into the parenthesised expression; the signature, definition and function tails into the declaration; a block into the thunk, lambda or function tail that opens it, and each statement into its block by the keyword that opens it — is told apart by its own tiles and named in a diagnostic by its folded kind (`FormName`).
 
 The alternative was an adapter that rebuilds the molded tree into a tree of the lowering's own node kinds and lowers that. It was declined because the adapter is a second vocabulary of forms that drifts from the grammar, and because the grammar already names every form and every tile. Reversal: if one lowering must read trees from grammars whose named kinds differ, the dispatch table is chosen per grammar; an adapter tree still is not.
 
@@ -111,13 +115,33 @@ A signature pairs with its definition wherever the two sit in the module, so the
 
 ## A form's sort is decided by its own form
 
-The sort a position demands flows down from its parent, and the sort a form produces is a function of the form alone: `U C` is a value type, `F A` and `A -> C` are computation types, a thunk, a name, a number, a string and `()` are values, a returner, a force, a lambda and an application are computations, and a grouping is whatever it wraps. A mismatch is therefore refused where the form stands, carrying the sort its position demanded.
+The sort a position demands flows down from its parent, and the sort a form produces is a function of the form alone: `U C` is a value type, `F A` and `A -> C` are computation types, a thunk, a name, a number, a string and `()` are values, a returner, a force, a lambda, an application and a block are computations, and a grouping is whatever it wraps. A mismatch is therefore refused where the form stands, carrying the sort its position demanded, except at the three positions [the insertions](#three-insertions-by-the-sort-of-the-position) name.
 
 A form is checked in one order, and the first check it fails is its refusal: a kind the fragment has no reading for; a repair among its children; a term where a type belongs or the reverse; a reserved form; a former that does not produce the demanded sort; a variant the fragment does not admit, or an operand count it does not take; and last, the names and literals it holds.
 
+## A function tail is a thunked chain of lambdas
+
+`def f(x: A, y: B) -> R { … }` is one form that writes both halves of a declaration: the declared type `U (A -> B -> R)` and the definition `thunk (λx. λy. …)`, the block lowered under one binder per parameter. An empty parameter list declares `U R` and defines `thunk …`. The tail is signed when every parameter states its type and the tail states its result; a tail missing any of them writes its definition alone, so the declaration is a bodiless definition whose thunk the checker cannot synthesise, refused there as `NotSynthesisable` and never by the lowering. The declared `U` takes the declaration's origin and each arrow its parameter's binder, all written; each lambda takes its binder too.
+
+A call `f(a, b)` is `f` applied to `a`, then to `b`, curried left to right at the call's origin; `f()` is its head alone. Since a signed tail files one form under both halves, its attributes are filed once, under that form's identity.
+
+The alternative was keeping the function tail out of the fragment until a desugaring pass rewrites it into a `def` with a thunk of lambdas, which would put a second tree between the grammar and the lowering. Reversal: when the tail grows a form whose meaning is not a chain of lambdas — an implicit telescope, a recursive definition — that form is lowered by its own plan, and the chain stays the reading of the explicit parameters.
+
+## A block binds each statement over the next
+
+A block is a sequence of `run x <- c;` statements and a last computation. It lowers to a chain of binds, `c₁` bound over the rest of the block with `x` in scope, the last computation innermost, each bind at the origin of its `run` keyword. A block with no last computation is refused at the block as `Arity` with zero; every other statement — `let`, `unpack`, `leta`, `recv`, `acquire`, `release`, `fork` and a bare expression statement — is refused as `Unadmitted`, named by its form, at its keyword or, for an expression statement, at the expression; and a `run` binder that is annotated or is a pattern other than a name is refused the same way, at the annotation or the pattern.
+
+The alternative was lowering `let x = v;` beside `run`, as the substitution of a value. It was declined because the core has no let and the substitution would duplicate `v` at each occurrence, which the fragment has no sharing to undo. Reversal: when the core gains a let, or the lowering gains sharing, `let` lowers to it.
+
+## Three insertions, by the sort of the position
+
+Three positions bridge the sorts instead of refusing a mismatch: a value standing as an application's head is forced, because a force is the only way from a value to a computation; a value type standing as a function's result gains a returner, so `-> Integer` and `-> F Integer` mean the same and the returner is never doubled; and a function's body, a computation where the declaration takes a value, is thunked. Each bridge is decided by the position's sort and the written form's, both read off the syntax, so no type is consulted. The inserted node takes the origin of the syntax node that demanded it, marked `Provenance::Inserted` with its `Insertion`, so a reader can be shown the cast the author did not write; the checker judges it like any other node, and the kernel re-derives it on readmission.
+
+The recorded design places these insertions in an elaborator that reads the types in hand. This fragment has no elaborator, and its checker returns verdicts rather than terms, so an insertion there would need an elaborated body the readmission does not read; the lowering already knows every position's sort and every form's, so it writes them. The recorded design also thunks a computation in any value position; here only the function body is, and a lambda written where a value belongs stays the `WrongSort` refusal the fragment's suites pin, because the boundary this change moves is the function form's. Alternatives: type-directed insertion in the checker, returning the elaborated body; and inserting at every mismatched position. Reversal: a position whose sort is not read off the syntax — a head whose classifier only normalisation computes — moves the insertion into the checker; and the unit that moves the computation-in-value boundary thunks there too.
+
 ## Four ways out of the fragment
 
-`OutOfFragment` names the boundary a form crossed. `Reserved`: the form parses and is declined by name — the product type and the pair — so the classifier's unrepresentable class is inhabited by design. `Unadmitted`: the grammar reads the form and this fragment does not — a statement block, a function declaration, an annotation, a string interpolation, a grade, a type abstraction, a typed lambda parameter, a number with a fraction or an exponent, and every kind outside the dispatch table. `WrongSort`: the form produces another sort than its position demands. `Arity`: a lambda with other than one parameter, a call with other than one argument, an empty block.
+`OutOfFragment` names the boundary a form crossed. `Reserved`: the form parses and is declined by name — the product type and the pair — so the classifier's unrepresentable class is inhabited by design. `Unadmitted`: the grammar reads the form and this fragment does not — a statement other than `run`, an annotated or patterned `run` binder, a recursive definition, an explicit parameter block, a parameter named as a type variable, an annotation, a string interpolation, a grade, a type abstraction, a typed lambda parameter, a number with a fraction or an exponent, and every kind outside the dispatch table. `WrongSort`: the form produces another sort than its position demands. `Arity`: a lambda with other than one parameter, a block with no last computation.
 
 `Unadmitted` and `Arity` exist because the grammar is the whole surface and the fragment is a small part of it; without them every form the surface has and the core lacks would be misreported as a sort error.
 
@@ -151,7 +175,7 @@ The alternative was to file attributes for unrefused declarations only. It was d
 
 ## Origins for terms and types
 
-Every minted core node records the syntax node that produced it — its arena position, its content identity and its span — for values, computations, value types and computation types alike, so a later note about a type has a carrier already. A grouping mints nothing and its content keeps its own origin. A declaration's origin travels as an opaque `OriginToken` that a checker echoes back, which keeps spans and names out of the core.
+Every minted core node records the syntax node that produced it — its arena position, its content identity and its span — for values, computations, value types and computation types alike, so a later note about a type has a carrier already, and whether the author wrote it or the lowering inserted it. A grouping mints nothing and its content keeps its own origin. A declaration's origin travels as an opaque `OriginToken` that a checker echoes back, which keeps spans and names out of the core.
 
 ## Two sweeps, no recursion, one allowance
 

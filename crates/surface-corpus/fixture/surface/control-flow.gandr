@@ -1,15 +1,19 @@
+@[ refuses("OutOfFragment") ]
 def for_each() {
   for x in xs { drop(x); }
 }
 
+@[ refuses("OutOfFragment") ]
 def until_done() {
   while cond { break; }
 }
 
+@[ refuses("OutOfFragment") ]
 def spin() {
   loop { continue; }
 }
 
+@[ refuses("OutOfFragment") ]
 def sift() {
   for x in xs { if p { break; } else { continue; } }
 }

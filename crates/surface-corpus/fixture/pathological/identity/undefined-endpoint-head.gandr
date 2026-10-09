@@ -1,3 +1,4 @@
+@[ refuses("OutOfFragment") ]
 def refuted(x: Integer) -> F Path(Integer, nosuch(x), x) {
   ret here(x)
 }

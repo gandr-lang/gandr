@@ -1,11 +1,14 @@
+@[ refuses("UnresolvedTypeHead") ]
 def absurd(x: Void) -> F Integer {
   case x {}
 }
 
+@[ refuses("UnresolvedTypeHead") ]
 def classify(xs: List(Integer)) -> F Integer {
   case xs with len(xs) { 0 => ret 0, _ => ret 1 }
 }
 
+@[ refuses("UnresolvedTypeHead") ]
 def classify_annotated(xs: List(Integer)) -> F Integer {
   case xs with len(xs) -> F Integer { 0 => ret 0, _ => ret 1 }
 }

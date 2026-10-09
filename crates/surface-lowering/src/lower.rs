@@ -30,6 +30,20 @@
 //! its result is consumed, and every refusal carries the sort its own position
 //! demanded.
 //!
+//! # Three insertions, by the sort of the position
+//!
+//! Where the source writes a value and the position reads a computation, or
+//! the reverse, the fragment refuses — with three exceptions, each a site the
+//! grammar's own shape names. An application's head reads a computation, and
+//! a value standing there is forced; a function's result reads a computation
+//! type, and a value type standing there gains a returner; a function's body is
+//! a computation where the declaration takes a value, and is thunked. Each
+//! bridge is decided by the position, never searched for, and its origin is
+//! the syntax node that demanded it, marked inserted, so a reader can be shown
+//! the cast they did not write. Everywhere else the mismatch stays a refusal:
+//! a lambda written where a value belongs is still the author's mistake to
+//! suspend.
+//!
 //! # One order of checks, the same at every form
 //!
 //! A form is checked in a fixed order, and the first check it fails is its
@@ -106,9 +120,11 @@ use crate::module::DeclarationParts;
 use crate::module::DeclarationSlot;
 use crate::module::LoweredDeclaration;
 use crate::module::LoweredModule;
+use crate::module::Operand;
 use crate::module::Payload;
 use crate::module::WrittenAttribute;
 use crate::module::collect;
+use crate::origin::Insertion;
 use crate::origin::Origin;
 use crate::origin::OriginTable;
 use crate::resolve::Frame;
@@ -131,6 +147,9 @@ quenchant_shape::reason_enum! {
             Unminted,
             /// The node was minted at another sort than the one asked for.
             OtherSort,
+            /// The function tail states no type: a parameter or the result is
+            /// untyped.
+            Unstated,
         }
     }
 }
@@ -145,6 +164,18 @@ quenchant_shape::reason_enum! {
             Malformed,
             /// The former is not a literal former at all.
             NotALiteral,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a tile in a block names no statement.
+    pub mod statement {
+        /// The tile opens none of the statements a block holds.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The tile is no statement's keyword.
+            NotAKeyword,
         }
     }
 }
@@ -285,6 +316,14 @@ enum Reading
     Value(Frame),
     /// Read as a computation, under the binder frame named here.
     Computation(Frame),
+    /// Read as an application's head: a computation under the binder frame
+    /// named here, which a value standing here reaches by an inserted force.
+    Head(Frame),
+    /// Read as a function's result: a computation type, which a value type
+    /// standing here reaches by an inserted returner.
+    Result,
+    /// Read as a function: the declaration form whose tail is one.
+    Function,
 }
 
 impl Reading
@@ -296,11 +335,11 @@ impl Reading
     const fn sort(self) -> FragmentSort
     {
         match self {
-            | Self::Unread => FragmentSort::Declaration,
+            | Self::Unread | Self::Function => FragmentSort::Declaration,
             | Self::ValueType => FragmentSort::ValueType,
-            | Self::CompType => FragmentSort::CompType,
+            | Self::CompType | Self::Result => FragmentSort::CompType,
             | Self::Value(_frame) => FragmentSort::Value,
-            | Self::Computation(_frame) => FragmentSort::Computation,
+            | Self::Computation(_frame) | Self::Head(_frame) => FragmentSort::Computation,
         }
     }
 
@@ -311,9 +350,9 @@ impl Reading
     const fn family(self) -> Family
     {
         match self {
-            | Self::Unread => Family::Neither,
-            | Self::ValueType | Self::CompType => Family::Type,
-            | Self::Value(_frame) | Self::Computation(_frame) => Family::Term,
+            | Self::Unread | Self::Function => Family::Neither,
+            | Self::ValueType | Self::CompType | Self::Result => Family::Type,
+            | Self::Value(_frame) | Self::Computation(_frame) | Self::Head(_frame) => Family::Term,
         }
     }
 }
@@ -371,6 +410,82 @@ enum Produced
     CompType,
 }
 
+/// What the mint sweep writes over a node's own core node.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum Bridge
+{
+    /// Nothing: the node's sort is the sort its position reads.
+    Bare,
+    /// The bridge from the node's sort to the one its position reads.
+    Inserted(Insertion),
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a function's parameter or result carries no type.
+    pub mod stated {
+        /// The function tail leaves the type to a signature written apart.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The source wrote no `: T` after the binder, or no `-> T` after
+            /// the parameter list.
+            Unstated,
+        }
+    }
+}
+
+/// A stretch of one of the lowerer's flat stores, which a plan reads its list
+/// from rather than owning one.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Stretch
+{
+    /// The first entry.
+    start: usize,
+    /// One past the last entry.
+    end: usize,
+}
+
+/// One `run x <- c ;` statement of a block.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Statement
+{
+    /// The `run` tile, the origin of the bind.
+    run: NodeIndex,
+    /// The computation whose returned value the statement binds.
+    bound: NodeIndex,
+}
+
+/// A block: its statements, in source order, and its last computation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Block
+{
+    /// The block's statements, in the lowerer's statement store.
+    statements: Stretch,
+    /// The computation the block ends with.
+    last: NodeIndex,
+}
+
+/// One parameter of a function tail.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct Parameter
+{
+    /// The binder tile, the origin of the parameter's lambda and arrow.
+    binder: NodeIndex,
+    /// The parameter's type, when the source wrote one.
+    declared: Maybe<NodeIndex, stated::Absent>,
+}
+
+/// A function tail's reading: `(params) -> T? { … }`.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+struct Function
+{
+    /// The parameters, in the lowerer's parameter store.
+    parameters: Stretch,
+    /// The result type, when the source wrote one.
+    result: Maybe<NodeIndex, stated::Absent>,
+    /// The body.
+    block: Block,
+}
+
 /// What the mint sweep does for one node, decided by the classification.
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Plan
@@ -393,20 +508,23 @@ enum Plan
     Arrow(NodeIndex, NodeIndex),
     /// Adopt the child's lowered node unchanged.
     Transparent(NodeIndex),
-    /// A thunk over its body.
-    Thunk(NodeIndex),
+    /// A thunk over its block.
+    Thunk(Block),
     /// A returner over its value.
     Return(NodeIndex),
     /// A force over its value.
     Force(NodeIndex),
-    /// A lambda over its body.
-    Lambda(NodeIndex),
-    /// An application of its head to its argument.
-    Application(NodeIndex, NodeIndex),
+    /// A lambda over its block.
+    Lambda(Block),
+    /// An application of its head to its arguments, left to right, in the
+    /// lowerer's operand store.
+    Application(NodeIndex, Stretch),
+    /// A function tail's declared type and body.
+    Function(Function),
 }
 
 /// A node's lowered core node, at the sort its own form produced.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Lowered
 {
     /// A value.
@@ -417,6 +535,14 @@ enum Lowered
     ValueType(ValueTypeId),
     /// A computation type.
     CompType(CompTypeId),
+    /// A function tail: its declared type, when it states one, and its body.
+    Function
+    {
+        /// `U (A1 -> … -> An -> C)`, from the parameter and result types.
+        signature: Maybe<ValueTypeId, lowered::Absent>,
+        /// `thunk (λ … λ. block)`.
+        body: ValueId,
+    },
 }
 
 /// Whether a form can stand where a value is expected.
@@ -535,11 +661,20 @@ struct Lowerer<'run, 'source>
     readings: Vec<Reading>,
     /// What the mint sweep does for each node.
     plans: Vec<Plan>,
+    /// What the mint sweep writes over each node's own core node.
+    bridges: Vec<Bridge>,
     /// Each node's lowered core node.
     lowered: Vec<Maybe<Lowered, lowered::Absent>>,
     /// Which nodes lie inside an attribute payload.
     payload: Vec<InPayload>,
-    /// The binder frames the lambdas extended.
+    /// The arguments every planned application reads, stretch by stretch.
+    operands: Vec<NodeIndex>,
+    /// The statements every planned block reads, stretch by stretch.
+    statements: Vec<Statement>,
+    /// The parameters every planned function reads, stretch by stretch.
+    parameters: Vec<Parameter>,
+    /// The binder frames the lambdas, the parameters and the statements
+    /// extended.
     scope: Scope<'source>,
     /// The remaining allowance.
     fuel: Fuel,
@@ -566,10 +701,13 @@ struct Sink<'run>
 ///   each carrying its admission position, the content identity of each of its
 ///   declaration forms, an origin token, and what its declarations amount to —
 ///   a completed pair, an uncompleted signature, a bodiless definition, or the
-///   declaration's first refusal by arena position. Every core node the module
-///   minted has an origin recorded, terms and types alike, and every attribute
-///   the module carries is resolved against the registry and filed under the
-///   content identity of the declaration form it decorates.
+///   declaration's first refusal by arena position; a function tail is a
+///   definition, and a signature too when it types every parameter and its
+///   result. Every core node the module minted has an origin recorded, terms
+///   and types alike, the force, thunk and returner the lowering inserted
+///   marked as inserted, and every attribute the module carries is resolved
+///   against the registry and filed under the content identity of the
+///   declaration form it decorates.
 /// - provides: the whole surface-to-core step, in one pass over one tree with
 ///   one strictness and one verdict per name.
 /// - fails: [`LoweringRefusal::GrammarMismatch`] when the tree was molded under
@@ -613,6 +751,14 @@ struct Sink<'run>
 /// - witness: `lower::tests::a_grouping_lowers_to_what_it_wraps`
 /// - witness: `lower::tests::a_text_literal_lowers_with_its_escapes_decoded`
 /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+/// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+/// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
+/// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
+/// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+/// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
+/// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
+/// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
+/// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
 /// - witness: `lower::tests::a_self_reference_is_unresolved`
 /// - witness: `lower::tests::an_undefined_term_name_is_refused`
 /// - witness: `lower::tests::an_undefined_type_head_is_refused`
@@ -717,6 +863,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
         readings.resize(count, Reading::Unread);
         let mut plans = Vec::new();
         plans.resize(count, Plan::Unplanned);
+        let mut bridges = Vec::new();
+        bridges.resize(count, Bridge::Bare);
         let mut lowered = Vec::new();
         lowered.resize(count, Maybe::Absent(lowered::Absent::Unminted));
         let mut payload = Vec::new();
@@ -728,8 +876,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
             collected,
             readings,
             plans,
+            bridges,
             lowered,
             payload,
+            operands: Vec::new(),
+            statements: Vec::new(),
+            parameters: Vec::new(),
             scope: Scope::new(),
             fuel,
             pieces: Pieces::new(),
@@ -741,9 +893,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Specification
     /// - requires: the collection pass has run.
     /// - ensures: a signature's type is read as a value type, a definition's
-    ///   body as a value in the outermost frame, and an attribute's payload as
-    ///   a value when its form can stand as one; every other node stays unread.
-    ///   Every written payload is marked as one, whatever its form.
+    ///   body as a value in the outermost frame, a function tail's declaration
+    ///   form as a function, which reads both halves it wrote at once, and an
+    ///   attribute's payload as a value when its form can stand as one; every
+    ///   other node stays unread. Every written payload is marked as one,
+    ///   whatever its form.
     /// - provides: the entry points of the ascending sweep.
     /// - fails: [`LoweringRefusal::UnknownMold`] for a payload of a mold the
     ///   grammar does not hold.
@@ -756,11 +910,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let mut seeds: Vec<(NodeIndex, Reading)> = Vec::new();
         let mut payloads: Vec<NodeIndex> = Vec::new();
         for slot in &self.collected.slots {
-            if let Maybe::Present(half) = slot.signature {
-                seeds.push((half.operand.node, Reading::ValueType));
+            if let Maybe::Present(half) = slot.signature
+                && let Operand::Written(operand) = half.operand
+            {
+                seeds.push((operand.node, Reading::ValueType));
             }
             if let Maybe::Present(half) = slot.definition {
-                seeds.push((half.operand.node, Reading::Value(Frame::Outermost)));
+                seeds.push(match half.operand {
+                    | Operand::Written(operand) => (operand.node, Reading::Value(Frame::Outermost)),
+                    | Operand::Function => (half.declaration.node, Reading::Function),
+                });
             }
             for written in &slot.attributes {
                 let Payload::Written(payload) = written.payload
@@ -961,7 +1120,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - requires: `pieces` is the reading of the form at `site`.
     /// - ensures: a repair refuses the form; a former of the wrong family for
     ///   the position refuses as the wrong sort; every other former is handed
-    ///   to its own reader.
+    ///   to its own reader, a declaration form to the function reader, the one
+    ///   reading of the family that seeds one.
     /// - provides: the dispatch on the grammar's named kind.
     /// - fails: yields the form's first refusal.
     /// - panics: none.
@@ -998,37 +1158,69 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::ArrowType => self.arrow(site, cursor),
             | Former::ProductType => Err(site.out(FragmentBoundary::Reserved)),
             | Former::ParenthesizedType => self.parenthesized_type(site, cursor),
-            | Former::Declaration | Former::AttributeBlock | Former::Unadmitted => {
+            | Former::Declaration => self.function(site, cursor),
+            | Former::AttributeBlock | Former::Unadmitted => {
                 Err(site.out(FragmentBoundary::WrongSort))
             },
         }
     }
 
-    /// The binder frame of a form whose position demands `produced`.
+    /// The binder frame of a form whose position demands `produced`, with the
+    /// bridge the position writes over it.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the frame the position carries when it reads the produced
-    ///   sort — the outermost frame for the type sorts, which bind nothing.
-    /// - provides: the sort check every former takes.
+    ///   sort — the outermost frame for the type sorts, which bind nothing. An
+    ///   application's head reads a computation and reaches a value by a force;
+    ///   a function's result reads a computation type and reaches a value type
+    ///   by a returner; the bridge is recorded for the form's node, and every
+    ///   other match records none.
+    /// - provides: the sort check every former takes, and the two insertions
+    ///   decided by the sort of a position.
     /// - fails: yields the wrong-sort refusal when the position reads another
-    ///   sort.
+    ///   sort no bridge reaches.
     /// - panics: none.
     ///
     /// # Errors
     /// [`LoweringRefusal::OutOfFragment`] for a sort mismatch.
-    const fn require(
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each bridge separated from its bare neighbour: a
+    ///   value and a computation at a head, a value type and a computation type
+    ///   at a result, each asserted through the lowered node and its origin's
+    ///   provenance.
+    /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
+    /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
+    /// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
+    fn require(
+        &mut self,
         site: Site,
         produced: Produced,
     ) -> Result<Frame, LoweringRefusal<'source>>
     {
-        match (site.reading, produced) {
+        let (frame, bridge) = match (site.reading, produced) {
             | (Reading::Value(frame), Produced::Value)
-            | (Reading::Computation(frame), Produced::Computation) => Ok(frame),
+            | (Reading::Computation(frame) | Reading::Head(frame), Produced::Computation) => {
+                (frame, Bridge::Bare)
+            },
+            | (Reading::Head(frame), Produced::Value) => {
+                (frame, Bridge::Inserted(Insertion::Force))
+            },
             | (Reading::ValueType, Produced::ValueType)
-            | (Reading::CompType, Produced::CompType) => Ok(Frame::Outermost),
-            | _ => Err(site.out(FragmentBoundary::WrongSort)),
+            | (Reading::CompType | Reading::Result, Produced::CompType) => {
+                (Frame::Outermost, Bridge::Bare)
+            },
+            | (Reading::Result, Produced::ValueType) => {
+                (Frame::Outermost, Bridge::Inserted(Insertion::Returner))
+            },
+            | _ => return Err(site.out(FragmentBoundary::WrongSort)),
+        };
+        if let Some(held) = self.bridges.get_mut(usize::from(site.at.node)) {
+            *held = bridge;
         }
+
+        Ok(frame)
     }
 
     /// Classify a term name.
@@ -1051,7 +1243,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         site: Site,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = Self::require(site, Produced::Value)?;
+        let frame = self.require(site, Produced::Value)?;
         let name = self.name_at(site.at);
         if let Maybe::Present(index) = self.scope.index_of(frame, name, &mut self.fuel)? {
             self.plan(site, Plan::Variable(index));
@@ -1093,7 +1285,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         site: Site,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _frame = Self::require(site, Produced::Value)?;
+        let _frame = self.require(site, Produced::Value)?;
         let text = self.text_at(site.at);
         if let Maybe::Present(literal) = parse_literal(Former::Number, text) {
             self.plan(site, Plan::Literal(literal));
@@ -1129,7 +1321,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _frame = Self::require(site, Produced::Value)?;
+        let _frame = self.require(site, Produced::Value)?;
         let interpolated = pieces.pieces.iter().any(
             |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::INTERPOLATION),
         );
@@ -1185,7 +1377,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 name: FormName::UNIT,
                 ..site
             };
-            let _frame = Self::require(unit, Produced::Value)?;
+            let _frame = self.require(unit, Produced::Value)?;
             self.plan(site, Plan::Unit);
             return Ok(());
         }
@@ -1197,12 +1389,12 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a thunk, `thunk { c }`.
+    /// Classify a thunk, `thunk { … }`.
     ///
     /// # Specification
     /// - requires: `site` is a thunk in term position.
-    /// - ensures: a thunk standing as a value reads its block's one computation
-    ///   in its own frame and is planned over it.
+    /// - ensures: a thunk standing as a value reads its block in its own frame
+    ///   and is planned over it.
     /// - provides: the value former that suspends a computation.
     /// - fails: yields the wrong-sort refusal outside value position, the
     ///   unadmitted refusal for a grade, and the block's own refusal.
@@ -1216,26 +1408,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = Self::require(site, Produced::Value)?;
+        let frame = self.require(site, Produced::Value)?;
         let _keyword = cursor.tile(TileName::THUNK);
         if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
             return Err(site.folded(FormName::GRADE, FragmentBoundary::Unadmitted));
         }
-        let body = block(site, &mut cursor)?;
-        self.read(body.node, Reading::Computation(frame));
+        let body = self.block(site, &mut cursor, frame)?;
 
-        self.plan(site, Plan::Thunk(body.node));
+        self.plan(site, Plan::Thunk(body));
 
         Ok(())
     }
 
-    /// Classify a lambda, `fn (x) { c }`.
+    /// Classify a lambda, `fn (x) { … }`.
     ///
     /// # Specification
     /// - requires: `site` is a lambda in term position.
     /// - ensures: a lambda standing as a computation binds its one parameter in
-    ///   a frame extending its own, reads its block's computation under that
-    ///   frame, and is planned over it.
+    ///   a frame extending its own, reads its block under that frame, and is
+    ///   planned over it.
     /// - provides: the binder of the fragment.
     /// - fails: yields the wrong-sort refusal outside computation position; the
     ///   unadmitted refusal for a type abstraction or a typed parameter; the
@@ -1251,20 +1442,340 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = Self::require(site, Produced::Computation)?;
+        let frame = self.require(site, Produced::Computation)?;
         let _keyword = cursor.tile(TileName::FN);
         if let Maybe::Present(_) = cursor.at(TileName::BRACKET_OPEN) {
             return Err(site.folded(FormName::TYPE_ABSTRACTION, FragmentBoundary::Unadmitted));
         }
         let binder = parameter(site, &mut cursor)?;
-        let body = block(site, &mut cursor)?;
         let name = self.name_at(binder);
         let extended = self.scope.extend(frame, name);
-        self.read(body.node, Reading::Computation(Frame::Inner(extended)));
+        let body = self.block(site, &mut cursor, Frame::Inner(extended))?;
 
-        self.plan(site, Plan::Lambda(body.node));
+        self.plan(site, Plan::Lambda(body));
 
         Ok(())
+    }
+
+    /// Classify a function tail, `def f(x: A, …) -> B { … }`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a declaration form read as a function, whose tail
+    ///   opens on `(`.
+    /// - ensures: each parameter binds in a frame extending the one before it,
+    ///   left to right, with its type, when written, read as a value type; the
+    ///   result, when written, is read at the result position; the block is
+    ///   read under the last parameter's frame; the form is planned as the
+    ///   function's declared type and body.
+    /// - provides: the function tail, lowered once at the declaration form for
+    ///   both halves it writes.
+    /// - fails: yields the unadmitted refusal for a parameter spelled as a type
+    ///   or a type variable; a fault naming the function form for a parameter
+    ///   list, a type or a result out of shape; and the block's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The function's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the parameter count is separated by none and two,
+    ///   each lowered tail asserted as the exact core node read back out of the
+    ///   arena, and the refusals by a type-spelled parameter and a juxtaposed
+    ///   parameter type, each asserted as the exact variant.
+    /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+    /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
+    /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+    /// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
+    fn function(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let function = Site {
+            name: FormName::FUNCTION,
+            ..site
+        };
+        loop {
+            match cursor.read() {
+                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::DEF => break,
+                | Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) => {},
+                | Maybe::Absent(_) => {
+                    return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
+                },
+            }
+        }
+        let _name = cursor.tile(TileName::IDENTIFIER);
+        closed(function, &mut cursor, TileName::PAREN_OPEN)?;
+        let start = self.parameters.len();
+        let mut frame = Frame::Outermost;
+        loop {
+            let binder = match cursor.peek() {
+                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => {
+                    let _close = cursor.tile(TileName::PAREN_CLOSE);
+                    break;
+                },
+                | Maybe::Present(Piece::Tile { label, at }) if label == TileName::IDENTIFIER => at,
+                | Maybe::Present(Piece::Tile { label, at }) if TileName::BINDERS.contains(&label) =>
+                {
+                    let parameter = Site {
+                        at,
+                        name: FormName::PARAMETER,
+                        ..function
+                    };
+                    return Err(parameter.out(FragmentBoundary::Unadmitted));
+                },
+                | Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
+                    return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
+                },
+            };
+            let _binder = cursor.tile(TileName::IDENTIFIER);
+            let declared = match cursor.tile(TileName::COLON) {
+                | Maybe::Present(_) => {
+                    let declared = function.one(cursor.operands())?;
+                    self.read(declared.node, Reading::ValueType);
+                    Maybe::Present(declared.node)
+                },
+                | Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
+            };
+            self.parameters.push(Parameter {
+                binder: binder.node,
+                declared,
+            });
+            let name = self.name_at(binder);
+            frame = Frame::Inner(self.scope.extend(frame, name));
+            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
+                && let Maybe::Absent(_) = cursor.at(TileName::PAREN_CLOSE)
+            {
+                return Err(function.fault(cursor.here(), FormFault::MisplacedTile));
+            }
+        }
+        let parameters = Stretch {
+            start,
+            end: self.parameters.len(),
+        };
+        let result = match cursor.tile(TileName::ARROW) {
+            | Maybe::Present(_) => {
+                let result = function.one(cursor.operands())?;
+                self.read(result.node, Reading::Result);
+                Maybe::Present(result.node)
+            },
+            | Maybe::Absent(_) => Maybe::Absent(stated::Absent::Unstated),
+        };
+        let block = self.block(function, &mut cursor, frame)?;
+
+        self.plan(
+            site,
+            Plan::Function(Function {
+                parameters,
+                result,
+                block,
+            }),
+        );
+
+        Ok(())
+    }
+
+    /// Read a block, `{ s… c }`, whose first statement reads under `frame`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the block's `{`, which the form's last
+    ///   piece closes.
+    /// - ensures: each `run x <- c ;` statement reads its computation under the
+    ///   frame the statements before it extended and binds `x` in a frame
+    ///   extending that one; the last computation reads under the frame every
+    ///   statement extended; the statements and the last computation are
+    ///   returned, with the cursor past the closing `}` and nothing after it.
+    /// - provides: the body reading of thunks, lambdas and function tails.
+    /// - fails: yields the unadmitted refusal for a statement the fragment does
+    ///   not read, by the statement's own name; the arity refusal, as a block,
+    ///   for a block with no last computation; and each statement's and hole's
+    ///   own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The block's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the statement count is separated by none and two, the
+    ///   second binding over the first, each asserted as the exact bind chain
+    ///   read back out of the arena; the residue by one witness row per refused
+    ///   statement form, asserted as the exact refusal.
+    /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+    /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+    /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+    /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
+    fn block(
+        &mut self,
+        site: Site,
+        cursor: &mut Cursor<'_>,
+        frame: Frame,
+    ) -> Result<Block, LoweringRefusal<'source>>
+    {
+        let Maybe::Present(open) = cursor.tile(TileName::BRACE_OPEN)
+        else {
+            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        };
+        let start = self.statements.len();
+        let mut frame = frame;
+        loop {
+            match cursor.peek() {
+                | Maybe::Present(Piece::Tile { label, at }) if label == TileName::RUN => {
+                    let _run = cursor.tile(TileName::RUN);
+                    frame = self.statement(cursor, at, frame)?;
+                },
+                | Maybe::Present(Piece::Operand(_)) => {
+                    let run = cursor.operands();
+                    if let Maybe::Present(semicolon) = cursor.at(TileName::SEMICOLON) {
+                        let first = match run {
+                            | Run::One(written) | Run::Several { first: written, .. } => {
+                                written.span
+                            },
+                            | Run::Empty(gap) => gap,
+                        };
+                        return Err(LoweringRefusal::OutOfFragment {
+                            span: first.join(semicolon.span),
+                            form: FormName::EXPRESSION_STATEMENT,
+                            sort: FragmentSort::Computation,
+                            boundary: FragmentBoundary::Unadmitted,
+                        });
+                    }
+                    let last = site.one(run)?;
+                    closed(site, cursor, TileName::BRACE_CLOSE)?;
+                    exhausted(site, cursor)?;
+                    self.read(last.node, Reading::Computation(frame));
+                    return Ok(Block {
+                        statements: Stretch {
+                            start,
+                            end: self.statements.len(),
+                        },
+                        last: last.node,
+                    });
+                },
+                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::BRACE_CLOSE => {
+                    let braced = ByteSpan::new(open.span.start(), site.at.span.end())
+                        .unwrap_or(site.at.span);
+                    let as_block = Site {
+                        at: Placed {
+                            node: site.at.node,
+                            span: braced,
+                        },
+                        name: FormName::BLOCK,
+                        reading: Reading::Computation(frame),
+                    };
+                    return Err(as_block.out(FragmentBoundary::Arity(OperandCount::from(0_usize))));
+                },
+                | Maybe::Present(Piece::Tile { label, at }) => {
+                    return Err(match statement_form(label, cursor) {
+                        | Maybe::Present(form) => LoweringRefusal::OutOfFragment {
+                            span: at.span,
+                            form,
+                            sort: FragmentSort::Computation,
+                            boundary: FragmentBoundary::Unadmitted,
+                        },
+                        | Maybe::Absent(_) => site.fault(at.span, FormFault::MisplacedTile),
+                    });
+                },
+                | Maybe::Absent(_) => {
+                    return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+                },
+            }
+        }
+    }
+
+    /// Read one `run x <- c ;` statement, its `run` tile already read.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the statement's `run` tile `run`;
+    ///   `frame` is the frame the statement reads under.
+    /// - ensures: the statement's computation is read under `frame` and the
+    ///   statement recorded with its `run` tile; the frame binding the
+    ///   statement's name over `frame`, which the rest of the block reads
+    ///   under, is returned.
+    /// - provides: the one statement the fragment reads.
+    /// - fails: yields the unadmitted refusal for an annotated binder and for a
+    ///   binder pattern other than a name, and a fault naming the bind
+    ///   statement for a hole or a tile out of shape.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The statement's refusal.
+    fn statement(
+        &mut self,
+        cursor: &mut Cursor<'_>,
+        run: Placed,
+        frame: Frame,
+    ) -> Result<Frame, LoweringRefusal<'source>>
+    {
+        let statement = Site {
+            at: run,
+            name: FormName::BIND_STATEMENT,
+            reading: Reading::Computation(frame),
+        };
+        let binder = statement.one(cursor.operands())?;
+        if let Maybe::Present(colon) = cursor.at(TileName::COLON) {
+            return Err(LoweringRefusal::OutOfFragment {
+                span: colon.span,
+                form: FormName::ANNOTATION,
+                sort: FragmentSort::Computation,
+                boundary: FragmentBoundary::Unadmitted,
+            });
+        }
+        closed(statement, cursor, TileName::BIND)?;
+        let bound = statement.one(cursor.operands())?;
+        closed(statement, cursor, TileName::SEMICOLON)?;
+        let name = self.binder_name(statement, binder)?;
+        self.read(bound.node, Reading::Computation(frame));
+        self.statements.push(Statement {
+            run: run.node,
+            bound: bound.node,
+        });
+
+        Ok(Frame::Inner(self.scope.extend(frame, name)))
+    }
+
+    /// The name a `run` statement's pattern binds.
+    ///
+    /// # Specification
+    /// - requires: `binder` is the pattern operand of the statement at
+    ///   `statement`.
+    /// - ensures: the name an identifier pattern spells.
+    /// - provides: the binder reading of the bind statement.
+    /// - fails: yields the unadmitted refusal, at pattern sort and by the
+    ///   pattern's own name, for every other pattern;
+    ///   [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pattern's refusal.
+    fn binder_name(
+        &self,
+        statement: Site,
+        binder: Placed,
+    ) -> Result<SurfaceName<'source>, LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(binder.node)
+        else {
+            return Err(statement.fault(binder.span, FormFault::MisplacedTile));
+        };
+        match shape_of(self.pbg, node)? {
+            | Shape::Form {
+                former: Former::Name,
+                ..
+            } => Ok(self.name_at(binder)),
+            | Shape::Form { name, .. } => Err(LoweringRefusal::OutOfFragment {
+                span: binder.span,
+                form: name,
+                sort: FragmentSort::Pattern,
+                boundary: FragmentBoundary::Unadmitted,
+            }),
+            | Shape::Repair(repair) => {
+                Err(statement.fault(binder.span, FormFault::Repaired(repair)))
+            },
+            | Shape::Root | Shape::Layout => {
+                Err(statement.fault(binder.span, FormFault::MisplacedTile))
+            },
+        }
     }
 
     /// Classify a keyword form of one value operand: `ret v` or `force v`.
@@ -1288,7 +1799,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         keyword: TileName,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = Self::require(site, Produced::Computation)?;
+        let frame = self.require(site, Produced::Computation)?;
         let _keyword = cursor.tile(keyword);
         let operand = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
@@ -1305,33 +1816,52 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify an application, `c(v)`.
+    /// Classify an application, `c(v, …)`.
     ///
     /// # Specification
     /// - requires: `site` is a call in term position.
-    /// - ensures: a call standing as a computation reads its head as a
-    ///   computation and its one argument as a value, both in its own frame,
-    ///   and is planned over them.
-    /// - provides: the elimination of a lambda.
-    /// - fails: yields the wrong-sort refusal outside computation position; the
-    ///   arity refusal for any argument count but one; the hole's own refusal.
+    /// - ensures: a call standing as a computation reads its head at the head
+    ///   position and each argument as a value, all in its own frame, and is
+    ///   planned as the head applied to the arguments left to right; a call of
+    ///   no arguments is its head.
+    /// - provides: the elimination of a lambda, curried over any argument
+    ///   count.
+    /// - fails: yields the wrong-sort refusal outside computation position, and
+    ///   the hole's own refusal.
     /// - panics: none.
     ///
     /// # Errors
     /// The call's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the argument count is separated by none, one and two,
+    ///   each asserted as the exact application chain read back out of the
+    ///   arena.
+    /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
+    /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
     fn call(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = Self::require(site, Produced::Computation)?;
+        let frame = self.require(site, Produced::Computation)?;
         let head = site.one(cursor.operands())?;
-        let argument = single(site, arguments(site, &mut cursor)?)?;
-        self.read(head.node, Reading::Computation(frame));
-        self.read(argument.node, Reading::Value(frame));
+        let start = self.operands.len();
+        arguments(site, &mut cursor, &mut self.operands)?;
+        let written = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        self.read(head.node, Reading::Head(frame));
+        for position in written.start .. written.end {
+            if let Some(&argument) = self.operands.get(position) {
+                self.read(argument, Reading::Value(frame));
+            }
+        }
 
-        self.plan(site, Plan::Application(head.node, argument.node));
+        self.plan(site, Plan::Application(head.node, written));
 
         Ok(())
     }
@@ -1355,7 +1885,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         site: Site,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _frame = Self::require(site, Produced::ValueType)?;
+        let _frame = self.require(site, Produced::ValueType)?;
         let name = self.name_at(site.at);
         let Maybe::Present(atom) = type_atom(name)
         else {
@@ -1397,15 +1927,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         };
         let name = self.name_at(head);
-        let written = arguments(site, &mut cursor)?;
+        let start = self.operands.len();
+        let read = arguments(site, &mut cursor, &mut self.operands);
+        let count = self.operands.len().saturating_sub(start);
+        let first = self.operands.get(start).copied();
+        self.operands.truncate(start);
+        read?;
         let unresolved = |arity| LoweringRefusal::UnresolvedTypeHead {
             span: head.span,
             name,
             arity,
         };
-        let Arguments::One(argument) = written
+        let (Some(argument), 1_usize) = (first, count)
         else {
-            return Err(unresolved(HeadArity::Polyadic(written.count())));
+            return Err(unresolved(HeadArity::Polyadic(OperandCount::from(count))));
         };
         let Maybe::Present(former) = type_former(name)
         else {
@@ -1457,7 +1992,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         let argument = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
 
-        self.apply_former(site, former, argument)
+        self.apply_former(site, former, argument.node)
     }
 
     /// Plan `former` applied to `argument` at `site`.
@@ -1480,17 +2015,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
         &mut self,
         site: Site,
         former: TypeFormer,
-        argument: Placed,
+        argument: NodeIndex,
     ) -> Result<(), LoweringRefusal<'source>>
     {
         let (produced, inner) = match former {
             | TypeFormer::Thunk => (Produced::ValueType, Reading::CompType),
             | TypeFormer::Returner => (Produced::CompType, Reading::ValueType),
         };
-        let _frame = Self::require(site, produced)?;
-        self.read(argument.node, inner);
+        let _frame = self.require(site, produced)?;
+        self.read(argument, inner);
 
-        self.plan(site, Plan::Former(former, argument.node));
+        self.plan(site, Plan::Former(former, argument));
 
         Ok(())
     }
@@ -1515,7 +2050,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let _frame = Self::require(site, Produced::CompType)?;
+        let _frame = self.require(site, Produced::CompType)?;
         let domain = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::ARROW)?;
         let codomain = site.one(cursor.operands())?;
@@ -1635,7 +2170,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   minted because the level-order layout puts them at strictly higher
     ///   positions; every minted node gets an origin naming the syntax node
     ///   that produced it, terms and types alike, while an adopted child keeps
-    ///   its own. A node under a declaration that refused is not minted, and
+    ///   its own. A node whose position bridges its sort has the bridge minted
+    ///   over its own core node, with the same syntax node's origin marked as
+    ///   inserted. A node under a declaration that refused is not minted, and
     ///   neither is any node above it, unless it lies inside an attribute
     ///   payload: the side table files a payload whatever its declaration's
     ///   outcome, so an expectation about a refused declaration stays readable.
@@ -1664,18 +2201,35 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 continue;
             };
             let plan = core::mem::replace(planned, Plan::Unplanned);
-            let Some(node) = self.tree.node(position)
+            let Maybe::Present(origin) = self.origin_at(position)
             else {
                 continue;
             };
-            let origin = Origin::new(position, node.digest(), node.span());
+            let bridge = self.bridges.get(next).copied().unwrap_or(Bridge::Bare);
             let minted = self.mint_plan(plan, sink, origin);
+            let bridged = sink.bridge(minted, bridge, origin);
             if let Some(held) = self.lowered.get_mut(next) {
-                *held = minted;
+                *held = bridged;
             }
         }
 
         Ok(())
+    }
+
+    /// The origin of a core node the syntax node at `position` wrote.
+    ///
+    /// # Specification
+    /// trivial.
+    fn origin_at(
+        &self,
+        position: NodeIndex,
+    ) -> Maybe<Origin, lowered::Absent>
+    {
+        self.tree
+            .node(position)
+            .map_or(Maybe::Absent(lowered::Absent::Unminted), |node| {
+                Maybe::Present(Origin::new(position, node.digest(), node.span()))
+            })
     }
 
     /// Carry out one plan.
@@ -1718,12 +2272,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Atom(atom) => Maybe::Present(sink.atom(atom, origin)),
             | Plan::Transparent(child) => self.lowered_at(child),
             | Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
+            | Plan::Application(head, arguments) => {
+                self.mint_application(head, arguments, sink, origin)
+            },
+            | Plan::Function(function) => self.mint_function(&function, sink, origin),
             | Plan::Arrow(..)
             | Plan::Thunk(_)
             | Plan::Return(_)
             | Plan::Force(_)
-            | Plan::Lambda(_)
-            | Plan::Application(..) => self.mint_over(&plan, sink, origin),
+            | Plan::Lambda(_) => self.mint_over(&plan, sink, origin),
         }
     }
 
@@ -1772,7 +2329,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Lowered::CompType(id)
                 })
             }),
-            | Plan::Thunk(body) => self.computation_at(body).map(|suspended| {
+            | Plan::Thunk(body) => self.mint_block(body, sink).map(|suspended| {
                 let id = sink.arena.value_thunk(suspended);
                 sink.value(id, origin)
             }),
@@ -1784,15 +2341,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 let id = sink.arena.computation_force(forced);
                 sink.computation(id, origin)
             }),
-            | Plan::Lambda(body) => self.computation_at(body).map(|under| {
+            | Plan::Lambda(body) => self.mint_block(body, sink).map(|under| {
                 let id = sink.arena.computation_lambda(under);
                 sink.computation(id, origin)
-            }),
-            | Plan::Application(head, argument) => self.computation_at(head).and_then(|called| {
-                self.value_at(argument).map(|passed| {
-                    let id = sink.arena.computation_application(called, passed);
-                    sink.computation(id, origin)
-                })
             }),
             | Plan::Unplanned
             | Plan::Variable(_)
@@ -1801,8 +2352,203 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Literal(_)
             | Plan::Atom(_)
             | Plan::Former(..)
-            | Plan::Transparent(_) => Maybe::Absent(lowered::Absent::Unminted),
+            | Plan::Transparent(_)
+            | Plan::Application(..)
+            | Plan::Function(_) => Maybe::Absent(lowered::Absent::Unminted),
         }
+    }
+
+    /// Mint a block: its statements bound over its last computation.
+    ///
+    /// # Specification
+    /// - requires: every node the block names is already minted or absent.
+    /// - ensures: `run x1 <- c1 ; … run xn <- cn ; c` mints as `bind(c1, …
+    ///   bind(cn, c))`, each bind's origin its statement's `run` tile; a block
+    ///   of no statements is its last computation; nothing is minted when any
+    ///   computation of the block did not lower.
+    /// - provides: the block half of thunks, lambdas and function tails.
+    /// - fails: never.
+    /// - panics: none.
+    fn mint_block(
+        &self,
+        block: Block,
+        sink: &mut Sink<'_>,
+    ) -> Maybe<ComputationId, lowered::Absent>
+    {
+        let statements = stretch(&self.statements, block.statements);
+        let mut chain = match self.computation_at(block.last) {
+            | Maybe::Present(last) => last,
+            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        for statement in statements {
+            if let Maybe::Absent(reason) = self.computation_at(statement.bound) {
+                return Maybe::Absent(reason);
+            }
+            if let Maybe::Absent(reason) = self.origin_at(statement.run) {
+                return Maybe::Absent(reason);
+            }
+        }
+        for statement in statements.iter().rev() {
+            let (Maybe::Present(bound), Maybe::Present(origin)) = (
+                self.computation_at(statement.bound),
+                self.origin_at(statement.run),
+            )
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let id = sink.arena.computation_bind(bound, chain);
+            sink.origins.record_computation(id, origin);
+            chain = id;
+        }
+
+        Maybe::Present(chain)
+    }
+
+    /// Mint an application of `head` to `arguments`, left to right.
+    ///
+    /// # Specification
+    /// - requires: every node the plan names is already minted or absent.
+    /// - ensures: `c(v1, …, vn)` mints as `app(… app(c, v1) …, vn)`, every
+    ///   application carrying the call's origin; a call of no arguments is its
+    ///   head's own computation; nothing is minted when the head or an argument
+    ///   did not lower.
+    /// - provides: the curried elimination of a lambda.
+    /// - fails: never.
+    /// - panics: none.
+    fn mint_application(
+        &self,
+        head: NodeIndex,
+        arguments: Stretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let mut applied = match self.computation_at(head) {
+            | Maybe::Present(called) => called,
+            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let arguments = stretch(&self.operands, arguments);
+        for &argument in arguments {
+            if let Maybe::Absent(reason) = self.value_at(argument) {
+                return Maybe::Absent(reason);
+            }
+        }
+        for &argument in arguments {
+            let passed = match self.value_at(argument) {
+                | Maybe::Present(passed) => passed,
+                | Maybe::Absent(reason) => return Maybe::Absent(reason),
+            };
+            let id = sink.arena.computation_application(applied, passed);
+            sink.origins.record_computation(id, origin);
+            applied = id;
+        }
+
+        Maybe::Present(Lowered::Computation(applied))
+    }
+
+    /// Mint a function tail: its body, and its declared type when it states
+    /// one.
+    ///
+    /// # Specification
+    /// - requires: every node the plan names is already minted or absent.
+    /// - ensures: `(x1: A1, …, xn: An) -> C { b }` mints its body as `thunk (λ
+    ///   … λ. b)`, one lambda per parameter with the binder tile's origin and
+    ///   the thunk marked as inserted at the declaration form, and its declared
+    ///   type as `U (A1 -> … -> An -> C)`, one arrow per parameter with the
+    ///   binder tile's origin and `U` the declaration form's; a tail missing a
+    ///   parameter or result type mints the body alone; nothing is minted when
+    ///   the block did not lower.
+    /// - provides: the function tail's two halves, from one reading.
+    /// - fails: never.
+    /// - panics: none.
+    fn mint_function(
+        &self,
+        function: &Function,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let parameters = stretch(&self.parameters, function.parameters);
+        for parameter in parameters {
+            if let Maybe::Absent(reason) = self.origin_at(parameter.binder) {
+                return Maybe::Absent(reason);
+            }
+        }
+        let mut body = match self.mint_block(function.block, sink) {
+            | Maybe::Present(block) => block,
+            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        for parameter in parameters.iter().rev() {
+            let Maybe::Present(binder) = self.origin_at(parameter.binder)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let id = sink.arena.computation_lambda(body);
+            sink.origins.record_computation(id, binder);
+            body = id;
+        }
+        let thunk = sink.arena.value_thunk(body);
+        sink.origins
+            .record_value(thunk, origin.inserted(Insertion::Thunk));
+
+        Maybe::Present(Lowered::Function {
+            signature: self.mint_signature(function, parameters, sink, origin),
+            body: thunk,
+        })
+    }
+
+    /// Mint a function tail's declared type, `U (A1 -> … -> An -> C)`.
+    ///
+    /// # Specification
+    /// - requires: `parameters` are the function's own.
+    /// - ensures: the declared type, as [`Self::mint_function`] states it;
+    ///   nothing is minted when a type is unstated or did not lower.
+    /// - provides: the signature half of [`Self::mint_function`].
+    /// - fails: never.
+    /// - panics: none.
+    fn mint_signature(
+        &self,
+        function: &Function,
+        parameters: &[Parameter],
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        let Maybe::Present(result) = function.result
+        else {
+            return Maybe::Absent(lowered::Absent::Unstated);
+        };
+        let mut declared = match self.comp_type_at(result) {
+            | Maybe::Present(result) => result,
+            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        for parameter in parameters {
+            let Maybe::Present(written) = parameter.declared
+            else {
+                return Maybe::Absent(lowered::Absent::Unstated);
+            };
+            if let Maybe::Absent(reason) = self.value_type_at(written) {
+                return Maybe::Absent(reason);
+            }
+        }
+        for parameter in parameters.iter().rev() {
+            let (Maybe::Present(written), Maybe::Present(binder)) =
+                (parameter.declared, self.origin_at(parameter.binder))
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let Maybe::Present(domain) = self.value_type_at(written)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            let id = sink.arena.comp_type_arrow(domain, declared);
+            sink.origins.record_comp_type(id, binder);
+            declared = id;
+        }
+        let id = sink.arena.value_type_thunk(declared);
+        sink.origins.record_value_type(id, origin);
+
+        Maybe::Present(id)
     }
 
     /// What `position` lowered to.
@@ -1831,9 +2577,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         self.lowered_at(position).and_then(|held| match held {
             | Lowered::Value(id) => Maybe::Present(id),
-            | Lowered::Computation(_) | Lowered::ValueType(_) | Lowered::CompType(_) => {
-                Maybe::Absent(lowered::Absent::OtherSort)
-            },
+            | Lowered::Computation(_)
+            | Lowered::ValueType(_)
+            | Lowered::CompType(_)
+            | Lowered::Function { .. } => Maybe::Absent(lowered::Absent::OtherSort),
         })
     }
 
@@ -1848,9 +2595,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         self.lowered_at(position).and_then(|held| match held {
             | Lowered::Computation(id) => Maybe::Present(id),
-            | Lowered::Value(_) | Lowered::ValueType(_) | Lowered::CompType(_) => {
-                Maybe::Absent(lowered::Absent::OtherSort)
-            },
+            | Lowered::Value(_)
+            | Lowered::ValueType(_)
+            | Lowered::CompType(_)
+            | Lowered::Function { .. } => Maybe::Absent(lowered::Absent::OtherSort),
         })
     }
 
@@ -1865,9 +2613,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         self.lowered_at(position).and_then(|held| match held {
             | Lowered::ValueType(id) => Maybe::Present(id),
-            | Lowered::Value(_) | Lowered::Computation(_) | Lowered::CompType(_) => {
-                Maybe::Absent(lowered::Absent::OtherSort)
-            },
+            | Lowered::Value(_)
+            | Lowered::Computation(_)
+            | Lowered::CompType(_)
+            | Lowered::Function { .. } => Maybe::Absent(lowered::Absent::OtherSort),
         })
     }
 
@@ -1882,9 +2631,46 @@ impl<'run, 'source> Lowerer<'run, 'source>
     {
         self.lowered_at(position).and_then(|held| match held {
             | Lowered::CompType(id) => Maybe::Present(id),
-            | Lowered::Value(_) | Lowered::Computation(_) | Lowered::ValueType(_) => {
-                Maybe::Absent(lowered::Absent::OtherSort)
-            },
+            | Lowered::Value(_)
+            | Lowered::Computation(_)
+            | Lowered::ValueType(_)
+            | Lowered::Function { .. } => Maybe::Absent(lowered::Absent::OtherSort),
+        })
+    }
+
+    /// The declared type the function tail at `position` lowered to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn signature_at(
+        &self,
+        position: NodeIndex,
+    ) -> Maybe<ValueTypeId, lowered::Absent>
+    {
+        self.lowered_at(position).and_then(|held| match held {
+            | Lowered::Function { signature, .. } => signature,
+            | Lowered::Value(_)
+            | Lowered::Computation(_)
+            | Lowered::ValueType(_)
+            | Lowered::CompType(_) => Maybe::Absent(lowered::Absent::OtherSort),
+        })
+    }
+
+    /// The body the function tail at `position` lowered to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn function_body_at(
+        &self,
+        position: NodeIndex,
+    ) -> Maybe<ValueId, lowered::Absent>
+    {
+        self.lowered_at(position).and_then(|held| match held {
+            | Lowered::Function { body, .. } => Maybe::Present(body),
+            | Lowered::Value(_)
+            | Lowered::Computation(_)
+            | Lowered::ValueType(_)
+            | Lowered::CompType(_) => Maybe::Absent(lowered::Absent::OtherSort),
         })
     }
 
@@ -2166,11 +2952,17 @@ impl<'run, 'source> Lowerer<'run, 'source>
             return Maybe::Present(DeclarationOutcome::Refused(refusal));
         }
         let declared = match slot.signature {
-            | Maybe::Present(half) => self.value_type_at(half.operand.node),
+            | Maybe::Present(half) => match half.operand {
+                | Operand::Written(written) => self.value_type_at(written.node),
+                | Operand::Function => self.signature_at(half.declaration.node),
+            },
             | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
         let body = match slot.definition {
-            | Maybe::Present(half) => self.value_at(half.operand.node),
+            | Maybe::Present(half) => match half.operand {
+                | Operand::Written(written) => self.value_at(written.node),
+                | Operand::Function => self.function_body_at(half.declaration.node),
+            },
             | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
         };
         match (declared, body) {
@@ -2204,6 +2996,49 @@ enum Filing
 
 impl Sink<'_>
 {
+    /// Write `bridge` over `minted`, the core node of the syntax node at
+    /// `origin`.
+    ///
+    /// # Specification
+    /// - requires: `minted` is what the node's own plan minted.
+    /// - ensures: a bare node is `minted` unchanged; a forced value is minted
+    ///   as a force over it and a returned value type as a returner over it,
+    ///   each with `origin` marked as the insertion it is; nothing when the
+    ///   node did not lower at the sort its bridge leaves, which the
+    ///   classification makes unreachable.
+    /// - provides: the minting half of the insertions a position's sort
+    ///   decides.
+    /// - fails: never.
+    /// - panics: none.
+    fn bridge(
+        &mut self,
+        minted: Maybe<Lowered, lowered::Absent>,
+        bridge: Bridge,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let Bridge::Inserted(insertion) = bridge
+        else {
+            return minted;
+        };
+        let inserted = origin.inserted(insertion);
+        match (minted, insertion) {
+            | (Maybe::Present(Lowered::Value(forced)), Insertion::Force) => {
+                let id = self.arena.computation_force(forced);
+                Maybe::Present(self.computation(id, inserted))
+            },
+            | (Maybe::Present(Lowered::ValueType(returned)), Insertion::Returner) => {
+                let id = self.arena.comp_type_returner(returned);
+                self.origins.record_comp_type(id, inserted);
+                Maybe::Present(Lowered::CompType(id))
+            },
+            | (Maybe::Present(_), Insertion::Force | Insertion::Thunk | Insertion::Returner) => {
+                Maybe::Absent(lowered::Absent::OtherSort)
+            },
+            | (Maybe::Absent(reason), _) => Maybe::Absent(reason),
+        }
+    }
+
     /// Record `id`'s origin and wrap it as a lowered value.
     ///
     /// # Specification
@@ -2302,84 +3137,63 @@ fn parameter<'source>(
     }
 }
 
-/// The one computation of a block, `{ c }`.
+/// The statements a block opens with a keyword the fragment does not read, by
+/// that keyword, with the form a refusal names each by; `fork` is read apart,
+/// because its two statements share the keyword.
+const UNREAD_STATEMENTS: [(TileName, FormName); 6_usize] = [
+    (TileName::VAL, FormName::LET_STATEMENT),
+    (TileName::UNPACK, FormName::UNPACK_STATEMENT),
+    (TileName::LETA, FormName::LETA_STATEMENT),
+    (TileName::RECV, FormName::RECV_STATEMENT),
+    (TileName::ACQUIRE, FormName::ACQUIRE_STATEMENT),
+    (TileName::RELEASE, FormName::RELEASE_STATEMENT),
+];
+
+/// The statement the tile `label`, at `cursor`, opens.
 ///
 /// # Specification
-/// - requires: `cursor` stands at the block's `{`, which the form's last piece
-///   closes.
-/// - ensures: the block's one operand, with the cursor past the closing `}` and
-///   nothing after it.
-/// - provides: the body reading of thunks and lambdas.
-/// - fails: yields the unadmitted refusal, as a block, for statements; the
-///   arity refusal, as a block, for an empty block; and the hole's own refusal.
+/// - requires: `cursor` stands at the tile `label`, in a block, at a place a
+///   statement may start.
+/// - ensures: the statement form the keyword opens — `fork` followed by `!` the
+///   shared fork — and the absence for a tile that opens no statement.
+/// - provides: the names a block's refused statements are written as;
+///   [`statement::Absent::NotAKeyword`] for a tile no statement starts with.
+/// - fails: never.
 /// - panics: none.
-///
-/// # Errors
-/// The block's refusal.
-fn block<'source>(
-    site: Site,
-    cursor: &mut Cursor<'_>,
-) -> Result<Placed, LoweringRefusal<'source>>
+fn statement_form(
+    label: TileName,
+    cursor: &Cursor<'_>,
+) -> Maybe<FormName, statement::Absent>
 {
-    let Maybe::Present(open) = cursor.tile(TileName::BRACE_OPEN)
-    else {
-        return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
-    };
-    let braced = ByteSpan::new(open.span.start(), site.at.span.end()).unwrap_or(site.at.span);
-    let as_block = Site {
-        at: Placed {
-            node: site.at.node,
-            span: braced,
-        },
-        name: FormName::BLOCK,
-        reading: Reading::Computation(Frame::Outermost),
-    };
-    let run = cursor.operands();
-    if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_CLOSE) {
-        return Err(as_block.out(FragmentBoundary::Unadmitted));
-    }
-    exhausted(site, cursor)?;
-    if let Run::Empty(_) = run {
-        return Err(as_block.out(FragmentBoundary::Arity(OperandCount::from(0_usize))));
+    if label == TileName::FORK {
+        let mut ahead = cursor.clone();
+        let _fork = ahead.read();
+        return Maybe::Present(match ahead.at(TileName::BANG) {
+            | Maybe::Present(_) => FormName::FORK_SHARED_STATEMENT,
+            | Maybe::Absent(_) => FormName::FORK_STATEMENT,
+        });
     }
 
-    site.one(run)
+    UNREAD_STATEMENTS
+        .iter()
+        .find(|&&(keyword, _form)| keyword == label)
+        .map_or(
+            Maybe::Absent(statement::Absent::NotAKeyword),
+            |&(_keyword, form)| Maybe::Present(form),
+        )
 }
 
-/// The arguments between a form's parentheses.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum Arguments
-{
-    /// Exactly one argument.
-    One(Placed),
-    /// Any other number of arguments.
-    Other(OperandCount),
-}
-
-impl Arguments
-{
-    /// How many arguments were written.
-    ///
-    /// # Specification
-    /// trivial.
-    fn count(self) -> OperandCount
-    {
-        match self {
-            | Self::One(_) => OperandCount::from(1_usize),
-            | Self::Other(count) => count,
-        }
-    }
-}
-
-/// Read a parenthesised, comma-separated argument list.
+/// Read a parenthesised, comma-separated argument list into `written`.
 ///
 /// # Specification
 /// - requires: `cursor` stands at the list's `(`.
-/// - ensures: the arguments written, with the cursor past the closing `)` and
-///   nothing after it; empty parentheses are zero arguments.
+/// - ensures: every argument written is appended to `written`, left to right,
+///   with the cursor past the closing `)` and nothing after it; empty
+///   parentheses append nothing.
 /// - provides: the argument reading of calls and type applications.
 /// - fails: yields the hole's own refusal for an empty or juxtaposed argument,
-///   and a misplaced-tile refusal for a list out of shape.
+///   and a misplaced-tile refusal for a list out of shape; the arguments read
+///   before the refusal stay appended.
 /// - panics: none.
 ///
 /// # Errors
@@ -2387,24 +3201,23 @@ impl Arguments
 fn arguments<'source>(
     site: Site,
     cursor: &mut Cursor<'_>,
-) -> Result<Arguments, LoweringRefusal<'source>>
+    written: &mut Vec<NodeIndex>,
+) -> Result<(), LoweringRefusal<'source>>
 {
     if let Maybe::Absent(_) = cursor.tile(TileName::PAREN_OPEN) {
         return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
     }
-    let mut first: Option<Placed> = None;
-    let mut count = 0_usize;
+    let start = written.len();
     loop {
         let run = cursor.operands();
         let closing = cursor.tile(TileName::PAREN_CLOSE);
         if let (Run::Empty(_), Maybe::Present(_)) = (run, closing)
-            && count == 0_usize
+            && written.len() == start
         {
             break;
         }
         let argument = site.one(run)?;
-        count = count.saturating_add(1_usize);
-        first = first.or(Some(argument));
+        written.push(argument.node);
         if let Maybe::Present(_) = closing {
             break;
         }
@@ -2412,27 +3225,20 @@ fn arguments<'source>(
             return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
         }
     }
-    exhausted(site, cursor)?;
 
-    Ok(match first {
-        | Some(argument) if count == 1_usize => Arguments::One(argument),
-        | Some(_) | None => Arguments::Other(OperandCount::from(count)),
-    })
+    exhausted(site, cursor)
 }
 
-/// The one argument of a call.
+/// The entries of `store` that `stretch` names.
 ///
 /// # Specification
 /// trivial.
-fn single<'source>(
-    site: Site,
-    written: Arguments,
-) -> Result<Placed, LoweringRefusal<'source>>
+fn stretch<Entry>(
+    store: &[Entry],
+    stretch: Stretch,
+) -> &[Entry]
 {
-    match written {
-        | Arguments::One(argument) => Ok(argument),
-        | Arguments::Other(count) => Err(site.out(FragmentBoundary::Arity(count))),
-    }
+    store.get(stretch.start .. stretch.end).unwrap_or(&[])
 }
 
 /// Read the closing tile `label`, refusing anything else in its place.
@@ -2677,7 +3483,9 @@ mod tests
     use crate::module::DeclarationOutcome;
     use crate::module::LoweredDeclaration;
     use crate::module::LoweredModule;
+    use crate::origin::Insertion;
     use crate::origin::OriginCount;
+    use crate::origin::Provenance;
     use crate::resolve::HeadArity;
     use crate::resolve::OperandCount;
     use crate::resolve::SurfaceName;
@@ -3100,6 +3908,402 @@ mod tests
     }
 
     #[test]
+    fn a_function_tail_lowers_to_a_thunked_lambda_chain()
+    {
+        let variable = |index: u32| Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(index),
+        };
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def f(x: Integer, y: String) -> F Integer { run z <- ret y ; ret x }",
+            ),
+            &mut arena,
+        );
+        let [ref declaration] = *module.declarations()
+        else {
+            panic!("the tail declares one name");
+        };
+        let DeclarationOutcome::Completed {
+            declared_type,
+            body,
+        } = declaration.outcome()
+        else {
+            panic!("a tail typing every parameter and its result writes both halves");
+        };
+        assert!(
+            matches!(declaration.signature(), Maybe::Present(_))
+                && declaration.signature() == declaration.definition(),
+            "both halves are the one declaration form"
+        );
+
+        let Some(&ValueType::Thunk(suspended)) = arena.value_type(declared_type)
+        else {
+            panic!("the declared type is a thunk type");
+        };
+        let Some(&CompType::Arrow {
+            domain: first,
+            codomain: rest,
+        }) = arena.comp_type(suspended)
+        else {
+            panic!("the first parameter is the outer arrow");
+        };
+        let Some(&CompType::Arrow {
+            domain: second,
+            codomain: result,
+        }) = arena.comp_type(rest)
+        else {
+            panic!("the second parameter is the inner arrow");
+        };
+        let Some(&CompType::Returner(returned)) = arena.comp_type(result)
+        else {
+            panic!("the result is the written returner");
+        };
+        assert_eq!(
+            [first, second, returned].map(|id| arena.value_type(id).cloned()),
+            [
+                Some(ValueType::Base(BaseType::Integer)),
+                Some(ValueType::Base(BaseType::String)),
+                Some(ValueType::Base(BaseType::Integer)),
+            ],
+            "the declared type is `U (Integer -> String -> F Integer)`"
+        );
+
+        let Some(&Value::Thunk(suspended)) = arena.value(body)
+        else {
+            panic!("the body is a thunk");
+        };
+        let Some(&Computation::Lambda(outer)) = arena.computation(suspended)
+        else {
+            panic!("the first parameter is the outer lambda");
+        };
+        let Some(&Computation::Lambda(inner)) = arena.computation(outer)
+        else {
+            panic!("the second parameter is the inner lambda");
+        };
+        let Some(&Computation::Bind(bound, rest)) = arena.computation(inner)
+        else {
+            panic!("the statement is a bind");
+        };
+        let (Some(&Computation::Return(read)), Some(&Computation::Return(last))) =
+            (arena.computation(bound), arena.computation(rest))
+        else {
+            panic!("the bound and the last computation are returners");
+        };
+        assert_eq!(
+            [read, last].map(|id| arena.value(id).cloned()),
+            [Some(variable(0_u32)), Some(variable(2_u32))],
+            "`y` is innermost before the statement, and `x` sits under `y` and `z` after it"
+        );
+        assert_eq!(
+            module
+                .origins()
+                .value(body)
+                .map(|origin| origin.provenance()),
+            Maybe::Present(Provenance::Inserted(Insertion::Thunk)),
+            "the body's thunk is the lowering's, not the source's"
+        );
+        assert_eq!(
+            module
+                .origins()
+                .value_type(declared_type)
+                .map(|origin| origin.provenance()),
+            Maybe::Present(Provenance::Written),
+            "the declared type is the function form's own"
+        );
+    }
+
+    #[test]
+    fn an_empty_parameter_list_lowers_to_a_thunked_computation()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def main() -> F Integer { ret 3 }"),
+            &mut arena,
+        );
+        let [
+            DeclarationOutcome::Completed {
+                declared_type,
+                body,
+            },
+        ] = outcomes(&module)[..]
+        else {
+            panic!("a tail of no parameters writes both halves");
+        };
+        let Some(&ValueType::Thunk(suspended)) = arena.value_type(declared_type)
+        else {
+            panic!("the declared type is a thunk type");
+        };
+        let Some(&Value::Thunk(computation)) = arena.value(body)
+        else {
+            panic!("the body is a thunk");
+        };
+
+        assert!(
+            matches!(arena.comp_type(suspended), Some(&CompType::Returner(_))),
+            "no arrow stands between `U` and the result"
+        );
+        assert!(
+            matches!(
+                arena.computation(computation),
+                Some(&Computation::Return(_))
+            ),
+            "no lambda stands between the thunk and the block"
+        );
+    }
+
+    #[test]
+    fn a_tail_missing_a_type_writes_its_definition_alone()
+    {
+        for source in [
+            "def f(x: Integer) { ret x }",
+            "def f(x, y: Integer) -> F Integer { ret y }",
+        ] {
+            let mut arena = CoreArena::new();
+            let module = lowered(SourceText::from(source), &mut arena);
+            let [ref declaration] = *module.declarations()
+            else {
+                panic!("`{source}` declares one name");
+            };
+
+            assert!(
+                matches!(declaration.outcome(), DeclarationOutcome::Bodied { .. }),
+                "`{source}` lowers its body alone"
+            );
+            assert!(
+                matches!(declaration.signature(), Maybe::Absent(_)),
+                "`{source}` writes no signature"
+            );
+        }
+    }
+
+    #[test]
+    fn a_block_binds_each_statement_over_the_next()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let variable = |index: u32| Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(index),
+        };
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def a = thunk { run x <- ret 1 ; run y <- ret x ; ret x } ;"),
+            &mut arena,
+        );
+        let body = body_of(outcomes(&module)[0]);
+        let Some(&Value::Thunk(suspended)) = arena.value(body)
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Bind(first, rest)) = arena.computation(suspended)
+        else {
+            panic!("the first statement is the outer bind");
+        };
+        let Some(&Computation::Bind(second, last)) = arena.computation(rest)
+        else {
+            panic!("the second statement binds over the rest of the block");
+        };
+        let returned = |id| match arena.computation(id) {
+            | Some(&Computation::Return(value)) => arena.value(value).cloned(),
+            | _ => None,
+        };
+
+        assert_eq!(
+            [returned(first), returned(second), returned(last)],
+            [
+                Some(Value::Literal(integer(SourceFragment::from("1")))),
+                Some(variable(0_u32)),
+                Some(variable(1_u32)),
+            ],
+            "each statement's name binds over everything after it"
+        );
+        assert_eq!(
+            module
+                .origins()
+                .computation(suspended)
+                .map(|origin| origin.span()),
+            Maybe::Present(at(16_usize, 19_usize)),
+            "a bind's origin is its statement's `run`"
+        );
+    }
+
+    #[test]
+    fn a_call_applies_its_arguments_left_to_right()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def g = thunk { fn (x) { fn (y) { ret x } } } ; def h = thunk { g(1, 2) } ; \
+                 def k = thunk { g() } ;",
+            ),
+            &mut arena,
+        );
+        let called = |declaration: usize| {
+            let Some(&Value::Thunk(suspended)) =
+                arena.value(body_of(outcomes(&module)[declaration]))
+            else {
+                panic!("the thunk lowers to a thunk value");
+            };
+            suspended
+        };
+        let Some(&Computation::Application(inner, second)) = arena.computation(called(1_usize))
+        else {
+            panic!("the last argument is the outer application");
+        };
+        let Some(&Computation::Application(head, first)) = arena.computation(inner)
+        else {
+            panic!("the first argument is the inner application");
+        };
+
+        assert_eq!(
+            [first, second].map(|id| arena.value(id).cloned()),
+            [
+                Some(Value::Literal(integer(SourceFragment::from("1")))),
+                Some(Value::Literal(integer(SourceFragment::from("2")))),
+            ],
+            "the arguments apply left to right"
+        );
+        assert!(
+            matches!(arena.computation(head), Some(&Computation::Force(_))),
+            "the head is applied to the first argument"
+        );
+        assert!(
+            matches!(
+                arena.computation(called(2_usize)),
+                Some(&Computation::Force(_))
+            ),
+            "a call of no arguments is its head"
+        );
+    }
+
+    #[test]
+    fn a_value_head_is_forced_and_marked_inserted()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def g = thunk { fn (x) { ret x } } ; def h = thunk { g(1) } ;"),
+            &mut arena,
+        );
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[1]))
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Application(head, _argument)) = arena.computation(suspended)
+        else {
+            panic!("the call lowers to an application");
+        };
+        let Some(&Computation::Force(forced)) = arena.computation(head)
+        else {
+            panic!("the value head is forced");
+        };
+        let origin = module.origins().computation(head);
+
+        assert_eq!(
+            arena.value(forced),
+            Some(&Value::Constant(ConstantIndex::from(0_usize))),
+            "the force is over the name the source wrote"
+        );
+        assert_eq!(
+            origin.map(|inserted| inserted.provenance()),
+            Maybe::Present(Provenance::Inserted(Insertion::Force)),
+            "the force is the lowering's, not the source's"
+        );
+        assert_eq!(
+            origin.map(|inserted| inserted.span()),
+            Maybe::Present(at(53_usize, 54_usize)),
+            "the inserted force names the head whose position demanded it"
+        );
+    }
+
+    #[test]
+    fn an_author_written_force_is_not_marked_inserted()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def g = 3 ; def a = thunk { (force g)(3) } ;"),
+            &mut arena,
+        );
+        let Some(&Value::Thunk(suspended)) = arena.value(body_of(outcomes(&module)[1]))
+        else {
+            panic!("the thunk lowers to a thunk value");
+        };
+        let Some(&Computation::Application(head, _argument)) = arena.computation(suspended)
+        else {
+            panic!("the call lowers to an application");
+        };
+        let Some(&Computation::Force(forced)) = arena.computation(head)
+        else {
+            panic!("the written force is the head");
+        };
+
+        assert!(
+            matches!(arena.value(forced), Some(&Value::Constant(_))),
+            "a computation head gains no second force"
+        );
+        assert_eq!(
+            module
+                .origins()
+                .computation(head)
+                .map(|written| written.provenance()),
+            Maybe::Present(Provenance::Written),
+            "the force the source wrote is the source's"
+        );
+    }
+
+    #[test]
+    fn a_positive_result_gains_a_returner_once()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def f(x: Integer) -> Integer { ret x } def g(x: Integer) -> F Integer { ret x }",
+            ),
+            &mut arena,
+        );
+        let result = |declaration: usize| {
+            let declared = declared_of(outcomes(&module)[declaration]);
+            let Some(&ValueType::Thunk(suspended)) = arena.value_type(declared)
+            else {
+                panic!("the declared type is a thunk type");
+            };
+            let Some(&CompType::Arrow { codomain, .. }) = arena.comp_type(suspended)
+            else {
+                panic!("the parameter is an arrow");
+            };
+            let Some(&CompType::Returner(returned)) = arena.comp_type(codomain)
+            else {
+                panic!("the result is a returner");
+            };
+            (
+                arena.value_type(returned).cloned(),
+                module
+                    .origins()
+                    .comp_type(codomain)
+                    .map(|origin| origin.provenance()),
+            )
+        };
+
+        assert_eq!(
+            result(0_usize),
+            (
+                Some(ValueType::Base(BaseType::Integer)),
+                Maybe::Present(Provenance::Inserted(Insertion::Returner))
+            ),
+            "a value type at the result gains the lowering's returner"
+        );
+        assert_eq!(
+            result(1_usize),
+            (
+                Some(ValueType::Base(BaseType::Integer)),
+                Maybe::Present(Provenance::Written)
+            ),
+            "a written returner is the only one, and the source's"
+        );
+    }
+
+    #[test]
     fn a_self_reference_is_unresolved()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -3291,18 +4495,72 @@ mod tests
             (
                 "def a = thunk { val y = 3; ret y } ;",
                 unadmitted(
-                    14_usize,
-                    34_usize,
-                    FormName::BLOCK,
+                    16_usize,
+                    19_usize,
+                    FormName::LET_STATEMENT,
                     FragmentSort::Computation,
                 ),
             ),
             (
-                "def f(x) { ret x }",
+                "def a = thunk { fork (x : Integer) { ret 1 } as y ; ret 2 } ;",
+                unadmitted(
+                    16_usize,
+                    20_usize,
+                    FormName::FORK_STATEMENT,
+                    FragmentSort::Computation,
+                ),
+            ),
+            (
+                "def a = thunk { ret 1; ret 2 } ;",
+                unadmitted(
+                    16_usize,
+                    22_usize,
+                    FormName::EXPRESSION_STATEMENT,
+                    FragmentSort::Computation,
+                ),
+            ),
+            (
+                "def a = thunk { run _ <- ret 1; ret 2 } ;",
+                unadmitted(
+                    20_usize,
+                    21_usize,
+                    FormName::from(NamedKind("wildcard")),
+                    FragmentSort::Pattern,
+                ),
+            ),
+            (
+                "def a = thunk { run y : F Integer <- ret 1; ret y } ;",
+                unadmitted(
+                    22_usize,
+                    23_usize,
+                    FormName::ANNOTATION,
+                    FragmentSort::Computation,
+                ),
+            ),
+            (
+                "def f @[a : Type] (x) { ret x }",
                 unadmitted(
                     0_usize,
-                    18_usize,
-                    FormName::FUNCTION,
+                    31_usize,
+                    FormName::PARAMETERS,
+                    FragmentSort::Declaration,
+                ),
+            ),
+            (
+                "def rec f(x) { ret x }",
+                unadmitted(
+                    0_usize,
+                    22_usize,
+                    FormName::RECURSIVE,
+                    FragmentSort::Declaration,
+                ),
+            ),
+            (
+                "def f(A) { ret 1 }",
+                unadmitted(
+                    6_usize,
+                    7_usize,
+                    FormName::PARAMETER,
                     FragmentSort::Declaration,
                 ),
             ),
@@ -3358,13 +4616,8 @@ mod tests
                 arity(14_usize, 16_usize, FormName::BLOCK, 0_usize),
             ),
             (
-                "def a = thunk { f(1, 2) } ;",
-                arity(
-                    16_usize,
-                    23_usize,
-                    FormName::from(NamedKind("call_expression")),
-                    2_usize,
-                ),
+                "def a = thunk { run x <- ret 1; } ;",
+                arity(14_usize, 33_usize, FormName::BLOCK, 0_usize),
             ),
         ];
         for (source, expected) in rows {
@@ -3495,6 +4748,16 @@ mod tests
             refused.classify(),
             FailureClass::MalformedSource,
             "a juxtaposition is the author's mistake"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def f(x: Integer Integer) { ret x }")),
+            LoweringRefusal::MalformedForm {
+                span: at(17_usize, 24_usize),
+                form: FormName::FUNCTION,
+                fault: FormFault::ExtraOperand,
+            },
+            "a parameter's type is one form, and a second juxtaposed beside it is refused as \
+             the function's"
         );
     }
 

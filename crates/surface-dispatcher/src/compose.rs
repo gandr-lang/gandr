@@ -444,9 +444,11 @@ mod tests
     use gandr_surface_corpus::CorpusRoot;
     use gandr_surface_corpus::Outcome;
     use gandr_surface_corpus::Produced;
+    use gandr_surface_corpus::RefusalName;
     use gandr_surface_corpus::Settlement;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
+    use gandr_surface_lowering::DeclarationOutcome;
     use gandr_surface_lowering::FragmentBoundary;
     use gandr_surface_lowering::LoweringBudget;
     use gandr_surface_lowering::LoweringRefusal;
@@ -648,7 +650,7 @@ def wrong = "text" ;"#,
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"@[ refuses("OutOfFragment") ] def f(x: Integer) -> F Integer { ret x }
+                r#"@[ refuses("OutOfFragment") ] def rec f(x: Integer) -> F Integer { ret x }
 @[ refuses("UnresolvedName") ] def g = missing ;
 def h = 1 ;"#,
             ),
@@ -665,7 +667,7 @@ def h = 1 ;"#,
                 boundary: FragmentBoundary::Unadmitted,
                 ..
             }]),
-            "the function form is refused at its own form, and only it"
+            "the recursive form is refused at its own form, and only it"
         );
         let settlements: Vec<Settlement> = report
             .declarations()
@@ -680,6 +682,29 @@ def h = 1 ;"#,
                 Settlement::Settled
             ],
             "the refused form's expectation cannot be read; a refused body's can"
+        );
+    }
+
+    #[test]
+    fn a_tail_without_a_result_type_lowers_unsigned()
+    {
+        let grammar = grammar();
+        let source = SourceText::from("def f(x: Integer) { ret x }");
+        let tree = parse(&grammar, source).expect("parses").into_tree();
+        let mut arena = CoreArena::new();
+        let module = lower_module(&grammar, &tree, &mut arena, LoweringBudget::DEFAULT)
+            .expect("the module lowers");
+        assert!(
+            matches!(
+                module.declarations()[0].outcome(),
+                DeclarationOutcome::Bodied { .. }
+            ),
+            "the lowering writes the body alone and refuses nothing"
+        );
+        assert_eq!(
+            settled(&grammar, CorpusRoot::Fixture, source).declarations()[0].outcome(),
+            Outcome::Refuses(RefusalName::NotSynthesisable),
+            "the checker, not the lowering, refuses the body it cannot type"
         );
     }
 

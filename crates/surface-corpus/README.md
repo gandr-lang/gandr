@@ -157,7 +157,7 @@ The alternatives were free text matched against a refusal's rendering, which bre
 
 ## One expectation per name
 
-A declared name carries at most one expectation. Two on one name — `checks` beside `owes`, or one on the signature and another on the definition — state no verdict: `ExpectationFault::ConflictingExpectations` names the first two, and the name is unsettled even when one of them would hold. A payload outside its schema's range — a negative `owes`, or one past every ledger size — likewise states nothing, with the bytes it covers. The lowering already refuses one attribute written twice; this crate refuses two different expectations. The alternative was a precedence among schemas, which makes a contradiction pass silently on whichever side wins. The choice reverses if a schema is added that refines another rather than contradicting it.
+A declared name carries at most one expectation. Two on one name — `checks` beside `owes`, or one on the signature and another on the definition — state no verdict: `ExpectationFault::ConflictingExpectations` names the first two, and the name is unsettled even when one of them would hold. A form that writes both halves, a signed function tail, is one form with one set of attributes, read once. A payload outside its schema's range — a negative `owes`, or one past every ledger size — likewise states nothing, with the bytes it covers. The lowering already refuses one attribute written twice; this crate refuses two different expectations. The alternative was a precedence among schemas, which makes a contradiction pass silently on whichever side wins. The choice reverses if a schema is added that refines another rather than contradicting it.
 
 ## Lockstep with the checker
 
@@ -177,7 +177,7 @@ The language's sources live beside the library that settles them, under the two 
 | --------- | ----- | ------------ |
 | `strict/` | sources in the slice fragment: signatures and definitions, literals and the unit value, thunks, lambdas, returns, forces and applications | none: every declaration checks, owing nothing |
 | `fixture/fragment/` | one source per refusal the fragment's checker and lowering can raise at a declaration, and one owed signature | `refuses` or `owes` on each declaration |
-| `fixture/model/`, `fixture/pathological/`, `fixture/surface/` | the language's earlier sources whose declarations the lowering reads, each refusal stated | `refuses` on each declaration |
+| `fixture/model/`, `fixture/pathological/`, `fixture/surface/` | the language's earlier sources whose declarations the lowering reads, each verdict stated | `refuses` or `checks` on each declaration |
 | `fixture/pending/` | the language's earlier sources the fragment does not yet cover | none: membership by location ([below](#the-pending-set)) |
 
 The earlier sources are the language's own surface programs: the model programs, the pathological cases and the surface families, kept in their own subdirectories with their commentary removed. The parser reads every source here as its zero-obligation gate.

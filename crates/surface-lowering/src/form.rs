@@ -74,7 +74,7 @@ impl FormName
 {
     /// Every form name the lowering spells itself, rather than reading it off
     /// a mold.
-    pub const ALL: [Self; 15_usize] = [
+    pub const ALL: [Self; 25_usize] = [
         Self::ROOT,
         Self::UNIT,
         Self::TUPLE,
@@ -90,21 +90,46 @@ impl FormName
         Self::INTERPOLATION,
         Self::ATTRIBUTE,
         Self::DECLARATION,
+        Self::BIND_STATEMENT,
+        Self::LET_STATEMENT,
+        Self::UNPACK_STATEMENT,
+        Self::LETA_STATEMENT,
+        Self::RECV_STATEMENT,
+        Self::ACQUIRE_STATEMENT,
+        Self::RELEASE_STATEMENT,
+        Self::FORK_STATEMENT,
+        Self::FORK_SHARED_STATEMENT,
+        Self::EXPRESSION_STATEMENT,
     ];
-    /// The annotation `(e : T)`, folded into the parenthesised expression.
+    /// The statement `acquire …;`, inlined into its block.
+    pub const ACQUIRE_STATEMENT: Self = Self("acquire_statement");
+    /// An annotation: `(e : T)`, folded into the parenthesised expression, and
+    /// `run x : B <- c ;`, inlined with its statement into the block.
     pub const ANNOTATION: Self = Self("annotation_expression");
     /// One attribute `name(payload)`, folded into the attribute block.
     pub const ATTRIBUTE: Self = Self("attribute");
+    /// The statement `run x <- c ;`, inlined into its block.
+    pub const BIND_STATEMENT: Self = Self("bind_statement");
     /// A block's statements, inlined into the form that opens the block.
     pub const BLOCK: Self = Self("block");
     /// The declaration family `def name …`, whose tail decides its variant.
     pub const DECLARATION: Self = Self("def_value");
-    /// The function tail `(params) { … }`, folded into the declaration.
+    /// The statement `e ;`, inlined into its block.
+    pub const EXPRESSION_STATEMENT: Self = Self("expression_statement");
+    /// The statement `fork !(…) { … } ;`, inlined into its block.
+    pub const FORK_SHARED_STATEMENT: Self = Self("fork_shared_statement");
+    /// The statement `fork (…) { … } as x ;`, inlined into its block.
+    pub const FORK_STATEMENT: Self = Self("fork_statement");
+    /// The function tail `(params) -> T? { … }`, folded into the declaration.
     pub const FUNCTION: Self = Self("def_function");
     /// A grade annotation `[r]`, folded into the thunk and its type.
     pub const GRADE: Self = Self("grade");
     /// An interpolation `${ e }`, folded into the string.
     pub const INTERPOLATION: Self = Self("string_interpolation");
+    /// The statement `leta x = e ;`, inlined into its block.
+    pub const LETA_STATEMENT: Self = Self("leta_statement");
+    /// The statement `val p = e ;`, inlined into its block.
+    pub const LET_STATEMENT: Self = Self("let_statement");
     /// One typed parameter `name : T`, folded into its parameter list.
     pub const PARAMETER: Self = Self("parameter");
     /// A parameter list, explicit `( … )` or implicit `@[ … ]`, folded into the
@@ -113,6 +138,10 @@ impl FormName
     /// The recursive tail `rec name (params) { … }`, folded into the
     /// declaration.
     pub const RECURSIVE: Self = Self("def_rec");
+    /// The statement `recv …;`, inlined into its block.
+    pub const RECV_STATEMENT: Self = Self("recv_statement");
+    /// The statement `release …;`, inlined into its block.
+    pub const RELEASE_STATEMENT: Self = Self("release_statement");
     /// The source root, which holds a module's declarations.
     pub const ROOT: Self = Self("source_file");
     /// The signature tail `: T ;`, folded into the declaration.
@@ -123,6 +152,8 @@ impl FormName
     pub const TYPE_ABSTRACTION: Self = Self("type_abstraction");
     /// The empty parentheses `()`, folded into the parenthesised expression.
     pub const UNIT: Self = Self("unit");
+    /// The statement `unpack … = e ;`, inlined into its block.
+    pub const UNPACK_STATEMENT: Self = Self("unpack_statement");
 }
 
 impl From<NamedKind<'static>> for FormName
@@ -174,10 +205,16 @@ pub struct TileName(&'static str);
 
 impl TileName
 {
+    /// The acquire keyword `acquire`, opening a statement.
+    pub const ACQUIRE: Self = Self("acquire");
+    /// The arrow `->` of a function type and of a function's result.
+    pub const ARROW: Self = Self("->");
     /// The attribute-block opener `@[`.
     pub const ATTRIBUTES: Self = Self("@[");
-    /// The arrow `->` of a function type.
-    pub const ARROW: Self = Self("->");
+    /// The bang `!` marking a shared fork.
+    pub const BANG: Self = Self("!");
+    /// The bind arrow `<-` of a `run` statement.
+    pub const BIND: Self = Self("<-");
     /// A bracket closer `]`.
     pub const BRACKET_CLOSE: Self = Self("]");
     /// A bracket opener `[`.
@@ -197,26 +234,46 @@ impl TileName
     pub const FN: Self = Self("fn");
     /// The force keyword `force`.
     pub const FORCE: Self = Self("force");
+    /// The fork keyword `fork`, opening a statement.
+    pub const FORK: Self = Self("fork");
     /// The equals sign `=` opening a definition tail.
     pub const EQUALS: Self = Self("=");
     /// An identifier written as one of a form's own tiles.
     pub const IDENTIFIER: Self = Self("identifier");
     /// The interpolation opener `${`.
     pub const INTERPOLATION: Self = Self("${");
+    /// The keyword `leta`, opening a statement.
+    pub const LETA: Self = Self("leta");
     /// A parenthesis closer `)`.
     pub const PAREN_CLOSE: Self = Self(")");
     /// A parenthesis opener `(`.
     pub const PAREN_OPEN: Self = Self("(");
     /// The recursion keyword `rec`.
     pub const REC: Self = Self("rec");
+    /// The receive keyword `recv`, opening a statement.
+    pub const RECV: Self = Self("recv");
+    /// The release keyword `release`, opening a statement.
+    pub const RELEASE: Self = Self("release");
     /// The returner keyword `ret`.
     pub const RET: Self = Self("ret");
-    /// The semicolon `;` closing a declaration.
+    /// The bind keyword `run`, opening a statement.
+    pub const RUN: Self = Self("run");
+    /// The semicolon `;` closing a declaration or a statement.
     pub const SEMICOLON: Self = Self(";");
     /// The thunk keyword `thunk`.
     pub const THUNK: Self = Self("thunk");
     /// A type identifier written as one of a form's own tiles.
     pub const TYPE_IDENTIFIER: Self = Self("type_identifier");
+    /// A type variable written as one of a form's own tiles.
+    pub const TYPE_VARIABLE: Self = Self("type_variable");
+    /// The unpack keyword `unpack`, opening a statement.
+    pub const UNPACK: Self = Self("unpack");
+    /// The keyword `val`, opening a statement.
+    pub const VAL: Self = Self("val");
+
+    /// The three tiles that can name a parameter: an identifier, a type
+    /// variable and a type identifier, the spellings the parameter list parses.
+    pub const BINDERS: [Self; 3] = [Self::IDENTIFIER, Self::TYPE_VARIABLE, Self::TYPE_IDENTIFIER];
 }
 
 impl AsRef<str> for TileName
@@ -916,6 +973,27 @@ impl<'pieces> Cursor<'pieces>
         let found = self.at(label);
         if let Maybe::Present(placed) = found {
             self.advance(placed);
+        }
+
+        found
+    }
+
+    /// Read the next piece, whatever it is.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the piece the cursor stood before, with the cursor moved past
+    ///   it, or the exhausted absence past the last one.
+    /// - provides: the step a reader scanning for a tile takes over the pieces
+    ///   it does not read.
+    /// - fails: never.
+    /// - panics: none.
+    #[inline]
+    pub fn read(&mut self) -> Maybe<Piece, cursor::Absent>
+    {
+        let found = self.peek();
+        if let Maybe::Present(piece) = found {
+            self.advance(piece.placed());
         }
 
         found
