@@ -202,7 +202,7 @@ impl Plane
     /// - hypothesis: L3 — zero and a nonzero leaf tag on both planes separate
     ///   payload-dependent value from constant unit weight by exact outcomes.
     /// - witness: `differential::tests::plane_fold_boundaries`
-    #[anodized::spec(ensures: |ret| ret == match self { Plane::Value => Outcome(u64::from(tag.0)), Plane::Weight => Outcome(1) })]
+    #[anodized::spec(ensures: |ret| ret == match self { Self::Value => Outcome(u64::from(tag.0)), Self::Weight => Outcome(1) })]
     fn leaf_outcome(
         self,
         tag: LeafTag,
@@ -233,8 +233,8 @@ impl Plane
     ///   ordinary weight, final-step overflow and operand-sum overflow.
     /// - witness: `differential::tests::plane_fold_boundaries`
     #[anodized::spec(ensures: |ret| match self {
-        Plane::Value => ret == Ok(Outcome(left.0.rotate_left(1) ^ right.0.rotate_left(3) ^ 0x9e37_79b9)),
-        Plane::Weight => ret.map(|outcome| u128::from(outcome.0))
+        Self::Value => ret == Ok(Outcome(left.0.rotate_left(1) ^ right.0.rotate_left(3) ^ 0x9e37_79b9)),
+        Self::Weight => ret.map(|outcome| u128::from(outcome.0))
             == u128::from(left.0).checked_add(u128::from(right.0)).and_then(|sum| sum.checked_add(1))
                 .filter(|sum| *sum <= u128::from(u64::MAX)).ok_or(WorkloadError::WeightOverflow),
     })]
