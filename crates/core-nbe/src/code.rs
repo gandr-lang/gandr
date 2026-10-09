@@ -13,7 +13,10 @@
 //!   environment, a constant by its position, a static application by its
 //!   operator and its argument — whether written in the quote or held as a
 //!   neutral's static spine — and a nested code by the same walk over its own
-//!   closure. Equal walks are [`CodeComparison::Equal`].
+//!   closure. A decode whose code reads as a quote is the quoted type, read at
+//!   the quote's place: core-term and the kernel fire that rule when they mint
+//!   a decode, and an environment holds codes no mint saw, so the walk fires it
+//!   too. Equal walks are [`CodeComparison::Equal`].
 //! - **Rigidity.** Two codes that are not α-equal are [`CodeComparison::Apart`]
 //!   only when neither holds anything that could still unfold: a constant with
 //!   a body, a neutral stuck on an elimination, or a value no code can be. A
@@ -29,6 +32,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::CoreArena;
@@ -655,14 +659,108 @@ impl<'run> Walk<'run>
         self.atom(Node::Code(held.body(), Self::opened(closure)))
     }
 
+    /// The node `node` reads as once every decode of a quote at its root has
+    /// fired: `El ⌜A⌝` is `A`, read at the quote's own place.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a value-type decode whose code resolves to a value quote is
+    ///   replaced by the quoted type, and a computation-type decode whose code
+    ///   resolves to a computation quote by the quoted computation type, until
+    ///   the root is neither; every other node unchanged.
+    /// - provides: the decoding rule core-term and the kernel fire on mint,
+    ///   fired here on a code an environment holds, where no mint saw it — so
+    ///   an instantiated body, decoded when it was minted, and the closure the
+    ///   machine evaluated it as compare alike.
+    /// - fails: as [`Walk::atom`]; [`ConversionFault::MachineInvariant`] when a
+    ///   type node does not resolve.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Termination
+    /// - reason: the `loop` fires one decode per iteration, not recursion.
+    /// - measure: the quotes nested beneath the node, read through the
+    ///   environments, which each iteration enters one deeper and which a
+    ///   finite domain arena bounds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separated by a value decode and a computation decode
+    ///   of a held quote, and a decode beside a type it is not.
+    /// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Node::ValueType(at, place)) => match self.core.value_type(at) {
+            | Some(&ValueType::Element { code, .. }) => {
+                !matches!(self.atom(Node::Code(code, place)), Ok(Atom::Quote(..)))
+            },
+            | _ => true,
+        },
+        | Ok(Node::CompType(at, place)) => match self.core.comp_type(at) {
+            | Some(&CompType::Element { code, .. }) => {
+                !matches!(self.atom(Node::Code(code, place)), Ok(Atom::QuoteComputation(..)))
+            },
+            | _ => true,
+        },
+        | Ok(_) | Err(_) => true,
+    })]
+    fn decoded(
+        &self,
+        node: Node,
+    ) -> Result<Node, ConversionFault>
+    {
+        let mut node = node;
+        loop {
+            let (code, place) = match node {
+                | Node::ValueType(at, place) => match *self
+                    .core
+                    .value_type(at)
+                    .ok_or(ConversionFault::MachineInvariant)?
+                {
+                    | ValueType::Element { code, .. } => (code, place),
+                    | ValueType::Base(_)
+                    | ValueType::Unit
+                    | ValueType::Product(..)
+                    | ValueType::Sum(..)
+                    | ValueType::Thunk(_)
+                    | ValueType::Universe { .. }
+                    | ValueType::Lift { .. }
+                    | ValueType::Abstract(_)
+                    | ValueType::StaticPi { .. } => return Ok(node),
+                },
+                | Node::CompType(at, place) => match *self
+                    .core
+                    .comp_type(at)
+                    .ok_or(ConversionFault::MachineInvariant)?
+                {
+                    | CompType::Element { code, .. } => (code, place),
+                    | CompType::Returner(_) | CompType::Arrow { .. } | CompType::Pi { .. } => {
+                        return Ok(node);
+                    },
+                },
+                | Node::Code(..) | Node::Held(_) | Node::Stuck(..) => return Ok(node),
+            };
+            node = match (node, self.atom(Node::Code(code, place))?) {
+                | (Node::ValueType(..), Atom::Quote(quoted, there)) => {
+                    Node::ValueType(quoted, there)
+                },
+                | (Node::CompType(..), Atom::QuoteComputation(quoted, there)) => {
+                    Node::CompType(quoted, there)
+                },
+                | _ => return Ok(node),
+            };
+        }
+    }
+
     /// Compare one pair of type nodes' formers, queueing their children.
     ///
     /// # Specification
     /// - requires: `one` and `other` are type nodes of the same family.
     /// - ensures: [`Alike::Different`] when the formers or their payloads
-    ///   differ, and otherwise [`Alike::Same`] with the children queued: type
-    ///   children as nodes, a decode's code as an atom pair, a dependent
-    ///   arrow's codomain one shared binder further in.
+    ///   differ, read after every decode of a quote at either root has fired,
+    ///   and otherwise [`Alike::Same`] with the children queued: type children
+    ///   as nodes, a decode's code as an atom pair, a dependent arrow's
+    ///   codomain one shared binder further in.
     /// - provides: the per-former step of the first pass.
     /// - fails: [`ConversionFault::MachineInvariant`] when a node does not
     ///   resolve.
@@ -678,6 +776,8 @@ impl<'run> Walk<'run>
         atoms: &mut Vec<(Atom, Atom)>,
     ) -> Result<Alike, ConversionFault>
     {
+        let one = self.decoded(one)?;
+        let other = self.decoded(other)?;
         match (one, other) {
             | (Node::ValueType(first, here), Node::ValueType(second, there)) => {
                 let (Some(left), Some(right)) =
@@ -968,10 +1068,10 @@ impl<'run> Walk<'run>
 /// - requires: `left` and `right` are value closures of `domain` whose bodies
 ///   are quotes or static lambdas written in `core`.
 /// - ensures: [`CodeComparison::Equal`] when the two are α-equal read through
-///   their environments; [`CodeComparison::Apart`] when they are not and
-///   neither holds anything that could unfold; and
-///   [`CodeComparison::Undecided`] otherwise — always so for two operators that
-///   are not α-equal.
+///   their environments, a decode of a quote read as the quoted type;
+///   [`CodeComparison::Apart`] when they are not and neither holds anything
+///   that could unfold; and [`CodeComparison::Undecided`] otherwise — always so
+///   for two operators that are not α-equal.
 /// - provides: the one comparison of two codes or two operators, which
 ///   conversion's structural step and the machine's rule table both read.
 /// - fails: [`ConversionFault::Domain`] for a closure or a held value that does
@@ -986,7 +1086,8 @@ impl<'run> Walk<'run>
 /// - hypothesis: L3 — the three answers, separated by two quotes of one type,
 ///   two of different rigid types, and two of different types one of which
 ///   decodes a defined constant; with the environment read through by two
-///   quotes over one variable; and the static formers by a written application
+///   quotes over one variable, and a decode of a held quote read as the quoted
+///   type in both families; and the static formers by a written application
 ///   against a held static spine, two heads and two arguments apart, and two
 ///   operators alike and unlike.
 /// - witness: `code::tests::two_quotes_of_one_type_are_equal`
@@ -994,6 +1095,7 @@ impl<'run> Walk<'run>
 /// - witness: `code::tests::a_quote_over_a_defined_constant_is_undecided`
 /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
 /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
+/// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
 pub fn compare_codes(
     core: &CoreArena,
     domain: &DomainArena,
@@ -1200,6 +1302,69 @@ mod tests
             compare_codes(&core, &domain, ConstantReading::Unread, left, computation)
                 .expect("both closures hold quotes"),
             "and a value-type quote is apart from a computation-type quote"
+        );
+    }
+
+    #[test]
+    fn a_decode_of_a_held_quote_compares_as_its_quoted_type()
+    {
+        // `El x * El x` over `x := ⌜Integer⌝` against `Integer * Integer`, and
+        // `El x` over `x := ⌜F Integer⌝` against `F Integer`: the decoding
+        // rule a mint fires, fired where the environment holds the quote.
+        let mut core = CoreArena::new();
+        let integer = core.value_type_base(BaseType::Integer);
+        let integer_quote = core.value_quote(integer);
+        let returns = core.comp_type_returner(integer);
+        let action_quote = core.value_quote_computation(returns);
+        let bound = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded = core.value_type_element(bound, Level::zero());
+        let squared = core.value_type_product(decoded, decoded);
+        let squared_quote = core.value_quote(squared);
+        let written = core.value_type_product(integer, integer);
+        let written_quote = core.value_quote(written);
+        let acting = core.comp_type_element(bound, Level::zero());
+        let acting_quote = core.value_quote_computation(acting);
+        let string = core.value_type_base(BaseType::String);
+        let other = core.value_type_product(integer, string);
+        let other_quote = core.value_quote(other);
+
+        let mut domain = DomainArena::new();
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let held = |domain: &mut DomainArena, quote: ValueId| {
+            eval_value_within(
+                &core,
+                domain,
+                definitions,
+                Fuel::from(64_u32),
+                quote,
+                Environment::new(),
+            )
+            .expect("the quote evaluates")
+            .0
+        };
+        let held_integer = held(&mut domain, integer_quote);
+        let held_action = held(&mut domain, action_quote);
+        let squared_code = code_of(&core, &mut domain, squared_quote, &[held_integer]);
+        let written_code = code_of(&core, &mut domain, written_quote, &[]);
+        let other_code = code_of(&core, &mut domain, other_quote, &[]);
+        let acting_code = code_of(&core, &mut domain, acting_quote, &[held_action]);
+        let action_code = code_of(&core, &mut domain, action_quote, &[]);
+        assert_eq!(
+            compare_rigidly(&core, &domain, squared_code, written_code),
+            CodeComparison::Equal,
+            "a value decode of a held quote reads as the quoted type"
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, acting_code, action_code),
+            CodeComparison::Equal,
+            "and so does a computation decode of a held computation quote"
+        );
+        assert_eq!(
+            compare_rigidly(&core, &domain, squared_code, other_code),
+            CodeComparison::Apart,
+            "a decoded side still differs from a type it is not"
         );
     }
 

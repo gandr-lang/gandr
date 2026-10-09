@@ -617,7 +617,7 @@ mod modules
 
         let names = lowered.module.structured_names();
         let report = report(&mut lowered);
-        let readmission = bridge::readmit(&lowered.arena, &report);
+        let readmission = bridge::readmit(&mut lowered.arena, &report);
         let artifact = decode(readmission.export(names).as_image()).expect("the export decodes");
         let exported: Vec<(Vec<String>, Option<KernelValue>)> = artifact
             .declarations()

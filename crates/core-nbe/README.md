@@ -51,7 +51,7 @@ Normalization by evaluation for the core language: the glued value domain, the p
 
 ## Provided features
 
-- `eval_value` and `eval_computation`: weak-head evaluation, refusing with `EvalFault`.
+- `eval_value` and `eval_computation`: weak-head evaluation, refusing with `EvalFault`; `eval_value_within`, the same for a value in an environment the caller supplies, which is how a caller evaluates an operator's body at its arguments without minting the instance.
 - `readback_value` and `readback_computation` under `ReadbackMode::ZeroUnfold` or `ReadbackMode::Unfolding`, refusing with `ReadbackFault`.
 - `DomainArena` with `DomainValueId`, `DomainCompId`, `NeutralId`, `ValueClosureId` and `CompClosureId`: checked constructors and lookups, `force_neutral`, and `RunWatermark` with `DomainArena::truncate_to`.
 - The glued vocabulary: `DomainValue`, `DomainComp`, `Neutral`, `NeutralHead`, `Elimination`, `TermFace`, `CompTermFace`, `Unfolding` and `Glued`.
@@ -217,6 +217,8 @@ A quote `⌜A⌝` carries a type, and a type has no weak head: nothing in it red
 Conversion compares two codes whole, in two passes. α-equality walks both types in lockstep, matching a bound variable by the binder it names and reading a free one through its quote's environment. Rigidity separates two α-distinct codes only when neither holds a constant with a body, a stuck elimination, or a value no code reads as. The search-free steps read every constant as one that could unfold, and defer; the machine reads the definitions, closes an equal or a rigidly apart pair as one `ComparedShared`, and declines anything else with `DeclineReason::UndecidedCodes`. The kernel's replay closes a shared comparison as equal when the sides are α-equal and separates it only when both are rigid, so an answer here is one the kernel re-derives on its own terms.
 
 Alternatives: a domain of types with weak-head formers, compared by the rule table, which is type-level reduction this language does not have and a second domain the replay would need a reading of; and codes compared by identity alone, which refutes two quotes of one type written twice. Reversal: a type former that reduces, such as a large elimination, needs types evaluated; codes then become weak heads the rule table decomposes, and the decline goes.
+
+The walk fires the decoding rule `gandr-core-term` and the kernel fire on mint, `El ⌜A⌝` is `A`, at a decode whose code resolves to a quote through an environment, where no mint saw it. An operator's body entered at a quoted argument reads such a decode, and the same body minted instantiated holds the quoted type itself, decoded when it was minted; with the rule, the closure the machine evaluated and the reduct the checker minted compare alike, which is the comparison a certificate for one static step makes. Alternatives: leaving the decode in place, which separates every static redex from its instantiated reduct, so no static step certifies; and decoding at evaluation, which gives types a weak head for this one rule. Reversal: as for codes, a type former that reduces, at which point the decode is one step of the rule table.
 
 The duplication walk refuses a quote graft by name, `DuplicationFault::Quote`: no producer shares inside a type, so the overlay carries quotes for erasure alone. Reversal: a producer that shares across a type, which makes the type families ribs of the walk.
 
