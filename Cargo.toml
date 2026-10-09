@@ -246,6 +246,13 @@ path = "crates/surface-grammar"
 [workspace.dependencies.gandr-surface-lowering]
 path = "crates/surface-lowering"
 
+# The language server: diagnostics and semantic tokens over the Language
+# Server Protocol, each request rechecking the whole document.
+# consumers:
+# - surface-driver
+[workspace.dependencies.gandr-surface-lsp]
+path = "crates/surface-lsp"
+
 # The surface parser: the lossless labeler, the obligation-minimizing molder
 # and the push-machine melder that commit a molded tree.
 # consumers:

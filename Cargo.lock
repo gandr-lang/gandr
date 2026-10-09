@@ -288,6 +288,7 @@ dependencies = [
  "clap",
  "gandr-surface-diagnostics",
  "gandr-surface-dispatcher",
+ "gandr-surface-lsp",
  "quenchant-shape",
  "tracing",
  "tracing-subscriber",

@@ -10,10 +10,16 @@
 #[cfg(test)]
 mod cli
 {
+    use std::io::Write as _;
     use std::path::Path;
     use std::path::PathBuf;
     use std::process::Command;
     use std::process::Output;
+    use std::process::Stdio;
+
+    use gandr_surface_lsp::Body;
+    use gandr_surface_lsp::Capabilities;
+    use gandr_surface_lsp::write_frame;
 
     /// A fresh scratch directory, removed when dropped.
     #[repr(transparent)]
@@ -440,5 +446,98 @@ mod cli
                 stderr(&output)
             );
         }
+    }
+
+    /// One input stream carrying `messages` as frames, in order.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    fn frames(messages: &[Text<'_>]) -> Body
+    {
+        let mut stream = Vec::new();
+        for message in messages {
+            write_frame(&mut stream, &Body::from(message.0.as_bytes().to_vec()))
+                .expect("a vector takes every write");
+        }
+        Body::from(stream)
+    }
+
+    /// The finished run of `gandr lsp` with `input` on standard input, its
+    /// output captured.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    fn served(input: &Body) -> Output
+    {
+        let mut child = gandr(&["lsp"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("the driver starts");
+        child
+            .stdin
+            .take()
+            .expect("standard input is piped")
+            .write_all(input.as_ref())
+            .expect("the session is written");
+        child.wait_with_output().expect("the driver runs")
+    }
+
+    #[test]
+    fn lsp_capabilities_print_one_line_of_json()
+    {
+        let output = ran(gandr(&["lsp", "--capabilities"]));
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        assert_eq!(
+            stdout(&output),
+            format!("{Capabilities}\n"),
+            "the line the server answers `initialize` with"
+        );
+        assert!(
+            stdout(&output).starts_with(r#"{"capabilities":{"positionEncoding":"utf-16","#),
+            "positions are counted in UTF-16 code units: {}",
+            stdout(&output)
+        );
+    }
+
+    #[test]
+    fn lsp_serves_a_session_over_the_standard_streams()
+    {
+        let initialize =
+            Text::from(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#);
+        let shutdown = Text::from(r#"{"jsonrpc":"2.0","id":2,"method":"shutdown"}"#);
+        let exit = Text::from(r#"{"jsonrpc":"2.0","method":"exit"}"#);
+        let output = served(&frames(&[initialize, shutdown, exit]));
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        let answer = format!(r#"{{"jsonrpc":"2.0","id":1,"result":{Capabilities}}}"#);
+        let expected = frames(&[
+            Text::from(answer.as_str()),
+            Text::from(r#"{"jsonrpc":"2.0","id":2,"result":null}"#),
+        ]);
+        assert_eq!(
+            output.stdout,
+            expected.as_ref().to_vec(),
+            "each request is answered in one frame, in order"
+        );
+
+        let output = served(&frames(&[initialize]));
+        assert_eq!(
+            code(&output),
+            Code(1_i32),
+            "a session closed before shutdown exits one"
+        );
+
+        let output = served(&Body::from(b"Content-Length: 9\r\n\r\n{".to_vec()));
+        assert_eq!(code(&output), Code(2_i32), "a broken stream exits two");
+        assert!(
+            stderr(&output).starts_with(
+                "gandr: the language server stopped: the stream ended inside a frame\n"
+            ),
+            "the fault is noted on standard error: {}",
+            stderr(&output)
+        );
     }
 }

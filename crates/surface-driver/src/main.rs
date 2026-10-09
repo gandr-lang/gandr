@@ -7,12 +7,14 @@
 //!
 //! # Exit codes
 //!
-//! - `0`: every declaration settled; also `--help`, `--version` and a bare
-//!   invocation.
+//! - `0`: every declaration settled; also `--help`, `--version`, a bare
+//!   invocation, `lsp --capabilities`, and a language-server session ended by
+//!   `exit` after `shutdown`.
 //! - `1`: at least one declaration is unsettled, or a source was not read as
-//!   its root expects.
+//!   its root expects; also a language-server session ended before `shutdown`.
 //! - `2`: an engine fault, an unreadable source or a path naming none, a
-//!   malformed invocation, or output the driver could not write.
+//!   malformed invocation, output the driver could not write, or a
+//!   language-server stream that failed.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -28,10 +30,15 @@ use gandr_surface_dispatcher::RunVerdict;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
+use gandr_surface_lsp::Capabilities;
+use gandr_surface_lsp::Served;
 use quenchant_shape::shape::Maybe;
 
 /// The exit code of a run with an unsettled declaration.
 const UNSETTLED: u8 = 1;
+
+/// The exit code of a language-server session that ended before `shutdown`.
+const ABRUPT: u8 = 1;
 
 /// The exit code of a fault: the engine's, a path's, the invocation's or the
 /// output's.
@@ -76,6 +83,17 @@ enum Command
         #[arg(required = true)]
         paths: Vec<PathBuf>,
     },
+    /// Serve the Language Server Protocol over standard input and output.
+    ///
+    /// Exits 0 when `exit` follows `shutdown`, 1 when the session ends
+    /// before `shutdown`, and 2 when a stream fails.
+    Lsp
+    {
+        /// Print the capabilities the server advertises, as one line of JSON,
+        /// and exit.
+        #[arg(long)]
+        capabilities: bool,
+    },
 }
 
 /// Parse the driver's arguments, route the invocation, render the outcome.
@@ -88,8 +106,9 @@ enum Command
 ///   message and exits `2`. A bare invocation prints one status line and exits
 ///   `0`. `check` and `test` walk their paths, print what [`render`] prints,
 ///   and exit `0`, `1` or `2` as the run settled, was unsettled or faulted.
-///   Output the driver cannot write is noted on standard error, when that is
-///   writable, and exits `2`.
+///   `lsp` serves and `lsp --capabilities` prints as [`lsp`] and
+///   [`capabilities`] state. Output the driver cannot write is noted on
+///   standard error, when that is writable, and exits `2`.
 /// - provides: the exit code as the run's verdict. The postcondition stays
 ///   prose: the exit code and the lines written are effects on the process, not
 ///   a value this call returns to a caller that could observe them. With
@@ -110,6 +129,8 @@ enum Command
 /// - witness: `cli::cli::a_malformed_invocation_exits_two`
 /// - witness: `cli::cli::unwritable_standard_output_exits_two`
 /// - witness: `cli::cli::a_bare_invocation_prints_the_status`
+/// - witness: `cli::cli::lsp_capabilities_print_one_line_of_json`
+/// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
@@ -132,6 +153,10 @@ fn main() -> ExitCode
             paths,
         },
         | Some(Command::Test { paths }) => Invocation::Test { paths },
+        | Some(Command::Lsp {
+            capabilities: false,
+        }) => return lsp(),
+        | Some(Command::Lsp { capabilities: true }) => return capabilities(),
     };
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
@@ -151,6 +176,75 @@ fn main() -> ExitCode
             // When standard error is unwritable too, the exit code is the one
             // channel left.
             | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+        },
+    }
+}
+
+/// Serve the language server over standard input and output until the
+/// session ends, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing; the streams come from the process.
+/// - ensures: every frame the client writes to standard input is answered on
+///   standard output by `gandr-surface-lsp`, until `exit` or the input closes;
+///   the session exits `0` when it ends after `shutdown` and `1` before it. A
+///   stream that fails is noted on standard error, when that is writable, and
+///   exits `2`.
+/// - provides: the editor's entry point.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the binary is spawned with a whole session on standard
+///   input, and with one closed before `shutdown`, and the frames and exit code
+///   asserted.
+/// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
+fn lsp() -> ExitCode
+{
+    let mut input = std::io::stdin().lock();
+    let mut output = std::io::stdout().lock();
+    match gandr_surface_lsp::serve(&mut input, &mut output) {
+        | Ok(Served::Clean) => ExitCode::SUCCESS,
+        | Ok(Served::Abrupt) => ExitCode::from(ABRUPT),
+        | Err(fault) => {
+            match writeln!(
+                std::io::stderr(),
+                "gandr: the language server stopped: {fault}"
+            ) {
+                // When standard error is unwritable too, the exit code is the
+                // one channel left.
+                | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+            }
+        },
+    }
+}
+
+/// Print the capabilities the language server advertises, and choose the exit
+/// code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: standard output receives the `initialize` result as one line of
+///   JSON and the process exits `0`; output the driver cannot write is noted on
+///   standard error, when that is writable, and exits `2`.
+/// - provides: what a client or a packager reads without starting a session.
+/// - fails: never by panic; every failure is an exit code.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the binary is spawned and its whole output compared with
+///   the line the server crate displays.
+/// - witness: `cli::cli::lsp_capabilities_print_one_line_of_json`
+fn capabilities() -> ExitCode
+{
+    let mut stdout = std::io::stdout().lock();
+    let written = writeln!(stdout, "{Capabilities}").and_then(|()| stdout.flush());
+    match written {
+        | Ok(()) => ExitCode::SUCCESS,
+        | Err(error) => {
+            match writeln!(std::io::stderr(), "gandr: cannot write the output: {error}") {
+                | Ok(()) | Err(_) => ExitCode::from(FAULTED),
+            }
         },
     }
 }

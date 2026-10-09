@@ -1,6 +1,6 @@
 # gandr-lang
 
-The `gandr` binary, the entry point of the gandr language toolchain: `gandr check` and `gandr test` over gandr sources, with the run's verdict as the exit code.
+The `gandr` binary, the entry point of the gandr language toolchain: `gandr check` and `gandr test` over gandr sources, with the run's verdict as the exit code, and `gandr lsp`, the language server.
 
 <!-- toc -->
 
@@ -16,11 +16,11 @@ The `gandr` binary, the entry point of the gandr language toolchain: `gandr chec
 
 ## Synopsis
 
-**What.** The package `gandr-lang` builds the `gandr` binary. `gandr check <paths>` settles every declaration of every source under the paths given and prints each unsettled one; `gandr test <paths>` runs the same pass and also prints every fixture and every pending source. A bare `gandr` prints one status line naming the driver version and stating that toolchain management is not implemented.
+**What.** The package `gandr-lang` builds the `gandr` binary. `gandr check <paths>` settles every declaration of every source under the paths given and prints each unsettled one; `gandr test <paths>` runs the same pass and also prints every fixture and every pending source. `gandr lsp` serves `gandr-surface-lsp`'s language server on standard input and output until the client sends `exit`, and `gandr lsp --capabilities` prints what the server advertises. A bare `gandr` prints one status line naming the driver version and stating that toolchain management is not implemented.
 
 **Why.** The driver owns the argument surface and the process boundary, and routes everything after that through `gandr-surface-dispatcher`, which composes the pipeline and decides the gate without a process. The registry name `gandr` belongs to an unrelated crate, so the package is `gandr-lang` and the binary is `gandr`.
 
-**How.** `clap` parses the arguments before anything is written. The invocation is dispatched; the driver advances the walk the dispatcher returns, prints each source step's entries as `gandr-surface-diagnostics` renders them, and each fault, then the runner's report and its verdict, through locked handles and fallible `writeln!`, and returns the verdict as its exit code from `main`. Witnesses, each spawning the binary: `cli::cli::a_settled_run_exits_zero`, `cli::cli::an_unsettled_run_exits_one`, `cli::cli::an_unreadable_path_exits_two`, `cli::cli::a_malformed_invocation_exits_two`, `cli::cli::unwritable_standard_output_exits_two`, `cli::cli::goals_report_an_obligation_without_failing`, `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`, `cli::cli::help_exits_zero`, `cli::cli::a_bare_invocation_prints_the_status`.
+**How.** `clap` parses the arguments before anything is written. The invocation is dispatched; the driver advances the walk the dispatcher returns, prints each source step's entries as `gandr-surface-diagnostics` renders them, and each fault, then the runner's report and its verdict, through locked handles and fallible `writeln!`, and returns the verdict as its exit code from `main`. `gandr lsp` hands the locked standard streams to `gandr-surface-lsp`'s `serve` and returns how the session ended as its exit code. Witnesses, each spawning the binary: `cli::cli::a_settled_run_exits_zero`, `cli::cli::an_unsettled_run_exits_one`, `cli::cli::an_unreadable_path_exits_two`, `cli::cli::a_malformed_invocation_exits_two`, `cli::cli::unwritable_standard_output_exits_two`, `cli::cli::goals_report_an_obligation_without_failing`, `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`, `cli::cli::help_exits_zero`, `cli::cli::a_bare_invocation_prints_the_status`, `cli::cli::lsp_capabilities_print_one_line_of_json`, `cli::cli::lsp_serves_a_session_over_the_standard_streams`.
 
 ## Verbs
 
@@ -29,16 +29,20 @@ The `gandr` binary, the entry point of the gandr language toolchain: `gandr chec
 | `gandr check <paths>` | each unsettled declaration, each source refused as a whole | any unsettled declaration |
 | `gandr check --goals <paths>` | as `check`, a declaration unsettled by its obligations alone marked `goal:` | any unsettled declaration but those |
 | `gandr test <paths>` | as `check`, plus every fixture, settled or not, and every pending source's refusal | as `check` |
+| `gandr lsp` | the language server's frames on standard output, until `exit` | a session ended before `shutdown` |
+| `gandr lsp --capabilities` | the `initialize` result as one line of JSON | nothing |
 
 A path is a source file of any name, or a directory searched for `.gandr` sources. The directories a source sits in decide its root — `strict`, `fixture`, or `fixture/pending` — and a source under none is strict ([membership is location](../surface-dispatcher/README.md#membership-is-location)). A refusal, an unsettled declaration and a goal each print as a located source snippet — the class and message, the path with line and column, the lines the report covers with their marks — followed by a blank line ([what a report shows](../surface-diagnostics/README.md#what-a-report-shows)); a settled fixture, a pending source's refusal and a pending source the lowering reads each print one ledger line, `<path>: <report>`. The driver writes plain text, without colour. Each fault is `gandr: <path>: <fault>` on standard error. Every run closes standard output with the runner's report — the sources read by root, the lowerings, the goals, the exercised table, the ledger size, the declaration and fixture counts, the surviving obligations, the refusals by class, the run's settlement and its seal — and `verdict: settled`, `unsettled` or `faulted`.
+
+`gandr lsp` reads frames from standard input and writes every answer and notification to standard output; it rechecks a document whole at every synchronisation and publishes the same reports `gandr check --goals` prints for it, under the root its path classifies as ([the language server](../surface-lsp/README.md)). A stream that fails is `gandr: the language server stopped: <fault>` on standard error.
 
 ## Exit codes
 
 | Code | Meaning |
 | ---- | ------- |
-| `0` | every declaration settled; also `--help`, `--version` and a bare `gandr` |
-| `1` | at least one declaration is unsettled, or a source was not read as its root expects |
-| `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, or output the driver could not write |
+| `0` | every declaration settled; also `--help`, `--version`, a bare `gandr`, `gandr lsp --capabilities`, and a language-server session ended by `exit` after `shutdown` |
+| `1` | at least one declaration is unsettled, or a source was not read as its root expects; also a language-server session ended by `exit`, or by its input closing, before `shutdown` |
+| `2` | an engine fault, an unreadable path or one naming no source, a malformed invocation, output the driver could not write, or a language-server stream that failed |
 
 A fault outranks an unsettled declaration: a run with both exits `2`. The walk continues past a faulted path, so every fault of a run is printed.
 
