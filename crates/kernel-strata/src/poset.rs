@@ -1265,7 +1265,7 @@ pub fn validate_loop_witness(
 #[spec(requires: constraints.iter().all(|constraint| {
     constraint.left().atoms().next().is_some() && constraint.right().atoms().next().is_some()
 }))]
-pub(crate) fn compile(constraints: &[LandmarkConstraint]) -> Vec<HornClause>
+fn compile(constraints: &[LandmarkConstraint]) -> Vec<HornClause>
 {
     let mut clauses = Vec::new();
     for constraint in constraints {

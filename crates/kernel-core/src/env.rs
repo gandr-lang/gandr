@@ -797,6 +797,7 @@ impl Environment
     // ends at the arena's own watermark — that is, the checker's intermediates
     // were truncated away rather than committed. Whether the declaration is
     // *well-typed* is what the body decides and is not restated here.
+    #[inline]
     #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| ret.is_err()
         || (arith::Int::from(self.entries.len()) == arith::add(arith::Int::from(entry_len), arith::Int::from(1_usize))
             && self.admission_floor == self.arena.watermark()))]
@@ -901,6 +902,7 @@ impl Environment
     ///   later rejection leaving bypassed content resolvable.
     /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
     /// - witness: `env::tests::a_rejection_keeps_bypassed_content_resolvable`
+    #[inline]
     #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark()], ensures: arith::Int::from(self.entries.len()) == arith::add(arith::Int::from(entry_len), arith::Int::from(1_usize))
         && self
             .entries
