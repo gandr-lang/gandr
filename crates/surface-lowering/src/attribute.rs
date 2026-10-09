@@ -423,6 +423,9 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::ReturnerType
         | Former::ArrowType
         | Former::ProductType
+        | Former::LazyProductType
+        | Former::ValueFunctionType
+        | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::Declaration
         | Former::AttributeBlock
@@ -959,6 +962,9 @@ mod tests
                 | Former::ReturnerType
                 | Former::ArrowType
                 | Former::ProductType
+                | Former::LazyProductType
+                | Former::ValueFunctionType
+                | Former::StaticAbstraction
                 | Former::ParenthesizedType
                 | Former::Declaration
                 | Former::AttributeBlock

@@ -261,12 +261,19 @@ fn add_type_rules(
             tile(TileLabel(")")),
         ]),
     ));
+    // A type application's head is a type name or a type variable: a
+    // declaration's name is lowercase, so a type operator a declaration binds
+    // is applied under the spelling a type position reads it by, `small` or
+    // `pair_of(A)`, as a static abstraction binds either spelling.
     rules.push(rule(
         RuleName("type_application"),
         ty,
         type_application,
         Regex::seq([
-            tile(TileLabel("type_identifier")),
+            Regex::alt([
+                tile(TileLabel("type_identifier")),
+                tile(TileLabel("type_variable")),
+            ]),
             tile(TileLabel("(")),
             comma1(Regex::sort(ty)),
             tile(TileLabel(")")),

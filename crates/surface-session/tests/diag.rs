@@ -117,8 +117,8 @@ const ERROR_CORPUS: [Case; 13] = [
     Case {
         name: "out-of-fragment",
         descriptor: "OutOfFragment",
-        source: "def a : Integer * Integer ;\n",
-        locus: "Integer * Integer",
+        source: "def a : -F Integer & -F Integer ;\n",
+        locus: "-F Integer & -F Integer",
     },
     Case {
         name: "malformed-form",

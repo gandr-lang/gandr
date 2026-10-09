@@ -639,7 +639,7 @@ mod tests
             (
                 LoweringRefusal::OutOfFragment {
                     span: empty,
-                    form: FormName::from(NamedKind("product_type")),
+                    form: FormName::from(NamedKind("lazy_product_type")),
                     sort: FragmentSort::ValueType,
                     boundary: FragmentBoundary::Reserved,
                 },

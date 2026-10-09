@@ -1,2 +1,6 @@
-@[ refuses("OutOfFragment") ]
+@[ checks ]
 def pair : Integer * Integer ;
+def pair = (1, 2) ;
+
+@[ refuses("OutOfFragment") ]
+def lazy : -F Integer & -F Integer ;

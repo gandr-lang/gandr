@@ -82,6 +82,7 @@ default-features = false
 # - storage-artifact
 # - storage-records
 # - storage-values
+# - surface-lowering
 # - surface-syntax
 # - theory-orders
 [workspace.dependencies.anodized]
@@ -202,6 +203,7 @@ path = "crates/kernel-conversion-trace"
 # consumers:
 # - core-checker
 # - core-nbe (dev)
+# - surface-lowering (dev)
 [workspace.dependencies.gandr-kernel-core]
 path = "crates/kernel-core"
 

@@ -81,6 +81,7 @@ use alloc::vec::Vec;
 use core::fmt;
 use core::ops::ControlFlow;
 
+use anodized::spec;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -432,6 +433,30 @@ impl Reading
             | Self::Result(frame) => frame,
         }
     }
+
+    /// The universe a decode stands at when nothing was written to say, at
+    /// the fuss-free level: the computation types where only a computation
+    /// type is read, the value types everywhere else — a function's result
+    /// included, which takes a value type under an inserted returner.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn positional_universe(self) -> Universe
+    {
+        match self {
+            | Self::CompType(_) => Universe {
+                sort: GroundSort::Computation,
+                level: LevelConstant::ZERO,
+            },
+            | Self::Unread
+            | Self::Function
+            | Self::ValueType(_)
+            | Self::Value(_)
+            | Self::Computation(_)
+            | Self::Head(_)
+            | Self::Result(_) => Universe::FUSS_FREE,
+        }
+    }
 }
 
 /// The two families of formers, which never stand in each other's place.
@@ -471,6 +496,9 @@ const fn family_of(former: Former) -> Family
         | Former::ReturnerType
         | Former::ArrowType
         | Former::ProductType
+        | Former::LazyProductType
+        | Former::ValueFunctionType
+        | Former::StaticAbstraction
         | Former::ParenthesizedType => Family::Type,
         | Former::Declaration
         | Former::AttributeBlock
@@ -581,7 +609,8 @@ impl Universe
     };
 }
 
-/// The code a decode reads its type from.
+/// The code a decode reads its type from, and the head a static application
+/// applies.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Code
 {
@@ -671,12 +700,28 @@ enum Plan
     Atom(TypeAtom),
     /// A universe.
     Universe(Universe),
-    /// The type a code denotes, in the universe it was declared at.
-    Decode(Code, Universe),
+    /// The type a code denotes, in the universe it was declared at: the code
+    /// is the head applied statically to the arguments in the lowerer's
+    /// operand store, none for a bare name.
+    Decode(Code, Stretch, Universe),
+    /// A static application of the head to the arguments in the lowerer's
+    /// operand store, left to right.
+    StaticApplication(Code, Stretch),
+    /// A static lambda over its body.
+    StaticLambda(NodeIndex),
     /// A type former over its argument.
     Former(TypeFormer, NodeIndex),
     /// An arrow over its domain and codomain.
     Arrow(NodeIndex, NodeIndex),
+    /// A static Pi over its domain and codomain.
+    StaticPi(NodeIndex, NodeIndex),
+    /// The eager product of two value types.
+    Product(NodeIndex, NodeIndex),
+    /// The values in the lowerer's operand store, paired to the right.
+    Pair(Stretch),
+    /// The thunked arrow from the domains in the lowerer's operand store to
+    /// the returner of the codomain.
+    ValueFunction(Stretch, NodeIndex),
     /// Adopt the child's lowered node unchanged.
     Transparent(NodeIndex),
     /// A thunk over its block.
@@ -968,9 +1013,14 @@ struct Sink<'run>
 /// - witness: `lower::tests::an_undefined_type_head_is_refused`
 /// - witness: `lower::tests::an_applied_nullary_head_is_refused`
 /// - witness: `lower::tests::an_applied_head_no_former_answers_is_refused`
-/// - witness: `lower::tests::the_reserved_product_is_declined`
-/// - witness: `lower::tests::the_reserved_pair_is_declined`
-/// - witness: `lower::tests::an_arrow_at_declaration_sort_is_refused`
+/// - witness: `lower::tests::the_reserved_lazy_product_is_declined`
+/// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+/// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+/// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
+/// - witness: `lower::tests::a_computation_codomain_of_a_static_pi_is_refused`
+/// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
+/// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+/// - witness: `static_operators::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
 /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
 /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
 /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
@@ -1654,7 +1704,10 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Former::TypeApplication => self.type_application(site, cursor),
             | Former::ThunkType | Former::ReturnerType => self.formed_type(site, cursor),
             | Former::ArrowType => self.arrow(site, cursor),
-            | Former::ProductType => Err(site.out(FragmentBoundary::Reserved)),
+            | Former::ProductType => self.product(site, cursor),
+            | Former::LazyProductType => Err(site.out(FragmentBoundary::Reserved)),
+            | Former::ValueFunctionType => self.value_function(site, cursor),
+            | Former::StaticAbstraction => self.static_abstraction(site, cursor),
             | Former::ParenthesizedType => self.parenthesized_type(site, cursor),
             | Former::Declaration | Former::Module => self.function(site, cursor),
             | Former::AttributeBlock | Former::Import | Former::Unadmitted => {
@@ -1972,18 +2025,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify a parenthesised expression: the unit, a grouping, the reserved
-    /// tuple or an annotation.
+    /// Classify a parenthesised expression: the unit, a grouping, a pair or
+    /// an annotation.
     ///
     /// # Specification
     /// - requires: `site` is a parenthesised expression in term position.
     /// - ensures: `()` standing as a value is planned as the unit; `(e)` reads
-    ///   its operand at its own reading and adopts it.
+    ///   its operand at its own reading and adopts it; a comma list is read as
+    ///   a pair.
     /// - provides: the reading of every form the grammar folds into
     ///   parentheses.
-    /// - fails: yields the reserved refusal for a tuple, the unadmitted refusal
-    ///   for an annotation, the wrong-sort refusal for a unit outside value
-    ///   position, and the extra-operand refusal for a juxtaposition.
+    /// - fails: yields the pair's own refusal, the unadmitted refusal for an
+    ///   annotation, the wrong-sort refusal for a unit outside value position,
+    ///   and the extra-operand refusal for a juxtaposition.
     /// - panics: none.
     ///
     /// # Errors
@@ -1994,10 +2048,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
+        let list = cursor.clone();
         let _open = cursor.tile(TileName::PAREN_OPEN);
         let run = cursor.operands();
         if let Maybe::Present(_) = cursor.at(TileName::COMMA) {
-            return Err(site.folded(FormName::TUPLE, FragmentBoundary::Reserved));
+            return self.pair(site, list);
         }
         if let Maybe::Present(_) = cursor.at(TileName::COLON) {
             return Err(site.folded(FormName::ANNOTATION, FragmentBoundary::Unadmitted));
@@ -2016,6 +2071,66 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.read(inner.node, site.reading);
 
         self.plan(site, Plan::Transparent(inner.node));
+
+        Ok(())
+    }
+
+    /// Classify a pair, `(v1, …, vn)`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands at the `(` of a parenthesised expression
+    ///   whose first member a comma follows.
+    /// - ensures: the pair stands as a value, reads every member as a value
+    ///   under its own frame, and is planned over them, paired to the right as
+    ///   the product associates.
+    /// - provides: the introduction of the eager product.
+    /// - fails: yields the wrong-sort refusal where no value is read, and the
+    ///   list's refusal for a member out of shape, both naming the tuple.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The pair's refusal.
+    ///
+    /// # Termination
+    /// The member loop runs once per entry of the finite member stretch.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pair of two, a tuple of four, and a pair where a
+    ///   computation is read, each asserted as the exact core node read back
+    ///   out of the arena or the exact refusal.
+    /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    #[spec(ensures: |ret| ret.is_err()
+        || matches!(
+            self.plans.get(usize::from(site.at.node)),
+            Some(&Plan::Pair(members)) if members.end.saturating_sub(members.start) >= 2_usize
+        ))]
+    fn pair(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let tuple = Site {
+            name: FormName::TUPLE,
+            ..site
+        };
+        let frame = self.require(tuple, Produced::Value)?;
+        let start = self.operands.len();
+        if let Err(refusal) = arguments(tuple, &mut cursor, &mut self.operands) {
+            self.operands.truncate(start);
+            return Err(refusal);
+        }
+        let members = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        for position in members.start .. members.end {
+            if let Some(&member) = self.operands.get(position) {
+                self.read(member, Reading::Value(frame));
+            }
+        }
+
+        self.plan(site, Plan::Pair(members));
 
         Ok(())
     }
@@ -2698,12 +2813,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: inside a module signature, a head naming a manifest type
     ///   component written before the head's own component stands for the type
     ///   that component names, adopted as it lowered. Otherwise a head a binder
-    ///   or an earlier declaration answers is that code, decoded in the
-    ///   universe its type was written at — the value types at the fuss-free
-    ///   level when it was written at none — and stands at the sort of that
-    ///   universe; a binder so named is recorded as mentioned by a type. Any
-    ///   other head resolves against the nullary table and is planned as its
-    ///   atom.
+    ///   or an earlier declaration answers is that code, read as the static
+    ///   application of it to no arguments. Any other head resolves against the
+    ///   nullary table and is planned as its atom.
     /// - provides: the type-head half of resolution, the expansion of a
     ///   manifest type component, and the decode of a value name in type
     ///   position.
@@ -2747,29 +2859,11 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
         let from = site.reading.frame();
         if let Maybe::Present(resolved) = self.resolve_name(site, from, name)? {
-            let (code, declared) = match resolved {
-                | Resolved::Binder(bound) => (
-                    Code::Bound {
-                        from,
-                        binder: bound.binder,
-                    },
-                    bound.declared,
-                ),
-                | Resolved::Declaration { constant, declared } => {
-                    (Code::Constant(constant), declared)
-                },
+            let none = Stretch {
+                start: self.operands.len(),
+                end: self.operands.len(),
             };
-            let universe = self.written_universe(declared)?;
-            let produced = match universe.sort {
-                | GroundSort::Value => Produced::ValueType,
-                | GroundSort::Computation => Produced::CompType,
-            };
-            let _frame = self.require(site, produced)?;
-            if let Code::Bound { binder, .. } = code {
-                self.scope.mention(binder);
-            }
-            self.plan(site, Plan::Decode(code, universe));
-            return Ok(());
+            return self.static_application(site, resolved, none);
         }
         let _frame = self.require(site, Produced::ValueType)?;
         let Maybe::Present(atom) = type_atom(name)
@@ -2879,47 +2973,62 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(Universe { sort, level })
     }
 
-    /// The universe the type at `declared` was written as, the fuss-free
-    /// default when it is none.
+    /// The universe a code of the type at `declared`, applied statically to
+    /// `applied` arguments, decodes in; `fallback` where the type does not
+    /// say.
     ///
     /// # Specification
     /// - requires: `declared`, when present, is a node of the tree.
-    /// - ensures: the universe a universe form spells, read through any
-    ///   grouping parentheses around it; [`Universe::FUSS_FREE`] for an absent
-    ///   type, any other form, or a universe out of shape, whose own reading
+    /// - ensures: read through any grouping parentheses, each of the first
+    ///   `applied` arrows of the type steps to its codomain, and the universe
+    ///   form the walk then reaches is the universe it spells; `fallback` for
+    ///   an absent type, for a walk that meets any other form or an arrow too
+    ///   few or too many, and for a universe out of shape, whose own reading
     ///   reports it.
-    /// - provides: the sort and level a decode of a binder or a declaration is
-    ///   minted at.
-    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk through the
-    ///   parentheses outruns the allowance.
+    /// - provides: the sort and level a decode of a binder, a declaration or a
+    ///   static application of either is minted at.
+    /// - fails: [`LoweringRefusal::BudgetExceeded`] when the walk outruns the
+    ///   allowance.
     /// - panics: none.
     ///
     /// # Errors
     /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
     ///
+    /// # Termination
+    /// Every turn spends one unit of the lowerer's allowance and steps to an
+    /// operand of the node it read, strictly deeper in a finite tree.
+    ///
     /// # Adequacy
     /// - hypothesis: L3 — a binder written at a sorted, levelled universe
-    ///   inside a grouping and a declaration signed at one, each observed
-    ///   through the decode it mints.
+    ///   inside a grouping, a declaration signed at one, an operator's codomain
+    ///   reached through one static arrow, and an unwritten type at each sort
+    ///   of position, each observed through the decode it mints.
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+    /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+    #[spec(ensures: |ret| ret.is_err()
+        || matches!(declared, Maybe::Present(_))
+        || ret.as_ref().is_ok_and(|universe| *universe == fallback))]
     fn written_universe(
         &mut self,
         declared: Maybe<NodeIndex, binder_type::Absent>,
+        applied: OperandCount,
+        fallback: Universe,
     ) -> Result<Universe, LoweringRefusal<'source>>
     {
         let Maybe::Present(mut position) = declared
         else {
-            return Ok(Universe::FUSS_FREE);
+            return Ok(fallback);
         };
+        let mut remaining = usize::from(applied);
         loop {
             self.fuel.spend()?;
             let Some(node) = self.tree.node(position)
             else {
-                return Ok(Universe::FUSS_FREE);
+                return Ok(fallback);
             };
             let Ok(Shape::Form { name, former }) = shape_of(self.pbg, node)
             else {
-                return Ok(Universe::FUSS_FREE);
+                return Ok(fallback);
             };
             let mut scratch = core::mem::take(&mut self.scratch);
             let read = read_pieces(self.pbg, self.tree, position, &mut scratch);
@@ -2930,20 +3039,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
             };
             let mut cursor = Cursor::new(&scratch.pieces, site.at.span);
             let step = match (read, former) {
-                | (Ok(()), Former::Universe) => ControlFlow::Break(
-                    self.universe_of(site, &mut cursor)
-                        .unwrap_or(Universe::FUSS_FREE),
-                ),
+                | (Ok(()), Former::Universe) if remaining == 0_usize => {
+                    ControlFlow::Break(self.universe_of(site, &mut cursor).unwrap_or(fallback))
+                },
                 | (Ok(()), Former::ParenthesizedType) => {
                     let _open = cursor.tile(TileName::PAREN_OPEN);
                     match cursor.operands() {
                         | Run::One(operand) => ControlFlow::Continue(operand.node),
-                        | Run::Empty(_) | Run::Several { .. } => {
-                            ControlFlow::Break(Universe::FUSS_FREE)
-                        },
+                        | Run::Empty(_) | Run::Several { .. } => ControlFlow::Break(fallback),
                     }
                 },
-                | _ => ControlFlow::Break(Universe::FUSS_FREE),
+                | (Ok(()), Former::ArrowType) if remaining > 0_usize => {
+                    remaining = remaining.saturating_sub(1_usize);
+                    let _domain = cursor.operands();
+                    let _arrow = cursor.tile(TileName::ARROW);
+                    match cursor.operands() {
+                        | Run::One(operand) => ControlFlow::Continue(operand.node),
+                        | Run::Empty(_) | Run::Several { .. } => ControlFlow::Break(fallback),
+                    }
+                },
+                | _ => ControlFlow::Break(fallback),
             };
             self.scratch = scratch;
             match step {
@@ -2956,35 +3071,77 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Classify a type head applied to arguments, `Foo(A)`.
     ///
     /// # Specification
-    /// - requires: `site` is a type application in type position.
-    /// - ensures: a head applied to one argument resolves against the unary
+    /// - requires: `site` is a type application in type position, or in value
+    ///   position where a type is quoted.
+    /// - ensures: a head a binder or an earlier declaration answers is read as
+    ///   the static application of that code to the arguments, left to right;
+    ///   any other head applied to one argument resolves against the unary
     ///   table, stands at the sort its former produces, reads its argument at
     ///   the sort the former takes, and is planned over it.
     /// - provides: the applied half of type-head resolution.
-    /// - fails: yields the unresolved-head refusal for a head no former answers
-    ///   at the arity it was written with, the wrong-sort refusal for a former
-    ///   whose sort does not suit the position, and the hole's own refusal.
+    /// - fails: yields the unresolved-head refusal for a head nothing answers
+    ///   and no former takes at the arity it was written with, the wrong-sort
+    ///   refusal for a former or an application whose sort does not suit the
+    ///   position, and the hole's own refusal.
     /// - panics: none.
     ///
     /// # Errors
     /// The application's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a former's head, a head no former takes, a head
+    ///   written at two arguments, and an operator a declaration and a binder
+    ///   name, each asserted as the exact core node read back out of the arena
+    ///   or the exact refusal.
+    /// - witness: `lower::tests::u_and_f_are_names`
+    /// - witness: `lower::tests::an_applied_head_no_former_answers_is_refused`
+    /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+    #[spec(ensures: |ret| ret.is_err()
+        || matches!(
+            self.plans.get(usize::from(site.at.node)),
+            Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::StaticApplication(..)))
+        ))]
     fn type_application(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let Maybe::Present(head) = cursor.tile(TileName::TYPE_IDENTIFIER)
-        else {
-            return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+        let head = match cursor.peek() {
+            | Maybe::Present(Piece::Tile { label, at })
+                if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE =>
+            {
+                let _head = cursor.tile(label);
+                at
+            },
+            | Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            },
         };
         let name = self.name_at(head);
         let start = self.operands.len();
         let read = arguments(site, &mut cursor, &mut self.operands);
+        let resolved = read.and_then(|()| {
+            let named = Site { at: head, ..site };
+            self.resolve_name(named, site.reading.frame(), name)
+        });
+        match resolved {
+            | Ok(Maybe::Present(resolved)) => {
+                let applied = Stretch {
+                    start,
+                    end: self.operands.len(),
+                };
+                return self.static_application(site, resolved, applied);
+            },
+            | Ok(Maybe::Absent(named::Absent::Unresolved)) => {},
+            | Err(refusal) => {
+                self.operands.truncate(start);
+                return Err(refusal);
+            },
+        }
         let count = self.operands.len().saturating_sub(start);
         let first = self.operands.get(start).copied();
         self.operands.truncate(start);
-        read?;
         let unresolved = |arity| LoweringRefusal::UnresolvedTypeHead {
             span: head.span,
             name,
@@ -3000,6 +3157,97 @@ impl<'run, 'source> Lowerer<'run, 'source>
         };
 
         self.apply_former(site, former, argument)
+    }
+
+    /// Classify the static application of the code `resolved` names to the
+    /// arguments `applied` holds in the operand store.
+    ///
+    /// # Specification
+    /// - requires: `applied` is a stretch of the operand store, each entry an
+    ///   argument the application was written with, left to right.
+    /// - ensures: where a value is read, the application stands as itself;
+    ///   where a type is read, it stands as the decode of the application, in
+    ///   the universe the code's written type reaches after one arrow per
+    ///   argument, and else in the universe the position reads — the
+    ///   computation types where only a computation type is read, the value
+    ///   types everywhere else, at the fuss-free level. Every argument is read
+    ///   as a value under the site's frame, and a binder so named is recorded
+    ///   as mentioned.
+    /// - provides: the one reading of a type operator's use, bare or applied,
+    ///   as a value or as the type it denotes.
+    /// - fails: yields the wrong-sort refusal where the position reads neither
+    ///   a value nor the sort of the decode's universe; propagates
+    ///   [`LoweringRefusal::BudgetExceeded`] from the walk of the code's type.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The application's refusal.
+    ///
+    /// # Termination
+    /// The argument loop runs once per entry of the finite stretch `applied`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare head and an applied one, each where a value is
+    ///   read and where a type is read, the decode's universe written by the
+    ///   operator and left to the position, each asserted as the exact core
+    ///   node read back out of the arena.
+    /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+    /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    #[spec(ensures: |ret| ret.is_err()
+        || match self.plans.get(usize::from(site.at.node)) {
+            | Some(&Plan::StaticApplication(_, planned)) => {
+                planned == applied && matches!(site.reading, Reading::Value(_))
+            },
+            | Some(&Plan::Decode(_, planned, _)) => {
+                planned == applied && !matches!(site.reading, Reading::Value(_))
+            },
+            | _ => false,
+        })]
+    fn static_application(
+        &mut self,
+        site: Site,
+        resolved: Resolved,
+        applied: Stretch,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let from = site.reading.frame();
+        let (code, declared) = match resolved {
+            | Resolved::Binder(bound) => (
+                Code::Bound {
+                    from,
+                    binder: bound.binder,
+                },
+                bound.declared,
+            ),
+            | Resolved::Declaration { constant, declared } => (Code::Constant(constant), declared),
+        };
+        let (plan, produced) = if let Reading::Value(_) = site.reading {
+            (Plan::StaticApplication(code, applied), Produced::Value)
+        }
+        else {
+            let count = OperandCount::from(applied.end.saturating_sub(applied.start));
+            let universe =
+                self.written_universe(declared, count, site.reading.positional_universe())?;
+            let produced = match universe.sort {
+                | GroundSort::Value => Produced::ValueType,
+                | GroundSort::Computation => Produced::CompType,
+            };
+            (Plan::Decode(code, applied, universe), produced)
+        };
+        let frame = self.require(site, produced)?;
+        if let Code::Bound { binder, .. } = code {
+            self.scope.mention(binder);
+        }
+        for position in applied.start .. applied.end {
+            if let Some(&argument) = self.operands.get(position) {
+                self.read(argument, Reading::Value(frame));
+            }
+        }
+
+        self.plan(site, plan);
+
+        Ok(())
     }
 
     /// Classify a type former written as its own keyword: `+U C` or `-F A`.
@@ -3131,35 +3379,304 @@ impl<'run, 'source> Lowerer<'run, 'source>
         Ok(())
     }
 
-    /// Classify an arrow type, `A -> C`.
+    /// Classify an arrow type: the computation arrow `A -> C`, or the static
+    /// Pi `A -> B` where a value type is read.
     ///
     /// # Specification
-    /// - requires: `site` is an arrow in type position.
-    /// - ensures: an arrow standing as a computation type reads its domain as a
-    ///   value type and its codomain as a computation type, and is planned over
-    ///   both.
-    /// - provides: the function type of the fragment.
-    /// - fails: yields the wrong-sort refusal outside computation-type
+    /// - requires: `site` is an arrow in type position, or in value position
+    ///   where a type is quoted.
+    /// - ensures: an arrow standing as a value type is the static Pi, its
+    ///   domain and codomain each read as a value type under the arrow's own
+    ///   frame, since the codomain binds nothing; any other arrow stands as a
+    ///   computation type, reads its domain as a value type and its codomain as
+    ///   a computation type. Either is planned over both operands.
+    /// - provides: the function type of the fragment and the classifier of a
+    ///   type operator.
+    /// - fails: yields the wrong-sort refusal where neither sort suits the
     ///   position, and either hole's own refusal.
     /// - panics: none.
     ///
     /// # Errors
     /// The arrow's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an arrow where a computation type is read, where a
+    ///   value type is read, nested to the right as an operator's classifier,
+    ///   and over a computation codomain where a value type is read, each
+    ///   asserted as the exact core node read back out of the arena or the
+    ///   exact refusal.
+    /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+    /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
+    /// - witness: `lower::tests::a_computation_codomain_of_a_static_pi_is_refused`
+    #[spec(ensures: |ret| ret.is_err()
+        || match self.plans.get(usize::from(site.at.node)) {
+            | Some(&Plan::StaticPi(..)) => matches!(site.reading, Reading::ValueType(_)),
+            | Some(&Plan::Arrow(..)) => !matches!(site.reading, Reading::ValueType(_)),
+            | _ => false,
+        })]
     fn arrow(
         &mut self,
         site: Site,
         mut cursor: Cursor<'_>,
     ) -> Result<(), LoweringRefusal<'source>>
     {
-        let frame = self.require(site, Produced::CompType)?;
+        let static_pi = matches!(site.reading, Reading::ValueType(_));
+        let produced = if static_pi {
+            Produced::ValueType
+        }
+        else {
+            Produced::CompType
+        };
+        let frame = self.require(site, produced)?;
         let domain = site.one(cursor.operands())?;
         closed(site, &mut cursor, TileName::ARROW)?;
         let codomain = site.one(cursor.operands())?;
         exhausted(site, &cursor)?;
         self.read(domain.node, Reading::ValueType(frame));
-        self.read(codomain.node, Reading::CompType(frame));
+        if static_pi {
+            self.read(codomain.node, Reading::ValueType(frame));
+            self.plan(site, Plan::StaticPi(domain.node, codomain.node));
+        }
+        else {
+            self.read(codomain.node, Reading::CompType(frame));
+            self.plan(site, Plan::Arrow(domain.node, codomain.node));
+        }
 
-        self.plan(site, Plan::Arrow(domain.node, codomain.node));
+        Ok(())
+    }
+
+    /// Classify an eager product type, `A * B`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a product in type position, or in value position
+    ///   where a type is quoted.
+    /// - ensures: the product stands as a value type, reads both operands as
+    ///   value types under its own frame, and is planned over them.
+    /// - provides: the eager product of the fragment.
+    /// - fails: yields the wrong-sort refusal where no value type is read, and
+    ///   either hole's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The product's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a product of atoms, a chain of three, and a product
+    ///   where a computation type is read, each asserted as the exact core node
+    ///   read back out of the arena or the exact refusal.
+    /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    #[spec(ensures: |ret| ret.is_err()
+        || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Product(..))))]
+    fn product(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::ValueType)?;
+        let first = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::STAR)?;
+        let second = site.one(cursor.operands())?;
+        exhausted(site, &cursor)?;
+        self.read(first.node, Reading::ValueType(frame));
+        self.read(second.node, Reading::ValueType(frame));
+
+        self.plan(site, Plan::Product(first.node, second.node));
+
+        Ok(())
+    }
+
+    /// Classify a value function space, `A => B` or `(A1, …, An) => B`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a value function space in type position, or in
+    ///   value position where a type is quoted.
+    /// - ensures: the alias stands as a value type; its domains — each member
+    ///   of a parenthesised list written before `=>`, else the one operand
+    ///   there — and its codomain are each read as value types under its own
+    ///   frame, and it is planned as the thunked arrow over them.
+    /// - provides: the value function space, the alias of `+U (A1 -> … -> An ->
+    ///   -F B)`.
+    /// - fails: yields the wrong-sort refusal where no value type is read,
+    ///   either hole's own refusal, and a domain list's refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The alias's refusal.
+    ///
+    /// # Termination
+    /// The domain loop runs once per entry of the finite domain stretch.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one domain, a list of two, and an alias nested to the
+    ///   right, each asserted as the same core node the thunked arrow it stands
+    ///   for lowers to.
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    #[spec(ensures: |ret| ret.is_err()
+        || matches!(
+            self.plans.get(usize::from(site.at.node)),
+            Some(&Plan::ValueFunction(domains, _)) if domains.start < domains.end
+        ))]
+    fn value_function(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::ValueType)?;
+        let domain = site.one(cursor.operands())?;
+        closed(site, &mut cursor, TileName::FAT_ARROW)?;
+        let codomain = site.one(cursor.operands())?;
+        exhausted(site, &cursor)?;
+        let start = self.operands.len();
+        if let Err(refusal) = self.domains(domain) {
+            self.operands.truncate(start);
+            return Err(refusal);
+        }
+        let domains = Stretch {
+            start,
+            end: self.operands.len(),
+        };
+        for position in domains.start .. domains.end {
+            if let Some(&each) = self.operands.get(position) {
+                self.read(each, Reading::ValueType(frame));
+            }
+        }
+        self.read(codomain.node, Reading::ValueType(frame));
+
+        self.plan(site, Plan::ValueFunction(domains, codomain.node));
+
+        Ok(())
+    }
+
+    /// Append the domains a value function space's domain operand writes to
+    /// the operand store.
+    ///
+    /// # Specification
+    /// - requires: `domain` is the operand written before `=>`.
+    /// - ensures: each member of an unrepaired parenthesised list of more than
+    ///   one, left to right; else `domain` itself, whose own reading groups,
+    ///   reports a repair or refuses an empty list.
+    /// - provides: the n-ary domain of the alias, the one place a type list is
+    ///   read.
+    /// - fails: yields the list's refusal for a member out of shape;
+    ///   [`LoweringRefusal::UnknownMold`] for a mold the grammar does not hold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The list's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one domain and a list of two, each asserted through
+    ///   the alias it lowers.
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    #[spec(
+        captures: before = self.operands.len(),
+        ensures: |ret| ret.is_err() || self.operands.len() > before
+    )]
+    fn domains(
+        &mut self,
+        domain: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(domain.node)
+        else {
+            self.operands.push(domain.node);
+            return Ok(());
+        };
+        let Shape::Form {
+            name,
+            former: Former::ParenthesizedType,
+        } = shape_of(self.pbg, node)?
+        else {
+            self.operands.push(domain.node);
+            return Ok(());
+        };
+        let mut scratch = core::mem::take(&mut self.scratch);
+        let read = read_pieces(self.pbg, self.tree, domain.node, &mut scratch);
+        let listed = read.and_then(|()| {
+            let commas = scratch.pieces.iter().any(
+                |piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::COMMA),
+            );
+            if commas && let Maybe::Absent(_) = scratch.repair {
+                let list = Site {
+                    at: domain,
+                    name,
+                    reading: Reading::Unread,
+                };
+                arguments(
+                    list,
+                    &mut Cursor::new(&scratch.pieces, domain.span),
+                    &mut self.operands,
+                )
+            }
+            else {
+                self.operands.push(domain.node);
+                Ok(())
+            }
+        });
+        self.scratch = scratch;
+
+        listed
+    }
+
+    /// Classify a static abstraction, `\A. T`.
+    ///
+    /// # Specification
+    /// - requires: `site` is a static abstraction in term or type position.
+    /// - ensures: an abstraction standing as a value binds its one type name in
+    ///   a frame extending its own, untyped — the checker reads the type from
+    ///   the operator's signature — reads its body as a value under that frame,
+    ///   so a type written there is quoted, and is planned as the static lambda
+    ///   over it.
+    /// - provides: the introduction of a type operator.
+    /// - fails: yields the wrong-sort refusal where no value is read, a
+    ///   misplaced-tile fault for a binder out of shape, the binder policy's
+    ///   refusal, and the hole's own refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The abstraction's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one abstraction, two nested whose body names both
+    ///   binders, and an abstraction where a value type is read, each asserted
+    ///   as the exact core node read back out of the arena or the exact
+    ///   refusal.
+    /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
+    #[spec(ensures: |ret| ret.is_err()
+        || matches!(
+            self.plans.get(usize::from(site.at.node)),
+            Some(&Plan::StaticLambda(_))
+        ))]
+    fn static_abstraction(
+        &mut self,
+        site: Site,
+        mut cursor: Cursor<'_>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let frame = self.require(site, Produced::Value)?;
+        closed(site, &mut cursor, TileName::BACKSLASH)?;
+        let binder = match cursor.peek() {
+            | Maybe::Present(Piece::Tile { label, at })
+                if label == TileName::TYPE_IDENTIFIER || label == TileName::TYPE_VARIABLE =>
+            {
+                let _binder = cursor.tile(label);
+                at
+            },
+            | Maybe::Present(Piece::Tile { .. } | Piece::Operand(_)) | Maybe::Absent(_) => {
+                return Err(site.fault(cursor.here(), FormFault::MisplacedTile));
+            },
+        };
+        closed(site, &mut cursor, TileName::DOT)?;
+        let body = site.one(cursor.operands())?;
+        exhausted(site, &cursor)?;
+        let name = self.name_at(binder);
+        self.note_binder(binder, name)?;
+        let extended = self.scope.extend(frame, name);
+        self.read(body.node, Reading::Value(Frame::Inner(extended)));
+
+        self.plan(site, Plan::StaticLambda(body.node));
 
         Ok(())
     }
@@ -3171,7 +3688,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: the one operand is read at the form's own reading and
     ///   adopted.
     /// - provides: grouping in type position.
-    /// - fails: yields the hole's own refusal.
+    /// - fails: yields the hole's own refusal, and a misplaced-tile fault at
+    ///   the first comma of a list, which only a value function space's domain
+    ///   reads.
     /// - panics: none.
     ///
     /// # Errors
@@ -3457,8 +3976,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
                 sink.origins.record_value_type(id, origin);
                 Maybe::Present(Lowered::ValueType(id))
             },
-            | Plan::Decode(code, universe) => {
-                Maybe::Present(self.mint_decode(code, universe, sink, origin))
+            | Plan::Decode(code, arguments, universe) => {
+                self.mint_decode(code, arguments, universe, sink, origin)
+            },
+            | Plan::StaticApplication(code, arguments) => self
+                .mint_code(code, arguments, sink, origin)
+                .map(Lowered::Value),
+            | Plan::Pair(members) => self.mint_pair(members, sink, origin),
+            | Plan::ValueFunction(domains, codomain) => {
+                self.mint_value_function(domains, codomain, sink, origin)
             },
             | Plan::Transparent(child) => self.lowered_at(child),
             | Plan::Former(former, argument) => self.mint_former(former, argument, sink, origin),
@@ -3467,6 +3993,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             },
             | Plan::Function(function) => self.mint_function(&function, sink, origin),
             | Plan::Arrow(..)
+            | Plan::StaticPi(..)
+            | Plan::Product(..)
+            | Plan::StaticLambda(_)
             | Plan::Thunk(_)
             | Plan::Return(_)
             | Plan::Force(_)
@@ -3474,50 +4003,259 @@ impl<'run, 'source> Lowerer<'run, 'source>
         }
     }
 
-    /// Carry out a decode's plan: the code, and the type it denotes.
+    /// Mint a code: its head, applied statically to the arguments `arguments`
+    /// names in the operand store, left to right.
     ///
     /// # Specification
     /// - requires: every type position has been classified, so every binder a
-    ///   type names is recorded as mentioned.
-    /// - ensures: a binder's code is the variable at its telescope index from
-    ///   the use site and a declaration's the constant, each with the written
-    ///   origin; the type is the decode of that code at the universe's level, a
-    ///   value type for the value sort and a computation type for the
-    ///   computation sort, with the origin marked inserted.
-    /// - provides: the decode half of a value name in type position.
+    ///   code names is recorded as mentioned; every argument is already minted
+    ///   or absent.
+    /// - ensures: a binder's head is the variable at its telescope index from
+    ///   the use site and a declaration's the constant; `h(v1, …, vn)` mints as
+    ///   `sapp(… sapp(h, v1) …, vn)`, every node with the written origin;
+    ///   nothing is minted when an argument did not lower.
+    /// - provides: the head of a decode and the value of a static application.
     /// - fails: never.
     /// - panics: none.
-    fn mint_decode(
+    ///
+    /// # Termination
+    /// Both loops run once per entry of the finite stretch `arguments`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare binder, a bare declaration, and an operator
+    ///   applied to one and to three arguments, each asserted as the exact core
+    ///   node read back out of the arena.
+    /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+    /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(id) => match sink.arena.value(id) {
+            | Some(&gandr_core_term::Value::StaticApplication(..)) => {
+                arguments.start < arguments.end
+            },
+            | Some(&(gandr_core_term::Value::Variable { .. } | gandr_core_term::Value::Constant(_))) => {
+                arguments.start >= arguments.end
+            },
+            | _ => false,
+        },
+        | Maybe::Absent(_) => true,
+    })]
+    fn mint_code(
         &self,
         code: Code,
-        universe: Universe,
+        arguments: Stretch,
         sink: &mut Sink<'_>,
         origin: Origin,
-    ) -> Lowered
+    ) -> Maybe<ValueId, lowered::Absent>
     {
-        let value = match code {
+        let written = stretch(&self.operands, arguments);
+        for &argument in written {
+            if let Maybe::Absent(reason) = self.value_at(argument) {
+                return Maybe::Absent(reason);
+            }
+        }
+        let mut applied = match code {
             | Code::Bound { from, binder } => sink.arena.value_variable(
                 Zone::Intuitionistic,
                 self.scope.telescope_index(from, binder),
             ),
             | Code::Constant(constant) => sink.arena.value_constant(constant),
         };
-        sink.origins.record_value(value, origin);
+        sink.origins.record_value(applied, origin);
+        for &argument in written {
+            let Maybe::Present(passed) = self.value_at(argument)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            applied = sink.arena.value_static_application(applied, passed);
+            sink.origins.record_value(applied, origin);
+        }
+
+        Maybe::Present(applied)
+    }
+
+    /// Carry out a decode's plan: the code, and the type it denotes.
+    ///
+    /// # Specification
+    /// - requires: as [`Self::mint_code`] does.
+    /// - ensures: the code [`Self::mint_code`] mints, with the written origin;
+    ///   the type is the decode of that code at the universe's level, a value
+    ///   type for the value sort and a computation type for the computation
+    ///   sort, with the origin marked inserted; nothing when the code did not
+    ///   lower.
+    /// - provides: the decode half of a value name, bare or applied, in type
+    ///   position.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decode at each sort, of a bare code and of an
+    ///   applied one, each asserted as the exact core type read back out of the
+    ///   arena.
+    /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+    /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+    #[spec(ensures: |ret| match (ret, universe.sort) {
+        | (Maybe::Present(Lowered::ValueType(id)), GroundSort::Value) => {
+            matches!(sink.arena.value_type(id), Some(&gandr_core_term::ValueType::Element { .. }))
+        },
+        | (Maybe::Present(Lowered::CompType(id)), GroundSort::Computation) => {
+            matches!(sink.arena.comp_type(id), Some(&gandr_core_term::CompType::Element { .. }))
+        },
+        | (Maybe::Absent(_), _) => true,
+        | _ => false,
+    })]
+    fn mint_decode(
+        &self,
+        code: Code,
+        arguments: Stretch,
+        universe: Universe,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let value = match self.mint_code(code, arguments, sink, origin) {
+            | Maybe::Present(value) => value,
+            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
         let level = Level::constant(universe.level);
         let decoded = origin.inserted(Insertion::Decode);
         match universe.sort {
             | GroundSort::Value => {
                 let id = sink.arena.value_type_element(value, level);
                 sink.origins.record_value_type(id, decoded);
-                Lowered::ValueType(id)
+                Maybe::Present(Lowered::ValueType(id))
             },
             | GroundSort::Computation => {
                 let id = sink.arena.comp_type_element(value, level);
                 sink.origins.record_comp_type(id, decoded);
-                Lowered::CompType(id)
+                Maybe::Present(Lowered::CompType(id))
             },
         }
     }
+
+    /// Carry out a pair's plan: its members, paired to the right.
+    ///
+    /// # Specification
+    /// - requires: every member is already minted or absent.
+    /// - ensures: `(v1, …, vn)` mints as `pair(v1, … pair(vn-1, vn))`, every
+    ///   pair with the written origin, so a tuple inhabits the product chain
+    ///   `*` builds; nothing is minted when a member did not lower or fewer
+    ///   than two were written.
+    /// - provides: the introduction of the eager product.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Both loops run once per entry of the finite stretch `members`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pair of two and a tuple of four, each asserted as
+    ///   the exact core value read back out of the arena.
+    /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::Value(id)) => {
+            matches!(sink.arena.value(id), Some(&gandr_core_term::Value::Pair(..)))
+        },
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    fn mint_pair(
+        &self,
+        members: Stretch,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let written = stretch(&self.operands, members);
+        for &member in written {
+            if let Maybe::Absent(reason) = self.value_at(member) {
+                return Maybe::Absent(reason);
+            }
+        }
+        let Some((&last, before)) = written.split_last()
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        if before.is_empty() {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        }
+        let Maybe::Present(mut paired) = self.value_at(last)
+        else {
+            return Maybe::Absent(lowered::Absent::Unminted);
+        };
+        for &member in before.iter().rev() {
+            let Maybe::Present(first) = self.value_at(member)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            paired = sink.arena.value_pair(first, paired);
+            sink.origins.record_value(paired, origin);
+        }
+
+        Maybe::Present(Lowered::Value(paired))
+    }
+
+    /// Carry out a value function space's plan: the thunked arrow it is the
+    /// alias of.
+    ///
+    /// # Specification
+    /// - requires: every domain and the codomain are already minted or absent.
+    /// - ensures: `(A1, …, An) => B` mints as `+U (A1 -> … -> An -> -F B)`,
+    ///   every node with the written origin, so the alias and the thunked arrow
+    ///   it names are one core type; nothing is minted when a domain or the
+    ///   codomain did not lower.
+    /// - provides: the value function space.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Termination
+    /// Both loops run once per entry of the finite stretch `domains`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one domain, a list of two, and an alias nested to the
+    ///   right, each asserted as the same core node the thunked arrow it stands
+    ///   for lowers to.
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    #[spec(ensures: |ret| match ret {
+        | Maybe::Present(Lowered::ValueType(id)) => {
+            matches!(sink.arena.value_type(id), Some(&gandr_core_term::ValueType::Thunk(_)))
+        },
+        | Maybe::Present(_) => false,
+        | Maybe::Absent(_) => true,
+    })]
+    fn mint_value_function(
+        &self,
+        domains: Stretch,
+        codomain: NodeIndex,
+        sink: &mut Sink<'_>,
+        origin: Origin,
+    ) -> Maybe<Lowered, lowered::Absent>
+    {
+        let written = stretch(&self.operands, domains);
+        for &domain in written {
+            if let Maybe::Absent(reason) = self.value_type_at(domain) {
+                return Maybe::Absent(reason);
+            }
+        }
+        let returned = match self.value_type_at(codomain) {
+            | Maybe::Present(returned) => returned,
+            | Maybe::Absent(reason) => return Maybe::Absent(reason),
+        };
+        let mut arrow = sink.arena.comp_type_returner(returned);
+        sink.origins.record_comp_type(arrow, origin);
+        for &domain in written.iter().rev() {
+            let Maybe::Present(from) = self.value_type_at(domain)
+            else {
+                return Maybe::Absent(lowered::Absent::Unminted);
+            };
+            arrow = sink.arena.comp_type_arrow(from, arrow);
+            sink.origins.record_comp_type(arrow, origin);
+        }
+        let id = sink.arena.value_type_thunk(arrow);
+        sink.origins.record_value_type(id, origin);
+
+        Maybe::Present(Lowered::ValueType(id))
+    }
+
     /// Carry out a type former's plan.
     ///
     /// # Specification
@@ -3563,6 +4301,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
                     Lowered::CompType(id)
                 })
             }),
+            | Plan::StaticPi(domain, codomain) => self.value_type_at(domain).and_then(|from| {
+                self.value_type_at(codomain).map(|to| {
+                    let id = sink.arena.value_type_static_pi(from, to);
+                    sink.origins.record_value_type(id, origin);
+                    Lowered::ValueType(id)
+                })
+            }),
+            | Plan::Product(first, second) => self.value_type_at(first).and_then(|left| {
+                self.value_type_at(second).map(|right| {
+                    let id = sink.arena.value_type_product(left, right);
+                    sink.origins.record_value_type(id, origin);
+                    Lowered::ValueType(id)
+                })
+            }),
+            | Plan::StaticLambda(body) => self.value_at(body).map(|under| {
+                let id = sink.arena.value_static_lambda(under);
+                sink.value(id, origin)
+            }),
             | Plan::Thunk(body) => self.mint_block(body, sink).map(|suspended| {
                 let id = sink.arena.value_thunk(suspended);
                 sink.value(id, origin)
@@ -3587,6 +4343,9 @@ impl<'run, 'source> Lowerer<'run, 'source>
             | Plan::Atom(_)
             | Plan::Universe(_)
             | Plan::Decode(..)
+            | Plan::StaticApplication(..)
+            | Plan::Pair(_)
+            | Plan::ValueFunction(..)
             | Plan::Former(..)
             | Plan::Transparent(_)
             | Plan::Application(..)
@@ -4754,6 +5513,9 @@ fn parse_literal(
         | Former::ReturnerType
         | Former::ArrowType
         | Former::ProductType
+        | Former::LazyProductType
+        | Former::ValueFunctionType
+        | Former::StaticAbstraction
         | Former::ParenthesizedType
         | Former::Declaration
         | Former::AttributeBlock
@@ -4823,15 +5585,19 @@ fn fractional(text: SourceFragment<'_>) -> Fractional
 #[cfg(test)]
 mod tests
 {
+    use alloc::format;
     use alloc::string::String;
+    use alloc::vec;
     use alloc::vec::Vec;
 
     use gandr_core_term::CompType;
+    use gandr_core_term::CompTypeId;
     use gandr_core_term::Computation;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Sort;
     use gandr_core_term::Value;
     use gandr_core_term::ValueType;
+    use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
@@ -6175,21 +6941,165 @@ mod tests
         );
     }
 
+    /// One node of a core type, as [`spine`] walks it.
+    #[derive(Clone, Copy)]
+    enum TypeNode
+    {
+        /// A value type.
+        Value(ValueTypeId),
+        /// A computation type.
+        Computation(CompTypeId),
+    }
+
+    /// The type at `root`, in pre-order, one token per former, so two types
+    /// minted at different arena positions compare by structure.
+    ///
+    /// # Specification
+    /// trivial.
+    fn spine(
+        arena: &CoreArena,
+        root: ValueTypeId,
+    ) -> Vec<String>
+    {
+        let mut pending = vec![TypeNode::Value(root)];
+        let mut tokens = Vec::new();
+        while let Some(next) = pending.pop() {
+            match next {
+                | TypeNode::Value(at) => match arena.value_type(at) {
+                    | Some(&ValueType::Base(base)) => tokens.push(format!("{base:?}")),
+                    | Some(&ValueType::Unit) => tokens.push(String::from("Unit")),
+                    | Some(&ValueType::Thunk(inner)) => {
+                        tokens.push(String::from("U"));
+                        pending.push(TypeNode::Computation(inner));
+                    },
+                    | Some(&ValueType::Product(first, second)) => {
+                        tokens.push(String::from("*"));
+                        pending.push(TypeNode::Value(second));
+                        pending.push(TypeNode::Value(first));
+                    },
+                    | other => tokens.push(format!("{other:?}")),
+                },
+                | TypeNode::Computation(at) => match arena.comp_type(at) {
+                    | Some(&CompType::Returner(inner)) => {
+                        tokens.push(String::from("F"));
+                        pending.push(TypeNode::Value(inner));
+                    },
+                    | Some(&CompType::Arrow { domain, codomain }) => {
+                        tokens.push(String::from("->"));
+                        pending.push(TypeNode::Computation(codomain));
+                        pending.push(TypeNode::Value(domain));
+                    },
+                    | other => tokens.push(format!("{other:?}")),
+                },
+            }
+        }
+
+        tokens
+    }
+
     #[test]
-    fn the_reserved_product_is_declined()
+    fn the_alias_is_the_thunked_arrow()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-        let refused = refusal(SourceText::from("def a : Integer * Integer ;"));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def a : Integer => String ; def b : +U (Integer -> -F String) ; def c : \
+                 (Integer, String) => Unit ; def d : +U (Integer -> String -> -F Unit) ; def e \
+                 : Integer => Integer => String ; def f : +U (Integer -> -F (+U (Integer -> -F \
+                 String))) ;",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let declared = |at: usize| spine(&arena, declared_of(lowered[at]));
+
+        assert_eq!(
+            declared(0_usize),
+            ["U", "->", "Integer", "F", "String"],
+            "`A => B` lowers to the thunked arrow into the returner"
+        );
+        assert_eq!(
+            declared(0_usize),
+            declared(1_usize),
+            "and is the same core type the thunked arrow spells"
+        );
+        assert_eq!(
+            declared(2_usize),
+            declared(3_usize),
+            "a domain list curries left to right under one thunk"
+        );
+        assert_eq!(
+            declared(4_usize),
+            declared(5_usize),
+            "the alias nests to the right, each level its own thunk"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def g : (Integer, String) ;")),
+            LoweringRefusal::MalformedForm {
+                span: at(16_usize, 17_usize),
+                form: FormName::from(NamedKind("parenthesized_type")),
+                fault: FormFault::MisplacedTile,
+            },
+            "a type list anywhere but before `=>` is refused at its first comma"
+        );
+    }
+
+    #[test]
+    fn an_arrow_where_a_value_type_is_read_is_a_static_pi()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from("def t : (Type -> Type[-]) -> Type -> Type ;"),
+            &mut arena,
+        );
+        let universe = |id, sort| {
+            arena.value_type(id)
+                == Some(&ValueType::Universe {
+                    sort: Sort::Ground(sort),
+                    level: Level::constant(LevelConstant::ZERO),
+                })
+        };
+        let pi = |id| match arena.value_type(id) {
+            | Some(&ValueType::StaticPi { domain, codomain }) => Some((domain, codomain)),
+            | _ => None,
+        };
+        let Some((family, rest)) = pi(declared_of(outcomes(&module)[0]))
+        else {
+            panic!("an arrow where a value type is read is a static Pi");
+        };
+        let Some((family_domain, family_codomain)) = pi(family)
+        else {
+            panic!("the grouped domain is a static Pi of its own");
+        };
+        let Some((carrier, result)) = pi(rest)
+        else {
+            panic!("the codomain nests to the right");
+        };
+        assert!(
+            universe(family_domain, GroundSort::Value)
+                && universe(family_codomain, GroundSort::Computation)
+                && universe(carrier, GroundSort::Value)
+                && universe(result, GroundSort::Value),
+            "every operand is the universe it spells"
+        );
+    }
+
+    #[test]
+    fn the_reserved_lazy_product_is_declined()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let refused = refusal(SourceText::from("def a : -F Integer & -F Integer ;"));
 
         assert_eq!(
             refused,
             LoweringRefusal::OutOfFragment {
-                span: at(8_usize, 25_usize),
-                form: FormName::from(NamedKind("product_type")),
+                span: at(8_usize, 31_usize),
+                form: FormName::from(NamedKind("lazy_product_type")),
                 sort: FragmentSort::ValueType,
                 boundary: FragmentBoundary::Reserved,
             },
-            "the product parses and is declined by name"
+            "the lazy product parses and is declined by name"
         );
         assert_eq!(
             refused.classify(),
@@ -6199,36 +7109,248 @@ mod tests
     }
 
     #[test]
-    fn the_reserved_pair_is_declined()
-    {
-        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
-
-        assert_eq!(
-            refusal(SourceText::from("def a = ( 1 , 2 ) ;")),
-            LoweringRefusal::OutOfFragment {
-                span: at(8_usize, 17_usize),
-                form: FormName::TUPLE,
-                sort: FragmentSort::Value,
-                boundary: FragmentBoundary::Reserved,
-            },
-            "the pair parses and is declined by name"
-        );
-    }
-
-    #[test]
-    fn an_arrow_at_declaration_sort_is_refused()
+    fn a_computation_codomain_of_a_static_pi_is_refused()
     {
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
 
         assert_eq!(
             refusal(SourceText::from("def a : Integer -> -F Integer ;")),
             LoweringRefusal::OutOfFragment {
-                span: at(8_usize, 29_usize),
-                form: FormName::from(NamedKind("function_type")),
+                span: at(19_usize, 29_usize),
+                form: FormName::from(NamedKind("f_type")),
                 sort: FragmentSort::ValueType,
                 boundary: FragmentBoundary::WrongSort,
             },
-            "a declaration's type is a value type, and an arrow is a computation type"
+            "an arrow in a declaration's type is a static Pi, whose codomain is a value type"
+        );
+    }
+
+    #[test]
+    fn the_eager_product_and_pair_lower_to_their_formers()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def p : Integer * String ; def q = (1, \"a\") ; def r : Integer * Unit * String ; \
+                 def s = (1, (), \"a\") ;",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let one = Value::Literal(integer(SourceFragment::from("1")));
+        let letter = Value::Literal(text(SourceFragment::from("a")));
+        let pair = |id| match arena.value(id) {
+            | Some(&Value::Pair(first, second)) => Some((first, second)),
+            | _ => None,
+        };
+
+        assert_eq!(
+            spine(&arena, declared_of(lowered[0])),
+            ["*", "Integer", "String"],
+            "`A * B` lowers to the product of its operands"
+        );
+        let Some((first, second)) = pair(body_of(lowered[1]))
+        else {
+            panic!("a comma list where a value is read is a pair");
+        };
+        assert_eq!(
+            (arena.value(first), arena.value(second)),
+            (Some(&one), Some(&letter)),
+            "the pair holds its members in order"
+        );
+        assert_eq!(
+            spine(&arena, declared_of(lowered[2])),
+            ["*", "Integer", "*", "Unit", "String"],
+            "a product chain nests to the right"
+        );
+        let Some((head, tail)) = pair(body_of(lowered[3]))
+        else {
+            panic!("a tuple is a pair");
+        };
+        let Some((middle, last)) = pair(tail)
+        else {
+            panic!("a tuple pairs to the right, as the product chain nests");
+        };
+        assert_eq!(
+            (arena.value(head), arena.value(middle), arena.value(last)),
+            (Some(&one), Some(&Value::Unit), Some(&letter)),
+            "each member stands at its place in the chain"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def t : +U (Integer * Integer) ;")),
+            LoweringRefusal::OutOfFragment {
+                span: at(12_usize, 29_usize),
+                form: FormName::from(NamedKind("product_type")),
+                sort: FragmentSort::CompType,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            "a product is a value type, not a computation type"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def u = thunk { (1, 2) } ;")),
+            LoweringRefusal::OutOfFragment {
+                span: at(16_usize, 22_usize),
+                form: FormName::TUPLE,
+                sort: FragmentSort::Computation,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            "a pair is a value, not a computation"
+        );
+    }
+
+    #[test]
+    fn a_static_abstraction_binds_its_name_over_a_quoted_body()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from("def k = \\A. \\B. A * B ;"), &mut arena);
+        let lambda = |id| match arena.value(id) {
+            | Some(&Value::StaticLambda(body)) => Some(body),
+            | _ => None,
+        };
+        let decoded = |id| match arena.value_type(id) {
+            | Some(&ValueType::Element { code, ref target }) => {
+                (arena.value(code).cloned(), Some(target.clone()))
+            },
+            | _ => (None, None),
+        };
+        let variable = |index: u32| {
+            (
+                Some(Value::Variable {
+                    zone: Zone::Intuitionistic,
+                    index: DeBruijnIndex::from(index),
+                }),
+                Some(Level::constant(LevelConstant::ZERO)),
+            )
+        };
+
+        let Some(inner) = lambda(body_of(outcomes(&module)[0])).and_then(lambda)
+        else {
+            panic!("each backslash is one static lambda");
+        };
+        let Some(&Value::Quote(quoted)) = arena.value(inner)
+        else {
+            panic!("a type written as the body is quoted");
+        };
+        let Some(&ValueType::Product(first, second)) = arena.value_type(quoted)
+        else {
+            panic!("the body is the product it spells");
+        };
+        assert_eq!(
+            (decoded(first), decoded(second)),
+            (variable(1_u32), variable(0_u32)),
+            "each binder decodes at its own index, the fuss-free universe where a value type \
+             is read"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def m : \\A. A ;")),
+            LoweringRefusal::OutOfFragment {
+                span: at(8_usize, 13_usize),
+                form: FormName::from(NamedKind("static_abstraction")),
+                sort: FragmentSort::ValueType,
+                boundary: FragmentBoundary::WrongSort,
+            },
+            "a static abstraction is a value, not a type"
+        );
+    }
+
+    #[test]
+    fn a_static_application_decodes_where_its_operator_says_or_where_it_stands()
+    {
+        let mut arena = CoreArena::new();
+        let module = lowered(
+            SourceText::from(
+                "def t : Type -> Type[-, 1] ; def a : +U (t(Integer)) ; def w = \\X. t(X) ; def k \
+                 = \\G. \\A. +U (G(A)) * A ;",
+            ),
+            &mut arena,
+        );
+        let lowered = outcomes(&module);
+        let variable = |index: u32| Value::Variable {
+            zone: Zone::Intuitionistic,
+            index: DeBruijnIndex::from(index),
+        };
+        let constant = Value::Constant(ConstantIndex::from(0_usize));
+        let applied = |id| match arena.value(id) {
+            | Some(&Value::StaticApplication(head, argument)) => {
+                Some((arena.value(head).cloned(), arena.value(argument).cloned()))
+            },
+            | _ => None,
+        };
+        let decoded = |id| match arena.comp_type(id) {
+            | Some(&CompType::Element { code, ref target }) => Some((code, target.clone())),
+            | _ => None,
+        };
+        let lambda = |id| match arena.value(id) {
+            | Some(&Value::StaticLambda(body)) => Some(body),
+            | _ => None,
+        };
+
+        let Some(&ValueType::Thunk(suspended)) = arena.value_type(declared_of(lowered[1]))
+        else {
+            panic!("`+U` is a thunk type");
+        };
+        let Some((code, target)) = decoded(suspended)
+        else {
+            panic!("an operator applied where a computation type is read decodes");
+        };
+        assert_eq!(
+            target,
+            Level::constant(LevelConstant::from(1_u64)),
+            "at the level of the universe its operator's codomain spells"
+        );
+        let Some((Some(head), Some(Value::Quote(argument)))) = applied(code)
+        else {
+            panic!("the code is the operator applied to the quoted argument");
+        };
+        assert_eq!(
+            (head, arena.value_type(argument).cloned()),
+            (constant.clone(), Some(ValueType::Base(BaseType::Integer))),
+            "the operator is the declaration, and the argument a type's code"
+        );
+
+        assert_eq!(
+            lambda(body_of(lowered[2])).and_then(applied),
+            Some((Some(constant), Some(variable(0_u32)))),
+            "where a value is read the application stands as itself, its binder unquoted"
+        );
+
+        let Some(inner) = lambda(body_of(lowered[3])).and_then(lambda)
+        else {
+            panic!("two static lambdas");
+        };
+        let Some(&Value::Quote(quoted)) = arena.value(inner)
+        else {
+            panic!("a quoted body");
+        };
+        let Some(&ValueType::Product(left, right)) = arena.value_type(quoted)
+        else {
+            panic!("a product body");
+        };
+        let Some(&ValueType::Thunk(family)) = arena.value_type(left)
+        else {
+            panic!("a thunk type on the left");
+        };
+        let Some((family_code, family_level)) = decoded(family)
+        else {
+            panic!("an untyped operator applied where a computation type is read decodes there");
+        };
+        assert_eq!(
+            (applied(family_code), family_level),
+            (
+                Some((Some(variable(1_u32)), Some(variable(0_u32)))),
+                Level::constant(LevelConstant::ZERO)
+            ),
+            "at the computation types and the fuss-free level"
+        );
+        assert!(
+            matches!(
+                arena.value_type(right),
+                Some(&ValueType::Element { code, .. })
+                    if arena.value(code) == Some(&variable(0_u32))
+            ),
+            "and an untyped binder where a value type is read decodes at the value types"
         );
     }
 

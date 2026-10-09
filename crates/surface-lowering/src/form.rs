@@ -214,6 +214,8 @@ impl TileName
     pub const ARROW: Self = Self("->");
     /// The alias keyword `as` of an import.
     pub const AS: Self = Self("as");
+    /// The static abstraction's lead `\`.
+    pub const BACKSLASH: Self = Self("\\");
     /// The attribute-block opener `@[`.
     pub const ATTRIBUTES: Self = Self("@[");
     /// The bang `!` marking a shared fork.
@@ -245,6 +247,8 @@ impl TileName
     pub const FORK: Self = Self("fork");
     /// The equals sign `=` opening a definition tail.
     pub const EQUALS: Self = Self("=");
+    /// The value function space's `=>`.
+    pub const FAT_ARROW: Self = Self("=>");
     /// An escape sequence inside a string's own tiles.
     pub const ESCAPE_SEQUENCE: Self = Self("escape_sequence");
     /// An identifier written as one of a form's own tiles.
@@ -285,6 +289,8 @@ impl TileName
     pub const RET: Self = Self("ret");
     /// The bind keyword `run`, opening a statement.
     pub const RUN: Self = Self("run");
+    /// The eager product's `*`.
+    pub const STAR: Self = Self("*");
     /// The opaque ascription `:>`.
     pub const SEAL: Self = Self(":>");
     /// The semicolon `;` closing a declaration or a statement.
@@ -358,16 +364,25 @@ pub enum Former
     /// The universe `Type[s, l]`, its sort and level each defaulted when left
     /// off.
     Universe,
-    /// A type head applied to arguments, `Foo(A)`.
+    /// A type head applied to arguments, `Foo(A)`: a unary type former, or a
+    /// static application of a type operator a binder or a declaration names.
     TypeApplication,
     /// The thunk type `+U C`.
     ThunkType,
     /// The returner type `-F A`.
     ReturnerType,
-    /// The arrow type `A -> C`.
+    /// The arrow type `A -> C`, or the static Pi `A -> B` where a value type
+    /// is read.
     ArrowType,
-    /// The reserved product type `A * B`.
+    /// The eager product type `A * B`.
     ProductType,
+    /// The reserved lazy product type `C & D`.
+    LazyProductType,
+    /// The value function space `A => B` or `(A, B) => C`, the alias of the
+    /// thunked arrow.
+    ValueFunctionType,
+    /// The static abstraction `\A. T`.
+    StaticAbstraction,
     /// A parenthesised type.
     ParenthesizedType,
     /// The declaration family `def name …`.
@@ -387,7 +402,7 @@ pub enum Former
 impl Former
 {
     /// Every former, in declaration order.
-    pub const ALL: [Self; 24_usize] = [
+    pub const ALL: [Self; 27_usize] = [
         Self::Name,
         Self::Constructor,
         Self::Number,
@@ -406,6 +421,9 @@ impl Former
         Self::ReturnerType,
         Self::ArrowType,
         Self::ProductType,
+        Self::LazyProductType,
+        Self::ValueFunctionType,
+        Self::StaticAbstraction,
         Self::ParenthesizedType,
         Self::Declaration,
         Self::AttributeBlock,
@@ -416,7 +434,7 @@ impl Former
 }
 
 /// The named kinds the lowering reads, with the former each is read as.
-pub const FORMERS: [(&str, Former); 25_usize] = [
+pub const FORMERS: [(&str, Former); 28_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
     ("number", Former::Number),
@@ -437,6 +455,9 @@ pub const FORMERS: [(&str, Former); 25_usize] = [
     ("f_type", Former::ReturnerType),
     ("function_type", Former::ArrowType),
     ("product_type", Former::ProductType),
+    ("lazy_product_type", Former::LazyProductType),
+    ("value_function_type", Former::ValueFunctionType),
+    ("static_abstraction", Former::StaticAbstraction),
     ("parenthesized_type", Former::ParenthesizedType),
     ("def_value", Former::Declaration),
     ("attribute_block", Former::AttributeBlock),
@@ -1441,6 +1462,9 @@ mod tests
             ("f_type", Former::ReturnerType),
             ("function_type", Former::ArrowType),
             ("product_type", Former::ProductType),
+            ("lazy_product_type", Former::LazyProductType),
+            ("value_function_type", Former::ValueFunctionType),
+            ("static_abstraction", Former::StaticAbstraction),
             ("parenthesized_type", Former::ParenthesizedType),
             ("def_value", Former::Declaration),
             ("attribute_block", Former::AttributeBlock),

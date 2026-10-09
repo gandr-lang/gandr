@@ -673,7 +673,7 @@ def konst = thunk { fn (x) { fn (y) { ret x } } } ;"#,
                 vec![(Row::NonSynthesisableDefinition, 1_usize)],
             ),
             (
-                r#"@[ refuses("OutOfFragment") ] def a : Integer * Integer ;"#,
+                r#"@[ refuses("OutOfFragment") ] def a : -F Integer & -F Integer ;"#,
                 vec![(Row::ReservedForm, 1_usize)],
             ),
             (r#"@[ owes(1) ] def a : Integer ;"#, vec![(

@@ -722,7 +722,7 @@ mod tests
             },
             LoweringRefusal::OutOfFragment {
                 span: s(9_usize, 10_usize),
-                form: FormName::from(NamedKind("product_type")),
+                form: FormName::from(NamedKind("lazy_product_type")),
                 sort: FragmentSort::ValueType,
                 boundary: FragmentBoundary::Reserved,
             },
@@ -861,7 +861,7 @@ mod tests
             "no type head answers `Intgr` bare at 3..4",
             "`x` already has a signature at 0..1; a second at 5..6",
             "`x` already has a definition at 0..1; a second at 7..8",
-            "`product_type` at 9..10, read as a value type, is reserved and declined",
+            "`lazy_product_type` at 9..10, read as a value type, is reserved and declined",
             "the text at 11..12 is not the lexeme of `number`",
             "`def_value` leaves an operand unwritten at 23..23",
             "no attribute is registered as `check` at 13..14; the nearest is `checks`",
