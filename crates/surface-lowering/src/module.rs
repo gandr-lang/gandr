@@ -1269,6 +1269,7 @@ mod tests
     use super::collect;
     use super::declaration_half;
     use super::slot_refusal;
+    use crate::classify::FailureClass;
     use crate::error::FormFault;
     use crate::error::FragmentBoundary;
     use crate::error::FragmentSort;
@@ -1389,6 +1390,11 @@ mod tests
             Maybe::Present(at(0_usize, 17_usize)),
             "the first signature survives the refusal"
         );
+        assert_eq!(
+            slot.refusal.map(|(_at, refusal)| refusal.classify()),
+            Maybe::Present(FailureClass::MalformedSource),
+            "a second signature is the author's mistake"
+        );
     }
 
     #[test]
@@ -1408,6 +1414,11 @@ mod tests
                 first: at(0_usize, 11_usize),
             }),
             "the second definition is refused and names the first"
+        );
+        assert_eq!(
+            slot.refusal.map(|(_at, refusal)| refusal.classify()),
+            Maybe::Present(FailureClass::MalformedSource),
+            "a second definition is the author's mistake"
         );
     }
 
