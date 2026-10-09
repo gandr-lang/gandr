@@ -243,7 +243,17 @@ fn checked(
             at,
             synthesised,
             expected,
-        }) => (spanned(origins.value(at)), [
+        })
+        | CheckRefusal::SortMismatch {
+            at,
+            synthesised,
+            expected,
+        }
+        | CheckRefusal::LevelMismatch {
+            at,
+            synthesised,
+            expected,
+        } => (spanned(origins.value(at)), [
             annotated(spanned(origins.value_type(expected)), Label::Expected),
             annotated(spanned(origins.value_type(synthesised)), Label::Synthesised),
         ]),
@@ -255,6 +265,10 @@ fn checked(
             annotated(spanned(origins.comp_type(expected)), Label::Expected),
             annotated(spanned(origins.comp_type(synthesised)), Label::Synthesised),
         ]),
+        | CheckRefusal::DependentBind { at, synthesised } => (spanned(origins.computation(at)), [
+            annotated(spanned(origins.comp_type(synthesised)), Label::Synthesised),
+            Maybe::Absent(report_context::Absent::Unnamed),
+        ]),
         | CheckRefusal::ShapeMismatch { at, wanted, found } => {
             (node(origins, CoreNode::Term(at)), [
                 annotated(node(origins, CoreNode::Type(found)), Label::Met(wanted)),
@@ -265,7 +279,8 @@ fn checked(
             form: CheckingForm::Thunk(at),
         }
         | CheckRefusal::UnknownConstant { at, .. }
-        | CheckRefusal::UnboundIndex { at, .. } => (spanned(origins.value(at)), UNNAMED),
+        | CheckRefusal::UnboundIndex { at, .. }
+        | CheckRefusal::Undecided { at } => (spanned(origins.value(at)), UNNAMED),
         | CheckRefusal::NotSynthesisable {
             form: CheckingForm::Lambda(at) | CheckingForm::Return(at),
         } => (spanned(origins.computation(at)), UNNAMED),
@@ -409,6 +424,18 @@ impl fmt::Display for Checked
             | CheckRefusal::MachineInvariant => {
                 f.write_str("the checking machine's bookkeeping disagreed with itself")
             },
+            | CheckRefusal::SortMismatch { .. } => f.write_str(
+                "the code's universe is of the other sort than the universe it is checked against",
+            ),
+            | CheckRefusal::LevelMismatch { .. } => f.write_str(
+                "the code's universe stands at a level the universe it is checked against does not admit",
+            ),
+            | CheckRefusal::DependentBind { .. } => f.write_str(
+                "the bind's continuation synthesises a type that mentions the value it binds",
+            ),
+            | CheckRefusal::Undecided { .. } => {
+                f.write_str("the normaliser did not certify the unfolding of this code")
+            },
         }
     }
 }
@@ -464,12 +491,10 @@ impl fmt::Display for Former
             | UnadmittedFormer::NumericAtom => "the numeric base atom",
             | UnadmittedFormer::Product => "the product type",
             | UnadmittedFormer::Sum => "the sum type",
-            | UnadmittedFormer::Universe => "a universe",
-            | UnadmittedFormer::TypeLift => "an explicit lift of a value type",
-            | UnadmittedFormer::Element => "the type a code denotes",
-            | UnadmittedFormer::Quote => "the code of a type",
+            | UnadmittedFormer::TypeLift => "a lift of a value type to a level not above its own",
             | UnadmittedFormer::Abstract => "a sealed abstract type",
-            | UnadmittedFormer::Pi => "the dependent function type",
+            | UnadmittedFormer::SortParameter => "a universe over a sort parameter",
+            | UnadmittedFormer::TopUniverse => "a universe at the greatest representable level",
         })
     }
 }

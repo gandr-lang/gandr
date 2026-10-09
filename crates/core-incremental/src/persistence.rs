@@ -1096,6 +1096,10 @@ mod tests
             | Typing::Refused(Refusal::DanglingNode { .. }) => "dangling-node",
             | Typing::Refused(Refusal::AdmissionOrder) => "admission-order",
             | Typing::Refused(Refusal::MachineInvariant) => "machine-invariant",
+            | Typing::Refused(Refusal::SortMismatch { .. }) => "sort-mismatch",
+            | Typing::Refused(Refusal::LevelMismatch { .. }) => "level-mismatch",
+            | Typing::Refused(Refusal::DependentBind { .. }) => "dependent-bind",
+            | Typing::Refused(Refusal::Undecided { .. }) => "undecided",
         })
     }
 

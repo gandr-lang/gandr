@@ -124,6 +124,7 @@ pub use crate::machine::ProcessCount;
 pub use crate::machine::ProcessId;
 pub use crate::machine::StepBudget;
 pub use crate::machine::StepCount;
+pub use crate::machine::TraceNode;
 pub use crate::machine::decide;
 pub use crate::measure::ExpansionSize;
 pub use crate::measure::MeasureFault;

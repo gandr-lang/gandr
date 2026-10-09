@@ -151,11 +151,6 @@ impl core::fmt::Display for SourceFault<'_>
 }
 
 /// One step of a walk.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "one per path, consumed by its caller before the next; a source is the common step, \
-              and boxing it would add an allocation per source to shrink the rare fault"
-)]
 #[derive(Debug)]
 pub enum Step<'walk>
 {

@@ -13,19 +13,23 @@ publish.workspace = true
 
 # The judgement is stated over the core language's own vocabulary and its
 # context, and reads the leaf vocabulary (admission positions, de Bruijn
-# indices, literals and base types) from the term crate that core-term
-# re-uses it from. The kernel bridge erases into that term crate's arena and
-# admits through the kernel's choke point, which re-derives every declaration
-# the judgement accepts. Nothing here names a surface crate: names, spans and
-# syntax stay above the core.
+# indices, literals, base types, sorts) from the term crate that core-term
+# re-uses it from, and levels from the strata crate. A code constant unfolds
+# through the normaliser's conversion machine, whose recorded trace is the
+# certificate the kernel replays. The kernel bridge erases into the term
+# crate's arena and admits through the kernel's choke point, which re-derives
+# every declaration the judgement accepts. Nothing here names a surface
+# crate: names, spans and syntax stay above the core.
 [dependencies]
+gandr-core-nbe.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-core.workspace = true
+gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]
-gandr-kernel-strata.workspace = true
 proptest.workspace = true
 
 [lints]

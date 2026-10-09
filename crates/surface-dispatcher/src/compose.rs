@@ -568,6 +568,7 @@ fn readmitted(
                 | bridge::Refusal::LinearVariable { .. }
                 | bridge::Refusal::DanglingNode { .. }
                 | bridge::Refusal::Cyclic { .. }
+                | bridge::Refusal::CertificateDeclined { .. }
                 | bridge::Refusal::MachineInvariant,
             )
             | bridge::Outcome::Rejected(_) => {

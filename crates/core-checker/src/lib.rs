@@ -12,16 +12,25 @@
 //! halves each present or absent for a stated reason, and an opaque origin
 //! token the verdict echoes back.
 //!
-//! # Six decisions that interlock
+//! # Eight decisions that interlock
 //!
 //! **The former decides the mode.** Leaves and eliminations synthesise,
 //! introductions check, and a dispatch on the direction names both cases, so a
 //! rule added in one mode and forgotten in the other does not compile.
 //!
-//! **Types meet in two places.** A synthesising value or computation in
-//! checking position crosses one of two bridges into the conversion module;
-//! no rule compares types itself, and each crossing is counted in the result
-//! a face returns.
+//! **Types meet in three places.** A synthesising value or computation in
+//! checking position crosses one of two bridges into the conversion module,
+//! and a decode's code crosses a third when formation checks it; no rule
+//! compares types itself, and each crossing is counted in the result a face
+//! returns.
+//!
+//! **A type has one classifier.** Formation runs in the judgement's machine
+//! and answers each formed type's universe — its family's sort at its natural
+//! level — and never asks a smallness question.
+//!
+//! **Smallness is a lift at the value bridge.** A value code checks at a
+//! value universe at or above its own, and the crossing records the lift the
+//! kernel bridge writes; nothing else moves a type up a universe.
 //!
 //! **Holes are directional.** A hole under a declared type absorbs it and owes
 //! it; a hole with nothing to absorb is refused. No unknown type stands in for
@@ -31,14 +40,17 @@
 //! the hole rule makes; a refusal cannot be spelled as an obligation, and the
 //! classifier leaves its absence class empty.
 //!
-//! **One machine, no recursion.** Every face runs one explicit machine of goals
-//! and frames, charged one step per transition against an allowance.
+//! **One machine, no recursion.** Every face and formation run one explicit
+//! machine of goals and frames, charged one step per transition against an
+//! allowance.
 //!
 //! **The kernel re-derives.** [`bridge::readmit`] erases every accepted
 //! declaration and offers it to the kernel's one checked entry: a body as a
-//! definition, an owed hole as an axiom, a refused declaration as nothing.
-//! The artifact's audit is empty exactly when the ledger is, and gates
-//! nothing.
+//! definition, an owed hole as an axiom, a refused declaration as nothing. A
+//! decode of a code constant is unfolded at export and the kernel replays
+//! the normaliser's certificate for every unfolding before it admits the
+//! declaration. The artifact's audit is empty exactly when the ledger is, and
+//! gates nothing.
 //!
 //! # Example
 //!
@@ -137,6 +149,7 @@
 extern crate alloc;
 
 pub mod bridge;
+mod code;
 mod context;
 mod conversion;
 mod declaration;
@@ -150,6 +163,10 @@ mod refusal;
 mod support;
 mod view;
 
+pub use crate::code::Certificate;
+pub use crate::code::CodeDefinitions;
+pub use crate::code::Lift;
+pub use crate::code::unfolding;
 pub use crate::context::CheckBudget;
 pub use crate::context::CheckingContext;
 pub use crate::context::signature_table;
@@ -160,8 +177,11 @@ pub use crate::declaration::body;
 pub use crate::declaration::signature;
 pub use crate::formation::FormedCompType;
 pub use crate::formation::FormedValueType;
+pub use crate::formation::classify_comp_type;
+pub use crate::formation::classify_value_type;
 pub use crate::formation::form_comp_type;
 pub use crate::formation::form_value_type;
+pub use crate::formation::level_of;
 pub use crate::judgement::Checked;
 pub use crate::judgement::Synthesised;
 pub use crate::judgement::check_comp;

@@ -138,6 +138,40 @@ pub enum Refusal
     AdmissionOrder,
     /// The machine's bookkeeping disagreed with itself.
     MachineInvariant,
+    /// A code was checked at a universe of the other sort.
+    SortMismatch
+    {
+        /// The code.
+        at: Site,
+        /// The universe it synthesised.
+        synthesised: TypeContent,
+        /// The universe expected.
+        expected: TypeContent,
+    },
+    /// A code was checked at a universe of its sort it does not fit.
+    LevelMismatch
+    {
+        /// The code.
+        at: Site,
+        /// The universe it synthesised.
+        synthesised: TypeContent,
+        /// The universe expected.
+        expected: TypeContent,
+    },
+    /// A bind's body synthesised a type that mentions the bound name.
+    DependentBind
+    {
+        /// The bind.
+        at: Site,
+        /// The type its body synthesised, under the binder.
+        synthesised: TypeContent,
+    },
+    /// The normaliser did not certify the unfolding of a code constant.
+    Undecided
+    {
+        /// The code.
+        at: Site,
+    },
 }
 
 /// An item's typing: its verdict, projected.
@@ -360,6 +394,31 @@ impl Projection<'_, '_, '_>
             },
             | CheckRefusal::AdmissionOrder { .. } => Refusal::AdmissionOrder,
             | CheckRefusal::MachineInvariant => Refusal::MachineInvariant,
+            | CheckRefusal::SortMismatch {
+                at,
+                synthesised,
+                expected,
+            } => Refusal::SortMismatch {
+                at: self.site(ArenaNode::Value(at)),
+                synthesised: self.value_type(synthesised),
+                expected: self.value_type(expected),
+            },
+            | CheckRefusal::LevelMismatch {
+                at,
+                synthesised,
+                expected,
+            } => Refusal::LevelMismatch {
+                at: self.site(ArenaNode::Value(at)),
+                synthesised: self.value_type(synthesised),
+                expected: self.value_type(expected),
+            },
+            | CheckRefusal::DependentBind { at, synthesised } => Refusal::DependentBind {
+                at: self.site(ArenaNode::Computation(at)),
+                synthesised: self.type_node(TypeNode::Computation(synthesised)),
+            },
+            | CheckRefusal::Undecided { at } => Refusal::Undecided {
+                at: self.site(ArenaNode::Value(at)),
+            },
         }
     }
 }
@@ -420,7 +479,6 @@ mod tests
     use gandr_core_term::ValueId;
     use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
-    use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
@@ -619,11 +677,11 @@ mod tests
         );
 
         let mut arena = CoreArena::new();
-        let code = arena.value_unit();
-        let element = arena.value_type_element(code, Level::zero());
+        let unit = arena.value_type_unit();
+        let product = arena.value_type_product(unit, unit);
         let (_verdict, typing) = judged(
             arena,
-            Maybe::Present(element),
+            Maybe::Present(product),
             Maybe::Absent(body::Absent::Hole),
             CheckBudget::DEFAULT,
         );
@@ -631,7 +689,7 @@ mod tests
             typing,
             Typing::Refused(Refusal::OutOfFragment {
                 at: first,
-                former: UnadmittedFormer::Element,
+                former: UnadmittedFormer::Product,
             }),
             "a former without a rule names the node carrying it"
         );

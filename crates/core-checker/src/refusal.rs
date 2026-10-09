@@ -116,18 +116,17 @@ pub enum UnadmittedFormer
     Product,
     /// The sum type.
     Sum,
-    /// A universe.
-    Universe,
-    /// An explicit lift of a value type.
+    /// A lift of a value type whose target does not lie above the type's
+    /// level: the judgement has a rule only for a lift that raises.
     TypeLift,
-    /// The type a code denotes.
-    Element,
-    /// A quote: the code of a value or a computation type.
-    Quote,
     /// A sealed abstract type.
     Abstract,
-    /// The dependent function type.
-    Pi,
+    /// A universe over a sort parameter, which has no ground reading until
+    /// the prenex sort binders that would bind it.
+    SortParameter,
+    /// A universe at the greatest representable level, whose own universe
+    /// has no level to stand at.
+    TopUniverse,
 }
 
 /// A synthesised type that does not convert to the type it was checked
@@ -243,6 +242,47 @@ pub enum CheckRefusal
     /// only source of frames and binders; reported rather than asserted, so a
     /// miscount surfaces as a refusal.
     MachineInvariant,
+    /// A code was checked at a universe of the other sort: a value type's code
+    /// at a computation universe, or a computation type's at a value universe.
+    SortMismatch
+    {
+        /// The code.
+        at: ValueId,
+        /// The universe it synthesised, naming its sort and level.
+        synthesised: ValueTypeId,
+        /// The universe it was checked at.
+        expected: ValueTypeId,
+    },
+    /// A code was checked at a universe of its own sort whose level it does
+    /// not fit: above the universe's level, or below a computation universe's,
+    /// which no lift of a computation type reaches.
+    LevelMismatch
+    {
+        /// The code.
+        at: ValueId,
+        /// The universe it synthesised, naming its sort and level.
+        synthesised: ValueTypeId,
+        /// The universe it was checked at.
+        expected: ValueTypeId,
+    },
+    /// A bind's body synthesised a type that mentions the value the bind
+    /// introduced: the binder is opaque to types, so the type has no reading
+    /// outside it.
+    DependentBind
+    {
+        /// The bind.
+        at: ComputationId,
+        /// The type its body synthesised, under the binder.
+        synthesised: CompTypeId,
+    },
+    /// The normaliser's conversion did not certify the unfolding of a code
+    /// constant to its body, which it holds by definition: its budget ran out
+    /// or its search declined.
+    Undecided
+    {
+        /// The code.
+        at: ValueId,
+    },
 }
 
 impl CheckRefusal
@@ -253,11 +293,12 @@ impl CheckRefusal
     /// - requires: nothing; the function is total over the vocabulary.
     /// - ensures: the class is a function of the variant alone — two refusals
     ///   of one variant classify alike whatever their payloads hold. A type
-    ///   mismatch, a shape mismatch, a checking-only form in synthesis position
-    ///   and an unknown constant are malformed source; a former outside the
-    ///   fragment is unrepresentable; an unbound index, an exhausted allowance,
-    ///   a dangling id, an admission out of order and a machine invariant are
-    ///   engine faults; nothing is a user absence.
+    ///   mismatch, a shape mismatch, a checking-only form in synthesis
+    ///   position, an unknown constant, a sort mismatch, a level mismatch and a
+    ///   dependent bind are malformed source; a former outside the fragment is
+    ///   unrepresentable; an unbound index, an exhausted allowance, a dangling
+    ///   id, an admission out of order, a machine invariant and an undecided
+    ///   unfolding are engine faults; nothing is a user absence.
     /// - provides: the fact a report groups by and an exit code reads.
     /// - fails: never.
     /// - panics: none.
@@ -278,13 +319,17 @@ impl CheckRefusal
             | Self::TypeMismatch(_)
             | Self::ShapeMismatch { .. }
             | Self::NotSynthesisable { .. }
-            | Self::UnknownConstant { .. } => FailureClass::MalformedSource,
+            | Self::UnknownConstant { .. }
+            | Self::SortMismatch { .. }
+            | Self::LevelMismatch { .. }
+            | Self::DependentBind { .. } => FailureClass::MalformedSource,
             | Self::OutOfFragment { .. } => FailureClass::Unrepresentable,
             | Self::UnboundIndex { .. }
             | Self::BudgetExceeded { .. }
             | Self::DanglingNode { .. }
             | Self::AdmissionOrder { .. }
-            | Self::MachineInvariant => FailureClass::EngineFault,
+            | Self::MachineInvariant
+            | Self::Undecided { .. } => FailureClass::EngineFault,
         }
     }
 }
@@ -321,7 +366,7 @@ mod tests
     ///   `every_refusal_carries_its_pinned_class`.
     /// - provides: the table both classification witnesses read.
     /// - panics: none.
-    fn table() -> [(CheckRefusal, CheckRefusal, FailureClass); 10]
+    fn table() -> [(CheckRefusal, CheckRefusal, FailureClass); 14]
     {
         let mut arena = CoreArena::new();
         let first_value = arena.value_unit();
@@ -387,8 +432,8 @@ mod tests
                     former: UnadmittedFormer::Pair,
                 },
                 CheckRefusal::OutOfFragment {
-                    at: CoreNode::Type(TypeNode::Computation(second_comp_type)),
-                    former: UnadmittedFormer::Pi,
+                    at: CoreNode::Type(TypeNode::Value(second_type)),
+                    former: UnadmittedFormer::SortParameter,
                 },
                 FailureClass::Unrepresentable,
             ),
@@ -441,13 +486,55 @@ mod tests
                 CheckRefusal::MachineInvariant,
                 FailureClass::EngineFault,
             ),
+            (
+                CheckRefusal::SortMismatch {
+                    at: first_value,
+                    synthesised: first_type,
+                    expected: second_type,
+                },
+                CheckRefusal::SortMismatch {
+                    at: second_value,
+                    synthesised: second_type,
+                    expected: first_type,
+                },
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::LevelMismatch {
+                    at: first_value,
+                    synthesised: first_type,
+                    expected: second_type,
+                },
+                CheckRefusal::LevelMismatch {
+                    at: second_value,
+                    synthesised: second_type,
+                    expected: first_type,
+                },
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::DependentBind {
+                    at: first_comp,
+                    synthesised: first_comp_type,
+                },
+                CheckRefusal::DependentBind {
+                    at: second_comp,
+                    synthesised: second_comp_type,
+                },
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::Undecided { at: first_value },
+                CheckRefusal::Undecided { at: second_value },
+                FailureClass::EngineFault,
+            ),
         ]
     }
 
     #[test]
     fn every_refusal_carries_its_pinned_class()
     {
-        let mut covered = [false; 10];
+        let mut covered = [false; 14];
         for (refusal, _, class) in table() {
             let row = match refusal {
                 | CheckRefusal::TypeMismatch(_) => 0_usize,
@@ -460,6 +547,10 @@ mod tests
                 | CheckRefusal::DanglingNode { .. } => 7_usize,
                 | CheckRefusal::AdmissionOrder { .. } => 8_usize,
                 | CheckRefusal::MachineInvariant => 9_usize,
+                | CheckRefusal::SortMismatch { .. } => 10_usize,
+                | CheckRefusal::LevelMismatch { .. } => 11_usize,
+                | CheckRefusal::DependentBind { .. } => 12_usize,
+                | CheckRefusal::Undecided { .. } => 13_usize,
             };
             covered[row] = true;
             assert_eq!(
@@ -468,7 +559,7 @@ mod tests
                 "{refusal:?} must classify as {class}"
             );
         }
-        assert_eq!(covered, [true; 10], "the table names every variant once");
+        assert_eq!(covered, [true; 14], "the table names every variant once");
     }
 
     #[test]

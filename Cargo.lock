@@ -213,7 +213,9 @@ checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 name = "gandr-core-checker"
 version = "0.0.0"
 dependencies = [
+ "gandr-core-nbe",
  "gandr-core-term",
+ "gandr-kernel-conversion-trace",
  "gandr-kernel-core",
  "gandr-kernel-strata",
  "gandr-kernel-term",

@@ -1,29 +1,35 @@
-//! The judgement: four directed faces over one machine.
+//! The judgement: four directed faces over one machine, which also runs type
+//! formation.
 //!
 //! # The former decides the mode
 //!
 //! Every term former has one mode. Leaves and eliminations synthesise —
-//! their type is read out of the context, the signature table, an atom, or
-//! the type of the term they eliminate — and introductions check against a
-//! type handed in, because nothing in an introduction alone fixes its type:
+//! their type is read out of the context, the signature table, an atom, the
+//! type they quote, or the type of the term they eliminate — and
+//! introductions check against a type handed in, because nothing in an
+//! introduction alone fixes its type:
 //!
 //! |Former|Mode|Rule|
 //! |---|---|---|
-//! |variable|synthesise|the type its binder declared|
+//! |variable|synthesise|the type its binder declared, shifted past the binders opened since|
 //! |constant|synthesise|the type its declaration supplied|
 //! |unit, integer and string literal|synthesise|the atom|
+//! |quote `⌜A⌝`, `⌜C⌝`|synthesise|the quoted type is formed; the quote has the universe of its family's sort at the type's level|
 //! |thunk|check against `U C`|its body checks against `C`|
 //! |force|synthesise|the forced value synthesises `U C`; the force has `C`|
-//! |application|synthesise|the head synthesises `A → C`, the argument checks against `A`; the application has `C`|
-//! |bind|either|the bound computation synthesises `F A`; opens a binder of `A`; the body is judged in the bind's own mode, and the bind has what the body has|
-//! |lambda|check against `A → C`|opens a binder of `A`; the body checks against `C`|
+//! |application|synthesise|the head synthesises `A → C` or `(x : A) → C`, the argument checks against `A`; the application has `C`, instantiated at the argument for the dependent arrow|
+//! |bind|either|the bound computation synthesises `F A`; opens a binder of `A`; the body is judged in the bind's own mode, and the bind has what the body has, lowered out of the binder|
+//! |lambda|check against `A → C` or `(x : A) → C`|opens a binder of `A`; the body checks against `C`|
 //! |return|check against `F A`|the value checks against `A`|
 //!
 //! A bind is the one former of either mode: it eliminates the returner its
 //! bound computation synthesises, so that half synthesises, and it hands its
 //! type through from its body, so the body is judged in whichever mode the
 //! bind was asked for. A bound computation that only checks — a bare
-//! `return` — is refused as not synthesisable rather than given a guessed type.
+//! `return` — is refused as not synthesisable rather than given a guessed type,
+//! and a body type that mentions the bound name is refused as a dependent
+//! bind: the binder is opaque to types, so that type has no reading outside
+//! it.
 //!
 //! A synthesising term in checking position synthesises, then its type crosses
 //! the conversion boundary to the expected type; that is the only place a
@@ -31,12 +37,28 @@
 //! the form: the judgement never guesses a type an introduction did not
 //! carry.
 //!
+//! # Types are read at their weak head
+//!
+//! Every rule that reads the former of a type — a thunk checked against it, a
+//! head applied at it, a returner bound — reads it at its weak head first, so
+//! `El Num` for `def Num : Type = U (F Integer)` is a thunk type to a thunk.
+//! The unfolding is the context's: the normaliser's conversion certifies each
+//! step and the constant is logged as consulted.
+//!
+//! # Formation is goals of the same machine
+//!
+//! A type is formed by goals beside the term goals: a decode `El c` asks for
+//! the synthesis of `c`, which may itself form a quoted type, and a dependent
+//! arrow forms its codomain under a binder of its domain. Running both in one
+//! machine keeps the judgement free of recursion between the two and charges
+//! both to one allowance.
+//!
 //! # One machine, no recursion
 //!
-//! The four faces all run [`Machine`]: an explicit goal and a stack of frames,
-//! one step per transition, charged against the context's allowance. A term
-//! as deep as memory holds is judged without a native stack, and the
-//! allowance bounds the run whatever sharing the term has.
+//! The four faces and formation all run [`Machine`]: an explicit goal and a
+//! stack of frames, one step per transition, charged against the context's
+//! allowance. A term as deep as memory holds is judged without a native
+//! stack, and the allowance bounds the run whatever sharing the term has.
 //!
 //! # A shared subterm is judged per occurrence
 //!
@@ -54,24 +76,33 @@
 use alloc::vec::Vec;
 
 use gandr_core_term::BinderDepth;
+use gandr_core_term::Binders;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ContextError;
+use gandr_core_term::Sort;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
+use gandr_core_term::instantiate_comp_type;
+use gandr_core_term::shift_comp_type;
+use gandr_core_term::shift_value_type;
+use gandr_core_term::strengthen_comp_type;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
 use crate::context::Atom;
 use crate::context::CheckingContext;
 use crate::conversion::ConversionCount;
 use crate::conversion::comp_bridge;
+use crate::conversion::decode_bridge;
 use crate::conversion::value_bridge;
 use crate::formation::FormedCompType;
 use crate::formation::FormedValueType;
+use crate::formation::level_of;
 use crate::refusal::CheckRefusal;
 use crate::refusal::CheckingForm;
 use crate::refusal::CoreNode;
@@ -368,6 +399,27 @@ const fn checked(
     }
 }
 
+/// Form `node` in the context's binders: the goal [`crate::formation`]'s faces
+/// run.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: success exactly when every node `node` reaches has a formation
+///   rule that accepts it, as [`crate::formation::form_value_type`] states.
+/// - fails: the first refusal a formation rule or a code's judgement gives.
+/// - panics: none.
+///
+/// # Errors
+/// - [`CheckRefusal`] — the type is not formed.
+pub fn form(
+    context: &mut CheckingContext<'_>,
+    node: TypeNode,
+) -> Result<(), CheckRefusal>
+{
+    let (produced, conversions) = Machine::run(context, Goal::Form(node))?;
+    checked(produced, conversions).map(|_| ())
+}
+
 /// A judgement the machine is to run.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Goal
@@ -388,6 +440,8 @@ enum Goal
         /// The direction, holding the expected computation type when checking.
         direction: Direction<CompTypeId>,
     },
+    /// Form a type; a formed type ends in [`Produced::Checked`].
+    Form(TypeNode),
 }
 
 /// What a finished judgement hands to the frame awaiting it.
@@ -398,8 +452,19 @@ enum Produced
     ValueType(ValueTypeId),
     /// A synthesised computation type.
     CompType(CompTypeId),
-    /// A check that succeeded.
+    /// A check that succeeded, or a type formed.
     Checked,
+}
+
+/// The codomain an application has once its argument checks.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum Codomain
+{
+    /// An arrow's: the application has it as it stands.
+    Ambient(CompTypeId),
+    /// A dependent arrow's, scoped under the argument's binder: the application
+    /// has it instantiated at the argument.
+    Dependent(CompTypeId),
 }
 
 /// A rule waiting on the judgement of one of its subterms.
@@ -414,7 +479,8 @@ enum Frame
         value: ValueId,
     },
     /// An application waits on the type its head synthesises, which must be an
-    /// arrow; the argument then checks against the domain.
+    /// arrow or a dependent arrow; the argument then checks against the
+    /// domain.
     ApplicationHead
     {
         /// The head.
@@ -426,8 +492,10 @@ enum Frame
     /// codomain.
     ApplicationArgument
     {
-        /// The arrow's codomain.
-        codomain: CompTypeId,
+        /// The argument, which a dependent codomain is instantiated at.
+        argument: ValueId,
+        /// The codomain.
+        codomain: Codomain,
     },
     /// A lambda waits on its body's check, then closes the binder it opened.
     LambdaBody,
@@ -436,6 +504,8 @@ enum Frame
     /// its body in the bind's own direction.
     BindBound
     {
+        /// The bind.
+        at: ComputationId,
         /// The bound computation.
         bound: ComputationId,
         /// The body still to judge.
@@ -444,8 +514,13 @@ enum Frame
         direction: Direction<CompTypeId>,
     },
     /// A bind waits on its body's judgement, then closes the binder it opened
-    /// and hands the body's result on.
-    BindBody,
+    /// and hands the body's result on, a synthesised type lowered out of the
+    /// binder.
+    BindBody
+    {
+        /// The bind.
+        at: ComputationId,
+    },
     /// A synthesising value in checking position waits on its synthesised type,
     /// which then crosses the value bridge.
     ValueBridge
@@ -464,6 +539,29 @@ enum Frame
         /// The type it is checked against.
         expected: CompTypeId,
     },
+    /// A quote waits on the formation of the type it quotes; it then has the
+    /// universe at that type's level.
+    Quote(TypeNode),
+    /// A former waits on the formation of one child; the next is formed then.
+    FormNext(TypeNode),
+    /// A dependent arrow waits on its domain's formation; it then forms its
+    /// codomain under a binder of the domain.
+    FormPi
+    {
+        /// The domain.
+        domain: ValueTypeId,
+        /// The codomain, scoped under the domain's binder.
+        codomain: CompTypeId,
+    },
+    /// A dependent arrow waits on its codomain's formation, then closes the
+    /// binder it opened.
+    FormBinder,
+    /// A lift waits on its type's formation; its target must then lie above
+    /// the type's level.
+    FormLift(ValueTypeId),
+    /// A decode waits on the type its code synthesises, which then crosses the
+    /// decode bridge.
+    FormElement(TypeNode),
 }
 
 /// The machine's next move.
@@ -595,11 +693,27 @@ impl<'context, 'arena> Machine<'context, 'arena>
         }
     }
 
+    /// Close the innermost binder this run opened.
+    ///
+    /// # Specification
+    /// - requires: a rule of this run opened a binder it has not closed.
+    /// - ensures: that binder is closed.
+    /// - fails: [`CheckRefusal::MachineInvariant`] when no binder is open.
+    /// - panics: none.
+    fn close(&mut self) -> Result<(), CheckRefusal>
+    {
+        match self.context.binders().close(Zone::Intuitionistic) {
+            | Ok(_) => Ok(()),
+            | Err(_) => Err(CheckRefusal::MachineInvariant),
+        }
+    }
+
     /// Start the judgement `goal`, by its direction.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the rule of the goal's direction for its term's former runs.
+    /// - ensures: the rule of the goal's direction for its term's former runs,
+    ///   or the formation rule of the type's former.
     /// - fails: as that rule.
     /// - panics: none.
     fn descend(
@@ -616,6 +730,8 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 | Direction::Synthesise => self.synthesise_comp(term),
                 | Direction::Check(expected) => self.check_comp(term, expected),
             },
+            | Goal::Form(TypeNode::Value(at)) => self.form_value_type(at),
+            | Goal::Form(TypeNode::Computation(at)) => self.form_comp_type(at),
         }
     }
 
@@ -629,7 +745,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     fn value(
         &self,
         term: ValueId,
-    ) -> Result<&'arena Value, CheckRefusal>
+    ) -> Result<&Value, CheckRefusal>
     {
         self.context
             .arena()
@@ -649,7 +765,7 @@ impl<'context, 'arena> Machine<'context, 'arena>
     fn computation(
         &self,
         term: ComputationId,
-    ) -> Result<&'arena Computation, CheckRefusal>
+    ) -> Result<&Computation, CheckRefusal>
     {
         self.context
             .arena()
@@ -663,9 +779,10 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a variable has the type its binder declared, a constant the
-    ///   type its declaration supplied, the unit value and an integer or string
-    ///   literal their atom.
+    /// - ensures: a variable has the type its binder declared, shifted past the
+    ///   binders opened since; a constant the type its declaration supplied;
+    ///   the unit value and an integer or string literal their atom; a quote
+    ///   awaits its type's formation.
     /// - fails: [`CheckRefusal::NotSynthesisable`] for a thunk;
     ///   [`CheckRefusal::UnboundIndex`] for a variable past its zone's binders;
     ///   [`CheckRefusal::UnknownConstant`] for a constant with no type;
@@ -681,7 +798,17 @@ impl<'context, 'arena> Machine<'context, 'arena>
         match *self.value(term)? {
             | Value::Variable { zone, index } => {
                 match self.context.binders().occurrence(zone, index) {
-                    | Ok(declared) => Ok(Step::Ascend(Produced::ValueType(declared))),
+                    | Ok(declared) => {
+                        let read = match zone {
+                            | Zone::Intuitionistic => shift_value_type(
+                                self.context.arena_mut(),
+                                declared,
+                                Binders::past(index),
+                            ),
+                            | Zone::Linear => declared,
+                        };
+                        Ok(Step::Ascend(Produced::ValueType(read)))
+                    },
                     | Err(ContextError::UnboundIndex { zone, index, depth }) => {
                         Err(CheckRefusal::UnboundIndex {
                             at: term,
@@ -709,25 +836,38 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     Err(unadmitted_value(term, UnadmittedFormer::NumericLiteral))
                 },
             },
+            | Value::Quote(quoted) => Ok(self.quote(TypeNode::Value(quoted))),
+            | Value::QuoteComputation(quoted) => Ok(self.quote(TypeNode::Computation(quoted))),
             | Value::Thunk(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Thunk(term),
             }),
             | Value::Pair(..) => Err(unadmitted_value(term, UnadmittedFormer::Pair)),
             | Value::Injection(..) => Err(unadmitted_value(term, UnadmittedFormer::Injection)),
             | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
-            | Value::Quote(_) | Value::QuoteComputation(_) => {
-                Err(unadmitted_value(term, UnadmittedFormer::Quote))
-            },
         }
+    }
+
+    /// Start a quote of `quoted`: the quoted type's formation is the next
+    /// goal, with the quote's frame awaiting it.
+    ///
+    /// # Specification
+    /// trivial.
+    fn quote(
+        &mut self,
+        quoted: TypeNode,
+    ) -> Step
+    {
+        self.frames.push(Frame::Quote(quoted));
+        Step::Descend(Goal::Form(quoted))
     }
 
     /// The checking rules over values.
     ///
     /// # Specification
     /// - requires: `expected` is formed.
-    /// - ensures: a thunk's body checks against the body of a thunk type; a
-    ///   synthesising value synthesises, then crosses the value bridge to
-    ///   `expected`.
+    /// - ensures: a thunk's body checks against the body of a thunk type at
+    ///   `expected`'s weak head; a synthesising value synthesises, then crosses
+    ///   the value bridge to `expected`.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a thunk against no thunk
     ///   type; [`CheckRefusal::OutOfFragment`] for a pair, an injection or a
     ///   value lift.
@@ -749,7 +889,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
                     direction: Direction::Check(body_type),
                 }))
             },
-            | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
+            | Value::Variable { .. }
+            | Value::Constant(_)
+            | Value::Unit
+            | Value::Literal(_)
+            | Value::Quote(_)
+            | Value::QuoteComputation(_) => {
                 self.frames.push(Frame::ValueBridge { at: term, expected });
                 Ok(Step::Descend(Goal::Value {
                     term,
@@ -759,9 +904,6 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Value::Pair(..) => Err(unadmitted_value(term, UnadmittedFormer::Pair)),
             | Value::Injection(..) => Err(unadmitted_value(term, UnadmittedFormer::Injection)),
             | Value::Lift { .. } => Err(unadmitted_value(term, UnadmittedFormer::ValueLift)),
-            | Value::Quote(_) | Value::QuoteComputation(_) => {
-                Err(unadmitted_value(term, UnadmittedFormer::Quote))
-            },
         }
     }
 
@@ -800,7 +942,9 @@ impl<'context, 'arena> Machine<'context, 'arena>
             | Computation::Return(_) => Err(CheckRefusal::NotSynthesisable {
                 form: CheckingForm::Return(term),
             }),
-            | Computation::Bind(bound, body) => Ok(self.bind(bound, body, Direction::Synthesise)),
+            | Computation::Bind(bound, body) => {
+                Ok(self.bind(term, bound, body, Direction::Synthesise))
+            },
             | Computation::Case { .. } => Err(unadmitted_comp(term, UnadmittedFormer::Case)),
         }
     }
@@ -809,10 +953,12 @@ impl<'context, 'arena> Machine<'context, 'arena>
     ///
     /// # Specification
     /// - requires: `expected` is formed.
-    /// - ensures: a lambda opens a binder of the arrow's domain and its body
-    ///   checks against the codomain; a return's value checks against the
-    ///   returner's result; a bind awaits its bound computation's synthesised
-    ///   type, then checks its body against `expected`; a synthesising
+    /// - ensures: a lambda opens a binder of the domain of the arrow or the
+    ///   dependent arrow at `expected`'s weak head, and its body checks against
+    ///   the codomain — an arrow's shifted past the binder, a dependent arrow's
+    ///   as it stands; a return's value checks against the returner's result; a
+    ///   bind awaits its bound computation's synthesised type, then checks its
+    ///   body against `expected` shifted past its binder; a synthesising
     ///   computation synthesises, then crosses the computation bridge to
     ///   `expected`.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a lambda against no arrow
@@ -853,16 +999,16 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 }))
             },
             | Computation::Bind(bound, body) => {
-                Ok(self.bind(bound, body, Direction::Check(expected)))
+                Ok(self.bind(term, bound, body, Direction::Check(expected)))
             },
             | Computation::Case { .. } => Err(unadmitted_comp(term, UnadmittedFormer::Case)),
         }
     }
 
-    /// Start a bind of `bound` into `body`, judged in `direction`.
+    /// Start the bind `at` of `bound` into `body`, judged in `direction`.
     ///
     /// # Specification
-    /// - requires: `bound` and `body` are the two halves of one bind.
+    /// - requires: `bound` and `body` are the two halves of the bind `at`.
     /// - ensures: the bound computation's synthesis is the next goal, with the
     ///   bind's frame awaiting its type and holding the direction the body is
     ///   judged in.
@@ -871,21 +1017,26 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the rule's surfaces are the two directions and the
-    ///   returner test, separated by a bind synthesising its body's type, a
-    ///   bind checked against its body's type, and a bind of an arrow-typed
-    ///   computation, each asserted as the exact type, check or refusal.
+    /// - hypothesis: L3 — the rule's surfaces are the two directions, the
+    ///   returner test and the lowering out of the binder, separated by a bind
+    ///   synthesising its body's type, a bind checked against its body's type,
+    ///   a bind of an arrow-typed computation, and a bind whose body's type
+    ///   mentions the bound name, each asserted as the exact type, check or
+    ///   refusal.
     /// - witness: `judgement::tests::a_bind_synthesises_its_continuations_type`
     /// - witness: `judgement::tests::a_bind_checks_against_the_expected_computation`
     /// - witness: `judgement::tests::a_bind_of_a_non_returner_is_a_shape_mismatch`
+    /// - witness: `judgement::tests::a_bind_whose_type_mentions_its_binder_is_refused`
     fn bind(
         &mut self,
+        at: ComputationId,
         bound: ComputationId,
         body: ComputationId,
         direction: Direction<CompTypeId>,
     ) -> Step
     {
         self.frames.push(Frame::BindBound {
+            at,
             bound,
             body,
             direction,
@@ -898,88 +1049,327 @@ impl<'context, 'arena> Machine<'context, 'arena>
     }
 
     /// The body a thunk checks against: the expected type's, when it is a
-    /// thunk type.
+    /// thunk type at its weak head.
     ///
     /// # Specification
     /// - requires: `expected` is formed.
-    /// - ensures: the body of `expected` when it is `U C`.
+    /// - ensures: the body of `expected` when it is `U C` at its weak head.
     /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a thunk type,
-    ///   for any other former.
+    ///   for any other former; the unfolding's refusal.
     /// - panics: none.
     ///
     /// # Judgement
     /// - expected: `expected`
     fn thunk_expected(
-        &self,
+        &mut self,
         at: ValueId,
         expected: ValueTypeId,
     ) -> Result<CompTypeId, CheckRefusal>
     {
-        match value_type_view(self.context.arena(), expected)? {
+        let head = self.context.whnf_value_type(expected)?;
+        match value_type_view(self.context.arena(), head)? {
             | ValueTypeView::Thunk(body) => Ok(body),
-            | ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit => {
-                Err(CheckRefusal::ShapeMismatch {
-                    at: TermNode::Value(at),
-                    wanted: ExpectedShape::Thunk,
-                    found: TypeNode::Value(expected),
-                })
-            },
+            | ValueTypeView::Integer
+            | ValueTypeView::String
+            | ValueTypeView::Unit
+            | ValueTypeView::Universe { .. }
+            | ValueTypeView::Lift { .. }
+            | ValueTypeView::Element { .. } => Err(CheckRefusal::ShapeMismatch {
+                at: TermNode::Value(at),
+                wanted: ExpectedShape::Thunk,
+                found: TypeNode::Value(expected),
+            }),
         }
     }
 
-    /// The domain and codomain a lambda checks against: the expected type's,
-    /// when it is an arrow.
+    /// The domain and codomain a lambda's body checks against: the expected
+    /// type's, when it is an arrow or a dependent arrow at its weak head.
     ///
     /// # Specification
     /// - requires: `expected` is formed.
-    /// - ensures: the domain and codomain of `expected` when it is `A → C`.
+    /// - ensures: the domain of `expected`, and its codomain read under the
+    ///   lambda's binder — an arrow's shifted past it, a dependent arrow's as
+    ///   it stands.
     /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting an arrow, for
-    ///   a returner.
+    ///   any other former; the unfolding's refusal.
     /// - panics: none.
     ///
     /// # Judgement
     /// - expected: `expected`
     fn arrow_expected(
-        &self,
+        &mut self,
         at: ComputationId,
         expected: CompTypeId,
     ) -> Result<(ValueTypeId, CompTypeId), CheckRefusal>
     {
-        match comp_type_view(self.context.arena(), expected)? {
-            | CompTypeView::Arrow { domain, codomain } => Ok((domain, codomain)),
-            | CompTypeView::Returner(_) => Err(CheckRefusal::ShapeMismatch {
-                at: TermNode::Computation(at),
-                wanted: ExpectedShape::Arrow,
-                found: TypeNode::Computation(expected),
-            }),
+        let head = self.context.whnf_comp_type(expected)?;
+        match comp_type_view(self.context.arena(), head)? {
+            | CompTypeView::Arrow { domain, codomain } => {
+                let scoped =
+                    shift_comp_type(self.context.arena_mut(), codomain, Binders::from(1_u32));
+                Ok((domain, scoped))
+            },
+            | CompTypeView::Pi { domain, codomain } => Ok((domain, codomain)),
+            | CompTypeView::Returner(_) | CompTypeView::Element { .. } => {
+                Err(CheckRefusal::ShapeMismatch {
+                    at: TermNode::Computation(at),
+                    wanted: ExpectedShape::Arrow,
+                    found: TypeNode::Computation(expected),
+                })
+            },
         }
     }
 
     /// The result type a return checks its value against: the expected
-    /// type's, when it is a returner.
+    /// type's, when it is a returner at its weak head.
     ///
     /// # Specification
     /// - requires: `expected` is formed.
-    /// - ensures: the result of `expected` when it is `F A`.
+    /// - ensures: the result of `expected` when it is `F A` at its weak head.
     /// - fails: [`CheckRefusal::ShapeMismatch`] at `at`, wanting a returner,
-    ///   for an arrow.
+    ///   for any other former; the unfolding's refusal.
     /// - panics: none.
     ///
     /// # Judgement
     /// - expected: `expected`
     fn returner_expected(
-        &self,
+        &mut self,
         at: ComputationId,
         expected: CompTypeId,
     ) -> Result<ValueTypeId, CheckRefusal>
     {
-        match comp_type_view(self.context.arena(), expected)? {
+        let head = self.context.whnf_comp_type(expected)?;
+        match comp_type_view(self.context.arena(), head)? {
             | CompTypeView::Returner(result) => Ok(result),
-            | CompTypeView::Arrow { .. } => Err(CheckRefusal::ShapeMismatch {
+            | CompTypeView::Arrow { .. }
+            | CompTypeView::Pi { .. }
+            | CompTypeView::Element { .. } => Err(CheckRefusal::ShapeMismatch {
                 at: TermNode::Computation(at),
                 wanted: ExpectedShape::Returner,
                 found: TypeNode::Computation(expected),
             }),
+        }
+    }
+
+    /// The formation rules over value types.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an atom and the unit type are formed; a thunk type forms its
+    ///   body; a universe is formed below the greatest level; a lift forms its
+    ///   type, then awaits the raise; a decode awaits its code's synthesised
+    ///   type.
+    /// - fails: the view's refusal for a former outside the fragment or a
+    ///   dangling id; [`CheckRefusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::TopUniverse`].
+    /// - panics: none.
+    fn form_value_type(
+        &mut self,
+        at: ValueTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        match value_type_view(self.context.arena(), at)? {
+            | ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit => {
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            | ValueTypeView::Thunk(body) => {
+                Ok(Step::Descend(Goal::Form(TypeNode::Computation(body))))
+            },
+            | ValueTypeView::Universe { level, .. } => {
+                if level.succ().is_err() {
+                    return Err(CheckRefusal::OutOfFragment {
+                        at: CoreNode::Type(TypeNode::Value(at)),
+                        former: UnadmittedFormer::TopUniverse,
+                    });
+                }
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            | ValueTypeView::Lift { inner, .. } => {
+                self.frames.push(Frame::FormLift(at));
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(inner))))
+            },
+            | ValueTypeView::Element { code, .. } => {
+                self.frames.push(Frame::FormElement(TypeNode::Value(at)));
+                Ok(Step::Descend(Goal::Value {
+                    term: code,
+                    direction: Direction::Synthesise,
+                }))
+            },
+        }
+    }
+
+    /// The formation rules over computation types.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a returner forms its result; an arrow forms its domain, then
+    ///   its codomain; a dependent arrow forms its domain, then its codomain
+    ///   under a binder of the domain; a decode awaits its code's synthesised
+    ///   type.
+    /// - fails: the view's refusal for a dangling id.
+    /// - panics: none.
+    fn form_comp_type(
+        &mut self,
+        at: CompTypeId,
+    ) -> Result<Step, CheckRefusal>
+    {
+        match comp_type_view(self.context.arena(), at)? {
+            | CompTypeView::Returner(result) => {
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(result))))
+            },
+            | CompTypeView::Arrow { domain, codomain } => {
+                self.frames
+                    .push(Frame::FormNext(TypeNode::Computation(codomain)));
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
+            },
+            | CompTypeView::Pi { domain, codomain } => {
+                self.frames.push(Frame::FormPi { domain, codomain });
+                Ok(Step::Descend(Goal::Form(TypeNode::Value(domain))))
+            },
+            | CompTypeView::Element { code, .. } => {
+                self.frames
+                    .push(Frame::FormElement(TypeNode::Computation(at)));
+                Ok(Step::Descend(Goal::Value {
+                    term: code,
+                    direction: Direction::Synthesise,
+                }))
+            },
+        }
+    }
+
+    /// The universe a quote of the formed type `quoted` has: its family's sort
+    /// at the type's level.
+    ///
+    /// # Specification
+    /// - requires: `quoted` is formed.
+    /// - ensures: the value universe for a value type, the computation universe
+    ///   for a computation type, at [`level_of`] the type, minted.
+    /// - fails: as [`level_of`].
+    /// - panics: none.
+    fn quoted(
+        &mut self,
+        quoted: TypeNode,
+    ) -> Result<ValueTypeId, CheckRefusal>
+    {
+        let level = level_of(self.context.arena(), quoted)?;
+        let sort = match quoted {
+            | TypeNode::Value(_) => GroundSort::Value,
+            | TypeNode::Computation(_) => GroundSort::Computation,
+        };
+        Ok(self
+            .context
+            .arena_mut()
+            .value_type_universe(Sort::Ground(sort), level))
+    }
+
+    /// Whether the lift `at`, its type formed, raises it.
+    ///
+    /// # Specification
+    /// - requires: `at` is a lift whose type is formed.
+    /// - ensures: success exactly when the lift's target lies strictly above
+    ///   [`level_of`] its type.
+    /// - fails: [`CheckRefusal::OutOfFragment`] naming
+    ///   [`UnadmittedFormer::TypeLift`] otherwise;
+    ///   [`CheckRefusal::MachineInvariant`] when `at` is no lift.
+    /// - panics: none.
+    fn raises(
+        &self,
+        at: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let arena = self.context.arena();
+        let ValueTypeView::Lift { inner, target } = value_type_view(arena, at)?
+        else {
+            return Err(CheckRefusal::MachineInvariant);
+        };
+        if bool::from(level_of(arena, TypeNode::Value(inner))?.lt(target)) {
+            Ok(())
+        }
+        else {
+            Err(CheckRefusal::OutOfFragment {
+                at: CoreNode::Type(TypeNode::Value(at)),
+                former: UnadmittedFormer::TypeLift,
+            })
+        }
+    }
+
+    /// Cross the decode bridge for the decode `node`, whose code synthesised
+    /// `synthesised`.
+    ///
+    /// # Specification
+    /// - requires: `node` is a decode.
+    /// - ensures: as [`decode_bridge`] at the decode's code, its family's sort
+    ///   and its level.
+    /// - fails: as [`decode_bridge`]; [`CheckRefusal::MachineInvariant`] when
+    ///   `node` is no decode.
+    /// - panics: none.
+    fn decodes(
+        &mut self,
+        node: TypeNode,
+        synthesised: ValueTypeId,
+    ) -> Result<(), CheckRefusal>
+    {
+        let arena = self.context.arena();
+        let (code, target, sort) = match node {
+            | TypeNode::Value(at) => match value_type_view(arena, at)? {
+                | ValueTypeView::Element { code, target } => {
+                    (code, target.clone(), GroundSort::Value)
+                },
+                | ValueTypeView::Integer
+                | ValueTypeView::String
+                | ValueTypeView::Unit
+                | ValueTypeView::Thunk(_)
+                | ValueTypeView::Universe { .. }
+                | ValueTypeView::Lift { .. } => return Err(CheckRefusal::MachineInvariant),
+            },
+            | TypeNode::Computation(at) => match comp_type_view(arena, at)? {
+                | CompTypeView::Element { code, target } => {
+                    (code, target.clone(), GroundSort::Computation)
+                },
+                | CompTypeView::Returner(_)
+                | CompTypeView::Arrow { .. }
+                | CompTypeView::Pi { .. } => {
+                    return Err(CheckRefusal::MachineInvariant);
+                },
+            },
+        };
+        decode_bridge(
+            self.context,
+            code,
+            synthesised,
+            sort,
+            &target,
+            &mut self.conversions,
+        )
+    }
+
+    /// The type an application whose argument checked has.
+    ///
+    /// # Specification
+    /// - requires: `argument` checked against the domain `codomain` belongs to.
+    /// - ensures: an arrow's codomain as it stands; a dependent arrow's
+    ///   instantiated at the argument — at the lifted code when the argument
+    ///   crossed the value bridge with a lift, so the codomain reads the code
+    ///   at the universe the domain names.
+    /// - fails: never.
+    /// - panics: none.
+    fn applied(
+        &mut self,
+        argument: ValueId,
+        codomain: Codomain,
+    ) -> CompTypeId
+    {
+        match codomain {
+            | Codomain::Ambient(codomain) => codomain,
+            | Codomain::Dependent(codomain) => {
+                let lift = self.context.lifts().get(&argument).cloned();
+                let arena = self.context.arena_mut();
+                let code = match lift {
+                    | Some(lift) => lift.mint(arena, argument),
+                    | None => argument,
+                };
+                instantiate_comp_type(arena, codomain, code)
+            },
         }
     }
 
@@ -989,13 +1379,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
     /// - requires: `frame` was pushed by a rule of this run.
     /// - ensures: a force has the body of its value's thunk type; an
     ///   application checks its argument against its head's domain, then has
-    ///   the codomain; a bind opens a binder of its bound computation's
-    ///   returned type and judges its body, then closes the binder and has what
-    ///   the body had; a lambda closes its binder; a bridge frame crosses its
-    ///   bridge and the check succeeds.
+    ///   the codomain, instantiated for a dependent arrow; a bind opens a
+    ///   binder of its bound computation's returned type and judges its body,
+    ///   then closes the binder and has what the body had, lowered out of the
+    ///   binder; a lambda closes its binder; a bridge frame crosses its bridge
+    ///   and the check succeeds; a quote has its universe; a formation frame
+    ///   forms the next child, closes its binder, checks a lift's raise or
+    ///   crosses the decode bridge. Every type read for its former is read at
+    ///   its weak head.
     /// - fails: [`CheckRefusal::ShapeMismatch`] for a forced value of no thunk
     ///   type, a head of no arrow type, or a bound computation of no returner
-    ///   type; [`CheckRefusal::TypeMismatch`] at a bridge;
+    ///   type; [`CheckRefusal::DependentBind`] for a bind whose body's type
+    ///   mentions the bound name; the bridges' refusals;
     ///   [`CheckRefusal::MachineInvariant`] when `produced` is not the kind the
     ///   frame awaits.
     /// - panics: none.
@@ -1005,83 +1400,138 @@ impl<'context, 'arena> Machine<'context, 'arena>
         produced: Produced,
     ) -> Result<Step, CheckRefusal>
     {
-        let arena = self.context.arena();
         match (frame, produced) {
             | (Frame::Force { value }, Produced::ValueType(synthesised)) => {
-                match value_type_view(arena, synthesised)? {
+                let head = self.context.whnf_value_type(synthesised)?;
+                match value_type_view(self.context.arena(), head)? {
                     | ValueTypeView::Thunk(body) => Ok(Step::Ascend(Produced::CompType(body))),
-                    | ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit => {
-                        Err(CheckRefusal::ShapeMismatch {
-                            at: TermNode::Value(value),
-                            wanted: ExpectedShape::Thunk,
-                            found: TypeNode::Value(synthesised),
-                        })
-                    },
-                }
-            },
-            | (Frame::ApplicationHead { head, argument }, Produced::CompType(synthesised)) => {
-                match comp_type_view(arena, synthesised)? {
-                    | CompTypeView::Arrow { domain, codomain } => {
-                        self.frames.push(Frame::ApplicationArgument { codomain });
-                        Ok(Step::Descend(Goal::Value {
-                            term: argument,
-                            direction: Direction::Check(domain),
-                        }))
-                    },
-                    | CompTypeView::Returner(_) => Err(CheckRefusal::ShapeMismatch {
-                        at: TermNode::Computation(head),
-                        wanted: ExpectedShape::Arrow,
-                        found: TypeNode::Computation(synthesised),
+                    | ValueTypeView::Integer
+                    | ValueTypeView::String
+                    | ValueTypeView::Unit
+                    | ValueTypeView::Universe { .. }
+                    | ValueTypeView::Lift { .. }
+                    | ValueTypeView::Element { .. } => Err(CheckRefusal::ShapeMismatch {
+                        at: TermNode::Value(value),
+                        wanted: ExpectedShape::Thunk,
+                        found: TypeNode::Value(synthesised),
                     }),
                 }
             },
-            | (Frame::ApplicationArgument { codomain }, Produced::Checked) => {
-                Ok(Step::Ascend(Produced::CompType(codomain)))
+            | (Frame::ApplicationHead { head, argument }, Produced::CompType(synthesised)) => {
+                let read = self.context.whnf_comp_type(synthesised)?;
+                let (domain, codomain) = match comp_type_view(self.context.arena(), read)? {
+                    | CompTypeView::Arrow { domain, codomain } => {
+                        (domain, Codomain::Ambient(codomain))
+                    },
+                    | CompTypeView::Pi { domain, codomain } => {
+                        (domain, Codomain::Dependent(codomain))
+                    },
+                    | CompTypeView::Returner(_) | CompTypeView::Element { .. } => {
+                        return Err(CheckRefusal::ShapeMismatch {
+                            at: TermNode::Computation(head),
+                            wanted: ExpectedShape::Arrow,
+                            found: TypeNode::Computation(synthesised),
+                        });
+                    },
+                };
+                self.frames
+                    .push(Frame::ApplicationArgument { argument, codomain });
+                Ok(Step::Descend(Goal::Value {
+                    term: argument,
+                    direction: Direction::Check(domain),
+                }))
             },
-            | (Frame::LambdaBody, Produced::Checked) => {
-                match self.context.binders().close(Zone::Intuitionistic) {
-                    | Ok(_) => Ok(Step::Ascend(Produced::Checked)),
-                    | Err(_) => Err(CheckRefusal::MachineInvariant),
-                }
+            | (Frame::ApplicationArgument { argument, codomain }, Produced::Checked) => Ok(
+                Step::Ascend(Produced::CompType(self.applied(argument, codomain))),
+            ),
+            | (
+                Frame::LambdaBody | Frame::FormBinder | Frame::BindBody { .. },
+                Produced::Checked,
+            ) => {
+                self.close()?;
+                Ok(Step::Ascend(Produced::Checked))
             },
             | (
                 Frame::BindBound {
+                    at,
                     bound,
                     body,
                     direction,
                 },
                 Produced::CompType(synthesised),
-            ) => match comp_type_view(arena, synthesised)? {
-                | CompTypeView::Returner(result) => {
-                    self.context.binders().open(Zone::Intuitionistic, result);
-                    self.frames.push(Frame::BindBody);
-                    Ok(Step::Descend(Goal::Computation {
-                        term: body,
-                        direction,
-                    }))
-                },
-                | CompTypeView::Arrow { .. } => Err(CheckRefusal::ShapeMismatch {
-                    at: TermNode::Computation(bound),
-                    wanted: ExpectedShape::Returner,
-                    found: TypeNode::Computation(synthesised),
-                }),
+            ) => {
+                let read = self.context.whnf_comp_type(synthesised)?;
+                let CompTypeView::Returner(result) = comp_type_view(self.context.arena(), read)?
+                else {
+                    return Err(CheckRefusal::ShapeMismatch {
+                        at: TermNode::Computation(bound),
+                        wanted: ExpectedShape::Returner,
+                        found: TypeNode::Computation(synthesised),
+                    });
+                };
+                let direction = match direction {
+                    | Direction::Synthesise => Direction::Synthesise,
+                    | Direction::Check(expected) => Direction::Check(shift_comp_type(
+                        self.context.arena_mut(),
+                        expected,
+                        Binders::from(1_u32),
+                    )),
+                };
+                self.context.binders().open(Zone::Intuitionistic, result);
+                self.frames.push(Frame::BindBody { at });
+                Ok(Step::Descend(Goal::Computation {
+                    term: body,
+                    direction,
+                }))
             },
-            | (Frame::BindBody, Produced::CompType(_) | Produced::Checked) => {
-                match self.context.binders().close(Zone::Intuitionistic) {
-                    | Ok(_) => Ok(Step::Ascend(produced)),
-                    | Err(_) => Err(CheckRefusal::MachineInvariant),
-                }
+            | (Frame::BindBody { at }, Produced::CompType(synthesised)) => {
+                let Maybe::Present(lowered) =
+                    strengthen_comp_type(self.context.arena_mut(), synthesised)
+                else {
+                    return Err(CheckRefusal::DependentBind { at, synthesised });
+                };
+                self.close()?;
+                Ok(Step::Ascend(Produced::CompType(lowered)))
             },
             | (Frame::ValueBridge { at, expected }, Produced::ValueType(synthesised)) => {
-                value_bridge(arena, at, synthesised, expected, &mut self.conversions)?;
+                value_bridge(
+                    self.context,
+                    at,
+                    synthesised,
+                    expected,
+                    &mut self.conversions,
+                )?;
                 Ok(Step::Ascend(Produced::Checked))
             },
             | (Frame::CompBridge { at, expected }, Produced::CompType(synthesised)) => {
-                comp_bridge(arena, at, synthesised, expected, &mut self.conversions)?;
+                comp_bridge(
+                    self.context,
+                    at,
+                    synthesised,
+                    expected,
+                    &mut self.conversions,
+                )?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            | (Frame::Quote(quoted), Produced::Checked) => {
+                Ok(Step::Ascend(Produced::ValueType(self.quoted(quoted)?)))
+            },
+            | (Frame::FormNext(next), Produced::Checked) => Ok(Step::Descend(Goal::Form(next))),
+            | (Frame::FormPi { domain, codomain }, Produced::Checked) => {
+                self.context.binders().open(Zone::Intuitionistic, domain);
+                self.frames.push(Frame::FormBinder);
+                Ok(Step::Descend(Goal::Form(TypeNode::Computation(codomain))))
+            },
+            | (Frame::FormLift(at), Produced::Checked) => {
+                self.raises(at)?;
+                Ok(Step::Ascend(Produced::Checked))
+            },
+            | (Frame::FormElement(node), Produced::ValueType(synthesised)) => {
+                self.decodes(node, synthesised)?;
                 Ok(Step::Ascend(Produced::Checked))
             },
             | (
-                Frame::Force { .. } | Frame::ValueBridge { .. },
+                Frame::Force { .. } | Frame::ValueBridge { .. } | Frame::FormElement(_),
                 Produced::CompType(_) | Produced::Checked,
             )
             | (
@@ -1089,10 +1539,18 @@ impl<'context, 'arena> Machine<'context, 'arena>
                 Produced::ValueType(_) | Produced::Checked,
             )
             | (
-                Frame::ApplicationArgument { .. } | Frame::LambdaBody,
+                Frame::ApplicationArgument { .. }
+                | Frame::LambdaBody
+                | Frame::FormBinder
+                | Frame::Quote(_)
+                | Frame::FormNext(_)
+                | Frame::FormPi { .. }
+                | Frame::FormLift(_),
                 Produced::ValueType(_) | Produced::CompType(_),
             )
-            | (Frame::BindBody, Produced::ValueType(_)) => Err(CheckRefusal::MachineInvariant),
+            | (Frame::BindBody { .. }, Produced::ValueType(_)) => {
+                Err(CheckRefusal::MachineInvariant)
+            },
         }
     }
 }
@@ -1138,14 +1596,18 @@ mod tests
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
+    use gandr_core_term::Sort;
     use gandr_core_term::Value;
     use gandr_core_term::ValueId;
+    use gandr_core_term::ValueType;
     use gandr_core_term::ValueTypeId;
     use gandr_core_term::Zone;
     use gandr_kernel_strata::Level;
+    use gandr_kernel_strata::LevelConstant;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::Side;
     use proptest::collection::vec;
     use proptest::prelude::ProptestConfig;
@@ -1295,7 +1757,7 @@ mod tests
                 synthesised,
                 "{term:?} synthesises by its former's rule"
             );
-            let expected = form_value_type(&context, expected).unwrap();
+            let expected = form_value_type(&mut context, expected).unwrap();
             assert_eq!(
                 check_value(&mut context, term, expected).map(|evidence| evidence.conversions()),
                 checked,
@@ -1364,7 +1826,7 @@ mod tests
                 synthesised,
                 "{term:?} synthesises by its former's rule"
             );
-            let expected = form_comp_type(&context, expected).unwrap();
+            let expected = form_comp_type(&mut context, expected).unwrap();
             assert_eq!(
                 check_comp(&mut context, term, expected).map(|evidence| evidence.conversions()),
                 checked,
@@ -1422,8 +1884,8 @@ mod tests
         let bind = arena.computation_bind(bound, body);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         seed(&mut context, &[suspended_integer]);
-        let expected = form_comp_type(&context, returns_integer).unwrap();
-        let wrong = form_comp_type(&context, returns_string).unwrap();
+        let expected = form_comp_type(&mut context, returns_integer).unwrap();
+        let wrong = form_comp_type(&mut context, returns_string).unwrap();
 
         assert_eq!(
             check_comp(&mut context, bind, expected).map(|evidence| evidence.conversions()),
@@ -1464,7 +1926,7 @@ mod tests
         let bind = arena.computation_bind(bound, body);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         seed(&mut context, &[suspended_arrow]);
-        let expected = form_comp_type(&context, returns_integer).unwrap();
+        let expected = form_comp_type(&mut context, returns_integer).unwrap();
         let refusal = CheckRefusal::ShapeMismatch {
             at: TermNode::Computation(bound),
             wanted: ExpectedShape::Returner,
@@ -1495,7 +1957,7 @@ mod tests
         let string = arena.value_type_base(BaseType::String);
         let integer_value = arena.value_literal(integer_literal());
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-        let expected = form_value_type(&context, string).unwrap();
+        let expected = form_value_type(&mut context, string).unwrap();
         let refusal = check_value(&mut context, integer_value, expected).unwrap_err();
         assert_eq!(
             refusal,
@@ -1529,7 +1991,7 @@ mod tests
         let application = arena.computation_application(force, argument);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         seed(&mut context, &[thunk_arrow]);
-        let expected = form_comp_type(&context, returns_string).unwrap();
+        let expected = form_comp_type(&mut context, returns_string).unwrap();
         let refusal = check_comp(&mut context, application, expected).unwrap_err();
         assert_eq!(
             refusal,
@@ -1559,9 +2021,9 @@ mod tests
         let thunk = arena.value_thunk(returned);
         let lambda = arena.computation_lambda(returned);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-        let formed_integer = form_value_type(&context, integer).unwrap();
-        let formed_returner = form_comp_type(&context, returns_integer).unwrap();
-        let formed_arrow = form_comp_type(&context, arrow).unwrap();
+        let formed_integer = form_value_type(&mut context, integer).unwrap();
+        let formed_returner = form_comp_type(&mut context, returns_integer).unwrap();
+        let formed_arrow = form_comp_type(&mut context, arrow).unwrap();
         let refusals = [
             (
                 check_value(&mut context, thunk, formed_integer),
@@ -1649,7 +2111,7 @@ mod tests
         let body = arena.value_thunk(lambda);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         seed(&mut context, &[thunk_arrow]);
-        let expected = form_value_type(&context, thunk_arrow).unwrap();
+        let expected = form_value_type(&mut context, thunk_arrow).unwrap();
         assert_eq!(
             check_value(&mut context, body, expected).map(|evidence| evidence.conversions()),
             Ok(ConversionCount::from(2_usize)),
@@ -1670,9 +2132,17 @@ mod tests
         let returned = arena.computation_return(bound);
         let lambda = arena.computation_lambda(returned);
         let identity = arena.value_thunk(lambda);
+        let expected = {
+            let mut forming = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+            form_value_type(&mut forming, thunk_arrow).unwrap()
+        };
         let budget = CheckBudget::from(3_usize);
         let mut context = CheckingContext::new(&mut arena, budget);
-        let expected = form_value_type(&context, thunk_arrow).unwrap();
+        assert_eq!(
+            form_value_type(&mut context, thunk_arrow),
+            Err(CheckRefusal::BudgetExceeded { budget }),
+            "formation runs in the same machine, under the same allowance"
+        );
         let refusal = check_value(&mut context, identity, expected).unwrap_err();
         assert_eq!(
             refusal,
@@ -1704,7 +2174,7 @@ mod tests
         let inner_lambda = arena.computation_lambda(returns_escaping);
         let outer_lambda = arena.computation_lambda(inner_lambda);
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
-        let expected = form_comp_type(&context, outer).unwrap();
+        let expected = form_comp_type(&mut context, outer).unwrap();
         let refusal = check_comp(&mut context, outer_lambda, expected).unwrap_err();
         assert_eq!(
             refusal,
@@ -1786,6 +2256,195 @@ mod tests
         );
     }
 
+    /// The universe a judged type stands at, read off the arena.
+    ///
+    /// # Specification
+    /// trivial.
+    fn universe_of(
+        context: &CheckingContext<'_>,
+        value_type: ValueTypeId,
+    ) -> (Sort, Level)
+    {
+        match context.arena().value_type(value_type) {
+            | Some(&ValueType::Universe { sort, ref level }) => (sort, level.clone()),
+            | other => panic!("a universe was synthesised, not {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_universe_classifies_one_level_up_in_the_positive_sort()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns_integer = arena.comp_type_returner(integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let negative =
+            arena.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
+        let quoted_small = arena.value_quote(small);
+        let quoted_negative = arena.value_quote(negative);
+        let quoted_integer = arena.value_quote(integer);
+        let quoted_returner = arena.value_quote_computation(returns_integer);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let one = Level::constant(LevelConstant::from(1_u64));
+        let positive_one = (Sort::Ground(GroundSort::Value), one);
+        let rows = [
+            (quoted_small, positive_one.clone()),
+            (quoted_negative, positive_one),
+            (
+                quoted_integer,
+                (Sort::Ground(GroundSort::Value), Level::zero()),
+            ),
+            (
+                quoted_returner,
+                (Sort::Ground(GroundSort::Computation), Level::zero()),
+            ),
+        ];
+        for (quote, universe) in rows {
+            let synthesised = synthesise_value(&mut context, quote).unwrap();
+            assert_eq!(
+                universe_of(&context, synthesised.produced().id()),
+                universe,
+                "a quote has the universe of its type's family at the type's level"
+            );
+        }
+    }
+
+    #[test]
+    fn a_value_type_in_a_computation_universe_is_a_sort_mismatch()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let negative =
+            arena.value_type_universe(Sort::Ground(GroundSort::Computation), Level::zero());
+        let quoted = arena.value_quote(integer);
+        let code = arena.value_constant(ConstantIndex::from(0_usize));
+        let decoded = arena.comp_type_element(code, Level::zero());
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &[small]);
+        let expected = form_value_type(&mut context, negative).unwrap();
+        let refusal = check_value(&mut context, quoted, expected).unwrap_err();
+        assert!(
+            matches!(
+                refusal,
+                CheckRefusal::SortMismatch { at, expected, .. } if at == quoted && expected == negative
+            ),
+            "a value type's code is refused at the computation universe, not lifted into it: \
+             {refusal:?}"
+        );
+        assert_eq!(
+            refusal.classify(),
+            FailureClass::MalformedSource,
+            "a sort mismatch is the author's"
+        );
+        assert!(
+            matches!(
+                form_comp_type(&mut context, decoded),
+                Err(CheckRefusal::SortMismatch { at, synthesised, .. }) if at == code && synthesised == small
+            ),
+            "a computation decode of a value code is refused when formation crosses the decode \
+             bridge"
+        );
+    }
+
+    #[test]
+    fn a_bind_whose_type_mentions_its_binder_is_refused()
+    {
+        // def mk : U (F Type) ; def pick : U ((A : Type) -> F El A) ;
+        // x <- force mk ; (force pick) x
+        let mut arena = CoreArena::new();
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let returns_small = arena.comp_type_returner(small);
+        let make = arena.value_type_thunk(returns_small);
+        let bound_code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded = arena.value_type_element(bound_code, Level::zero());
+        let returns_decoded = arena.comp_type_returner(decoded);
+        let pi = arena.comp_type_pi(small, returns_decoded);
+        let pick = arena.value_type_thunk(pi);
+        let mk = arena.value_constant(ConstantIndex::from(0_usize));
+        let picker = arena.value_constant(ConstantIndex::from(1_usize));
+        let bound = arena.computation_force(mk);
+        let head = arena.computation_force(picker);
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let body = arena.computation_application(head, variable);
+        let bind = arena.computation_bind(bound, body);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &[make, pick]);
+        let refusal = synthesise_comp(&mut context, bind).unwrap_err();
+        assert!(
+            matches!(refusal, CheckRefusal::DependentBind { at, .. } if at == bind),
+            "the body has `F El x`, which has no reading outside the bind: {refusal:?}"
+        );
+        assert_eq!(
+            refusal.classify(),
+            FailureClass::MalformedSource,
+            "a dependent bind is the author's"
+        );
+        assert_eq!(
+            context.binders().depth(Zone::Intuitionistic),
+            BinderDepth::from(0_usize),
+            "the refused bind closed the binder it opened"
+        );
+    }
+
+    #[test]
+    fn a_dependent_application_instantiates_its_codomain_at_the_argument()
+    {
+        // def id : U ((A : Type) -> F El A) ;
+        // def lifted : U ((A : Type[+, 1]) -> F El A) ;
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns_integer = arena.comp_type_returner(integer);
+        let one = Level::constant(LevelConstant::from(1_u64));
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let large = arena.value_type_universe(Sort::Ground(GroundSort::Value), one.clone());
+        let bound_code = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded = arena.value_type_element(bound_code, Level::zero());
+        let returns_decoded = arena.comp_type_returner(decoded);
+        let pi = arena.comp_type_pi(small, returns_decoded);
+        let identity = arena.value_type_thunk(pi);
+        let decoded_large = arena.value_type_element(bound_code, one.clone());
+        let returns_large = arena.comp_type_returner(decoded_large);
+        let large_pi = arena.comp_type_pi(large, returns_large);
+        let lifting = arena.value_type_thunk(large_pi);
+        let lifted_integer = arena.value_type_lift(integer, one);
+        let returns_lifted = arena.comp_type_returner(lifted_integer);
+        let function = arena.value_constant(ConstantIndex::from(0_usize));
+        let lifter = arena.value_constant(ConstantIndex::from(1_usize));
+        let code = arena.value_quote(integer);
+        let head = arena.computation_force(function);
+        let applied = arena.computation_application(head, code);
+        let lifted_head = arena.computation_force(lifter);
+        let lifted_code = arena.value_quote(integer);
+        let lifted_applied = arena.computation_application(lifted_head, lifted_code);
+        let returned = arena.computation_return(bound_code);
+        let lambda = arena.computation_lambda(returned);
+        let returns_small = arena.comp_type_returner(small);
+        let small_identity = arena.comp_type_pi(small, returns_small);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        seed(&mut context, &[identity, lifting]);
+        let expected = form_comp_type(&mut context, returns_integer).unwrap();
+        assert!(
+            check_comp(&mut context, applied, expected).is_ok(),
+            "applying at the code of Integer has F Integer: the decode of a quote is its type"
+        );
+        assert!(
+            check_comp(&mut context, lifted_applied, expected).is_err(),
+            "a small code at a large domain is read at its lift, not as itself"
+        );
+        let lifted = form_comp_type(&mut context, returns_lifted).unwrap();
+        assert!(
+            check_comp(&mut context, lifted_applied, lifted).is_ok(),
+            "the codomain is instantiated at the lifted code"
+        );
+        let identity_type = form_comp_type(&mut context, small_identity).unwrap();
+        assert!(
+            check_comp(&mut context, lambda, identity_type).is_ok(),
+            "a lambda checks against a dependent arrow, its body against the codomain under the \
+             binder"
+        );
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(256))]
 
@@ -1802,10 +2461,10 @@ mod tests
             let (expected_value, expected_comp) = expected.build_both(&mut arena);
             let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
             seed(&mut context, &constant_types);
-            let expected_value = form_value_type(&context, expected_value).unwrap();
-            let expected_comp = form_comp_type(&context, expected_comp).unwrap();
-            let arena = context.arena();
+            let expected_value = form_value_type(&mut context, expected_value).unwrap();
+            let expected_comp = form_comp_type(&mut context, expected_comp).unwrap();
             for &term in &terms.values {
+                let node = context.arena().value(term).cloned().unwrap();
                 let synthesised = synthesise_value(&mut context, term);
                 if let Ok(found) = synthesised {
                     prop_assert!(
@@ -1814,7 +2473,7 @@ mod tests
                     );
                 }
                 let checked = check_value(&mut context, term, expected_value);
-                match *arena.value(term).unwrap() {
+                match node {
                     | Value::Thunk(_) => prop_assert_eq!(
                         synthesised,
                         Err(CheckRefusal::NotSynthesisable { form: CheckingForm::Thunk(term) }),
@@ -1823,7 +2482,7 @@ mod tests
                     | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => {
                         let bridged = synthesised.and_then(|found| {
                             let mut tally = found.conversions();
-                            value_bridge(arena, term, found.produced().id(), expected_value.id(), &mut tally)
+                            value_bridge(&mut context, term, found.produced().id(), expected_value.id(), &mut tally)
                                 .map(|()| tally)
                         });
                         prop_assert_eq!(
@@ -1837,7 +2496,7 @@ mod tests
                     | Value::Lift { .. }
                     | Value::Quote(_)
                     | Value::QuoteComputation(_) => {
-                        prop_assert!(false, "the recipe mints no former outside the fragment");
+                        prop_assert!(false, "the recipe mints no pair, injection, lift or quote");
                     },
                 }
                 prop_assert_eq!(
@@ -1847,6 +2506,7 @@ mod tests
                 );
             }
             for &term in &terms.comps {
+                let node = context.arena().computation(term).cloned().unwrap();
                 let synthesised = synthesise_comp(&mut context, term);
                 if let Ok(found) = synthesised {
                     prop_assert!(
@@ -1855,7 +2515,7 @@ mod tests
                     );
                 }
                 let checked = check_comp(&mut context, term, expected_comp);
-                match *arena.computation(term).unwrap() {
+                match node {
                     | Computation::Lambda(_) => prop_assert_eq!(
                         synthesised,
                         Err(CheckRefusal::NotSynthesisable { form: CheckingForm::Lambda(term) }),
@@ -1869,7 +2529,7 @@ mod tests
                     | Computation::Force(_) | Computation::Application(..) => {
                         let bridged = synthesised.and_then(|found| {
                             let mut tally = found.conversions();
-                            comp_bridge(arena, term, found.produced().id(), expected_comp.id(), &mut tally)
+                            comp_bridge(&mut context, term, found.produced().id(), expected_comp.id(), &mut tally)
                                 .map(|()| tally)
                         });
                         prop_assert_eq!(
@@ -1900,9 +2560,8 @@ mod tests
             let terms = recipe.build(&mut arena);
             let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
             seed(&mut context, &terms.constants);
-            let arena = context.arena();
             for &(term, built, mode) in &terms.values {
-                let expected = form_value_type(&context, built).unwrap();
+                let expected = form_value_type(&mut context, built).unwrap();
                 prop_assert!(
                     check_value(&mut context, term, expected).is_ok(),
                     "a well-typed value checks against its type"
@@ -1913,7 +2572,7 @@ mod tests
                         let found = synthesised.unwrap();
                         let mut scratch = ConversionCount::default();
                         prop_assert!(
-                            value_bridge(arena, term, found.produced().id(), built, &mut scratch).is_ok(),
+                            value_bridge(&mut context, term, found.produced().id(), built, &mut scratch).is_ok(),
                             "a well-typed synthesising value synthesises its type"
                         );
                     },
@@ -1924,7 +2583,7 @@ mod tests
                 }
             }
             for &(term, built, mode) in &terms.comps {
-                let expected = form_comp_type(&context, built).unwrap();
+                let expected = form_comp_type(&mut context, built).unwrap();
                 prop_assert!(
                     check_comp(&mut context, term, expected).is_ok(),
                     "a well-typed computation checks against its type"
@@ -1935,7 +2594,7 @@ mod tests
                         let found = synthesised.unwrap();
                         let mut scratch = ConversionCount::default();
                         prop_assert!(
-                            comp_bridge(arena, term, found.produced().id(), built, &mut scratch).is_ok(),
+                            comp_bridge(&mut context, term, found.produced().id(), built, &mut scratch).is_ok(),
                             "a well-typed synthesising computation synthesises its type"
                         );
                     },

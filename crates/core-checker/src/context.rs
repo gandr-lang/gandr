@@ -7,8 +7,17 @@
 //! stack, and it stays that. What checking adds sits here beside it: the
 //! signature table from admission positions to the types declarations
 //! supplied, the highest admission position so far, the atoms the literal and
-//! unit rules hand out, and the step allowance. A later synthesised context
+//! unit rules hand out, the definitions a code may unfold to, the lifts the
+//! judgement decided, and the step allowance. A later synthesised context
 //! lands in this wrapper too, so no checking concern widens the core crate.
+//!
+//! # The context mints
+//!
+//! A dependent type is rewritten as it is read — a binder's type shifted to
+//! the depth it is read at, a codomain instantiated at its argument, a quote's
+//! universe minted at its type's level — so the context holds the arena
+//! mutably and the judgement mints into it. Every node minted is a type the
+//! judgement reads; no term the producer built is changed.
 //!
 //! # Resolution by admission position
 //!
@@ -26,20 +35,38 @@
 //! [`CheckingContext::adopt`], instead of judging it again. Admission order
 //! binds an adopted declaration exactly as a judged one.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
+use gandr_core_term::CompTypeId;
 use gandr_core_term::Context;
 use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueTypeId;
+use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::GroundSort;
 use quenchant_shape::shape::Maybe;
 
+use crate::code::CodeDefinitions;
+use crate::code::Lift;
+use crate::code::unfolding;
 use crate::formation::FormedValueType;
+use crate::formation::level_of;
 use crate::refusal::CheckRefusal;
+use crate::refusal::CoreNode;
+use crate::refusal::TermNode;
+use crate::refusal::TypeNode;
 use crate::support::Consulted;
 use crate::support::Support;
 use crate::support::SupportLog;
+use crate::view::CompTypeView;
+use crate::view::ValueTypeView;
+use crate::view::comp_type_view;
+use crate::view::value_type_view;
 
 quenchant_shape::reason_enum! {
     /// Why the signature table holds no type for a position.
@@ -148,14 +175,15 @@ pub enum Atom
 }
 
 /// The core context wrapped with the signature table, the admission position,
-/// the atoms and the step allowance.
+/// the atoms, the code definitions, the lifts and the step allowance.
 ///
 /// The context derives nothing: it borrows the whole arena, and an equality
 /// or a debug rendering of it would read every node.
 pub struct CheckingContext<'arena>
 {
-    /// The arena every id the judgement reads resolves in.
-    arena: &'arena CoreArena,
+    /// The arena every id the judgement reads resolves in, and the types it
+    /// rewrites are minted into.
+    arena: &'arena mut CoreArena,
     /// The binders the judgement is under; empty between judgements.
     binders: Context,
     /// The types declarations supplied, ascending by admission position.
@@ -164,6 +192,10 @@ pub struct CheckingContext<'arena>
     admitted: Maybe<ConstantIndex, admission::Absent>,
     /// The atoms the leaf rules hand out.
     atoms: Atoms,
+    /// The bodies a code constant unfolds to.
+    definitions: CodeDefinitions,
+    /// The codes checked at a universe above their own, by node.
+    lifts: BTreeMap<ValueId, Lift>,
     /// The allowance each judgement starts with.
     budget: CheckBudget,
     /// The answers the running supported judgement consulted, when one runs.
@@ -177,13 +209,13 @@ impl<'arena> CheckingContext<'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the context holds no binder and no signature, has admitted
-    ///   nothing, and reads `arena` without changing it again.
+    /// - ensures: the context holds no binder, no signature, no definition and
+    ///   no lift, and has admitted nothing.
     /// - provides: the context every face and the declaration check run in.
     /// - panics: none.
-    /// - intension: mints exactly three value-type nodes into `arena` — the
-    ///   unit type, the integer atom and the string atom — which every literal
-    ///   and unit rule then hands out, so judging mints nothing further.
+    /// - intension: mints three value-type nodes into `arena` — the unit type,
+    ///   the integer atom and the string atom — which every literal and unit
+    ///   rule then hands out.
     #[inline]
     #[must_use]
     pub fn new(
@@ -202,6 +234,8 @@ impl<'arena> CheckingContext<'arena>
             signatures: Vec::new(),
             admitted: Maybe::Absent(admission::Absent::Fresh),
             atoms,
+            definitions: CodeDefinitions::new(),
+            lifts: BTreeMap::new(),
             budget,
             support: SupportLog::Off,
         }
@@ -257,11 +291,13 @@ impl<'arena> CheckingContext<'arena>
     /// # Specification
     /// - requires: nothing — an out-of-order position is admissible input and
     ///   refused.
-    /// - ensures: on success `constant` is the highest position admitted and
-    ///   [`Self::signature`] answers `supplied` for it, exactly as after
-    ///   judging a declaration that supplied `supplied`.
+    /// - ensures: on success `constant` is the highest position admitted,
+    ///   [`Self::signature`] answers `supplied` for it, and a code naming it
+    ///   unfolds to `unfolds` when one is present, exactly as after judging a
+    ///   declaration that supplied `supplied` and was accepted with that body.
     /// - provides: the seat an incremental caller places a reused verdict in;
-    ///   the caller, not the context, vouches that the verdict still answers.
+    ///   the caller, not the context, vouches that the verdict still answers,
+    ///   and passes the body exactly when the verdict it reuses accepted it.
     /// - fails: [`CheckRefusal::AdmissionOrder`] when `constant` is not above
     ///   the highest position admitted; the context is unchanged.
     /// - panics: none.
@@ -271,21 +307,26 @@ impl<'arena> CheckingContext<'arena>
     ///   position admitted before it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are the admission and the record,
-    ///   separated by an adopted type a later declaration reads, an adopted
-    ///   absence a later declaration finds no type at, and an adoption out of
-    ///   order refused with the table unchanged.
+    /// - hypothesis: L3 — the surfaces are the admission, the record and the
+    ///   definition, separated by an adopted type a later declaration reads, an
+    ///   adopted absence a later declaration finds no type at, an adoption out
+    ///   of order refused with the table unchanged, and an adopted body a later
+    ///   decode unfolds to.
     /// - witness: `module::tests::an_adopted_answer_is_read_as_if_judged`
     #[inline]
     pub fn adopt(
         &mut self,
         constant: ConstantIndex,
         supplied: Maybe<FormedValueType, signature_table::Absent>,
+        unfolds: Maybe<ValueId, unfolding::Absent>,
     ) -> Result<(), CheckRefusal>
     {
         self.admit(constant)?;
         if let Maybe::Present(declared) = supplied {
             self.record(constant, declared);
+            if let Maybe::Present(body) = unfolds {
+                self.define(constant, declared, body);
+            }
         }
         Ok(())
     }
@@ -343,16 +384,280 @@ impl<'arena> CheckingContext<'arena>
         }
     }
 
-    /// The arena every id resolves in, shared for as long as the context reads
-    /// it.
+    /// The arena every id resolves in.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn arena(&self) -> &'arena CoreArena
+    pub fn arena(&self) -> &CoreArena
     {
         self.arena
+    }
+
+    /// The arena, for minting the types the judgement rewrites.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn arena_mut(&mut self) -> &mut CoreArena
+    {
+        self.arena
+    }
+
+    /// The bodies a code constant unfolds to.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn definitions(&self) -> &CodeDefinitions
+    {
+        &self.definitions
+    }
+
+    /// Define `constant`, accepted at `declared` with `body`: a later decode
+    /// of a code naming it unfolds to the body, elaborated.
+    ///
+    /// # Specification
+    /// - requires: `body` was accepted at `declared`.
+    /// - ensures: [`Self::definitions`] holds, at `constant`, `body` itself
+    ///   unless `declared` is, at its weak head, a value universe above the
+    ///   level of the universe `body` inhabits; then the lift of `body` to that
+    ///   universe, minted. The definition is the code the kernel admits for the
+    ///   declaration, so a decode unfolds alike on either side.
+    /// - fails: never; a body whose level cannot be read is defined as it
+    ///   stands, and the kernel's replay of an unfolding over it declines
+    ///   rather than certifies a wrong one.
+    /// - panics: none.
+    pub(crate) fn define(
+        &mut self,
+        constant: ConstantIndex,
+        declared: FormedValueType,
+        body: ValueId,
+    )
+    {
+        let elaborated = self.elaborate(declared, body).unwrap_or(body);
+        self.definitions.define(constant, elaborated);
+    }
+
+    /// `body` at the universe `declared` names: lifted when `declared` is a
+    /// value universe above the body's own.
+    ///
+    /// # Specification
+    /// - requires: `body` was accepted at `declared`.
+    /// - ensures: as [`Self::define`] states of the definition.
+    /// - fails: the refusal reading `declared`'s weak head or the body's level
+    ///   gives.
+    /// - panics: none.
+    fn elaborate(
+        &mut self,
+        declared: FormedValueType,
+        body: ValueId,
+    ) -> Result<ValueId, CheckRefusal>
+    {
+        let head = self.whnf_value_type(declared.id())?;
+        let ValueTypeView::Universe {
+            sort: GroundSort::Value,
+            level,
+        } = value_type_view(self.arena, head)?
+        else {
+            return Ok(body);
+        };
+        let target = level.clone();
+        let natural = self.code_level(body, &target)?;
+        if bool::from(natural.lt(&target)) {
+            Ok(Lift::new(natural, target).mint(self.arena, body))
+        }
+        else {
+            Ok(body)
+        }
+    }
+
+    /// The codes the judgement checked at a universe above their own, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn lifts(&self) -> &BTreeMap<ValueId, Lift>
+    {
+        &self.lifts
+    }
+
+    /// Record that the code `at` was checked at a universe above its own.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn record_lift(
+        &mut self,
+        at: ValueId,
+        lift: Lift,
+    )
+    {
+        self.lifts.insert(at, lift);
+    }
+
+    /// The value type `value_type` stands for at its head: a decode of a code
+    /// constant with a body read as the type the body denotes, until the head
+    /// is anything else.
+    ///
+    /// # Specification
+    /// - requires: `value_type` is formed.
+    /// - ensures: `value_type` itself unless its head is a decode of a constant
+    ///   with a body; otherwise the decode of that body at the decode's level,
+    ///   read again. A body is defined at the universe its constant was
+    ///   declared at, so the decode is at the body's own level. Each unfolding
+    ///   is certified by the normaliser's conversion and its constant logged as
+    ///   consulted.
+    /// - provides: the weak head every rule that reads a type's former reads.
+    /// - fails: [`CheckRefusal::Undecided`] at a code whose unfolding the
+    ///   machine did not certify; [`CheckRefusal::DanglingNode`] for a node
+    ///   that does not resolve.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — an unfolding was not certified.
+    /// - [`CheckRefusal::DanglingNode`] — a node does not resolve.
+    pub(crate) fn whnf_value_type(
+        &mut self,
+        value_type: ValueTypeId,
+    ) -> Result<ValueTypeId, CheckRefusal>
+    {
+        let mut head = value_type;
+        loop {
+            let ValueTypeView::Element { code, target } = value_type_view(self.arena, head)?
+            else {
+                return Ok(head);
+            };
+            let target = target.clone();
+            let Maybe::Present(body) = self.unfold(code)?
+            else {
+                return Ok(head);
+            };
+            head = self.arena.value_type_element(body, target);
+        }
+    }
+
+    /// The computation type `comp_type` stands for at its head, as
+    /// [`Self::whnf_value_type`] reads a value type.
+    ///
+    /// # Specification
+    /// - requires: `comp_type` is formed.
+    /// - ensures: `comp_type` itself unless its head is a decode of a constant
+    ///   with a body; otherwise the decode of that body at the decode's level,
+    ///   read again. A computation code is never lifted: the judgement refuses
+    ///   one checked above its level.
+    /// - provides: the weak head every rule that reads a computation type's
+    ///   former reads.
+    /// - fails: as [`Self::whnf_value_type`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`CheckRefusal::Undecided`] — an unfolding was not certified.
+    /// - [`CheckRefusal::DanglingNode`] — a node does not resolve.
+    pub(crate) fn whnf_comp_type(
+        &mut self,
+        comp_type: CompTypeId,
+    ) -> Result<CompTypeId, CheckRefusal>
+    {
+        let mut head = comp_type;
+        loop {
+            let CompTypeView::Element { code, target } = comp_type_view(self.arena, head)?
+            else {
+                return Ok(head);
+            };
+            let target = target.clone();
+            let Maybe::Present(body) = self.unfold(code)?
+            else {
+                return Ok(head);
+            };
+            head = self.arena.comp_type_element(body, target);
+        }
+    }
+
+    /// The body the code `code` unfolds to, certified.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the body of the constant `code` names when it is a constant
+    ///   with a body, its unfolding certified by the normaliser's conversion
+    ///   and the constant logged as consulted; nothing for any other code.
+    /// - fails: [`CheckRefusal::Undecided`] when the machine does not certify
+    ///   the unfolding; [`CheckRefusal::DanglingNode`] for a code that does not
+    ///   resolve.
+    /// - panics: none.
+    fn unfold(
+        &mut self,
+        code: ValueId,
+    ) -> Result<Maybe<ValueId, unfolding::Absent>, CheckRefusal>
+    {
+        let Some(node) = self.arena.value(code)
+        else {
+            return Err(CheckRefusal::DanglingNode {
+                node: CoreNode::Term(TermNode::Value(code)),
+            });
+        };
+        let &Value::Constant(constant) = node
+        else {
+            return Ok(Maybe::Absent(unfolding::Absent::Rigid));
+        };
+        if let Maybe::Absent(rigid) = self.definitions.body(constant) {
+            return Ok(Maybe::Absent(rigid));
+        }
+        let certificate = self.definitions.certify(self.arena, code, constant)?;
+        let _answer = self.consult(constant);
+        Ok(Maybe::Present(certificate.body()))
+    }
+
+    /// The level of the universe a closed code `code` inhabits, read off the
+    /// code: a quote's type's level, a constant's declared universe.
+    ///
+    /// # Specification
+    /// - requires: `code` is a body a code constant unfolded to, so a quote or
+    ///   a constant.
+    /// - ensures: the level of the quoted type for a quote, the level of the
+    ///   universe a constant was declared at for a constant, and `otherwise`
+    ///   for any other code.
+    /// - fails: [`CheckRefusal::DanglingNode`] or the refusal reading a quoted
+    ///   type's level gives.
+    /// - panics: none.
+    fn code_level(
+        &mut self,
+        code: ValueId,
+        otherwise: &Level,
+    ) -> Result<Level, CheckRefusal>
+    {
+        let Some(node) = self.arena.value(code)
+        else {
+            return Err(CheckRefusal::DanglingNode {
+                node: CoreNode::Term(TermNode::Value(code)),
+            });
+        };
+        match *node {
+            | Value::Quote(quoted) => level_of(self.arena, TypeNode::Value(quoted)),
+            | Value::QuoteComputation(quoted) => {
+                level_of(self.arena, TypeNode::Computation(quoted))
+            },
+            | Value::Constant(constant) => match self.consult(constant) {
+                | Maybe::Present(declared) => match value_type_view(self.arena, declared.id())? {
+                    | ValueTypeView::Universe { level, .. } => Ok(level.clone()),
+                    | ValueTypeView::Integer
+                    | ValueTypeView::String
+                    | ValueTypeView::Unit
+                    | ValueTypeView::Thunk(_)
+                    | ValueTypeView::Lift { .. }
+                    | ValueTypeView::Element { .. } => Ok(otherwise.clone()),
+                },
+                | Maybe::Absent(_) => Ok(otherwise.clone()),
+            },
+            | Value::Variable { .. }
+            | Value::Unit
+            | Value::Literal(_)
+            | Value::Pair(..)
+            | Value::Injection(..)
+            | Value::Thunk(_)
+            | Value::Lift { .. } => Ok(otherwise.clone()),
+        }
     }
 
     /// The binders the judgement is under.
@@ -428,5 +733,123 @@ impl<'arena> CheckingContext<'arena>
     )
     {
         self.signatures.push((constant, declared));
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_core_term::Classifier;
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::Sort;
+    use gandr_core_term::Zone;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
+
+    use super::Atom;
+    use super::CheckBudget;
+    use super::CheckingContext;
+    use crate::formation::classify_value_type;
+    use crate::formation::form_value_type;
+    use crate::refusal::CheckRefusal;
+    use crate::refusal::Mismatch;
+
+    /// The classifier of a value type at level zero.
+    ///
+    /// # Specification
+    /// trivial.
+    fn small() -> Classifier
+    {
+        Classifier {
+            sort: GroundSort::Value,
+            level: Level::zero(),
+        }
+    }
+
+    #[test]
+    fn the_producer_declares_the_rigid_base_atoms()
+    {
+        let mut arena = CoreArena::new();
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let atoms = [
+            (Atom::Unit, None),
+            (Atom::Integer, Some(BaseType::Integer)),
+            (Atom::String, Some(BaseType::String)),
+        ];
+        for (atom, base) in atoms {
+            let declared = context.atom(atom);
+            let node = context.arena().value_type(declared.id()).cloned();
+            assert_eq!(
+                node,
+                Some(base.map_or(
+                    gandr_core_term::ValueType::Unit,
+                    gandr_core_term::ValueType::Base
+                )),
+                "the context mints {atom:?} as the rigid atom of its name"
+            );
+            let formed = form_value_type(&mut context, declared.id()).unwrap();
+            assert_eq!(
+                classify_value_type(&context, formed),
+                Ok(small()),
+                "every atom is a small value type"
+            );
+        }
+    }
+
+    #[test]
+    fn an_undeclared_type_name_is_refused_by_name()
+    {
+        let mut arena = CoreArena::new();
+        let name = arena.value_constant(ConstantIndex::from(5_usize));
+        let decoded = arena.value_type_element(name, Level::zero());
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        assert_eq!(
+            form_value_type(&mut context, decoded),
+            Err(CheckRefusal::UnknownConstant {
+                at: name,
+                constant: ConstantIndex::from(5_usize),
+            }),
+            "a decode of a name no declaration supplied is refused naming the constant"
+        );
+    }
+
+    #[test]
+    fn a_universe_typed_hypothesis_becomes_a_type_variable()
+    {
+        let mut arena = CoreArena::new();
+        let universe = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded = arena.value_type_element(bound, Level::zero());
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.binders().open(Zone::Intuitionistic, universe);
+        let formed = form_value_type(&mut context, decoded).unwrap();
+        assert_eq!(
+            classify_value_type(&context, formed),
+            Ok(small()),
+            "a hypothesis of the small universe decodes to a small type"
+        );
+    }
+
+    #[test]
+    fn a_value_typed_hypothesis_does_not_become_a_type_variable()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded = arena.value_type_element(bound, Level::zero());
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        context.binders().open(Zone::Intuitionistic, integer);
+        let refused = form_value_type(&mut context, decoded);
+        assert!(
+            matches!(
+                refused,
+                Err(CheckRefusal::TypeMismatch(Mismatch::Value { at, synthesised, .. }))
+                    if at == bound && synthesised == integer
+            ),
+            "an integer is no code, so its decode is refused at the variable: {refused:?}"
+        );
     }
 }

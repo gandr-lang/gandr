@@ -198,6 +198,14 @@ pub enum RefusalName
     AdmissionOrder,
     /// The checking machine's bookkeeping disagreed with itself.
     MachineInvariant,
+    /// A code checked at a universe of the other sort.
+    SortMismatch,
+    /// A code checked at a universe of its sort it does not fit.
+    LevelMismatch,
+    /// A bind whose body's type mentions the bound name.
+    DependentBind,
+    /// A code constant's unfolding the normaliser did not certify.
+    Undecided,
     /// An expectation the strict root refuses.
     ExpectationOutsideFixtureRoot,
 }
@@ -205,7 +213,7 @@ pub enum RefusalName
 impl RefusalName
 {
     /// Every name of the vocabulary, in declaration order.
-    pub const VOCABULARY: [Self; 26_usize] = [
+    pub const VOCABULARY: [Self; 30_usize] = [
         Self::UnresolvedName,
         Self::UnresolvedTypeHead,
         Self::DuplicateSignature,
@@ -231,6 +239,10 @@ impl RefusalName
         Self::DanglingNode,
         Self::AdmissionOrder,
         Self::MachineInvariant,
+        Self::SortMismatch,
+        Self::LevelMismatch,
+        Self::DependentBind,
+        Self::Undecided,
         Self::ExpectationOutsideFixtureRoot,
     ];
 
@@ -281,6 +293,10 @@ impl RefusalName
             | Self::DanglingNode => "DanglingNode",
             | Self::AdmissionOrder => "AdmissionOrder",
             | Self::MachineInvariant => "MachineInvariant",
+            | Self::SortMismatch => "SortMismatch",
+            | Self::LevelMismatch => "LevelMismatch",
+            | Self::DependentBind => "DependentBind",
+            | Self::Undecided => "Undecided",
             | Self::ExpectationOutsideFixtureRoot => "ExpectationOutsideFixtureRoot",
         })
     }
@@ -446,6 +462,10 @@ const fn checking_name(refusal: CheckRefusal) -> RefusalName
         | CheckRefusal::DanglingNode { .. } => RefusalName::DanglingNode,
         | CheckRefusal::AdmissionOrder { .. } => RefusalName::AdmissionOrder,
         | CheckRefusal::MachineInvariant => RefusalName::MachineInvariant,
+        | CheckRefusal::SortMismatch { .. } => RefusalName::SortMismatch,
+        | CheckRefusal::LevelMismatch { .. } => RefusalName::LevelMismatch,
+        | CheckRefusal::DependentBind { .. } => RefusalName::DependentBind,
+        | CheckRefusal::Undecided { .. } => RefusalName::Undecided,
     }
 }
 
@@ -512,6 +532,8 @@ mod tests
         let value = arena.value_unit();
         let value_type = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
+        let computation = arena.computation_return(value);
+        let comp_type = arena.comp_type_returner(value_type);
         let zero = ConstantIndex::from(0_usize);
         let lowering = [
             (
@@ -740,6 +762,37 @@ mod tests
             (
                 CheckRefusal::MachineInvariant,
                 "MachineInvariant",
+                FailureClass::EngineFault,
+            ),
+            (
+                CheckRefusal::SortMismatch {
+                    at: value,
+                    synthesised: value_type,
+                    expected: integer,
+                },
+                "SortMismatch",
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::LevelMismatch {
+                    at: value,
+                    synthesised: value_type,
+                    expected: integer,
+                },
+                "LevelMismatch",
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::DependentBind {
+                    at: computation,
+                    synthesised: comp_type,
+                },
+                "DependentBind",
+                FailureClass::MalformedSource,
+            ),
+            (
+                CheckRefusal::Undecided { at: value },
+                "Undecided",
                 FailureClass::EngineFault,
             ),
         ];

@@ -22,13 +22,23 @@
 //!
 //! [`check_module`] judges every declaration, in the order given, and a
 //! refused one does not stop the run: the report is total over the module.
+//!
+//! # An accepted body is a definition
+//!
+//! A declaration whose body was accepted defines its constant: a later decode
+//! of a code naming it unfolds to that body. A refused or owed declaration
+//! leaves its constant rigid. The report carries the lifts the run's value
+//! bridges recorded beside the verdicts, so the kernel bridge writes each one
+//! where it stands.
 
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use gandr_core_term::ValueId;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
 
+use crate::code::Lift;
 use crate::context::CheckingContext;
 use crate::declaration::Declaration;
 use crate::declaration::OriginToken;
@@ -136,6 +146,11 @@ pub struct ModuleReport
     judged: Vec<Judged>,
     /// The holes owed, in the order met.
     ledger: ObligationLedger,
+    /// The codes the run checked at a universe above their own, by node.
+    lifts: BTreeMap<ValueId, Lift>,
+    /// The body each accepted declaration defines its constant as, elaborated
+    /// to the universe it was declared at, by position.
+    definitions: BTreeMap<ConstantIndex, ValueId>,
 }
 
 impl ModuleReport
@@ -161,6 +176,30 @@ impl ModuleReport
     {
         &self.ledger
     }
+
+    /// The codes the run checked at a universe above their own, by node.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn lifts(&self) -> &BTreeMap<ValueId, Lift>
+    {
+        &self.lifts
+    }
+
+    /// The body each accepted declaration defines its constant as: its body,
+    /// lifted to the universe it was declared at when the body is a code of a
+    /// smaller one.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn definitions(&self) -> &BTreeMap<ConstantIndex, ValueId>
+    {
+        &self.definitions
+    }
 }
 
 /// Judge one declaration in `context`.
@@ -173,9 +212,10 @@ impl ModuleReport
 ///   formed signature; a signature and a hole give [`Verdict::Owed`] with the
 ///   hole's absence; a body alone gives [`Verdict::Synthesised`] when it
 ///   synthesises; neither is refused. An accepted verdict carries the body it
-///   judged. A formed signature enters the signature table after the body is
-///   judged, whatever the body's verdict; a synthesised type enters it after
-///   synthesis; a refused body alone enters nothing.
+///   judged and defines the constant as that body. A formed signature enters
+///   the signature table after the body is judged, whatever the body's verdict;
+///   a synthesised type enters it after synthesis; a refused body alone enters
+///   nothing.
 /// - provides: the one obligation a declaration can owe, carried in its
 ///   verdict, so a caller judging a single declaration needs no ledger.
 /// - fails: never; a refusal is the verdict [`Verdict::Refused`].
@@ -234,15 +274,17 @@ pub fn check_declaration(
         },
     };
     match (direction, verdict) {
+        | (Direction::Check(declared), Verdict::Checked { body, .. }) => {
+            context.record(constant, declared);
+            context.define(constant, declared, body);
+        },
         | (
             Direction::Check(declared),
-            Verdict::Checked { .. }
-            | Verdict::Synthesised { .. }
-            | Verdict::Owed(_)
-            | Verdict::Refused(_),
+            Verdict::Synthesised { .. } | Verdict::Owed(_) | Verdict::Refused(_),
         ) => context.record(constant, declared),
-        | (Direction::Synthesise, Verdict::Synthesised { synthesised, .. }) => {
+        | (Direction::Synthesise, Verdict::Synthesised { synthesised, body }) => {
             context.record(constant, synthesised.produced());
+            context.define(constant, synthesised.produced(), body);
         },
         | (
             Direction::Synthesise,
@@ -293,7 +335,9 @@ pub fn check_declaration_supported(
 /// - requires: nothing.
 /// - ensures: one [`Judged`] per declaration, in the order given, each carrying
 ///   the verdict [`check_declaration`] gives at that point of the run; the
-///   ledger holds exactly the owed verdicts' entries, in order.
+///   ledger holds exactly the owed verdicts' entries, in order; the lifts are
+///   every lift the context's value bridges recorded by the run's end, and the
+///   definitions every body the context defines a constant as.
 /// - provides: total marking — a refused declaration does not stop the run.
 /// - fails: never.
 /// - panics: none.
@@ -326,7 +370,12 @@ pub fn check_module(
             verdict,
         });
     }
-    ModuleReport { judged, ledger }
+    ModuleReport {
+        judged,
+        ledger,
+        lifts: context.lifts().clone(),
+        definitions: context.definitions().definitions().collect(),
+    }
 }
 
 /// The hole rule, in both directions.
@@ -975,20 +1024,32 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(
+            gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+            gandr_kernel_strata::Level::zero(),
+        );
+        let code = arena.value_quote(integer);
         let adopted = arena.value_constant(ConstantIndex::from(0_usize));
         let untyped = arena.value_constant(ConstantIndex::from(1_usize));
+        let decoded = arena.value_type_element(adopted, gandr_kernel_strata::Level::zero());
+        let zero = arena.value_literal(integer_literal());
         let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
         let formed =
-            crate::formation::form_value_type(&context, integer).expect("the integer atom forms");
+            crate::formation::form_value_type(&mut context, small).expect("the universe forms");
         assert_eq!(
-            context.adopt(ConstantIndex::from(0_usize), Maybe::Present(formed)),
+            context.adopt(
+                ConstantIndex::from(0_usize),
+                Maybe::Present(formed),
+                Maybe::Present(code)
+            ),
             Ok(()),
             "a first adoption takes any position"
         );
         assert_eq!(
             context.adopt(
                 ConstantIndex::from(1_usize),
-                Maybe::Absent(crate::context::signature_table::Absent::Untyped)
+                Maybe::Absent(crate::context::signature_table::Absent::Untyped),
+                Maybe::Absent(crate::code::unfolding::Absent::Rigid)
             ),
             Ok(()),
             "an adopted absence is admitted"
@@ -996,7 +1057,7 @@ mod tests
         assert!(
             matches!(
                 check_declaration(&mut context, &declaration(At(2), UNSIGNED, Maybe::Present(adopted))),
-                Verdict::Synthesised { synthesised, .. } if synthesised.produced().id() == integer
+                Verdict::Synthesised { synthesised, .. } if synthesised.produced().id() == small
             ),
             "a later declaration reads the adopted type"
         );
@@ -1014,7 +1075,8 @@ mod tests
         assert_eq!(
             context.adopt(
                 ConstantIndex::from(2_usize),
-                Maybe::Absent(crate::context::signature_table::Absent::Untyped)
+                Maybe::Absent(crate::context::signature_table::Absent::Untyped),
+                Maybe::Absent(crate::code::unfolding::Absent::Rigid)
             ),
             Err(CheckRefusal::AdmissionOrder {
                 constant: ConstantIndex::from(2_usize),
@@ -1026,8 +1088,18 @@ mod tests
             context
                 .signature(ConstantIndex::from(2_usize))
                 .map(crate::formation::FormedValueType::id),
-            Maybe::Present(integer),
+            Maybe::Present(small),
             "the refused adoption left the table as it was"
+        );
+        assert!(
+            matches!(
+                check_declaration(
+                    &mut context,
+                    &declaration(At(4), Maybe::Present(decoded), Maybe::Present(zero))
+                ),
+                Verdict::Checked { .. }
+            ),
+            "a decode of the adopted code unfolds to the adopted body"
         );
     }
 }

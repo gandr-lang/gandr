@@ -137,9 +137,11 @@ path = "crates/core-checker"
 [workspace.dependencies.gandr-core-incremental]
 path = "crates/core-incremental"
 
-# Normalisation by evaluation over the core: weak-head evaluation and
-# readback, the oracle the L machine's readback is compared against.
+# Normalisation by evaluation over the core: weak-head evaluation, readback,
+# the conversion machine whose recorded traces the kernel replays, and the
+# oracle the L machine's readback is compared against.
 # consumers:
+# - core-checker
 # - core-sequent (dev)
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
@@ -169,6 +171,7 @@ path = "crates/kernel-check-memo"
 
 # The conversion-decision seam between the untrusted engine and the kernel.
 # consumers:
+# - core-checker
 # - core-nbe
 # - kernel-core
 [workspace.dependencies.gandr-kernel-conversion-trace]
@@ -184,7 +187,7 @@ path = "crates/kernel-core"
 
 # The certified kernel's universe-level oracle.
 # consumers:
-# - core-checker (dev)
+# - core-checker
 # - core-incremental
 # - core-nbe
 # - core-sequent

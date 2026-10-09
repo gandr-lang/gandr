@@ -72,7 +72,7 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x01";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x02";
 /// The magic and version a program's address is computed over.
 const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x01";
 /// The decoder's cap on a level atom's offset.
@@ -1383,7 +1383,7 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in declaration order.
-const FORMERS: [UnadmittedFormer; 14] = [
+const FORMERS: [UnadmittedFormer; 12] = [
     UnadmittedFormer::Pair,
     UnadmittedFormer::Injection,
     UnadmittedFormer::ValueLift,
@@ -1392,12 +1392,10 @@ const FORMERS: [UnadmittedFormer; 14] = [
     UnadmittedFormer::NumericAtom,
     UnadmittedFormer::Product,
     UnadmittedFormer::Sum,
-    UnadmittedFormer::Universe,
     UnadmittedFormer::TypeLift,
-    UnadmittedFormer::Element,
     UnadmittedFormer::Abstract,
-    UnadmittedFormer::Pi,
-    UnadmittedFormer::Quote,
+    UnadmittedFormer::SortParameter,
+    UnadmittedFormer::TopUniverse,
 ];
 
 /// The shapes a rule can require, in declaration order.
@@ -1536,6 +1534,38 @@ where
         },
         | Refusal::AdmissionOrder => writer.tag(Tag(8)),
         | Refusal::MachineInvariant => writer.tag(Tag(9)),
+        | Refusal::SortMismatch {
+            at,
+            ref synthesised,
+            ref expected,
+        } => {
+            writer.tag(Tag(10));
+            write_site(writer, at)?;
+            write_type(writer, synthesised)?;
+            write_type(writer, expected)?;
+        },
+        | Refusal::LevelMismatch {
+            at,
+            ref synthesised,
+            ref expected,
+        } => {
+            writer.tag(Tag(11));
+            write_site(writer, at)?;
+            write_type(writer, synthesised)?;
+            write_type(writer, expected)?;
+        },
+        | Refusal::DependentBind {
+            at,
+            ref synthesised,
+        } => {
+            writer.tag(Tag(12));
+            write_site(writer, at)?;
+            write_type(writer, synthesised)?;
+        },
+        | Refusal::Undecided { at } => {
+            writer.tag(Tag(13));
+            write_site(writer, at)?;
+        },
     }
     Ok(())
 }
@@ -1624,6 +1654,35 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
         },
         | 8 => Refusal::AdmissionOrder,
         | 9 => Refusal::MachineInvariant,
+        | 10 => {
+            let at = read_site(reader)?;
+            let synthesised = read_type(reader)?;
+            let expected = read_type(reader)?;
+            Refusal::SortMismatch {
+                at,
+                synthesised,
+                expected,
+            }
+        },
+        | 11 => {
+            let at = read_site(reader)?;
+            let synthesised = read_type(reader)?;
+            let expected = read_type(reader)?;
+            Refusal::LevelMismatch {
+                at,
+                synthesised,
+                expected,
+            }
+        },
+        | 12 => {
+            let at = read_site(reader)?;
+            let synthesised = read_type(reader)?;
+            Refusal::DependentBind { at, synthesised }
+        },
+        | 13 => {
+            let at = read_site(reader)?;
+            Refusal::Undecided { at }
+        },
         | _ => return Err(CodecError::Corrupt),
     };
     Ok(refusal)

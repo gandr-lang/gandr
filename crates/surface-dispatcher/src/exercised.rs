@@ -416,7 +416,11 @@ fn checking_row(
         | CheckRefusal::BudgetExceeded { .. }
         | CheckRefusal::DanglingNode { .. }
         | CheckRefusal::AdmissionOrder { .. }
-        | CheckRefusal::MachineInvariant => {},
+        | CheckRefusal::MachineInvariant
+        | CheckRefusal::SortMismatch { .. }
+        | CheckRefusal::LevelMismatch { .. }
+        | CheckRefusal::DependentBind { .. }
+        | CheckRefusal::Undecided { .. } => {},
     }
 }
 

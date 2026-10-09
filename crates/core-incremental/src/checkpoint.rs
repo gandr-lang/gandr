@@ -44,6 +44,7 @@ use gandr_core_checker::Support;
 use gandr_core_checker::check_declaration_supported;
 use gandr_core_checker::form_value_type;
 use gandr_core_checker::signature_table;
+use gandr_core_checker::unfolding;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_check_memo::CheckMemo;
@@ -1029,7 +1030,6 @@ where
     let mut supplied: Vec<Answer> = Vec::with_capacity(encoded.len());
     let (arena, layout) = edited.parts_mut();
     let mut context = CheckingContext::new(arena, budget);
-    let arena = context.arena();
     for (index, (item, footprint)) in encoded.iter().zip(footprints).enumerate() {
         let ordinal = ItemOrdinal::from(index);
         let Some(declaration) = layout.items.get(index).map(|item| *item.declaration())
@@ -1072,6 +1072,7 @@ where
                 }
                 bump(&mut census.judged);
                 let supported = check_declaration_supported(&mut context, &declaration);
+                let arena = context.arena();
                 let projection = Projection {
                     arena,
                     layout,
@@ -1212,7 +1213,18 @@ fn adopt(
             answer = Answer::Untyped;
         },
     }
-    if context.adopt(input.declaration.constant(), seat).is_err() {
+    let unfolds = match (&checkpoint.typing, input.declaration.body()) {
+        | (&(Typing::Checked { .. } | Typing::Synthesised { .. }), Maybe::Present(body)) => {
+            Maybe::Present(body)
+        },
+        | (_, Maybe::Absent(_)) | (&(Typing::Owed | Typing::Refused(_)), Maybe::Present(_)) => {
+            Maybe::Absent(unfolding::Absent::Rigid)
+        },
+    };
+    if context
+        .adopt(input.declaration.constant(), seat, unfolds)
+        .is_err()
+    {
         return Maybe::Absent(recall::Absent::Unseated);
     }
     Maybe::Present((
