@@ -35,6 +35,7 @@ use crate::mold::MoldIsFormLast;
 use crate::mold::MoldTable;
 use crate::mold::RCtxId;
 use crate::mold::RCtxStep;
+use crate::parity::NamedKind;
 
 /// Defines a transparent static-text identity with `AsRef<str>`,
 /// `Borrow<str>` and `Display`, so a consumer compares, keys and prints it
@@ -1338,6 +1339,66 @@ impl Pbg
     ) -> Result<&MoldDef, PbgError>
     {
         self.molds.mold(id)
+    }
+
+    /// The rule mold `id` belongs to: the rule whose tile occurrence the mold
+    /// was numbered for.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the rule's sort and precedence are the mold's; molds are
+    ///   numbered in rule order, so ascending ids meet the rules in
+    ///   non-decreasing order.
+    /// - fails: an id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 exhaustive over the built-in table — every mold's rule
+    ///   agrees with the mold's sort and precedence, ids meet rules in order,
+    ///   and the first id past the table is refused; L3 pointwise — a `def`
+    ///   module member resolves to its rule.
+    /// - witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`
+    #[inline]
+    pub fn rule_of(
+        &self,
+        id: MoldId,
+    ) -> Result<&Rule, PbgError>
+    {
+        self.molds.rule_of(&self.rules, id)
+    }
+
+    /// The named kind the form of mold `id` realises: its rule's
+    /// provenance.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a total function over the mold table — every id in it
+    ///   resolves to the named kind its rule realises, a node kind of the
+    ///   surface's committed inventory or one this grammar adds.
+    /// - provides: the kind a consumer of a molded tree dispatches on, read
+    ///   from the mold a node carries.
+    /// - fails: an id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 exhaustive over the built-in table — every mold's named
+    ///   kind is its rule's provenance and is a known kind; L3 boundary — the
+    ///   first id past the table is refused.
+    /// - witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`
+    #[inline]
+    pub fn named_kind(
+        &self,
+        id: MoldId,
+    ) -> Result<NamedKind<'static>, PbgError>
+    {
+        let rule = self.rule_of(id)?;
+        Ok(NamedKind(rule.provenance))
     }
 
     /// The precedence bounds of mold `id`, left and right: its precedence on

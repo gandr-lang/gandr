@@ -2352,10 +2352,9 @@ fn primary_expressions(
     // which for a long `E` sits arbitrarily far past the `(`, out of reach of a
     // bounded lookahead. They are factored into one form whose tail alternates on
     // that discriminating tile, so the `(` owns one mold and the choice is
-    // locally decidable — the discriminator `≐`-continues exactly one tail
-    // (`proposal-parser-interaction-core` §5.2). The concrete language is
-    // unchanged; the folded kinds are recorded as adaptations for the parity
-    // inventory.
+    // locally decidable — the discriminator `≐`-continues exactly one tail.
+    // The concrete language is unchanged; the folded kinds are recorded as
+    // adaptations for the parity inventory.
     let mut paren = r(
         RuleName("parenthesized_expression"),
         Provenance("parenthesized_expression"),
@@ -2611,8 +2610,8 @@ fn primary_expressions(
     // factored into one form whose tail alternates on the discriminating tile:
     // `#{` owns one mold, the first expression fills one hole, and the following
     // `|` / `=` `≐`-continues exactly one tail — locally decidable with no window
-    // (`proposal-parser-interaction-core` §5.2), and the `|` reads as the form's
-    // own continuation (continuation-rank 0), never the pipeline operator. The
+    // — and the `|` reads as the form's own continuation (continuation-rank 0),
+    // never the pipeline operator. The
     // concrete language is unchanged; the folded kinds are adaptations for the
     // parity inventory.
     let mut record = r(

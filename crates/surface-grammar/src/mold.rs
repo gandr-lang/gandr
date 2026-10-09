@@ -198,6 +198,9 @@ pub struct MoldTable
     rctxs: Vec<RCtxData>,
     /// Each mold's precedence bounds, by id.
     bounds: Vec<(Bound<Prec>, Bound<Prec>)>,
+    /// Each mold's rule, by id: its position in the rules the table was built
+    /// from.
+    owners: Vec<usize>,
     /// Each label's molds, ascending.
     candidates: BTreeMap<&'static str, Vec<MoldId>>,
     /// Each label's molds admissible where no form is open, ascending: those
@@ -254,8 +257,9 @@ impl MoldTable
         let mut complete_last_keys: BTreeSet<TileKey> = BTreeSet::new();
         let mut required_tail_keys: BTreeSet<TileKey> = BTreeSet::new();
         let mut closing: Vec<Option<ClosingClass>> = Vec::new();
+        let mut owners: Vec<usize> = Vec::new();
 
-        for rule in rules {
+        for (owner, rule) in rules.iter().enumerate() {
             let mut occurrences = Vec::new();
             let facet = collect_occurrences(rule, &mut interner, &mut occurrences);
             first_keys.extend(facet.first.iter().copied());
@@ -287,6 +291,7 @@ impl MoldTable
                     prec: rule.prec,
                     sort: rule.sort,
                 });
+                owners.push(owner);
                 candidates
                     .entry(occurrence.label)
                     .or_default()
@@ -350,6 +355,7 @@ impl MoldTable
             molds,
             rctxs,
             bounds,
+            owners,
             candidates,
             fresh,
             adjacencies,
@@ -383,6 +389,35 @@ impl MoldTable
         let index =
             usize::try_from(u32::from(id)).map_err(|_error| PbgError::UnknownMold { id })?;
         self.molds.get(index).ok_or(PbgError::UnknownMold { id })
+    }
+
+    /// The rule mold `id` belongs to, among the `rules` the table was built
+    /// from.
+    ///
+    /// # Specification
+    /// - requires: `rules` are the rules this table was built from, in the
+    ///   order it was built from them.
+    /// - ensures: returns the rule whose occurrence the mold was numbered for.
+    /// - fails: an id past the table.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PbgError::UnknownMold`] for an id past the table.
+    #[inline]
+    pub(crate) fn rule_of<'rules>(
+        &self,
+        rules: &'rules [Rule],
+        id: MoldId,
+    ) -> Result<&'rules Rule, PbgError>
+    {
+        let index =
+            usize::try_from(u32::from(id)).map_err(|_error| PbgError::UnknownMold { id })?;
+        let owner = self
+            .owners
+            .get(index)
+            .copied()
+            .ok_or(PbgError::UnknownMold { id })?;
+        rules.get(owner).ok_or(PbgError::UnknownMold { id })
     }
 
     /// The precedence bounds of mold `id`.

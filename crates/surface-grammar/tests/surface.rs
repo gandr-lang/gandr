@@ -378,6 +378,65 @@ fn named_kind_coverage_is_semantic() -> Result<(), Box<dyn Error>>
 }
 
 #[test]
+fn every_mold_resolves_to_its_rule_and_named_kind() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built_in()?;
+    let recognised: BTreeSet<&str> = TREE_SITTER_NAMED_KINDS
+        .iter()
+        .chain(PBG_ONLY_KINDS)
+        .copied()
+        .collect();
+    let positions: Vec<&str> = pbg.rules().iter().map(|rule| rule.name).collect();
+    let mut previous = 0_usize;
+    for (id, def) in pbg.iter_molds() {
+        let rule = pbg.rule_of(id)?;
+        assert_eq!(
+            (rule.sort, rule.prec),
+            (def.sort, def.prec),
+            "mold {id:?} carries its rule's sort and precedence"
+        );
+        let position = positions
+            .iter()
+            .position(|&name| name == rule.name)
+            .expect("the rule is one of the grammar's");
+        assert!(position >= previous, "ids meet the rules in order");
+        previous = position;
+        let kind = pbg.named_kind(id)?;
+        assert_eq!(NamedKind(rule.provenance), kind);
+        assert!(
+            recognised.contains(kind.0),
+            "mold {id:?} names the known kind {}",
+            kind.0
+        );
+    }
+
+    let past = MoldId::try_from(pbg.mold_count().0)?;
+    assert_eq!(
+        Err(PbgError::UnknownMold { id: past }),
+        pbg.named_kind(past)
+    );
+    assert_eq!(
+        Some(PbgError::UnknownMold { id: past }),
+        pbg.rule_of(past).err()
+    );
+
+    let members: Vec<MoldId> = pbg
+        .candidates(TileLabel("def"))
+        .iter()
+        .copied()
+        .filter(|&mold| {
+            pbg.mold(mold)
+                .is_ok_and(|def| def.sort == Sort::ModuleMember)
+        })
+        .collect();
+    assert!(!members.is_empty(), "a module member opens with `def`");
+    for mold in members {
+        assert_eq!(NamedKind("module_declaration"), pbg.named_kind(mold)?);
+    }
+    Ok(())
+}
+
+#[test]
 fn sort_decode_contract()
 {
     let cases = [

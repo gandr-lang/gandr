@@ -423,7 +423,9 @@ fn static_prec_name(
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeSet;
     use alloc::vec;
+    use alloc::vec::Vec;
 
     use gandr_theory_graphs::PrecIndex;
 
@@ -464,6 +466,56 @@ mod tests
         assert_eq!(
             PbgError::PrecedenceDag(PrecDagError::Inconsistent),
             dag_error(&spec, PrecDagError::Inconsistent)
+        );
+    }
+
+    #[test]
+    fn cyclic_named_precedence_spec_reports_closed_named_witness()
+    {
+        // Three groups spelled with constant names, each tighter than the
+        // next and the last tighter than the first: the DAG refuses the spec,
+        // and the grammar names the cycle group by group, closed, along edges
+        // the spec actually declares.
+        let names = ["expression.atom", "expression.postfix", "expression.unary"];
+        let mut spec = PrecSpec::new();
+        let a = spec
+            .insert(names[0], Assoc::Non)
+            .expect("first group inserts");
+        let b = spec
+            .insert(names[1], Assoc::Left)
+            .expect("second group inserts");
+        let c = spec
+            .insert(names[2], Assoc::Right)
+            .expect("third group inserts");
+        spec.add_edge(a, b).expect("edge a b");
+        spec.add_edge(b, c).expect("edge b c");
+        spec.add_edge(c, a).expect("edge c a");
+
+        let refusal = PrecDag::build(&spec).expect_err("a cyclic spec is refused");
+        let PbgError::PrecedenceCycle { witness } = dag_error(&spec, refusal)
+        else {
+            panic!("a cycle is named as a precedence cycle");
+        };
+        assert!(witness.len() >= 2, "the witness is a walk, not a point");
+        assert_eq!(witness.first(), witness.last(), "the witness is closed");
+        assert!(
+            witness.iter().all(|name| names.contains(name)),
+            "every witness group is named by its constant: {witness:?}"
+        );
+        let declared: BTreeSet<(&str, &str)> = spec
+            .edges()
+            .filter_map(|(from, to)| Some((spec.name(from)?.into(), spec.name(to)?.into())))
+            .collect();
+        let walked: Vec<(&str, &str)> = witness
+            .windows(2)
+            .filter_map(|pair| match *pair {
+                | [from, to] => Some((from, to)),
+                | _ => None,
+            })
+            .collect();
+        assert!(
+            walked.iter().all(|edge| declared.contains(edge)),
+            "every step of the witness is a declared edge: {walked:?}"
         );
     }
 }
