@@ -16,6 +16,7 @@
 use alloc::sync::Arc;
 use std::collections::HashMap;
 
+use anodized::spec;
 use gandr_theory_levitation::Code;
 use gandr_theory_levitation::DescValue;
 use gandr_theory_levitation::Name;
@@ -193,6 +194,20 @@ impl CodeIso
     ///   [`composition::Absent::BoundaryMismatch`]. There is no acyclicity
     ///   gate.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — matching and mismatched descriptions are observed
+    ///   through refusal and composite replay. The noncommuting three-value
+    ///   permutations detect reversed forward or backward composition, beyond
+    ///   the group laws; arbitrary translators remain outside this finite
+    ///   witness.
+    /// - witness: `tests::code_iso::certificates::invertible_composition_declines_only_on_a_boundary_mismatch`
+    /// - witness: `tests::code_iso::harness::tests::composition_preserves_noncommuting_order`
+    #[spec(ensures: |ref result| match *result {
+        | Maybe::Present(ref composite) => self.target == next.source
+            && (&composite.source, &composite.target) == (&self.source, &next.target),
+        | Maybe::Absent(composition::Absent::BoundaryMismatch) => self.target != next.source,
+    })]
     pub fn compose_invertible(
         &self,
         next: &Self,
@@ -225,7 +240,28 @@ impl CodeIso
     /// - ensures: a report recording every sample whose round trip `generic_eq`
     ///   does not relate to it, in sample order, source samples first; the
     ///   certificate holds exactly when the report does.
-    /// - panics: none; `generic_eq` is total.
+    /// - panics: a translator's panic propagates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite valid descriptions include exhaustive
+    ///   invertible maps and a deliberately non-invertible map with repeated
+    ///   failing samples. Exact direction, original, image and count
+    ///   observations detect omitted, reordered or deduplicated failures and
+    ///   swapped directions; empty samples constrain the zero boundary, not
+    ///   unobserved values of an infinite type.
+    /// - witness: `tests::code_iso::certificates::every_named_iso_holds_its_round_trips_exhaustively`
+    /// - witness: `tests::code_iso::harness::tests::round_trip_failures_keep_direction_order_and_multiplicity`
+    #[spec(ensures: |ref report| report.forward_checked == RoundTripSampleCount::from(source_samples.len())
+        && report.backward_checked == RoundTripSampleCount::from(target_samples.len())
+        && report.failures.len() <= source_samples.len().saturating_add(target_samples.len())
+        && report.failures.iter().all(|failure| match failure.direction {
+            | Direction::BackAfterForward => source_samples.contains(&failure.original)
+                && !bool::from(generic_eq(&self.source, &failure.round_tripped, &failure.original)),
+            | Direction::ForwardAfterBackward => target_samples.contains(&failure.original)
+                && !bool::from(generic_eq(&self.target, &failure.round_tripped, &failure.original)),
+        })
+        && report.failures.iter().skip_while(|failure| failure.direction == Direction::BackAfterForward)
+            .all(|failure| failure.direction == Direction::ForwardAfterBackward))]
     pub fn round_trips(
         &self,
         source_samples: &[DescValue],
@@ -356,7 +392,18 @@ quenchant_shape::reason_enum! {
 /// - requires: `left` and `right` share a boundary; the samples are values of
 ///   it.
 /// - ensures: positive exactly when [`replay_disagreement`] finds nothing.
-/// - panics: on a boundary mismatch, a test-author error.
+/// - panics: on a boundary mismatch, a test-author error, or a translator
+///   panic.
+///
+/// # Adequacy
+/// - hypothesis: L3 — shared finite boundaries distinguish agreement and a
+///   backward-only disagreement; empty samples agree, while a mismatched
+///   boundary is refused before replay. These observers detect ignoring
+///   backward replay or its domain restriction; sampled agreement is not a
+///   universal certificate.
+/// - witness: `tests::code_iso::harness::tests::disagreement_search_reaches_backward_samples`
+/// - witness: `tests::code_iso::harness::tests::equivalence_rejects_mismatched_boundaries`
+#[spec(requires: left.source == right.source && left.target == right.target)]
 pub fn replay_equivalent(
     left: &CodeIso,
     right: &CodeIso,
@@ -378,7 +425,27 @@ pub fn replay_equivalent(
 /// - ensures: the earliest sample where the two forward images (source samples
 ///   first) or the two backward images differ under `generic_eq`, with both
 ///   images; [`disagreement::Absent::Equivalent`] when there is none.
-/// - panics: on a boundary mismatch, a test-author error.
+/// - panics: on a boundary mismatch, a test-author error, or a translator
+///   panic.
+///
+/// # Adequacy
+/// - hypothesis: L3 — forward and backward-only disagreements expose exact
+///   first input and both images; no samples expose equivalence. These
+///   observations reject skipped backward search, later-sample selection and
+///   swapped images; a rejected boundary is a domain check, not an equivalence
+///   verdict.
+/// - witness: `tests::code_iso::harness::tests::disagreement_search_reaches_backward_samples`
+/// - witness: `tests::code_iso::harness::tests::disagreement_rejects_mismatched_boundaries`
+/// - witness: `tests::code_iso::negation_guard::the_disagreement_is_witnessed_on_false`
+#[spec(requires: left.source == right.source && left.target == right.target,
+    ensures: |ref result| match *result {
+        | Maybe::Present(ref disagreement) =>
+            (source_samples.contains(&disagreement.input)
+                && !bool::from(generic_eq(&left.target, &disagreement.left_image, &disagreement.right_image)))
+            || (target_samples.contains(&disagreement.input)
+                && !bool::from(generic_eq(&left.source, &disagreement.left_image, &disagreement.right_image))),
+        | Maybe::Absent(disagreement::Absent::Equivalent) => true,
+    })]
 pub fn replay_disagreement(
     left: &CodeIso,
     right: &CodeIso,
@@ -433,6 +500,20 @@ impl CodeTable
     /// - ensures: equal codes receive equal slots; a code unequal to every held
     ///   one receives the next unused slot.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — interleaving repeated and distinct codes observes
+    ///   exact first-insertion slots and table size. It rejects duplicate
+    ///   allocation, collisions and allocating before checking for an existing
+    ///   code; it does not establish collision resistance beyond structural
+    ///   equality.
+    /// - witness: `tests::code_iso::harness::tests::interning_reuses_slots_without_advancing_the_fresh_slot`
+    /// - witness: `tests::code_iso::transport::cross_code_iso_interns_to_distinct_codes`
+    #[spec(captures: [before = self.slots.len(), existing = self.slots.get(&code).copied()],
+        ensures: |slot| match existing {
+            | Some(previous) => slot == previous && self.slots.len() == before,
+            | None => slot == CodeSlot::from(before) && self.slots.len() == before.saturating_add(1),
+        })]
     pub fn intern(
         &mut self,
         code: Code<Grade>,
@@ -449,5 +530,182 @@ impl CodeTable
     pub fn size(&self) -> CodeSlot
     {
         CodeSlot::from(self.slots.len())
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_theory_levitation::ConstructorTag;
+
+    use super::*;
+    use crate::code_iso::fixtures;
+
+    #[test]
+    fn composition_preserves_noncommuting_order()
+    {
+        let swap: Translate = Arc::new(|value| {
+            DescValue::new(
+                ConstructorTag::from(match usize::from(value.ctor) {
+                    | 0 => 1_usize,
+                    | 1 => 0,
+                    | _ => 2,
+                }),
+                value.payload.clone(),
+            )
+        });
+        let reflection = CodeIso::new(
+            "swap",
+            fixtures::rgb(),
+            fixtures::rgb(),
+            Arc::clone(&swap),
+            swap,
+        );
+        let Maybe::Present(composed) = fixtures::rgb_rotate().compose_invertible(&reflection)
+        else {
+            panic!("matching boundaries");
+        };
+        for (value, expected) in fixtures::rgb_values().iter().zip([0_usize, 2, 1]) {
+            let expected = DescValue::new(ConstructorTag::from(expected), value.payload.clone());
+            assert_eq!(composed.forward_value(value), expected);
+            assert_eq!(composed.backward_value(value), expected);
+        }
+    }
+
+    #[test]
+    fn round_trip_failures_keep_direction_order_and_multiplicity()
+    {
+        let [zero, one] = <[DescValue; 2]>::try_from(fixtures::bool_two_ctor_values())
+            .expect("two Boolean values");
+        let forward_value = zero.clone();
+        let backward_value = one.clone();
+        let bad = CodeIso::new(
+            "constant",
+            fixtures::bool_two_ctor(),
+            fixtures::bool_two_ctor(),
+            Arc::new(move |_| forward_value.clone()),
+            Arc::new(move |_| backward_value.clone()),
+        );
+        let source = [zero.clone(), one.clone(), zero.clone()];
+        let target = [one.clone(), zero.clone(), one.clone()];
+        let source_failure = RoundTripFailure {
+            direction: Direction::BackAfterForward,
+            original: zero.clone(),
+            round_tripped: one.clone(),
+        };
+        let target_failure = RoundTripFailure {
+            direction: Direction::ForwardAfterBackward,
+            original: one,
+            round_tripped: zero,
+        };
+        let report = bad.round_trips(&source, &target);
+        assert_eq!(report, RoundTripReport {
+            forward_checked: RoundTripSampleCount::from(3_usize),
+            backward_checked: RoundTripSampleCount::from(3_usize),
+            failures: vec![
+                source_failure.clone(),
+                source_failure,
+                target_failure.clone(),
+                target_failure
+            ]
+        });
+        assert!(!bool::from(report.holds()));
+        assert_eq!(bad.round_trips(&[], &[]), RoundTripReport {
+            forward_checked: RoundTripSampleCount::from(0_usize),
+            backward_checked: RoundTripSampleCount::from(0_usize),
+            failures: vec![]
+        });
+    }
+
+    #[test]
+    fn disagreement_search_reaches_backward_samples()
+    {
+        let identity = fixtures::identity_bool();
+        let negation = fixtures::negation_bool();
+        let backward_only = CodeIso::new(
+            "backward-only",
+            fixtures::bool_two_ctor(),
+            fixtures::bool_two_ctor(),
+            Arc::new(DescValue::clone),
+            Arc::new(move |value| negation.backward_value(value)),
+        );
+        let source = fixtures::bool_two_ctor_values();
+        let [zero, one] = <[DescValue; 2]>::try_from(source.clone()).expect("two Boolean values");
+        let target = [one.clone(), zero.clone()];
+        assert_eq!(
+            replay_disagreement(&identity, &backward_only, &source, &target),
+            Maybe::Present(Disagreement {
+                input: one.clone(),
+                left_image: one,
+                right_image: zero
+            })
+        );
+        assert!(!bool::from(replay_equivalent(
+            &identity,
+            &backward_only,
+            &source,
+            &target
+        )));
+        assert_eq!(
+            replay_disagreement(&identity, &backward_only, &[], &[]),
+            Maybe::Absent(disagreement::Absent::Equivalent)
+        );
+        assert!(bool::from(replay_equivalent(
+            &identity,
+            &backward_only,
+            &[],
+            &[]
+        )));
+        assert_eq!(
+            replay_disagreement(&identity, &identity, &source, &target),
+            Maybe::Absent(disagreement::Absent::Equivalent)
+        );
+    }
+
+    #[test]
+    fn equivalence_rejects_mismatched_boundaries()
+    {
+        assert!(
+            std::panic::catch_unwind(|| replay_equivalent(
+                &fixtures::identity_bool(),
+                &fixtures::bool_bridge(),
+                &[],
+                &[]
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn disagreement_rejects_mismatched_boundaries()
+    {
+        assert!(
+            std::panic::catch_unwind(|| replay_disagreement(
+                &fixtures::identity_bool(),
+                &fixtures::bool_bridge(),
+                &[],
+                &[]
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn interning_reuses_slots_without_advancing_the_fresh_slot()
+    {
+        let mut table = CodeTable::default();
+        let first = Code::<Grade>::var("X");
+        let second = Code::<Grade>::var("Y");
+        let third = Code::<Grade>::var("Z");
+        for (code, slot, size) in [
+            (first.clone(), 0_usize, 1_usize),
+            (second.clone(), 1, 2),
+            (first, 0, 2),
+            (third, 2, 3),
+            (second, 1, 3),
+        ] {
+            assert_eq!(table.intern(code), CodeSlot::from(slot));
+            assert_eq!(table.size(), CodeSlot::from(size));
+        }
     }
 }

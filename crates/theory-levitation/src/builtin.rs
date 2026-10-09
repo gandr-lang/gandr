@@ -12,6 +12,8 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
+
 use crate::boundary::NominalSerial;
 use crate::code::Attrs;
 use crate::code::Code;
@@ -31,12 +33,18 @@ use crate::desc::SignDesc;
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the retrofit passes the declaration table and is not
-///   recursive.
+/// - hypothesis: L3 — both stand-in grades, the nullary tag and the field tag
+///   are observed through exact parameter, constructor and payload records;
+///   dropped parameters, reversed tags and erased grades change those records.
 /// - witness: `builtin::tests::every_retrofit_is_well_formed`
 /// - witness: `builtin::tests::list_is_recursive`
+/// - witness: `builtin::tests::retrofits_preserve_parameters_payloads_and_grades`
 #[inline]
 #[must_use]
+#[spec(ensures: |ref desc| desc.id.name.as_ref() == "Option"
+    && desc.params.iter().map(|param| param.name.as_ref()).eq(["a"])
+    && desc.ctors.iter().map(|ctor| ctor.name.as_ref()).eq(["None", "Some"])
+    && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "Option"))]
 pub fn option_desc<G>(grade: G) -> SignDesc<G>
 where
     G: Clone,
@@ -64,11 +72,18 @@ where
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the generic programs read the retrofit as they read a
-///   declared datatype: it renders, and its two values compare by tag.
+/// - hypothesis: L3 — both nullary tags are observed through their exact
+///   descriptor payloads and through generic equality; a spurious parameter,
+///   swapped tags or a non-unit payload changes at least one observer.
 /// - witness: `builtin::tests::generic_programs_cover_builtins_uniformly`
+/// - witness: `builtin::tests::boolean_tags_are_nullary_and_parameter_free`
 #[inline]
 #[must_use]
+#[spec(ensures: |ref desc| desc.id.name.as_ref() == "Boolean"
+    && desc.params.is_empty()
+    && desc.ctors.iter().map(|ctor| ctor.name.as_ref()).eq(["False", "True"])
+    && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "Boolean"
+        && matches!(ctor.code.view(), crate::code::CodeView::Unit)))]
 pub fn bool_desc<G>() -> SignDesc<G>
 {
     SignDesc::new(
@@ -92,12 +107,18 @@ pub fn bool_desc<G>() -> SignDesc<G>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the retrofit passes the declaration table and is
-///   recursive.
+/// - hypothesis: L3 — both stand-in grades and the nil/cons boundary are
+///   observed through exact payload codes and recursion status; erasing the
+///   grade, reversing the product or losing the recursive sort changes them.
 /// - witness: `builtin::tests::every_retrofit_is_well_formed`
 /// - witness: `builtin::tests::list_is_recursive`
+/// - witness: `builtin::tests::retrofits_preserve_parameters_payloads_and_grades`
 #[inline]
 #[must_use]
+#[spec(ensures: |ref desc| desc.id.name.as_ref() == "List"
+    && desc.params.iter().map(|param| param.name.as_ref()).eq(["a"])
+    && desc.ctors.iter().map(|ctor| ctor.name.as_ref()).eq(["Nil", "Cons"])
+    && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "List"))]
 pub fn list_desc<G>(grade: G) -> SignDesc<G>
 where
     G: Clone,
@@ -130,10 +151,17 @@ where
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the retrofit passes the declaration table.
+/// - hypothesis: L3 — both stand-in grades and the two distinct parameter names
+///   are observed through exact parameters and the ordered payload; erasure, a
+///   missing factor or swapped fields changes those records.
 /// - witness: `builtin::tests::every_retrofit_is_well_formed`
+/// - witness: `builtin::tests::retrofits_preserve_parameters_payloads_and_grades`
 #[inline]
 #[must_use]
+#[spec(ensures: |ref desc| desc.id.name.as_ref() == "Pair"
+    && desc.params.iter().map(|param| param.name.as_ref()).eq(["a", "b"])
+    && desc.ctors.iter().map(|ctor| ctor.name.as_ref()).eq(["Pair"])
+    && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "Pair"))]
 pub fn pair_desc<G>(grade: G) -> SignDesc<G>
 where
     G: Clone,
@@ -163,10 +191,17 @@ where
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the retrofit passes the declaration table.
+/// - hypothesis: L3 — both stand-in grades and both injection tags are observed
+///   through exact parameter and field records; swapping tags or their
+///   parameters, dropping an injection or erasing grades changes them.
 /// - witness: `builtin::tests::every_retrofit_is_well_formed`
+/// - witness: `builtin::tests::retrofits_preserve_parameters_payloads_and_grades`
 #[inline]
 #[must_use]
+#[spec(ensures: |ref desc| desc.id.name.as_ref() == "Sum"
+    && desc.params.iter().map(|param| param.name.as_ref()).eq(["a", "b"])
+    && desc.ctors.iter().map(|ctor| ctor.name.as_ref()).eq(["Inl", "Inr"])
+    && desc.ctors.iter().all(|ctor| ctor.result.as_ref() == "Sum"))]
 pub fn sum_desc<G>(grade: G) -> SignDesc<G>
 where
     G: Clone,
@@ -299,5 +334,85 @@ mod tests
             !bool::from(option_desc(Grade::One).is_recursive()),
             "Option is non-recursive"
         );
+    }
+
+    #[test]
+    fn boolean_tags_are_nullary_and_parameter_free()
+    {
+        let desc = bool_desc::<Grade>();
+        assert_eq!(desc.id.name.as_ref(), "Boolean");
+        assert!(desc.params.is_empty());
+        assert_eq!(
+            desc.ctors
+                .iter()
+                .map(|ctor| ctor.name.as_ref())
+                .collect::<Vec<_>>(),
+            ["False", "True"]
+        );
+        for ctor in &desc.ctors {
+            assert_eq!(ctor.result.as_ref(), "Boolean");
+            assert_eq!(ctor.code, Code::unit());
+        }
+    }
+
+    #[test]
+    fn retrofits_preserve_parameters_payloads_and_grades()
+    {
+        for grade in [Grade::One, Grade::Omega] {
+            let field_a = Code::field(ValueTypeRef::param("a"), grade, Attrs::empty());
+            let field_b = Code::field(ValueTypeRef::param("b"), grade, Attrs::empty());
+            for (desc, params, names, codes, result) in [
+                (
+                    option_desc(grade),
+                    &["a"][..],
+                    &["None", "Some"][..],
+                    alloc::vec![Code::unit(), field_a.clone()],
+                    "Option",
+                ),
+                (
+                    list_desc(grade),
+                    &["a"][..],
+                    &["Nil", "Cons"][..],
+                    alloc::vec![Code::unit(), Code::prod(field_a.clone(), Code::var("List"))],
+                    "List",
+                ),
+                (
+                    pair_desc(grade),
+                    &["a", "b"][..],
+                    &["Pair"][..],
+                    alloc::vec![Code::prod(field_a.clone(), field_b.clone())],
+                    "Pair",
+                ),
+                (
+                    sum_desc(grade),
+                    &["a", "b"][..],
+                    &["Inl", "Inr"][..],
+                    alloc::vec![field_a, field_b],
+                    "Sum",
+                ),
+            ] {
+                assert_eq!(desc.id.name.as_ref(), result);
+                assert_eq!(
+                    desc.params
+                        .iter()
+                        .map(|param| param.name.as_ref())
+                        .collect::<Vec<_>>(),
+                    params
+                );
+                assert!(desc.params.iter().all(|param| param.grade == grade));
+                assert_eq!(
+                    desc.ctors
+                        .iter()
+                        .map(|ctor| ctor.name.as_ref())
+                        .collect::<Vec<_>>(),
+                    names
+                );
+                assert!(desc.ctors.iter().all(|ctor| ctor.result.as_ref() == result));
+                assert_eq!(
+                    desc.ctors.iter().map(|ctor| &ctor.code).collect::<Vec<_>>(),
+                    codes.iter().collect::<Vec<_>>()
+                );
+            }
+        }
     }
 }
