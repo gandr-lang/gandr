@@ -10,6 +10,7 @@ use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::ConvexityDischarge;
 use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::PositionStep;
+use gandr_theory_cell_complexes_tools::AlphabetLie;
 use gandr_theory_cell_complexes_tools::CollidingAddresses;
 use gandr_theory_cell_complexes_tools::IncomparablePositions;
 use gandr_theory_cell_complexes_tools::Lying;
@@ -94,17 +95,13 @@ fn the_incomparable_wrapper_breaks_the_position_order_and_keeps_the_match()
     );
     let pattern = Toy::add(Toy::var("x"), Toy::zero());
     let ground = Toy::add(Toy::succ(Toy::zero()), Toy::zero());
-    let mut honest = <ToyAlphabet as CellAlphabet>::Subst::default();
     let mut lying = <Lying<IncomparablePositions> as CellAlphabet>::Subst::default();
+    assert!(bool::from(
+        <Lying<IncomparablePositions> as CellAlphabet>::match_cmd(&pattern, &ground, &mut lying)
+    ));
     assert_eq!(
-        ToyAlphabet::match_cmd(&pattern, &ground, &mut honest),
-        <Lying<IncomparablePositions> as CellAlphabet>::match_cmd(&pattern, &ground, &mut lying),
-        "and it delegates the match decision unchanged"
-    );
-    assert_eq!(
-        ToyAlphabet::apply_subst(&honest, &pattern),
-        <Lying<IncomparablePositions> as CellAlphabet>::apply_subst(&lying, &pattern),
-        "with the same bindings behind it"
+        ground,
+        <Lying<IncomparablePositions> as CellAlphabet>::apply_subst(&lying, &pattern)
     );
 }
 
@@ -127,12 +124,12 @@ fn the_non_local_splice_wrapper_breaks_the_splice_and_keeps_the_read()
     );
     let unary = Toy::succ(Toy::succ(Toy::zero()));
     assert_eq!(
-        ToyAlphabet::splice_cmd_at(&unary, &left, Toy::zero()),
+        Ok(Toy::succ(Toy::zero())),
         <Lying<NonLocalSplice> as CellAlphabet>::splice_cmd_at(&unary, &left, Toy::zero()),
         "a unary root has no sibling, so the two splices agree there"
     );
     assert_eq!(
-        ToyAlphabet::subterm_cmd_at(&binary, &left),
+        quenchant_shape::shape::Maybe::Present(Toy::succ(Toy::zero())),
         <Lying<NonLocalSplice> as CellAlphabet>::subterm_cmd_at(&binary, &left),
         "and the read at the spliced position is the honest one"
     );
@@ -159,17 +156,13 @@ fn the_withheld_convexity_wrapper_withholds_the_warrant_and_keeps_the_match()
     );
     let pattern = Toy::add(Toy::var("x"), Toy::zero());
     let ground = Toy::add(Toy::succ(Toy::zero()), Toy::zero());
-    let mut honest = <ToyAlphabet as CellAlphabet>::Subst::default();
     let mut lying = <Lying<WithheldConvexity> as CellAlphabet>::Subst::default();
+    assert!(bool::from(
+        <Lying<WithheldConvexity> as CellAlphabet>::match_cmd(&pattern, &ground, &mut lying)
+    ));
     assert_eq!(
-        ToyAlphabet::match_cmd(&pattern, &ground, &mut honest),
-        <Lying<WithheldConvexity> as CellAlphabet>::match_cmd(&pattern, &ground, &mut lying),
-        "and it delegates the match decision unchanged"
-    );
-    assert_eq!(
-        ToyAlphabet::apply_subst(&honest, &pattern),
-        <Lying<WithheldConvexity> as CellAlphabet>::apply_subst(&lying, &pattern),
-        "with the same bindings behind it"
+        ground,
+        <Lying<WithheldConvexity> as CellAlphabet>::apply_subst(&lying, &pattern)
     );
 }
 
@@ -217,4 +210,98 @@ fn the_colliding_addresses_wrapper_hides_the_orientation_and_keeps_the_cell()
         ),
         "and keep their own orientation tags"
     );
+}
+
+#[test]
+fn default_answers_and_adversarial_boundaries_stay_distinct()
+{
+    use core::hash::Hasher as _;
+
+    let root = at(&[]);
+    let left = at(&[PositionStep::from(0_usize)]);
+    let right = at(&[PositionStep::from(1_usize)]);
+    for (a, b, expected) in [
+        (&root, &root, PositionOrder::Same),
+        (&root, &left, PositionOrder::Encloses),
+        (&left, &root, PositionOrder::EnclosedBy),
+        (&left, &right, PositionOrder::Incomparable),
+    ] {
+        assert_eq!(
+            expected,
+            <WithheldConvexity as AlphabetLie>::position_order(a, b)
+        );
+        assert_eq!(
+            PositionOrder::Incomparable,
+            <IncomparablePositions as AlphabetLie>::position_order(a, b)
+        );
+    }
+    assert_eq!(
+        ConvexityDischarge::StronglyConnectedOverAcyclicTarget,
+        <IncomparablePositions as AlphabetLie>::convexity_discharge()
+    );
+    assert_eq!(
+        ConvexityDischarge::ReCheckRequired,
+        <WithheldConvexity as AlphabetLie>::convexity_discharge()
+    );
+    let branch = Toy::succ(Toy::zero());
+    let binary = Toy::add(branch.clone(), branch.clone());
+    let replacement = Toy::var("new");
+    assert_eq!(
+        Ok(Toy::add(replacement.clone(), branch.clone())),
+        <Lying<WithheldConvexity> as CellAlphabet>::splice_cmd_at(
+            &binary,
+            &left,
+            replacement.clone()
+        )
+    );
+    let reset = Toy::add(Toy::zero(), Toy::zero());
+    for (pos, expected) in [
+        (root, replacement.clone()),
+        (left, Toy::add(replacement.clone(), reset.clone())),
+        (right, Toy::add(reset, replacement.clone())),
+        (
+            at(&[PositionStep::from(0_usize), PositionStep::from(0_usize)]),
+            Toy::add(Toy::succ(replacement.clone()), branch.clone()),
+        ),
+    ] {
+        assert_eq!(
+            Ok(expected),
+            <Lying<NonLocalSplice> as CellAlphabet>::splice_cmd_at(
+                &binary,
+                &pos,
+                replacement.clone()
+            )
+        );
+    }
+    assert_eq!(
+        Ok(Toy::succ(replacement.clone())),
+        <Lying<NonLocalSplice> as CellAlphabet>::splice_cmd_at(
+            &Toy::succ(branch),
+            &at(&[PositionStep::from(0_usize)]),
+            replacement.clone()
+        )
+    );
+    let outside = at(&[PositionStep::from(2_usize)]);
+    assert_eq!(
+        Err(gandr_theory_cell_complexes::CommandSpliceRefusal::OffTerm),
+        <Lying<NonLocalSplice> as CellAlphabet>::splice_cmd_at(
+            &binary,
+            &outside,
+            replacement.clone()
+        )
+    );
+    assert_eq!(
+        Err(gandr_theory_cell_complexes::CommandSpliceRefusal::OffTerm),
+        <Lying<WithheldConvexity> as CellAlphabet>::splice_cmd_at(&binary, &outside, replacement)
+    );
+    for orientation in [ToyOrient::Given, ToyOrient::Derived] {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        hasher.write(b"prior contents");
+        let before = hasher.finish();
+        <CollidingAddresses as AlphabetLie>::hash_orientation(orientation, &mut hasher);
+        assert_eq!(before, hasher.finish());
+        let mut bytes = Written(vec![1, 2, 3]);
+        <CollidingAddresses as AlphabetLie>::hash_orientation(orientation, &mut bytes);
+        assert_eq!(Written(vec![1, 2, 3]), bytes);
+    }
 }
