@@ -265,11 +265,17 @@ impl RenderFrame
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the scope and the body read back separate this
-    ///   constructor from one that routes the greeting to a document.
+    /// - hypothesis: L3 — connection scope and hello identity are checked for a
+    ///   one-document greeting; empty and populated greetings also round-trip
+    ///   at L2. These observations do not cover arbitrary document lists.
     /// - witness: `wire::tests::connection_scoped_constructors_omit_routing_keys`
+    /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Connection, &FrameBody::Hello { .. }),
+    ))]
     pub const fn hello(docs: Vec<DocId>) -> Self
     {
         Self {
@@ -289,11 +295,18 @@ impl RenderFrame
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the scope, the version and the body read back
-    ///   separate this constructor from one that drops or swaps them.
+    /// - hypothesis: L3 — exact document routing is observed for an empty
+    ///   report; the populated highlight and goal report round-trips at L2.
+    ///   Scope, body kind and payload preservation are distinguished on these
+    ///   fixtures, not on every report or document URI.
     /// - witness: `wire::tests::document_scoped_constructors_populate_routing_keys`
+    /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Frame { .. }),
+    ))]
     pub const fn frame(
         document: DocId,
         report: ReportView,
@@ -316,11 +329,17 @@ impl RenderFrame
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the scope and the body read back separate this
-    ///   constructor from one that leaves the request unrouted.
+    /// - hypothesis: L3 — the exact document and resync body are observed for
+    ///   one document; an independent JSON image fixes the routing-key roles.
+    ///   This bounds the claim to those versions and URI.
     /// - witness: `wire::tests::document_scoped_constructors_populate_routing_keys`
+    /// - witness: `wire::tests::frame_body_is_adjacently_tagged_on_the_wire`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Document(_), &FrameBody::Resync),
+    ))]
     pub const fn resync(document: DocId) -> Self
     {
         Self {
@@ -339,11 +358,16 @@ impl RenderFrame
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the scope and the body read back separate this
-    ///   constructor from one that routes the close to a document.
+    /// - hypothesis: L3 — the parameterless close has connection scope and a
+    ///   detach body. This exhausts this constructor's input domain, without
+    ///   claiming exhaustive codec behavior.
     /// - witness: `wire::tests::connection_scoped_constructors_omit_routing_keys`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ref ret| matches!(
+        (&ret.scope, &ret.body),
+        (&FrameScope::Connection, &FrameBody::Detach),
+    ))]
     pub const fn detach() -> Self
     {
         Self {
@@ -402,14 +426,17 @@ impl serde::Serialize for RenderFrame
     ///   and the adjacently tagged body.
     /// - fails: propagates the serializer's own error.
     /// - panics: none.
+    /// - executable: none — the generic serializer's success value does not
+    ///   expose the encoded fields to a postcondition.
     ///
     /// # Errors
     /// The serializer's error.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the exact keys of a document-scoped image, and every
-    ///   body decoding back to its frame, separate an encode that drops, swaps
-    ///   or nulls a routing key.
+    /// - hypothesis: L3 — independent hello and resync JSON images fix the
+    ///   schema field, routing keys and adjacent tags. L2 round-trips exercise
+    ///   all four bodies and empty/populated reports, but do not independently
+    ///   prove every payload encoding or arbitrary serializer behavior.
     /// - witness: `wire::tests::frame_body_is_adjacently_tagged_on_the_wire`
     /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
     #[inline]
@@ -512,6 +539,15 @@ impl fmt::Display for FrameDecodeError
     /// - provides: the message a decode failure carries.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes write status, not the text
+    ///   emitted into the caller's sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — version numbers, routing-key identifiers and each
+    ///   body tag are observed in successful formatting, independently of the
+    ///   English sentence. This detects lost diagnostic parameters, not every
+    ///   wording error or the behavior of an arbitrary rejecting sink.
+    /// - witness: `wire::tests::decode_error_display_preserves_diagnostic_parameters`
     #[inline]
     fn fmt(
         &self,
@@ -568,14 +604,52 @@ impl RenderFrame
     /// The [`FrameDecodeError`] naming the first broken invariant.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every body is decoded at its lawful routing, and each
-    ///   refusal is triggered by one image that breaks only its invariant: a
-    ///   foreign version, each half of the lockstep, a routed greeting and an
-    ///   unrouted report, each asserted by its message.
+    /// - hypothesis: L3 — typed refusals distinguish foreign schema endpoints,
+    ///   both partial routes and all four body/scope mismatches. Overlapping
+    ///   violations establish schema-before-lockstep-before-body precedence. L2
+    ///   lawful-body round-trips cover payload preservation on finite fixtures;
+    ///   arbitrary payloads and URIs are not exhaustively enumerated.
     /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
     /// - witness: `wire::tests::a_frame_is_refused_at_another_schema_version`
     /// - witness: `wire::tests::deserialize_rejects_doc_uri_doc_version_lockstep_violations`
     /// - witness: `wire::tests::deserialize_rejects_body_routing_mismatches`
+    /// - witness: `wire::tests::decode_refusals_preserve_validation_precedence`
+    #[anodized::spec(
+        captures: [
+            schema = wire.schema_version,
+            has_uri = wire.doc_uri.is_some(),
+            version = wire.doc_version,
+            kind = core::mem::discriminant(&wire.body),
+            connection = matches!(wire.body, FrameBody::Hello { .. } | FrameBody::Detach),
+            hello = matches!(wire.body, FrameBody::Hello { .. }),
+            resync = matches!(wire.body, FrameBody::Resync),
+        ],
+        ensures: |ref ret| match *ret {
+            Err(FrameDecodeError::SchemaVersion { found }) =>
+                schema != WIRE_SCHEMA_VERSION && found == schema,
+            Err(FrameDecodeError::RoutingLockstep) =>
+                schema == WIRE_SCHEMA_VERSION && has_uri != version.is_some(),
+            Err(FrameDecodeError::ConnectionScopedRouted { body }) =>
+                schema == WIRE_SCHEMA_VERSION && has_uri && version.is_some()
+                    && connection && match body {
+                        ConnectionBody::Hello => hello,
+                        ConnectionBody::Detach => !hello,
+                    },
+            Err(FrameDecodeError::DocumentScopedUnrouted { body }) =>
+                schema == WIRE_SCHEMA_VERSION && !has_uri && version.is_none()
+                    && !connection && match body {
+                        DocumentBody::Frame => !resync,
+                        DocumentBody::Resync => resync,
+                    },
+            Ok(ref frame) => schema == WIRE_SCHEMA_VERSION
+                && has_uri == version.is_some() && has_uri != connection
+                && core::mem::discriminant(&frame.body) == kind
+                && match frame.scope {
+                    FrameScope::Connection => !has_uri,
+                    FrameScope::Document(ref routed) => Some(routed.version) == version,
+                },
+        },
+    )]
     fn from_wire(wire: RenderFrameWire) -> Result<Self, FrameDecodeError>
     {
         if wire.schema_version != WIRE_SCHEMA_VERSION {
@@ -638,14 +712,22 @@ impl<'input> serde::Deserialize<'input> for RenderFrame
     /// The deserializer's error, or the broken invariant.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every body round-trips, and each broken invariant is
-    ///   refused with its own message, which separates a validating decode from
-    ///   a structural one.
+    /// - hypothesis: L3 — foreign versions, partial routes and every wrong
+    ///   body/scope pairing fail as data errors; typed validation establishes
+    ///   the rejection precedence without pinning prose. L2 successful JSON
+    ///   round-trips cover all bodies on finite payloads. Other formats and
+    ///   malformed serializer-specific representations remain outside this set.
     /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
     /// - witness: `wire::tests::a_frame_is_refused_at_another_schema_version`
     /// - witness: `wire::tests::deserialize_rejects_doc_uri_doc_version_lockstep_violations`
     /// - witness: `wire::tests::deserialize_rejects_body_routing_mismatches`
+    /// - witness: `wire::tests::decode_refusals_preserve_validation_precedence`
     #[inline]
+    #[anodized::spec(ensures: |ref ret| ret.as_ref().map_or(true, |frame| matches!(
+        (&frame.scope, &frame.body),
+        (&FrameScope::Connection, &(FrameBody::Hello { .. } | FrameBody::Detach))
+            | (&FrameScope::Document(_), &(FrameBody::Frame { .. } | FrameBody::Resync)),
+    )))]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'input>,
@@ -700,17 +782,6 @@ mod tests
     fn image(frame: &RenderFrame) -> serde_json::Value
     {
         serde_json::to_value(frame).expect("a frame serializes")
-    }
-
-    /// The message `image` is refused with.
-    ///
-    /// # Specification
-    /// trivial.
-    fn refusal(image: serde_json::Value) -> alloc::string::String
-    {
-        serde_json::from_value::<RenderFrame>(image)
-            .expect_err("the image breaks a frame invariant")
-            .to_string()
     }
 
     #[test]
@@ -813,17 +884,19 @@ mod tests
             serde_json::from_value(foreign.clone()).expect("the supported version decodes");
         assert_eq!(frame, back, "the version round-trips with the frame");
 
-        for version in [
-            u32::from(WIRE_SCHEMA_VERSION).saturating_add(1),
-            u32::from(WIRE_SCHEMA_VERSION).saturating_sub(1),
-        ] {
+        for version in [0_u32, 2_u32, u32::MAX] {
             foreign["schema_version"] = serde_json::Value::from(version);
-            let refused = refusal(foreign.clone());
+            let wire = serde_json::from_value(foreign.clone()).expect("well-typed wire fields");
+            assert_eq!(
+                Err(super::FrameDecodeError::SchemaVersion {
+                    found: version.into()
+                }),
+                RenderFrame::from_wire(wire),
+            );
             assert!(
-                refused.contains(&alloc::format!(
-                    "render frame schema_version {version} is not the supported wire schema {WIRE_SCHEMA_VERSION}"
-                )),
-                "the refusal names both versions: {refused}"
+                serde_json::from_value::<RenderFrame>(foreign.clone())
+                    .expect_err("a foreign schema is rejected")
+                    .is_data()
             );
         }
     }
@@ -831,21 +904,20 @@ mod tests
     #[test]
     fn deserialize_rejects_doc_uri_doc_version_lockstep_violations()
     {
-        let mut missing_version = image(&RenderFrame::resync(document(Version(2))));
-        missing_version["doc_version"] = serde_json::Value::Null;
-        let missing_version_err = refusal(missing_version);
-        assert!(
-            missing_version_err.contains("lockstep"),
-            "a URI without a version names the lockstep invariant: {missing_version_err}"
-        );
-
-        let mut missing_uri = image(&RenderFrame::resync(document(Version(2))));
-        missing_uri["doc_uri"] = serde_json::Value::Null;
-        let missing_uri_err = refusal(missing_uri);
-        assert!(
-            missing_uri_err.contains("lockstep"),
-            "a version without a URI names the lockstep invariant: {missing_uri_err}"
-        );
+        for key in ["doc_version", "doc_uri"] {
+            let mut partial = image(&RenderFrame::resync(document(Version(2))));
+            partial[key] = serde_json::Value::Null;
+            let wire = serde_json::from_value(partial.clone()).expect("well-typed wire fields");
+            assert_eq!(
+                Err(super::FrameDecodeError::RoutingLockstep),
+                RenderFrame::from_wire(wire)
+            );
+            assert!(
+                serde_json::from_value::<RenderFrame>(partial)
+                    .expect_err("partial routing is rejected")
+                    .is_data()
+            );
+        }
     }
 
     #[test]
@@ -866,29 +938,39 @@ mod tests
         let cases = [
             (
                 routed(&RenderFrame::hello(Vec::new())),
-                "hello render frames must not carry document routing keys",
+                super::FrameDecodeError::ConnectionScopedRouted {
+                    body: super::ConnectionBody::Hello,
+                },
             ),
             (
                 routed(&RenderFrame::detach()),
-                "detach render frames must not carry document routing keys",
+                super::FrameDecodeError::ConnectionScopedRouted {
+                    body: super::ConnectionBody::Detach,
+                },
             ),
             (
                 unrouted(&RenderFrame::frame(
                     document(Version(2)),
                     ReportView::default(),
                 )),
-                "frame render frames require document routing keys",
+                super::FrameDecodeError::DocumentScopedUnrouted {
+                    body: super::DocumentBody::Frame,
+                },
             ),
             (
                 unrouted(&RenderFrame::resync(document(Version(2)))),
-                "resync render frames require document routing keys",
+                super::FrameDecodeError::DocumentScopedUnrouted {
+                    body: super::DocumentBody::Resync,
+                },
             ),
         ];
-        for (image, message) in cases {
-            let refused = refusal(image);
+        for (image, expected) in cases {
+            let wire = serde_json::from_value(image.clone()).expect("well-typed wire fields");
+            assert_eq!(Err(expected), RenderFrame::from_wire(wire));
             assert!(
-                refused.contains(message),
-                "the refusal names the body and its routing: {refused}"
+                serde_json::from_value::<RenderFrame>(image)
+                    .expect_err("the body disagrees with its routing")
+                    .is_data()
             );
         }
     }
@@ -922,5 +1004,91 @@ mod tests
             hello,
             "a connection-scoped frame nulls both routing keys"
         );
+    }
+
+    #[test]
+    fn decode_refusals_preserve_validation_precedence()
+    {
+        let mut overlapping = image(&RenderFrame::hello(Vec::new()));
+        overlapping["schema_version"] = serde_json::Value::from(u32::MAX);
+        overlapping["doc_uri"] = serde_json::Value::from("file:///a.gandr");
+        let wire = serde_json::from_value(overlapping.clone()).expect("well-typed wire fields");
+        assert_eq!(
+            Err(super::FrameDecodeError::SchemaVersion {
+                found: u32::MAX.into()
+            }),
+            RenderFrame::from_wire(wire),
+        );
+        overlapping["schema_version"] = serde_json::Value::from(u32::from(WIRE_SCHEMA_VERSION));
+        let wire = serde_json::from_value(overlapping.clone()).expect("well-typed wire fields");
+        assert_eq!(
+            Err(super::FrameDecodeError::RoutingLockstep),
+            RenderFrame::from_wire(wire)
+        );
+        overlapping["doc_version"] = serde_json::Value::from(i32::MIN);
+        let wire = serde_json::from_value(overlapping.clone()).expect("well-typed wire fields");
+        assert_eq!(
+            Err(super::FrameDecodeError::ConnectionScopedRouted {
+                body: super::ConnectionBody::Hello
+            }),
+            RenderFrame::from_wire(wire),
+        );
+        assert!(
+            serde_json::from_value::<RenderFrame>(overlapping)
+                .expect_err("routing still disagrees with the hello body")
+                .is_data()
+        );
+    }
+
+    #[test]
+    fn decode_error_display_preserves_diagnostic_parameters()
+    {
+        let version = super::FrameDecodeError::SchemaVersion {
+            found: u32::MAX.into(),
+        }
+        .to_string();
+        let found = u32::MAX.to_string();
+        let supported = WIRE_SCHEMA_VERSION.to_string();
+        assert!(
+            version
+                .split(|ch: char| !ch.is_ascii_digit())
+                .filter(|part| !part.is_empty())
+                .eq([found.as_str(), supported.as_str()])
+        );
+        let lockstep = super::FrameDecodeError::RoutingLockstep.to_string();
+        assert!(lockstep.contains("doc_uri") && lockstep.contains("doc_version"));
+        for (error, kind) in [
+            (
+                super::FrameDecodeError::ConnectionScopedRouted {
+                    body: super::ConnectionBody::Hello,
+                },
+                "hello",
+            ),
+            (
+                super::FrameDecodeError::ConnectionScopedRouted {
+                    body: super::ConnectionBody::Detach,
+                },
+                "detach",
+            ),
+            (
+                super::FrameDecodeError::DocumentScopedUnrouted {
+                    body: super::DocumentBody::Frame,
+                },
+                "frame",
+            ),
+            (
+                super::FrameDecodeError::DocumentScopedUnrouted {
+                    body: super::DocumentBody::Resync,
+                },
+                "resync",
+            ),
+        ] {
+            assert!(
+                error
+                    .to_string()
+                    .split_whitespace()
+                    .any(|word| word == kind)
+            );
+        }
     }
 }
