@@ -1,1 +1,0 @@
-module Bad { def first = second + 1; def second = 2; }

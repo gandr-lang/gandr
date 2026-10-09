@@ -182,6 +182,44 @@ impl fmt::Display for FormFault
     }
 }
 
+/// A module ascription form the fragment does not read yet.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AscriptionForm
+{
+    /// Opaque ascription `:>`, which seals what it hides.
+    Opaque,
+    /// A bare type component `type T` under transparent ascription: an
+    /// abstract type, whose meaning is sealing's.
+    Abstract,
+    /// A kinded type component `type T : κ`, declaring a type family.
+    Kinded,
+    /// A type component binding parameters, `type T(a : A) …`.
+    Parameterized,
+}
+
+impl fmt::Display for AscriptionForm
+{
+    /// Writes the form and what it waits on.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            | Self::Opaque => f.write_str("is ascribed opaquely with `:>`"),
+            | Self::Abstract => f.write_str(
+                "is an abstract type component, given its meaning only by opaque ascription `:>`",
+            ),
+            | Self::Kinded => f.write_str("is a kinded type component, a type family"),
+            | Self::Parameterized => f.write_str("is a type component that binds parameters"),
+        }
+    }
+}
+
 /// Every way this crate refuses a module.
 ///
 /// The vocabulary is closed and every refusal carries a class, which the
@@ -356,6 +394,52 @@ pub enum LoweringRefusal<'source>
         written: PayloadForm,
     },
 
+    /// A module member named at or after the position of the member that
+    /// names it.
+    ForwardMemberReference
+    {
+        /// The bytes the reference covers.
+        span: ByteSpan,
+        /// The member's name as the reference wrote it.
+        name: SurfaceName<'source>,
+        /// The bytes of the member's own name, where it is declared.
+        declared: ByteSpan,
+    },
+
+    /// A module that exports no member of this name: a path selecting a
+    /// member the module hid or never declared, or a signature component no
+    /// member supplies.
+    UnknownMember
+    {
+        /// The bytes the selection or the component covers.
+        span: ByteSpan,
+        /// The module, as the path or the declaration spelled it.
+        module: SurfaceName<'source>,
+        /// The member's name.
+        member: SurfaceName<'source>,
+    },
+
+    /// A module ascription form the fragment does not read yet.
+    UnreadAscription
+    {
+        /// The bytes of the ascription's tile or the component's name.
+        span: ByteSpan,
+        /// The module or the type component the form ascribes.
+        name: SurfaceName<'source>,
+        /// The form.
+        form: AscriptionForm,
+    },
+
+    /// A top-level module named with a lowercase initial, a spelling the
+    /// grammar reserves for nested modules.
+    LowercaseModuleName
+    {
+        /// The bytes the declaration covers.
+        span: ByteSpan,
+        /// The name as it was written.
+        name: SurfaceName<'source>,
+    },
+
     /// The lowering's work allowance ran out.
     BudgetExceeded
     {
@@ -473,6 +557,34 @@ impl fmt::Display for LoweringRefusal<'_>
                 f,
                 "`{name}` at {span} takes {expected} and was given {written}"
             ),
+            | Self::ForwardMemberReference {
+                span,
+                name,
+                declared,
+            } => write!(
+                f,
+                "the member `{name}` at {span} is declared at {declared}, at or after the member \
+                 naming it; a member names only the members before it"
+            ),
+            | Self::UnknownMember {
+                span,
+                module,
+                member,
+            } => write!(
+                f,
+                "the module `{module}` exports no member `{member}` at {span}"
+            ),
+            | Self::UnreadAscription { span, name, form } => {
+                write!(
+                    f,
+                    "`{name}` at {span} {form}; the fragment does not read it yet"
+                )
+            },
+            | Self::LowercaseModuleName { span, name } => write!(
+                f,
+                "the module `{name}` at {span} is named with a lowercase initial; a top-level \
+                 module's name starts with an uppercase letter"
+            ),
             | Self::BudgetExceeded { budget } => {
                 write!(f, "the lowering outran its allowance of {budget} steps")
             },
@@ -535,6 +647,10 @@ impl LoweringRefusal<'_>
             | Self::MissingPayload { span, .. }
             | Self::NonValuePayload { span, .. }
             | Self::IllTypedPayload { span, .. }
+            | Self::ForwardMemberReference { span, .. }
+            | Self::UnknownMember { span, .. }
+            | Self::UnreadAscription { span, .. }
+            | Self::LowercaseModuleName { span, .. }
             | Self::UnknownMold { span, .. } => Maybe::Present(span),
             | Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. } => {
                 Maybe::Absent(refusal_span::Absent::Run)
@@ -557,6 +673,7 @@ mod tests
     use gandr_surface_syntax::MoldId;
     use quenchant_shape::shape::Maybe;
 
+    use super::AscriptionForm;
     use super::FormFault;
     use super::FragmentBoundary;
     use super::FragmentSort;
@@ -578,7 +695,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn every_variant() -> [LoweringRefusal<'static>; 18_usize]
+    fn every_variant() -> [LoweringRefusal<'static>; 22_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
         let s = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
@@ -668,6 +785,25 @@ mod tests
                 span: s(30_usize, 31_usize),
                 grade: SurfaceName::from("1"),
             },
+            LoweringRefusal::ForwardMemberReference {
+                span: s(32_usize, 33_usize),
+                name: SurfaceName::from("second"),
+                declared: s(40_usize, 46_usize),
+            },
+            LoweringRefusal::UnknownMember {
+                span: s(34_usize, 35_usize),
+                module: SurfaceName::from("Facts"),
+                member: SurfaceName::from("hidden"),
+            },
+            LoweringRefusal::UnreadAscription {
+                span: s(36_usize, 37_usize),
+                name: SurfaceName::from("T"),
+                form: AscriptionForm::Abstract,
+            },
+            LoweringRefusal::LowercaseModuleName {
+                span: s(38_usize, 39_usize),
+                name: SurfaceName::from("natAdd"),
+            },
         ]
     }
 
@@ -697,6 +833,10 @@ mod tests
             s(26_usize, 27_usize),
             s(28_usize, 29_usize),
             s(30_usize, 31_usize),
+            s(32_usize, 33_usize),
+            s(34_usize, 35_usize),
+            s(36_usize, 37_usize),
+            s(38_usize, 39_usize),
         ];
 
         for (refusal, position) in every_variant().into_iter().zip(expected) {
@@ -738,6 +878,13 @@ mod tests
             "`list` at 28..29 shadows a builtin name, which the active policy forbids",
             "the bridge's grade `1` at 30..31 is not the default `ω`, the only grade the \
              fragment admits",
+            "the member `second` at 32..33 is declared at 40..46, at or after the member naming \
+             it; a member names only the members before it",
+            "the module `Facts` exports no member `hidden` at 34..35",
+            "`T` at 36..37 is an abstract type component, given its meaning only by opaque \
+             ascription `:>`; the fragment does not read it yet",
+            "the module `natAdd` at 38..39 is named with a lowercase initial; a top-level \
+             module's name starts with an uppercase letter",
         ];
 
         for (refusal, rendering) in every_variant().into_iter().zip(expected) {
@@ -791,6 +938,34 @@ mod tests
                 format!("{boundary}"),
                 String::from(rendering),
                 "each boundary names the way the form left the fragment"
+            );
+        }
+    }
+
+    #[test]
+    fn every_ascription_form_renders_apart()
+    {
+        let expected = [
+            (AscriptionForm::Opaque, "is ascribed opaquely with `:>`"),
+            (
+                AscriptionForm::Abstract,
+                "is an abstract type component, given its meaning only by opaque ascription `:>`",
+            ),
+            (
+                AscriptionForm::Kinded,
+                "is a kinded type component, a type family",
+            ),
+            (
+                AscriptionForm::Parameterized,
+                "is a type component that binds parameters",
+            ),
+        ];
+
+        for (form, rendering) in expected {
+            assert_eq!(
+                format!("{form}"),
+                String::from(rendering),
+                "each unread ascription form names itself"
             );
         }
     }
@@ -873,6 +1048,7 @@ mod tests
             (FormName::FORK_STATEMENT, "`fork_statement`"),
             (FormName::FORK_SHARED_STATEMENT, "`fork_shared_statement`"),
             (FormName::EXPRESSION_STATEMENT, "`expression_statement`"),
+            (FormName::MODULE, "`module_declaration`"),
         ];
 
         for (name, rendering) in expected {

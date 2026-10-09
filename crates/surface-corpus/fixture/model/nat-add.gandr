@@ -1,0 +1,6 @@
+module NatAdd : #{ type M = Integer, zero : M, add : +U[ω] (M -> M -> -F M) } {
+  @[ runs("0") ]
+  def zero = 0;
+  @[ refuses("OutOfFragment") ]
+  def add(x: Integer, y: Integer) -> -F Integer { ret x + y }
+}

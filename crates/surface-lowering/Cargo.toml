@@ -20,6 +20,7 @@ gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]
+gandr-core-checker.workspace = true
 gandr-surface-parser.workspace = true
 
 [lints]

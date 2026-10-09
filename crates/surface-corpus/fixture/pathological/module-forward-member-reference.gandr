@@ -1,0 +1,6 @@
+module Bad {
+  @[ refuses("OutOfFragment") ]
+  def first = second + 1;
+  @[ runs("2") ]
+  def second = 2;
+}

@@ -64,15 +64,19 @@ use alloc::vec::Vec;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::ConstantIndex;
+use gandr_kernel_term::NameSegment;
+use gandr_kernel_term::StructuredName;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeDigest;
 use gandr_surface_syntax::NodeIndex;
+use gandr_surface_syntax::NodeLabel;
 use gandr_surface_syntax::SourceFragment;
 use gandr_surface_syntax::SyntaxTree;
 use quenchant_shape::shape::Maybe;
 
 use crate::attribute::AttributeTable;
+use crate::error::AscriptionForm;
 use crate::error::FormFault;
 use crate::error::FragmentBoundary;
 use crate::error::FragmentSort;
@@ -83,6 +87,7 @@ use crate::form::Former;
 use crate::form::Piece;
 use crate::form::Pieces;
 use crate::form::Placed;
+use crate::form::Repair;
 use crate::form::Run;
 use crate::form::Shape;
 use crate::form::TileName;
@@ -132,6 +137,18 @@ quenchant_shape::reason_enum! {
         pub enum Absent {
             /// The node is the root, layout, or not under a filed declaration.
             Unowned,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a module carries no inline signature.
+    pub mod ascription {
+        /// The module is written without one.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No `:` signature follows the module's name.
+            Unascribed,
         }
     }
 }
@@ -198,6 +215,152 @@ impl From<DeclarationCount> for usize
     }
 }
 
+/// The position of one module in a source's pre-order of modules: a module
+/// before every module nested in it.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StructureIndex(usize);
+
+impl From<usize> for StructureIndex
+{
+    /// The module at pre-order position `position`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: usize) -> Self
+    {
+        Self(position)
+    }
+}
+
+impl From<StructureIndex> for usize
+{
+    /// The pre-order position `position` names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(position: StructureIndex) -> Self
+    {
+        position.0
+    }
+}
+
+/// Where a name is declared: the source's top level, or a module's body.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Container
+{
+    /// The source's top level.
+    TopLevel,
+    /// The body of this module.
+    Module(StructureIndex),
+}
+
+/// What a slot stands for.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Role
+{
+    /// A name the source declared: a top-level definition or a module
+    /// member.
+    Declared,
+    /// A second type stated for a member, checked by a declaration whose body
+    /// is that member.
+    Witness,
+    /// A slot that declares nothing: it carries a refusal a module or a
+    /// signature component raised, or owns a manifest type component's type,
+    /// and yields a declaration only when it holds a refusal.
+    Held,
+}
+
+/// One member of a module's body, or one component it exports.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Member
+{
+    /// A definition member, by its slot.
+    Slot(SlotIndex),
+    /// A nested module.
+    Module(StructureIndex),
+}
+
+/// What one component of a module signature states.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ComponentForm
+{
+    /// A value component `x : T`, with its type.
+    Value(Placed),
+    /// A manifest type component `type T = τ`, with the type it names.
+    Manifest(Placed),
+    /// A type component the fragment does not read yet.
+    Unread(AscriptionForm),
+}
+
+/// One component of a module signature, as written.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Component<'source>
+{
+    /// The component's name.
+    pub name: SurfaceName<'source>,
+    /// The name's tile.
+    pub named: Placed,
+    /// What the component states.
+    pub form: ComponentForm,
+}
+
+/// A manifest type component, kept for the module's stratum item and for the
+/// components after it that name it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TypeComponent<'source>
+{
+    /// The component's name.
+    pub name: SurfaceName<'source>,
+    /// The type it is manifestly equal to.
+    pub defined: Placed,
+    /// The held slot owning that type, which carries its refusal.
+    pub held: SlotIndex,
+}
+
+/// The manifest type components a signature type sees: those of `structure`
+/// written before the component the type belongs to.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ComponentScope
+{
+    /// The module whose signature the type is written in.
+    pub structure: StructureIndex,
+    /// How many of its manifest type components precede the type.
+    pub before: usize,
+}
+
+/// Whether matching against a signature coerced a module's body.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Coerced(pub bool);
+
+/// One module as the collection pass found it: a stratum item.
+#[derive(Clone, Debug)]
+pub struct Structure<'source>
+{
+    /// The module's own name.
+    pub name: SurfaceName<'source>,
+    /// Where the module is declared.
+    pub container: Container,
+    /// The module form.
+    pub declared_by: Placed,
+    /// The module's name tile.
+    pub named: Placed,
+    /// The inline signature's components, in signature order, when the
+    /// module is ascribed transparently.
+    pub ascription: Maybe<Vec<Component<'source>>, ascription::Absent>,
+    /// The body's members, in source order.
+    pub members: Vec<Member>,
+    /// The components the module exports, in signature order once matched.
+    pub exports: Vec<Member>,
+    /// The manifest type components, in signature order.
+    pub types: Vec<TypeComponent<'source>>,
+    /// Whether matching coerced the body.
+    pub coerced: Coerced,
+}
+
 /// What one half of a declared name lowers from.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Operand
@@ -207,6 +370,8 @@ pub enum Operand
     /// The function tail `(params) -> T? { … }`, lowered at the declaration
     /// form itself.
     Function,
+    /// The member a witness re-states, whose constant is the witness's body.
+    Member(SlotIndex),
 }
 
 /// One half of a declared name: the declaration form that wrote it and what
@@ -253,6 +418,10 @@ pub struct DeclarationSlot<'source>
 {
     /// The declared name.
     pub name: SurfaceName<'source>,
+    /// Where the name is declared.
+    pub container: Container,
+    /// What the slot stands for.
+    pub role: Role,
     /// The admission position this name takes.
     pub constant: ConstantIndex,
     /// The declaration form that introduced the name.
@@ -332,8 +501,16 @@ pub struct Collected<'source>
     pub slots: Vec<DeclarationSlot<'source>>,
     /// Each arena position's owning slot, where it has one.
     pub owner: Vec<Maybe<SlotIndex, slot_owner::Absent>>,
-    /// Each declared name's slot, for the term-name resolution table.
-    pub by_name: BTreeMap<SurfaceName<'source>, SlotIndex>,
+    /// Each declared name's slot by where it is declared, for the term-name
+    /// resolution table.
+    pub by_name: BTreeMap<(Container, SurfaceName<'source>), SlotIndex>,
+    /// The modules, in pre-order: a module before every module nested in it.
+    pub structures: Vec<Structure<'source>>,
+    /// Each module's position by where it is declared.
+    pub modules: BTreeMap<(Container, SurfaceName<'source>), StructureIndex>,
+    /// Every signature type's root, with the manifest type components it
+    /// sees.
+    pub scopes: Vec<(NodeIndex, ComponentScope)>,
     /// The imports, in source order, with their aliases bound.
     pub imports: ModuleImports<'source>,
 }
@@ -425,6 +602,37 @@ impl<'source> Collected<'source>
             .get(slot.0)
             .map_or(SlotRefused(false), DeclarationSlot::refused)
     }
+
+    /// The path of the modules enclosing a name declared in `container`,
+    /// outermost first; empty at the top level.
+    ///
+    /// # Specification
+    /// - requires: every module index reachable from `container` names a
+    ///   collected module.
+    /// - ensures: the names of the modules from the outermost to `container`'s
+    ///   own, walked up by an explicit loop; a module index the collection does
+    ///   not hold ends the walk.
+    /// - provides: a declaration's structured name, less its own segment.
+    /// - fails: never.
+    /// - panics: none.
+    #[must_use]
+    pub fn path(
+        &self,
+        container: Container,
+    ) -> Vec<SurfaceName<'source>>
+    {
+        let mut path = Vec::new();
+        let mut at = container;
+        while let Container::Module(index) = at
+            && let Some(structure) = self.structures.get(index.0)
+        {
+            path.push(structure.name);
+            at = structure.container;
+        }
+        path.reverse();
+
+        path
+    }
 }
 
 /// Which half of a declared name a declaration form writes.
@@ -469,6 +677,8 @@ struct Collector<'run, 'source>
     pbg: &'run Pbg,
     /// The tree being collected.
     tree: &'run SyntaxTree<'source>,
+    /// The lowering's remaining allowance.
+    fuel: &'run mut Fuel,
     /// What has been collected so far.
     collected: Collected<'source>,
     /// The scratch reading of the declaration form being collected.
@@ -545,10 +755,14 @@ pub fn collect<'source>(
     let mut collector = Collector {
         pbg,
         tree,
+        fuel,
         collected: Collected {
             slots: Vec::new(),
             owner,
             by_name: BTreeMap::new(),
+            structures: Vec::new(),
+            modules: BTreeMap::new(),
+            scopes: Vec::new(),
             imports: ModuleImports::new(),
         },
         pieces: Pieces::new(),
@@ -563,7 +777,7 @@ pub fn collect<'source>(
         });
     }
     for piece in root.pieces {
-        fuel.spend()?;
+        collector.fuel.spend()?;
         collector.module_child(piece.placed())?;
     }
 
@@ -576,13 +790,13 @@ impl<'source> Collector<'_, 'source>
     ///
     /// # Specification
     /// - requires: `child` is a written child of the root.
-    /// - ensures: a declaration form is collected into its slot and an import
-    ///   into the import list; every other form refuses the module as a form of
-    ///   the wrong sort.
+    /// - ensures: a declaration form is collected into its slot, a module into
+    ///   its structures and member slots, and an import into the import list;
+    ///   every other form refuses the module as a form of the wrong sort.
     /// - provides: the module-shape half of [`collect`].
     /// - fails: [`LoweringRefusal::OutOfFragment`] for a child that is neither
-    ///   a declaration nor an import, and every module-level fault
-    ///   [`Self::declaration`] and [`Self::import`] raise.
+    ///   a declaration, a module nor an import, and every module-level fault
+    ///   [`Self::declaration`], [`Self::module`] and [`Self::import`] raise.
     /// - panics: none.
     ///
     /// # Errors
@@ -601,6 +815,10 @@ impl<'source> Collector<'_, 'source>
                 former: Former::Declaration,
                 ..
             } => self.declaration(child),
+            | Shape::Form {
+                former: Former::Module,
+                ..
+            } => self.module(child),
             | Shape::Form {
                 former: Former::Import,
                 name,
@@ -640,7 +858,7 @@ impl<'source> Collector<'_, 'source>
     {
         let mut pieces = core::mem::take(&mut self.pieces);
         read_pieces(self.pbg, self.tree, declaration.node, &mut pieces)?;
-        let outcome = self.read_declaration(declaration, &pieces);
+        let outcome = self.read_declaration(Container::TopLevel, declaration, &pieces);
         self.pieces = pieces;
 
         outcome
@@ -763,13 +981,15 @@ impl<'source> Collector<'_, 'source>
         ))
     }
 
-    /// Read one declaration form's pieces into its slot.
+    /// Read one declaration form's pieces into its slot in `container`.
     ///
     /// # Specification
-    /// - requires: `pieces` is the reading of the form `declaration`.
-    /// - ensures: as [`Self::declaration`].
-    /// - provides: the reading half of [`Self::declaration`], over a borrowed
-    ///   reading.
+    /// - requires: `pieces` is the reading of the form `declaration`, a
+    ///   top-level declaration or a definition member of the module `container`
+    ///   names.
+    /// - ensures: as [`Self::declaration`], the name admitted in `container`.
+    /// - provides: the reading half of [`Self::declaration`] and of a module's
+    ///   definition members, over a borrowed reading.
     /// - fails: as [`Self::declaration`].
     /// - panics: none.
     ///
@@ -777,6 +997,7 @@ impl<'source> Collector<'_, 'source>
     /// As [`Self::declaration`].
     fn read_declaration(
         &mut self,
+        container: Container,
         declaration: Placed,
         pieces: &Pieces,
     ) -> Result<(), LoweringRefusal<'source>>
@@ -803,7 +1024,7 @@ impl<'source> Collector<'_, 'source>
             return Err(self.unnamed(pieces, declaration, &header));
         };
         let name = self.name_of(named);
-        let slot = self.admit(name, declaration, named);
+        let slot = self.admit(container, name, declaration, named);
         self.collected.own(declaration.node, slot);
         let tail = if let Maybe::Present(repaired) = pieces.repair {
             Tail::Refused(LoweringRefusal::MalformedForm {
@@ -993,11 +1214,22 @@ impl<'source> Collector<'_, 'source>
     ///   for a function tail and its signature too when the tail is signed —
     ///   are recorded unless the slot already holds one of their kinds, which
     ///   offers the duplicate refusal naming the first instead and records none
-    ///   of them; a clean form's attributes join the slot's in source order,
-    ///   once whatever the halves it writes.
+    ///   of them. A written signature and the signature a signed function tail
+    ///   derives are not duplicates: the written one is the slot's, whichever
+    ///   came first, and the derived one is filed as a witness checking it. A
+    ///   clean form's attributes join the slot's in source order, once whatever
+    ///   the halves it writes.
     /// - provides: the filing half of [`Self::declaration`].
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a written signature before a signed function tail and
+    ///   after one, and two written signatures, each asserted as the exact
+    ///   declared type, witness or refusal.
+    /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
+    /// - witness: `modules::modules::signatures_attach_to_their_defs`
+    /// - witness: `module::tests::a_second_signature_is_refused`
     fn file(
         &mut self,
         slot: SlotIndex,
@@ -1027,64 +1259,88 @@ impl<'source> Collector<'_, 'source>
                 return;
             },
         };
+        let incoming = Half {
+            declaration,
+            operand,
+        };
+        let mut derived = Maybe::Absent(declaration_half::Absent::Unwritten);
         for &kind in kinds {
             let held = match kind {
                 | HalfKind::Signature => entry.signature,
                 | HalfKind::Definition => entry.definition,
             };
-            if let Maybe::Present(first) = held {
-                let (span, name, first) = (declaration.span, entry.name, first.declaration.span);
-                let refusal = match kind {
-                    | HalfKind::Signature => {
-                        LoweringRefusal::DuplicateSignature { span, name, first }
+            let Maybe::Present(first) = held
+            else {
+                continue;
+            };
+            if kind == HalfKind::Signature {
+                match (first.operand, operand) {
+                    | (Operand::Written(_), Operand::Function) => {
+                        derived = Maybe::Present(incoming);
+                        continue;
                     },
-                    | HalfKind::Definition => {
-                        LoweringRefusal::DuplicateDefinition { span, name, first }
+                    | (Operand::Function, Operand::Written(_)) => {
+                        derived = Maybe::Present(first);
+                        continue;
                     },
-                };
-                entry.refuse(declaration.node, refusal);
-                return;
+                    | _ => {},
+                }
             }
+            let (span, name, first) = (declaration.span, entry.name, first.declaration.span);
+            let refusal = match kind {
+                | HalfKind::Signature => LoweringRefusal::DuplicateSignature { span, name, first },
+                | HalfKind::Definition => {
+                    LoweringRefusal::DuplicateDefinition { span, name, first }
+                },
+            };
+            entry.refuse(declaration.node, refusal);
+            return;
         }
         for &kind in kinds {
-            let held = match kind {
-                | HalfKind::Signature => &mut entry.signature,
-                | HalfKind::Definition => &mut entry.definition,
-            };
-            *held = Maybe::Present(Half {
-                declaration,
-                operand,
-            });
+            match kind {
+                | HalfKind::Signature => {
+                    if derived != Maybe::Present(incoming) {
+                        entry.signature = Maybe::Present(incoming);
+                    }
+                },
+                | HalfKind::Definition => entry.definition = Maybe::Present(incoming),
+            }
         }
         entry.attributes.extend(attributes);
+        if let Maybe::Present(stated) = derived {
+            let _witness = self.witness(slot, stated);
+        }
     }
 
-    /// The slot `name` occupies, creating it at the next admission position
-    /// when this is the name's first declaration, written by the tile `named`
-    /// of the form `declaration`.
+    /// The slot `name` occupies in `container`, creating it at the next
+    /// admission position when this is the name's first declaration there,
+    /// written by the tile `named` of the form `declaration`.
     ///
     /// # Specification
     /// - requires: the collection's slots and name table describe the same
     ///   collection so far.
-    /// - ensures: a name already declared keeps its admission position, and a
-    ///   fresh name takes the next one; the returned index always names a live
-    ///   slot.
+    /// - ensures: a name already declared in `container` keeps its admission
+    ///   position, and a fresh name takes the next one and joins its module's
+    ///   members; the returned index always names a live slot.
     /// - provides: the collect-by-name half of the pass.
     /// - fails: never.
     /// - panics: none.
     fn admit(
         &mut self,
+        container: Container,
         name: SurfaceName<'source>,
         declaration: Placed,
         named: Placed,
     ) -> SlotIndex
     {
-        if let Some(&existing) = self.collected.by_name.get(&name) {
+        if let Some(&existing) = self.collected.by_name.get(&(container, name)) {
             return existing;
         }
         let minted = SlotIndex(self.collected.slots.len());
         self.collected.slots.push(DeclarationSlot {
             name,
+            container,
+            role: Role::Declared,
             constant: ConstantIndex::from(minted.0),
             introduced_by: declaration,
             named,
@@ -1093,7 +1349,55 @@ impl<'source> Collector<'_, 'source>
             attributes: Vec::new(),
             refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
         });
-        self.collected.by_name.insert(name, minted);
+        self.collected.by_name.insert((container, name), minted);
+        if let Container::Module(module) = container
+            && let Some(entry) = self.collected.structures.get_mut(module.0)
+        {
+            entry.members.push(Member::Slot(minted));
+        }
+
+        minted
+    }
+
+    /// File `stated`, a second type for the member at `target`, as a witness:
+    /// a slot whose signature is `stated` and whose body is the member.
+    ///
+    /// # Specification
+    /// - requires: `target` names a live slot.
+    /// - ensures: the witness takes the next admission position, after the
+    ///   member's, under the member's name and module, and is entered in no
+    ///   name table; it declares nothing a reference can reach.
+    /// - provides: the check that two types stated for one member agree,
+    ///   carried out by the checker as the body's type meeting the signature.
+    /// - fails: never.
+    /// - panics: none.
+    fn witness(
+        &mut self,
+        target: SlotIndex,
+        stated: Half,
+    ) -> SlotIndex
+    {
+        let minted = SlotIndex(self.collected.slots.len());
+        let Some(entry) = self.collected.slots.get(target.0)
+        else {
+            return minted;
+        };
+        let witness = DeclarationSlot {
+            name: entry.name,
+            container: entry.container,
+            role: Role::Witness,
+            constant: ConstantIndex::from(minted.0),
+            introduced_by: stated.declaration,
+            named: entry.named,
+            signature: Maybe::Present(stated),
+            definition: Maybe::Present(Half {
+                declaration: stated.declaration,
+                operand: Operand::Member(target),
+            }),
+            attributes: Vec::new(),
+            refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
+        };
+        self.collected.slots.push(witness);
 
         minted
     }
@@ -1110,6 +1414,1348 @@ impl<'source> Collector<'_, 'source>
         self.tree
             .fragment(tile.node)
             .map_or_else(|| SurfaceName::from(""), SurfaceName::from)
+    }
+}
+
+/// The kind a record type is written as, the only form a signature states a
+/// nested module's components with.
+const RECORD_TYPE: &str = "record_type";
+
+/// A module form's header, read.
+#[derive(Clone, Debug)]
+struct Opened<'source>
+{
+    /// The module's name.
+    name: SurfaceName<'source>,
+    /// The name's tile.
+    named: Placed,
+    /// The inline signature's components, when ascribed transparently.
+    ascription: Maybe<Vec<Component<'source>>, ascription::Absent>,
+    /// The body's member forms, in source order.
+    members: Vec<Placed>,
+}
+
+/// What reading a module form's header found.
+#[derive(Clone, Debug)]
+enum Header<'source>
+{
+    /// A module whose body is read.
+    Opened(Opened<'source>),
+    /// A named module refused as a whole, its body unread.
+    Refused
+    {
+        /// The module's name.
+        name: SurfaceName<'source>,
+        /// The name's tile, or the form standing where it belongs.
+        named: Placed,
+        /// Why the module is refused.
+        refusal: LoweringRefusal<'source>,
+    },
+    /// A module with no name to refuse it under.
+    Unnamed(LoweringRefusal<'source>),
+}
+
+/// One module whose body is being read.
+#[derive(Clone, Debug)]
+struct Open
+{
+    /// The module.
+    structure: StructureIndex,
+    /// The body's member forms, in source order.
+    members: Vec<Placed>,
+    /// How many of them have been read.
+    next: usize,
+}
+
+/// A signature a module's enclosing module states for it, applied after the
+/// module's own.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Layer
+{
+    /// The module the signature is stated for.
+    structure: StructureIndex,
+    /// The record type stating it.
+    record: Placed,
+    /// The manifest type components its types see.
+    scope: Maybe<ComponentScope, component_scope::Absent>,
+}
+
+/// One field `name : T` of a record type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct Field<'source>
+{
+    /// The field's name.
+    name: SurfaceName<'source>,
+    /// The name's tile.
+    named: Placed,
+    /// The field's type.
+    stated: Placed,
+}
+
+/// Whether a module form's operands carry the repair its own pieces hold.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct Carried(bool);
+
+/// Whether an operand is a bare name.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct BareName(bool);
+
+quenchant_shape::reason_enum! {
+    /// Why a signature type sees no manifest type component.
+    pub mod component_scope {
+        /// The type is written where no signature binds one.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The type is a member signature in a module's body.
+            Body,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a module has no member of a name.
+    pub mod declared_member {
+        /// Nothing in the module's body declares the name.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// No definition member and no nested module carries it.
+            Undeclared,
+        }
+    }
+}
+
+impl<'source> Collector<'_, 'source>
+{
+    /// Collect one top-level module and every module nested in it.
+    ///
+    /// # Specification
+    /// - requires: `module` is a module form standing at the root.
+    /// - ensures: the modules are walked in pre-order by an explicit stack:
+    ///   each module is recorded before the modules nested in it, its
+    ///   definition members are admitted in source order under it, and once its
+    ///   body is read it is matched against its signatures. A module refused as
+    ///   a whole — unread, sealed, misnamed or declared twice — files a held
+    ///   slot carrying the refusal under its name, and its body is not read; a
+    ///   malformed member files one under its module's name and the module's
+    ///   other members are kept.
+    /// - provides: the module half of [`collect`].
+    /// - fails: when the module has no name to refuse it under, as a
+    ///   declaration with no name does; [`LoweringRefusal::UnknownMold`] and
+    ///   [`LoweringRefusal::BudgetExceeded`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] for a module with no name,
+    /// [`LoweringRefusal::UnknownMold`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nesting separated by depth one and depth eight, and
+    ///   the refusals of the module as a whole by an unread body, an empty
+    ///   body, a sealed module, a lowercase name and a malformed member, each
+    ///   asserted as the exact declaration list.
+    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
+    /// - witness: `modules::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+    /// - witness: `modules::modules::an_unread_module_body_is_refused_not_emptied`
+    /// - witness: `modules::modules::an_empty_module_is_not_an_unread_one`
+    /// - witness: `modules::modules::opaque_module_ascription_is_declined_not_read_as_transparent`
+    /// - witness: `modules::modules::module_name_case_boundary_covers_single_and_multi_names`
+    /// - witness: `modules::modules::an_unread_member_keeps_its_own_report`
+    /// - witness: `modules::modules::a_readable_module_keeps_its_members_and_its_successor`
+    /// - witness: `modules::modules::a_nested_module_declares_under_either_case_spelling`
+    /// - witness: `modules::modules::a_repaired_container_keeps_its_member`
+    /// - witness: `modules::modules::a_malformed_member_is_repaired_and_its_siblings_kept`
+    /// - witness: `modules::modules::duplicate_module_member_definition_is_rejected`
+    /// - witness: `modules::modules::module_members_admit_in_source_order`
+    /// - witness: `modules::modules::computation_signed_module_member_origin_mirrors_ascription_encoding`
+    fn module(
+        &mut self,
+        module: Placed,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, module.node, &mut pieces)?;
+        let mut stack = Vec::new();
+        match self.header(module, &pieces, Container::TopLevel)? {
+            | Header::Opened(opened) => self.open(Container::TopLevel, module, opened, &mut stack),
+            | Header::Refused {
+                name,
+                named,
+                refusal,
+            } => {
+                let _held = self.refuse_held(Container::TopLevel, name, module, named, refusal);
+            },
+            | Header::Unnamed(refusal) => return Err(refusal),
+        }
+        while let Some(top) = stack.last_mut() {
+            let structure = top.structure;
+            let Some(&member) = top.members.get(top.next)
+            else {
+                let _closed = stack.pop();
+                self.close(structure)?;
+                continue;
+            };
+            top.next = top.next.saturating_add(1_usize);
+            self.fuel.spend()?;
+            let mut read = core::mem::take(&mut self.pieces);
+            let outcome = read_pieces(self.pbg, self.tree, member.node, &mut read)
+                .and_then(|()| self.member(structure, member, &read, &mut stack));
+            self.pieces = read;
+            outcome?;
+        }
+
+        Ok(())
+    }
+
+    /// Read a module form's header: its name, its signature and its body's
+    /// member forms.
+    ///
+    /// # Specification
+    /// - requires: `pieces` is the reading of the module form `form`, declared
+    ///   in `container`.
+    /// - ensures: the opened module when its tiles read `module Name (: #{ …
+    ///   })? { members }`, a top-level name taking the uppercase spelling and a
+    ///   nested one either; a top-level module named in lowercase, a repair no
+    ///   operand carries, opaque ascription, or a signature or body out of
+    ///   shape refuses the module under its name; a form with no name is
+    ///   unnamed.
+    /// - provides: the per-module reading of [`Self::module`] and
+    ///   [`Self::member`].
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold; every
+    ///   fault of the form itself is yielded rather than raised.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    fn header(
+        &self,
+        form: Placed,
+        pieces: &Pieces,
+        container: Container,
+    ) -> Result<Header<'source>, LoweringRefusal<'source>>
+    {
+        let mut cursor = Cursor::new(&pieces.pieces, form.span);
+        let unnamed = |cursor: &Cursor<'_>| match pieces.repair {
+            | Maybe::Present(repaired) => {
+                Header::Unnamed(repaired_module(repaired.span, repaired.repair))
+            },
+            | Maybe::Absent(_) => Header::Unnamed(misplaced_in(FormName::MODULE, cursor.here())),
+        };
+        if let Maybe::Absent(_) = cursor.tile(TileName::MODULE) {
+            return Ok(unnamed(&cursor));
+        }
+        let named = match cursor.peek() {
+            | Maybe::Present(Piece::Tile { label, at })
+                if label == TileName::TYPE_IDENTIFIER
+                    || (label == TileName::IDENTIFIER && container != Container::TopLevel) =>
+            {
+                let _name = cursor.read();
+                at
+            },
+            | Maybe::Present(Piece::Operand(standing))
+                if container == Container::TopLevel && self.is_name(standing)?.0 =>
+            {
+                let name = self.name_of(standing);
+                return Ok(Header::Refused {
+                    name,
+                    named: standing,
+                    refusal: LoweringRefusal::LowercaseModuleName {
+                        span: form.span,
+                        name,
+                    },
+                });
+            },
+            | Maybe::Present(_) | Maybe::Absent(_) => return Ok(unnamed(&cursor)),
+        };
+        let name = self.name_of(named);
+        let refused = |refusal| {
+            Ok(Header::Refused {
+                name,
+                named,
+                refusal,
+            })
+        };
+        if let Maybe::Present(repaired) = pieces.repair
+            && !self.carried(pieces).0
+        {
+            return refused(repaired_module(repaired.span, repaired.repair));
+        }
+        let ascription = if let Maybe::Present(seal) = cursor.tile(TileName::SEAL) {
+            return refused(LoweringRefusal::UnreadAscription {
+                span: seal.span,
+                name,
+                form: AscriptionForm::Opaque,
+            });
+        }
+        else if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
+            match self.signature(&mut cursor) {
+                | Ok(components) => Maybe::Present(components),
+                | Err(refusal) => return refused(refusal),
+            }
+        }
+        else {
+            Maybe::Absent(ascription::Absent::Unascribed)
+        };
+        if let Maybe::Absent(_) = cursor.tile(TileName::BRACE_OPEN) {
+            return refused(misplaced_in(FormName::MODULE, cursor.here()));
+        }
+        let mut members = Vec::new();
+        while let Maybe::Present(Piece::Operand(member)) = cursor.peek() {
+            let _member = cursor.read();
+            members.push(member);
+        }
+        let _close = cursor.tile(TileName::BRACE_CLOSE);
+        if let Maybe::Present(_) = cursor.peek() {
+            return refused(misplaced_in(FormName::MODULE, cursor.here()));
+        }
+
+        Ok(Header::Opened(Opened {
+            name,
+            named,
+            ascription,
+            members,
+        }))
+    }
+
+    /// Whether `standing` is a bare name: a top-level module's lowercase name,
+    /// which the grammar reads as an operand where the name tile belongs.
+    ///
+    /// # Specification
+    /// trivial.
+    fn is_name(
+        &self,
+        standing: Placed,
+    ) -> Result<BareName, LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(standing.node)
+        else {
+            return Ok(BareName(false));
+        };
+        let shape = shape_of(self.pbg, node)?;
+
+        Ok(BareName(matches!(shape, Shape::Form {
+            former: Former::Name,
+            ..
+        })))
+    }
+
+    /// Whether an operand of a module form carries a repair of its own: the
+    /// repair the module's pieces hold then belongs to a member, which reports
+    /// it more precisely.
+    ///
+    /// # Specification
+    /// - requires: `pieces` is the reading of a module form.
+    /// - ensures: affirmative exactly when some operand's own children include
+    ///   grout or a minted close.
+    /// - provides: the separating test between an unread module and a module
+    ///   with an unread member.
+    /// - fails: never.
+    /// - panics: none.
+    fn carried(
+        &self,
+        pieces: &Pieces,
+    ) -> Carried
+    {
+        let repaired = |operand: Placed| {
+            self.tree.children(operand.node).any(|child| {
+                self.tree.node(child).is_some_and(|node| {
+                    matches!(
+                        node.label(),
+                        NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. }
+                    )
+                })
+            })
+        };
+
+        Carried(pieces.pieces.iter().any(|piece| match *piece {
+            | Piece::Operand(operand) => repaired(operand),
+            | Piece::Tile { .. } => false,
+        }))
+    }
+
+    /// Read a module signature, `#{ components }`, after its `:`.
+    ///
+    /// # Specification
+    /// - requires: `cursor` stands just past the ascription's `:`.
+    /// - ensures: every component in signature order, the cursor past the
+    ///   closing `}`: `x : T` a value component; `type T = τ` a manifest one;
+    ///   `type T`, `type T : κ` and a type component binding parameters, each
+    ///   kept as a form the fragment does not read.
+    /// - provides: the signature half of [`Self::header`].
+    /// - fails: yields a misplaced-tile refusal for a signature out of shape
+    ///   and the hole's refusal for a type not written as one form.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`] naming the module form.
+    fn signature(
+        &self,
+        cursor: &mut Cursor<'_>,
+    ) -> Result<Vec<Component<'source>>, LoweringRefusal<'source>>
+    {
+        if let Maybe::Absent(_) = cursor.tile(TileName::RECORD) {
+            return Err(misplaced_in(FormName::MODULE, cursor.here()));
+        }
+        let mut components = Vec::new();
+        loop {
+            if let Maybe::Present(_) = cursor.tile(TileName::BRACE_CLOSE) {
+                return Ok(components);
+            }
+            let component = if let Maybe::Present(named) = cursor.tile(TileName::IDENTIFIER) {
+                if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
+                    return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                }
+                Component {
+                    name: self.name_of(named),
+                    named,
+                    form: ComponentForm::Value(one_in(FormName::MODULE, cursor.operands())?),
+                }
+            }
+            else if let Maybe::Present(_) = cursor.tile(TileName::TYPE) {
+                let Maybe::Present(named) = cursor.tile(TileName::TYPE_IDENTIFIER)
+                else {
+                    return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                };
+                Component {
+                    name: self.name_of(named),
+                    named,
+                    form: type_component(cursor)?,
+                }
+            }
+            else {
+                return Err(misplaced_in(FormName::MODULE, cursor.here()));
+            };
+            components.push(component);
+            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
+                && let Maybe::Absent(_) = cursor.at(TileName::BRACE_CLOSE)
+            {
+                return Err(misplaced_in(FormName::MODULE, cursor.here()));
+            }
+        }
+    }
+
+    /// Record the opened module `opened`, declared in `container` by `form`,
+    /// and push its body onto `stack`.
+    ///
+    /// # Specification
+    /// - requires: `opened` is the header of `form`.
+    /// - ensures: a module name already declared in `container` files a held
+    ///   slot carrying the duplicate refusal and leaves the body unread;
+    ///   otherwise the module takes the next pre-order position, joins its
+    ///   enclosing module's members and its body is pushed.
+    /// - provides: the recording half of [`Self::module`].
+    /// - fails: never.
+    /// - panics: none.
+    fn open(
+        &mut self,
+        container: Container,
+        form: Placed,
+        opened: Opened<'source>,
+        stack: &mut Vec<Open>,
+    )
+    {
+        let key = (container, opened.name);
+        if let Some(&first) = self.collected.modules.get(&key) {
+            let first = self
+                .collected
+                .structures
+                .get(first.0)
+                .map_or(form.span, |earlier| earlier.named.span);
+            let refusal = LoweringRefusal::DuplicateDefinition {
+                span: opened.named.span,
+                name: opened.name,
+                first,
+            };
+            let _held = self.refuse_held(container, opened.name, form, opened.named, refusal);
+            return;
+        }
+        let structure = StructureIndex(self.collected.structures.len());
+        self.collected.structures.push(Structure {
+            name: opened.name,
+            container,
+            declared_by: form,
+            named: opened.named,
+            ascription: opened.ascription,
+            members: Vec::new(),
+            exports: Vec::new(),
+            types: Vec::new(),
+            coerced: Coerced(false),
+        });
+        self.collected.modules.insert(key, structure);
+        if let Container::Module(parent) = container
+            && let Some(entry) = self.collected.structures.get_mut(parent.0)
+        {
+            entry.members.push(Member::Module(structure));
+        }
+        stack.push(Open {
+            structure,
+            members: opened.members,
+            next: 0_usize,
+        });
+    }
+
+    /// Read one member form of `structure`'s body.
+    ///
+    /// # Specification
+    /// - requires: `pieces` is the reading of `member`, a member form of the
+    ///   module at `structure`.
+    /// - ensures: a form holding a `def` tile is a definition member, read as a
+    ///   declaration in the module; a form opening on `module` is a nested
+    ///   module, opened onto `stack` or refused as a whole under its name;
+    ///   every other form is a malformed member, refused under the module's
+    ///   name at the member, and the module's other members are kept.
+    /// - provides: the per-member half of [`Self::module`].
+    /// - fails: [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    fn member(
+        &mut self,
+        structure: StructureIndex,
+        member: Placed,
+        pieces: &Pieces,
+        stack: &mut Vec<Open>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let container = Container::Module(structure);
+        let Some(node) = self.tree.node(member.node)
+        else {
+            return Ok(());
+        };
+        let form = match shape_of(self.pbg, node)? {
+            | Shape::Form {
+                former: Former::Module | Former::Declaration,
+                name,
+            } => name,
+            | Shape::Form { name, .. } => {
+                self.fault_at(structure, member, LoweringRefusal::OutOfFragment {
+                    span: member.span,
+                    form: name,
+                    sort: FragmentSort::Declaration,
+                    boundary: FragmentBoundary::WrongSort,
+                });
+                return Ok(());
+            },
+            | Shape::Root | Shape::Repair(_) | Shape::Layout => return Ok(()),
+        };
+        let defines = pieces
+            .pieces
+            .iter()
+            .any(|piece| matches!(*piece, Piece::Tile { label, .. } if label == TileName::DEF));
+        if defines {
+            if let Err(refusal) = self.read_declaration(container, member, pieces) {
+                self.fault_at(structure, member, refusal);
+            }
+            return Ok(());
+        }
+        let cursor = Cursor::new(&pieces.pieces, member.span);
+        if let Maybe::Absent(_) = cursor.at(TileName::MODULE) {
+            self.fault_at(structure, member, misplaced_in(form, cursor.here()));
+            return Ok(());
+        }
+        match self.header(member, pieces, container)? {
+            | Header::Opened(opened) => self.open(container, member, opened, stack),
+            | Header::Refused {
+                name,
+                named,
+                refusal,
+            } => {
+                let _held = self.refuse_held(container, name, member, named, refusal);
+            },
+            | Header::Unnamed(refusal) => self.fault_at(structure, member, refusal),
+        }
+
+        Ok(())
+    }
+
+    /// A slot named `name` in `container` that declares nothing, introduced
+    /// by `introduced_by` with its name at `named`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the slot takes the next admission position, holds no half and
+    ///   no refusal, and is entered in no name table.
+    /// - provides: the owner of a manifest type component's type, and the
+    ///   carrier of a refusal no declaration owns.
+    /// - fails: never.
+    /// - panics: none.
+    fn held(
+        &mut self,
+        container: Container,
+        name: SurfaceName<'source>,
+        introduced_by: Placed,
+        named: Placed,
+    ) -> SlotIndex
+    {
+        let minted = SlotIndex(self.collected.slots.len());
+        self.collected.slots.push(DeclarationSlot {
+            name,
+            container,
+            role: Role::Held,
+            constant: ConstantIndex::from(minted.0),
+            introduced_by,
+            named,
+            signature: Maybe::Absent(declaration_half::Absent::Unwritten),
+            definition: Maybe::Absent(declaration_half::Absent::Unwritten),
+            attributes: Vec::new(),
+            refusal: Maybe::Absent(slot_refusal::Absent::Unrefused),
+        });
+
+        minted
+    }
+
+    /// A held slot carrying `refusal`, at the form `introduced_by`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn refuse_held(
+        &mut self,
+        container: Container,
+        name: SurfaceName<'source>,
+        introduced_by: Placed,
+        named: Placed,
+        refusal: LoweringRefusal<'source>,
+    ) -> SlotIndex
+    {
+        let held = self.held(container, name, introduced_by, named);
+        if let Some(entry) = self.collected.slots.get_mut(held.0) {
+            entry.refuse(introduced_by.node, refusal);
+        }
+
+        held
+    }
+
+    /// A held slot carrying `refusal`, raised at `at` inside the module at
+    /// `structure`, under that module's own name.
+    ///
+    /// # Specification
+    /// trivial.
+    fn fault_at(
+        &mut self,
+        structure: StructureIndex,
+        at: Placed,
+        refusal: LoweringRefusal<'source>,
+    )
+    {
+        let Some(entry) = self.collected.structures.get(structure.0)
+        else {
+            return;
+        };
+        let (container, name, named) = (entry.container, entry.name, entry.named);
+        let _held = self.refuse_held(container, name, at, named, refusal);
+    }
+
+    /// Match the module at `structure` against its signatures, once its body
+    /// is read.
+    ///
+    /// # Specification
+    /// - requires: every module nested in `structure` is already closed.
+    /// - ensures: a member signature naming a nested module states that
+    ///   module's signature; the module's own signature is matched; then every
+    ///   signature the module states for a nested module is applied after that
+    ///   module's own, deepest last, by an explicit queue.
+    /// - provides: coercive matching.
+    /// - fails: [`LoweringRefusal::UnknownMold`] and
+    ///   [`LoweringRefusal::BudgetExceeded`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
+    fn close(
+        &mut self,
+        structure: StructureIndex,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut layers = Vec::new();
+        self.absorb(structure, &mut layers)?;
+        self.match_signature(structure, &mut layers)?;
+        let mut next = 0_usize;
+        while let Some(&layer) = layers.get(next) {
+            next = next.saturating_add(1_usize);
+            self.fuel.spend()?;
+            self.layer(layer, &mut layers)?;
+        }
+
+        Ok(())
+    }
+
+    /// Read every member signature of `structure` that names a nested module
+    /// as that module's signature.
+    ///
+    /// # Specification
+    /// - requires: `structure`'s body is read.
+    /// - ensures: a definition member of a nested module's name holding a
+    ///   record-typed signature and no definition becomes a layer over that
+    ///   module and declares nothing; any other definition member sharing a
+    ///   nested module's name is refused as a second definition of it.
+    /// - provides: the member-signature half of matching.
+    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    fn absorb(
+        &mut self,
+        structure: StructureIndex,
+        layers: &mut Vec<Layer>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let container = Container::Module(structure);
+        let nested: Vec<StructureIndex> = self
+            .collected
+            .structures
+            .get(structure.0)
+            .map(|entry| {
+                entry
+                    .members
+                    .iter()
+                    .filter_map(|member| match *member {
+                        | Member::Module(nested) => Some(nested),
+                        | Member::Slot(_) => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        for nested in nested {
+            let Some((name, named)) = self
+                .collected
+                .structures
+                .get(nested.0)
+                .map(|entry| (entry.name, entry.named))
+            else {
+                continue;
+            };
+            let Some(&slot) = self.collected.by_name.get(&(container, name))
+            else {
+                continue;
+            };
+            let Some(entry) = self.collected.slots.get(slot.0)
+            else {
+                continue;
+            };
+            let (signature, definition, introduced) =
+                (entry.signature, entry.definition, entry.introduced_by);
+            if let (Maybe::Present(stated), Maybe::Absent(_)) = (signature, definition)
+                && let Operand::Written(record) = stated.operand
+                && self.form_name(record)?.as_ref() == RECORD_TYPE
+            {
+                if let Some(absorbed) = self.collected.slots.get_mut(slot.0) {
+                    absorbed.signature = Maybe::Absent(declaration_half::Absent::Unwritten);
+                    absorbed.role = Role::Held;
+                }
+                let _absorbed = self.collected.by_name.remove(&(container, name));
+                layers.push(Layer {
+                    structure: nested,
+                    record,
+                    scope: Maybe::Absent(component_scope::Absent::Body),
+                });
+                continue;
+            }
+            if let Some(clashing) = self.collected.slots.get_mut(slot.0) {
+                clashing.refuse(introduced.node, LoweringRefusal::DuplicateDefinition {
+                    span: named.span,
+                    name,
+                    first: introduced.span,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Match the module at `structure` against its own signature.
+    ///
+    /// # Specification
+    /// - requires: `structure`'s body is read and its member signatures
+    ///   absorbed.
+    /// - ensures: an unascribed module exports every member it declares, in
+    ///   source order. An ascribed module exports exactly its value components,
+    ///   in signature order, each found by name: a definition member takes the
+    ///   component's type, as its signature when it has none or only a derived
+    ///   one, and as a witness otherwise; a nested module takes a record-typed
+    ///   component as a layer. A manifest type component is recorded with a
+    ///   held slot owning its type; every type sees the manifest components
+    ///   before it. A component no member supplies, a nested module stated a
+    ///   type other than a record, and a type component the fragment does not
+    ///   read each file a held slot carrying the refusal under the component's
+    ///   name; members the signature omits stay admitted and are not exported.
+    /// - provides: the module's own coercive matching.
+    /// - fails: [`LoweringRefusal::UnknownMold`] and
+    ///   [`LoweringRefusal::BudgetExceeded`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`] and
+    /// [`LoweringRefusal::BudgetExceeded`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the component forms separated by a value component
+    ///   met by an untyped member, by a member with its own signature, by a
+    ///   nested module and by nothing, a manifest component named by a later
+    ///   one, and each unread type component; hiding by a member the signature
+    ///   omits; order by a reordered signature, each asserted as the exact
+    ///   exports, declared types or refusal.
+    /// - witness: `modules::modules::a_reordered_signature_matches_and_canonicalizes`
+    /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `modules::modules::a_missing_signature_component_is_rejected_at_the_signature`
+    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
+    /// - witness: `modules::modules::a_bare_type_component_declines_and_keeps_its_siblings`
+    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    /// - witness: `modules::modules::a_dangling_member_signature_is_an_obligation`
+    /// - witness: `modules::modules::an_abstract_component_under_transparent_ascription_points_at_seal`
+    fn match_signature(
+        &mut self,
+        structure: StructureIndex,
+        layers: &mut Vec<Layer>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let container = Container::Module(structure);
+        let Some(entry) = self.collected.structures.get(structure.0)
+        else {
+            return Ok(());
+        };
+        let module = entry.name;
+        let Maybe::Present(components) = entry.ascription.clone()
+        else {
+            let exports = entry
+                .members
+                .iter()
+                .copied()
+                .filter(|member| match *member {
+                    | Member::Slot(slot) => self
+                        .collected
+                        .slots
+                        .get(slot.0)
+                        .is_some_and(|held| held.role == Role::Declared),
+                    | Member::Module(_) => true,
+                })
+                .collect();
+            if let Some(opened) = self.collected.structures.get_mut(structure.0) {
+                opened.exports = exports;
+            }
+            return Ok(());
+        };
+        let mut exports = Vec::new();
+        let mut types = Vec::new();
+        for component in components {
+            self.fuel.spend()?;
+            let scope = ComponentScope {
+                structure,
+                before: types.len(),
+            };
+            let stated = match component.form {
+                | ComponentForm::Value(stated) => stated,
+                | ComponentForm::Manifest(defined) => {
+                    let held =
+                        self.held(container, component.name, component.named, component.named);
+                    self.collected.own(defined.node, held);
+                    self.collected.scopes.push((defined.node, scope));
+                    types.push(TypeComponent {
+                        name: component.name,
+                        defined,
+                        held,
+                    });
+                    continue;
+                },
+                | ComponentForm::Unread(form) => {
+                    let refusal = LoweringRefusal::UnreadAscription {
+                        span: component.named.span,
+                        name: component.name,
+                        form,
+                    };
+                    let _held = self.refuse_held(
+                        container,
+                        component.name,
+                        component.named,
+                        component.named,
+                        refusal,
+                    );
+                    continue;
+                },
+            };
+            if let Maybe::Present(found) =
+                self.state_component(container, module, component, stated, scope, layers)?
+                && !exports.contains(&found)
+            {
+                exports.push(found);
+            }
+        }
+        if let Some(matched) = self.collected.structures.get_mut(structure.0) {
+            matched.exports = exports;
+            matched.types = types;
+            matched.coerced = Coerced(true);
+        }
+
+        Ok(())
+    }
+
+    /// State the value component `component`, of type `stated`, for the
+    /// member of its name in `container`, the module `module` names.
+    ///
+    /// # Specification
+    /// - requires: `container` is the module the component's signature
+    ///   ascribes.
+    /// - ensures: as [`Self::match_signature`] for one value component; the
+    ///   member found is yielded, and nothing when the component refused.
+    /// - provides: the per-component half of [`Self::match_signature`] and of
+    ///   [`Self::layer`].
+    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    fn state_component(
+        &mut self,
+        container: Container,
+        module: SurfaceName<'source>,
+        component: Component<'source>,
+        stated: Placed,
+        scope: ComponentScope,
+        layers: &mut Vec<Layer>,
+    ) -> Result<Maybe<Member, declared_member::Absent>, LoweringRefusal<'source>>
+    {
+        let found = self.member_named(container, component.name);
+        match found {
+            | Maybe::Present(Member::Slot(slot)) => {
+                self.state(slot, stated, component.named, Maybe::Present(scope));
+            },
+            | Maybe::Present(Member::Module(nested)) => {
+                let form = self.form_name(stated)?;
+                if form.as_ref() != RECORD_TYPE {
+                    let refusal = LoweringRefusal::OutOfFragment {
+                        span: stated.span,
+                        form,
+                        sort: FragmentSort::Module,
+                        boundary: FragmentBoundary::WrongSort,
+                    };
+                    let _held = self.refuse_held(
+                        container,
+                        component.name,
+                        component.named,
+                        component.named,
+                        refusal,
+                    );
+                    return Ok(Maybe::Absent(declared_member::Absent::Undeclared));
+                }
+                layers.push(Layer {
+                    structure: nested,
+                    record: stated,
+                    scope: Maybe::Present(scope),
+                });
+            },
+            | Maybe::Absent(_) => {
+                let refusal = LoweringRefusal::UnknownMember {
+                    span: component.named.span,
+                    module,
+                    member: component.name,
+                };
+                let _held = self.refuse_held(
+                    container,
+                    component.name,
+                    component.named,
+                    component.named,
+                    refusal,
+                );
+            },
+        }
+
+        Ok(found)
+    }
+
+    /// The member `container`'s body declares under `name`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn member_named(
+        &self,
+        container: Container,
+        name: SurfaceName<'source>,
+    ) -> Maybe<Member, declared_member::Absent>
+    {
+        if let Some(&slot) = self.collected.by_name.get(&(container, name)) {
+            return Maybe::Present(Member::Slot(slot));
+        }
+        match self.collected.modules.get(&(container, name)) {
+            | Some(&nested) => Maybe::Present(Member::Module(nested)),
+            | None => Maybe::Absent(declared_member::Absent::Undeclared),
+        }
+    }
+
+    /// State `stated`, a type written at `at`, for the definition member at
+    /// `member`.
+    ///
+    /// # Specification
+    /// - requires: `member` names a live slot.
+    /// - ensures: a member with no signature, or with only the one a function
+    ///   tail derives, takes `stated` as its signature, the derived one filed
+    ///   as a witness; a member with a written signature keeps it and `stated`
+    ///   is filed as a witness. The slot `stated` lands on owns it, and it sees
+    ///   `scope`'s manifest type components.
+    /// - provides: the one way a signature types a member.
+    /// - fails: never.
+    /// - panics: none.
+    fn state(
+        &mut self,
+        member: SlotIndex,
+        stated: Placed,
+        at: Placed,
+        scope: Maybe<ComponentScope, component_scope::Absent>,
+    )
+    {
+        let half = Half {
+            declaration: at,
+            operand: Operand::Written(stated),
+        };
+        let Some(entry) = self.collected.slots.get_mut(member.0)
+        else {
+            return;
+        };
+        let owner = match entry.signature {
+            | Maybe::Absent(_) => {
+                entry.signature = Maybe::Present(half);
+                member
+            },
+            | Maybe::Present(
+                derived @ Half {
+                    operand: Operand::Function,
+                    ..
+                },
+            ) => {
+                entry.signature = Maybe::Present(half);
+                let _witness = self.witness(member, derived);
+                member
+            },
+            | Maybe::Present(_) => self.witness(member, half),
+        };
+        self.collected.own(stated.node, owner);
+        if let Maybe::Present(seen) = scope {
+            self.collected.scopes.push((stated.node, seen));
+        }
+    }
+
+    /// Apply one layer: a record type stating the signature of a nested
+    /// module, after the signatures already applied to it.
+    ///
+    /// # Specification
+    /// - requires: the layer's module is closed.
+    /// - ensures: the module's exports become the record's fields, in field
+    ///   order, each found among the exports so far: a definition member takes
+    ///   the field's type as [`Self::state`] states it, and a nested module a
+    ///   record-typed field as a further layer queued on `queue`. A field the
+    ///   exports do not hold files a held slot carrying the refusal under its
+    ///   name; a record out of shape files one under the module's name.
+    /// - provides: the matching of a module against a signature its enclosing
+    ///   module states for it.
+    /// - fails: [`LoweringRefusal::UnknownMold`].
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a layer from the enclosing module's signature and one
+    ///   from a member signature, the latter disagreeing with the module's own,
+    ///   each asserted as the exact exports and the checker's verdict.
+    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+    /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
+    fn layer(
+        &mut self,
+        layer: Layer,
+        queue: &mut Vec<Layer>,
+    ) -> Result<(), LoweringRefusal<'source>>
+    {
+        let mut pieces = Pieces::new();
+        read_pieces(self.pbg, self.tree, layer.record.node, &mut pieces)?;
+        let fields = match self.fields(layer.record, &pieces) {
+            | Ok(fields) => fields,
+            | Err(refusal) => {
+                self.fault_at(layer.structure, layer.record, refusal);
+                return Ok(());
+            },
+        };
+        let container = Container::Module(layer.structure);
+        let Some((module, exports)) = self
+            .collected
+            .structures
+            .get(layer.structure.0)
+            .map(|entry| (entry.name, entry.exports.clone()))
+        else {
+            return Ok(());
+        };
+        let mut kept = Vec::new();
+        for field in fields {
+            let found = exports
+                .iter()
+                .copied()
+                .find(|export| self.member_name(*export) == field.name);
+            match found {
+                | Some(Member::Slot(slot)) => {
+                    self.state(slot, field.stated, field.named, layer.scope);
+                },
+                | Some(Member::Module(nested)) => {
+                    let form = self.form_name(field.stated)?;
+                    if form.as_ref() != RECORD_TYPE {
+                        let refusal = LoweringRefusal::OutOfFragment {
+                            span: field.stated.span,
+                            form,
+                            sort: FragmentSort::Module,
+                            boundary: FragmentBoundary::WrongSort,
+                        };
+                        let _held = self.refuse_held(
+                            container,
+                            field.name,
+                            field.named,
+                            field.named,
+                            refusal,
+                        );
+                        continue;
+                    }
+                    queue.push(Layer {
+                        structure: nested,
+                        record: field.stated,
+                        scope: layer.scope,
+                    });
+                },
+                | None => {
+                    let refusal = LoweringRefusal::UnknownMember {
+                        span: field.named.span,
+                        module,
+                        member: field.name,
+                    };
+                    let _held =
+                        self.refuse_held(container, field.name, field.named, field.named, refusal);
+                    continue;
+                },
+            }
+            if let Some(export) = found
+                && !kept.contains(&export)
+            {
+                kept.push(export);
+            }
+        }
+        if let Some(entry) = self.collected.structures.get_mut(layer.structure.0) {
+            entry.exports = kept;
+            entry.coerced = Coerced(true);
+        }
+
+        Ok(())
+    }
+
+    /// Read a record type's fields, `#{ name : T, … }`.
+    ///
+    /// # Specification
+    /// - requires: `pieces` is the reading of the record type `record`.
+    /// - ensures: every field in order, when the tiles read `#{`, fields
+    ///   separated by `,`, and `}` with nothing after.
+    /// - provides: the reading half of [`Self::layer`].
+    /// - fails: yields the repair the record holds, a misplaced tile, or the
+    ///   hole's refusal for a field type not written as one form, each naming
+    ///   the record form.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// [`LoweringRefusal::MalformedForm`].
+    fn fields(
+        &self,
+        record: Placed,
+        pieces: &Pieces,
+    ) -> Result<Vec<Field<'source>>, LoweringRefusal<'source>>
+    {
+        let form = self.form_name(record)?;
+        if let Maybe::Present(repaired) = pieces.repair {
+            return Err(LoweringRefusal::MalformedForm {
+                span: repaired.span,
+                form,
+                fault: FormFault::Repaired(repaired.repair),
+            });
+        }
+        let mut cursor = Cursor::new(&pieces.pieces, record.span);
+        if let Maybe::Absent(_) = cursor.tile(TileName::RECORD) {
+            return Err(misplaced_in(form, cursor.here()));
+        }
+        let mut fields = Vec::new();
+        loop {
+            if let Maybe::Present(_) = cursor.tile(TileName::BRACE_CLOSE) {
+                break;
+            }
+            let Maybe::Present(named) = cursor.tile(TileName::IDENTIFIER)
+            else {
+                return Err(misplaced_in(form, cursor.here()));
+            };
+            if let Maybe::Absent(_) = cursor.tile(TileName::COLON) {
+                return Err(misplaced_in(form, cursor.here()));
+            }
+            fields.push(Field {
+                name: self.name_of(named),
+                named,
+                stated: one_in(form, cursor.operands())?,
+            });
+            if let Maybe::Absent(_) = cursor.tile(TileName::COMMA)
+                && let Maybe::Absent(_) = cursor.at(TileName::BRACE_CLOSE)
+            {
+                return Err(misplaced_in(form, cursor.here()));
+            }
+        }
+        if let Maybe::Present(_) = cursor.peek() {
+            return Err(misplaced_in(form, cursor.here()));
+        }
+
+        Ok(fields)
+    }
+
+    /// The name `member` is declared under.
+    ///
+    /// # Specification
+    /// trivial.
+    fn member_name(
+        &self,
+        member: Member,
+    ) -> SurfaceName<'source>
+    {
+        match member {
+            | Member::Slot(slot) => self
+                .collected
+                .slots
+                .get(slot.0)
+                .map_or_else(|| SurfaceName::from(""), |entry| entry.name),
+            | Member::Module(nested) => self
+                .collected
+                .structures
+                .get(nested.0)
+                .map_or_else(|| SurfaceName::from(""), |entry| entry.name),
+        }
+    }
+
+    /// The name of the form `placed` stands for.
+    ///
+    /// # Specification
+    /// trivial.
+    fn form_name(
+        &self,
+        placed: Placed,
+    ) -> Result<FormName, LoweringRefusal<'source>>
+    {
+        let Some(node) = self.tree.node(placed.node)
+        else {
+            return Ok(FormName::ROOT);
+        };
+
+        Ok(match shape_of(self.pbg, node)? {
+            | Shape::Form { name, .. } => name,
+            | Shape::Root | Shape::Repair(_) | Shape::Layout => FormName::ROOT,
+        })
+    }
+}
+
+/// What a type component written `type T` states after its name.
+///
+/// # Specification
+/// - requires: `cursor` stands just past the component's name.
+/// - ensures: `= τ` a manifest component; `: κ` a kinded one; a parameter list,
+///   skipped to its closing `)`, a parameterized one whatever follows; nothing
+///   an abstract one. The cursor stands past the component.
+/// - provides: the type-component half of a module signature.
+/// - fails: yields a misplaced-tile refusal for a parameter list that does not
+///   close, and the hole's refusal for a type not written as one form.
+/// - panics: none.
+///
+/// # Errors
+/// [`LoweringRefusal::MalformedForm`] naming the module form.
+fn type_component<'source>(
+    cursor: &mut Cursor<'_>
+) -> Result<ComponentForm, LoweringRefusal<'source>>
+{
+    let parameterized = cursor.tile(TileName::PAREN_OPEN);
+    if let Maybe::Present(_) = parameterized {
+        let mut depth = 1_usize;
+        while depth > 0_usize {
+            depth = match cursor.read() {
+                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_OPEN => {
+                    depth.saturating_add(1_usize)
+                },
+                | Maybe::Present(Piece::Tile { label, .. }) if label == TileName::PAREN_CLOSE => {
+                    depth.saturating_sub(1_usize)
+                },
+                | Maybe::Present(_) => depth,
+                | Maybe::Absent(_) => {
+                    return Err(misplaced_in(FormName::MODULE, cursor.here()));
+                },
+            };
+        }
+    }
+    let form = if let Maybe::Present(_) = cursor.tile(TileName::EQUALS) {
+        let defined = one_in(FormName::MODULE, cursor.operands())?;
+        ComponentForm::Manifest(defined)
+    }
+    else if let Maybe::Present(_) = cursor.tile(TileName::COLON) {
+        let _kind = one_in(FormName::MODULE, cursor.operands())?;
+        ComponentForm::Unread(AscriptionForm::Kinded)
+    }
+    else {
+        ComponentForm::Unread(AscriptionForm::Abstract)
+    };
+
+    Ok(match parameterized {
+        | Maybe::Present(_) => ComponentForm::Unread(AscriptionForm::Parameterized),
+        | Maybe::Absent(_) => form,
+    })
+}
+
+/// The operand a one-operand hole of `form` holds, or the fault its run
+/// earns.
+///
+/// # Specification
+/// trivial.
+const fn one_in<'source>(
+    form: FormName,
+    run: Run,
+) -> Result<Placed, LoweringRefusal<'source>>
+{
+    match run {
+        | Run::One(operand) => Ok(operand),
+        | Run::Empty(gap) => Err(LoweringRefusal::MalformedForm {
+            span: gap,
+            form,
+            fault: FormFault::MissingOperand,
+        }),
+        | Run::Several { extra, .. } => Err(extra_operand(form, extra)),
+    }
+}
+
+/// The refusal a tile of `form` out of place earns.
+///
+/// # Specification
+/// trivial.
+const fn misplaced_in<'source>(
+    form: FormName,
+    span: ByteSpan,
+) -> LoweringRefusal<'source>
+{
+    LoweringRefusal::MalformedForm {
+        span,
+        form,
+        fault: FormFault::MisplacedTile,
+    }
+}
+
+/// The refusal a module whose own pieces hold `repair` at `span` earns.
+///
+/// # Specification
+/// trivial.
+const fn repaired_module<'source>(
+    span: ByteSpan,
+    repair: Repair,
+) -> LoweringRefusal<'source>
+{
+    LoweringRefusal::MalformedForm {
+        span,
+        form: FormName::MODULE,
+        fault: FormFault::Repaired(repair),
     }
 }
 
@@ -1312,6 +2958,10 @@ pub struct DeclarationParts<'source>
 {
     /// The declared name.
     pub name: SurfaceName<'source>,
+    /// Where the name is declared.
+    pub container: Container,
+    /// What the declaration stands for.
+    pub role: Role,
     /// The admission position the name takes.
     pub constant: ConstantIndex,
     /// The bytes covered by the declaration that introduced the name.
@@ -1359,6 +3009,30 @@ impl<'source> LoweredDeclaration<'source>
     pub const fn name(&self) -> SurfaceName<'source>
     {
         self.parts.name
+    }
+
+    /// Where the name is declared: the top level, or the module whose path
+    /// [`LoweredModule::path_of`] spells.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn container(&self) -> Container
+    {
+        self.parts.container
+    }
+
+    /// What the declaration stands for: a declared name, a witness checking
+    /// a second type stated for a member, or a held refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn role(&self) -> Role
+    {
+        self.parts.role
     }
 
     /// The admission position the name takes.
@@ -1428,6 +3102,153 @@ impl<'source> LoweredDeclaration<'source>
     }
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a manifest type component carries no lowered type.
+    pub mod manifest_type {
+        /// The type it names did not lower.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The type refused, and the refusal is carried by a held
+            /// declaration under the component's name.
+            Unlowered,
+        }
+    }
+}
+
+/// One value component a lowered module exports.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ValueComponent<'source>
+{
+    /// The component's name.
+    pub name: SurfaceName<'source>,
+    /// The admission position of the member it resolves to.
+    pub constant: ConstantIndex,
+}
+
+/// One manifest type component of a lowered module.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ManifestComponent<'source>
+{
+    /// The component's name.
+    pub name: SurfaceName<'source>,
+    /// The type it is manifestly equal to.
+    pub defined: Maybe<ValueTypeId, manifest_type::Absent>,
+}
+
+/// One module, lowered: the stratum item recording its path, the components
+/// it exports and whether matching coerced its body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LoweredStructure<'source>
+{
+    /// The module's path, outermost first, its own name last.
+    path: Vec<SurfaceName<'source>>,
+    /// The bytes the module form covers.
+    span: ByteSpan,
+    /// The value components it exports, in signature order once matched and
+    /// in source order otherwise.
+    values: Vec<ValueComponent<'source>>,
+    /// The nested modules it exports, by name, in the same order.
+    modules: Vec<SurfaceName<'source>>,
+    /// The manifest type components, in signature order.
+    types: Vec<ManifestComponent<'source>>,
+    /// Whether matching against a signature coerced the body.
+    coerced: Coerced,
+}
+
+impl<'source> LoweredStructure<'source>
+{
+    /// The stratum item holding these parts.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        path: Vec<SurfaceName<'source>>,
+        span: ByteSpan,
+        values: Vec<ValueComponent<'source>>,
+        modules: Vec<SurfaceName<'source>>,
+        types: Vec<ManifestComponent<'source>>,
+        coerced: Coerced,
+    ) -> Self
+    {
+        Self {
+            path,
+            span,
+            values,
+            modules,
+            types,
+            coerced,
+        }
+    }
+
+    /// The module's path, outermost first, its own name last.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn path(&self) -> &[SurfaceName<'source>]
+    {
+        &self.path
+    }
+
+    /// The bytes the module form covers.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn span(&self) -> ByteSpan
+    {
+        self.span
+    }
+
+    /// The value components it exports.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn values(&self) -> &[ValueComponent<'source>]
+    {
+        &self.values
+    }
+
+    /// The nested modules it exports, by name.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn modules(&self) -> &[SurfaceName<'source>]
+    {
+        &self.modules
+    }
+
+    /// The manifest type components, in signature order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn types(&self) -> &[ManifestComponent<'source>]
+    {
+        &self.types
+    }
+
+    /// Whether matching against a signature coerced the body.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn coerced(&self) -> Coerced
+    {
+        self.coerced
+    }
+}
+
 /// One module, lowered: its declarations, its attributes, its origins, its
 /// imports, and the outermost scope its names were declared in.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1435,6 +3256,8 @@ pub struct LoweredModule<'source>
 {
     /// The declarations, in admission order.
     declarations: Vec<LoweredDeclaration<'source>>,
+    /// The modules, in pre-order: a module before every module nested in it.
+    structures: Vec<LoweredStructure<'source>>,
     /// The attribute side table, keyed by declaration content identity.
     attributes: AttributeTable,
     /// Every minted core node's origin, and the declarations' own.
@@ -1455,6 +3278,7 @@ impl<'source> LoweredModule<'source>
     #[must_use]
     pub const fn new(
         declarations: Vec<LoweredDeclaration<'source>>,
+        structures: Vec<LoweredStructure<'source>>,
         attributes: AttributeTable,
         origins: OriginTable,
         imports: ModuleImports<'source>,
@@ -1463,11 +3287,95 @@ impl<'source> LoweredModule<'source>
     {
         Self {
             declarations,
+            structures,
             attributes,
             origins,
             imports,
             recognition,
         }
+    }
+
+    /// The modules, in pre-order: a module before every module nested in it.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn structures(&self) -> &[LoweredStructure<'source>]
+    {
+        &self.structures
+    }
+
+    /// The structured name of `declaration`: the path of the module it is
+    /// declared in, then its own name.
+    ///
+    /// # Specification
+    /// - requires: `declaration` is one of this module's declarations.
+    /// - ensures: one segment for a top-level declaration, and the enclosing
+    ///   module's path followed by the name for a member, so a member nested at
+    ///   depth `n` has `n + 1` segments.
+    /// - provides: the name a declaration exports under.
+    /// - fails: never.
+    /// - panics: none.
+    #[inline]
+    #[must_use]
+    pub fn path_of(
+        &self,
+        declaration: &LoweredDeclaration<'source>,
+    ) -> Vec<SurfaceName<'source>>
+    {
+        let mut path = match declaration.container() {
+            | Container::TopLevel => Vec::new(),
+            | Container::Module(structure) => self
+                .structures
+                .get(structure.0)
+                .map_or_else(Vec::new, |module| module.path.clone()),
+        };
+        path.push(declaration.name());
+
+        path
+    }
+
+    /// The structured name of every declared name, by admission position:
+    /// the names a checker's export writes into each declaration that crossed.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: one entry per declaration whose role is [`Role::Declared`],
+    ///   at its admission position, holding [`Self::path_of`] segment for
+    ///   segment; a witness and a held declaration declare no name and take no
+    ///   entry.
+    /// - provides: the name each flattened member is exported under, while
+    ///   every reference still reads the admission position.
+    /// - fails: never; a surface name never holds the segment separator.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module nesting a member five segments deep beside a
+    ///   witness and a top-level declaration, exported through the checker and
+    ///   decoded, each declaration asserted at its exact name.
+    /// - witness: `modules::modules::modules_lower_to_named_member_declarations`
+    #[inline]
+    #[must_use]
+    pub fn structured_names(&self) -> BTreeMap<ConstantIndex, StructuredName>
+    {
+        let mut names = BTreeMap::new();
+        for declaration in &self.declarations {
+            if declaration.role() != Role::Declared {
+                continue;
+            }
+            let segments: Option<Vec<NameSegment>> = self
+                .path_of(declaration)
+                .into_iter()
+                .map(|segment| NameSegment::from_text(String::from(segment.as_ref())))
+                .collect();
+            if let Some(segments) = segments {
+                let _replaced =
+                    names.insert(declaration.constant(), StructuredName::from(segments));
+            }
+        }
+
+        names
     }
 
     /// The imports, in source order.
@@ -1576,8 +3484,10 @@ mod tests
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
+    use super::Container;
     use super::DeclarationSlot;
     use super::Half;
+    use super::Role;
     use super::SlotIndex;
     use super::collect;
     use super::declaration_half;
@@ -1870,6 +3780,8 @@ mod tests
         };
         let mut slot = DeclarationSlot {
             name: SurfaceName::from("x"),
+            container: Container::TopLevel,
+            role: Role::Declared,
             constant: ConstantIndex::from(0_usize),
             introduced_by: introduced,
             named: introduced,

@@ -45,10 +45,10 @@ impl LoweringRefusal<'_>
     /// - ensures: the class is a function of the variant alone — two refusals
     ///   of one variant classify alike whatever their spans, names or
     ///   suggestions hold — and every reserved, unadmitted, wrong-sort or
-    ///   wrong-arity form and every graded bridge classifies as
-    ///   unrepresentable, the exhausted allowance, the grammar mismatch and the
-    ///   unknown mold as engine faults, and every other refusal as malformed
-    ///   source.
+    ///   wrong-arity form, every graded bridge and every unread ascription
+    ///   classifies as unrepresentable, the exhausted allowance, the grammar
+    ///   mismatch and the unknown mold as engine faults, and every other
+    ///   refusal as malformed source.
     /// - provides: the fact a report groups by and a job alarming on the
     ///   fragment's reach counts.
     /// - fails: never.
@@ -79,10 +79,13 @@ impl LoweringRefusal<'_>
             | Self::DuplicateAttribute { .. }
             | Self::MissingPayload { .. }
             | Self::NonValuePayload { .. }
-            | Self::IllTypedPayload { .. } => FailureClass::MalformedSource,
-            | Self::OutOfFragment { .. } | Self::GradedBridge { .. } => {
-                FailureClass::Unrepresentable
-            },
+            | Self::IllTypedPayload { .. }
+            | Self::ForwardMemberReference { .. }
+            | Self::UnknownMember { .. }
+            | Self::LowercaseModuleName { .. } => FailureClass::MalformedSource,
+            | Self::OutOfFragment { .. }
+            | Self::GradedBridge { .. }
+            | Self::UnreadAscription { .. } => FailureClass::Unrepresentable,
             | Self::BudgetExceeded { .. }
             | Self::GrammarMismatch { .. }
             | Self::UnknownMold { .. } => FailureClass::EngineFault,
@@ -106,6 +109,7 @@ mod tests
     use crate::attribute::AttributeSchema;
     use crate::attribute::PayloadForm;
     use crate::attribute::suggestion;
+    use crate::error::AscriptionForm;
     use crate::error::FormFault;
     use crate::error::FragmentBoundary;
     use crate::error::FragmentSort;
@@ -122,7 +126,7 @@ mod tests
     ///
     /// # Specification
     /// trivial.
-    fn vocabulary() -> [LoweringRefusal<'static>; 18_usize]
+    fn vocabulary() -> [LoweringRefusal<'static>; 22_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
         let owes = registered(SurfaceName::from("owes"));
@@ -212,6 +216,25 @@ mod tests
                 span: empty,
                 grade: SurfaceName::from("1"),
             },
+            LoweringRefusal::ForwardMemberReference {
+                span: empty,
+                name: SurfaceName::from("second"),
+                declared: empty,
+            },
+            LoweringRefusal::UnknownMember {
+                span: empty,
+                module: SurfaceName::from("Facts"),
+                member: SurfaceName::from("hidden"),
+            },
+            LoweringRefusal::UnreadAscription {
+                span: empty,
+                name: SurfaceName::from("T"),
+                form: AscriptionForm::Abstract,
+            },
+            LoweringRefusal::LowercaseModuleName {
+                span: empty,
+                name: SurfaceName::from("natAdd"),
+            },
         ]
     }
 
@@ -237,6 +260,10 @@ mod tests
             FailureClass::MalformedSource,
             FailureClass::MalformedSource,
             FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
+            FailureClass::MalformedSource,
+            FailureClass::Unrepresentable,
+            FailureClass::MalformedSource,
         ];
 
         for (refusal, class) in vocabulary().into_iter().zip(expected) {

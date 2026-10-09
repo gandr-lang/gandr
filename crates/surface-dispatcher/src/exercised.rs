@@ -475,6 +475,10 @@ fn lowering_row(
         | LoweringRefusal::MissingPayload { .. }
         | LoweringRefusal::NonValuePayload { .. }
         | LoweringRefusal::IllTypedPayload { .. }
+        | LoweringRefusal::ForwardMemberReference { .. }
+        | LoweringRefusal::UnknownMember { .. }
+        | LoweringRefusal::UnreadAscription { .. }
+        | LoweringRefusal::LowercaseModuleName { .. }
         | LoweringRefusal::BudgetExceeded { .. }
         | LoweringRefusal::GrammarMismatch { .. }
         | LoweringRefusal::UnknownMold { .. } => {},

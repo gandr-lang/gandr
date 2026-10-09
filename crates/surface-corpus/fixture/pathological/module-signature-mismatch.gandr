@@ -1,0 +1,4 @@
+module Bad : #{ x: String } {
+  @[ refuses("TypeMismatch") ]
+  def x = 1;
+}
