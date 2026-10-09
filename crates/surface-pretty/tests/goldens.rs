@@ -1,10 +1,11 @@
 //! The printer through its public surface: every former at its exact
 //! spelling, and representative types and values pinned at two page widths.
 //!
-//! Each golden presents one node at the narrow page (40 columns) and the wide
+//! Paired goldens present one node at the narrow page (40 columns) and the wide
 //! page (100 columns). The wide page must hold exactly the one-line spelling
 //! written beside the fixture — the flattened image of every document is that
 //! line — and both pages are compared whole against `tests/golden/`.
+//! A zero-column pair pins fallback when both separator branches are tainted.
 //! Regenerate with `UPDATE_EXPECT=1` and review the diff.
 
 #[cfg(test)]
@@ -469,6 +470,25 @@ mod tests
             flat: "(\"analytical engine\", (\"ada lovelace\", 1843))",
             fidelity: Fidelity::Faithful,
         });
+    }
+
+    /// At zero columns, the inline space and the two-column indentation both
+    /// exceed the computation width; their choice keeps the broken separator.
+    #[test]
+    fn doubly_tainted_pair_keeps_the_broken_separator()
+    {
+        let mut core = CoreArena::new();
+        let first = text(&mut core, Written("abcdefghijklmnopq"));
+        let second = text(&mut core, Written("rstuvwxyzabcdefgh"));
+        let pair = core.value_pair(first, second);
+        let read = normal_form(&mut core, pair);
+        let presentation = presented(
+            &CoreSource::new(&core, &[]),
+            Root::Value(read),
+            PageWidth::from(0_u32),
+        );
+        assert_eq!(presentation.fidelity(), Fidelity::Faithful);
+        expect_file!["golden/tainted_pair.zero.txt"].assert_eq(&format!("{presentation}\n"));
     }
 
     /// A nominal type without arguments is its bare name at both pages: the
