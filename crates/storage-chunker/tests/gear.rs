@@ -31,7 +31,24 @@ use crate::common::record_spans;
 /// Calls [`ChunkLimits::new`] with six raw limits.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing; both arrays may contain arbitrary limits.
+/// - ensures: validation preserves the six offered fields on success and the
+///   first parameter-refusal reason on failure.
+/// - provides: array-shaped inputs for the validation boundary witnesses.
+/// - fails: returns the validating constructor's exact refusal.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 at zero, ordering and width boundaries, including competing
+///   failures; exact fields and refusal reasons separate argument permutation
+///   and altered error mapping.
+/// - witness: `tests::gear::invalid_limits_are_refused_by_reason`
+/// - witness: `tests::gear::equal_limits_are_admitted`
+#[anodized::spec(ensures: |ret| {
+    let [min, target, max] = bytes;
+    let [min_records, target_records, max_records] = records;
+    ret == ChunkLimits::new(min, target, max, min_records, target_records, max_records)
+})]
 fn raw_limits(
     bytes: [ByteCount; 3],
     records: [RecordCount; 3],
@@ -109,6 +126,27 @@ fn invalid_limits_are_refused_by_reason()
             [1, 6, 5],
             InvalidParameterReason::InvertedRecordLimits,
         ),
+        ([0, 0, 0], [0, 0, 0], InvalidParameterReason::ZeroByteLimit),
+        (
+            [3, 2, 1],
+            [0, 0, 0],
+            InvalidParameterReason::ZeroRecordLimit,
+        ),
+        (
+            [3, 2, 1],
+            [3, 2, 1],
+            InvalidParameterReason::MinByteExceedsTargetByte,
+        ),
+        (
+            [1, past_widest, 1],
+            [3, 2, 1],
+            InvalidParameterReason::InvertedByteLimits,
+        ),
+        (
+            [1, past_widest, past_widest],
+            [3, 2, 1],
+            InvalidParameterReason::TargetByteExceedsU32,
+        ),
     ];
 
     for (bytes, records, reason) in cases {
@@ -125,22 +163,32 @@ fn equal_limits_are_admitted()
 {
     let widest = u64::from(u32::MAX);
 
-    // Each refusal above has its admitted neighbour: equal limits where the
-    // refusal had them one apart, and a target of exactly `u32::MAX`.
-    assert!(
-        raw_limits(
-            [8, 8, 8].map(ByteCount::from),
-            [2, 2, 2].map(RecordCount::from)
-        )
-        .is_ok()
-    );
-    assert!(
-        raw_limits(
-            [1, widest, widest].map(ByteCount::from),
-            [1, 1, 1].map(RecordCount::from)
-        )
-        .is_ok()
-    );
+    for (bytes, records) in [
+        ([8, 8, 8], [2, 2, 2]),
+        ([1, widest, widest], [1, 1, 1]),
+        ([1, 3, 9], [2, 4, 7]),
+    ] {
+        let limits = raw_limits(bytes.map(ByteCount::from), records.map(RecordCount::from))
+            .expect("valid limit boundaries");
+        assert_eq!(
+            [
+                limits.min_bytes(),
+                limits.target_bytes(),
+                limits.max_bytes()
+            ]
+            .map(u64::from),
+            bytes
+        );
+        assert_eq!(
+            [
+                limits.min_records(),
+                limits.target_records(),
+                limits.max_records()
+            ]
+            .map(u32::from),
+            records
+        );
+    }
 }
 
 #[test]
@@ -429,4 +477,32 @@ fn many_tiny_and_near_cap_records_stay_within_the_caps()
 
     assert_partition(&chunks, near_cap);
     assert_within_caps(&chunks, &near_cap_limits);
+}
+
+#[test]
+fn empty_records_keep_their_record_positions()
+{
+    let records: [&[u8]; 4] = [b"", b"", b"x", b""];
+    let records = CanonicalRecords::from(records.as_slice());
+    let params = params(limits(
+        [4, 8, 16].map(ByteCount::from),
+        [1, 4, 8].map(RecordCount::from),
+    ));
+    let chunks = chunk_record_slices(records, &params).expect("empty records are valid");
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(
+        chunks[0].bytes(),
+        ByteSpan::new(BytePosition::ZERO, BytePosition::from(1_u64))
+    );
+    assert_eq!(chunks[0].records().start(), RecordPosition::ZERO);
+    assert_eq!(chunks[0].records().end(), RecordPosition::from(4_u64));
+    assert_eq!(chunks[0].reason(), BoundaryReason::FinalRemainder);
+    assert_eq!(
+        chunk_spans(
+            CanonicalBytes::from(b"x".as_slice()),
+            &record_spans(records),
+            &params
+        ),
+        Ok(chunks)
+    );
 }

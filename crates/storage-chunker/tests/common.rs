@@ -24,6 +24,23 @@ use gandr_storage_chunker::SeedPolicy;
 /// - ensures: the limits carry exactly the six values.
 /// - provides: one line per fixture's limits.
 /// - panics: when the limits are refused, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L3 on valid cap and minimum fixtures; emitted spans and cut
+///   reasons separate substitutions of the limits those corpora exercise.
+/// - witness: `tests::gear::the_caps_force_their_reasons`
+/// - witness: `tests::gear::minimum_limits_suppress_an_early_hash_cut`
+#[anodized::spec(
+    requires: {
+        let [min, target, max] = bytes;
+        let [min_records, target_records, max_records] = records;
+        min > ByteCount::ZERO && min <= target && target <= max
+            && u32::try_from(u64::from(target)).is_ok()
+            && min_records > RecordCount::ZERO && min_records <= target_records && target_records <= max_records
+    },
+    ensures: |ret| [ret.min_bytes(), ret.target_bytes(), ret.max_bytes()] == bytes
+        && [ret.min_records(), ret.target_records(), ret.max_records()] == records,
+)]
 pub fn limits(
     bytes: [ByteCount; 3],
     records: [RecordCount; 3],
@@ -91,7 +108,21 @@ impl Concatenated
 /// - ensures: one span per record, in order, each starting where the previous
 ///   ended and the first at zero.
 /// - provides: the record edges a partition check compares chunk edges with.
-/// - panics: never for fixture-sized input.
+/// - panics: when a record length or accumulated fixture length exceeds u64.
+///
+/// # Adequacy
+/// - hypothesis: L2 on empty and nonuniform records including empty records;
+///   exact prefix spans distinguish omitted lengths, gaps and off-by-one edges.
+/// - witness: `tests::common::record_edges_match_independent_prefixes`
+#[anodized::spec(ensures: |ret| {
+    let mut expected = 0_u64;
+    ret.len() == records.as_ref().len() && ret.iter().zip(records.as_ref()).all(|(span, record)| {
+        let start = expected;
+        let Some(end) = u64::try_from(record.len()).ok().and_then(|len| start.checked_add(len)) else { return false; };
+        expected = end;
+        u64::from(span.start()) == start && u64::from(span.end()) == end
+    })
+})]
 pub fn record_spans(records: CanonicalRecords<'_>) -> Vec<ByteSpan>
 {
     let mut start = 0_u64;
@@ -112,7 +143,20 @@ pub fn record_spans(records: CanonicalRecords<'_>) -> Vec<ByteSpan>
 /// Returns the byte length of a chunk.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the chunk's byte endpoints are ordered.
+/// - ensures: the exact nonnegative difference of the endpoints.
+/// - provides: a byte-length observer independent of scanner counters.
+/// - fails: none.
+/// - panics: when the endpoints are inverted.
+///
+/// # Adequacy
+/// - hypothesis: L3 at empty, interior and maximum-width differences; exact
+///   lengths distinguish reversed subtraction and narrowing.
+/// - witness: `tests::common::length_observers_preserve_empty_and_width_boundaries`
+#[anodized::spec(
+    requires: chunk.bytes().end() >= chunk.bytes().start(),
+    ensures: |ret| u64::from(chunk.bytes().start()).checked_add(u64::from(ret)) == Some(u64::from(chunk.bytes().end())),
+)]
 pub fn byte_len(chunk: &ChunkSpan) -> ByteCount
 {
     let bytes = chunk.bytes();
@@ -126,7 +170,21 @@ pub fn byte_len(chunk: &ChunkSpan) -> ByteCount
 /// Returns the record count of a chunk.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the record endpoints are ordered and their difference fits u32.
+/// - ensures: the exact nonnegative difference of the endpoints.
+/// - provides: a record-count observer independent of scanner counters.
+/// - fails: none.
+/// - panics: when endpoints are inverted or the difference exceeds u32.
+///
+/// # Adequacy
+/// - hypothesis: L3 at empty, interior and maximum-width differences; exact
+///   counts distinguish reversed subtraction and narrowing.
+/// - witness: `tests::common::length_observers_preserve_empty_and_width_boundaries`
+#[anodized::spec(
+    requires: u64::from(chunk.records().end()).checked_sub(u64::from(chunk.records().start()))
+        .is_some_and(|len| u32::try_from(len).is_ok()),
+    ensures: |ret| u64::from(chunk.records().start()).checked_add(u64::from(u32::from(ret))) == Some(u64::from(chunk.records().end())),
+)]
 pub fn record_len(chunk: &ChunkSpan) -> RecordCount
 {
     let records = chunk.records();
@@ -148,6 +206,24 @@ pub fn record_len(chunk: &ChunkSpan) -> RecordCount
 /// - provides: the partition invariant every record-safe scan owes, checked
 ///   against the records rather than against the scan's own arithmetic.
 /// - panics: when any of those fails, naming the chunk.
+///
+/// # Adequacy
+/// - hypothesis: L1 on record-safe corpora and L3 at missing prefixes, wrong
+///   record edges, missing suffixes and empty record ranges between valid
+///   empty-byte records; acceptance and rejection separate coverage, alignment
+///   and positivity mutations without confusing byte and record emptiness.
+/// - witness: `tests::gear::the_two_entry_points_agree`
+/// - witness: `tests::common::partition_oracle_rejects_empty_record_ranges`
+/// - witness: `tests::common::partition_oracle_rejects_broken_geometry`
+#[anodized::spec(ensures: {
+    chunks.iter().all(|chunk| chunk.records().end() > chunk.records().start())
+        && chunks.array_windows::<2>().all(|pair| pair[0].bytes().end() == pair[1].bytes().start()
+            && pair[0].records().end() == pair[1].records().start())
+        && chunks.first().is_none_or(|chunk| chunk.bytes().start() == BytePosition::ZERO
+            && chunk.records().start() == RecordPosition::ZERO)
+        && chunks.last().map_or(0_u64, |chunk| u64::from(chunk.records().end()))
+            == u64::try_from(records.as_ref().len()).expect("fixture count fits")
+})]
 pub fn assert_partition(
     chunks: &[ChunkSpan],
     records: CanonicalRecords<'_>,
@@ -161,6 +237,10 @@ pub fn assert_partition(
     let mut record = RecordPosition::ZERO;
 
     for (position, chunk) in chunks.iter().enumerate() {
+        assert!(
+            chunk.records().end() > chunk.records().start(),
+            "chunk {position} contains a record"
+        );
         let first = index(chunk.records().start());
         let last = index(chunk.records().end())
             .checked_sub(1)
@@ -208,7 +288,20 @@ pub fn assert_partition(
 /// - ensures: returns only when no chunk exceeds the byte cap or the record
 ///   cap.
 /// - provides: the cap invariant every record-safe scan owes.
-/// - panics: when a chunk exceeds a cap, naming it.
+/// - panics: when a chunk exceeds a cap, has inverted endpoints or its record
+///   count exceeds the fixture observer's width.
+///
+/// # Adequacy
+/// - hypothesis: L3 at each cap and its upper neighbor, varying one axis at a
+///   time; acceptance and rejection distinguish wrong-axis and strictness
+///   faults.
+/// - witness: `tests::common::cap_oracle_rejects_each_excess`
+#[anodized::spec(ensures: chunks.iter().all(|chunk| {
+    u64::from(chunk.bytes().end()).checked_sub(u64::from(chunk.bytes().start()))
+        .is_some_and(|len| len <= u64::from(limits.max_bytes()))
+        && u64::from(chunk.records().end()).checked_sub(u64::from(chunk.records().start()))
+            .is_some_and(|len| len <= u64::from(u32::from(limits.max_records())))
+}))]
 pub fn assert_within_caps(
     chunks: &[ChunkSpan],
     limits: &ChunkLimits,
@@ -224,4 +317,113 @@ pub fn assert_within_caps(
             "chunk {position} is within the record cap"
         );
     }
+}
+
+#[test]
+fn partition_oracle_rejects_empty_record_ranges()
+{
+    let records: [&[u8]; 2] = [b"", b""];
+    let chunks = [(0_u64, 1_u64), (1, 1), (1, 2)].map(|(start, end)| {
+        ChunkSpan::new(
+            ByteSpan::new(BytePosition::ZERO, BytePosition::ZERO),
+            gandr_storage_chunker::RecordSpan::new(
+                RecordPosition::from(start),
+                RecordPosition::from(end),
+            ),
+            gandr_storage_chunker::BoundaryReason::FinalRemainder,
+        )
+    });
+    assert!(
+        std::panic::catch_unwind(|| assert_partition(
+            &chunks,
+            CanonicalRecords::from(records.as_slice())
+        ))
+        .is_err(),
+        "a zero-record chunk must be rejected even between valid empty-byte records"
+    );
+}
+
+#[test]
+fn record_edges_match_independent_prefixes()
+{
+    let records: [&[u8]; 4] = [b"", b"ab", b"cde", b""];
+    let expected = [(0_u64, 0_u64), (0, 2), (2, 5), (5, 5)]
+        .map(|(start, end)| ByteSpan::new(BytePosition::from(start), BytePosition::from(end)));
+    assert_eq!(
+        record_spans(CanonicalRecords::from(records.as_slice())).as_slice(),
+        expected.as_slice()
+    );
+    assert_eq!(
+        record_spans(CanonicalRecords::from([].as_slice())).as_slice(),
+        [].as_slice()
+    );
+}
+
+#[test]
+fn length_observers_preserve_empty_and_width_boundaries()
+{
+    for (bytes, records, expected_bytes, expected_records) in [
+        ([0_u64, 0_u64], [0_u64, 0_u64], 0_u64, 0_u32),
+        ([7, 10], [11, 15], 3, 4),
+        ([0, u64::MAX], [0, u64::from(u32::MAX)], u64::MAX, u32::MAX),
+    ] {
+        let [start, end] = bytes.map(BytePosition::from);
+        let [first, last] = records.map(RecordPosition::from);
+        let chunk = ChunkSpan::new(
+            ByteSpan::new(start, end),
+            gandr_storage_chunker::RecordSpan::new(first, last),
+            gandr_storage_chunker::BoundaryReason::FinalRemainder,
+        );
+        assert_eq!(byte_len(&chunk), ByteCount::from(expected_bytes));
+        assert_eq!(record_len(&chunk), RecordCount::from(expected_records));
+    }
+}
+
+#[test]
+fn cap_oracle_rejects_each_excess()
+{
+    let limits = limits(
+        [1, 4, 8].map(ByteCount::from),
+        [1, 2, 3].map(RecordCount::from),
+    );
+    for (bytes, records, expected_refusal) in [(8_u64, 3_u64, false), (9, 1, true), (1, 4, true)] {
+        let chunk = ChunkSpan::new(
+            ByteSpan::new(BytePosition::ZERO, BytePosition::from(bytes)),
+            gandr_storage_chunker::RecordSpan::new(
+                RecordPosition::ZERO,
+                RecordPosition::from(records),
+            ),
+            gandr_storage_chunker::BoundaryReason::FinalRemainder,
+        );
+        assert_eq!(
+            std::panic::catch_unwind(|| assert_within_caps(&[chunk], &limits)).is_err(),
+            expected_refusal
+        );
+    }
+}
+
+#[test]
+fn partition_oracle_rejects_broken_geometry()
+{
+    let records: [&[u8]; 3] = [b"ab", b"cde", b"f"];
+    let records = CanonicalRecords::from(records.as_slice());
+    let chunk = |bytes: [u64; 2], records: [u64; 2]| {
+        let [start, end] = bytes.map(BytePosition::from);
+        let [first, last] = records.map(RecordPosition::from);
+        ChunkSpan::new(
+            ByteSpan::new(start, end),
+            gandr_storage_chunker::RecordSpan::new(first, last),
+            gandr_storage_chunker::BoundaryReason::FinalRemainder,
+        )
+    };
+    let valid = [chunk([0, 2], [0, 1]), chunk([2, 6], [1, 3])];
+    assert_partition(&valid, records);
+    for invalid in [
+        [chunk([1, 2], [0, 1]), valid[1]],
+        [chunk([0, 3], [0, 1]), chunk([3, 6], [1, 3])],
+        [valid[0], chunk([2, 6], [2, 3])],
+    ] {
+        assert!(std::panic::catch_unwind(|| assert_partition(&invalid, records)).is_err());
+    }
+    assert!(std::panic::catch_unwind(|| assert_partition(&valid[.. 1], records)).is_err());
 }
