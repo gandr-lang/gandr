@@ -71,7 +71,10 @@ default-features = false
 # Runtime enforcement is selected for the whole build graph with
 # `--cfg anodized_panic`, never inferred from the optimization profile.
 # consumers:
+# - core-checker
+# - core-incremental
 # - core-nbe
+# - core-sequent
 # - core-term
 # - kernel-check-memo
 # - kernel-conversion-trace
@@ -79,9 +82,32 @@ default-features = false
 # - kernel-strata
 # - kernel-term
 # - storage-artifact
+# - storage-chunker
 # - storage-records
 # - storage-values
+# - surface-corpus
+# - surface-diagnostics
+# - surface-dispatcher
+# - surface-driver
+# - surface-grammar
+# - surface-layout
+# - surface-lowering
+# - surface-lsp
+# - surface-parser
+# - surface-pretty
+# - surface-render-remote
+# - surface-repl
+# - surface-session
 # - surface-syntax
+# - surface-tui
+# - theory-cell-complexes
+# - theory-cell-complexes-tools
+# - theory-circuit-algebras
+# - theory-coherent-resolutions
+# - theory-computads
+# - theory-deep-inference
+# - theory-graphs
+# - theory-levitation
 # - theory-orders
 [workspace.dependencies.anodized]
 git = "https://github.com/silvanshade/anodized"

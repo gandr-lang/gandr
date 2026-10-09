@@ -20,7 +20,10 @@ publish.workspace = true
 # crate's arena and admits through the kernel's choke point, which re-derives
 # every declaration the judgement accepts. Nothing here names a surface
 # crate: names, spans and syntax stay above the core.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-core-nbe.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-conversion-trace.workspace = true

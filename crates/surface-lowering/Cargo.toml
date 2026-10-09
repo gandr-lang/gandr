@@ -11,7 +11,10 @@ keywords = ["call-by-push-value", "gandr", "lowering", "no-std"]
 categories = ["compilers", "no-std"]
 publish.workspace = true
 
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-core-term.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true

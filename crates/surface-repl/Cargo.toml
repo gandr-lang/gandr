@@ -19,7 +19,10 @@ publish.workspace = true
 # table, and encodes everything onto the renderer seam's transcript blocks.
 # The session's checkpoints and kernel records live in memory. The terminal
 # face edits lines with rustyline.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-core-incremental.workspace = true
 gandr-storage-records.workspace = true
 gandr-surface-corpus.workspace = true

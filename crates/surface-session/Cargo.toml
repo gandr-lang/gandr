@@ -26,7 +26,10 @@ path = "tests/lib.rs"
 # declaration's produced verdict to decide what it evaluates, and commits the
 # kernel artifact as records into a block store, reading it back through the
 # kernel's decoder.
+# The pinned anodized facade supplies core-only specification helpers;
+# logic/BigInt stays disabled.
 [dependencies]
+anodized.workspace = true
 gandr-core-checker.workspace = true
 gandr-core-incremental.workspace = true
 gandr-core-term.workspace = true
