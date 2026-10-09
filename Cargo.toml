@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = [
+  "crates/core-checker",
   "crates/core-nbe",
   "crates/core-term",
   "crates/kernel-check-memo",
@@ -89,6 +90,7 @@ features = ["derive", "error-context", "help", "std", "usage"]
 # The core call-by-push-value syntax, the one unified context, the definition
 # chain and the per-scope definitional environment.
 # consumers:
+# - core-checker
 # - core-nbe
 # - surface-lowering
 [workspace.dependencies.gandr-core-term]
@@ -117,6 +119,7 @@ path = "crates/kernel-core"
 
 # The certified kernel's universe-level oracle.
 # consumers:
+# - core-checker (dev)
 # - core-nbe
 # - core-term
 # - kernel-core
@@ -127,6 +130,7 @@ path = "crates/kernel-strata"
 # The flat term arena, the subterm-table sharing format, and the decode budgets;
 # the leaf vocabularies the core language reads rather than restates.
 # consumers:
+# - core-checker
 # - core-nbe
 # - core-term
 # - kernel-core
@@ -214,6 +218,7 @@ default-features = false
 # features:
 # - std: the test runner, its random source and failure persistence
 # consumers:
+# - core-checker (dev)
 # - kernel-strata (dev)
 # - storage-records (dev)
 # - storage-values (dev)
@@ -242,6 +247,7 @@ default-features = false
 # features:
 # - none: core-only shapes without instrumentation
 # consumers:
+# - core-checker
 # - kernel-core
 # - surface-lowering
 # - theory-cell-complexes

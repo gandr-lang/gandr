@@ -1,0 +1,29 @@
+[package]
+name = "gandr-core-checker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The core checking judgement: four directed faces, the name-free declaration input, the conversion boundary, the obligation ledger and the refusal vocabulary"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["bidirectional", "call-by-push-value", "gandr", "no-std", "type-checking"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+
+# The judgement is stated over the core language's own vocabulary and its
+# context, and reads the leaf vocabulary (admission positions, de Bruijn
+# indices, literals and base types) from the term crate that core-term
+# re-uses it from. Nothing here names a surface crate: names, spans and syntax
+# stay above the core.
+[dependencies]
+gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+gandr-kernel-strata.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true
