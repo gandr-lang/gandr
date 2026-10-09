@@ -426,7 +426,7 @@ impl AsRef<[u8]> for ArtifactImage<'_>
     }
 }
 
-impl<'artifact> ArtifactImage<'artifact>
+impl ArtifactImage<'_>
 {
     /// The number of bytes in this image.
     ///
@@ -456,7 +456,7 @@ impl<'artifact> ArtifactImage<'artifact>
     pub(crate) fn span(
         self,
         range: core::ops::Range<ByteOffset>,
-    ) -> Option<ArtifactImage<'artifact>>
+    ) -> Option<Self>
     {
         self.0.get(range.start.0 .. range.end.0).map(Self)
     }
