@@ -60,10 +60,16 @@ impl TryFrom<usize> for MoldId
     /// The integer conversion's error when `position` exceeds `u32::MAX`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 boundary — the largest 32-bit index converts and the
-    ///   next one, where the host can name it, is refused.
+    /// - hypothesis: L3 — zero, an ordinary id and the largest 32-bit index
+    ///   retain their exact values; the next index, where the host can name it,
+    ///   is refused. These observers detect truncation, shifted ids and an
+    ///   off-by-one upper bound.
     /// - witness: `mold::tests::a_host_index_past_the_id_width_is_refused`
     #[inline]
+    #[anodized::spec(ensures: |ret| ret.as_ref().map_or_else(
+        |_| u32::try_from(position).is_err(),
+        |id| usize::try_from(id.0) == Ok(position),
+    ))]
     fn try_from(position: usize) -> Result<Self, Self::Error>
     {
         u32::try_from(position).map(Self)
@@ -202,6 +208,7 @@ impl ClosingClass
     /// - witness: `mold::tests::openers_and_closers_pair_by_family`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret == match spelling.0 { "(" => Some(Self::Paren), "[" => Some(Self::Bracket), "{" | "#{" => Some(Self::Brace), _ => None })]
     pub fn opening(spelling: DelimSpelling<'_>) -> Option<Self>
     {
         match spelling.0 {
@@ -227,6 +234,7 @@ impl ClosingClass
     /// - witness: `mold::tests::openers_and_closers_pair_by_family`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret == match spelling.0 { ")" => Some(Self::Paren), "]" => Some(Self::Bracket), "}" => Some(Self::Brace), _ => None })]
     pub fn closing(spelling: DelimSpelling<'_>) -> Option<Self>
     {
         match spelling.0 {
@@ -277,10 +285,12 @@ mod tests
     #[test]
     fn a_host_index_past_the_id_width_is_refused()
     {
-        assert_eq!(
-            Ok(MoldId::from(u32::MAX)),
-            MoldId::try_from(usize::try_from(u32::MAX).expect("hosts are at least 32-bit"))
-        );
+        for value in [0_u32, 17, u32::MAX] {
+            assert_eq!(
+                Ok(MoldId::from(value)),
+                MoldId::try_from(usize::try_from(value).expect("hosts are at least 32-bit")),
+            );
+        }
         let past = usize::try_from(u64::from(u32::MAX).checked_add(1).expect("fits in u64"));
         if let Ok(past) = past {
             assert!(MoldId::try_from(past).is_err());
