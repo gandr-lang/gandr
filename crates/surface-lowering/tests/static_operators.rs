@@ -1,16 +1,23 @@
 //! Type operators, lowered and checked: the relative-monad witness written
 //! with every universe spelled out and with the defaults left off, each
 //! lowered, judged by the checker and readmitted to the kernel, the two
-//! compared by the kernel's content digest of everything they export.
+//! compared by the kernel's content digest of everything they export; and the
+//! witness's sort errors, refused naming both universes.
+
+extern crate alloc;
 
 /// The static-operator cases, in a `cfg(test)` module so the crate's lint
 /// wall reads them as test code rather than as shipping code.
 #[cfg(test)]
 mod static_operators
 {
+    use alloc::collections::BTreeMap;
+
     use gandr_core_checker::CheckBudget;
+    use gandr_core_checker::CheckRefusal;
     use gandr_core_checker::CheckingContext;
     use gandr_core_checker::Declaration;
+    use gandr_core_checker::ModuleReport;
     use gandr_core_checker::OriginToken;
     use gandr_core_checker::Verdict;
     use gandr_core_checker::body;
@@ -18,9 +25,15 @@ mod static_operators
     use gandr_core_checker::check_module;
     use gandr_core_checker::signature;
     use gandr_core_term::CoreArena;
+    use gandr_core_term::Sort;
+    use gandr_core_term::ValueType;
     use gandr_kernel_core::content_digest;
+    use gandr_kernel_strata::Level;
     use gandr_kernel_term::AnyNode;
+    use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeclarationContent;
+    use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::decode;
     use gandr_surface_grammar::built_in;
     use gandr_surface_lowering::DeclarationOutcome;
@@ -51,6 +64,16 @@ mod static_operators
           * ((+U (-F (Integer * Integer)), Integer => Integer * Integer) => Integer * Integer) ;
     ";
 
+    /// The witness's two sort errors: the carrier `T(A)`, a computation type,
+    /// standing bare in an eager product and under a returner, where a value
+    /// type is read.
+    const SORT_ERRORS: &str = "\
+        def in_a_product : (Type -> Type[-]) -> Type -> Type ;
+        def in_a_product = \\T. \\A. T(A) * A ;
+        def under_a_returner : (Type -> Type[-]) -> Type -> Type[-] ;
+        def under_a_returner = \\T. \\A. -F (T(A)) ;
+    ";
+
     /// What one spelling elaborates to: the checker's verdict on each
     /// declaration, and each exported declaration's name with the content
     /// digests of its type and of its body when it has one.
@@ -63,11 +86,15 @@ mod static_operators
         exported: Vec<(Vec<String>, String, Option<String>)>,
     }
 
-    /// `source` parsed, lowered, judged and readmitted.
+    /// `source` parsed, lowered and judged in `arena`: the checker's report,
+    /// and each declaration's structured name.
     ///
     /// # Specification
     /// trivial.
-    fn elaborate(source: SourceText<'_>) -> Elaborated
+    fn judge(
+        source: SourceText<'_>,
+        arena: &mut CoreArena,
+    ) -> (ModuleReport, BTreeMap<ConstantIndex, StructuredName>)
     {
         let pbg = built_in().expect("the built-in grammar builds");
         let parsed = parse(&pbg, source).expect("the parser reads the source");
@@ -76,11 +103,10 @@ mod static_operators
             "the parser reads the source without repair: {source}"
         );
         let tree = parsed.into_tree();
-        let mut arena = CoreArena::new();
         let module = lower_module(
             &pbg,
             &tree,
-            &mut arena,
+            arena,
             LoweringBudget::DEFAULT,
             Recognition::default(),
         )
@@ -114,11 +140,21 @@ mod static_operators
                 )
             })
             .collect();
-        let names = module.structured_names();
         let report = check_module(
-            &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+            &mut CheckingContext::new(arena, CheckBudget::DEFAULT),
             &declarations,
         );
+        (report, module.structured_names())
+    }
+
+    /// `source` parsed, lowered, judged and readmitted.
+    ///
+    /// # Specification
+    /// trivial.
+    fn elaborate(source: SourceText<'_>) -> Elaborated
+    {
+        let mut arena = CoreArena::new();
+        let (report, names) = judge(source, &mut arena);
         let verdicts = report
             .judged()
             .iter()
@@ -187,6 +223,38 @@ mod static_operators
         assert_eq!(
             explicit, elided,
             "the explicit and the elided spellings export equal content"
+        );
+    }
+
+    #[test]
+    fn a_negative_carrier_where_a_value_type_is_read_names_both_universes()
+    {
+        let mut arena = CoreArena::new();
+        let (report, _) = judge(SourceText::from(SORT_ERRORS), &mut arena);
+        let universe = |id| match arena.value_type(id) {
+            | Some(&ValueType::Universe { sort, ref level }) => (sort, level.clone()),
+            | other => panic!("a sort mismatch names universes, not {other:?}"),
+        };
+        let refused: Vec<_> = report
+            .judged()
+            .iter()
+            .map(|judged| match judged.verdict() {
+                | Verdict::Refused(CheckRefusal::SortMismatch {
+                    synthesised,
+                    expected,
+                    ..
+                }) => (universe(synthesised), universe(expected)),
+                | other => panic!("each carrier is refused as a sort mismatch, not {other:?}"),
+            })
+            .collect();
+
+        let negative = (Sort::Ground(GroundSort::Computation), Level::zero());
+        let positive = (Sort::Ground(GroundSort::Value), Level::zero());
+        assert_eq!(
+            refused,
+            [(negative.clone(), positive.clone()), (negative, positive)],
+            "each refusal names the carrier's universe and the one its position reads, sort and \
+             level both"
         );
     }
 }

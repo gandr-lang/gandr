@@ -1,0 +1,14 @@
+def raw_rel_monad : (Type[+, 0] -> Type[-, 0]) -> Type[+, 0] -> Type[+, 0] -> Type[+, 0] ;
+def raw_rel_monad = \T. \A. \B. +U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)) ;
+
+def raw_rel_monad_elided : (Type -> Type[-]) -> Type -> Type -> Type ;
+def raw_rel_monad_elided = \T. \A. \B. +U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)) ;
+
+def unit_and_bind : raw_rel_monad(\X. -F (X * X), Integer, Integer) ;
+def unit_and_bind = (thunk { fn (a) { ret (a, a) } }, thunk { fn (m) { fn (k) { run p <- force m ; (force k)(1) } } }) ;
+
+def unit_and_bind_elided : raw_rel_monad_elided(\X. -F (X * X), Integer, Integer) ;
+def unit_and_bind_elided = unit_and_bind ;
+
+def unit_and_bind_spelled : (Integer => Integer * Integer) * ((+U (-F (Integer * Integer)), Integer => Integer * Integer) => Integer * Integer) ;
+def unit_and_bind_spelled = unit_and_bind_elided ;
