@@ -16,6 +16,9 @@
 //! - [`convert_values`] and [`convert_computations`] run the conversion steps
 //!   that need no search — identity, the [`Guard`] every node is minted with,
 //!   and structural comparison — answering a [`Settlement`].
+//! - [`Overlay`] holds sharing syntax over the core language in four flat
+//!   families, minted only over children it holds and checked by
+//!   [`Overlay::validate`] over a heap worklist.
 //!
 //! The design, and what a caller must guarantee, is stated in this crate's
 //! `README.md`, § Synopsis and § Expected features, and in the sections they
@@ -31,6 +34,7 @@ mod conv;
 mod domain;
 mod eval;
 mod guard;
+mod overlay;
 mod policy;
 mod readback;
 
@@ -74,6 +78,29 @@ pub use crate::eval::eval_value;
 pub use crate::guard::ContentHash;
 pub use crate::guard::Guard;
 pub use crate::guard::GuardAnswer;
+pub use crate::overlay::Bound;
+pub use crate::overlay::CompGraft;
+pub use crate::overlay::CompNode;
+pub use crate::overlay::CompTypeGraft;
+pub use crate::overlay::CompTypeNode;
+pub use crate::overlay::Overlay;
+pub use crate::overlay::OverlayCompId;
+pub use crate::overlay::OverlayCompTypeId;
+pub use crate::overlay::OverlayFamily;
+pub use crate::overlay::OverlayFault;
+pub use crate::overlay::OverlayId;
+pub use crate::overlay::OverlayRefusal;
+pub use crate::overlay::OverlayValueId;
+pub use crate::overlay::OverlayValueTypeId;
+pub use crate::overlay::OverlayWatermark;
+pub use crate::overlay::ShareArity;
+pub use crate::overlay::ShareDistance;
+pub use crate::overlay::SharePosition;
+pub use crate::overlay::Sharing;
+pub use crate::overlay::ValueGraft;
+pub use crate::overlay::ValueNode;
+pub use crate::overlay::ValueTypeGraft;
+pub use crate::overlay::ValueTypeNode;
 pub use crate::policy::Copied;
 pub use crate::policy::DuplicationPolicy;
 pub use crate::policy::DuplicationStance;

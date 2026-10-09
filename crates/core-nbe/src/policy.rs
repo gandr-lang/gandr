@@ -283,8 +283,8 @@ impl DuplicationPolicy
     /// - ensures: the installed stance, which is
     ///   [`DuplicationStance::EraseAndClone`] for every policy that exists,
     ///   since [`DuplicationPolicy::new`] refuses the other.
-    /// - provides: the stance the sharing overlay consults rather than deciding
-    ///   for itself.
+    /// - provides: the stance a duplication walk over the sharing overlay
+    ///   consults, so the overlay itself decides nothing.
     /// - fails: never.
     /// - panics: none.
     #[inline]
@@ -296,8 +296,9 @@ impl DuplicationPolicy
 
     /// What a duplication under this policy does to a part of a shared value.
     ///
-    /// This is the whole observable content of a stance, and it is what the
-    /// sharing overlay consults rather than deciding for itself.
+    /// This is the whole observable content of a stance, and it is what a
+    /// duplication walk over the sharing overlay consults; the overlay holds
+    /// syntax and decides nothing.
     ///
     /// # Specification
     /// - requires: nothing.

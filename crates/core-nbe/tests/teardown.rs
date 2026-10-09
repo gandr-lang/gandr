@@ -1,4 +1,4 @@
-//! The teardown witness for the per-run domain arena.
+//! The teardown witness for the per-run domain arena and the sharing overlay.
 //!
 //! The claim under test is that the domain arena is **flat**, not that some
 //! particular release order happens to work. So a chain is released twice —
@@ -25,23 +25,45 @@
 //! built against it, released, and dropped while it is still live. The core
 //! arena is asserted still to resolve its nodes after both releases, which is
 //! what makes the ordering an observation rather than a comment.
+//!
+//! # The overlay is flat too
+//!
+//! A sharing overlay is released the same two ways, and before its release
+//! the same chain is validated inside the same small stack: the validation
+//! walk is the overlay's other deep traversal, and a recursive one would need
+//! a frame per link just as a recursive destructor would.
 
 /// The teardown case and its chain builder, in a `cfg(test)` module so the
 /// crate's lint wall reads them as test code rather than as shipping code.
 #[cfg(test)]
 mod teardown
 {
+    use gandr_core_nbe::Bound;
     use gandr_core_nbe::DomainArena;
     use gandr_core_nbe::DomainValueId;
     use gandr_core_nbe::Elimination;
     use gandr_core_nbe::Environment;
     use gandr_core_nbe::NeutralHead;
+    use gandr_core_nbe::Overlay;
+    use gandr_core_nbe::OverlayId;
+    use gandr_core_nbe::OverlayValueId;
+    use gandr_core_nbe::OverlayValueTypeId;
+    use gandr_core_nbe::OverlayWatermark;
     use gandr_core_nbe::RunWatermark;
+    use gandr_core_nbe::ShareArity;
+    use gandr_core_nbe::ShareDistance;
+    use gandr_core_nbe::SharePosition;
+    use gandr_core_nbe::Sharing;
     use gandr_core_nbe::TermFace;
     use gandr_core_nbe::Unfolding;
+    use gandr_core_nbe::ValueGraft;
+    use gandr_core_nbe::ValueNode;
+    use gandr_core_nbe::ValueTypeGraft;
+    use gandr_core_nbe::ValueTypeNode;
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
     use gandr_core_term::ValueId;
+    use gandr_kernel_strata::Level;
     use gandr_kernel_term::ConstantIndex;
 
     /// The number of links in one chain. Each link owns the one below it, so a
@@ -155,6 +177,104 @@ mod teardown
         assert!(
             released.is_ok(),
             "both release orders complete inside a stack too small for a recursive destructor"
+        );
+    }
+
+    /// Build an overlay deep in the value family and in the value-type family,
+    /// and return it with weak handles on the deepest node of each.
+    ///
+    /// Each value link is `⟨x₀, x₁⟩[x₀ x₁ ← below]`: one explicit share whose
+    /// leg is the link below, so the chain is linear in the overlay and
+    /// stands for a term whose expansion doubles per link. Each value-type
+    /// link lifts the one below to a level that owns a heap allocation, so
+    /// the second family's nodes own what a recursive destructor would
+    /// walk.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: an overlay holding [`CHAIN_LINKS`] value shares and as many
+    ///   value-type lifts, with a handle on the deepest of each.
+    /// - provides: the deep overlay the validation and release witness walks.
+    /// - panics: when a mint is refused, which only the id ceiling causes.
+    fn deep_overlay() -> (Overlay, OverlayValueId, OverlayValueTypeId)
+    {
+        let mut overlay = Overlay::new();
+        let mut top = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Unit))
+            .expect("a leaf names no child");
+        let mut lifted = overlay
+            .mint_value_type(ValueTypeNode::Grafted(ValueTypeGraft::Unit))
+            .expect("a leaf names no child");
+        let target = Level::zero().succ().expect("level one exists");
+        let mut remaining = CHAIN_LINKS;
+        while remaining > 0 {
+            let left = overlay
+                .mint_value(ValueNode::Bound(Bound {
+                    distance: ShareDistance::from(0_u32),
+                    position: SharePosition::from(0_u32),
+                }))
+                .expect("an occurrence names no child");
+            let right = overlay
+                .mint_value(ValueNode::Bound(Bound {
+                    distance: ShareDistance::from(0_u32),
+                    position: SharePosition::from(1_u32),
+                }))
+                .expect("an occurrence names no child");
+            let body = overlay
+                .mint_value(ValueNode::Grafted(ValueGraft::Pair(left, right)))
+                .expect("both occurrences resolve");
+            top = overlay
+                .mint_value(ValueNode::Shared(Sharing {
+                    arity: ShareArity::from(2_u32),
+                    leg: OverlayId::Value(top),
+                    body,
+                }))
+                .expect("the link below and the body resolve");
+            lifted = overlay
+                .mint_value_type(ValueTypeNode::Grafted(ValueTypeGraft::Lift {
+                    inner: lifted,
+                    target: target.clone(),
+                }))
+                .expect("the type below resolves");
+            remaining = remaining.saturating_sub(1);
+        }
+        (overlay, top, lifted)
+    }
+
+    #[test]
+    fn a_deep_overlay_validates_and_is_released_in_both_orders_inside_a_small_stack()
+    {
+        let released = std::thread::Builder::new()
+            .stack_size(SMALL_STACK_BYTES)
+            .spawn(|| {
+                // First order: validate, truncate to the floor, then drop the empty
+                // overlay.
+                let (mut overlay, top, lifted) = deep_overlay();
+                assert_eq!(
+                    Ok(()),
+                    overlay.validate(OverlayId::Value(top)),
+                    "the chain of shares validates on the heap"
+                );
+                assert_eq!(Ok(()), overlay.validate(OverlayId::ValueType(lifted)));
+                overlay.truncate_to(OverlayWatermark::default());
+                assert!(
+                    overlay.value(top).is_none() && overlay.value_type(lifted).is_none(),
+                    "the weak handles stop resolving, so the release actually happened"
+                );
+                assert_eq!(OverlayWatermark::default(), overlay.watermark());
+                drop(overlay);
+
+                // Second order: drop the overlay outright, with the chain still in it.
+                let (overlay, top, lifted) = deep_overlay();
+                assert!(overlay.value(top).is_some() && overlay.value_type(lifted).is_some());
+                drop(overlay);
+            })
+            .expect("the small-stack thread starts")
+            .join();
+        assert!(
+            released.is_ok(),
+            "validation and both release orders complete inside a stack too small for a \
+             recursive walk"
         );
     }
 }
