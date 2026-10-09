@@ -21,10 +21,15 @@ use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::CommandSpliceRefusal;
 use gandr_theory_cell_complexes::ConvexityDischarge;
 use gandr_theory_cell_complexes::FiringPermission;
+use gandr_theory_cell_complexes::Generalization;
+use gandr_theory_cell_complexes::GeneralizationArm;
+use gandr_theory_cell_complexes::GeneralizationPoint;
+use gandr_theory_cell_complexes::PatternSize;
 use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::PositionStep;
 use gandr_theory_cell_complexes::SeamRole;
 use gandr_theory_cell_complexes::SubstitutionDecision;
+use gandr_theory_cell_complexes::anti_unification;
 use gandr_theory_cell_complexes::command_subterm;
 use gandr_theory_cell_complexes::path_order;
 use quenchant_shape::shape::Maybe;
@@ -484,6 +489,129 @@ fn dominates(
     HoleDomination::FallsShort
 }
 
+/// The least general generalization of a family of toy-term tuples, reported
+/// for any alphabet whose terms, metavariables and substitutions are the toy
+/// alphabet's own.
+///
+/// # Specification
+/// - ensures: one pattern per component; every member's component is its
+///   pattern with each point's arm applied; a head every member holds at a
+///   position is kept and descended into, so a point stands only where two
+///   members differ; two positions whose subterms agree member by member stand
+///   one point; every point's name is `$g$` and a suffix, worn by no member;
+///   the points are listed in the order the walk meets them, component by
+///   component, in prefix order.
+/// - provides: [`anti_unification::Absent::EmptyFamily`] for a family with no
+///   member; [`anti_unification::Absent::RaggedFamily`] when two members have
+///   different lengths. Every toy node may be a metavariable, so every family
+///   that is neither generalizes.
+/// - panics: none.
+/// - intension: one lockstep walk emitting the pattern in prefix order, the
+///   pending child columns on a heap stack; a new point is compared with every
+///   point already stood.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a shared constructor is kept above a point, a repeated
+///   disagreement stands one point, a point's name avoids every member's, and
+///   each refusal is reached by its own family; the law that each member is its
+///   generalization under its arms is checked on a nesting family.
+/// - witness: `tests::inhabitant::each_member_is_its_generalization_under_its_arms`
+/// - witness: `tests::inhabitant::a_repeated_disagreement_stands_one_point`
+/// - witness: `tests::inhabitant::a_point_takes_a_name_no_member_wears`
+/// - witness: `tests::inhabitant::a_family_without_a_generalization_is_refused_by_name`
+#[inline]
+pub fn anti_unify_toys<A>(family: &[&[Toy]]) -> Maybe<Generalization<A>, anti_unification::Absent>
+where
+    A: CellAlphabet<Cmd = Toy, Var = ToyVar, Subst = ToySubst>,
+{
+    let Some((first, rest)) = family.split_first()
+    else {
+        return Maybe::Absent(anti_unification::Absent::EmptyFamily);
+    };
+    if rest.iter().any(|member| member.len() != first.len()) {
+        return Maybe::Absent(anti_unification::Absent::RaggedFamily);
+    }
+    let mut taken: BTreeSet<ToyVar> = family
+        .iter()
+        .flat_map(|member| member.iter())
+        .flat_map(Toy::vars)
+        .cloned()
+        .collect();
+    let mut suffix = ToyCount(0);
+    let mut stood: Vec<(ToyVar, Vec<&[ToyHead]>)> = Vec::new();
+    let mut patterns = Vec::with_capacity(first.len());
+    for (component, term) in first.iter().enumerate() {
+        let members: Vec<&Toy> = core::iter::once(term)
+            .chain(rest.iter().filter_map(|member| member.get(component)))
+            .collect();
+        let mut nodes: Vec<ToyHead> = Vec::new();
+        let mut visits: Vec<Vec<ToyCount>> = alloc::vec![alloc::vec![ToyCount(0); members.len()]];
+        while let Some(starts) = visits.pop() {
+            let mut heads = members
+                .iter()
+                .zip(&starts)
+                .map(|(member, start)| member.0.get(start.0));
+            let shared = match heads.next() {
+                | Some(Some(head)) if heads.all(|other| other == Some(head)) => Some(head),
+                | Some(_) | None => None,
+            };
+            if let Some(head) = shared {
+                nodes.push(head.clone());
+                let mut cursor: Vec<ToyCount> = starts.iter().map(|start| start.next()).collect();
+                let mut children: Vec<Vec<ToyCount>> = Vec::with_capacity(head.arity().0);
+                for _ in 0 .. head.arity().0 {
+                    let next: Vec<ToyCount> = members
+                        .iter()
+                        .zip(&cursor)
+                        .map(|(member, child)| member.end_of(*child))
+                        .collect();
+                    children.push(core::mem::replace(&mut cursor, next));
+                }
+                visits.extend(children.into_iter().rev());
+                continue;
+            }
+            let column: Vec<&[ToyHead]> = members
+                .iter()
+                .zip(&starts)
+                .map(|(member, start)| {
+                    member
+                        .0
+                        .get(start.0 .. member.end_of(*start).0)
+                        .unwrap_or_default()
+                })
+                .collect();
+            if let Some(seen) = stood.iter().find(|seen| seen.1 == column) {
+                nodes.push(ToyHead::Var(seen.0.clone()));
+                continue;
+            }
+            let fresh = loop {
+                let name = ToyVar(alloc::format!("$g${}", suffix.0).into_boxed_str());
+                suffix = suffix.next();
+                if taken.insert(name.clone()) {
+                    break name;
+                }
+            };
+            stood.push((fresh.clone(), column));
+            nodes.push(ToyHead::Var(fresh));
+        }
+        patterns.push(Toy(nodes));
+    }
+    let points = stood
+        .into_iter()
+        .map(|(var, column)| {
+            let arms = column
+                .iter()
+                .map(|subterm| GeneralizationArm {
+                    binding: ToySubst(BTreeMap::from([(var.clone(), Toy(subterm.to_vec()))])),
+                    size: PatternSize::from(subterm.len()),
+                })
+                .collect();
+            GeneralizationPoint { var, arms }
+        })
+        .collect();
+    Maybe::Present(Generalization { patterns, points })
+}
+
 impl CellAlphabet for ToyAlphabet
 {
     type Cmd = Toy;
@@ -590,6 +718,20 @@ impl CellAlphabet for ToyAlphabet
         SubstitutionDecision::from(true)
     }
 
+    /// The least general generalization of a family of toy-term tuples.
+    ///
+    /// # Specification
+    /// - ensures: as [`anti_unify_toys`].
+    /// - provides: as [`anti_unify_toys`].
+    /// - panics: none.
+    #[inline]
+    fn anti_unify_cmd(
+        family: &[&[Self::Cmd]]
+    ) -> Maybe<Generalization<Self>, anti_unification::Absent>
+    {
+        anti_unify_toys(family)
+    }
+
     /// The term with the substitution applied to its fixpoint.
     ///
     /// # Specification
@@ -603,6 +745,26 @@ impl CellAlphabet for ToyAlphabet
         subst.apply_fully(cmd)
     }
 
+    /// The bindings of `vars` alone.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn restrict_subst(
+        subst: &Self::Subst,
+        vars: &[Self::Var],
+    ) -> Self::Subst
+    {
+        ToySubst(
+            subst
+                .0
+                .iter()
+                .filter(|&(var, _)| vars.contains(var))
+                .map(|(var, image)| (var.clone(), image.clone()))
+                .collect(),
+        )
+    }
+
     /// The term's metavariables, left to right with repeats.
     ///
     /// # Specification
@@ -611,6 +773,16 @@ impl CellAlphabet for ToyAlphabet
     fn metavariables(cmd: &Self::Cmd) -> Vec<Self::Var>
     {
         cmd.vars().cloned().collect()
+    }
+
+    /// The table's length: one node per entry.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn cmd_size(cmd: &Self::Cmd) -> PatternSize
+    {
+        PatternSize::from(cmd.0.len())
     }
 
     /// Every position of the term, breadth first: every subterm is a command.

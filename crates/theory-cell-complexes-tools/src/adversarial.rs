@@ -27,10 +27,13 @@ use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::CommandSpliceRefusal;
 use gandr_theory_cell_complexes::ConvexityDischarge;
 use gandr_theory_cell_complexes::FiringPermission;
+use gandr_theory_cell_complexes::Generalization;
+use gandr_theory_cell_complexes::PatternSize;
 use gandr_theory_cell_complexes::PositionOrder;
 use gandr_theory_cell_complexes::PositionStep;
 use gandr_theory_cell_complexes::SeamRole;
 use gandr_theory_cell_complexes::SubstitutionDecision;
+use gandr_theory_cell_complexes::anti_unification;
 use gandr_theory_cell_complexes::command_subterm;
 use quenchant_shape::shape::Maybe;
 
@@ -42,6 +45,7 @@ use crate::toy::ToyPos;
 use crate::toy::ToyProv;
 use crate::toy::ToySubst;
 use crate::toy::ToyVar;
+use crate::toy::anti_unify_toys;
 
 /// The answers a [`Lying`] alphabet may give dishonestly.
 ///
@@ -413,6 +417,18 @@ where
         ToyAlphabet::unify_cmd(lhs, rhs, subst)
     }
 
+    /// The toy alphabet's anti-unification.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn anti_unify_cmd(
+        family: &[&[Self::Cmd]]
+    ) -> Maybe<Generalization<Self>, anti_unification::Absent>
+    {
+        anti_unify_toys(family)
+    }
+
     /// The toy alphabet's substitution.
     ///
     /// # Specification
@@ -426,6 +442,19 @@ where
         ToyAlphabet::apply_subst(subst, cmd)
     }
 
+    /// The toy alphabet's restriction.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn restrict_subst(
+        subst: &Self::Subst,
+        vars: &[Self::Var],
+    ) -> Self::Subst
+    {
+        ToyAlphabet::restrict_subst(subst, vars)
+    }
+
     /// The toy alphabet's metavariables.
     ///
     /// # Specification
@@ -434,6 +463,16 @@ where
     fn metavariables(cmd: &Self::Cmd) -> Vec<Self::Var>
     {
         ToyAlphabet::metavariables(cmd)
+    }
+
+    /// The toy alphabet's node count.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn cmd_size(cmd: &Self::Cmd) -> PatternSize
+    {
+        ToyAlphabet::cmd_size(cmd)
     }
 
     /// The toy alphabet's command positions.

@@ -26,13 +26,16 @@ use quenchant_shape::shape::Maybe;
 use crate::alphabet::CellAlphabet;
 use crate::alphabet::CommandSpliceRefusal;
 use crate::alphabet::ConvexityDischarge;
+use crate::alphabet::Generalization;
 use crate::alphabet::PositionOrder;
 use crate::alphabet::SeamRole;
+use crate::alphabet::anti_unification;
 use crate::alphabet::command_subterm;
 use crate::alphabet::path_order;
 use crate::boundary::CellInvertibility;
 use crate::boundary::CellLinearity;
 use crate::boundary::FiringPermission;
+use crate::boundary::PatternSize;
 use crate::boundary::PositionStep;
 use crate::boundary::SubstitutionDecision;
 use crate::cell::Cell;
@@ -619,6 +622,21 @@ impl CellAlphabet for SequentAlphabet
         crate::subst::unify_cmd(lhs, rhs, subst)
     }
 
+    /// The least general generalization of a family of command-pattern
+    /// tuples.
+    ///
+    /// # Specification
+    /// - ensures: as [`crate::generalize::anti_unify_cmd`].
+    /// - provides: as [`crate::generalize::anti_unify_cmd`].
+    /// - panics: none.
+    #[inline]
+    fn anti_unify_cmd(
+        family: &[&[Self::Cmd]]
+    ) -> Maybe<Generalization<Self>, anti_unification::Absent>
+    {
+        crate::generalize::anti_unify_cmd(family)
+    }
+
     /// A command pattern with a substitution applied.
     ///
     /// # Specification
@@ -633,6 +651,20 @@ impl CellAlphabet for SequentAlphabet
         subst.apply_cmd(cmd)
     }
 
+    /// The substitution restricted to `vars`.
+    ///
+    /// # Specification
+    /// - ensures: as [`Subst::restricted`].
+    /// - panics: none.
+    #[inline]
+    fn restrict_subst(
+        subst: &Self::Subst,
+        vars: &[Self::Var],
+    ) -> Self::Subst
+    {
+        subst.restricted(vars)
+    }
+
     /// The command pattern's metavariables, left to right with repeats.
     ///
     /// # Specification
@@ -642,6 +674,17 @@ impl CellAlphabet for SequentAlphabet
     fn metavariables(cmd: &Self::Cmd) -> Vec<Self::Var>
     {
         cmd.metavars().cloned().collect()
+    }
+
+    /// The command pattern's node count.
+    ///
+    /// # Specification
+    /// - ensures: as [`CmdPat::size`].
+    /// - panics: none.
+    #[inline]
+    fn cmd_size(cmd: &Self::Cmd) -> PatternSize
+    {
+        cmd.size()
     }
 
     /// The command positions of a command pattern: the root alone.

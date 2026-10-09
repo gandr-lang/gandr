@@ -9,14 +9,18 @@
 //!   its metavariables [`CellAlphabet::Var`] with the hole identity
 //!   [`CellAlphabet::Hole`] the composition gate keys on, its positions
 //!   [`CellAlphabet::Pos`], navigation and splicing
-//!   ([`CellAlphabet::subterm_cmd_at`], [`CellAlphabet::splice_cmd_at`]), the
-//!   well-founded [`CellAlphabet::reduction_cmp`] completion orients by, the
-//!   deterministic apartness renaming [`CellAlphabet::rename_apart`], and the
-//!   replay [`CellAlphabet::skolemize`];
+//!   ([`CellAlphabet::subterm_cmd_at`], [`CellAlphabet::splice_cmd_at`]), its
+//!   node count ([`CellAlphabet::cmd_size`]), the well-founded
+//!   [`CellAlphabet::reduction_cmp`] completion orients by, the deterministic
+//!   apartness renaming [`CellAlphabet::rename_apart`], and the replay
+//!   [`CellAlphabet::skolemize`];
 //! - the ordered-map substitution — one-sided matching
-//!   ([`CellAlphabet::match_cmd`], cell application) and two-sided unification
-//!   ([`CellAlphabet::unify_cmd`], overlap superposition), both over the
-//!   deterministic [`CellAlphabet::Subst`] carrier;
+//!   ([`CellAlphabet::match_cmd`], cell application), two-sided unification
+//!   ([`CellAlphabet::unify_cmd`], overlap superposition) and its dual,
+//!   anti-unification ([`CellAlphabet::anti_unify_cmd`], folding a family of
+//!   instances into one pattern), all over the deterministic
+//!   [`CellAlphabet::Subst`] carrier, which [`CellAlphabet::restrict_subst`]
+//!   cuts down to chosen metavariables;
 //! - the cell vocabulary — orientation and provenance tags, the derived
 //!   per-cell metadata [`CellAlphabet::Meta`], the firing discipline
 //!   ([`CellAlphabet::may_fire`]), and the provenance-to-certificate reading
@@ -46,6 +50,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::boundary::CellInvertibility;
 use crate::boundary::FiringPermission;
+use crate::boundary::PatternSize;
 use crate::boundary::PositionStep;
 use crate::boundary::SubstitutionDecision;
 use crate::cell::CellStore;
@@ -200,6 +205,57 @@ impl core::error::Error for CommandSpliceRefusal
 {
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a family of terms has no generalization.
+    pub mod anti_unification {
+        /// The reason the anti-unifier finds no pattern.
+        #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+        pub enum Absent {
+            /// The family has no member.
+            EmptyFamily,
+            /// Two members are tuples of different lengths.
+            RaggedFamily,
+            /// Two members differ where the grammar has no metavariable to
+            /// stand.
+            Ungeneralizable,
+        }
+    }
+}
+
+/// One member's arm at a generalization point: the subterm the member holds
+/// where the point stands.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct GeneralizationArm<A: CellAlphabet>
+{
+    /// The substitution binding the point's metavariable, and nothing else, to
+    /// the member's subterm.
+    pub binding: A::Subst,
+    /// The node count of the member's subterm.
+    pub size: PatternSize,
+}
+
+/// One generalization point: a fresh metavariable, and the subterm it stands
+/// for in each member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GeneralizationPoint<A: CellAlphabet>
+{
+    /// The fresh metavariable standing at the point.
+    pub var: A::Var,
+    /// One arm per member, in family order.
+    pub arms: Vec<GeneralizationArm<A>>,
+}
+
+/// The least general generalization of a family of term tuples: the patterns
+/// every member instantiates, and what each point stands for in each member.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Generalization<A: CellAlphabet>
+{
+    /// One pattern per tuple component.
+    pub patterns: Vec<A::Cmd>,
+    /// The generalization points, in the order the walk first meets them.
+    pub points: Vec<GeneralizationPoint<A>>,
+}
+
 /// The cell alphabet the engines quantify over: the pattern grammar, the
 /// ordered-map substitution, and the seam and overlap vocabulary of one term
 /// language.
@@ -212,7 +268,8 @@ impl core::error::Error for CommandSpliceRefusal
 /// # Specification
 /// - requires: an implementor keeps [`CellAlphabet::Cmd`] equality and hashing
 ///   structural, content identity only; [`CellAlphabet::match_cmd`] is
-///   one-sided and [`CellAlphabet::unify_cmd`] finds a most general unifier;
+///   one-sided, [`CellAlphabet::unify_cmd`] finds a most general unifier and
+///   [`CellAlphabet::anti_unify_cmd`] a least general generalization;
 ///   [`CellAlphabet::rename_apart`] is deterministic and structure-preserving.
 /// - requires: two occurrences of one primitive at one position remain
 ///   dependent: [`CellAlphabet::position_order`] returns
@@ -225,10 +282,11 @@ impl core::error::Error for CommandSpliceRefusal
 /// - hypothesis: L3 — the sequent alphabet's own suite runs through the trait's
 ///   methods: renaming apart, skolemization and the firing discipline are
 ///   asserted on cells that wear a seam, repeat a name and carry each η kind.
-///   The three inhabitant laws the engines spend — a match followed by its
+///   The four inhabitant laws the engines spend — a match followed by its
 ///   substitution reproduces the matched term, a successful match binds every
-///   metavariable its pattern names, and a splice at a position agrees with the
-///   read there — are asserted over this inhabitant and a second, nesting term
+///   metavariable its pattern names, a splice at a position agrees with the
+///   read there, and each member of a family is its generalization under its
+///   own arms — are asserted over this inhabitant and a second, nesting term
 ///   language by `gandr-theory-cell-complexes-tools`' inhabitant suite, which
 ///   depends on this crate, so the laws are cited here rather than witnessed.
 /// - witness: `sequent::tests::renaming_apart_keeps_a_seam_one_hole`
@@ -288,6 +346,35 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
         subst: &mut Self::Subst,
     ) -> SubstitutionDecision;
 
+    /// Anti-unification: the least general generalization of `family`, a
+    /// family of equal-length term tuples, taken component by component over
+    /// one table of fresh metavariables.
+    ///
+    /// Unification's dual: where a unifier finds the most general term two
+    /// patterns both instantiate to, the generalization is the most specific
+    /// pattern tuple every member instantiates.
+    ///
+    /// # Specification
+    /// - requires: none; a member may carry metavariables of its own, which an
+    ///   arm binds like any other subterm.
+    /// - ensures: one pattern per component; for every member, applying its
+    ///   arm's binding at every point to each pattern gives the member's
+    ///   component back; a position where every member holds one head keeps
+    ///   that head and is descended into, so a point stands only where two
+    ///   members differ; two positions whose subterms agree member by member
+    ///   carry one point; no point's metavariable occurs in any member; the
+    ///   points are listed in the order the walk first meets them, component by
+    ///   component, left to right.
+    /// - provides: [`anti_unification::Absent::EmptyFamily`] for a family with
+    ///   no member; [`anti_unification::Absent::RaggedFamily`] when two members
+    ///   are tuples of different lengths;
+    ///   [`anti_unification::Absent::Ungeneralizable`] when two members differ
+    ///   where the grammar admits no metavariable.
+    /// - panics: none.
+    fn anti_unify_cmd(
+        family: &[&[Self::Cmd]]
+    ) -> Maybe<Generalization<Self>, anti_unification::Absent>;
+
     /// A term with a substitution applied.
     ///
     /// # Specification
@@ -299,6 +386,19 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
         cmd: &Self::Cmd,
     ) -> Self::Cmd;
 
+    /// `subst` restricted to `vars`: the bindings it holds for exactly those
+    /// metavariables.
+    ///
+    /// # Specification
+    /// - ensures: every binding of `subst` whose metavariable is in `vars`, and
+    ///   no other; a metavariable of `vars` that `subst` leaves unbound stays
+    ///   unbound.
+    /// - panics: none.
+    fn restrict_subst(
+        subst: &Self::Subst,
+        vars: &[Self::Var],
+    ) -> Self::Subst;
+
     /// The term's metavariables, left to right with repeats, so linearity is
     /// judged by counting occurrences.
     ///
@@ -307,6 +407,13 @@ pub trait CellAlphabet: Copy + Default + Eq + Ord + core::hash::Hash + core::fmt
     ///   order.
     /// - panics: none.
     fn metavariables(cmd: &Self::Cmd) -> Vec<Self::Var>;
+
+    /// The term's node count.
+    ///
+    /// # Specification
+    /// - ensures: one per node of the term; at least one.
+    /// - panics: none.
+    fn cmd_size(cmd: &Self::Cmd) -> PatternSize;
 
     /// Every command position of the term — the seams a cell can fire at and
     /// the composition enumerator unifies at — outer to inner.

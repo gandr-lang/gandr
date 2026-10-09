@@ -160,6 +160,41 @@ impl Subst
         }
     }
 
+    /// The bindings of `vars` alone.
+    ///
+    /// # Specification
+    /// - ensures: every binding whose metavariable is in `vars`, at that
+    ///   metavariable's own category, and no other.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-binding substitution restricted to one of its
+    ///   metavariables keeps that binding alone, and restricted to a
+    ///   metavariable it leaves unbound is empty.
+    /// - witness: `subst::tests::a_restriction_keeps_exactly_the_named_bindings`
+    #[inline]
+    #[must_use]
+    pub fn restricted(
+        &self,
+        vars: &[MetaVar],
+    ) -> Self
+    {
+        Self {
+            prods: self
+                .prods
+                .iter()
+                .filter(|&(var, _)| vars.contains(var))
+                .map(|(var, image)| (var.clone(), image.clone()))
+                .collect(),
+            conss: self
+                .conss
+                .iter()
+                .filter(|&(var, _)| vars.contains(var))
+                .map(|(var, image)| (var.clone(), image.clone()))
+                .collect(),
+        }
+    }
+
     /// Binds a producer metavariable.
     ///
     /// # Specification
@@ -1045,6 +1080,33 @@ mod tests
 {
     use super::*;
     use crate::polarity::Polarity;
+
+    #[test]
+    fn a_restriction_keeps_exactly_the_named_bindings()
+    {
+        let (x, alpha) = (MetaVar::producer("x"), MetaVar::consumer("alpha"));
+        let mut subst = Subst::new();
+        subst
+            .bind_prod(x.clone(), ProdPat::ctor("Zero", []))
+            .expect("a fresh producer binding");
+        subst
+            .bind_cons(alpha.clone(), ConsPat::top())
+            .expect("a fresh consumer binding");
+        let kept = subst.restricted(core::slice::from_ref(&alpha));
+        assert_eq!(
+            (
+                Maybe::Absent(binding::Absent::Unbound),
+                Maybe::Present(&ConsPat::top())
+            ),
+            (kept.get_prod(&x), kept.get_cons(&alpha)),
+            "the named binding is kept and the other dropped"
+        );
+        assert_eq!(
+            Subst::new(),
+            subst.restricted(&[MetaVar::producer("y")]),
+            "a metavariable left unbound stays unbound"
+        );
+    }
 
     #[test]
     fn matching_binds_a_ground_configuration()

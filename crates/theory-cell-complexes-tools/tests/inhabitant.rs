@@ -8,15 +8,19 @@
 //! disagree, or whose splice and read disagree, would make every
 //! alphabet-generic result measured over it meaningless. The copy search the
 //! substrate's linearity boundary runs is read through the same interface, so
-//! it is checked over the toy alphabet too.
+//! it is checked over the toy alphabet too, and so is anti-unification, whose
+//! law is the match law read backward: each member of a family is its
+//! generalization under its own arms.
 
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CmdPat;
 use gandr_theory_cell_complexes::ConsPat;
+use gandr_theory_cell_complexes::Generalization;
 use gandr_theory_cell_complexes::Polarity;
 use gandr_theory_cell_complexes::PositionStep;
 use gandr_theory_cell_complexes::ProdPat;
 use gandr_theory_cell_complexes::SequentAlphabet;
+use gandr_theory_cell_complexes::anti_unification;
 use gandr_theory_cell_complexes::copied_hole;
 use gandr_theory_cell_complexes::copy_search;
 use gandr_theory_cell_complexes_tools::Toy;
@@ -115,6 +119,42 @@ fn splice_agrees_with_read<A>(
     );
 }
 
+/// The anti-unification law: each member of `family` is its generalization
+/// with its own arm applied at every point; the generalization is returned for
+/// the caller's further reading.
+///
+/// # Specification
+/// - panics: when the family is refused or the law fails.
+fn generalization_reproduces<A>(family: &[&[A::Cmd]]) -> Generalization<A>
+where
+    A: CellAlphabet,
+{
+    let Maybe::Present(generalization) = A::anti_unify_cmd(family)
+    else {
+        panic!("the family generalizes");
+    };
+    for (index, member) in family.iter().enumerate() {
+        let rebuilt: Vec<A::Cmd> = generalization
+            .patterns
+            .iter()
+            .map(|pattern| {
+                generalization
+                    .points
+                    .iter()
+                    .fold(pattern.clone(), |term, point| {
+                        A::apply_subst(&point.arms[index].binding, &term)
+                    })
+            })
+            .collect();
+        assert_eq!(
+            member.to_vec(),
+            rebuilt,
+            "member {index} is its generalization under its arms"
+        );
+    }
+    generalization
+}
+
 /// `⟨Succ(m) | add(n; α)⟩`, the successor rule's left-hand side.
 ///
 /// # Specification
@@ -210,5 +250,78 @@ fn the_copy_search_is_alphabet_neutral()
             Toy::add(Toy::var("y"), Toy::var("y")),
         )),
         "and a toy cell linear on the left copies nothing, whatever its right-hand side repeats"
+    );
+}
+
+#[test]
+fn each_member_is_its_generalization_under_its_arms()
+{
+    generalization_reproduces::<SequentAlphabet>(&[&[successor_lhs()], &[
+        successor_configuration(),
+    ]]);
+    let one = || Toy::succ(Toy::zero());
+    generalization_reproduces::<ToyAlphabet>(&[
+        &[Toy::add(one(), Toy::var("x")), Toy::succ(Toy::var("x"))],
+        &[
+            Toy::add(Toy::succ(one()), Toy::zero()),
+            Toy::succ(Toy::zero()),
+        ],
+        &[
+            Toy::add(Toy::zero(), Toy::add(one(), one())),
+            Toy::succ(Toy::add(one(), one())),
+        ],
+    ]);
+}
+
+#[test]
+fn a_repeated_disagreement_stands_one_point()
+{
+    let twice = |term: Toy| Toy::add(term.clone(), term);
+    let repeated = generalization_reproduces::<ToyAlphabet>(&[&[twice(Toy::zero())], &[twice(
+        Toy::succ(Toy::zero()),
+    )]]);
+    assert_eq!(
+        (1_usize, &[Toy::add(Toy::var("$g$0"), Toy::var("$g$0"))][..]),
+        (repeated.points.len(), repeated.patterns.as_slice()),
+        "one disagreement met twice stands one point at both places"
+    );
+    let crossed = generalization_reproduces::<ToyAlphabet>(&[
+        &[Toy::add(Toy::zero(), Toy::succ(Toy::zero()))],
+        &[Toy::add(Toy::succ(Toy::zero()), Toy::zero())],
+    ]);
+    assert_eq!(
+        2,
+        crossed.points.len(),
+        "two disagreements that differ member by member stand two points"
+    );
+}
+
+#[test]
+fn a_point_takes_a_name_no_member_wears()
+{
+    let generalization =
+        generalization_reproduces::<ToyAlphabet>(&[&[Toy::succ(Toy::var("$g$0"))], &[Toy::succ(
+            Toy::zero(),
+        )]]);
+    assert_eq!(
+        ToyVar::from("$g$1"),
+        generalization.points[0].var,
+        "the first fresh name is worn by a member, so the next is taken"
+    );
+}
+
+#[test]
+fn a_family_without_a_generalization_is_refused_by_name()
+{
+    assert_eq!(
+        Maybe::Absent(anti_unification::Absent::EmptyFamily),
+        ToyAlphabet::anti_unify_cmd(&[]).map(|generalization| generalization.patterns),
+        "a family with no member"
+    );
+    assert_eq!(
+        Maybe::Absent(anti_unification::Absent::RaggedFamily),
+        ToyAlphabet::anti_unify_cmd(&[&[Toy::zero()], &[Toy::zero(), Toy::zero()]])
+            .map(|generalization| generalization.patterns),
+        "members of two lengths"
     );
 }

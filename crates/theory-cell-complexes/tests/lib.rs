@@ -8,6 +8,8 @@
 #[cfg(test)]
 mod depth;
 #[cfg(test)]
+mod generalize;
+#[cfg(test)]
 mod generate;
 #[cfg(test)]
 mod order;

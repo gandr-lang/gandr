@@ -11,8 +11,10 @@
 //!
 //! A **substitution** ([`Subst`]) binds metavariables; [`match_cmd`] extends
 //! one so a pattern instantiates to a target, [`unify_cmd`] so two patterns
-//! instantiate alike. The **reduction order** ([`reduction_cmp`]) orients a
-//! critical pair or reports it as an honest obstruction.
+//! instantiate alike, and [`anti_unify_cmd`] folds a family of terms into the
+//! least general pattern each instantiates. The **reduction order**
+//! ([`reduction_cmp`]) orients a critical pair or reports it as an honest
+//! obstruction.
 //!
 //! The **cell alphabet** ([`CellAlphabet`]) is the one trait the rewriting
 //! engines quantify over; [`SequentAlphabet`] is its first inhabitant. A
@@ -32,6 +34,7 @@ extern crate alloc;
 mod alphabet;
 mod boundary;
 mod cell;
+mod generalize;
 mod linearity;
 mod order;
 mod pattern;
@@ -42,8 +45,12 @@ mod subst;
 pub use crate::alphabet::CellAlphabet;
 pub use crate::alphabet::CommandSpliceRefusal;
 pub use crate::alphabet::ConvexityDischarge;
+pub use crate::alphabet::Generalization;
+pub use crate::alphabet::GeneralizationArm;
+pub use crate::alphabet::GeneralizationPoint;
 pub use crate::alphabet::PositionOrder;
 pub use crate::alphabet::SeamRole;
+pub use crate::alphabet::anti_unification;
 pub use crate::alphabet::command_subterm;
 pub use crate::alphabet::path_order;
 pub use crate::boundary::CellCount;
@@ -62,6 +69,7 @@ pub use crate::cell::Cell;
 pub use crate::cell::CellId;
 pub use crate::cell::CellStore;
 pub use crate::cell::cell_lookup;
+pub use crate::generalize::anti_unify_cmd;
 pub use crate::linearity::NonLinearPattern;
 pub use crate::linearity::admit_linear_cell;
 pub use crate::linearity::copied_hole;
