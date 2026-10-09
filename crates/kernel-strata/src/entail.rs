@@ -152,6 +152,20 @@ impl From<WitnessPrefixLength> for usize
 ///
 /// Constructed only by the oracle, since the fields are private; inspected
 /// through the accessors and replayed by [`validate_entailment_witness`].
+///
+/// # Specification
+/// - ensures: an oracle-produced derivation covers the original query goals in
+///   its recorded comparison mode.
+/// - executable: none — the original claim and its query seeds are external to
+///   the witness.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated queries independently replay their evidence. L3
+///   — an empty reflexive derivation and forged clause, shift and unavailable
+///   body cases expose a bad mode, insufficient targets or invalid replay.
+/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `entail::tests::constants_cross_the_bottom_encoding`
+/// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntailmentWitness
 {
@@ -192,6 +206,19 @@ impl EntailmentWitness
 ///
 /// Constructed only by the oracle, since the fields are private; inspected
 /// through the accessors and checked by [`validate_entailment_countermodel`].
+///
+/// # Specification
+/// - ensures: an oracle-produced model satisfies the query system and seeds
+///   while failing its recorded goal.
+/// - executable: none — model validity depends on the external poset and query
+///   levels.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated refutations validate independently. L3 mutates
+///   assignments, seeds, clause satisfaction and the recorded goal and crosses
+///   the arithmetic ceiling; exact refusals distinguish an invalid model.
+/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `entail::tests::perturbed_countermodel_arms_are_rejected`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntailmentCountermodel
 {
@@ -240,6 +267,13 @@ impl EntailmentCountermodel
     ///   since the operation cannot fail.
     /// - provides: the per-variable read the countermodel validator needs.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refuted variable query yields distinct finite
+    ///   values for two scoped variables and absence outside the scope; a
+    ///   constant-only query has no assignments. Exact answers expose false
+    ///   presence or defaults.
+    /// - witness: `entail::tests::countermodel_assignment_boundaries`
     #[spec(ensures: |ret| ret == self.values.get(&variable).copied())]
     #[inline]
     #[must_use]
@@ -259,6 +293,15 @@ impl EntailmentCountermodel
     ///   value, in ascending variable order.
     /// - provides: the whole-model read the countermodel validator walks.
     /// - panics: none.
+    /// - executable: none — the opaque iterator cannot be named by the
+    ///   postcondition expansion or consumed without changing its output.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — variable and constant-only countermodels are
+    ///   enumerated exactly, exposing wrong values, duplication, omission and
+    ///   variable order while distinguishing an empty scope from a zero-valued
+    ///   scoped variable.
+    /// - witness: `entail::tests::countermodel_assignment_boundaries`
     #[inline]
     pub fn assignments(&self) -> impl Iterator<Item = (LevelVar, ModelValue)> + '_
     {
@@ -317,6 +360,22 @@ impl Entailment
 
 /// The deterministic query encoding shared by the oracle and both validators,
 /// as the module docs describe it.
+///
+/// # Specification
+/// - ensures: the clauses, seeds and goals encode the original query in
+///   deterministic scope order.
+/// - executable: none — encoding relates these fields to the external poset,
+///   levels and strictness; the encoder checks that relation.
+///
+/// # Adequacy
+/// - hypothesis: L2 — empty-poset queries agree with the free oracle. L3 uses
+///   constants at equality and one past a variable offset, fresh query
+///   variables and strict versus non-strict hypotheses, exposing a lost bottom
+///   generator, scope omission or incorrect shifts.
+/// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
+/// - witness: `entail::tests::constants_cross_the_bottom_encoding`
+/// - witness: `entail::tests::queries_mentioning_undeclared_variables_work`
+/// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
 pub struct QueryEncoding
 {
     /// The query clause system's base clauses: the poset's compiled clauses,
@@ -347,6 +406,26 @@ pub struct QueryEncoding
 ///   [`PosetError::EvidenceIncomplete`] only under a defect the theory
 ///   excludes.
 /// - panics: none.
+///
+/// # Errors
+/// [`PosetError::Overflow`], [`PosetError::UnexpectedDivergence`] or
+/// [`PosetError::EvidenceIncomplete`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — empty-poset queries agree with the independent free
+///   oracle, and generated hypothesis queries validate both evidence branches.
+///   L3 — equality versus a unit shift and a non-total hypothesis distinguish
+///   wrong strictness, constant mishandling and spurious totality.
+/// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
+/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
+/// - witness: `entail::tests::non_total_order_is_refused_with_a_countermodel`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|evidence| match *evidence {
+    Entailment::Holds(ref witness) => witness.strict() == strict
+        && validate_entailment_witness(poset, left, right, witness).is_ok(),
+    Entailment::Refuted(ref model) => model.strict() == strict
+        && validate_entailment_countermodel(poset, left, right, model).is_ok(),
+}))]
 fn decide(
     poset: &LandmarkPoset,
     left: &Level,
@@ -537,6 +616,17 @@ impl LandmarkPoset
     ///
     /// # Errors
     /// As [`Self::entails_leq_with_evidence`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — generated empty-poset verdicts agree with the
+    ///   independent free oracle; fixed hypotheses preserve reflexivity and
+    ///   transitivity. L3 separates an asserted order from its unjustified
+    ///   reverse and distinguishes hypotheses that reach a constant goal from
+    ///   an uncovered goal.
+    /// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
+    /// - witness: `entailment_oracle::entailment_oracle::prop_entailment_order_laws_under_the_fixed_poset`
+    /// - witness: `entail::tests::landmark_order_is_entailed`
+    /// - witness: `entail::tests::hypotheses_reach_constant_goals`
     #[spec(ensures: |ret| ret == self.entails_leq_with_evidence(left, right)
         .map(|evidence| evidence.holds()))]
     #[inline]
@@ -563,6 +653,15 @@ impl LandmarkPoset
     ///
     /// # Errors
     /// As [`Self::entails_lt_with_evidence`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — generated strict queries agree with successor
+    ///   non-strict queries. L3 — reflexivity and hypotheses with zero versus
+    ///   one unit of gap expose an inclusive comparison or a missing successor
+    ///   shift.
+    /// - witness: `entailment_oracle::entailment_oracle::prop_lt_equals_succ_leq_under_the_fixed_poset`
+    /// - witness: `entail::tests::entailment_is_irreflexive_for_lt_on_admitted_posets`
+    /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
     #[spec(ensures: |ret| ret == self.entails_lt_with_evidence(left, right)
         .map(|evidence| evidence.holds()))]
     #[inline]
@@ -911,12 +1010,12 @@ pub fn encode_query(
 ///   recursive, and stops at the first step that clears the outstanding goals.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the truncated derivation must replay through the
-///   independent witness validator on every decided query of the entailment
-///   differential, so a mutant truncating early or late fails validation; the
-///   L3 residue is the already-covered boundary, where the seeds cover the
-///   goals and the prefix must be empty, pinned by the reflexive constant
-///   golden.
+/// - hypothesis: L2 — generated witnesses replay independently, exposing an
+///   early cutoff that leaves goals uncovered. L3 — empty and seed-covered
+///   goals need no steps; first-step and final-step coverage, conjunctive goals
+///   and an uncovered goal distinguish early or late cutoff by exact prefix
+///   lengths. Replay alone cannot reject a valid but longer prefix.
+/// - witness: `entail::tests::witness_prefix_is_the_first_covering_prefix`
 /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
 /// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
 #[spec(ensures: |ret| {
@@ -997,6 +1096,91 @@ mod tests
     use crate::poset::LandmarkConstraint;
     use crate::poset::LandmarkPoset;
     use crate::poset::PosetEvidenceError;
+
+    #[test]
+    fn countermodel_assignment_boundaries()
+    {
+        let poset = empty_poset();
+        let model = refuted(&poset, &Level::var(y()), &Level::var(x()));
+        assert_eq!(model.assignments().collect::<Vec<_>>(), [
+            (x(), ModelValue::Finite(HornOffset::ONE)),
+            (y(), ModelValue::Finite(HornOffset::ZERO)),
+        ]);
+        assert_eq!(
+            model.value_of(x()),
+            Some(ModelValue::Finite(HornOffset::ONE))
+        );
+        assert_eq!(
+            model.value_of(y()),
+            Some(ModelValue::Finite(HornOffset::ZERO))
+        );
+        assert_eq!(model.value_of(var8()), None);
+        let constant = refuted(
+            &poset,
+            &Level::constant(LevelConstant::from(1_u64)),
+            &Level::zero(),
+        );
+        assert_eq!(constant.assignments().next(), None);
+        assert_eq!(constant.value_of(x()), None);
+    }
+
+    #[test]
+    fn witness_prefix_is_the_first_covering_prefix()
+    {
+        let system = crate::horn::ClauseSystem {
+            clauses: vec![
+                crate::horn::HornClause::new(
+                    &[HornAtom::new(HVar::Var(x()), HornOffset::ZERO)],
+                    HornAtom::new(HVar::Var(y()), HornOffset::ONE),
+                )
+                .expect("nonempty body"),
+                crate::horn::HornClause::new(
+                    &[HornAtom::new(HVar::Var(y()), HornOffset::ZERO)],
+                    HornAtom::new(HVar::Var(var8()), HornOffset::ONE),
+                )
+                .expect("nonempty body"),
+            ],
+            min_shift: HornShift::ZERO,
+        };
+        let seed = BTreeMap::from([(HVar::Var(x()), HornOffset::ZERO)]);
+        let result = crate::horn::saturate(
+            &system,
+            BTreeMap::from([(HVar::Var(x()), ModelValue::Finite(HornOffset::ZERO))]),
+            crate::horn::SaturationBound::from(3_u128),
+        )
+        .expect("finite chain");
+        for (goals, expected) in [
+            (vec![], Some(0_usize)),
+            (
+                vec![HornAtom::new(HVar::Var(x()), HornOffset::ZERO)],
+                Some(0),
+            ),
+            (
+                vec![HornAtom::new(HVar::Var(y()), HornOffset::ONE)],
+                Some(1),
+            ),
+            (
+                vec![HornAtom::new(HVar::Var(var8()), HornOffset::from(2_u128))],
+                Some(2),
+            ),
+            (
+                vec![
+                    HornAtom::new(HVar::Var(y()), HornOffset::ONE),
+                    HornAtom::new(HVar::Var(var8()), HornOffset::from(2_u128)),
+                ],
+                Some(2),
+            ),
+            (
+                vec![HornAtom::new(HVar::Var(var8()), HornOffset::from(3_u128))],
+                None,
+            ),
+        ] {
+            assert_eq!(
+                super::witness_cutoff(&seed, &goals, &result.log).map(usize::from),
+                expected
+            );
+        }
+    }
 
     #[test]
     fn constants_cross_the_bottom_encoding()
@@ -1360,6 +1544,16 @@ mod tests
     /// - provides: the forged evidence each replay rejection arm is stated
     ///   against.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — arbitrary clause indices and shifts deliberately
+    ///   cross the unknown-clause, minimum-shift and body-availability
+    ///   boundaries; exact validator errors expose a fixture that changes its
+    ///   supplied index or shift.
+    /// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
+    #[anodized::spec(ensures: |ret| ret.strict() == Strictness::NON_STRICT
+        && ret.derivation().steps().iter().map(|step| (step.clause(), step.shift()))
+            .eq(core::iter::once((clause, shift))))]
     fn forged_witness(
         clause: ClauseIndex,
         shift: HornShift,
@@ -1385,6 +1579,15 @@ mod tests
     ///   oracle.
     /// - panics: when admission overflows or loops, neither of which an empty
     ///   constraint set can do.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — constants at equality and one unit above a variable
+    ///   offset test free-fragment behavior, and a query using fresh variables
+    ///   tests the unconstrained scope; a spurious hypothesis would alter those
+    ///   verdicts.
+    /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
+    /// - witness: `entail::tests::queries_mentioning_undeclared_variables_work`
+    #[anodized::spec(ensures: |ret| ret.constraints().is_empty() && ret.variables().is_empty())]
     fn empty_poset() -> LandmarkPoset
     {
         admitted(vec![])
@@ -1399,6 +1602,19 @@ mod tests
     ///   against.
     /// - panics: when admission overflows or loops, neither of which this
     ///   single acyclic constraint can do.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the declared forward inequality holds, its strict
+    ///   form does not follow without a gap, and the reverse order is refuted;
+    ///   these verdicts distinguish a missing, reversed or strengthened
+    ///   hypothesis.
+    /// - witness: `entail::tests::landmark_order_is_entailed`
+    /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
+    #[anodized::spec(ensures: |ret| ret.constraints().len() == 1
+        && ret.constraints().first().is_some_and(|constraint|
+            constraint.relation() == crate::poset::ConstraintRelation::Leq
+            && constraint.left().atoms().eq(core::iter::once((x(), LevelOffset::ZERO)))
+            && constraint.right().atoms().eq(core::iter::once((y(), LevelOffset::ZERO)))))]
     fn leq_poset() -> LandmarkPoset
     {
         admitted(vec![
@@ -1419,6 +1635,16 @@ mod tests
     /// - provides: the admitted-arm fixture, with the dichotomy's other arm
     ///   turned into a test failure at the point it appears.
     /// - panics: when admission overflows or returns a loop.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — empty and nonempty admitting hypotheses are queried
+    ///   with independently validated evidence. L3 — strict and non-total
+    ///   hypotheses distinguish discarded declarations or a spurious admitting
+    ///   fixture.
+    /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
+    /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
+    /// - witness: `entail::tests::non_total_order_is_refused_with_a_countermodel`
+    #[anodized::spec(ensures: |ret| crate::poset::validate_consistency(ret.constraints(), ret.consistency()).is_ok())]
     fn admitted(constraints: Vec<LandmarkConstraint>) -> LandmarkPoset
     {
         match LandmarkPoset::admit(constraints).expect("admission does not overflow") {
@@ -1472,6 +1698,16 @@ mod tests
     /// - provides: the atom builder these tests state their fixtures with.
     /// - panics: when a successor step passes the representable range, which
     ///   the offsets these tests use never reach.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — small offsets at zero and across one-unit comparison
+    ///   boundaries determine exact entailment outcomes; changed variables or a
+    ///   missing successor alter strictness or bottom-encoding results.
+    /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
+    /// - witness: `entail::tests::shifted_landmark_order_is_entailed`
+    /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
+    #[anodized::spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
+        && ret.atoms().eq(core::iter::once((variable, offset))))]
     fn var_plus(
         variable: LevelVar,
         offset: LevelOffset,
@@ -1495,6 +1731,17 @@ mod tests
     ///   so no test reads an unvalidated witness.
     /// - panics: when the query fails to decide, when it is refuted, or when
     ///   the witness fails validation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the helper validates successful evidence
+    ///   independently. L3 — constant equality needs an empty derivation while
+    ///   an asserted landmark order requires steps; forged clauses, shifts and
+    ///   missing steps are refused.
+    /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
+    /// - witness: `entail::tests::landmark_order_is_entailed`
+    /// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
+    #[anodized::spec(ensures: |ret| ret.strict() == Strictness::NON_STRICT
+        && validate_entailment_witness(poset, left, right, &ret).is_ok())]
     fn holds(
         poset: &LandmarkPoset,
         left: &Level,
@@ -1528,6 +1775,17 @@ mod tests
     ///   so no test reads an unvalidated countermodel.
     /// - panics: when the query fails to decide, when it holds, or when the
     ///   countermodel fails validation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the returned countermodel is independently validated.
+    ///   L3 — a non-total order and a constant just past an atom offset require
+    ///   refutation; missing, starving and non-refuting forged models are
+    ///   rejected.
+    /// - witness: `entail::tests::non_total_order_is_refused_with_a_countermodel`
+    /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
+    /// - witness: `entail::tests::perturbed_countermodel_arms_are_rejected`
+    #[anodized::spec(ensures: |ret| ret.strict() == Strictness::NON_STRICT
+        && validate_entailment_countermodel(poset, left, right, &ret).is_ok())]
     fn refuted(
         poset: &LandmarkPoset,
         left: &Level,

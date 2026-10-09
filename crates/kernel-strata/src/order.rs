@@ -45,6 +45,15 @@ impl Strictness
     ///   one, which is what makes `l < m` the comparison `l + 1 ≤ m`.
     /// - provides: the one place the two comparison modes differ.
     /// - panics: none.
+    /// - executable: none — the specification expansion calls a non-const
+    ///   evaluator, so an attribute would remove this const-callable API.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — strict and non-strict comparisons on equal atoms and
+    ///   adjacent successors distinguish a missing or reversed unit shift by
+    ///   exact comparison verdicts.
+    /// - witness: `order::tests::leq_is_reflexive_and_lt_is_irreflexive_on_atoms`
+    /// - witness: `order::tests::var_is_strictly_below_its_successor`
     #[inline]
     #[must_use]
     pub(crate) const fn shift(self) -> OrderShift
@@ -148,6 +157,21 @@ impl Not for OrderComparison
 }
 
 /// What bounds the left level's constant part within the right level.
+///
+/// # Specification
+/// - ensures: the selected constant or atom component dominates the external
+///   left constant.
+/// - executable: none — the operand levels are not fields of this evidence tag.
+///
+/// # Adequacy
+/// - hypothesis: L3 — genuine and forged bounds over canonical levels are
+///   checked by the independent validator. Equality and one-past-offset
+///   constants, an absent named atom and two equally dominating atoms expose
+///   wrong source selection and acceptance of non-dominating components.
+/// - witness: `order::tests::constant_dominated_by_atom_offset`
+/// - witness: `order::tests::constant_past_atom_offset_is_refuted_at_zero`
+/// - witness: `order::tests::constant_bound_names_the_least_dominating_variable`
+/// - witness: `order::tests::perturbed_witness_absent_constant_atom_is_rejected`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConstantBound
 {
@@ -163,6 +187,20 @@ pub enum ConstantBound
 /// The left atom over `variable` is dominated by the right level's
 /// same-variable atom. Offsets are recorded so a reviewer or validator can
 /// check the claim against the levels directly.
+///
+/// # Specification
+/// - ensures: oracle-produced bounds name equal variables, record their exact
+///   offsets and establish domination.
+/// - executable: none — the compared levels and strictness are external to the
+///   bound.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a genuine bound for unequal offsets is inspected; a
+///   forged offset and an accurate but insufficient bound must produce distinct
+///   typed refusals, exposing altered offsets and a weakened domination guard.
+/// - witness: `order::tests::witness_records_accurate_offsets`
+/// - witness: `order::tests::perturbed_witness_offset_mismatch_is_rejected`
+/// - witness: `order::tests::false_witness_insufficient_bound_is_rejected`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AtomBound
 {
@@ -219,6 +257,21 @@ impl AtomBound
 /// Witnesses are constructed only by the oracle, since the fields are private;
 /// they are inspected through the accessors and checked by
 /// [`validate_witness`].
+///
+/// # Specification
+/// - ensures: oracle-produced witnesses account for every left atom and the
+///   constant, with no unrelated bounds.
+/// - executable: none — validity relates this value to two external levels.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated comparisons validate their evidence. L3 mutates
+///   genuine or forged bounds at the missing, stray and insufficient bound
+///   boundaries; the exact validator refusal distinguishes incomplete or
+///   unsound certificates from valid ones.
+/// - witness: `level_oracle::level_oracle::prop_evidence_validates`
+/// - witness: `order::tests::perturbed_witness_missing_bound_is_rejected`
+/// - witness: `order::tests::perturbed_witness_stray_bound_is_rejected`
+/// - witness: `order::tests::false_witness_insufficient_constant_is_rejected`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LeqWitness
 {
@@ -273,6 +326,22 @@ impl LeqWitness
 /// Refutations are constructed only by the oracle, since the fields are
 /// private; they are inspected through the accessors and checked by
 /// [`validate_refutation`].
+///
+/// # Specification
+/// - ensures: oracle-produced valuations refute the external comparison in the
+///   recorded mode.
+/// - executable: none — the compared levels are not stored in the
+///   counter-valuation.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated comparisons independently validate both
+///   evidence branches. L3 checks incomparable variables, non-refuting equality
+///   and arithmetic overflow, distinguishing a false counterexample from a
+///   valid one by exact validator outcomes.
+/// - witness: `level_oracle::level_oracle::prop_evidence_validates`
+/// - witness: `order::tests::distinct_variables_are_incomparable`
+/// - witness: `order::tests::non_refuting_valuation_is_rejected`
+/// - witness: `order::tests::overflowing_valuation_is_rejected`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LeqRefutation
 {
@@ -512,6 +581,15 @@ impl Level
     /// - provides: the verdict without its evidence, for callers that only
     ///   branch on it.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — generated canonical levels are compared with
+    ///   independent zero-and-spike valuation decisions; equality, zero,
+    ///   incomparable variables and one-offset separation distinguish reversed
+    ///   or constant verdicts.
+    /// - witness: `level_oracle::level_oracle::prop_leq_agrees_with_semantic_reference`
+    /// - witness: `order::tests::zero_is_leq_everything`
+    /// - witness: `order::tests::distinct_variables_are_incomparable`
     #[spec(ensures: |ret| bool::from(ret) == self.leq_with_evidence(other).is_ok())]
     #[inline]
     #[must_use]
@@ -531,6 +609,14 @@ impl Level
     /// - provides: the verdict without its evidence, for callers that only
     ///   branch on it.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — generated canonical levels are compared with
+    ///   independent strict valuation decisions. L3 separates equality from a
+    ///   one-offset gap to expose an inclusive or missing strictness shift.
+    /// - witness: `level_oracle::level_oracle::prop_lt_agrees_with_semantic_reference`
+    /// - witness: `order::tests::leq_is_reflexive_and_lt_is_irreflexive_on_atoms`
+    /// - witness: `order::tests::var_is_strictly_below_its_successor`
     #[spec(ensures: |ret| bool::from(ret) == self.lt_with_evidence(other).is_ok())]
     #[inline]
     #[must_use]
@@ -656,6 +742,15 @@ fn compare(
 /// - provides: the value the refutation branch spikes a variable to, so that a
 ///   left atom the right level does not dominate overtakes it there.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, a dominating atom, a dominating constant and the
+///   u64 ceiling distinguish omitted components, missing successor and
+///   narrowing arithmetic by the exact spike value.
+/// - witness: `order::tests::spike_exceeds_zero_atom_and_numeric_ceiling`
+#[spec(ensures: |ret| ret.map(u128::from) == right.atoms()
+    .map(|(_, offset)| u128::from(offset))
+    .fold(u128::from(right.constant_part()), u128::max).checked_add(1))]
 fn spike_value(right: &Level) -> Option<LevelValue>
 {
     let mut ceiling = u128::from(right.constant_part());
@@ -1220,46 +1315,22 @@ mod tests
     }
 
     #[test]
-    fn evidence_error_displays_are_stable()
+    fn spike_exceeds_zero_atom_and_numeric_ceiling()
     {
-        use alloc::string::ToString as _;
-
-        let cases = [
+        for (right, expected) in [
+            (Level::zero(), 1_u128),
+            (Level::constant(LevelConstant::from(5_u64)), 6),
             (
-                EvidenceError::MissingAtomBound { variable: x() },
-                "no bound covers the left atom over variable 0",
+                var_plus(x(), LevelOffset::from(3_u64))
+                    .max(&Level::constant(LevelConstant::from(1_u64))),
+                4,
             ),
             (
-                EvidenceError::StrayAtomBound { variable: y() },
-                "a bound names variable 1 outside the left level's atoms",
+                Level::constant(LevelConstant::from(u64::MAX)).max(&Level::var(x())),
+                u128::from(u64::MAX).saturating_add(1),
             ),
-            (
-                EvidenceError::AtomOffsetMismatch { variable: x() },
-                "recorded offsets for variable 0 differ from the levels",
-            ),
-            (
-                EvidenceError::InsufficientAtomBound { variable: y() },
-                "the bound for variable 1 does not dominate",
-            ),
-            (
-                EvidenceError::MissingConstantBound { variable: x() },
-                "the constant bound names absent variable 0",
-            ),
-            (
-                EvidenceError::InsufficientConstantBound,
-                "the constant bound does not dominate",
-            ),
-            (
-                EvidenceError::NotRefuting,
-                "the valuation does not refute the claimed order",
-            ),
-            (
-                EvidenceError::Overflow,
-                "evaluating the valuation overflowed",
-            ),
-        ];
-        for (error, expected) in cases {
-            assert_eq!(error.to_string(), expected, "{error:?} must render stably");
+        ] {
+            assert_eq!(super::spike_value(&right), Some(LevelValue::from(expected)));
         }
     }
 
@@ -1272,6 +1343,17 @@ mod tests
     /// - provides: the atom builder these tests state their fixtures with.
     /// - panics: when a successor step passes the representable range, which
     ///   the offsets these tests use never reach.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — small offsets zero through five produce levels whose
+    ///   order and evidence expose changed variable selection, a missing
+    ///   successor or an extra shift; unequal offsets are inspected in a
+    ///   genuine witness.
+    /// - witness: `order::tests::witness_records_accurate_offsets`
+    /// - witness: `order::tests::constant_dominated_by_atom_offset`
+    /// - witness: `order::tests::var_is_strictly_below_its_successor`
+    #[anodized::spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
+        && ret.atoms().eq(core::iter::once((variable, offset))))]
     fn var_plus(
         variable: LevelVar,
         offset: LevelOffset,

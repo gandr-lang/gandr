@@ -67,8 +67,14 @@ impl HornOffset
     ///
     /// # Errors
     /// [`LevelError::Overflow`] — the sum passed the `u128` range.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, ordinary sums, the exact u128 ceiling and one
+    ///   step beyond expose incorrect addition and overflow guards by exact
+    ///   results.
+    /// - witness: `horn::tests::offset_arithmetic_covers_zero_equality_and_ceiling`
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok() == (self.0 <= u128::MAX.saturating_sub(rhs.0)))]
+    #[spec(ensures: |ret| ret.as_ref().ok().map(|value| u128::from(*value)) == self.0.checked_add(rhs.0))]
     pub fn checked_add(
         self,
         rhs: Self,
@@ -94,12 +100,12 @@ impl HornOffset
     /// [`LevelError::Overflow`] — the shifted sum passed the `u128` range.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the guard is separated from the sum by an
-    ///   adversarial model driving a body variable to `u128::MAX`, reached
-    ///   through the countermodel validator.
-    /// - witness: `entail::tests::perturbed_countermodel_arms_are_rejected`
+    /// - hypothesis: L3 — zero and positive shifts at ordinary values, the
+    ///   exact u128 ceiling and one step beyond distinguish a changed shift, a
+    ///   guard off by one and wrapping arithmetic by exact results.
+    /// - witness: `horn::tests::offset_arithmetic_covers_zero_equality_and_ceiling`
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok() == (self.0 <= u128::MAX.saturating_sub(u128::from(shift))))]
+    #[spec(ensures: |ret| ret.as_ref().ok().map(|value| u128::from(*value)) == self.0.checked_add(u128::from(shift)))]
     pub fn checked_add_shift(
         self,
         shift: HornShift,
@@ -120,6 +126,13 @@ impl HornOffset
     ///   with, where a conclusion below its body is no gain rather than a
     ///   negative one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — subtrahends immediately below, equal to and above the
+    ///   minuend distinguish reversed operands, wrapping and an incorrect zero
+    ///   boundary by exact floored differences.
+    /// - witness: `horn::tests::offset_arithmetic_covers_zero_equality_and_ceiling`
+    #[spec(ensures: |ret| u128::from(ret) == self.0.saturating_sub(rhs.0))]
     #[inline]
     #[must_use]
     pub fn saturating_sub(
@@ -143,6 +156,14 @@ impl HornOffset
     /// - provides: the sanctioned crossing from the offset domain into the
     ///   shift domain, named per site rather than opened as a conversion.
     /// - panics: none.
+    /// - executable: none — the expansion calls a non-const evaluator and
+    ///   cannot preserve this const-callable cross-domain operation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, ordinary magnitudes and the u128 ceiling are
+    ///   used in shifted addition; exact sums and overflow refusals expose
+    ///   altered magnitudes on either cross-domain projection.
+    /// - witness: `horn::tests::offset_arithmetic_covers_zero_equality_and_ceiling`
     #[inline]
     #[must_use]
     pub const fn shift_from_zero(self) -> HornShift
@@ -228,6 +249,14 @@ impl HornShift
     /// - provides: the sanctioned crossing from the shift domain into the
     ///   offset domain, named per site rather than opened as a conversion.
     /// - panics: none.
+    /// - executable: none — the expansion calls a non-const evaluator and
+    ///   cannot preserve this const-callable cross-domain operation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, ordinary magnitudes and the u128 ceiling are
+    ///   used in shifted addition; exact sums and overflow refusals expose
+    ///   altered magnitudes on either cross-domain projection.
+    /// - witness: `horn::tests::offset_arithmetic_covers_zero_equality_and_ceiling`
     #[inline]
     #[must_use]
     pub const fn offset_from_zero(self) -> HornOffset
@@ -671,6 +700,18 @@ pub enum HVar
 
 /// A value of the model domain `ℕ^∞`: the downward-closed atom set
 /// `{v+k | k ≤ f(v)}` of a variable, represented by its maximum.
+///
+/// # Specification
+/// - ensures: a finite value covers exactly the offsets at most its maximum;
+///   infinity covers every representable offset.
+/// - executable: none — the data-item expansion does not check construction;
+///   the coverage method checks this interpretation when it is observed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — finite boundaries and infinity are observed through
+///   membership below, at and above the maximum and at the numeric ceiling,
+///   distinguishing a strict bound and a finite interpretation of infinity.
+/// - witness: `horn::tests::model_coverage_separates_absence_infinity_and_equality`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ModelValue
 {
@@ -701,9 +742,16 @@ impl ModelValue
     ///   value — the documented absence of a finite maximum, not a swallowed
     ///   failure, since the projection cannot fail.
     /// - provides: the finite projection the admission certificate is computed
-    ///   from. This remains a `const fn` without `#[spec]`: the pinned
-    ///   expansion calls a non-const evaluator and fails with `E0015`.
+    ///   from.
     /// - panics: none.
+    /// - executable: none — the expansion calls a non-const evaluator and
+    ///   cannot preserve this const-callable projection.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a finite boundary and infinity are observed through
+    ///   atom coverage and the finite projection; confusing infinity with a
+    ///   finite maximum changes the exact membership verdicts.
+    /// - witness: `horn::tests::model_coverage_separates_absence_infinity_and_equality`
     #[inline]
     #[must_use]
     pub const fn as_finite(self) -> Option<HornOffset>
@@ -726,6 +774,16 @@ impl ModelValue
     /// - provides: the atom membership test saturation and the validators
     ///   share.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite offsets below, at and above a model maximum,
+    ///   and the largest offset under infinity, distinguish a strict comparison
+    ///   or finite treatment of infinity by exact membership answers.
+    /// - witness: `horn::tests::model_coverage_separates_absence_infinity_and_equality`
+    #[spec(ensures: |ret| bool::from(ret) == match self {
+        ModelValue::Finite(value) => offset <= value,
+        ModelValue::Infinite => true,
+    })]
     #[inline]
     #[must_use]
     pub(crate) fn covers(
@@ -746,6 +804,18 @@ impl ModelValue
 /// The body is nonempty and canonical: sorted by variable with one maximal
 /// offset per variable. A body atom `x + 2` beside `x + 5` is redundant, since
 /// the downward-closed model semantics makes the higher atom imply the lower.
+///
+/// # Specification
+/// - ensures: constructor-produced bodies are nonempty, sorted by variable, and
+///   retain exactly the maximum input offset of each variable.
+/// - executable: none — data-item invariants are not checked on construction by
+///   the expansion; the smart constructor owns the executable boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an empty body is refused, while repeated variables with
+///   unequal offsets collapse to one maximal atom. Exact body contents expose
+///   lost maxima, duplicate retention and unsorted canonicalization.
+/// - witness: `horn::tests::clause_bodies_canonicalize`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HornClause
 {
@@ -813,6 +883,15 @@ impl HornClause
     /// - provides: the omission test the documented compilation applies, so a
     ///   vacuous clause never enters a system.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a different head variable and same-variable heads
+    ///   below, at and above the body offset distinguish lost variable
+    ///   matching, wrong comparison direction and an exclusive equality
+    ///   boundary.
+    /// - witness: `horn::tests::clause_gain_and_subsumption_use_the_correct_extrema`
+    #[spec(ensures: |ret| bool::from(ret) == self.body.iter().any(|atom|
+        atom.variable() == self.head.variable() && atom.offset() >= self.head.offset()))]
     pub fn is_trivial(&self) -> ClauseTriviality
     {
         let head = self.head;
@@ -852,6 +931,15 @@ impl HornClause
     /// - provides: the per-clause growth measure the system's modulus is the
     ///   maximum of.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-offset body and heads below, equal to and above
+    ///   its minimum distinguish choosing the maximum, reversing subtraction
+    ///   and losing the zero floor through exact growth values.
+    /// - witness: `horn::tests::clause_gain_and_subsumption_use_the_correct_extrema`
+    #[spec(ensures: |ret| u128::from(ret) == self.body.iter().map(|atom|
+        u128::from(self.head.offset()).saturating_sub(u128::from(atom.offset())))
+        .max().unwrap_or(0))]
     fn gain(&self) -> MaxGain
     {
         let min_body = self
@@ -888,6 +976,15 @@ impl ClauseSystem
     ///   a system with no clauses.
     /// - provides: the growth modulus the saturation bound is computed from.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and nonempty systems separate the zero identity
+    ///   from a positive maximum. The paper fixpoint with unequal clause gains
+    ///   exposes choosing a smaller gain through the exact finite model.
+    /// - witness: `horn::tests::clause_gain_and_subsumption_use_the_correct_extrema`
+    /// - witness: `horn::tests::paper_example_reaches_the_published_fixpoint`
+    #[spec(ensures: |ret| ret == self.clauses.iter().map(HornClause::gain)
+        .max().unwrap_or(MaxGain::ZERO))]
     pub fn maxgain(&self) -> MaxGain
     {
         self.clauses
@@ -906,6 +1003,16 @@ impl ClauseSystem
     ///   clause, and zero for a system with no clauses.
     /// - provides: the offset the loop check seeds its model at.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the empty system and a clause with unequal body
+    ///   offsets distinguish a nonzero empty value or a minimum in place of the
+    ///   maximum by exact offsets; the paper loop adds multiple-clause
+    ///   coverage.
+    /// - witness: `horn::tests::clause_gain_and_subsumption_use_the_correct_extrema`
+    /// - witness: `horn::tests::paper_loop_variant_diverges_everywhere`
+    #[spec(ensures: |ret| ret == self.clauses.iter().flat_map(|clause|
+        clause.body().iter().map(|atom| atom.offset())).max().unwrap_or(HornOffset::ZERO))]
     pub fn max_body_offset(&self) -> HornOffset
     {
         self.clauses
@@ -917,6 +1024,21 @@ impl ClauseSystem
 }
 
 /// The strongest conclusion a clause family forces from a model, per [`fire`].
+///
+/// # Specification
+/// - ensures: results produced by firing contain a finite shift exactly for a
+///   finite forced value; the shift is maximal among enabled instances.
+/// - executable: none — maximality depends on the external clause and model;
+///   the firing function checks that relation at the production boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — finite, mixed and all-infinite bodies are observed by the
+///   exact conclusion and optional shift. Missing variables, insufficient
+///   offsets and the minimum-shift boundary expose invalid firing admission.
+/// - witness: `horn::tests::firing_requires_the_minimum_shift`
+/// - witness: `horn::tests::firing_skips_absent_and_dominated_bodies`
+/// - witness: `horn::tests::mixed_finite_bodies_bound_the_shift`
+/// - witness: `horn::tests::infinite_bodies_force_infinite_conclusions`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Firing
 {
@@ -931,6 +1053,21 @@ pub struct Firing
 
 /// The result of [`saturate`]: the least model, the finite-shift firing log,
 /// and whether any component left the finite range.
+///
+/// # Specification
+/// - ensures: results produced by saturation contain the least model above the
+///   seed, its finite updates in application order and its divergence.
+/// - executable: none — leastness quantifies over models of the external clause
+///   system, and the initial seed is no longer retained in this value.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the published example fixes each finite model value and
+///   its loop variant fixes the infinite components. L2 — the empty-system
+///   differential covers unconstrained queries, exposing incorrect propagation
+///   or a finite/infinite misclassification.
+/// - witness: `horn::tests::paper_example_reaches_the_published_fixpoint`
+/// - witness: `horn::tests::paper_loop_variant_diverges_everywhere`
+/// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
 #[derive(Clone, Debug)]
 pub struct Saturation
 {
@@ -977,11 +1114,12 @@ pub struct Saturation
 /// [`LevelError::Overflow`] — a firing's conclusion passed the `u128` range.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the worked example of the loop-checking paper's section
-///   5.2 pins the exact fixpoint and its loop variant pins the divergence set,
-///   and the empty-poset differential pins the degenerate case against the free
-///   order oracle; the L3 residue is the snap decision, exercised by the loop
-///   goldens, since a mutant snapping early or late moves the divergence set.
+/// - hypothesis: L1 — the paper example fixes the finite model and its loop
+///   variant fixes the divergent components. L2 — unconstrained queries agree
+///   with the free oracle. L3 — a zero-gain conclusion exactly at the bound
+///   remains finite, while a unit-gain loop records the updates at and just
+///   above its bound; exact models and logs expose early or late snapping.
+/// - witness: `horn::tests::saturation_snaps_only_above_the_bound`
 /// - witness: `horn::tests::paper_example_reaches_the_published_fixpoint`
 /// - witness: `horn::tests::paper_loop_variant_diverges_everywhere`
 /// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
@@ -1091,11 +1229,11 @@ pub fn saturate(
 /// [`LevelError::Overflow`] — a derived value passed the `u128` range.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the loop goldens, the paper's section 5.2 variant and the
-///   self-successor equality, pin extraction end to end, since the produced log
-///   must replay through the independent witness validator, so an extraction
-///   mutant is caught at validation; the L3 residue is the early-exit boundary,
-///   where coverage is checked after every step, pinned by the one-step golden.
+/// - hypothesis: L2 — paper loop fixtures replay through the independent
+///   witness validator. L3 — empty and seed-covered targets with no rounds, and
+///   a two-step target at limits zero, one and two distinguish an early cutoff
+///   or an extra round by exact optional logs and concluded atoms.
+/// - witness: `horn::tests::derivation_respects_zero_and_exact_round_limits`
 /// - witness: `horn::tests::derive_targets_extracts_a_checkable_log`
 /// - witness: `poset::tests::paper_loop_variant_returns_a_validating_loop_witness`
 /// - witness: `poset::tests::self_successor_equality_loops`
@@ -1168,6 +1306,15 @@ pub fn derive_targets(
 /// - provides: the stopping test derivation extraction polls after every
 ///   firing.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty targets, an absent variable, offsets at and above a
+///   finite maximum, infinity and a mixed covered/uncovered target list
+///   distinguish default presence, strictness and existential in place of
+///   universal coverage by exact verdicts.
+/// - witness: `horn::tests::model_coverage_separates_absence_infinity_and_equality`
+#[spec(ensures: |ret| bool::from(ret) == targets.iter().all(|target|
+    values.get(&target.variable()).is_some_and(|value| bool::from(value.covers(target.offset())))))]
 pub fn covered(
     values: &BTreeMap<HVar, ModelValue>,
     targets: &[HornAtom],
@@ -1207,6 +1354,7 @@ pub fn covered(
 ///   rule as a whole is exercised by the paper-example golden and the
 ///   differential property suite, since a firing mutant shifts the computed
 ///   fixpoint away from the published one or breaks free-fragment agreement.
+/// - witness: `horn::tests::firing_at_the_ceiling_refuses_only_overflow`
 /// - witness: `horn::tests::firing_requires_the_minimum_shift`
 /// - witness: `horn::tests::firing_skips_absent_and_dominated_bodies`
 /// - witness: `horn::tests::infinite_bodies_force_infinite_conclusions`
@@ -1299,6 +1447,242 @@ mod tests
     use super::saturate;
     use crate::level::LevelVar;
     use crate::level::LevelVarIndex;
+
+    #[test]
+    fn saturation_snaps_only_above_the_bound()
+    {
+        let finite = ClauseSystem {
+            clauses: vec![
+                HornClause::new(
+                    &[HornAtom::new(v0(), HornOffset::ZERO)],
+                    HornAtom::new(v1(), HornOffset::ZERO),
+                )
+                .expect("nonempty body"),
+            ],
+            min_shift: HornShift::ZERO,
+        };
+        let seed = BTreeMap::from([(v0(), ModelValue::Finite(HornOffset::ZERO))]);
+        let fixed = saturate(&finite, seed.clone(), SaturationBound::from(0_u128))
+            .expect("zero-gain model");
+        assert_eq!(
+            fixed.values,
+            BTreeMap::from([
+                (v0(), ModelValue::Finite(HornOffset::ZERO)),
+                (v1(), ModelValue::Finite(HornOffset::ZERO)),
+            ])
+        );
+        assert!(!bool::from(fixed.diverged));
+        let looping = ClauseSystem {
+            clauses: vec![
+                HornClause::new(
+                    &[HornAtom::new(v0(), HornOffset::ZERO)],
+                    HornAtom::new(v0(), HornOffset::ONE),
+                )
+                .expect("nonempty body"),
+            ],
+            min_shift: HornShift::ZERO,
+        };
+        let fixed = saturate(&looping, seed, SaturationBound::from(1_u128))
+            .expect("bounded loop detection");
+        assert_eq!(fixed.values, BTreeMap::from([(v0(), ModelValue::Infinite)]));
+        assert!(bool::from(fixed.diverged));
+        assert_eq!(
+            fixed
+                .log
+                .iter()
+                .map(|step| (step.shift(), step.concluded()))
+                .collect::<Vec<_>>(),
+            vec![
+                (HornShift::ZERO, HornAtom::new(v0(), HornOffset::ONE)),
+                (
+                    HornShift::ONE,
+                    HornAtom::new(v0(), HornOffset::from(2_u128))
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn offset_arithmetic_covers_zero_equality_and_ceiling()
+    {
+        for (left, right, expected) in [
+            (0_u128, 0_u128, Ok(0_u128)),
+            (7, 3, Ok(10)),
+            (u128::MAX, 0, Ok(u128::MAX)),
+            (u128::MAX.saturating_sub(1), 1, Ok(u128::MAX)),
+            (u128::MAX, 1, Err(crate::level::LevelError::Overflow)),
+        ] {
+            let offset = HornOffset::from(left);
+            let shift = HornOffset::from(right).shift_from_zero();
+            assert_eq!(
+                offset.checked_add(HornOffset::from(right)).map(u128::from),
+                expected
+            );
+            assert_eq!(offset.checked_add_shift(shift).map(u128::from), expected);
+            assert_eq!(
+                offset.checked_add(shift.offset_from_zero()).map(u128::from),
+                expected
+            );
+        }
+        for (left, right, expected) in [(2_u128, 1_u128, 1_u128), (2, 2, 0), (2, 3, 0)] {
+            assert_eq!(
+                HornOffset::from(left).saturating_sub(HornOffset::from(right)),
+                HornOffset::from(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn model_coverage_separates_absence_infinity_and_equality()
+    {
+        let finite = ModelValue::Finite(HornOffset::from(2_u128));
+        assert_eq!(finite.as_finite(), Some(HornOffset::from(2_u128)));
+        assert_eq!(ModelValue::Infinite.as_finite(), None);
+        let values = BTreeMap::from([(v0(), finite), (v1(), ModelValue::Infinite)]);
+        for (offset, expected) in [(1_u128, true), (2, true), (3, false)] {
+            let offset = HornOffset::from(offset);
+            assert_eq!(bool::from(finite.covers(offset)), expected);
+            assert_eq!(
+                bool::from(super::covered(&values, &[HornAtom::new(v0(), offset)])),
+                expected
+            );
+        }
+        let largest = HornOffset::from(u128::MAX);
+        assert!(bool::from(ModelValue::Infinite.covers(largest)));
+        assert!(bool::from(super::covered(&values, &[HornAtom::new(
+            v1(),
+            largest
+        )])));
+        assert!(!bool::from(super::covered(&values, &[HornAtom::new(
+            v2(),
+            HornOffset::ZERO
+        )])));
+        assert!(bool::from(super::covered(&BTreeMap::new(), &[])));
+        assert!(!bool::from(super::covered(&values, &[
+            HornAtom::new(v1(), largest),
+            HornAtom::new(v0(), HornOffset::from(3_u128))
+        ])));
+    }
+
+    #[test]
+    fn clause_gain_and_subsumption_use_the_correct_extrema()
+    {
+        let empty = ClauseSystem {
+            clauses: vec![],
+            min_shift: HornShift::ZERO,
+        };
+        assert_eq!(empty.maxgain(), MaxGain::ZERO);
+        assert_eq!(empty.max_body_offset(), HornOffset::ZERO);
+        let body = [
+            HornAtom::new(v0(), HornOffset::from(2_u128)),
+            HornAtom::new(v1(), HornOffset::from(5_u128)),
+        ];
+        let clause = HornClause::new(&body, HornAtom::new(v2(), HornOffset::from(7_u128)))
+            .expect("nonempty body");
+        assert_eq!(clause.gain(), MaxGain::from(5_u128));
+        assert!(!bool::from(clause.is_trivial()));
+        let system = ClauseSystem {
+            clauses: vec![clause],
+            min_shift: HornShift::ONE,
+        };
+        assert_eq!(system.maxgain(), MaxGain::from(5_u128));
+        assert_eq!(system.max_body_offset(), HornOffset::from(5_u128));
+        for (head, expected) in [(1_u128, true), (2, true), (3, false)] {
+            let clause = HornClause::new(&body, HornAtom::new(v0(), HornOffset::from(head)))
+                .expect("nonempty body");
+            assert_eq!(bool::from(clause.is_trivial()), expected);
+            assert_eq!(clause.gain(), MaxGain::from(head.saturating_sub(2)));
+        }
+    }
+
+    #[test]
+    fn derivation_respects_zero_and_exact_round_limits()
+    {
+        let system = ClauseSystem {
+            clauses: vec![
+                HornClause::new(
+                    &[HornAtom::new(v0(), HornOffset::ZERO)],
+                    HornAtom::new(v0(), HornOffset::ONE),
+                )
+                .expect("nonempty body"),
+            ],
+            min_shift: HornShift::ZERO,
+        };
+        let seed = BTreeMap::from([(v0(), ModelValue::Finite(HornOffset::ZERO))]);
+        for targets in [vec![], vec![HornAtom::new(v0(), HornOffset::ZERO)]] {
+            assert_eq!(
+                derive_targets(
+                    &system,
+                    seed.clone(),
+                    &targets,
+                    DerivationRoundLimit::from(0_u128)
+                ),
+                Ok(Some(vec![]))
+            );
+        }
+        let targets = [HornAtom::new(v0(), HornOffset::from(2_u128))];
+        for limit in [0_u128, 1] {
+            assert_eq!(
+                derive_targets(
+                    &system,
+                    seed.clone(),
+                    &targets,
+                    DerivationRoundLimit::from(limit)
+                ),
+                Ok(None)
+            );
+        }
+        let log = derive_targets(&system, seed, &targets, DerivationRoundLimit::from(2_u128))
+            .expect("finite derivation")
+            .expect("two rounds cover the goal");
+        assert_eq!(
+            log.iter()
+                .map(|step| (step.clause(), step.shift(), step.concluded()))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    ClauseIndex::from(0_usize),
+                    HornShift::ZERO,
+                    HornAtom::new(v0(), HornOffset::ONE)
+                ),
+                (
+                    ClauseIndex::from(0_usize),
+                    HornShift::ONE,
+                    HornAtom::new(v0(), HornOffset::from(2_u128))
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn firing_at_the_ceiling_refuses_only_overflow()
+    {
+        let clause = HornClause::new(
+            &[HornAtom::new(v0(), HornOffset::ZERO)],
+            HornAtom::new(v1(), HornOffset::ONE),
+        )
+        .expect("nonempty body");
+        let model = BTreeMap::from([(v0(), ModelValue::Finite(HornOffset::from(u128::MAX)))]);
+        assert_eq!(
+            fire(&clause, &model, HornShift::ZERO),
+            Err(crate::level::LevelError::Overflow)
+        );
+        let model = BTreeMap::from([(
+            v0(),
+            ModelValue::Finite(HornOffset::from(u128::MAX.saturating_sub(1))),
+        )]);
+        let firing = fire(&clause, &model, HornShift::ZERO)
+            .expect("exact ceiling")
+            .expect("enabled body");
+        assert_eq!(
+            firing.value,
+            ModelValue::Finite(HornOffset::from(u128::MAX))
+        );
+        assert_eq!(
+            firing.shift,
+            Some(HornShift::from(u128::MAX.saturating_sub(1)))
+        );
+    }
 
     #[test]
     fn paper_example_reaches_the_published_fixpoint()
@@ -1592,6 +1976,16 @@ mod tests
     /// - provides: the fixture the engine's tests are stated against.
     /// - panics: when a body is rejected as empty, which the literal nonempty
     ///   bodies here never are.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — the fixed paper example is observed by its published
+    ///   finite fixpoint and its all-diverging variant. Changed clause
+    ///   directions, omitted variables and offsets cross those finite/infinite
+    ///   boundaries.
+    /// - witness: `horn::tests::paper_example_reaches_the_published_fixpoint`
+    /// - witness: `horn::tests::paper_loop_variant_diverges_everywhere`
+    #[anodized::spec(ensures: |ret| ret.iter().map(|clause| clause.head().variable())
+        .eq([v1(), v2(), v3(), v4()]))]
     fn paper_clauses() -> Vec<HornClause>
     {
         vec![

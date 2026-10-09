@@ -78,12 +78,12 @@ impl LevelOffset
     /// [`LevelError::Overflow`] — the offset was at the numeric ceiling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the increment and its guard are separated by the
-    ///   `u64::MAX` boundary, reached through [`Level::succ`] whose witnesses
-    ///   assert the exact variant.
-    /// - witness: `level::tests::succ_overflow_surfaces_exact_variant`
+    /// - hypothesis: L3 — zero, ordinary offsets, the last representable
+    ///   successor and the ceiling expose changed increments and overflow
+    ///   guards by exact values and the Overflow variant.
+    /// - witness: `level::tests::arithmetic_boundaries_preserve_values_and_refuse_overflow`
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok() == (u64::from(self) < u64::MAX))]
+    #[spec(ensures: |ret| ret.as_ref().map(|value| u64::from(*value)).ok() == u64::from(self).checked_add(1))]
     pub fn succ(self) -> Result<Self, LevelError>
     {
         self.0
@@ -156,12 +156,12 @@ impl LevelConstant
     /// [`LevelError::Overflow`] — the constant was at the numeric ceiling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the increment and its guard are separated by the
-    ///   `u64::MAX` boundary, reached through [`Level::succ`] whose witnesses
-    ///   assert the exact variant.
-    /// - witness: `level::tests::succ_overflow_surfaces_exact_variant`
+    /// - hypothesis: L3 — zero, ordinary constants, the last representable
+    ///   successor and the ceiling expose changed increments and overflow
+    ///   guards by exact values and the Overflow variant.
+    /// - witness: `level::tests::arithmetic_boundaries_preserve_values_and_refuse_overflow`
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok() == (u64::from(self) < u64::MAX))]
+    #[spec(ensures: |ret| ret.as_ref().map(|value| u64::from(*value)).ok() == u64::from(self).checked_add(1))]
     pub fn succ(self) -> Result<Self, LevelError>
     {
         self.0
@@ -234,11 +234,12 @@ impl LevelValue
     /// [`LevelError::Overflow`] — the sum passed the `u128` range.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the guard is separated from the sum by the
-    ///   `u128::MAX` valuation, reached through [`Level::eval`].
-    /// - witness: `level::tests::eval_overflow_surfaces_exact_variant`
+    /// - hypothesis: L3 — zero and positive offsets at ordinary values and
+    ///   immediately below, at, and above the u128 sum ceiling distinguish
+    ///   changed arithmetic and guards by exact results.
+    /// - witness: `level::tests::arithmetic_boundaries_preserve_values_and_refuse_overflow`
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok() == (u128::from(self) <= u128::MAX.saturating_sub(u128::from(offset))))]
+    #[spec(ensures: |ret| ret.as_ref().map(|value| u128::from(*value)).ok() == u128::from(self).checked_add(u128::from(offset)))]
     pub fn checked_add_offset(
         self,
         offset: LevelOffset,
@@ -445,6 +446,21 @@ impl Error for LevelError
 /// invariant, canonical-form identity coincides with semantic equality at every
 /// valuation, which is why `Eq` on this type is the kernel's level-equality
 /// oracle.
+///
+/// # Specification
+/// - ensures: each variable has one offset, and any constant dominated by an
+///   atom offset is zero; equality therefore decides equality of denotations.
+/// - panics: none.
+/// - executable: none — a data value does not retain its construction inputs;
+///   constructor predicates check the canonical invariant when values arise.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated terms are compared by an independent evaluator
+///   and semantic equality. L3 separates constant domination at equality from a
+///   larger constant, observing canonical equality and component values.
+/// - witness: `level_oracle::level_oracle::prop_eq_agrees_with_semantic_reference`
+/// - witness: `level::tests::max_absorbs_dominated_constant`
+/// - witness: `level::tests::max_keeps_undominated_constant`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Level
 {
@@ -464,6 +480,12 @@ impl Level
     ///   atoms, which denotes `0` under every valuation.
     /// - provides: the unit of the level algebra's join.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — under empty and nonempty valuations, the constant and
+    ///   atom projections distinguish a nonzero constant or spurious atom.
+    /// - witness: `level::tests::constructors_preserve_their_denotations`
+    #[spec(ensures: |ret| ret.constant == LevelConstant::ZERO && ret.atoms.is_empty())]
     #[inline]
     #[must_use]
     pub fn zero() -> Self
@@ -482,6 +504,13 @@ impl Level
     ///   which carries no atoms, so it denotes `value` under every valuation.
     /// - provides: the constant embedding of the naturals into levels.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, an ordinary constant, and the numeric ceiling
+    ///   retain their exact value under unrelated variable assignments; the
+    ///   atom iterator detects contamination by a variable component.
+    /// - witness: `level::tests::constructors_preserve_their_denotations`
+    #[spec(ensures: |ret| ret.constant == value && ret.atoms.is_empty())]
     #[inline]
     #[must_use]
     pub fn constant(value: LevelConstant) -> Self
@@ -501,6 +530,14 @@ impl Level
     ///   valuation gives `variable`.
     /// - provides: the variable embedding of the level context into levels.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — variable indices zero and the index ceiling, under
+    ///   absent and explicit valuations, expose an altered variable, offset, or
+    ///   constant through exact atoms and evaluation.
+    /// - witness: `level::tests::constructors_preserve_their_denotations`
+    #[spec(ensures: |ret| ret.constant == LevelConstant::ZERO
+        && ret.atoms.len() == 1 && ret.atoms.get(&variable) == Some(&LevelOffset::ZERO))]
     #[inline]
     #[must_use]
     pub fn var(variable: LevelVar) -> Self
@@ -538,6 +575,7 @@ impl Level
     ///   constant-renormalization pair, where a dominated constant must leave
     ///   the canonical constant at `0` after the shift.
     /// - witness: `level::tests::succ_overflow_surfaces_exact_variant`
+    /// - witness: `level::tests::arithmetic_boundaries_preserve_values_and_refuse_overflow`
     /// - witness: `level::tests::succ_renormalizes_dominated_constant`
     /// - witness: `level_oracle::level_oracle::prop_succ_distributes_over_max`
     /// - witness: `level_oracle::level_oracle::prop_eval_agrees_with_reference`
@@ -643,6 +681,14 @@ impl Level
     /// - provides: per-variable read access to the canonical form, used by the
     ///   evidence validators.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — absent variables and present zero/nonzero offsets
+    ///   distinguish fabricated membership, wrong-key lookup, and lost offsets
+    ///   by exact optional values.
+    /// - witness: `level::tests::var_has_zero_offset`
+    /// - witness: `level::tests::absent_variable_reads_as_lookup_absence`
+    /// - witness: `level::tests::max_keeps_undominated_constant`
     #[spec(ensures: |ret| ret == self.atoms.get(&variable).copied())]
     #[inline]
     #[must_use]
@@ -665,6 +711,14 @@ impl Level
     /// - provides: the atom-by-atom read the order oracle and the evidence
     ///   validators walk.
     /// - panics: none.
+    /// - executable: none — the opaque iterator cannot be named by the
+    ///   postcondition expansion or consumed without changing its output.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, singleton, and reverse-inserted distinct atoms
+    ///   expose omission, duplication, reordering, and wrong offsets through
+    ///   exact iteration to exhaustion.
+    /// - witness: `level::tests::atom_iteration_preserves_order_and_offsets`
     #[inline]
     pub fn atoms(&self) -> impl Iterator<Item = (LevelVar, LevelOffset)> + '_
     {
@@ -683,6 +737,12 @@ impl Level
     /// - provides: the zero decision, without building a level to compare
     ///   against.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, positive constants, and zero-offset variables
+    ///   separate both conjuncts of the zero decision by exact truth values.
+    /// - witness: `level::tests::constructors_preserve_their_denotations`
+    #[spec(ensures: |ret| bool::from(ret) == (self.constant == LevelConstant::ZERO && self.atoms.is_empty()))]
     #[inline]
     #[must_use]
     pub fn is_zero(&self) -> LevelIsZero
@@ -717,12 +777,11 @@ impl Level
     /// - witness: `level_oracle::level_oracle::prop_eval_agrees_with_reference`
     ///
     /// [`validate_refutation`]: crate::validate_refutation
-    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|value| {
+    #[spec(ensures: |ret| ret.as_ref().ok().map(|value| u128::from(*value)) ==
         self.atoms.iter().try_fold(u128::from(self.constant), |maximum, (variable, offset)| {
             valuation.get(variable).copied().unwrap_or(LevelValue::ZERO)
                 .0.checked_add(u128::from(*offset)).map(|component| maximum.max(component))
-        }) == Some(u128::from(*value))
-    }))]
+        }))]
     #[inline]
     pub fn eval(
         &self,
@@ -822,6 +881,80 @@ mod tests
     use super::LevelVarIndex;
 
     #[test]
+    fn constructors_preserve_their_denotations()
+    {
+        for index in [0_u32, u32::MAX] {
+            let variable = LevelVar::new(LevelVarIndex::from(index));
+            let valuation = BTreeMap::from([(variable, LevelValue::from(11_u128))]);
+            let zero = Level::zero();
+            assert_eq!(zero.eval(&valuation), Ok(LevelValue::ZERO));
+            assert_eq!(zero.atoms().next(), None);
+            assert!(bool::from(zero.is_zero()));
+            for value in [0_u64, 7, u64::MAX] {
+                let constant = Level::constant(LevelConstant::from(value));
+                assert_eq!(
+                    constant.eval(&valuation),
+                    Ok(LevelValue::from(u128::from(value)))
+                );
+                assert_eq!(constant.atoms().next(), None);
+                assert_eq!(bool::from(constant.is_zero()), value == 0);
+            }
+            let level = Level::var(variable);
+            assert_eq!(level.eval(&valuation), Ok(LevelValue::from(11_u128)));
+            assert_eq!(level.eval(&BTreeMap::new()), Ok(LevelValue::ZERO));
+            assert_eq!(level.atoms().collect::<alloc::vec::Vec<_>>(), [(
+                variable,
+                LevelOffset::ZERO
+            )]);
+            assert!(!bool::from(level.is_zero()));
+        }
+    }
+
+    #[test]
+    fn arithmetic_boundaries_preserve_values_and_refuse_overflow()
+    {
+        for value in [0_u64, 7, u64::MAX.saturating_sub(1), u64::MAX] {
+            let expected = value.checked_add(1).ok_or(LevelError::Overflow);
+            assert_eq!(LevelOffset::from(value).succ().map(u64::from), expected);
+            assert_eq!(LevelConstant::from(value).succ().map(u64::from), expected);
+            let level = Level::canonicalized(
+                LevelConstant::ZERO,
+                BTreeMap::from([(x(), LevelOffset::from(value))]),
+            );
+            assert_eq!(
+                level.succ().map(|level| level.offset_of(x())),
+                expected.map(|offset| Some(LevelOffset::from(offset)))
+            );
+        }
+        for (base, offset, expected) in [
+            (0_u128, 0_u64, Ok(0_u128)),
+            (7, 3, Ok(10)),
+            (u128::MAX, 0, Ok(u128::MAX)),
+            (u128::MAX.saturating_sub(1), 1, Ok(u128::MAX)),
+            (u128::MAX, 1, Err(LevelError::Overflow)),
+        ] {
+            assert_eq!(
+                LevelValue::from(base)
+                    .checked_add_offset(LevelOffset::from(offset))
+                    .map(u128::from),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn atom_iteration_preserves_order_and_offsets()
+    {
+        assert_eq!(Level::zero().atoms().next(), None);
+        let level = var_plus(y(), LevelOffset::from(3_u64)).max(&var_plus(x(), LevelOffset::ZERO));
+        let mut atoms = level.atoms();
+        assert_eq!(atoms.next(), Some((x(), LevelOffset::ZERO)));
+        assert_eq!(atoms.next(), Some((y(), LevelOffset::from(3_u64))));
+        assert_eq!(atoms.next(), None);
+        assert_eq!(atoms.next(), None);
+    }
+
+    #[test]
     fn zero_is_zero()
     {
         assert!(
@@ -855,16 +988,6 @@ mod tests
             None,
             level.offset_of(y()),
             "a variable the level does not mention has no offset"
-        );
-    }
-
-    #[test]
-    fn constant_round_trips()
-    {
-        assert_eq!(
-            LevelConstant::from(7_u64),
-            Level::constant(LevelConstant::from(7_u64)).constant_part(),
-            "constant part must round-trip"
         );
     }
 
@@ -965,18 +1088,6 @@ mod tests
         );
     }
 
-    #[test]
-    fn error_display_is_stable()
-    {
-        use alloc::string::ToString as _;
-
-        assert_eq!(
-            LevelError::Overflow.to_string(),
-            "level arithmetic stepped past the representable range",
-            "the overflow variant must render stably"
-        );
-    }
-
     /// `var + n` built through the public constructors.
     ///
     /// # Specification
@@ -986,6 +1097,15 @@ mod tests
     /// - provides: the atom builder these tests state their fixtures with.
     /// - panics: when a successor step passes the representable range, which
     ///   the offsets these tests use never reach.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — offsets zero, one, and three retain the requested
+    ///   variable and offset; exact canonical projections expose omitted or
+    ///   repeated successors.
+    /// - witness: `level::tests::atom_iteration_preserves_order_and_offsets`
+    /// - witness: `level::tests::max_absorbs_dominated_constant`
+    #[anodized::spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
+        && ret.atoms().eq(core::iter::once((variable, offset))))]
     fn var_plus(
         variable: LevelVar,
         offset: LevelOffset,

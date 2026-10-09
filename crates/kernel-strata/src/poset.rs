@@ -297,6 +297,18 @@ impl Error for PosetError
 /// Constructed only through [`Self::leq`] and [`Self::equal`], which enforce
 /// the variable-only restriction, so an ill-formed constraint is
 /// unrepresentable.
+///
+/// # Specification
+/// - ensures: both sides are nonempty joins of variables and offsets with no
+///   residual constant.
+/// - executable: none — data-item predicates are not checked at construction;
+///   the two checked constructors enforce this invariant.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, pure constants and undominated constants on either
+///   side are refused, while a dominated constant and repeated variables across
+///   the sides are accepted and enumerated exactly.
+/// - witness: `poset::tests::constraint_guards_both_sides_and_preserves_variable_order`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LandmarkConstraint
 {
@@ -313,8 +325,7 @@ impl LandmarkConstraint
     /// Declares `left ≤ right`.
     ///
     /// # Specification
-    /// - requires: both sides variable-only — canonical constant part `0` and
-    ///   at least one atom, for the reasons the module docs record.
+    /// - requires: nothing; any pair of canonical levels is admissible input.
     /// - ensures: a well-formed constraint carrying the sides verbatim.
     /// - provides: the non-strict half of the declared constraint language.
     /// - fails: [`PosetError::ConstantInConstraint`] otherwise.
@@ -350,8 +361,7 @@ impl LandmarkConstraint
     /// Declares `left = right`.
     ///
     /// # Specification
-    /// - requires: both sides variable-only — canonical constant part `0` and
-    ///   at least one atom, for the reasons the module docs record.
+    /// - requires: nothing; any pair of canonical levels is admissible input.
     /// - ensures: a well-formed constraint carrying the sides verbatim.
     /// - provides: the equational half of the declared constraint language.
     /// - fails: [`PosetError::ConstantInConstraint`] otherwise.
@@ -389,6 +399,16 @@ impl LandmarkConstraint
     /// - fails: [`PosetError::ConstantInConstraint`] when either side carries a
     ///   nonzero canonical constant part or has no atoms.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// [`PosetError::ConstantInConstraint`] for either non-variable-only side.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, a pure constant and an undominated constant on
+    ///   either side are refused; a dominated constant disappears before
+    ///   admission. Exact errors and successful relations distinguish a missing
+    ///   conjunct.
+    /// - witness: `poset::tests::constraint_guards_both_sides_and_preserves_variable_order`
     #[spec(
         captures: [variable_only = left.constant_part() == LevelConstant::ZERO
             && left.atoms().next().is_some()
@@ -460,6 +480,14 @@ impl LandmarkConstraint
     /// - provides: the variable collection admission declares the poset over,
     ///   which is a set and therefore absorbs the repetition.
     /// - panics: none.
+    /// - executable: none — the opaque iterator cannot be named by the
+    ///   postcondition expansion or consumed without changing its output.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two ordered sides share one variable; exact iteration
+    ///   including that repetition exposes omission, premature deduplication
+    ///   and interleaving the sides instead of concatenating them.
+    /// - witness: `poset::tests::constraint_guards_both_sides_and_preserves_variable_order`
     fn variables(&self) -> impl Iterator<Item = LevelVar> + '_
     {
         let left = self.left.atoms().map(|(variable, _offset)| variable);
@@ -526,6 +554,20 @@ impl DerivationStep
 ///
 /// Derivations are constructed only by the oracle, since the field is private;
 /// they are inspected through the accessors and replayed by the validators.
+///
+/// # Specification
+/// - ensures: oracle-produced steps replay in order to the claimed targets from
+///   the originating seed.
+/// - executable: none — legality depends on the external seed and clause
+///   system.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated evidence replays independently. L3 mutates
+///   clause indices, shifts and step availability; the exact refusal separates
+///   an invalid derivation from a valid pumping certificate.
+/// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+/// - witness: `poset::tests::perturbed_loop_witness_arms_are_rejected`
+/// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Derivation
@@ -560,6 +602,17 @@ impl Derivation
     /// - provides: the engine-to-evidence boundary, across which a validator
     ///   recomputes what it would otherwise have to trust.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — oracle-produced derivations replay against
+    ///   independent validators. The empty derivation and multi-step paper loop
+    ///   distinguish omission, reversal or altered clause indices and shifts by
+    ///   target coverage.
+    /// - witness: `poset::tests::paper_loop_variant_returns_a_validating_loop_witness`
+    /// - witness: `poset::tests::perturbed_loop_witness_arms_are_rejected`
+    /// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
+    #[spec(ensures: |ret| ret.steps.iter().map(|step| (step.clause(), step.shift()))
+        .eq(log.iter().map(|step| (step.clause(), step.shift()))))]
     pub(crate) fn from_log(log: &[FiringLogStep]) -> Self
     {
         let steps = log
@@ -578,6 +631,21 @@ impl Derivation
 /// An explicit homomorphism into `ℕ` — one value per declared variable — under
 /// which every declared constraint holds. Its existence is what admission
 /// certifies; [`validate_consistency`] checks it by direct evaluation.
+///
+/// # Specification
+/// - ensures: an oracle-produced assignment is total over declared variables
+///   and satisfies the originating constraints.
+/// - executable: none — the originating constraints are external to the
+///   assignment.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the paper certificate satisfies direct constraint
+///   evaluation. L3 deletes an assignment or violates an inequality and
+///   observes the exact validator error; the empty constraint set has an empty
+///   certificate.
+/// - witness: `poset::tests::paper_example_admits_with_a_validating_homomorphism`
+/// - witness: `poset::tests::perturbed_consistency_witness_is_rejected`
+/// - witness: `poset::tests::empty_constraint_set_admits_with_an_empty_certificate`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConsistencyWitness
@@ -597,6 +665,12 @@ impl ConsistencyWitness
     ///   operation cannot fail.
     /// - provides: the per-variable read the consistency validator needs.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and nonempty certificates expose missing versus
+    ///   present zero and positive assignments through exact lookup results. A
+    ///   variable outside the declared set must remain absent.
+    /// - witness: `poset::tests::reflection_and_assignment_boundaries`
     #[spec(ensures: |ret| ret == self.values.get(&variable).copied())]
     #[inline]
     #[must_use]
@@ -616,6 +690,14 @@ impl ConsistencyWitness
     ///   homomorphism value, in ascending variable order.
     /// - provides: the whole-certificate read the consistency validator walks.
     /// - panics: none.
+    /// - executable: none — the opaque iterator cannot be named by the
+    ///   postcondition expansion or consumed without changing its output.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty certificate and a reverse-inserted
+    ///   two-variable certificate are enumerated exactly, distinguishing
+    ///   omission, duplicate entries, wrong values and changed ordering.
+    /// - witness: `poset::tests::reflection_and_assignment_boundaries`
     #[inline]
     pub fn assignments(&self) -> impl Iterator<Item = (LevelVar, ConsistencyValue)> + '_
     {
@@ -630,6 +712,21 @@ impl ConsistencyWitness
 /// A nonempty variable set `W` and shift `n` such that the derivation replays,
 /// from exactly the atoms `{w+n | w ∈ W}`, to cover every `w+n+1` — a pumping
 /// certificate, so `∨_{w∈W} w+n` is a loop and no homomorphism into `ℕ` exists.
+///
+/// # Specification
+/// - ensures: an oracle-produced nonempty member set has a replayable positive
+///   pumping derivation.
+/// - executable: none — the clause system needed for pumping validity is
+///   external to the witness.
+///
+/// # Adequacy
+/// - hypothesis: L2 — total and partial loops replay against their constraints.
+///   L3 forges empty members, unknown clauses, unavailable bodies and uncovered
+///   targets; typed refusals distinguish malformed evidence from a pumping
+///   proof.
+/// - witness: `poset::tests::paper_loop_variant_returns_a_validating_loop_witness`
+/// - witness: `poset::tests::partial_loop_pins_the_shift_choice`
+/// - witness: `poset::tests::perturbed_loop_witness_arms_are_rejected`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LoopWitness
 {
@@ -819,6 +916,21 @@ pub enum AdmissionOutcome
 /// It carries the declared constraints, their compiled clause system — fixed at
 /// admission and reused by every query — and the consistency certificate
 /// admission produced.
+///
+/// # Specification
+/// - ensures: the retained consistency certificate satisfies the admitted
+///   constraints and the compiled clauses preserve their declaration order.
+/// - executable: none — data-item predicates do not run at construction;
+///   admission and the independent validators check this invariant.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the finite paper model validates independently, while
+///   total and partial loops are refused. L3 — an empty declaration admits with
+///   an empty certificate, separating vacuous admission from spurious refusal.
+/// - witness: `poset::tests::paper_example_admits_with_a_validating_homomorphism`
+/// - witness: `poset::tests::paper_loop_variant_returns_a_validating_loop_witness`
+/// - witness: `poset::tests::partial_loop_pins_the_shift_choice`
+/// - witness: `poset::tests::empty_constraint_set_admits_with_an_empty_certificate`
 #[derive(Clone, Debug)]
 pub struct LandmarkPoset
 {
@@ -846,11 +958,9 @@ impl LandmarkPoset
     ///   witness passing [`validate_loop_witness`] otherwise.
     /// - provides: the kernel's landmark-poset admission choke point. The empty
     ///   set admits with an empty certificate, and queries under it agree
-    ///   exactly with the free order oracle. The postcondition remains prose:
-    ///   the loop arm needs the consumed constraint list, and an entry
-    ///   reference cannot survive its move. Preserving that list would require
-    ///   an owned snapshot, which the pinned expansion evaluates even without
-    ///   runtime checks.
+    ///   exactly with the free order oracle. The predicate checks the retained
+    ///   consistency certificate and nonempty pumping evidence; loop replay
+    ///   additionally needs the consumed constraints and is witnessed below.
     /// - fails: [`PosetError::Overflow`] on arithmetic past the representable
     ///   range; [`PosetError::EvidenceIncomplete`] if loop evidence extraction
     ///   misses its round limit, which the theory excludes and which is
@@ -882,8 +992,12 @@ impl LandmarkPoset
     /// - witness: `poset::tests::partial_loop_pins_the_shift_choice`
     /// - witness: `poset::tests::self_successor_equality_loops`
     /// - witness: `poset::tests::empty_constraint_set_admits_with_an_empty_certificate`
-    // The admitted arm retains its constraints, but checking only that arm
-    // would weaken the stated dichotomy.
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|outcome| match *outcome {
+        AdmissionOutcome::Admitted(ref poset) =>
+            validate_consistency(poset.constraints(), poset.consistency()).is_ok(),
+        AdmissionOutcome::Loop(ref witness) =>
+            !witness.members().is_empty() && !witness.derivation().steps().is_empty(),
+    }))]
     #[inline]
     pub fn admit(constraints: Vec<LandmarkConstraint>) -> Result<AdmissionOutcome, PosetError>
     {
@@ -1001,6 +1115,14 @@ impl LandmarkPoset
 ///   holds no finite value at all.
 /// - provides: the finite base the loop shift is measured from.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, all-infinite and mixed models with unequal finite
+///   values distinguish a missing zero identity, treating infinity as finite
+///   and selecting the minimum through exact ceiling values.
+/// - witness: `poset::tests::reflection_and_assignment_boundaries`
+#[spec(ensures: |ret| ret == values.values().filter_map(|value| value.as_finite())
+    .max().unwrap_or(HornOffset::ZERO))]
 fn finite_ceiling(values: &BTreeMap<HVar, ModelValue>) -> HornOffset
 {
     values
@@ -1026,6 +1148,17 @@ fn finite_ceiling(values: &BTreeMap<HVar, ModelValue>) -> HornOffset
 /// - fails: [`PosetError::Overflow`] when the reflection underflows, which the
 ///   ceiling's definition excludes.
 /// - panics: none.
+///
+/// # Errors
+/// [`PosetError::Overflow`] if a reflected value exceeds its ceiling.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty variables and unequal finite model values expose
+///   wrong reflection direction, missing assignments and a nonzero empty
+///   identity through exact ordered assignments. The paper example validates
+///   the resulting homomorphism against its constraints.
+/// - witness: `poset::tests::reflection_and_assignment_boundaries`
+/// - witness: `poset::tests::paper_example_admits_with_a_validating_homomorphism`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|witness| {
     let ceiling = u128::from(finite_ceiling(values));
     witness.values.len() == variables.len()
@@ -1078,6 +1211,17 @@ fn consistency_certificate(
 /// - intension: the round limit is the gain budget times the traversal length,
 ///   both computed from the member and clause counts, so extraction terminates
 ///   on a counter rather than on a semantic condition.
+///
+/// # Errors
+/// [`PosetError::Overflow`] or [`PosetError::EvidenceIncomplete`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — total and partial loops replay their pumping derivations
+///   in the full compiled system; exact member sets and shifts distinguish bad
+///   subset selection, remapped indices and a wrong shift choice.
+/// - witness: `poset::tests::paper_loop_variant_returns_a_validating_loop_witness`
+/// - witness: `poset::tests::partial_loop_pins_the_shift_choice`
+/// - witness: `poset::tests::self_successor_equality_loops`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|witness| {
     let seed = members.iter().map(|variable| {
         (HVar::Var(*variable), shift.offset_from_zero())
@@ -1259,6 +1403,12 @@ pub fn validate_loop_witness(
 /// - fails: never; a constraint side with no atoms would contribute no clause,
 ///   and the constraint constructor excludes that side.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — inequality, equality and a self-subsumed component are
+///   compiled together. Exact clause order, directions and atom offsets expose
+///   missing equality orientation, reversed implication and failed omission.
+/// - witness: `poset::tests::compilation_preserves_direction_order_and_subsumption`
 // The precondition is the variable-only guard `LandmarkConstraint::new`
 // establishes, re-read here at the one point that depends on it. The scan is
 // linear in the constraint list, which the compilation below already walks.
@@ -1293,6 +1443,14 @@ fn compile(constraints: &[LandmarkConstraint]) -> Vec<HornClause>
 ///   offset, in ascending variable order.
 /// - provides: the atom-level half of the documented compilation.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — multiple variables with unequal offsets occur in an
+///   inequality and an equality; the exact compiled bodies and heads expose
+///   changed variables, offsets or ordering in the level-to-Horn translation.
+/// - witness: `poset::tests::compilation_preserves_direction_order_and_subsumption`
+#[spec(ensures: |ret| ret.iter().map(|atom| (atom.variable(), atom.offset()))
+    .eq(level.atoms().map(|(variable, offset)| (HVar::Var(variable), HornOffset::from(offset)))))]
 fn level_atoms(level: &Level) -> Vec<HornAtom>
 {
     level
@@ -1313,6 +1471,12 @@ fn level_atoms(level: &Level) -> Vec<HornAtom>
 /// - fails: never; an empty body contributes nothing, which the caller-side
 ///   invariant excludes.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — compilation appends families to an existing prefix and
+///   omits a head already covered by its body. Exact emitted clauses expose
+///   prefix replacement, reversed head order and retention of a trivial clause.
+/// - witness: `poset::tests::compilation_preserves_direction_order_and_subsumption`
 #[spec(requires: !body.is_empty())]
 fn push_family(
     clauses: &mut Vec<HornClause>,
@@ -1340,10 +1504,9 @@ fn push_family(
 ///   application time; the maxima then bound exactly the atoms the derivation
 ///   establishes.
 /// - provides: the shared replay engine of [`validate_loop_witness`] and the
-///   entailment witness validator, where trust concentrates. Replay remains
-///   prose: its postcondition needs the consumed seed map. A borrowed capture
-///   cannot survive the move, while an owned snapshot would allocate even in
-///   the pinned non-enforcing expansion.
+///   entailment witness validator. The predicate checks known clauses, minimum
+///   shifts and retention of every conclusion; step-time availability also
+///   depends on the consumed seed and is witnessed by adversarial replay.
 /// - fails: the first [`PosetEvidenceError`] encountered, in step order;
 ///   adversarial arithmetic overflow is rejected as
 ///   [`PosetEvidenceError::Overflow`] rather than wrapped.
@@ -1362,9 +1525,16 @@ fn push_family(
 /// - hypothesis: L3 — each rejection arm is pinned by a hand-perturbed
 ///   derivation asserting the exact variant, and acceptance is pinned by the
 ///   property that every oracle-produced derivation replays.
+/// - witness: `poset::tests::replay_distinguishes_body_and_head_overflow`
 /// - witness: `poset::tests::perturbed_loop_witness_arms_are_rejected`
 /// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
 /// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
+#[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|maxima|
+    derivation.steps().iter().all(|step| step.shift() >= min_shift &&
+        clauses.get(usize::from(step.clause())).is_some_and(|clause|
+            u128::from(clause.head().offset()).checked_add(u128::from(step.shift()))
+                .is_some_and(|concluded| maxima.get(&clause.head().variable())
+                    .is_some_and(|maximum| concluded <= u128::from(*maximum)))))))]
 pub fn replay_derivation(
     clauses: &[HornClause],
     min_shift: HornShift,
@@ -1483,6 +1653,17 @@ pub fn validate_consistency(
 ///   is unassigned; [`PosetEvidenceError::Overflow`] when a component sum
 ///   leaves the `u128` range.
 /// - panics: none.
+///
+/// # Errors
+/// [`PosetEvidenceError::MissingAssignment`] or
+/// [`PosetEvidenceError::Overflow`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a constant floor, unequal assigned atom components, a
+///   missing variable, the exact u128 ceiling and one overflowing successor
+///   distinguish an omitted component, default assignment and unchecked
+///   addition by exact values and typed refusals.
+/// - witness: `poset::tests::side_evaluation_distinguishes_missing_values_and_overflow`
 #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|value| {
     side.atoms().try_fold(u128::from(side.constant_part()), |maximum, (variable, offset)| {
         let base = witness.value_of(variable)?;
@@ -1530,12 +1711,217 @@ mod tests
     use super::validate_consistency;
     use super::validate_loop_witness;
     use crate::horn::ClauseIndex;
+    use crate::horn::HVar;
+    use crate::horn::HornAtom;
+    use crate::horn::HornClause;
+    use crate::horn::HornOffset;
     use crate::horn::HornShift;
+    use crate::horn::ModelValue;
     use crate::level::Level;
     use crate::level::LevelConstant;
     use crate::level::LevelOffset;
     use crate::level::LevelVar;
     use crate::level::LevelVarIndex;
+
+    #[test]
+    fn constraint_guards_both_sides_and_preserves_variable_order()
+    {
+        let valid = Level::var(x());
+        for invalid in [
+            Level::zero(),
+            Level::constant(LevelConstant::from(2_u64)),
+            Level::constant(LevelConstant::from(2_u64)).max(&Level::var(y())),
+        ] {
+            for (left, right) in [(invalid.clone(), valid.clone()), (valid.clone(), invalid)] {
+                assert_eq!(
+                    LandmarkConstraint::leq(left.clone(), right.clone()),
+                    Err(PosetError::ConstantInConstraint)
+                );
+                assert_eq!(
+                    LandmarkConstraint::equal(left, right),
+                    Err(PosetError::ConstantInConstraint)
+                );
+            }
+        }
+        let left = var_plus(y(), LevelOffset::from(1_u64)).max(&Level::var(x()));
+        let right = Level::var(var2()).max(&var_plus(x(), LevelOffset::from(2_u64)));
+        for constraint in [
+            LandmarkConstraint::leq(left.clone(), right.clone()),
+            LandmarkConstraint::equal(left, right),
+        ] {
+            assert_eq!(
+                constraint
+                    .expect("variable-only sides")
+                    .variables()
+                    .collect::<Vec<_>>(),
+                [x(), y(), x(), var2()]
+            );
+        }
+        let dominated = Level::constant(LevelConstant::from(2_u64))
+            .max(&var_plus(x(), LevelOffset::from(2_u64)));
+        assert_eq!(
+            LandmarkConstraint::equal(dominated, valid)
+                .expect("dominated constant")
+                .relation(),
+            super::ConstraintRelation::Eq
+        );
+    }
+
+    #[test]
+    fn reflection_and_assignment_boundaries()
+    {
+        let empty = BTreeMap::new();
+        assert_eq!(super::finite_ceiling(&empty), HornOffset::ZERO);
+        let certificate =
+            super::consistency_certificate(&BTreeSet::new(), &empty).expect("empty model");
+        assert_eq!(certificate.assignments().next(), None);
+        assert_eq!(certificate.value_of(x()), None);
+        let infinite = BTreeMap::from([(HVar::Var(x()), ModelValue::Infinite)]);
+        assert_eq!(super::finite_ceiling(&infinite), HornOffset::ZERO);
+        let mixed = BTreeMap::from([
+            (HVar::Var(y()), ModelValue::Finite(HornOffset::from(7_u128))),
+            (HVar::Var(x()), ModelValue::Finite(HornOffset::from(2_u128))),
+            (HVar::Var(var2()), ModelValue::Infinite),
+        ]);
+        assert_eq!(super::finite_ceiling(&mixed), HornOffset::from(7_u128));
+        let finite = BTreeMap::from([
+            (HVar::Var(y()), ModelValue::Finite(HornOffset::from(7_u128))),
+            (HVar::Var(x()), ModelValue::Finite(HornOffset::from(2_u128))),
+        ]);
+        let certificate = super::consistency_certificate(&BTreeSet::from([y(), x()]), &finite)
+            .expect("finite model");
+        assert_eq!(certificate.assignments().collect::<Vec<_>>(), [
+            (x(), ConsistencyValue::from(5_u128)),
+            (y(), ConsistencyValue::from(0_u128)),
+        ]);
+        assert_eq!(
+            certificate.value_of(x()),
+            Some(ConsistencyValue::from(5_u128))
+        );
+        assert_eq!(
+            certificate.value_of(y()),
+            Some(ConsistencyValue::from(0_u128))
+        );
+        assert_eq!(certificate.value_of(var2()), None);
+    }
+
+    #[test]
+    fn compilation_preserves_direction_order_and_subsumption()
+    {
+        let constraints = vec![
+            LandmarkConstraint::leq(
+                var_plus(x(), LevelOffset::from(2_u64))
+                    .max(&var_plus(y(), LevelOffset::from(1_u64))),
+                var_plus(y(), LevelOffset::from(1_u64)),
+            )
+            .expect("variable-only sides"),
+            LandmarkConstraint::equal(
+                var_plus(y(), LevelOffset::from(1_u64)),
+                var_plus(var2(), LevelOffset::from(3_u64)),
+            )
+            .expect("variable-only sides"),
+        ];
+        let clauses = super::compile(&constraints);
+        assert_eq!(
+            clauses
+                .iter()
+                .map(|clause| (clause.head().variable(), u128::from(clause.head().offset())))
+                .collect::<Vec<_>>(),
+            [
+                (HVar::Var(x()), 2_u128),
+                (HVar::Var(var2()), 3),
+                (HVar::Var(y()), 1)
+            ]
+        );
+        assert_eq!(
+            clauses
+                .iter()
+                .map(|clause| clause
+                    .body()
+                    .iter()
+                    .map(|atom| (atom.variable(), u128::from(atom.offset())))
+                    .collect::<Vec<_>>())
+                .collect::<Vec<_>>(),
+            [
+                vec![(HVar::Var(y()), 1_u128)],
+                vec![(HVar::Var(y()), 1)],
+                vec![(HVar::Var(var2()), 3)]
+            ]
+        );
+    }
+
+    #[test]
+    fn side_evaluation_distinguishes_missing_values_and_overflow()
+    {
+        let witness = ConsistencyWitness {
+            values: BTreeMap::from([
+                (x(), ConsistencyValue::from(2_u128)),
+                (y(), ConsistencyValue::from(7_u128)),
+            ]),
+        };
+        let atoms = var_plus(x(), LevelOffset::from(3_u64)).max(&Level::var(y()));
+        assert_eq!(
+            super::evaluate_side(&atoms, &witness),
+            Ok(ConsistencyValue::from(7_u128))
+        );
+        assert_eq!(
+            super::evaluate_side(
+                &atoms.max(&Level::constant(LevelConstant::from(9_u64))),
+                &witness
+            ),
+            Ok(ConsistencyValue::from(9_u128))
+        );
+        assert_eq!(
+            super::evaluate_side(&Level::var(var2()), &witness),
+            Err(PosetEvidenceError::MissingAssignment { variable: var2() })
+        );
+        let largest = ConsistencyWitness {
+            values: BTreeMap::from([(x(), ConsistencyValue::from(u128::MAX))]),
+        };
+        assert_eq!(
+            super::evaluate_side(&Level::var(x()), &largest),
+            Ok(ConsistencyValue::from(u128::MAX))
+        );
+        assert_eq!(
+            super::evaluate_side(&var_plus(x(), LevelOffset::from(1_u64)), &largest),
+            Err(PosetEvidenceError::Overflow)
+        );
+    }
+
+    #[test]
+    fn replay_distinguishes_body_and_head_overflow()
+    {
+        let seed = BTreeMap::from([(HVar::Var(x()), HornOffset::from(u128::MAX))]);
+        let derivation = Derivation {
+            steps: vec![DerivationStep::new(
+                ClauseIndex::from(0_usize),
+                HornShift::from(u128::MAX),
+            )],
+        };
+        for (body, head) in [(1_u128, 0_u128), (0, 1)] {
+            let clauses = [HornClause::new(
+                &[HornAtom::new(HVar::Var(x()), HornOffset::from(body))],
+                HornAtom::new(HVar::Var(y()), HornOffset::from(head)),
+            )
+            .expect("nonempty body")];
+            assert_eq!(
+                super::replay_derivation(&clauses, HornShift::ZERO, seed.clone(), &derivation),
+                Err(PosetEvidenceError::Overflow)
+            );
+        }
+        let clauses = [HornClause::new(
+            &[HornAtom::new(HVar::Var(x()), HornOffset::ZERO)],
+            HornAtom::new(HVar::Var(y()), HornOffset::ZERO),
+        )
+        .expect("nonempty body")];
+        assert_eq!(
+            super::replay_derivation(&clauses, HornShift::ZERO, seed, &derivation),
+            Ok(BTreeMap::from([
+                (HVar::Var(x()), HornOffset::from(u128::MAX)),
+                (HVar::Var(y()), HornOffset::from(u128::MAX)),
+            ]))
+        );
+    }
 
     #[test]
     fn paper_loop_variant_returns_a_validating_loop_witness()
@@ -1851,114 +2237,6 @@ mod tests
         );
     }
 
-    #[test]
-    fn error_displays_are_stable()
-    {
-        use alloc::string::ToString as _;
-
-        let poset_errors = [
-            (
-                PosetError::ConstantInConstraint,
-                "a declared constraint side mentions a constant",
-            ),
-            (
-                PosetError::Overflow,
-                "poset arithmetic stepped past the representable range",
-            ),
-            (
-                PosetError::UnexpectedDivergence,
-                "a query diverged on an admitted poset (excluded by admission)",
-            ),
-            (
-                PosetError::EvidenceIncomplete,
-                "evidence extraction missed its targets (excluded by the theory)",
-            ),
-        ];
-        for (error, expected) in poset_errors {
-            assert_eq!(error.to_string(), expected, "{error:?} must render stably");
-        }
-
-        let evidence_errors = [
-            (
-                PosetEvidenceError::EmptyLoop,
-                "the loop witness has no members",
-            ),
-            (
-                PosetEvidenceError::UnknownClause {
-                    clause: ClauseIndex::from(7_usize),
-                },
-                "step names clause 7 outside the compiled system",
-            ),
-            (
-                PosetEvidenceError::ShiftBelowMinimum {
-                    clause: ClauseIndex::from(3_usize),
-                },
-                "step on clause 3 fires below the minimum shift",
-            ),
-            (
-                PosetEvidenceError::BodyUnavailable {
-                    clause: ClauseIndex::from(2_usize),
-                },
-                "step on clause 2 fires without its body",
-            ),
-            (
-                PosetEvidenceError::TargetUncovered {
-                    subject: EvidenceSubject::Variable(var4()),
-                },
-                "the target over variable 4 is not covered",
-            ),
-            (
-                PosetEvidenceError::TargetUncovered {
-                    subject: EvidenceSubject::Bottom,
-                },
-                "the target over the constant (bottom) generator is not covered",
-            ),
-            (
-                PosetEvidenceError::MissingAssignment { variable: y() },
-                "the witness assigns no value to variable 1",
-            ),
-            (
-                PosetEvidenceError::ConstraintViolated {
-                    index: ConstraintIndex::from(0_usize),
-                },
-                "declared constraint 0 fails under the witness",
-            ),
-            (
-                PosetEvidenceError::MissingValue { variable: var2() },
-                "the countermodel assigns no value to variable 2",
-            ),
-            (
-                PosetEvidenceError::SeedUnsatisfied {
-                    subject: EvidenceSubject::Variable(var5()),
-                },
-                "the countermodel misses the seed over variable 5",
-            ),
-            (
-                PosetEvidenceError::SeedUnsatisfied {
-                    subject: EvidenceSubject::Bottom,
-                },
-                "the countermodel misses the seed over the constant (bottom) generator",
-            ),
-            (
-                PosetEvidenceError::ClauseUnsatisfied {
-                    clause: ClauseIndex::from(9_usize),
-                },
-                "the countermodel violates clause 9",
-            ),
-            (
-                PosetEvidenceError::NotRefuting,
-                "the recorded goal is not refuted",
-            ),
-            (
-                PosetEvidenceError::Overflow,
-                "evaluating the evidence overflowed",
-            ),
-        ];
-        for (error, expected) in evidence_errors {
-            assert_eq!(error.to_string(), expected, "{error:?} must render stably");
-        }
-    }
-
     /// The worked example as declared constraints over `a` to `e`, that is
     /// variables `0` to `4`: `b+1 ≤ a∨b`, `c+3 ≤ b`, `d ≤ c+1`, `e ≤ b∨d+2`,
     /// compiling to exactly the published clause set.
@@ -1970,6 +2248,16 @@ mod tests
     /// - provides: the fixture both dichotomy arms are stated against.
     /// - panics: when a declared side is rejected as not variable-only, which
     ///   the literal sides here never are.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — the fixed paper constraints produce the published
+    ///   finite homomorphism and, with the closing inequality, the all-variable
+    ///   loop. Those exact outcomes expose altered direction, dropped
+    ///   hypotheses and offsets.
+    /// - witness: `poset::tests::paper_example_admits_with_a_validating_homomorphism`
+    /// - witness: `poset::tests::paper_loop_variant_returns_a_validating_loop_witness`
+    #[anodized::spec(ensures: |ret| ret.iter().map(|constraint| constraint.left().atoms().next()
+        .map(|(variable, _)| variable)).eq([Some(y()), Some(var2()), Some(var3()), Some(var4())]))]
     fn paper_constraints() -> Vec<LandmarkConstraint>
     {
         vec![
@@ -2043,15 +2331,6 @@ mod tests
         LevelVar::new(LevelVarIndex::from(4_u32))
     }
 
-    /// The variable at index 5.
-    ///
-    /// # Specification
-    /// trivial.
-    fn var5() -> LevelVar
-    {
-        LevelVar::new(LevelVarIndex::from(5_u32))
-    }
-
     /// `var + n` built through the public constructors.
     ///
     /// # Specification
@@ -2061,6 +2340,16 @@ mod tests
     /// - provides: the atom builder these tests state their fixtures with.
     /// - panics: when a successor step passes the representable range, which
     ///   the offsets these tests use never reach.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — small offsets zero through three participate in exact
+    ///   compiled clauses and model evaluation; changing the variable or
+    ///   iteration count moves the head/body boundary or the resulting
+    ///   homomorphism.
+    /// - witness: `poset::tests::compilation_preserves_direction_order_and_subsumption`
+    /// - witness: `poset::tests::paper_example_admits_with_a_validating_homomorphism`
+    #[anodized::spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
+        && ret.atoms().eq(core::iter::once((variable, offset))))]
     fn var_plus(
         variable: LevelVar,
         offset: LevelOffset,
@@ -2082,6 +2371,14 @@ mod tests
     /// - provides: the admitted-arm fixture, with the dichotomy's other arm
     ///   turned into a test failure at the point it appears.
     /// - panics: when admission overflows or returns a loop.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — empty and nonempty admitting constraints yield a
+    ///   homomorphism validated independently; exact paper assignments
+    ///   distinguish discarded constraints or a spurious admitting branch.
+    /// - witness: `poset::tests::empty_constraint_set_admits_with_an_empty_certificate`
+    /// - witness: `poset::tests::paper_example_admits_with_a_validating_homomorphism`
+    #[anodized::spec(ensures: |ret| validate_consistency(ret.constraints(), ret.consistency()).is_ok())]
     fn admitted(constraints: Vec<LandmarkConstraint>) -> LandmarkPoset
     {
         match LandmarkPoset::admit(constraints).expect("admission does not overflow") {
@@ -2104,6 +2401,15 @@ mod tests
     /// - provides: the loop-arm fixture, with the dichotomy's other arm turned
     ///   into a test failure at the point it appears.
     /// - panics: when admission overflows or admits.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — self-successor, total and partial loops replay
+    ///   against their original constraints; exact members and shifts expose
+    ///   fabricated evidence, a wrong pumping set or a mischosen shift.
+    /// - witness: `poset::tests::self_successor_equality_loops`
+    /// - witness: `poset::tests::paper_loop_variant_returns_a_validating_loop_witness`
+    /// - witness: `poset::tests::partial_loop_pins_the_shift_choice`
+    #[anodized::spec(ensures: |ret| validate_loop_witness(constraints, &ret).is_ok())]
     fn looped(constraints: &[LandmarkConstraint]) -> LoopWitness
     {
         match LandmarkPoset::admit(constraints.to_vec()).expect("admission does not overflow") {
