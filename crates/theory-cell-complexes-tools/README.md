@@ -84,7 +84,12 @@ Run the tests:
 
 ```sh
 cargo nextest run -p gandr-theory-cell-complexes-tools
+RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-cell-complexes-tools
 ```
+
+Nontrivial operations carry executable `#[spec]` predicates and crate-local `# Adequacy` witnesses. They cover prefix-table bounds, transactional refusals, substitution chains, fresh names, empty and singleton generalization families, and the root-versus-child boundaries of each adversary. Predicates on an adversarial override state its intended lie rather than the alphabet law it breaks.
+
+The const count operation and opaque variable iterator state their instrumentation limits. The alphabet marker, orientation wrapper, opaque hash-write protocols and unrestricted strategy delegation state the observations their interfaces cannot expose to an independent predicate. Their adequacy witnesses observe reconstructed terms, exact byte streams, distinct store identities and typed refusals.
 
 ## Toy alphabet
 
