@@ -101,6 +101,25 @@ impl From<GroutSort> for u16
     }
 }
 
+/// The shape of a piece of grout: which of its sides face a neighbour.
+///
+/// Grout is the material a parser inserts where the source leaves a term or a
+/// closer unwritten; its shape says which sides it stands between. A missing
+/// operand is convex — it faces nothing — and a closer the source never wrote
+/// is postfix, closing the form to its left.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum GroutShape
+{
+    /// Faces nothing: a whole term that is absent.
+    Convex,
+    /// Faces a term on its right only.
+    Prefix,
+    /// Faces a term on its left only.
+    Postfix,
+    /// Faces a term on both sides.
+    Infix,
+}
+
 /// The fingerprint of the grammar whose mold table a tree's [`MoldId`]s
 /// index.
 #[repr(transparent)]

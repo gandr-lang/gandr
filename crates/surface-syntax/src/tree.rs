@@ -40,7 +40,8 @@ use alloc::vec::Vec;
 use anodized::spec;
 
 use crate::digest::NodeDigest;
-use crate::kind::NodeKind;
+use crate::label::NodeLabel;
+use crate::mold::GrammarFingerprint;
 use crate::span::ByteSpan;
 use crate::span::SourceFragment;
 use crate::span::SourceText;
@@ -164,13 +165,13 @@ impl From<ChildCount> for usize
     }
 }
 
-/// One node: its form, the source it covers, its content identity, and the
+/// One node: its label, the source it covers, its content identity, and the
 /// arena range its children occupy.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Node
 {
-    /// The form this node is.
-    kind: NodeKind,
+    /// What this node is.
+    label: NodeLabel,
     /// The bytes of the source this node covers.
     span: ByteSpan,
     /// The content identity of this node and everything under it.
@@ -183,15 +184,16 @@ pub struct Node
 
 impl Node
 {
-    /// The node's form.
+    /// What the node is: a molded form or tile, inserted grout, layout, or the
+    /// root.
     ///
     /// # Specification
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn kind(&self) -> NodeKind
+    pub const fn label(&self) -> NodeLabel
     {
-        self.kind
+        self.label
     }
 
     /// The bytes of the source the node covers.
@@ -247,7 +249,7 @@ impl Node
     /// [`TreeBuilder`]: crate::TreeBuilder
     #[inline]
     pub(crate) const fn new(
-        kind: NodeKind,
+        label: NodeLabel,
         span: ByteSpan,
         digest: NodeDigest,
         first_child: NodeIndex,
@@ -255,7 +257,7 @@ impl Node
     ) -> Self
     {
         Self {
-            kind,
+            label,
             span,
             digest,
             first_child,
@@ -354,20 +356,25 @@ impl ExactSizeIterator for NodeIndices
 {
 }
 
-/// A concrete syntax tree: the source it was parsed from and its nodes, laid
-/// out in level order with the root at position zero.
+/// A concrete syntax tree: the source it was parsed from, the grammar whose
+/// molds its labels name, and its nodes, laid out in level order with the root
+/// at position zero.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyntaxTree<'source>
 {
     /// The text every span in this tree is read against.
     source: SourceText<'source>,
+    /// The grammar whose mold table every [`MoldId`](crate::MoldId) in this
+    /// tree indexes.
+    grammar: GrammarFingerprint,
     /// The nodes, in level order: parents before children, siblings adjacent.
     nodes: Vec<Node>,
 }
 
 impl<'source> SyntaxTree<'source>
 {
-    /// The tree over `source` holding `nodes` already laid out in level order.
+    /// The tree over `source` under `grammar` holding `nodes` already laid out
+    /// in level order.
     ///
     /// # Specification
     /// - requires: `nodes` is a level-order layout — the root first, every
@@ -377,7 +384,8 @@ impl<'source> SyntaxTree<'source>
     ///   only producer that establishes all of this is [`TreeBuilder::finish`],
     ///   which is why the constructor is crate-private rather than public.
     /// - ensures: the tree holds exactly `nodes`, in the order given, over
-    ///   `source`; the layout is adopted rather than checked or re-derived.
+    ///   `source` and under `grammar`; the layout is adopted rather than
+    ///   checked or re-derived.
     /// - provides: the seam between the builder's layout walk and the finished
     ///   tree. This stays a `const fn` without `#[spec]`: the pinned `anodized`
     ///   expansion calls a non-const evaluator (`E0015`). The precondition is a
@@ -392,10 +400,15 @@ impl<'source> SyntaxTree<'source>
     #[inline]
     pub(crate) const fn from_layout(
         source: SourceText<'source>,
+        grammar: GrammarFingerprint,
         nodes: Vec<Node>,
     ) -> Self
     {
-        Self { source, nodes }
+        Self {
+            source,
+            grammar,
+            nodes,
+        }
     }
 
     /// The text every span in this tree is read against.
@@ -407,6 +420,19 @@ impl<'source> SyntaxTree<'source>
     pub const fn source(&self) -> SourceText<'source>
     {
         self.source
+    }
+
+    /// The fingerprint of the grammar whose mold table this tree's labels
+    /// index; a consumer resolves a [`MoldId`](crate::MoldId) only against a
+    /// grammar with this fingerprint.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn grammar(&self) -> GrammarFingerprint
+    {
+        self.grammar
     }
 
     /// The position of the root, which the level-order layout fixes at zero.
@@ -460,7 +486,7 @@ impl<'source> SyntaxTree<'source>
     /// # Adequacy
     /// - hypothesis: L3 only — one bounds comparison, separated by the boundary
     ///   pair `node_count - 1` / `node_count`, the first asserted as an exact
-    ///   node kind and the second asserted absent.
+    ///   label and the second asserted absent.
     /// - witness: `build::tests::the_last_position_holds_a_node`
     /// - witness: `build::tests::a_position_past_the_arena_holds_no_node`
     #[inline]

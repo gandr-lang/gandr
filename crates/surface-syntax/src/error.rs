@@ -131,7 +131,9 @@ mod tests
 
     use super::SyntaxError;
     use crate::build::TreeBuilder;
-    use crate::kind::NodeKind;
+    use crate::label::NodeLabel;
+    use crate::mold::GrammarFingerprint;
+    use crate::mold::MoldId;
     use crate::span::ByteOffset;
     use crate::span::ByteSpan;
     use crate::span::SourceText;
@@ -202,10 +204,11 @@ mod tests
         // The two staged-node variants carry a `StagedId`, which only a builder
         // can mint, so they are rendered from a real one rather than a
         // fabricated value.
-        let mut builder = TreeBuilder::new(SourceText::from("ab")).unwrap();
+        let mut builder =
+            TreeBuilder::new(SourceText::from("ab"), GrammarFingerprint::from(1_u64)).unwrap();
         let node = builder
             .node(
-                NodeKind::Name,
+                NodeLabel::Tile(MoldId::from(0_u32)),
                 span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
                 &[],
             )

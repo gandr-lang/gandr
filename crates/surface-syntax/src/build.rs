@@ -45,7 +45,8 @@ use anodized::spec;
 use crate::digest::NodeDigest;
 use crate::digest::digest_of;
 use crate::error::SyntaxError;
-use crate::kind::NodeKind;
+use crate::label::NodeLabel;
+use crate::mold::GrammarFingerprint;
 use crate::span::ByteSpan;
 use crate::span::SourceText;
 use crate::tree::ChildCount;
@@ -185,8 +186,8 @@ struct Attached(bool);
 #[derive(Clone, Copy, Debug)]
 struct StagedNode
 {
-    /// The form this node is.
-    kind: NodeKind,
+    /// What this node is.
+    label: NodeLabel,
     /// The bytes of the source this node covers.
     span: ByteSpan,
     /// The content identity, computed when the node was staged.
@@ -208,7 +209,9 @@ struct StagedNode
 /// ```
 /// use gandr_surface_syntax::ByteOffset;
 /// use gandr_surface_syntax::ByteSpan;
-/// use gandr_surface_syntax::NodeKind;
+/// use gandr_surface_syntax::GrammarFingerprint;
+/// use gandr_surface_syntax::MoldId;
+/// use gandr_surface_syntax::NodeLabel;
 /// use gandr_surface_syntax::SourceFragment;
 /// use gandr_surface_syntax::SourceText;
 /// use gandr_surface_syntax::SyntaxError;
@@ -216,28 +219,35 @@ struct StagedNode
 ///
 /// fn example() -> Result<(), SyntaxError>
 /// {
-///     let source = SourceText::from("def f = x ;");
-///     let mut builder = TreeBuilder::new(source)?;
+///     // The mold ids index the table the fingerprint names; these are
+///     // illustrative, where a parser reads them from its grammar.
+///     let source = SourceText::from("f x");
+///     let mut builder = TreeBuilder::new(source, GrammarFingerprint::from(7_u64))?;
 ///
 ///     // `?` is a statement, never a subexpression: every fallible step is
 ///     // bound with `let` before the name is used.
 ///     let at = |start: usize, end: usize| {
 ///         ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end))
 ///     };
-///     let name_span = at(4, 5)?;
-///     let name = builder.node(NodeKind::Name, name_span, &[])?;
-///     let body_span = at(8, 9)?;
-///     let body = builder.node(NodeKind::Name, body_span, &[])?;
-///     let whole = at(0, 11)?;
-///     let definition = builder.node(NodeKind::Definition, whole, &[name, body])?;
-///     let module = builder.node(NodeKind::Module, whole, &[definition])?;
-///     let tree = builder.finish(module)?;
+///     let word = NodeLabel::Tile(MoldId::from(4_u32));
+///     let head_span = at(0, 1)?;
+///     let head = builder.node(word, head_span, &[])?;
+///     let gap = at(1, 2)?;
+///     let space = builder.node(NodeLabel::Space, gap, &[])?;
+///     let argument_span = at(2, 3)?;
+///     let argument = builder.node(word, argument_span, &[])?;
+///     let whole = at(0, 3)?;
+///     let application = builder.node(NodeLabel::Meld(MoldId::from(4_u32)), whole, &[
+///         head, space, argument,
+///     ])?;
+///     let root = builder.node(NodeLabel::Wald, whole, &[application])?;
+///     let tree = builder.finish(root)?;
 ///
 ///     // A fragment is not a source: it says what a node covers, never what an
 ///     // offset means.
 ///     assert_eq!(
 ///         tree.fragment(tree.root()),
-///         Some(SourceFragment::from("def f = x ;"))
+///         Some(SourceFragment::from("f x"))
 ///     );
 ///
 ///     // Level order: every child sits strictly above its parent.
@@ -257,6 +267,8 @@ pub struct TreeBuilder<'source>
     identity: BuilderId,
     /// The text every staged span is validated against.
     source: SourceText<'source>,
+    /// The grammar whose mold table the staged labels index.
+    grammar: GrammarFingerprint,
     /// The staged nodes, in staging order: children before parents.
     staged: Vec<StagedNode>,
     /// Every staged node's children, in one flat list.
@@ -265,12 +277,14 @@ pub struct TreeBuilder<'source>
 
 impl<'source> TreeBuilder<'source>
 {
-    /// A builder staging nodes over `source`, under a fresh identity.
+    /// A builder staging nodes over `source` under `grammar`, with a fresh
+    /// identity.
     ///
     /// # Specification
     /// - requires: nothing.
     /// - ensures: on success the builder has staged nothing and carries an
-    ///   identity no other builder in this process has held or will hold.
+    ///   identity no other builder in this process has held or will hold; the
+    ///   tree it finishes records `grammar`.
     /// - provides: the only way to obtain a builder, so every staged handle
     ///   carries a stamp. The freshness half is a claim over every builder this
     ///   process has made and will make, which no predicate over one call
@@ -288,17 +302,22 @@ impl<'source> TreeBuilder<'source>
     /// - hypothesis: L3 only — the one decision surface is the counter's
     ///   refusal, witnessed on the counter itself where the ceiling is
     ///   reachable; the success arm is exercised by every other witness in this
-    ///   module.
+    ///   module, and the recorded grammar is read back from a finished tree.
     /// - witness: `build::tests::builder_id_exhaustion_is_typed`
     /// - witness: `build::tests::two_builders_take_distinct_identities`
+    /// - witness: `build::tests::a_tree_records_its_grammar`
     #[inline]
-    pub fn new(source: SourceText<'source>) -> Result<Self, SyntaxError>
+    pub fn new(
+        source: SourceText<'source>,
+        grammar: GrammarFingerprint,
+    ) -> Result<Self, SyntaxError>
     {
         let identity = NEXT_BUILDER_ID.allocate()?;
 
         Ok(Self {
             identity,
             source,
+            grammar,
             staged: Vec::new(),
             edges: Vec::new(),
         })
@@ -337,17 +356,19 @@ impl<'source> TreeBuilder<'source>
         Ok(StagingPosition(node.position))
     }
 
-    /// Stage a node of `kind` covering `span` over already-staged `children`.
+    /// Stage a node labelled `label` covering `span` over already-staged
+    /// `children`.
     ///
     /// # Specification
     /// - requires: every identity in `children` was minted by this builder and
     ///   has not yet been accepted as a child; `span` lies inside this
     ///   builder's source and does not split a character. Each is checked
     ///   rather than assumed, the builder stamp before the position.
-    /// - ensures: on success the node's content digest folds its kind, its own
-    ///   source fragment when its kind carries text, and its children's digests
-    ///   in the order given, and each child is now attached to exactly one
-    ///   parent; the returned identity is fresh.
+    /// - ensures: on success the node's content digest folds its label, its own
+    ///   source fragment when its label carries text, and the digests of its
+    ///   significant children in the order given — layout children are kept in
+    ///   the tree and left out of the fold — and each child is now attached to
+    ///   exactly one parent; the returned identity is fresh.
     /// - provides: the one way to stage a node, so every node in a finished
     ///   tree has a validated span and a digest computed over the same
     ///   preimage. Stating the digest half means rebuilding the child digest
@@ -374,13 +395,14 @@ impl<'source> TreeBuilder<'source>
     /// parent.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — four decision surfaces (the span validation, the
-    ///   child lookup, the attachment test, the digest fold) separated by a
-    ///   span one byte past the source end, a child identity from a second
-    ///   builder, a child offered twice across two calls and twice within one
-    ///   call, each asserted as an exact variant with its exact payload; the
-    ///   fold is separated by the digest agreements and disagreements the
-    ///   layout witnesses assert.
+    /// - hypothesis: L3 — five decision surfaces (the span validation, the
+    ///   child lookup, the attachment test, the significance filter, the digest
+    ///   fold) separated by a span one byte past the source end, a child
+    ///   identity from a second builder, a child offered twice across two calls
+    ///   and twice within one call, each asserted as an exact variant with its
+    ///   exact payload; a parent over layout and the same parent without it
+    ///   asserted one digest; the fold is separated by the digest agreements
+    ///   and disagreements the layout witnesses assert.
     /// - witness: `build::tests::a_span_outside_the_source_is_refused_at_mint`
     /// - witness: `build::tests::a_span_splitting_a_character_is_refused_at_mint`
     /// - witness: `build::tests::an_unknown_staged_node_is_refused`
@@ -388,10 +410,11 @@ impl<'source> TreeBuilder<'source>
     /// - witness: `build::tests::attaching_a_staged_node_twice_is_refused`
     /// - witness: `build::tests::a_child_listed_twice_in_one_call_is_refused`
     /// - witness: `build::tests::a_refusal_leaves_the_builder_at_the_failure_point`
+    /// - witness: `build::tests::layout_never_reaches_a_parent_digest`
     #[inline]
     pub fn node(
         &mut self,
-        kind: NodeKind,
+        label: NodeLabel,
         span: ByteSpan,
         children: &[StagedId],
     ) -> Result<StagedId, SyntaxError>
@@ -408,12 +431,14 @@ impl<'source> TreeBuilder<'source>
                 return Err(SyntaxError::ChildAlreadyAttached { node: child });
             }
             staged.attached = Attached(true);
-            digests.push(staged.digest);
+            if bool::from(staged.label.significance()) {
+                digests.push(staged.digest);
+            }
         }
         let staged = StagedNode {
-            kind,
+            label,
             span,
-            digest: digest_of(kind, fragment, &digests),
+            digest: digest_of(label, fragment, &digests),
             first_edge: self.edges.len(),
             child_count: children.len(),
             attached: Attached(false),
@@ -475,7 +500,7 @@ impl<'source> TreeBuilder<'source>
     /// - witness: `build::tests::an_unreachable_staged_node_is_dropped`
     /// - witness: `build::tests::the_same_subtree_in_two_sources_shares_its_digest`
     /// - witness: `build::tests::an_edit_reaches_exactly_the_edited_node_and_its_ancestors`
-    /// - witness: `build::tests::an_attribute_block_leaves_the_declaration_identity_alone`
+    /// - witness: `build::tests::a_tree_records_its_grammar`
     /// - witness: `build::tests::a_foreign_identity_at_a_live_position_is_refused`
     #[inline]
     pub fn finish(
@@ -498,7 +523,7 @@ impl<'source> TreeBuilder<'source>
             let edges = self.edges.get(staged.first_edge .. edge_end).unwrap_or(&[]);
             order.extend_from_slice(edges);
             nodes.push(Node::new(
-                staged.kind,
+                staged.label,
                 staged.span,
                 staged.digest,
                 first_child,
@@ -507,7 +532,7 @@ impl<'source> TreeBuilder<'source>
             cursor = cursor.saturating_add(1_usize);
         }
 
-        Ok(SyntaxTree::from_layout(self.source, nodes))
+        Ok(SyntaxTree::from_layout(self.source, self.grammar, nodes))
     }
 }
 
@@ -519,7 +544,9 @@ mod tests
 
     use super::TreeBuilder;
     use crate::error::SyntaxError;
-    use crate::kind::NodeKind;
+    use crate::label::NodeLabel;
+    use crate::mold::GrammarFingerprint;
+    use crate::mold::MoldId;
     use crate::span::ByteOffset;
     use crate::span::ByteSpan;
     use crate::span::SourceFragment;
@@ -533,6 +560,60 @@ mod tests
     /// The fixture source: one definition whose body is a lambda over a
     /// returner, which is the shallowest shape reaching depth four.
     const LAMBDA_SOURCE: &str = r#"def f = \x. return x ;"#;
+
+    /// The grammar every fixture tree is built under.
+    ///
+    /// # Specification
+    /// trivial.
+    fn grammar() -> GrammarFingerprint
+    {
+        GrammarFingerprint::from(0x5eed_u64)
+    }
+
+    /// The tile every name in the fixtures molds to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn word() -> NodeLabel
+    {
+        NodeLabel::Tile(MoldId::from(1_u32))
+    }
+
+    /// A tile of a second mold, distinct from [`word`].
+    ///
+    /// # Specification
+    /// trivial.
+    fn literal() -> NodeLabel
+    {
+        NodeLabel::Tile(MoldId::from(5_u32))
+    }
+
+    /// The definition form.
+    ///
+    /// # Specification
+    /// trivial.
+    fn definition() -> NodeLabel
+    {
+        NodeLabel::Meld(MoldId::from(2_u32))
+    }
+
+    /// The lambda form.
+    ///
+    /// # Specification
+    /// trivial.
+    fn lambda() -> NodeLabel
+    {
+        NodeLabel::Meld(MoldId::from(3_u32))
+    }
+
+    /// The returner form.
+    ///
+    /// # Specification
+    /// trivial.
+    fn returner() -> NodeLabel
+    {
+        NodeLabel::Meld(MoldId::from(4_u32))
+    }
 
     /// Mint a span from two offsets, for a test that is not about minting.
     ///
@@ -555,7 +636,7 @@ mod tests
     /// Build the fixture tree over `source`, whose declaration starts `padding`
     /// bytes in.
     ///
-    /// The shape is `Module [ Definition [ Name, Lambda [ Name, Return [ Name
+    /// The shape is `Wald [ definition [ word, lambda [ word, returner [ word
     /// ] ] ] ]`, whose deepest path is four edges long.
     ///
     /// # Specification
@@ -573,7 +654,7 @@ mod tests
         padding: ByteOffset,
     ) -> SyntaxTree<'_>
     {
-        let mut builder = TreeBuilder::new(source).unwrap();
+        let mut builder = TreeBuilder::new(source, grammar()).unwrap();
         let shift = usize::from(padding);
         let at = |start: usize, end: usize| {
             span(
@@ -581,21 +662,21 @@ mod tests
                 ByteOffset::from(end.saturating_add(shift)),
             )
         };
-        let name = builder.node(NodeKind::Name, at(4, 5), &[]).unwrap();
-        let binder = builder.node(NodeKind::Name, at(9, 10), &[]).unwrap();
-        let body = builder.node(NodeKind::Name, at(19, 20), &[]).unwrap();
-        let returner = builder.node(NodeKind::Return, at(12, 20), &[body]).unwrap();
-        let lambda = builder
-            .node(NodeKind::Lambda, at(8, 20), &[binder, returner])
+        let name = builder.node(word(), at(4, 5), &[]).unwrap();
+        let binder = builder.node(word(), at(9, 10), &[]).unwrap();
+        let body = builder.node(word(), at(19, 20), &[]).unwrap();
+        let returned = builder.node(returner(), at(12, 20), &[body]).unwrap();
+        let abstraction = builder
+            .node(lambda(), at(8, 20), &[binder, returned])
             .unwrap();
-        let definition = builder
-            .node(NodeKind::Definition, at(0, 22), &[name, lambda])
+        let declaration = builder
+            .node(definition(), at(0, 22), &[name, abstraction])
             .unwrap();
-        let module = builder
-            .node(NodeKind::Module, at(0, 22), &[definition])
+        let root = builder
+            .node(NodeLabel::Wald, at(0, 22), &[declaration])
             .unwrap();
 
-        builder.finish(module).unwrap()
+        builder.finish(root).unwrap()
     }
 
     /// The refusal fixture: two one-byte characters, so every span the refusal
@@ -670,8 +751,8 @@ mod tests
             "the level-order layout puts the root first"
         );
         assert_eq!(
-            tree.node(tree.root()).map(Node::kind),
-            Some(NodeKind::Module),
+            tree.node(tree.root()).map(Node::label),
+            Some(NodeLabel::Wald),
             "position zero holds the node finish was called with"
         );
         assert_eq!(
@@ -710,7 +791,7 @@ mod tests
         assert_eq!(
             children(&tree, NodeIndex::from(0_usize)),
             [NodeIndex::from(1_usize)],
-            "the module holds one declaration"
+            "the root holds one declaration"
         );
         assert_eq!(
             children(&tree, NodeIndex::from(1_usize)),
@@ -779,8 +860,8 @@ mod tests
         let tree = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
 
         assert_eq!(
-            tree.node(NodeIndex::from(6_usize)).map(Node::kind),
-            Some(NodeKind::Name),
+            tree.node(NodeIndex::from(6_usize)).map(Node::label),
+            Some(word()),
             "one below the node count is the last position that resolves"
         );
     }
@@ -791,7 +872,7 @@ mod tests
         let tree = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
 
         assert_eq!(
-            tree.node(NodeIndex::from(7_usize)).map(Node::kind),
+            tree.node(NodeIndex::from(7_usize)).map(Node::label),
             None,
             "the node count itself is the first position that does not"
         );
@@ -802,11 +883,11 @@ mod tests
     {
         // `REFUSAL_SOURCE` is all one-byte characters, so the boundary fault
         // needs a fixture that actually has a multi-byte character in it.
-        let mut builder = TreeBuilder::new(SourceText::from(ACCENTED_SOURCE)).unwrap();
+        let mut builder = TreeBuilder::new(SourceText::from(ACCENTED_SOURCE), grammar()).unwrap();
 
         assert_eq!(
             builder.node(
-                NodeKind::Name,
+                word(),
                 span(ByteOffset::from(0_usize), ByteOffset::from(1_usize)),
                 &[]
             ),
@@ -901,66 +982,69 @@ mod tests
     }
 
     #[test]
-    fn an_attribute_block_leaves_the_declaration_identity_alone()
+    fn layout_never_reaches_a_parent_digest()
     {
-        let plain_source = r#"def f = x ;"#;
-        let attributed_source = r#"@[checks]
-def f = x ;"#;
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut spaced = TreeBuilder::new(SourceText::from("f  x"), grammar()).unwrap();
+        let head = spaced.node(word(), at(0, 1), &[]).unwrap();
+        let gap = spaced.node(NodeLabel::Space, at(1, 3), &[]).unwrap();
+        let argument = spaced.node(word(), at(3, 4), &[]).unwrap();
+        let form = spaced
+            .node(definition(), at(0, 4), &[head, gap, argument])
+            .unwrap();
+        let root = spaced.node(NodeLabel::Wald, at(0, 4), &[form]).unwrap();
+        let spaced_tree = spaced.finish(root).unwrap();
 
-        let mut plain = TreeBuilder::new(SourceText::from(plain_source)).unwrap();
-        let plain_name = plain.node(NodeKind::Name, at(4, 5), &[]).unwrap();
-        let plain_body = plain.node(NodeKind::Name, at(8, 9), &[]).unwrap();
-        let plain_definition = plain
-            .node(NodeKind::Definition, at(0, 11), &[plain_name, plain_body])
+        let mut tight = TreeBuilder::new(SourceText::from("fx"), grammar()).unwrap();
+        let head = tight.node(word(), at(0, 1), &[]).unwrap();
+        let argument = tight.node(word(), at(1, 2), &[]).unwrap();
+        let form = tight
+            .node(definition(), at(0, 2), &[head, argument])
             .unwrap();
-        let plain_module = plain
-            .node(NodeKind::Module, at(0, 11), &[plain_definition])
-            .unwrap();
-        let plain_tree = plain.finish(plain_module).unwrap();
-
-        let mut attributed = TreeBuilder::new(SourceText::from(attributed_source)).unwrap();
-        let attribute_name = attributed.node(NodeKind::Name, at(2, 8), &[]).unwrap();
-        let attribute = attributed
-            .node(NodeKind::Attribute, at(2, 8), &[attribute_name])
-            .unwrap();
-        let block = attributed
-            .node(NodeKind::AttributeBlock, at(0, 9), &[attribute])
-            .unwrap();
-        let name = attributed.node(NodeKind::Name, at(14, 15), &[]).unwrap();
-        let body = attributed.node(NodeKind::Name, at(18, 19), &[]).unwrap();
-        let definition = attributed
-            .node(NodeKind::Definition, at(10, 21), &[name, body])
-            .unwrap();
-        let module = attributed
-            .node(NodeKind::Module, at(0, 21), &[block, definition])
-            .unwrap();
-        let attributed_tree = attributed.finish(module).unwrap();
+        let root = tight.node(NodeLabel::Wald, at(0, 2), &[form]).unwrap();
+        let tight_tree = tight.finish(root).unwrap();
 
         assert_eq!(
-            plain_tree.node(NodeIndex::from(1_usize)).map(Node::digest),
-            attributed_tree
-                .node(NodeIndex::from(2_usize))
-                .map(Node::digest),
-            "an attribute block is the module's child, so the declaration it \
-             decorates keeps the identity its side-table entry is keyed by"
+            spaced_tree.node(NodeIndex::from(1_usize)).map(Node::digest),
+            tight_tree.node(NodeIndex::from(1_usize)).map(Node::digest),
+            "a form over layout has the identity of the same form without it"
         );
-        assert_ne!(
-            plain_tree.node(plain_tree.root()).map(Node::digest),
-            attributed_tree
-                .node(attributed_tree.root())
-                .map(Node::digest),
-            "while the module that gained the block does not"
+        assert_eq!(
+            spaced_tree.node(spaced_tree.root()).map(Node::digest),
+            tight_tree.node(tight_tree.root()).map(Node::digest),
+            "and so does every ancestor"
+        );
+        assert_eq!(
+            spaced_tree.node(NodeIndex::from(3_usize)).map(Node::label),
+            Some(NodeLabel::Space),
+            "while the layout stays in the tree, between the tiles it separates"
+        );
+        assert_eq!(
+            spaced_tree.fragment(NodeIndex::from(3_usize)),
+            Some(SourceFragment::from("  ")),
+            "covering exactly the bytes it was staged over"
+        );
+    }
+
+    #[test]
+    fn a_tree_records_its_grammar()
+    {
+        let tree = lambda_tree(SourceText::from(LAMBDA_SOURCE), ByteOffset::from(0_usize));
+
+        assert_eq!(
+            tree.grammar(),
+            grammar(),
+            "the finished tree names the grammar its builder was opened under"
         );
     }
 
     #[test]
     fn a_span_outside_the_source_is_refused_at_mint()
     {
-        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
+        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
 
         assert_eq!(
-            builder.node(NodeKind::Name, past_fixture_end(), &[]),
+            builder.node(word(), past_fixture_end(), &[]),
             Err(SyntaxError::SpanOutsideSource {
                 span: past_fixture_end(),
                 source_end: ByteOffset::from(2_usize),
@@ -972,12 +1056,12 @@ def f = x ;"#;
     #[test]
     fn an_unknown_staged_node_is_refused()
     {
-        let mut first = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
-        let foreign = first.node(NodeKind::Name, first_byte(), &[]).unwrap();
-        let mut second = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
+        let mut first = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let foreign = first.node(word(), first_byte(), &[]).unwrap();
+        let mut second = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
 
         assert_eq!(
-            second.node(NodeKind::Module, whole_fixture(), &[foreign]),
+            second.node(NodeLabel::Wald, whole_fixture(), &[foreign]),
             Err(SyntaxError::UnknownStagedNode { node: foreign }),
             "an identity from another builder resolves to nothing here"
         );
@@ -989,19 +1073,17 @@ def f = x ;"#;
         // The boundary the stamp exists for: both builders have staged one
         // node, so the foreign identity's raw position is in range here. With a
         // bare position this call would silently adopt the local node.
-        let mut first = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
-        let foreign = first.node(NodeKind::Name, first_byte(), &[]).unwrap();
-        let mut second = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
-        let local = second
-            .node(NodeKind::TextLiteral, first_byte(), &[])
-            .unwrap();
+        let mut first = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let foreign = first.node(word(), first_byte(), &[]).unwrap();
+        let mut second = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let local = second.node(literal(), first_byte(), &[]).unwrap();
 
         assert_ne!(
             foreign, local,
             "two builders' handles at one position are distinct values"
         );
         assert_eq!(
-            second.node(NodeKind::Module, whole_fixture(), &[foreign]),
+            second.node(NodeLabel::Wald, whole_fixture(), &[foreign]),
             Err(SyntaxError::UnknownStagedNode { node: foreign }),
             "a foreign identity is refused even where the position resolves"
         );
@@ -1015,10 +1097,10 @@ def f = x ;"#;
     #[test]
     fn two_builders_take_distinct_identities()
     {
-        let mut first = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
-        let mut second = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
-        let from_first = first.node(NodeKind::Name, first_byte(), &[]).unwrap();
-        let from_second = second.node(NodeKind::Name, first_byte(), &[]).unwrap();
+        let mut first = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let mut second = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let from_first = first.node(word(), first_byte(), &[]).unwrap();
+        let from_second = second.node(word(), first_byte(), &[]).unwrap();
 
         assert_ne!(
             from_first, from_second,
@@ -1045,14 +1127,14 @@ def f = x ;"#;
     #[test]
     fn attaching_a_staged_node_twice_is_refused()
     {
-        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
-        let leaf = builder.node(NodeKind::Name, first_byte(), &[]).unwrap();
+        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let leaf = builder.node(word(), first_byte(), &[]).unwrap();
         let _first = builder
-            .node(NodeKind::Module, whole_fixture(), &[leaf])
+            .node(NodeLabel::Wald, whole_fixture(), &[leaf])
             .unwrap();
 
         assert_eq!(
-            builder.node(NodeKind::Module, whole_fixture(), &[leaf]),
+            builder.node(NodeLabel::Wald, whole_fixture(), &[leaf]),
             Err(SyntaxError::ChildAlreadyAttached { node: leaf }),
             "a staged node has at most one parent"
         );
@@ -1061,11 +1143,11 @@ def f = x ;"#;
     #[test]
     fn a_child_listed_twice_in_one_call_is_refused()
     {
-        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
-        let leaf = builder.node(NodeKind::Name, first_byte(), &[]).unwrap();
+        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let leaf = builder.node(word(), first_byte(), &[]).unwrap();
 
         assert_eq!(
-            builder.node(NodeKind::Module, whole_fixture(), &[leaf, leaf]),
+            builder.node(NodeLabel::Wald, whole_fixture(), &[leaf, leaf]),
             Err(SyntaxError::ChildAlreadyAttached { node: leaf }),
             "the attachment is recorded as each child is accepted, so a repeat \
              inside one call is caught as well"
@@ -1075,10 +1157,10 @@ def f = x ;"#;
     #[test]
     fn a_refusal_leaves_the_builder_at_the_failure_point()
     {
-        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
-        let first = builder.node(NodeKind::Name, first_byte(), &[]).unwrap();
-        let second = builder.node(NodeKind::Name, second_byte(), &[]).unwrap();
-        let refused = builder.node(NodeKind::Module, whole_fixture(), &[first, second, second]);
+        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let first = builder.node(word(), first_byte(), &[]).unwrap();
+        let second = builder.node(word(), second_byte(), &[]).unwrap();
+        let refused = builder.node(NodeLabel::Wald, whole_fixture(), &[first, second, second]);
 
         assert_eq!(
             refused,
@@ -1086,7 +1168,7 @@ def f = x ;"#;
             "the third child repeats the second"
         );
         assert_eq!(
-            builder.node(NodeKind::Module, whole_fixture(), &[first]),
+            builder.node(NodeLabel::Wald, whole_fixture(), &[first]),
             Err(SyntaxError::ChildAlreadyAttached { node: first }),
             "the children accepted before the refusal stay attached"
         );
@@ -1095,9 +1177,9 @@ def f = x ;"#;
     #[test]
     fn finishing_from_an_unknown_root_is_refused()
     {
-        let mut first = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
-        let foreign = first.node(NodeKind::Name, first_byte(), &[]).unwrap();
-        let second = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
+        let mut first = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let foreign = first.node(word(), first_byte(), &[]).unwrap();
+        let second = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
 
         assert_eq!(
             second.finish(foreign).err(),
@@ -1109,11 +1191,11 @@ def f = x ;"#;
     #[test]
     fn an_unreachable_staged_node_is_dropped()
     {
-        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE)).unwrap();
-        let kept = builder.node(NodeKind::Name, first_byte(), &[]).unwrap();
-        let _abandoned = builder.node(NodeKind::Name, second_byte(), &[]).unwrap();
+        let mut builder = TreeBuilder::new(SourceText::from(REFUSAL_SOURCE), grammar()).unwrap();
+        let kept = builder.node(word(), first_byte(), &[]).unwrap();
+        let _abandoned = builder.node(word(), second_byte(), &[]).unwrap();
         let root = builder
-            .node(NodeKind::Module, whole_fixture(), &[kept])
+            .node(NodeLabel::Wald, whole_fixture(), &[kept])
             .unwrap();
         let tree = builder.finish(root).unwrap();
 

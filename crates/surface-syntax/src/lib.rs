@@ -1,9 +1,9 @@
-//! The **concrete syntax tree of the gandr surface**: the closed token
-//! vocabulary, the closed node vocabulary, byte spans, and a flat level-order
-//! arena whose every node carries an arena position and a content digest.
+//! The **concrete syntax tree of the gandr surface**: the molded node
+//! vocabulary, byte spans, and a flat level-order arena whose every node
+//! carries an arena position and a content digest.
 //!
-//! - [`TokenKind`] and [`NodeKind`] are the closed vocabularies a lexer, a
-//!   parser and a re-renderer share.
+//! - [`NodeLabel`] is what a node is: a form or a tile named by its mold, grout
+//!   a parser inserted, layout, or the root.
 //! - [`TreeBuilder`] stages nodes bottom-up and finishes them into a
 //!   [`SyntaxTree`], whose children are a contiguous range of strictly higher
 //!   positions.
@@ -11,9 +11,9 @@
 //!   it across trees, runs and processes.
 //! - [`SourceText`], [`ByteSpan`] and [`SourceFragment`] are byte-addressed
 //!   source positions; [`SyntaxError`] is every refusal.
-//! - [`MoldId`], [`GroutSort`], [`GrammarFingerprint`] and [`ClosingClass`] are
-//!   the grammar-facing references a molded tree carries; the grammar owns the
-//!   tables they index.
+//! - [`MoldId`], [`GroutSort`], [`GroutShape`], [`GrammarFingerprint`] and
+//!   [`ClosingClass`] are the grammar-facing references a molded tree carries;
+//!   the grammar owns the tables they index.
 //!
 //! The crate holds **representation only**: it lexes and parses nothing, and
 //! reads a source only to answer what a span covers. Its one target
@@ -35,10 +35,9 @@ extern crate alloc;
 mod build;
 mod digest;
 mod error;
-mod kind;
+mod label;
 mod mold;
 mod span;
-mod token;
 mod tree;
 
 pub use crate::build::StagedId;
@@ -46,12 +45,14 @@ pub use crate::build::TreeBuilder;
 pub use crate::digest::NODE_DIGEST_LEN;
 pub use crate::digest::NodeDigest;
 pub use crate::error::SyntaxError;
-pub use crate::kind::CarriesText;
-pub use crate::kind::KindTag;
-pub use crate::kind::NodeKind;
+pub use crate::label::CarriesText;
+pub use crate::label::LabelTag;
+pub use crate::label::NodeLabel;
+pub use crate::label::Significance;
 pub use crate::mold::ClosingClass;
 pub use crate::mold::DelimSpelling;
 pub use crate::mold::GrammarFingerprint;
+pub use crate::mold::GroutShape;
 pub use crate::mold::GroutSort;
 pub use crate::mold::MoldId;
 pub use crate::span::ByteLength;
@@ -59,9 +60,6 @@ pub use crate::span::ByteOffset;
 pub use crate::span::ByteSpan;
 pub use crate::span::SourceFragment;
 pub use crate::span::SourceText;
-pub use crate::token::Token;
-pub use crate::token::TokenKind;
-pub use crate::token::TokenSpelling;
 pub use crate::tree::ChildCount;
 pub use crate::tree::Node;
 pub use crate::tree::NodeCount;

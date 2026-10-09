@@ -8,9 +8,9 @@
 //! into that tree's node vector and it means nothing anywhere else, because the
 //! next parse of an edited source lays the same declaration out at a different
 //! offset. The digest addresses a node *across* trees, runs and processes: it
-//! is a function of the node's form and its content and of nothing else, so the
-//! same declaration parsed from two files, in two processes, on two machines,
-//! carries the same digest.
+//! is a function of the node's label and its content and of nothing else, so
+//! the same declaration parsed from two files, in two processes, on two
+//! machines, carries the same digest.
 //!
 //! A diagnostic that carries both resolves fast inside the tree in hand and
 //! survives the tree. A side table keyed by a position is invalidated by an
@@ -24,17 +24,21 @@
 //! moves, or the cross-tree half of the identity would decay into a
 //! position under another name. Neither are the arena positions of the
 //! children: a node folds its children's *digests*, so the fold is itself
-//! position-free.
+//! position-free. Layout children are not folded at all, so reformatting a
+//! node leaves its identity unchanged.
 //!
 //! # What the preimage includes, and in what shape
 //!
-//! The domain string, the kind's pinned tag, the child count, the node's own
-//! text when its kind carries text, and the children's digests in order. Every
-//! variable-width field is preceded by its length at a fixed width, so two
-//! sibling texts cannot run together into a third reading: `ab` beside `c` and
-//! `a` beside `bc` have different preimages, not one shared one.
+//! The domain string, the label's pinned tag, the label's payload, the
+//! significant child count, the node's own text when its label carries text,
+//! and the significant children's digests in order. Every variable-width field
+//! is preceded by its length at a fixed width, so two sibling texts cannot run
+//! together into a third reading: `ab` beside `c` and `a` beside `bc` have
+//! different preimages, not one shared one.
 
-use crate::kind::NodeKind;
+use crate::label::NodeLabel;
+use crate::mold::ClosingClass;
+use crate::mold::GroutShape;
 use crate::span::SourceFragment;
 
 /// Byte width of a node identity, fixed by the hash family.
@@ -45,9 +49,9 @@ pub const NODE_DIGEST_LEN: usize = 32_usize;
 /// The version suffix is part of the domain rather than a field beside it: a
 /// change to the preimage layout is a change of identity for every node, and
 /// the two generations must not be comparable.
-const NODE_DOMAIN: &[u8] = b"gandr.surface-syntax.node.v1";
+const NODE_DOMAIN: &[u8] = b"gandr.surface-syntax.node.v2";
 
-/// The content identity of one node: a digest of its form and its content.
+/// The content identity of one node: a digest of its label and its content.
 ///
 /// # Specification
 /// - requires: nothing; the type is a carrier and admits any byte array.
@@ -159,15 +163,19 @@ impl core::fmt::Debug for NodeDigest
     }
 }
 
-/// The content identity of a node of `kind` spanning `text` over `children`.
+/// The content identity of a node labelled `label` spanning `text` over the
+/// significant `children`.
 ///
 /// # Specification
 /// - requires: `text` is the fragment the node's span covers, and `children`
-///   holds its immediate children's digests in the order the node carries them.
-/// - ensures: equal `(kind, folded text, children)` triples give equal digests,
-///   where the folded text is `text` exactly when the kind carries text and is
-///   absent otherwise; the digest is independent of where in a source the node
-///   sits, and of the arena the node will be laid out into.
+///   holds the digests of its immediate children whose labels are significant,
+///   in the order the node carries them.
+/// - ensures: equal `(label, folded text, children)` triples give equal
+///   digests, where the label contributes its tag and its payload — a mold id,
+///   or a grout's sort and shape, or a minted close's sort and family — and the
+///   folded text is `text` exactly when the label carries text and is absent
+///   otherwise; the digest is independent of where in a source the node sits,
+///   and of the arena the node will be laid out into.
 /// - provides: the crate's only hashing entry point, so no node identity is
 ///   computed outside the domain or with a differently shaped preimage. The
 ///   postcondition stays prose: it is a law relating two calls' inputs to their
@@ -185,29 +193,54 @@ impl core::fmt::Debug for NodeDigest
 /// # Adequacy
 /// - hypothesis: L2 — one node's digest is pinned against an external
 ///   hexadecimal golden, so any change to the domain, the tag placement, the
-///   count width or the field order moves it; the L3 residue is the set of
-///   collisions a fold could admit, separated by two kinds over identical
-///   children, by two sibling texts of equal total length split differently, by
-///   reversed child order, and by a structural kind whose text differs.
+///   payload, the count width or the field order moves it; the L3 residue is
+///   the set of collisions a fold could admit, separated by two labels over
+///   identical children, by two payloads of one variant, by two sibling texts
+///   of equal total length split differently, by reversed child order, and by
+///   an interior label whose text differs.
 /// - witness: `digest::tests::a_pinned_leaf_digest_is_stable`
-/// - witness: `digest::tests::two_kinds_over_the_same_children_differ`
+/// - witness: `digest::tests::two_labels_over_the_same_children_differ`
+/// - witness: `digest::tests::every_payload_reaches_the_digest`
 /// - witness: `digest::tests::sibling_texts_do_not_run_together`
 /// - witness: `digest::tests::child_order_changes_the_digest`
-/// - witness: `digest::tests::a_structural_kind_ignores_its_own_text`
+/// - witness: `digest::tests::an_interior_label_ignores_its_own_text`
 #[inline]
 #[must_use]
 pub fn digest_of(
-    kind: NodeKind,
+    label: NodeLabel,
     text: SourceFragment<'_>,
     children: &[NodeDigest],
 ) -> NodeDigest
 {
     let mut hasher = blake3::Hasher::new();
     let _domain = hasher.update(NODE_DOMAIN);
-    let _tag = hasher.update(&[u8::from(kind.tag())]);
+    let _tag = hasher.update(&[u8::from(label.tag())]);
+    match label {
+        | NodeLabel::Wald | NodeLabel::Space => {},
+        | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => {
+            let _mold = hasher.update(&u32::from(mold).to_le_bytes());
+        },
+        | NodeLabel::Grout { sort, shape } => {
+            let _sort = hasher.update(&u16::from(sort).to_le_bytes());
+            let _shape = hasher.update(&[match shape {
+                | GroutShape::Convex => 0x01_u8,
+                | GroutShape::Prefix => 0x02_u8,
+                | GroutShape::Postfix => 0x03_u8,
+                | GroutShape::Infix => 0x04_u8,
+            }]);
+        },
+        | NodeLabel::GhostClose { sort, class } => {
+            let _sort = hasher.update(&u16::from(sort).to_le_bytes());
+            let _class = hasher.update(&[match class {
+                | ClosingClass::Paren => 0x01_u8,
+                | ClosingClass::Bracket => 0x02_u8,
+                | ClosingClass::Brace => 0x03_u8,
+            }]);
+        },
+    }
     let child_count = u64::try_from(children.len()).unwrap_or(u64::MAX);
     let _count = hasher.update(&child_count.to_le_bytes());
-    if bool::from(kind.carries_text()) {
+    if bool::from(label.carries_text()) {
         let bytes = <&str>::from(text).as_bytes();
         let text_length = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
         let _length = hasher.update(&text_length.to_le_bytes());
@@ -230,24 +263,50 @@ mod tests
     use super::NODE_DIGEST_LEN;
     use super::NodeDigest;
     use super::digest_of;
-    use crate::kind::NodeKind;
+    use crate::label::NodeLabel;
+    use crate::mold::ClosingClass;
+    use crate::mold::GroutShape;
+    use crate::mold::GroutSort;
+    use crate::mold::MoldId;
     use crate::span::SourceFragment;
 
-    /// The digest of a childless node of `kind` whose fragment is `text`.
+    /// The digest of a childless node labelled `label` whose fragment is
+    /// `text`.
     ///
     /// # Specification
     /// - requires: `text` is the fragment the node covers, under the same
     ///   reading [`digest_of`] asks of it.
-    /// - ensures: the digest of `kind` over `text` with no children.
+    /// - ensures: the digest of `label` over `text` with no children.
     /// - provides: the childless case every rendering and collision fixture
     ///   below is written against.
     /// - panics: none.
     fn leaf(
-        kind: NodeKind,
+        label: NodeLabel,
         text: SourceFragment<'_>,
     ) -> NodeDigest
     {
-        digest_of(kind, text, &[])
+        digest_of(label, text, &[])
+    }
+
+    /// A tile of `mold` whose fragment is `text`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn tile(
+        mold: MoldId,
+        text: SourceFragment<'_>,
+    ) -> NodeDigest
+    {
+        leaf(NodeLabel::Tile(mold), text)
+    }
+
+    /// A tile of the first mold whose fragment is `text`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn word(text: SourceFragment<'_>) -> NodeDigest
+    {
+        tile(MoldId::from(1_u32), text)
     }
 
     #[test]
@@ -273,30 +332,116 @@ mod tests
     #[test]
     fn a_pinned_leaf_digest_is_stable()
     {
-        // The golden is external: it is `b3sum` over the fifty preimage bytes
-        // this layout specifies — the domain string, the tag `0x06`, a
-        // little-endian child count of zero, a little-endian text length of
-        // five, and `value` — computed outside this crate, so a change to the
-        // domain, the tag placement, a field width or the field order moves the
-        // left side and not the right.
+        // The golden is external: it is `b3sum` over the fifty-four preimage
+        // bytes this layout specifies — the domain string, the tag `0x03`, the
+        // little-endian mold id seven, a little-endian child count of zero, a
+        // little-endian text length of five, and `value` — computed outside
+        // this crate, so a change to the domain, the tag placement, the
+        // payload, a field width or the field order moves the left side and
+        // not the right.
         assert_eq!(
-            format!("{}", leaf(NodeKind::Name, SourceFragment::from("value"))),
-            "3ccf68eac92cc64b9f5b595799ab9f1adfcfee552171c7c7fcdabc6acaee8de1",
+            format!(
+                "{}",
+                tile(MoldId::from(7_u32), SourceFragment::from("value"))
+            ),
+            "7951888b97e227bb76a1ca6bd9736ed8fb7be0ecb4369a5b4bdb11f43ec9b0b4",
             "the preimage layout is pinned against an external golden"
         );
     }
 
     #[test]
-    fn two_kinds_over_the_same_children_differ()
+    fn two_labels_over_the_same_children_differ()
     {
-        let child = leaf(NodeKind::Name, SourceFragment::from("x"));
+        let child = word(SourceFragment::from("x"));
         let empty = SourceFragment::from("");
 
         assert_ne!(
-            digest_of(NodeKind::Return, empty, &[child]),
-            digest_of(NodeKind::Force, empty, &[child]),
-            "the kind tag separates two forms over identical children"
+            digest_of(NodeLabel::Meld(MoldId::from(2_u32)), empty, &[child]),
+            digest_of(NodeLabel::Wald, empty, &[child]),
+            "the label tag separates two forms over identical children"
         );
+        assert_ne!(
+            leaf(NodeLabel::Meld(MoldId::from(2_u32)), empty),
+            leaf(NodeLabel::Tile(MoldId::from(2_u32)), empty),
+            "a form and a tile of one mold are distinct nodes"
+        );
+    }
+
+    #[test]
+    fn every_payload_reaches_the_digest()
+    {
+        let empty = SourceFragment::from("");
+        assert_ne!(
+            leaf(NodeLabel::Meld(MoldId::from(2_u32)), empty),
+            leaf(NodeLabel::Meld(MoldId::from(3_u32)), empty),
+            "a form's mold reaches its digest"
+        );
+        assert_ne!(
+            tile(MoldId::from(2_u32), SourceFragment::from("x")),
+            tile(MoldId::from(3_u32), SourceFragment::from("x")),
+            "a tile's mold reaches its digest beside its text"
+        );
+        let grout = |sort: u16, shape: GroutShape| {
+            leaf(
+                NodeLabel::Grout {
+                    sort: GroutSort::from(sort),
+                    shape,
+                },
+                empty,
+            )
+        };
+        assert_ne!(
+            grout(1_u16, GroutShape::Convex),
+            grout(2_u16, GroutShape::Convex),
+            "a grout's sort reaches its digest"
+        );
+        let shapes = [
+            GroutShape::Convex,
+            GroutShape::Prefix,
+            GroutShape::Postfix,
+            GroutShape::Infix,
+        ];
+        for (first, left) in shapes.into_iter().enumerate() {
+            for (second, right) in shapes.into_iter().enumerate() {
+                if first != second {
+                    assert_ne!(
+                        grout(1_u16, left),
+                        grout(1_u16, right),
+                        "every grout shape writes its own byte"
+                    );
+                }
+            }
+        }
+        let close = |sort: u16, class: ClosingClass| {
+            leaf(
+                NodeLabel::GhostClose {
+                    sort: GroutSort::from(sort),
+                    class,
+                },
+                empty,
+            )
+        };
+        assert_ne!(
+            close(1_u16, ClosingClass::Paren),
+            close(2_u16, ClosingClass::Paren),
+            "a minted close's sort reaches its digest"
+        );
+        let classes = [
+            ClosingClass::Paren,
+            ClosingClass::Bracket,
+            ClosingClass::Brace,
+        ];
+        for (first, left) in classes.into_iter().enumerate() {
+            for (second, right) in classes.into_iter().enumerate() {
+                if first != second {
+                    assert_ne!(
+                        close(1_u16, left),
+                        close(1_u16, right),
+                        "every closing family writes its own byte"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -304,17 +449,18 @@ mod tests
     {
         let empty = SourceFragment::from("");
         let split_early = [
-            leaf(NodeKind::Name, SourceFragment::from("ab")),
-            leaf(NodeKind::Name, SourceFragment::from("c")),
+            word(SourceFragment::from("ab")),
+            word(SourceFragment::from("c")),
         ];
         let split_late = [
-            leaf(NodeKind::Name, SourceFragment::from("a")),
-            leaf(NodeKind::Name, SourceFragment::from("bc")),
+            word(SourceFragment::from("a")),
+            word(SourceFragment::from("bc")),
         ];
+        let form = NodeLabel::Meld(MoldId::from(5_u32));
 
         assert_ne!(
-            digest_of(NodeKind::Application, empty, &split_early),
-            digest_of(NodeKind::Application, empty, &split_late),
+            digest_of(form, empty, &split_early),
+            digest_of(form, empty, &split_late),
             "a length-prefixed text cannot be re-split across its siblings"
         );
     }
@@ -323,28 +469,57 @@ mod tests
     fn child_order_changes_the_digest()
     {
         let empty = SourceFragment::from("");
-        let first = leaf(NodeKind::Name, SourceFragment::from("f"));
-        let second = leaf(NodeKind::Name, SourceFragment::from("x"));
+        let first = word(SourceFragment::from("f"));
+        let second = word(SourceFragment::from("x"));
+        let form = NodeLabel::Meld(MoldId::from(5_u32));
 
         assert_ne!(
-            digest_of(NodeKind::Application, empty, &[first, second]),
-            digest_of(NodeKind::Application, empty, &[second, first]),
+            digest_of(form, empty, &[first, second]),
+            digest_of(form, empty, &[second, first]),
             "the fold is ordered, so an applied argument is not its own head"
         );
     }
 
     #[test]
-    fn a_structural_kind_ignores_its_own_text()
+    fn an_interior_label_ignores_its_own_text()
     {
+        let form = NodeLabel::Meld(MoldId::from(5_u32));
         assert_eq!(
-            leaf(NodeKind::Module, SourceFragment::from("def a = b ;")),
-            leaf(NodeKind::Module, SourceFragment::from("")),
-            "a structural kind's identity does not read the bytes it spans"
+            leaf(form, SourceFragment::from("def a = b ;")),
+            leaf(form, SourceFragment::from("")),
+            "an interior label's identity does not read the bytes it spans"
+        );
+        assert_eq!(
+            leaf(NodeLabel::Wald, SourceFragment::from("def a = b ;")),
+            leaf(NodeLabel::Wald, SourceFragment::from("")),
+            "the root's identity does not read the bytes it spans"
         );
         assert_ne!(
-            leaf(NodeKind::Name, SourceFragment::from("a")),
-            leaf(NodeKind::Name, SourceFragment::from("b")),
-            "a text leaf's identity is exactly its text"
+            word(SourceFragment::from("a")),
+            word(SourceFragment::from("b")),
+            "a tile's identity is exactly its mold and its text"
+        );
+        assert_ne!(
+            leaf(NodeLabel::Space, SourceFragment::from(" ")),
+            leaf(NodeLabel::Space, SourceFragment::from("  ")),
+            "layout carries its own text"
+        );
+        assert_ne!(
+            leaf(
+                NodeLabel::Grout {
+                    sort: GroutSort::from(1_u16),
+                    shape: GroutShape::Convex,
+                },
+                SourceFragment::from("~"),
+            ),
+            leaf(
+                NodeLabel::Grout {
+                    sort: GroutSort::from(1_u16),
+                    shape: GroutShape::Convex,
+                },
+                SourceFragment::from("^"),
+            ),
+            "grout over an unmolded token carries that token's bytes"
         );
     }
 }
