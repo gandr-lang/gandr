@@ -18,6 +18,7 @@ members = [
   "crates/surface-grammar",
   "crates/surface-lowering",
   "crates/surface-parser",
+  "crates/surface-render-remote",
   "crates/surface-syntax",
   "crates/theory-cell-complexes",
   "crates/theory-cell-complexes-tools",
@@ -207,6 +208,15 @@ path = "crates/surface-lowering"
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
 
+# The renderer seam: presentation spans, cards and transcript blocks, the
+# byte-to-position projection and the versioned render-bus frame.
+# features:
+# - serde: the wire image the codec witnesses round-trip, so the gate runs them
+# consumers:
+# - surface-render-remote (dev)
+[workspace.dependencies.gandr-surface-render-remote]
+path = "crates/surface-render-remote"
+
 # The concrete syntax tree and the grammar-facing mold vocabulary it carries.
 # consumers:
 # - surface-corpus
@@ -308,6 +318,27 @@ default-features = false
 git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"
 default-features = false
+
+# The serialization framework the render-bus wire image derives through.
+# features:
+# - alloc: the owned strings and vectors, and the tagged enums' buffered content
+# - derive: the `Serialize` and `Deserialize` derives
+# consumers:
+# - surface-render-remote
+[workspace.dependencies.serde]
+version = "1.0.229"
+default-features = false
+features = ["alloc", "derive"]
+
+# JSON, the format the render-bus codec witnesses round-trip through.
+# features:
+# - alloc: the owned value tree and the string encoder without std
+# consumers:
+# - surface-render-remote (dev)
+[workspace.dependencies.serde_json]
+version = "1.0.151"
+default-features = false
+features = ["alloc"]
 
 # Optional structured diagnostics, with no runtime or output backend.
 # features:

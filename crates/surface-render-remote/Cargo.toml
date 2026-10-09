@@ -1,0 +1,33 @@
+[package]
+name = "gandr-surface-render-remote"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The gandr renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projection, and the versioned render-bus frame"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "language-server", "no-std", "rendering", "serde"]
+categories = ["compilers", "development-tools", "no-std"]
+publish.workspace = true
+
+# A leaf: no workspace crate, so a renderer links the presentation vocabulary
+# without the parser or the checker. Serialization is the one dependency, and
+# it is optional.
+[dependencies]
+serde = { workspace = true, optional = true }
+
+# The codec witnesses round-trip through JSON. The crate names itself with
+# `serde` on, so every test build carries the codec and the gate's suite runs
+# the witnesses the serde impls cite.
+[dev-dependencies]
+gandr-surface-render-remote = { workspace = true, features = ["serde"] }
+serde_json.workspace = true
+
+[features]
+default = []
+# The serde wire image of every type here, and the validating frame decode.
+serde = ["dep:serde"]
+
+[lints]
+workspace = true

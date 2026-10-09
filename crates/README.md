@@ -42,6 +42,7 @@ crates/
 ├── storage-records/               gandr-storage-records               the authenticated ordered-record plane
 ├── storage-values/                gandr-storage-values                the content-addressed value plane: typed chunk DAG and content pointers
 ├── surface-syntax/                gandr-surface-syntax                the molded concrete syntax tree and the mold references a grammar and a parser exchange
+├── surface-render-remote/         gandr-surface-render-remote         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projection, the versioned render-bus frame
 ├── surface-grammar/               gandr-surface-grammar               the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
 ├── surface-parser/                gandr-surface-parser                the labeler, molder and resumable melder: source to molded tree with completion obligations
 ├── surface-lowering/              gandr-surface-lowering              the molded tree into core terms: name resolution, the module collection pass, attributes, origins, refusals
