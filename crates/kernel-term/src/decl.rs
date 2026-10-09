@@ -25,6 +25,10 @@ pub struct LevelParamCount(u32);
 
 impl From<u32> for LevelParamCount
 {
+    /// The count for a number of level parameters.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(count: u32) -> Self
     {
@@ -34,6 +38,10 @@ impl From<u32> for LevelParamCount
 
 impl From<LevelParamCount> for u32
 {
+    /// The number of parameters the count carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(count: LevelParamCount) -> Self
     {
@@ -55,6 +63,10 @@ pub struct MintedAtom(usize);
 
 impl From<usize> for MintedAtom
 {
+    /// The atom for an admission position.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(position: usize) -> Self
     {
@@ -64,6 +76,10 @@ impl From<usize> for MintedAtom
 
 impl From<MintedAtom> for usize
 {
+    /// The admission position the atom carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(atom: MintedAtom) -> Self
     {
@@ -85,6 +101,14 @@ pub struct LevelSignature
 impl LevelSignature
 {
     /// The signature of a declaration binding no level parameters.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the signature binding zero level parameters and
+    ///   declaring no constraints.
+    /// - provides: the one monomorphic signature, so a declaration that binds
+    ///   nothing does not have to spell an empty constraint list.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn monomorphic() -> Self
@@ -119,6 +143,9 @@ impl LevelSignature
     }
 
     /// The number of prenex level parameters.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn params(&self) -> LevelParamCount
@@ -127,6 +154,9 @@ impl LevelSignature
     }
 
     /// The declared landmark constraints, in declaration order.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub fn constraints(&self) -> &[LandmarkConstraint]
@@ -181,6 +211,14 @@ impl DeclarationContent
     /// The three share one accessor because they share one well-formedness
     /// obligation — whatever the root is, it must form. What differs is what
     /// admission additionally demands of it, which is not this crate's plane.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the declared value-type root, whichever of the three
+    ///   forms the content takes.
+    /// - provides: the one root every form owes well-formedness for, so a
+    ///   consumer checking that obligation cannot reach a form it forgot.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub const fn declared_id(&self) -> ValueTypeId
@@ -217,6 +255,9 @@ pub struct Declaration
 impl Declaration
 {
     /// The prenex level interface.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn levels(&self) -> &LevelSignature
@@ -225,6 +266,9 @@ impl Declaration
     }
 
     /// The content roots.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn content(&self) -> &DeclarationContent
@@ -233,6 +277,9 @@ impl Declaration
     }
 
     /// The declared value-type root.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn declared_id(&self) -> ValueTypeId
@@ -242,6 +289,9 @@ impl Declaration
 
     /// The atoms this declaration's projection rebound, in the order the
     /// artifact carries them.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub fn provenance(&self) -> &[ConstantIndex]
@@ -280,6 +330,14 @@ pub struct MarkedDeclaration
 impl MarkedDeclaration
 {
     /// Pair an admission mark with a declaration.
+    ///
+    /// # Specification
+    /// - requires: `mark` is the mark admission issued for `declaration`.
+    /// - ensures: returns the pair carrying both unchanged.
+    /// - provides: the marked declaration a consumer stores; the pairing is the
+    ///   caller's claim, since a mark carries no reference back to the
+    ///   declaration it was issued for.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub const fn new(
@@ -291,6 +349,9 @@ impl MarkedDeclaration
     }
 
     /// The admission mark.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn mark(&self) -> AdmissionMark
@@ -299,6 +360,9 @@ impl MarkedDeclaration
     }
 
     /// The declaration, whose content roots address the arena beside it.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn declaration(&self) -> &Declaration
@@ -312,12 +376,12 @@ impl MarkedDeclaration
 /// It lends the arena for minting the declared type and body, then finalizes a
 /// [`Declaration`] over the roots that minting produced.
 ///
-/// **Abandoning a builder rolls the arena back.** A builder dropped without
+/// **Abandoning a builder truncates the arena.** A builder dropped without
 /// reaching a finisher — a scope exit on a failure path, or an explicit
-/// [`Self::discard`] — truncates the arena to the watermark it recorded at
-/// construction, so a lowering that fails partway leaves no orphan content
-/// behind. A finisher consumes the builder without truncating: the minted
-/// content becomes the declaration's.
+/// [`Self::discard`] — truncates each family to the lesser of its current
+/// length and the length the watermark recorded at construction holds for it.
+/// A finisher consumes the builder without truncating: the minted content
+/// becomes the declaration's.
 ///
 /// # Specification
 /// - requires: content for exactly one declaration is minted through
@@ -325,10 +389,10 @@ impl MarkedDeclaration
 ///   allocation into the arena interleaved — the recorded watermark and the
 ///   arena's end must describe a contiguous suffix.
 /// - ensures: a finisher yields a [`Declaration`] over the minted roots and
-///   leaves them in the arena; dropping the builder before a finisher restores
-///   the arena to the recorded watermark.
+///   leaves them in the arena; dropping the builder before a finisher truncates
+///   each family to `min(current_len, content_start)`.
 /// - provides: the construction surface that ties content minting to the
-///   watermark discipline, so the rollback is structural rather than a step a
+///   watermark discipline, so the truncation is structural rather than a step a
 ///   failure path has to remember. This lifecycle contract stays prose: a
 ///   data-item `#[spec]` has no constructor-to-finisher or destructor
 ///   observation.
@@ -354,6 +418,15 @@ impl<'arena> DeclarationBuilder<'arena>
 {
     /// Begin building a declaration's content into `arena`, recording the
     /// content-start watermark.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the arena this declaration's content will be
+    ///   minted into.
+    /// - ensures: returns a builder holding the arena's watermark at entry.
+    /// - provides: the staging scope: a finisher leaves the minted content in
+    ///   the arena, and dropping the builder before one truncates each family
+    ///   to `min(current_len, content_start)`.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn new(arena: &'arena mut TermArena) -> Self
@@ -366,6 +439,9 @@ impl<'arena> DeclarationBuilder<'arena>
     }
 
     /// The watermark this content began at.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn content_start(&self) -> ArenaWatermark
@@ -374,14 +450,24 @@ impl<'arena> DeclarationBuilder<'arena>
     }
 
     /// The borrowed arena, for minting this declaration's content.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the borrowed arena, unchanged.
+    /// - provides: the only minting handle inside a staging scope. It is the
+    ///   whole arena, so a caller can truncate through it as well as mint
+    ///   through it; whatever the family lengths then are, dropping the builder
+    ///   before a finisher truncates each family to `min(current_len,
+    ///   content_start)`.
+    /// - panics: none.
     #[inline]
     pub fn arena(&mut self) -> &mut TermArena
     {
         self.arena
     }
 
-    /// Discard the staged content, restoring the arena to the content-start
-    /// watermark.
+    /// Discard the staged content, truncating each family to
+    /// `min(current_len, content_start)`.
     ///
     /// This is the explicit form of what the destructor does on scope exit;
     /// name it where the abandonment is the point of the path rather than the
@@ -389,22 +475,35 @@ impl<'arena> DeclarationBuilder<'arena>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the arena holds exactly the nodes it held at construction,
-    ///   and every id minted through this builder dangles and is unreachable,
-    ///   since no finisher ran and so no declaration roots it.
-    /// - provides: the named abandonment path. Rollback stays prose: it occurs
-    ///   when the consumed builder drops, after the attribute's normal-return
-    ///   checks; no post-return arena borrow is available without changing this
-    ///   signature.
+    /// - ensures: each family holds its `min(current_len, content_start)`
+    ///   leading nodes.
+    /// - provides: the named abandonment path. The truncation stays prose: it
+    ///   occurs when the consumed builder drops, after the attribute's
+    ///   normal-return checks; no post-return arena borrow is available without
+    ///   changing this signature.
     /// - fails: never.
     /// - panics: none.
     #[inline]
     pub fn discard(self)
     {
-        // Dropping `self` truncates the arena to the content-start watermark.
+        // Dropping `self` truncates each family to `min(current_len,
+        // content_start)`.
     }
 
     /// Finalize a definition over an already-minted declared type and body.
+    ///
+    /// # Specification
+    /// - requires: `declared` and `body` were minted through this builder, and
+    ///   `levels` is the declaration's prenex interface. Whether the body
+    ///   inhabits the declared type is a typing fact, refused at the choke
+    ///   point rather than here.
+    /// - ensures: returns the definition over the two roots with empty
+    ///   provenance, and leaves the staged content in the arena rather than
+    ///   rolling it back.
+    /// - provides: the finisher that keeps a definition's content alive; the
+    ///   builder is consumed, so no second finisher and no rollback can follow
+    ///   it.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn def(
@@ -455,6 +554,16 @@ impl<'arena> DeclarationBuilder<'arena>
     }
 
     /// Finalize an axiom over an already-minted declared type.
+    ///
+    /// # Specification
+    /// - requires: `declared` was minted through this builder, and `levels` is
+    ///   the declaration's prenex interface.
+    /// - ensures: returns the axiom over that root with empty provenance, and
+    ///   leaves the staged content in the arena rather than rolling it back.
+    /// - provides: the finisher for a declaration asserted without a body; the
+    ///   builder is consumed, so no second finisher and no rollback can follow
+    ///   it.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn axiom(
@@ -503,8 +612,16 @@ impl<'arena> DeclarationBuilder<'arena>
 
 impl Drop for DeclarationBuilder<'_>
 {
-    /// Roll the arena back to the content-start watermark: a builder that never
-    /// reached a finisher owns no content, so nothing it minted may survive it.
+    /// Truncate each family to `min(current_len, content_start)`.
+    ///
+    /// # Specification
+    /// - requires: nothing; a builder consumed by a finisher never reaches
+    ///   this, because each finisher forgets the builder instead of dropping
+    ///   it.
+    /// - ensures: truncates each family to `min(current_len, content_start)`.
+    /// - provides: the truncation that ends an abandoned staging scope, so no
+    ///   failure path has to name the watermark itself.
+    /// - panics: none.
     #[inline]
     fn drop(&mut self)
     {

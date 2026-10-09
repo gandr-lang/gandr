@@ -40,6 +40,14 @@ struct StructureIdCounter(AtomicUsize);
 impl StructureIdCounter
 {
     /// A counter with exactly one distinct identity left to issue.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a counter whose next [`Self::allocate`] issues the
+    ///   final identity and whose following call refuses.
+    /// - provides: the seeded counter the exhaustion test drives, so the
+    ///   refusal is reachable without minting `usize::MAX` structures.
+    /// - panics: none.
     #[cfg(test)]
     #[inline]
     fn nearly_exhausted() -> Self
@@ -101,6 +109,14 @@ impl LabelBits
     const MAX: Self = Self(62);
 
     /// This width clamped into `[MIN, MAX]`.
+    ///
+    /// # Specification
+    /// - requires: nothing; any width may be offered.
+    /// - ensures: returns this width unchanged when it already lies in `[MIN,
+    ///   MAX]`, and the nearer endpoint otherwise.
+    /// - provides: the only width the universe-size computation accepts, so a
+    ///   caller-chosen width can never name an unrepresentable universe.
+    /// - panics: none.
     #[inline]
     fn clamped(self) -> Self
     {
@@ -108,6 +124,14 @@ impl LabelBits
     }
 
     /// The next wider width, or `None` at the representable ceiling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the width one bit wider than this one, or `None` when
+    ///   that successor is not representable.
+    /// - provides: the widening step; the absence is the representable ceiling
+    ///   rather than a failure.
+    /// - panics: none.
     #[inline]
     fn wider(self) -> Option<Self>
     {
@@ -147,6 +171,19 @@ impl TryFrom<usize> for SlotIndex
 {
     type Error = <u32 as TryFrom<usize>>::Error;
 
+    /// The slot index for an arena position, if the position is
+    /// representable.
+    ///
+    /// # Specification
+    /// - requires: nothing; any position may be offered.
+    /// - ensures: returns the index carrying `value` unchanged when it fits the
+    ///   underlying `u32`.
+    /// - provides: the one narrowing step from an arena position to a handle
+    ///   field, so an arena wider than a handle can address is refused rather
+    ///   than truncated.
+    /// - fails: returns the `u32` conversion's own error once `value` exceeds
+    ///   `u32::MAX`.
+    /// - panics: none.
     #[inline]
     fn try_from(value: usize) -> Result<Self, Self::Error>
     {
@@ -158,6 +195,16 @@ impl TryFrom<SlotIndex> for usize
 {
     type Error = <Self as TryFrom<u32>>::Error;
 
+    /// The arena position a slot index names, if the position is
+    /// representable.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the index's own value widened to `usize`.
+    /// - provides: the indexing step every arena lookup takes.
+    /// - fails: returns the `usize` conversion's own error on a target too
+    ///   narrow to hold a `u32`, which no supported target is.
+    /// - panics: none.
     #[inline]
     fn try_from(value: SlotIndex) -> Result<Self, Self::Error>
     {
@@ -182,6 +229,15 @@ impl SlotGeneration
     /// The generation the slot's next occupant carries, or `None` once the
     /// slot's generation space is exhausted and the slot must be retired
     /// rather than reused.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the generation one above this one, or `None` at the
+    ///   representable ceiling.
+    /// - provides: the exhaustion signal the free path reads; the absence is
+    ///   what retires a slot instead of reusing it under a generation some live
+    ///   handle already carries.
+    /// - panics: none.
     #[inline]
     fn successor(self) -> Option<Self>
     {
@@ -219,6 +275,14 @@ impl LiveLen
 
     /// This length with one more element, or `None` past the representable
     /// ceiling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns this length plus one, or `None` at the representable
+    ///   ceiling.
+    /// - provides: the checked bump the insert path takes, so a length that
+    ///   could not be represented refuses the insertion rather than wrapping.
+    /// - panics: none.
     #[inline]
     fn incremented(self) -> Option<Self>
     {
@@ -226,6 +290,13 @@ impl LiveLen
     }
 
     /// This length with one fewer element, or `None` when already empty.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns this length minus one, or `None` when already zero.
+    /// - provides: the checked decrement the remove path takes, so a removal
+    ///   unmatched by an insertion cannot wrap the length.
+    /// - panics: none.
     #[inline]
     fn decremented(self) -> Option<Self>
     {
@@ -235,6 +306,10 @@ impl LiveLen
 
 impl From<LiveLen> for usize
 {
+    /// The length as a plain count.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(value: LiveLen) -> Self
     {
@@ -249,6 +324,10 @@ pub struct OrderIsEmpty(bool);
 
 impl From<OrderIsEmpty> for bool
 {
+    /// The answer as a plain boolean.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(value: OrderIsEmpty) -> Self
     {
@@ -263,6 +342,10 @@ pub struct HandleMembership(bool);
 
 impl From<HandleMembership> for bool
 {
+    /// The answer as a plain boolean.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(value: HandleMembership) -> Self
     {
@@ -277,6 +360,10 @@ pub struct IntervalContainment(bool);
 
 impl From<IntervalContainment> for bool
 {
+    /// The answer as a plain boolean.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(value: IntervalContainment) -> Self
     {
@@ -327,6 +414,15 @@ pub enum OrderError
 
 impl core::fmt::Display for OrderError
 {
+    /// Writes the failure's message.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one fixed message per variant, naming the operation
+    ///   and the condition that refused it.
+    /// - provides: the rendering [`core::error::Error`] reporting reads.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
     #[inline]
     fn fmt(
         &self,
@@ -568,6 +664,9 @@ impl<T> OrderMaintenance<T>
     }
 
     /// The number of live elements.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub fn len(&self) -> LiveLen
@@ -576,6 +675,13 @@ impl<T> OrderMaintenance<T>
     }
 
     /// Whether the structure has no live elements.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: answers affirmatively exactly when [`Self::len`] is zero.
+    /// - provides: the emptiness question in the crate's own answer type,
+    ///   agreeing with the length by construction.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn is_empty(&self) -> OrderIsEmpty
@@ -584,6 +690,14 @@ impl<T> OrderMaintenance<T>
     }
 
     /// The first element in order, if any.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a handle to the earliest live element, and `None`
+    ///   exactly when the structure is empty.
+    /// - provides: the entry point of a forward walk; the handle carries this
+    ///   structure's identity and the element's current generation.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn first(&self) -> Option<Pos>
@@ -593,6 +707,14 @@ impl<T> OrderMaintenance<T>
     }
 
     /// The last element in order, if any.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a handle to the latest live element, and `None`
+    ///   exactly when the structure is empty.
+    /// - provides: the entry point of a backward walk; the handle carries this
+    ///   structure's identity and the element's current generation.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn last(&self) -> Option<Pos>
@@ -602,6 +724,15 @@ impl<T> OrderMaintenance<T>
     }
 
     /// Whether `pos` refers to a live element of this structure.
+    ///
+    /// # Specification
+    /// - requires: nothing; any handle may be offered.
+    /// - ensures: answers affirmatively exactly when `pos` names a live element
+    ///   of this structure — this identity, an occupied slot, and the slot's
+    ///   current generation.
+    /// - provides: the liveness question a caller holding a possibly stale
+    ///   handle asks before acting on it.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn contains(
@@ -694,6 +825,15 @@ impl<T> OrderMaintenance<T>
 
     /// The element immediately after `pos` in order, or `None` at the end (or
     /// if the handle is stale or foreign).
+    ///
+    /// # Specification
+    /// - requires: nothing; any handle may be offered.
+    /// - ensures: returns a handle to the element immediately later in the
+    ///   order, and `None` both at the last element and for a stale or foreign
+    ///   handle.
+    /// - provides: the forward step of a walk. The two absences are not told
+    ///   apart here; a caller needing them apart asks [`Self::contains`] first.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn next(
@@ -708,6 +848,15 @@ impl<T> OrderMaintenance<T>
 
     /// The element immediately before `pos` in order, or `None` at the start
     /// (or if the handle is stale or foreign).
+    ///
+    /// # Specification
+    /// - requires: nothing; any handle may be offered.
+    /// - ensures: returns a handle to the element immediately earlier in the
+    ///   order, and `None` both at the first element and for a stale or foreign
+    ///   handle.
+    /// - provides: the backward step of a walk. The two absences are not told
+    ///   apart here; a caller needing them apart asks [`Self::contains`] first.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn prev(
@@ -1063,6 +1212,15 @@ impl<T> OrderMaintenance<T>
     // ----- internal helpers ------------------------------------------------
 
     /// The handle for slot `index`, if the slot is occupied.
+    ///
+    /// # Specification
+    /// - requires: `index` is a position in this structure's arena.
+    /// - ensures: returns a handle stamped with this structure's identity and
+    ///   the slot's current generation, and `None` when the slot is absent,
+    ///   free, or retired.
+    /// - provides: the one site a handle is minted, so every handle in
+    ///   circulation carries a generation that was live when it was taken.
+    /// - panics: none.
     #[inline]
     fn pos_at(
         &self,
@@ -1078,6 +1236,14 @@ impl<T> OrderMaintenance<T>
     }
 
     /// The slot at `index`, if the arena has one.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the arena's slot at `index`, and `None` when the
+    ///   index is past the arena's end or not representable as a position.
+    /// - provides: the bounds-checked arena read every lookup routes through,
+    ///   so an out-of-range index is an absence rather than a panic.
+    /// - panics: none.
     #[inline]
     fn slot(
         &self,
@@ -1089,6 +1255,14 @@ impl<T> OrderMaintenance<T>
     }
 
     /// The occupied payload at `index`, if the slot exists and is occupied.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the live payload at `index`, and `None` when the slot
+    ///   is absent, free, or retired.
+    /// - provides: the liveness filter over [`Self::slot`], so a freed or
+    ///   retired slot never reads as an element.
+    /// - panics: none.
     #[inline]
     fn occupied(
         &self,
@@ -1103,6 +1277,14 @@ impl<T> OrderMaintenance<T>
 
     /// The mutable occupied payload at `index`, if the slot exists and is
     /// occupied.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a unique borrow of the live payload at `index`, and
+    ///   `None` when the slot is absent, free, or retired.
+    /// - provides: the mutable counterpart of [`Self::occupied`], answering the
+    ///   same question under a unique borrow.
+    /// - panics: none.
     #[inline]
     fn occupied_mut(
         &mut self,
@@ -1119,6 +1301,16 @@ impl<T> OrderMaintenance<T>
 
     /// The occupied payload `pos` refers to, if the handle is live: same
     /// structure, occupied slot, matching generation.
+    ///
+    /// # Specification
+    /// - requires: nothing; any handle may be offered.
+    /// - ensures: returns the payload `pos` names exactly when all three of the
+    ///   handle's claims hold — this structure's identity, an occupied slot,
+    ///   and the slot's current generation — and `None` otherwise.
+    /// - provides: the single handle-validation site every operation on a
+    ///   handle routes through, so a stale handle cannot alias the element that
+    ///   reused its slot.
+    /// - panics: none.
     #[inline]
     fn resolve(
         &self,
@@ -1133,6 +1325,14 @@ impl<T> OrderMaintenance<T>
     }
 
     /// The label of the occupied slot at `index`, if any.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the live element's order label, and `None` when the
+    ///   slot is absent, free, or retired.
+    /// - provides: the label read the relabel and comparison paths take without
+    ///   borrowing the payload.
+    /// - panics: none.
     #[inline]
     fn label_of(
         &self,
@@ -1910,6 +2110,10 @@ impl<'order, T> IntoIterator for &'order OrderMaintenance<T>
     type IntoIter = Iter<'order, T>;
     type Item = (Pos, &'order T);
 
+    /// Iterates `(handle, &payload)` over every element in order.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn into_iter(self) -> Self::IntoIter
     {
@@ -1921,6 +2125,19 @@ impl<'order, T> Iterator for Iter<'order, T>
 {
     type Item = (Pos, &'order T);
 
+    /// The next element in order, paired with its handle.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: yields each live element exactly once in list order, pairing
+    ///   a handle carrying that element's current generation with a borrow of
+    ///   its payload, and `None` once the walk passes the last element.
+    /// - provides: the forward step of the in-order walk.
+    /// - fails: the walk stops rather than looping if a link does not resolve,
+    ///   which no sequence of public operations produces.
+    /// - panics: none.
+    /// - intension: one `next` link is followed per call, holding one slot
+    ///   index of state.
     #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
@@ -1962,6 +2179,13 @@ mod tests
         use super::*;
 
         /// A structure over the production label universe.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: returns an empty structure over the full label universe.
+        /// - provides: the fixture the focused tests build on.
+        /// - panics: panics when no distinct structure identity remains, which
+        ///   a focused test run cannot reach.
         pub(super) fn new_order<T>() -> OrderMaintenance<T>
         {
             OrderMaintenance::new().expect("structure id allocation succeeds in focused tests")
@@ -1969,6 +2193,16 @@ mod tests
 
         /// A structure over a deliberately narrow label universe, so relabeling
         /// and capacity exhaustion are reachable in a handful of insertions.
+        ///
+        /// # Specification
+        /// - requires: nothing; the requested width is clamped into the
+        ///   supported range by the constructor.
+        /// - ensures: returns an empty structure over the clamped `[0,
+        ///   2^label_bits)` universe.
+        /// - provides: the fixture that puts relabeling and capacity exhaustion
+        ///   within a handful of insertions.
+        /// - panics: panics when no distinct structure identity remains, which
+        ///   a focused test run cannot reach.
         pub(super) fn narrow_order<T>(label_bits: LabelBits) -> OrderMaintenance<T>
         {
             OrderMaintenance::with_label_bits(label_bits)
@@ -1978,6 +2212,17 @@ mod tests
         /// Asserts the structural invariant: labels strictly increase along the
         /// list and stay inside the universe, the forward and backward link
         /// chains agree on length, and head/tail bound the chain.
+        ///
+        /// # Specification
+        /// - requires: `order` is any structure, sound or corrupted.
+        /// - ensures: returns only when every part of the invariant holds —
+        ///   labels strictly increase along the forward chain and stay below
+        ///   the universe size, both chains have length `len`, and head and
+        ///   tail are the chain's ends.
+        /// - provides: the structural oracle every mutating test asserts
+        ///   through, so a broken link or a repeated label is caught where it
+        ///   is introduced.
+        /// - panics: panics naming the part of the invariant that failed.
         pub(super) fn assert_invariant<T>(order: &OrderMaintenance<T>)
         {
             let universe = Label(order.capacity.0);
@@ -2024,6 +2269,17 @@ mod tests
 
         /// Asserts O(1) comparison agrees with list order for every pair, and
         /// that each element compares equal only to itself.
+        ///
+        /// # Specification
+        /// - requires: `order` has resolvable links, since the pairs are drawn
+        ///   by walking it.
+        /// - ensures: returns only when every ordered pair of handles compares
+        ///   as their list ranks do, so each element compares equal to itself
+        ///   alone.
+        /// - provides: the comparison oracle — the constant-time answer checked
+        ///   against the linear rank it must agree with.
+        /// - panics: panics on the first pair whose comparison disagrees with
+        ///   its rank pair.
         pub(super) fn assert_cmp_consistent<T>(order: &OrderMaintenance<T>)
         {
             let handles = positions(order);
@@ -2039,12 +2295,18 @@ mod tests
         }
 
         /// The handles in list order.
+        ///
+        /// # Specification
+        /// trivial.
         pub(super) fn positions<T>(order: &OrderMaintenance<T>) -> Vec<Pos>
         {
             order.iter().map(|(pos, _value)| pos).collect()
         }
 
         /// The payloads in list order.
+        ///
+        /// # Specification
+        /// trivial.
         pub(super) fn ordered<T>(order: &OrderMaintenance<T>) -> Vec<T>
         where
             T: Copy,
@@ -2055,6 +2317,15 @@ mod tests
         /// Points the `next` link of the element at `index` at a slot the arena
         /// does not have, so the next walk over that link must report
         /// [`OrderError::Inconsistent`].
+        ///
+        /// # Specification
+        /// - requires: `index` names a live element of `order`.
+        /// - ensures: the element's `next` link names a slot the arena does not
+        ///   have, and every other field is untouched.
+        /// - provides: the one corruption that makes
+        ///   [`OrderError::Inconsistent`] reachable, which no public operation
+        ///   produces.
+        /// - panics: panics when `index` does not name a live element.
         pub(super) fn corrupt_next_link<T>(
             order: &mut OrderMaintenance<T>,
             index: SlotIndex,

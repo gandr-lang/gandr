@@ -146,6 +146,14 @@ struct Table
 impl Table
 {
     /// A fresh empty table.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a table with an empty arena and no entries, so the
+    ///   next global index is zero.
+    /// - provides: the accumulator one artifact's entries fill; no state from
+    ///   an earlier decode is reachable from it.
+    /// - panics: none.
     #[inline]
     fn new() -> Self
     {
@@ -158,6 +166,15 @@ impl Table
     }
 
     /// The number of entries decoded so far, as the next global index.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the index the next entry will take, or the `u32`
+    ///   ceiling on a table longer than the index space.
+    /// - provides: the total, panic-free index for the entry about to be
+    ///   decoded; the saturated index cannot alias entry zero, and the entry
+    ///   cap is reached long before it.
+    /// - panics: none.
     #[inline]
     fn next_index(&self) -> GlobalIndex
     {
@@ -218,6 +235,9 @@ pub struct DecodedArtifact
 impl DecodedArtifact
 {
     /// The arena the declarations' content was decoded into.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn arena(&self) -> &TermArena
@@ -226,6 +246,9 @@ impl DecodedArtifact
     }
 
     /// The decoded declarations, in admission order.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub fn declarations(&self) -> &[MarkedDeclaration]
@@ -234,6 +257,9 @@ impl DecodedArtifact
     }
 
     /// The deterministic decode-budget metrics.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn metrics(&self) -> DecodeMetrics
@@ -480,6 +506,14 @@ fn check_minted_atom_table(
 }
 
 /// The value-type id at a global index, if the entry there is a value type.
+///
+/// # Specification
+/// - requires: nothing; `global` may name no entry.
+/// - ensures: returns the value-type id at that index, and `None` both when the
+///   index names no entry and when the entry there is of another family.
+/// - provides: the family-checked root resolution, so a declaration claiming a
+///   value type cannot be handed a node of another polarity.
+/// - panics: none.
 #[inline]
 fn value_type_id_at(
     nodes: &[DecodedNode],
@@ -493,6 +527,13 @@ fn value_type_id_at(
 }
 
 /// The value id at a global index, if the entry there is a value.
+///
+/// # Specification
+/// - requires: nothing; `global` may name no entry.
+/// - ensures: returns the value id at that index, and `None` both when the
+///   index names no entry and when the entry there is of another family.
+/// - provides: the family-checked root resolution for a definition's body.
+/// - panics: none.
 #[inline]
 fn value_id_at(
     nodes: &[DecodedNode],
@@ -578,6 +619,13 @@ pub struct ByteReader<'bytes>
 impl<'bytes> ByteReader<'bytes>
 {
     /// A cursor at the start of `image`.
+    ///
+    /// # Specification
+    /// - requires: nothing; `image` may be arbitrary or adversarial.
+    /// - ensures: returns a cursor whose next unread offset is zero.
+    /// - provides: the one reading position over an image; every read advances
+    ///   it, so no byte is read twice and none is skipped.
+    /// - panics: none.
     #[inline]
     pub(crate) fn new(image: ArtifactImage<'bytes>) -> Self
     {
@@ -588,6 +636,17 @@ impl<'bytes> ByteReader<'bytes>
     }
 
     /// Read one byte, or refuse as truncated at the end.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on `Ok`, returns the byte at the current offset and advances
+    ///   the offset by one.
+    /// - provides: the single-byte read every other read is built from; the
+    ///   offset advances only on success, so a refusal leaves the cursor where
+    ///   it was.
+    /// - fails: [`DecodeError::Truncated`] at the end of the image, and on an
+    ///   offset increment that would not be representable.
+    /// - panics: none.
     #[inline]
     fn next_byte(&mut self) -> Result<WireByte, DecodeError>
     {
@@ -605,6 +664,16 @@ impl<'bytes> ByteReader<'bytes>
     }
 
     /// Read one tag byte.
+    ///
+    /// # Specification
+    /// - requires: the current position is a tagged position of the format.
+    /// - ensures: on `Ok`, returns the byte at the current offset as a tag and
+    ///   advances the offset by one.
+    /// - provides: the read every tag alphabet is resolved from; the tag's
+    ///   meaning is decided by the site the caller is at, never by the byte
+    ///   alone.
+    /// - fails: [`DecodeError::Truncated`] at the end of the image.
+    /// - panics: none.
     #[inline]
     fn next_tag(&mut self) -> Result<WireTag, DecodeError>
     {
@@ -613,6 +682,16 @@ impl<'bytes> ByteReader<'bytes>
     }
 
     /// Read `count` bytes as a borrowed image, or refuse as truncated.
+    ///
+    /// # Specification
+    /// - requires: nothing; `count` may exceed the image.
+    /// - ensures: on `Ok`, returns a borrow of exactly `count` bytes from the
+    ///   current offset and advances the offset past them.
+    /// - provides: the bounds-checked bulk read; the borrow is of the original
+    ///   image, so no payload is copied to be inspected.
+    /// - fails: [`DecodeError::Truncated`] when fewer than `count` bytes
+    ///   remain, and on an offset sum that would not be representable.
+    /// - panics: none.
     #[inline]
     fn take(
         &mut self,
@@ -634,6 +713,16 @@ impl<'bytes> ByteReader<'bytes>
     }
 
     /// Verify the four-byte magic.
+    ///
+    /// # Specification
+    /// - requires: the cursor is at the start of the image.
+    /// - ensures: on `Ok`, the four leading bytes were the format magic and the
+    ///   offset is past them.
+    /// - provides: the first refusal an unrelated byte string meets, so a
+    ///   non-artifact is rejected before any length is believed.
+    /// - fails: [`DecodeError::Truncated`] on fewer than four bytes;
+    ///   [`DecodeError::Malformed`] at the header site when the bytes differ.
+    /// - panics: none.
     #[inline]
     fn expect_magic(&mut self) -> Result<(), DecodeError>
     {
@@ -649,6 +738,17 @@ impl<'bytes> ByteReader<'bytes>
     }
 
     /// Verify the version, refusing any other by name.
+    ///
+    /// # Specification
+    /// - requires: the cursor is positioned just past the magic.
+    /// - ensures: on `Ok`, the two version bytes named the version this decoder
+    ///   implements and the offset is past them.
+    /// - provides: the version gate, which names the version it found rather
+    ///   than reporting a generic malformation, so a future artifact is
+    ///   distinguishable from a corrupt one.
+    /// - fails: [`DecodeError::Truncated`] on fewer than two bytes;
+    ///   [`DecodeError::UnsupportedVersion`] carrying the version found.
+    /// - panics: none.
     #[inline]
     fn expect_version(&mut self) -> Result<(), DecodeError>
     {
@@ -671,6 +771,19 @@ impl<'bytes> ByteReader<'bytes>
     /// against nothing is not checked. No capacity is reserved from the
     /// declared count, so an adversarial count costs one truncation rather
     /// than an allocation.
+    ///
+    /// # Specification
+    /// - requires: the cursor is positioned at the minted-atom table.
+    /// - ensures: on `Ok`, returns exactly the declared number of admission
+    ///   positions, in the order the bytes carry them, and advances past the
+    ///   table.
+    /// - provides: the declared table, read but not believed: its truth is
+    ///   decided later against the decoded declarations, and no capacity is
+    ///   reserved from the declared count, so an adversarial count costs one
+    ///   truncation rather than an allocation.
+    /// - fails: [`DecodeError::Truncated`] when the bytes run out;
+    ///   [`DecodeError::Malformed`] at the varint or index-range site.
+    /// - panics: none.
     fn read_minted_atom_table(&mut self) -> Result<Vec<MintedAtom>, DecodeError>
     {
         let count = self.read_uvarint()?;
@@ -758,6 +871,15 @@ impl<'bytes> ByteReader<'bytes>
     }
 
     /// Read a 32-bit value, refusing an out-of-range varint.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on `Ok`, returns the varint's value when it fits a `u32`.
+    /// - provides: the narrowing every table index and count is read through,
+    ///   so an out-of-range value is a refusal rather than a truncated index.
+    /// - fails: the varint read's own failures, and [`DecodeError::Malformed`]
+    ///   at the index-range site when the value exceeds `u32::MAX`.
+    /// - panics: none.
     #[inline]
     fn read_u32(&mut self) -> Result<WireU32, DecodeError>
     {
@@ -770,6 +892,16 @@ impl<'bytes> ByteReader<'bytes>
     }
 
     /// Read a host-sized value, refusing an out-of-range varint.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on `Ok`, returns the varint's value when it fits a `usize`.
+    /// - provides: the narrowing every length is read through, so a length
+    ///   larger than the host can address is a refusal rather than a wrapped
+    ///   count.
+    /// - fails: the varint read's own failures, and [`DecodeError::Malformed`]
+    ///   at the index-range site when the value exceeds `usize::MAX`.
+    /// - panics: none.
     #[inline]
     fn read_usize(&mut self) -> Result<WireUsize, DecodeError>
     {
@@ -782,6 +914,15 @@ impl<'bytes> ByteReader<'bytes>
     }
 
     /// Read a global table index.
+    ///
+    /// # Specification
+    /// - requires: the cursor is positioned at a table index.
+    /// - ensures: on `Ok`, returns the index the bytes named; whether it names
+    ///   an entry is decided by the caller.
+    /// - provides: the typed read that keeps a table index from being crossed
+    ///   with a count at a signature.
+    /// - fails: the 32-bit read's own failures.
+    /// - panics: none.
     #[inline]
     fn read_global(&mut self) -> Result<GlobalIndex, DecodeError>
     {
@@ -790,6 +931,17 @@ impl<'bytes> ByteReader<'bytes>
     }
 
     /// Read length-prefixed text through a validating UTF-8 conversion.
+    ///
+    /// # Specification
+    /// - requires: the cursor is positioned at a length-prefixed text field.
+    /// - ensures: on `Ok`, returns the field's bytes as owned text and advances
+    ///   past them.
+    /// - provides: the one validating conversion every text payload passes
+    ///   through, so no invalid UTF-8 reaches a literal.
+    /// - fails: the length and bulk reads' own failures, and
+    ///   [`DecodeError::Malformed`] at the literal-payload site on invalid
+    ///   UTF-8.
+    /// - panics: none.
     #[inline]
     fn read_text(&mut self) -> Result<String, DecodeError>
     {
@@ -1219,6 +1371,17 @@ fn read_child(
 }
 
 /// Read a value-type child.
+///
+/// # Specification
+/// - requires: `this` is the index of the entry being decoded, and `children`
+///   collects its child indices in wire order.
+/// - ensures: on `Ok`, returns the child's value-type id and appends its index
+///   to `children`.
+/// - provides: the polarity-checked child read; a child of another family is
+///   refused here rather than reaching a constructor.
+/// - fails: the child read's own failures, and [`DecodeError::Malformed`] at
+///   the polarity site when the entry is of another family.
+/// - panics: none.
 #[inline]
 fn read_value_type(
     reader: &mut ByteReader<'_>,
@@ -1237,6 +1400,16 @@ fn read_value_type(
 }
 
 /// Read a computation-type child.
+///
+/// # Specification
+/// - requires: `this` is the index of the entry being decoded, and `children`
+///   collects its child indices in wire order.
+/// - ensures: on `Ok`, returns the child's computation-type id and appends its
+///   index to `children`.
+/// - provides: the polarity-checked child read for the negative type family.
+/// - fails: the child read's own failures, and [`DecodeError::Malformed`] at
+///   the polarity site when the entry is of another family.
+/// - panics: none.
 #[inline]
 fn read_comp_type(
     reader: &mut ByteReader<'_>,
@@ -1255,6 +1428,16 @@ fn read_comp_type(
 }
 
 /// Read a value child.
+///
+/// # Specification
+/// - requires: `this` is the index of the entry being decoded, and `children`
+///   collects its child indices in wire order.
+/// - ensures: on `Ok`, returns the child's value id and appends its index to
+///   `children`.
+/// - provides: the polarity-checked child read for the positive term family.
+/// - fails: the child read's own failures, and [`DecodeError::Malformed`] at
+///   the polarity site when the entry is of another family.
+/// - panics: none.
 #[inline]
 fn read_value(
     reader: &mut ByteReader<'_>,
@@ -1273,6 +1456,16 @@ fn read_value(
 }
 
 /// Read a computation child.
+///
+/// # Specification
+/// - requires: `this` is the index of the entry being decoded, and `children`
+///   collects its child indices in wire order.
+/// - ensures: on `Ok`, returns the child's computation id and appends its index
+///   to `children`.
+/// - provides: the polarity-checked child read for the negative term family.
+/// - fails: the child read's own failures, and [`DecodeError::Malformed`] at
+///   the polarity site when the entry is of another family.
+/// - panics: none.
 #[inline]
 fn read_computation(
     reader: &mut ByteReader<'_>,
@@ -1291,6 +1484,15 @@ fn read_computation(
 }
 
 /// Decode a declaration's admission mark.
+///
+/// # Specification
+/// - requires: the cursor is positioned at a declaration's admission mark.
+/// - ensures: on `Ok`, returns the mark the tag named and advances past it.
+/// - provides: the mark a consumer reads to tell a checked declaration from one
+///   admitted by bypass; the two are distinct bytes rather than a default.
+/// - fails: [`DecodeError::Truncated`] at the end of the image;
+///   [`DecodeError::UnknownTag`] at the admission site on any other byte.
+/// - panics: none.
 #[inline]
 fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, DecodeError>
 {
@@ -1307,6 +1509,18 @@ fn decode_admission(reader: &mut ByteReader<'_>) -> Result<AdmissionMark, Decode
 
 /// Resolve a declaration-kind byte, refusing a reserved kind distinctly from an
 /// unknown one.
+///
+/// # Specification
+/// - requires: `kind` is the byte read at a declaration-kind position.
+/// - ensures: returns the live kind for a definition, an axiom, or a sealed
+///   abstract type.
+/// - provides: the one place a kind byte is interpreted, keeping a reserved
+///   kind's refusal distinct from an unknown byte's, so a reader learns whether
+///   the kind is unimplemented or unassigned.
+/// - fails: [`DecodeError::ReservedDeclarationKind`] on one of the three
+///   reserved kinds; [`DecodeError::UnknownTag`] at the declaration-kind site
+///   on any other byte.
+/// - panics: none.
 #[inline]
 fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 {
@@ -1334,6 +1548,15 @@ fn declaration_kind(kind: WireTag) -> Result<DeclKind, DecodeError>
 }
 
 /// Decode the structured-name record, requiring it empty.
+///
+/// # Specification
+/// - requires: the cursor is positioned at the structured-name record.
+/// - ensures: on `Ok`, the record's count was zero and the cursor is past it.
+/// - provides: the refusal that keeps the reserved name record unusable, so an
+///   artifact cannot carry names this format does not define.
+/// - fails: the count read's own failures, and
+///   [`DecodeError::ReservedSlotOccupied`] naming the structured-name record.
+/// - panics: none.
 #[inline]
 fn decode_empty_name(reader: &mut ByteReader<'_>) -> Result<(), DecodeError>
 {
@@ -1348,6 +1571,21 @@ fn decode_empty_name(reader: &mut ByteReader<'_>) -> Result<(), DecodeError>
 /// are only *read* here — whether they ascend, and whether each occurs in the
 /// declared type, are typing facts decided at a choke point, and this is the
 /// format plane.
+///
+/// # Specification
+/// - requires: the cursor is positioned at the first of the four per-definition
+///   annotation slots.
+/// - ensures: on `Ok`, the three reserved slots were empty and the returned
+///   atoms are the sealing-provenance slot's, in wire order; the cursor is past
+///   all four.
+/// - provides: the whole slot block read in one place, so the live slot's
+///   position among the reserved ones is stated once. Whether the atoms ascend,
+///   and whether each occurs in the declared type, are typing facts decided at
+///   a choke point.
+/// - fails: the slot reads' own failures, and
+///   [`DecodeError::ReservedSlotOccupied`] naming whichever reserved slot was
+///   occupied.
+/// - panics: none.
 #[inline]
 fn decode_definition_slots(reader: &mut ByteReader<'_>) -> Result<Vec<ConstantIndex>, DecodeError>
 {
@@ -1359,6 +1597,15 @@ fn decode_definition_slots(reader: &mut ByteReader<'_>) -> Result<Vec<ConstantIn
 }
 
 /// Require one still-reserved slot to be empty.
+///
+/// # Specification
+/// - requires: the cursor is positioned at a reserved slot's count.
+/// - ensures: on `Ok`, the count was zero and the cursor is past it.
+/// - provides: the one refusal every still-reserved slot shares, so a slot made
+///   live later changes one call site rather than a scattered check.
+/// - fails: the count read's own failures, and
+///   [`DecodeError::ReservedSlotOccupied`] naming `slot`.
+/// - panics: none.
 #[inline]
 fn expect_empty_slot(
     reader: &mut ByteReader<'_>,
@@ -1378,6 +1625,16 @@ fn expect_empty_slot(
 ///
 /// No capacity is reserved from the declared count, so an adversarial count
 /// costs one truncation rather than an allocation.
+///
+/// # Specification
+/// - requires: the cursor is positioned at the sealing-provenance slot.
+/// - ensures: on `Ok`, returns exactly the declared number of admission
+///   positions, in wire order, and advances past the slot.
+/// - provides: the slot's atoms; no capacity is reserved from the declared
+///   count, so an adversarial count costs one truncation rather than an
+///   allocation.
+/// - fails: the count and position reads' own failures.
+/// - panics: none.
 #[inline]
 fn decode_sealing_provenance(reader: &mut ByteReader<'_>)
 -> Result<Vec<ConstantIndex>, DecodeError>
@@ -1438,6 +1695,15 @@ fn decode_level_signature(reader: &mut ByteReader<'_>) -> Result<LevelSignature,
 }
 
 /// Decode a landmark-constraint relation.
+///
+/// # Specification
+/// - requires: the cursor is positioned at a constraint relation.
+/// - ensures: on `Ok`, returns the relation the tag named and advances past it.
+/// - provides: the relation alphabet's one interpretation site.
+/// - fails: [`DecodeError::Truncated`] at the end of the image;
+///   [`DecodeError::UnknownTag`] at the constraint-relation site on any other
+///   byte.
+/// - panics: none.
 #[inline]
 fn decode_relation(reader: &mut ByteReader<'_>) -> Result<ConstraintRelation, DecodeError>
 {
@@ -1539,6 +1805,14 @@ fn build_variable_atom(
 }
 
 /// Decode a base-type atom.
+///
+/// # Specification
+/// - requires: the cursor is positioned at a base-type atom.
+/// - ensures: on `Ok`, returns the atom the tag named and advances past it.
+/// - provides: the base-type alphabet's one interpretation site.
+/// - fails: [`DecodeError::Truncated`] at the end of the image;
+///   [`DecodeError::UnknownTag`] at the base-type site on any other byte.
+/// - panics: none.
 #[inline]
 fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError>
 {
@@ -1555,6 +1829,14 @@ fn decode_base_type(reader: &mut ByteReader<'_>) -> Result<BaseType, DecodeError
 }
 
 /// Decode an injection side.
+///
+/// # Specification
+/// - requires: the cursor is positioned at an injection side.
+/// - ensures: on `Ok`, returns the side the tag named and advances past it.
+/// - provides: the side alphabet's one interpretation site.
+/// - fails: [`DecodeError::Truncated`] at the end of the image;
+///   [`DecodeError::UnknownTag`] at the side site on any other byte.
+/// - panics: none.
 #[inline]
 fn decode_side(reader: &mut ByteReader<'_>) -> Result<Side, DecodeError>
 {
@@ -1570,6 +1852,17 @@ fn decode_side(reader: &mut ByteReader<'_>) -> Result<Side, DecodeError>
 }
 
 /// Decode a literal, rebuilt through the base-type smart constructors.
+///
+/// # Specification
+/// - requires: the cursor is positioned at a literal.
+/// - ensures: on `Ok`, returns the literal the kind tag and payload named,
+///   rebuilt through the canonicalizing constructors, and advances past it.
+/// - provides: the only path from bytes to a literal, so a non-canonical
+///   payload cannot enter the term language: the constructor canonicalizes and
+///   the canonical-form comparison then refuses the original bytes.
+/// - fails: the payload reads' own failures, and [`DecodeError::UnknownTag`] at
+///   the literal-kind site on any other kind byte.
+/// - panics: none.
 fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
 {
     let tag = reader.next_tag()?;
@@ -1601,6 +1894,14 @@ fn decode_literal(reader: &mut ByteReader<'_>) -> Result<Literal, DecodeError>
 }
 
 /// Decode a literal sign.
+///
+/// # Specification
+/// - requires: the cursor is positioned at a literal sign.
+/// - ensures: on `Ok`, returns the sign the tag named and advances past it.
+/// - provides: the sign alphabet's one interpretation site.
+/// - fails: [`DecodeError::Truncated`] at the end of the image;
+///   [`DecodeError::UnknownTag`] at the sign site on any other byte.
+/// - panics: none.
 #[inline]
 fn decode_sign(reader: &mut ByteReader<'_>) -> Result<Sign, DecodeError>
 {
@@ -1616,6 +1917,16 @@ fn decode_sign(reader: &mut ByteReader<'_>) -> Result<Sign, DecodeError>
 }
 
 /// Decode a canonical magnitude through its smart constructor.
+///
+/// # Specification
+/// - requires: the cursor is positioned at a magnitude's digit text.
+/// - ensures: on `Ok`, returns the canonical magnitude the digits denote.
+/// - provides: the canonicalizing read; a padded or empty spelling is refused
+///   here rather than stored, so a magnitude in the arena is canonical by
+///   construction.
+/// - fails: the text read's own failures, and [`DecodeError::Malformed`] at the
+///   literal-payload site when the text is not decimal digits.
+/// - panics: none.
 #[inline]
 fn decode_magnitude(reader: &mut ByteReader<'_>) -> Result<Magnitude, DecodeError>
 {
@@ -1626,6 +1937,16 @@ fn decode_magnitude(reader: &mut ByteReader<'_>) -> Result<Magnitude, DecodeErro
 }
 
 /// Decode a canonical fraction through its smart constructor.
+///
+/// # Specification
+/// - requires: the cursor is positioned at a fraction's digit text.
+/// - ensures: on `Ok`, returns the canonical fraction the digits denote.
+/// - provides: the canonicalizing read; a trailing-zero spelling is refused
+///   here rather than stored, so a fraction in the arena is canonical by
+///   construction.
+/// - fails: the text read's own failures, and [`DecodeError::Malformed`] at the
+///   literal-payload site when the text is not decimal digits.
+/// - panics: none.
 #[inline]
 fn decode_fraction(reader: &mut ByteReader<'_>) -> Result<FractionDigits, DecodeError>
 {

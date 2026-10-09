@@ -25,6 +25,10 @@ pub struct WireByte(pub u8);
 
 impl From<u8> for WireByte
 {
+    /// The wire byte for a raw byte.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(byte: u8) -> Self
     {
@@ -34,6 +38,10 @@ impl From<u8> for WireByte
 
 impl From<WireByte> for u8
 {
+    /// The raw byte the wrapper carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(byte: WireByte) -> Self
     {
@@ -57,6 +65,10 @@ pub struct WireTag(pub u8);
 
 impl From<u8> for WireTag
 {
+    /// The tag for a raw byte.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(tag: u8) -> Self
     {
@@ -66,6 +78,10 @@ impl From<u8> for WireTag
 
 impl From<WireTag> for u8
 {
+    /// The raw byte the tag carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(tag: WireTag) -> Self
     {
@@ -75,6 +91,10 @@ impl From<WireTag> for u8
 
 impl From<WireByte> for WireTag
 {
+    /// The byte read at a tagged position, as a tag.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(byte: WireByte) -> Self
     {
@@ -84,6 +104,10 @@ impl From<WireByte> for WireTag
 
 impl From<WireTag> for WireByte
 {
+    /// The tag as the byte written for it.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(tag: WireTag) -> Self
     {
@@ -93,6 +117,17 @@ impl From<WireTag> for WireByte
 
 impl core::fmt::Display for WireTag
 {
+    /// Writes the tag as a two-digit hexadecimal byte.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes `0x` followed by exactly two lowercase hexadecimal
+    ///   digits.
+    /// - provides: the spelling an unknown-tag refusal carries, so the message
+    ///   names the byte as the format writes it rather than as a decimal
+    ///   number.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
     #[inline]
     fn fmt(
         &self,
@@ -110,6 +145,10 @@ pub struct FormatVersion(pub u16);
 
 impl From<u16> for FormatVersion
 {
+    /// The version for a raw number.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(version: u16) -> Self
     {
@@ -119,6 +158,10 @@ impl From<u16> for FormatVersion
 
 impl From<FormatVersion> for u16
 {
+    /// The raw number the version carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(version: FormatVersion) -> Self
     {
@@ -128,6 +171,10 @@ impl From<FormatVersion> for u16
 
 impl core::fmt::Display for FormatVersion
 {
+    /// Writes the version as a decimal number.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn fmt(
         &self,
@@ -145,6 +192,10 @@ pub struct WireU32(pub u32);
 
 impl From<u32> for WireU32
 {
+    /// The wire integer for a raw number.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(value: u32) -> Self
     {
@@ -154,6 +205,10 @@ impl From<u32> for WireU32
 
 impl From<WireU32> for u32
 {
+    /// The raw number the wire integer carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(value: WireU32) -> Self
     {
@@ -168,6 +223,10 @@ pub struct WireU64(pub u64);
 
 impl From<u64> for WireU64
 {
+    /// The wire integer for a raw number.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(value: u64) -> Self
     {
@@ -177,6 +236,10 @@ impl From<u64> for WireU64
 
 impl From<WireU64> for u64
 {
+    /// The raw number the wire integer carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(value: WireU64) -> Self
     {
@@ -191,6 +254,10 @@ pub struct WireUsize(pub usize);
 
 impl From<usize> for WireUsize
 {
+    /// The wire count for a raw count.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(value: usize) -> Self
     {
@@ -200,6 +267,10 @@ impl From<usize> for WireUsize
 
 impl From<WireUsize> for usize
 {
+    /// The raw count the wire count carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(value: WireUsize) -> Self
     {
@@ -215,6 +286,15 @@ impl From<WireUsize> for WireU64
     /// is lossless there; the saturating fallback keeps the conversion total on
     /// a hypothetical wider platform rather than introducing a failure mode no
     /// caller could act on.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the equal 64-bit integer, or the `u64` ceiling on a
+    ///   platform whose pointer is wider than 64 bits.
+    /// - provides: the total, panic-free widening from a host count to the
+    ///   wire's integer; the saturation is a documented ceiling rather than a
+    ///   reachable path on any supported platform.
+    /// - panics: none.
     #[inline]
     fn from(value: WireUsize) -> Self
     {
@@ -229,6 +309,10 @@ pub struct ByteOffset(pub usize);
 
 impl From<usize> for ByteOffset
 {
+    /// The offset for a raw position.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(offset: usize) -> Self
     {
@@ -238,6 +322,10 @@ impl From<usize> for ByteOffset
 
 impl From<ByteOffset> for usize
 {
+    /// The raw position the offset carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(offset: ByteOffset) -> Self
     {
@@ -252,6 +340,10 @@ pub struct ByteCount(pub usize);
 
 impl From<usize> for ByteCount
 {
+    /// The count for a raw number of bytes.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(count: usize) -> Self
     {
@@ -261,6 +353,10 @@ impl From<usize> for ByteCount
 
 impl From<ByteCount> for usize
 {
+    /// The raw number of bytes the count carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(count: ByteCount) -> Self
     {
@@ -275,6 +371,10 @@ pub struct ArtifactText<'text>(pub &'text str);
 
 impl<'text> From<&'text str> for ArtifactText<'text>
 {
+    /// The wire text for borrowed UTF-8.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(text: &'text str) -> Self
     {
@@ -284,6 +384,10 @@ impl<'text> From<&'text str> for ArtifactText<'text>
 
 impl AsRef<str> for ArtifactText<'_>
 {
+    /// Borrow the text.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn as_ref(&self) -> &str
     {
@@ -298,6 +402,10 @@ pub struct ArtifactImage<'artifact>(&'artifact [u8]);
 
 impl<'artifact> From<&'artifact [u8]> for ArtifactImage<'artifact>
 {
+    /// The image for borrowed bytes.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(bytes: &'artifact [u8]) -> Self
     {
@@ -307,6 +415,10 @@ impl<'artifact> From<&'artifact [u8]> for ArtifactImage<'artifact>
 
 impl AsRef<[u8]> for ArtifactImage<'_>
 {
+    /// Borrow the image's bytes.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn as_ref(&self) -> &[u8]
     {
@@ -317,6 +429,9 @@ impl AsRef<[u8]> for ArtifactImage<'_>
 impl<'artifact> ArtifactImage<'artifact>
 {
     /// The number of bytes in this image.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub(crate) fn length(self) -> ByteOffset
@@ -347,6 +462,15 @@ impl<'artifact> ArtifactImage<'artifact>
     }
 
     /// The byte at `offset`, or `None` past the end.
+    ///
+    /// # Specification
+    /// - requires: nothing — an out-of-range offset is admissible input, since
+    ///   the bytes may be adversarial.
+    /// - ensures: returns the byte at `offset` when it lies inside this image,
+    ///   and `None` otherwise.
+    /// - provides: the bounds-checked single-byte read the cursor advances
+    ///   through, so no read is ever an index.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub(crate) fn byte_at(
@@ -369,6 +493,10 @@ pub struct EncodedArtifact(Vec<u8>);
 
 impl AsRef<[u8]> for EncodedArtifact
 {
+    /// Borrow the image's bytes.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn as_ref(&self) -> &[u8]
     {
@@ -378,6 +506,10 @@ impl AsRef<[u8]> for EncodedArtifact
 
 impl From<EncodedArtifact> for Vec<u8>
 {
+    /// The bytes the image owns.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(artifact: EncodedArtifact) -> Self
     {
@@ -388,6 +520,9 @@ impl From<EncodedArtifact> for Vec<u8>
 impl EncodedArtifact
 {
     /// An empty image.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub(crate) fn new() -> Self
@@ -396,6 +531,9 @@ impl EncodedArtifact
     }
 
     /// Borrow these bytes for decoding or comparison.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub fn as_image(&self) -> ArtifactImage<'_>
@@ -404,6 +542,9 @@ impl EncodedArtifact
     }
 
     /// Append one tag byte.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     pub(crate) fn put_tag(
         &mut self,
@@ -414,6 +555,9 @@ impl EncodedArtifact
     }
 
     /// Append the bytes of `image` verbatim.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     pub(crate) fn put_image(
         &mut self,
@@ -424,6 +568,13 @@ impl EncodedArtifact
     }
 
     /// Append a format version as two little-endian bytes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: appends exactly two bytes, the version's little-endian image.
+    /// - provides: the header's version framing, fixed at two bytes so the
+    ///   field's width does not depend on the value written.
+    /// - panics: none.
     #[inline]
     pub(crate) fn put_version(
         &mut self,

@@ -267,6 +267,9 @@ pub struct TermArena
 impl TermArena
 {
     /// An empty arena.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub fn new() -> Self
@@ -275,6 +278,15 @@ impl TermArena
     }
 
     /// The current watermark: the four family lengths.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the four families' current lengths.
+    /// - provides: the mark [`Self::truncate_to`] takes, truncating each family
+    ///   to `min(current_len, mark)`, so a checker's intermediates are dropped
+    ///   after a verdict. The mark carries no arena identity, so pairing it
+    ///   with the arena it came from is the caller's.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn watermark(&self) -> ArenaWatermark
@@ -287,16 +299,19 @@ impl TermArena
         }
     }
 
-    /// Truncate every family back to `watermark`, dropping later allocations.
+    /// Truncate each family to `min(current_len, watermark)`, dropping later
+    /// allocations.
     ///
     /// # Specification
-    /// - requires: `watermark` was taken from this arena and no family has
-    ///   since shrunk below it; every id minted after it is unreachable from
-    ///   content the caller retains, which is what the admission discipline
-    ///   establishes.
-    /// - ensures: each family holds exactly its watermark-many leading nodes;
-    ///   every id minted after the watermark now dangles, and a lookup of one
-    ///   fails closed rather than resolving to a later node.
+    /// - requires: `watermark` was taken from this arena, and every id minted
+    ///   after it is unreachable from content the caller retains, which the
+    ///   admission discipline establishes. A family already shorter than the
+    ///   mark is admissible: its truncation is a no-op.
+    /// - ensures: each family's length becomes `min(entry_len, watermark)` —
+    ///   the mark's length where the family is longer, the length it already
+    ///   has where it is shorter; an id whose index is at or past the resulting
+    ///   length dangles, and a lookup of one fails closed rather than resolving
+    ///   to a later node.
     /// - provides: the truncation an admission choke point performs after a
     ///   verdict, on rejection and on success alike. The clause checks family
     ///   lengths, including the stale-mark no-op. Arena provenance,
@@ -330,6 +345,15 @@ impl TermArena
     }
 
     /// Resolve a value id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: returns the value node `id` names, and `None` exactly when
+    ///   the id's index is past this family's length — after a truncation past
+    ///   it, or for an id this arena never minted.
+    /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
+    ///   unchecked resolution path exists.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn value(
@@ -341,6 +365,14 @@ impl TermArena
     }
 
     /// Resolve a computation id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: returns the computation node `id` names, and `None` exactly
+    ///   when the id's index is past this family's length.
+    /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
+    ///   unchecked resolution path exists.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn computation(
@@ -352,6 +384,14 @@ impl TermArena
     }
 
     /// Resolve a value-type id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: returns the value-type node `id` names, and `None` exactly
+    ///   when the id's index is past this family's length.
+    /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
+    ///   unchecked resolution path exists.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn value_type(
@@ -363,6 +403,14 @@ impl TermArena
     }
 
     /// Resolve a computation-type id, or `None` when it dangles.
+    ///
+    /// # Specification
+    /// - requires: nothing; a dangling or foreign id is admissible input.
+    /// - ensures: returns the computation-type node `id` names, and `None`
+    ///   exactly when the id's index is past this family's length.
+    /// - provides: the checked lookup that keeps a `u32` id fail-closed; no
+    ///   unchecked resolution path exists.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn comp_type(
@@ -373,7 +421,21 @@ impl TermArena
         self.comp_types.get(id_offset(ArenaIndex(id.0)).0)
     }
 
-    /// Append a value node and return its fresh id.
+    /// Append a value node and return the id that names it.
+    ///
+    /// # Specification
+    /// - requires: every child id inside `value` resolves in this arena.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the single minting site for a [`ValueId`], which is what
+    ///   puts constructor-only minting in one checkable place. An id is a
+    ///   family index, so [`Self::truncate_to`] makes index reuse a supported
+    ///   path: after a truncation the next push mints an id equal to one minted
+    ///   before it; and above the ceiling [`id_index`] saturates at, the
+    ///   returned id no longer names the appended node.
+    /// - panics: none.
     #[inline]
     fn alloc_value(
         &mut self,
@@ -385,7 +447,16 @@ impl TermArena
         id
     }
 
-    /// Append a computation node and return its fresh id.
+    /// Append a computation node and return the id that names it.
+    ///
+    /// # Specification
+    /// - requires: every child id inside `computation` resolves in this arena.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   computation id currently live in this arena.
+    /// - provides: the single minting site for a [`ComputationId`].
+    /// - panics: none.
     #[inline]
     fn alloc_computation(
         &mut self,
@@ -397,7 +468,16 @@ impl TermArena
         id
     }
 
-    /// Append a value-type node and return its fresh id.
+    /// Append a value-type node and return the id that names it.
+    ///
+    /// # Specification
+    /// - requires: every child id inside `value_type` resolves in this arena.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the single minting site for a [`ValueTypeId`].
+    /// - panics: none.
     #[inline]
     fn alloc_value_type(
         &mut self,
@@ -409,7 +489,16 @@ impl TermArena
         id
     }
 
-    /// Append a computation-type node and return its fresh id.
+    /// Append a computation-type node and return the id that names it.
+    ///
+    /// # Specification
+    /// - requires: every child id inside `comp_type` resolves in this arena.
+    /// - ensures: appends the node and returns the computation-type family's
+    ///   length before the push, saturated at the `u32` ceiling; while that
+    ///   length fits `u32` the id names the appended node and is greater than
+    ///   every computation-type id currently live in this arena.
+    /// - provides: the single minting site for a [`CompTypeId`].
+    /// - panics: none.
     #[inline]
     fn alloc_comp_type(
         &mut self,
@@ -425,6 +514,16 @@ impl TermArena
     // what makes a child id strictly less than its parent's.
 
     /// Mint a bound value variable.
+    ///
+    /// # Specification
+    /// - requires: nothing; a de Bruijn index is an inline payload, and whether
+    ///   it names an enclosing binder is a typing fact.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueId`] for a bound variable.
+    /// - panics: none.
     #[inline]
     pub fn value_variable(
         &mut self,
@@ -435,6 +534,18 @@ impl TermArena
     }
 
     /// Mint a constant reference to a prior declaration.
+    ///
+    /// # Specification
+    /// - requires: nothing; whether the admission position names an admitted
+    ///   declaration is a typing fact, refused at the choke point rather than
+    ///   here.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueId`] for a constant
+    ///   reference.
+    /// - panics: none.
     #[inline]
     pub fn value_constant(
         &mut self,
@@ -445,6 +556,15 @@ impl TermArena
     }
 
     /// Mint the unit value.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueId`] for the unit value.
+    /// - panics: none.
     #[inline]
     pub fn value_unit(&mut self) -> ValueId
     {
@@ -452,6 +572,16 @@ impl TermArena
     }
 
     /// Mint a base-type literal value.
+    ///
+    /// # Specification
+    /// - requires: nothing; the literal is an inline payload, and whether it
+    ///   inhabits its base type is a typing fact.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueId`] for a literal.
+    /// - panics: none.
     #[inline]
     pub fn value_literal(
         &mut self,
@@ -462,6 +592,16 @@ impl TermArena
     }
 
     /// Mint a pair over two already-allocated value children.
+    ///
+    /// # Specification
+    /// - requires: `first` and `second` resolve in this arena.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is strictly greater than both child
+    ///   ids, which the precondition keeps live.
+    /// - provides: the pair node, acyclic by construction; the id ordering is
+    ///   what the subterm table's strictly-earlier invariant rests on.
+    /// - panics: none.
     #[inline]
     pub fn value_pair(
         &mut self,
@@ -473,6 +613,16 @@ impl TermArena
     }
 
     /// Mint a sum injection over an already-allocated value body.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena.
+    /// - ensures: appends the node on the named side and returns the value
+    ///   family's length before the push, saturated at the `u32` ceiling; while
+    ///   that length fits `u32` the id names the appended node and is strictly
+    ///   greater than `body`, which the precondition keeps live.
+    /// - provides: the injection node, acyclic by construction; which summand
+    ///   the side selects is a typing fact.
+    /// - panics: none.
     #[inline]
     pub fn value_injection(
         &mut self,
@@ -484,6 +634,17 @@ impl TermArena
     }
 
     /// Mint a thunk over an already-allocated computation body.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena's computation family.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is greater than every value id
+    ///   currently live in this arena.
+    /// - provides: the one value form embedding a computation, which suspends
+    ///   rather than runs it. The child crosses families, so the two ids share
+    ///   no allocation order and none is claimed.
+    /// - panics: none.
     #[inline]
     pub fn value_thunk(
         &mut self,
@@ -494,6 +655,17 @@ impl TermArena
     }
 
     /// Mint a value lift over an already-allocated value body.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena; whether its type's level sits
+    ///   strictly below `target` is a typing fact.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is strictly greater than `body`,
+    ///   which the precondition keeps live.
+    /// - provides: the written lift; there is no implicit cumulativity, so a
+    ///   lift exists only where a producer minted one.
+    /// - panics: none.
     #[inline]
     pub fn value_lift(
         &mut self,
@@ -507,6 +679,16 @@ impl TermArena
     // Computation constructors.
 
     /// Mint a lambda over an already-allocated computation body.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   `body`, which the precondition keeps live.
+    /// - provides: the lambda node, acyclic by construction; the binder is
+    ///   positional, so no name is represented.
+    /// - panics: none.
     #[inline]
     pub fn computation_lambda(
         &mut self,
@@ -517,6 +699,17 @@ impl TermArena
     }
 
     /// Mint an application over an already-allocated head and argument.
+    ///
+    /// # Specification
+    /// - requires: `head` and `argument` resolve in this arena, in its
+    ///   computation and value families respectively.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   computation id currently live in this arena, `head` included.
+    /// - provides: the application node; whether the argument matches the
+    ///   head's domain is a typing fact.
+    /// - panics: none.
     #[inline]
     pub fn computation_application(
         &mut self,
@@ -528,6 +721,16 @@ impl TermArena
     }
 
     /// Mint a returner over an already-allocated value.
+    ///
+    /// # Specification
+    /// - requires: `value` resolves in this arena's value family.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   computation id currently live in this arena.
+    /// - provides: the returner node. The child crosses families, so the two
+    ///   ids share no allocation order and none is claimed.
+    /// - panics: none.
     #[inline]
     pub fn computation_return(
         &mut self,
@@ -538,6 +741,16 @@ impl TermArena
     }
 
     /// Mint a bind over an already-allocated bound computation and body.
+    ///
+    /// # Specification
+    /// - requires: `bound` and `body` resolve in this arena.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   both child ids, which the precondition keeps live.
+    /// - provides: the sequencing node; the value `bound` returns is bound
+    ///   positionally in `body`.
+    /// - panics: none.
     #[inline]
     pub fn computation_bind(
         &mut self,
@@ -549,6 +762,16 @@ impl TermArena
     }
 
     /// Mint a force over an already-allocated value.
+    ///
+    /// # Specification
+    /// - requires: `value` resolves in this arena's value family.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   computation id currently live in this arena.
+    /// - provides: the force node. Whether `value` is a thunk is a typing fact,
+    ///   and the child crosses families, so no id ordering is claimed.
+    /// - panics: none.
     #[inline]
     pub fn computation_force(
         &mut self,
@@ -559,6 +782,19 @@ impl TermArena
     }
 
     /// Mint a case over an already-allocated scrutinee and two branches.
+    ///
+    /// # Specification
+    /// - requires: `scrutinee`, `on_left`, and `on_right` resolve in this
+    ///   arena, the scrutinee in its value family and the branches in its
+    ///   computation family.
+    /// - ensures: appends the node and returns the computation family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   both branch ids, which the precondition keeps live.
+    /// - provides: the sum elimination; each branch is checked with the
+    ///   injected value bound, which is a typing fact rather than a
+    ///   representation one.
+    /// - panics: none.
     #[inline]
     pub fn computation_case(
         &mut self,
@@ -577,6 +813,15 @@ impl TermArena
     // Value-type constructors.
 
     /// Mint a base value type.
+    ///
+    /// # Specification
+    /// - requires: nothing; the base type is an inline payload.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueTypeId`] for a base type.
+    /// - panics: none.
     #[inline]
     pub fn value_type_base(
         &mut self,
@@ -587,6 +832,15 @@ impl TermArena
     }
 
     /// Mint the unit value type.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the only way to obtain a [`ValueTypeId`] for the unit type.
+    /// - panics: none.
     #[inline]
     pub fn value_type_unit(&mut self) -> ValueTypeId
     {
@@ -594,6 +848,15 @@ impl TermArena
     }
 
     /// Mint a product over two already-allocated value types.
+    ///
+    /// # Specification
+    /// - requires: `first` and `second` resolve in this arena.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   both child ids, which the precondition keeps live.
+    /// - provides: the product type, acyclic by construction.
+    /// - panics: none.
     #[inline]
     pub fn value_type_product(
         &mut self,
@@ -605,6 +868,16 @@ impl TermArena
     }
 
     /// Mint a sum over two already-allocated value types.
+    ///
+    /// # Specification
+    /// - requires: `first` and `second` resolve in this arena.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   both child ids, which the precondition keeps live.
+    /// - provides: the sum type, acyclic by construction; the summand order is
+    ///   the order the two arguments are given in.
+    /// - panics: none.
     #[inline]
     pub fn value_type_sum(
         &mut self,
@@ -616,6 +889,16 @@ impl TermArena
     }
 
     /// Mint a thunk type over an already-allocated computation type.
+    ///
+    /// # Specification
+    /// - requires: `body` resolves in this arena's computation-type family.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the thunk type `U C`. The child crosses families, so the two
+    ///   ids share no allocation order and none is claimed.
+    /// - panics: none.
     #[inline]
     pub fn value_type_thunk(
         &mut self,
@@ -626,6 +909,15 @@ impl TermArena
     }
 
     /// Mint a universe value type at a canonical level.
+    ///
+    /// # Specification
+    /// - requires: `level` is a canonical level; the arena stores it as given.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the universe type at that level.
+    /// - panics: none.
     #[inline]
     pub fn value_type_universe(
         &mut self,
@@ -641,6 +933,17 @@ impl TermArena
     /// Minting does not check the position: whether it names an admitted
     /// abstract-type declaration is a typing fact, so an unadmitted position is
     /// a rejection at the choke point rather than an unrepresentable node here.
+    ///
+    /// # Specification
+    /// - requires: nothing; the admission position is checked at the choke
+    ///   point rather than here.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the reference to a sealed abstract type, representable
+    ///   whether or not the position is admitted.
+    /// - panics: none.
     #[inline]
     pub fn value_type_abstract(
         &mut self,
@@ -655,6 +958,17 @@ impl TermArena
     /// Minting checks neither the code nor the level: that the code inhabits
     /// `Universe target` is a typing fact, so a mismatched pair is a rejection
     /// at the choke point rather than an unrepresentable node here.
+    ///
+    /// # Specification
+    /// - requires: `code` resolves in this arena's value family; whether it
+    ///   inhabits `Universe target` is checked at the choke point.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is greater than every
+    ///   value-type id currently live in this arena.
+    /// - provides: the type a code denotes. The child crosses families, so the
+    ///   two ids share no allocation order and none is claimed.
+    /// - panics: none.
     #[inline]
     pub fn value_type_element(
         &mut self,
@@ -666,6 +980,16 @@ impl TermArena
     }
 
     /// Mint a value-type lift over an already-allocated inner value type.
+    ///
+    /// # Specification
+    /// - requires: `inner` resolves in this arena.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   `inner`, which the precondition keeps live.
+    /// - provides: the written type-level lift; whether `inner`'s level sits
+    ///   below `target` is a typing fact.
+    /// - panics: none.
     #[inline]
     pub fn value_type_lift(
         &mut self,
@@ -679,6 +1003,16 @@ impl TermArena
     // Computation-type constructors.
 
     /// Mint a returner type over an already-allocated value type.
+    ///
+    /// # Specification
+    /// - requires: `result` resolves in this arena's value-type family.
+    /// - ensures: appends the node and returns the computation-type family's
+    ///   length before the push, saturated at the `u32` ceiling; while that
+    ///   length fits `u32` the id names the appended node and is greater than
+    ///   every computation-type id currently live in this arena.
+    /// - provides: the returner type `F A`. The child crosses families, so the
+    ///   two ids share no allocation order and none is claimed.
+    /// - panics: none.
     #[inline]
     pub fn comp_type_returner(
         &mut self,
@@ -689,6 +1023,17 @@ impl TermArena
     }
 
     /// Mint an arrow type over an already-allocated domain and codomain.
+    ///
+    /// # Specification
+    /// - requires: `domain` and `codomain` resolve in this arena, in its
+    ///   value-type and computation-type families respectively.
+    /// - ensures: appends the node and returns the computation-type family's
+    ///   length before the push, saturated at the `u32` ceiling; while that
+    ///   length fits `u32` the id names the appended node and is strictly
+    ///   greater than `codomain`, which the precondition keeps live.
+    /// - provides: the non-dependent arrow, where the codomain does not read
+    ///   the domain's binder.
+    /// - panics: none.
     #[inline]
     pub fn comp_type_arrow(
         &mut self,
@@ -706,6 +1051,18 @@ impl TermArena
     /// binder is a typing fact rather than a representation one, so a
     /// codomain that ignores it is representable here and is the producer's
     /// obligation rather than an unrepresentable node.
+    ///
+    /// # Specification
+    /// - requires: `domain` and `codomain` resolve in this arena, in its
+    ///   value-type and computation-type families respectively.
+    /// - ensures: appends the node and returns the computation-type family's
+    ///   length before the push, saturated at the `u32` ceiling; while that
+    ///   length fits `u32` the id names the appended node and is strictly
+    ///   greater than `codomain`, which the precondition keeps live.
+    /// - provides: the dependent arrow. Whether the codomain reads the domain's
+    ///   binder is the producer's obligation, not a representation one, so a
+    ///   codomain that ignores it is still representable.
+    /// - panics: none.
     #[inline]
     pub fn comp_type_pi(
         &mut self,

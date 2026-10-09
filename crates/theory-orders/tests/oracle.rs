@@ -91,6 +91,10 @@ mod oracle
 
     impl From<OrderError> for OracleFailure
     {
+        /// The structure's failure as a harness failure.
+        ///
+        /// # Specification
+        /// trivial.
         fn from(value: OrderError) -> Self
         {
             Self::Order(value)
@@ -102,6 +106,16 @@ mod oracle
     /// Taking the model itself rather than its length keeps the collection
     /// that defines the range visible at the call site, and leaves no
     /// length to name.
+    ///
+    /// # Specification
+    /// - requires: nothing; any generated rank may be offered.
+    /// - ensures: returns the rank reduced modulo the model's length, so the
+    ///   result names an element of the model whenever the model is non-empty.
+    /// - provides: the one narrowing from a generated rank to an index the
+    ///   model and the parallel handle list both accept.
+    /// - fails: [`OracleFailure::RankNotReducible`] when the model is empty,
+    ///   which the harness's own emptiness guards preclude.
+    /// - panics: none.
     fn reduce(
         rank: OracleRank,
         model: &[OracleValue],
@@ -114,6 +128,15 @@ mod oracle
     }
 
     /// A generator for a single [`Op`].
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: yields each of the five [`Op`] variants, with payloads and
+    ///   ranks drawn over the whole range of their types.
+    /// - provides: the edit alphabet the replay draws from; every variant being
+    ///   present is what makes the cross-check reach appending, prepending,
+    ///   both interior insertions, and removal.
+    /// - panics: none.
     fn op_strategy() -> impl Strategy<Value = Op>
     {
         prop_oneof![
@@ -128,18 +151,33 @@ mod oracle
     }
 
     /// The payloads of `order` in list order.
+    ///
+    /// # Specification
+    /// trivial.
     fn values(order: &OrderMaintenance<OracleValue>) -> Vec<OracleValue>
     {
         order.iter().map(|(_pos, &value)| value).collect()
     }
 
     /// The handles of `order` in list order.
+    ///
+    /// # Specification
+    /// trivial.
     fn handles_of(order: &OrderMaintenance<OracleValue>) -> Vec<Pos>
     {
         order.iter().map(|(pos, _value)| pos).collect()
     }
 
     /// Asserts O(1) comparison agrees with list rank for every ordered pair.
+    ///
+    /// # Specification
+    /// - requires: `order` is any structure whose links resolve.
+    /// - ensures: returns only when every ordered pair of handles compares as
+    ///   their list ranks do.
+    /// - provides: the check that the constant-time comparison agrees with the
+    ///   linear rank it stands in for.
+    /// - panics: panics on the first pair whose comparison disagrees with its
+    ///   rank pair.
     fn assert_pairwise_comparison(order: &OrderMaintenance<OracleValue>)
     {
         let handles = handles_of(order);
@@ -161,6 +199,20 @@ mod oracle
     /// under test. Failures of the harness itself return [`OracleFailure`],
     /// so the caller — always a `#[test]` body — decides how they surface;
     /// the helper itself stays free of `expect`.
+    ///
+    /// # Specification
+    /// - requires: `ops` is any generated edit sequence; an edit naming a rank
+    ///   in an empty structure is skipped rather than refused.
+    /// - ensures: returns `Ok` only when, after every applied edit, the
+    ///   structure's payload sequence, length, and handle sequence all equal
+    ///   the model's, and every pair compares as its rank pair does at the end.
+    /// - provides: the cross-check against an oracle that shares no code with
+    ///   the structure, so a perturbed label, link, or comparison direction
+    ///   diverges from it.
+    /// - fails: [`OracleFailure`] when the harness cannot apply an edit it
+    ///   intended to apply, which the generator should not be able to produce.
+    /// - panics: panics on any disagreement with the model, which is the
+    ///   property under test.
     fn replay(ops: &[Op]) -> Result<(), OracleFailure>
     {
         let mut order: OrderMaintenance<OracleValue> = OrderMaintenance::new()?;

@@ -15,7 +15,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 - [Rejection vocabulary](#rejection-vocabulary)
 - [Tag numbering and versioning](#tag-numbering-and-versioning)
 - [Sharing and compression](#sharing-and-compression)
-- [Contract attributes](#contract-attributes)
+- [Specification attributes](#specification-attributes)
 - [License](#license)
 
 <!-- tocstop -->
@@ -35,7 +35,7 @@ The kernel's term arena and sharing format: a flat, id-addressed arena, the unif
 
 ## Provided features
 
-- **A flat arena in four typed id families** (`ValueId`, `ComputationId`, `ValueTypeId`, `CompTypeId`) where a node's children are `Copy` ids. Ids are minted only by constructors over already-allocated children, so a child id is always strictly less than its parent's and a dangling id is impossible within an arena. Derived equality, hashing and debug output are shallow.
+- **A flat arena in four typed id families** (`ValueId`, `ComputationId`, `ValueTypeId`, `CompTypeId`) where a node's children are `Copy` ids. Constructors require children already allocated in the same arena; same-family children precede their parent while the family length fits `u32`. Lookup checks the family index, not arena provenance. Truncation permits index reuse, and minting saturates the returned index at the `u32` ceiling. Derived equality, hashing and debug output are shallow.
 - **The admission watermark** (`ArenaWatermark`): a snapshot of the four family lengths, truncation back to one, and the clamp a rollback needs when staging order differs from admission order. `DeclarationBuilder` ties content minting to it.
 - **The unified subterm table**: `encode` and `decode` over `EncodedArtifact` and `ArtifactImage`, with `DecodedArtifact` holding the arena and its `MarkedDeclaration` sequence. Polarity is recoverable from the tag alone, so a child slot's requirement is a table lookup.
 - **Canonical form enforced by re-encoding**, described in [Canonical form by re-encoding](#canonical-form-by-re-encoding).
@@ -105,9 +105,9 @@ The budgets bound work without touching the checker, so they stay outside the tr
 
 ## Admission watermark
 
-A choke point takes an `ArenaWatermark` before staging a declaration and truncates back to it after the verdict, on rejection and on success alike. `DeclarationBuilder` records its own mark and rolls the arena back when the builder is abandoned, so an abandoned build rolls back structurally. A `Declaration` carries no watermark: decode builds one table for the whole artifact, so a decoded declaration has no meaningful content-start mark.
+A choke point takes an `ArenaWatermark` before staging a declaration and truncates after the verdict, on rejection and on success alike. `DeclarationBuilder` records its own mark and truncates each family to `min(current_len, content_start)` when abandoned. Its mutable arena borrow also permits shrinking and reminting below that mark: abandonment preserves those leading nodes rather than restoring an earlier snapshot. A `Declaration` carries no watermark: decode builds one table for the whole artifact, so a decoded declaration has no meaningful content-start mark.
 
-`TermArena::truncate_to` with a stale watermark past the arena's end is a documented no-op, not a failure.
+The mark stores lengths rather than copied nodes, keeping truncation allocation-free. Snapshot restoration would require retaining overwritten content; revisit that choice only if staging must restore arbitrary edits rather than discard an appended suffix. `TermArena::truncate_to` with a stale watermark past a family's end leaves that family unchanged.
 
 ## Rejection vocabulary
 
@@ -135,7 +135,7 @@ The kernel preserves sharing and never creates it. The crate has no interning ta
 
 Compression is a storage and transport concern. The canonical bytes are the bytes, and no codec sits inside a reader whose rejection vocabulary has to stay clean. The bytes are declaration-segmented and self-delimiting.
 
-## Contract attributes
+## Specification attributes
 
 The `# Specification` prose is the statement of record; a combined `#[spec(...)]` attribute mirrors it where the clause is a cheap runtime predicate.
 

@@ -42,6 +42,10 @@ mod adversarial_depth
 
     impl AsRef<[u8]> for Bytes
     {
+        /// Borrow the image's bytes.
+        ///
+        /// # Specification
+        /// trivial.
         fn as_ref(&self) -> &[u8]
         {
             self.0.as_slice()
@@ -49,6 +53,17 @@ mod adversarial_depth
     }
 
     /// Build a chain-deep artifact's canonical bytes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the canonical bytes of an artifact whose single
+    ///   axiom's declared type is a chain of [`CHAIN_LINKS`]
+    ///   thunk-over-returner links above the unit type.
+    /// - provides: the adversarial input the teardown claim is made over, and
+    ///   the first half of that claim: the producing arena is dropped here, on
+    ///   an ordinary stack and with no ordering care taken.
+    /// - panics: panics only through the arena and builder calls it makes, none
+    ///   of which is fallible.
     fn deep_artifact_bytes() -> Bytes
     {
         let mut arena = TermArena::new();

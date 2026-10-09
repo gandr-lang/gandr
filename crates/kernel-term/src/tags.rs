@@ -205,6 +205,10 @@ pub struct ChildArity(u8);
 
 impl From<ChildArity> for u8
 {
+    /// The child count the arity carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(arity: ChildArity) -> Self
     {
@@ -214,6 +218,10 @@ impl From<ChildArity> for u8
 
 impl From<ChildArity> for usize
 {
+    /// The child count the arity carries, widened for indexing.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(arity: ChildArity) -> Self
     {
@@ -229,6 +237,10 @@ pub struct TokenCount(u8);
 
 impl From<TokenCount> for u8
 {
+    /// The token count the wrapper carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(count: TokenCount) -> Self
     {
@@ -285,6 +297,15 @@ pub struct NodeTagDescription
 }
 
 /// Build one row of [`NODE_TAG_TABLE`].
+///
+/// # Specification
+/// - requires: `tag` is one of the frozen node tags, and the two verdicts are
+///   the classifications recorded for it.
+/// - ensures: returns the description carrying its arguments unchanged, with
+///   the tag's own token contribution fixed at one.
+/// - provides: the one row constructor, so every row agrees that a tag
+///   contributes exactly one storage token.
+/// - panics: none.
 const fn row(
     tag: WireTag,
     child_arity: ChildArity,
@@ -305,6 +326,15 @@ const fn row(
 
 /// A row for a former whose payload is unbounded, hence a boundary under both
 /// criteria.
+///
+/// # Specification
+/// - requires: `tag` names a former whose inline payload has no finite token
+///   bound.
+/// - ensures: returns the row with no token bound and both verdicts
+///   [`NodeTagVerdict::Boundary`].
+/// - provides: the shorthand that keeps an unbounded payload from being
+///   recorded as an alias by hand.
+/// - panics: none.
 const fn unbounded(
     tag: WireTag,
     child_arity: ChildArity,
@@ -321,6 +351,15 @@ const fn unbounded(
 
 /// A row for a leaf whose payload is finitely bounded, hence an alias under
 /// both criteria.
+///
+/// # Specification
+/// - requires: `tag` names a leaf former whose inline payload is bounded by
+///   `bound` storage tokens.
+/// - ensures: returns the row with no children, that bound, and both verdicts
+///   [`NodeTagVerdict::Alias`].
+/// - provides: the shorthand for the conservative alias case, so the zero-arity
+///   and the finite bound cannot disagree in a hand-written row.
+/// - panics: none.
 const fn bounded_alias(
     tag: WireTag,
     bound: TokenCount,
@@ -402,6 +441,16 @@ mod tests
     use crate::wire::WireTag;
 
     /// One node of every former, in the tag table's order, in a fresh arena.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a fresh arena holding one node of every former, and
+    ///   the nodes' cross-family references in the tag table's order.
+    /// - provides: the fixture the table's arity comparison reads; every former
+    ///   being present is what makes a missing or wrong arity a test failure
+    ///   rather than an untested row.
+    /// - panics: panics only through the arena constructors it calls, none of
+    ///   which is fallible.
     fn one_node_per_former() -> (TermArena, Vec<AnyNode>)
     {
         let mut arena = TermArena::new();

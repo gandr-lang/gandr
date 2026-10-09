@@ -97,6 +97,14 @@ struct Interner
 impl Interner
 {
     /// A fresh interner over an empty index space.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns an interner holding no node and no content, with the
+    ///   next free global index at zero.
+    /// - provides: the empty index space one artifact's encoding fills, so no
+    ///   index from an earlier encoding can be reused.
+    /// - panics: none.
     #[inline]
     fn new() -> Self
     {
@@ -209,6 +217,14 @@ pub fn minted_atoms(declarations: &[MarkedDeclaration]) -> Vec<MintedAtom>
 /// is a table the decoder can *refute*, and refutability is the whole
 /// difference between freshness as a checked property and freshness as
 /// something the producer asserts.
+///
+/// # Specification
+/// - requires: `declarations` are in admission order.
+/// - ensures: appends the number of minted atoms and then their admission
+///   positions in ascending order.
+/// - provides: the table a decoder recomputes and compares, which is what makes
+///   freshness a checked property rather than a producer's assertion.
+/// - panics: none.
 fn encode_minted_atom_table(
     out: &mut EncodedArtifact,
     declarations: &[MarkedDeclaration],
@@ -304,6 +320,15 @@ fn encode_declaration(
 /// A declaration no projection touched writes a zero count, which is
 /// byte-identical to what the slot carried while it was reserved — so filling
 /// the slot moved no other field and invalidated no artifact.
+///
+/// # Specification
+/// - requires: `provenance` holds the admission positions the declaration's
+///   projection rebound, in the order the artifact carries them.
+/// - ensures: appends the count and then those positions in that order; a
+///   declaration no projection touched writes a zero count and nothing else.
+/// - provides: the slot's filling, byte-identical to the reserved form on the
+///   empty case, so filling it moved no other field.
+/// - panics: none.
 fn encode_sealing_provenance(
     out: &mut EncodedArtifact,
     provenance: &[ConstantIndex],
@@ -540,6 +565,14 @@ fn encode_entry(
 }
 
 /// Write a declaration's prenex level signature.
+///
+/// # Specification
+/// - requires: `signature`'s constraints are in declaration order.
+/// - ensures: appends the parameter count, the constraint count, and then each
+///   constraint as its relation tag followed by its two levels.
+/// - provides: the prenex interface's byte image, in the one order a decoder
+///   reads it back in.
+/// - panics: none.
 fn encode_level_signature(
     out: &mut EncodedArtifact,
     signature: &LevelSignature,
@@ -561,6 +594,16 @@ fn encode_level_signature(
 /// Write a canonical level: its constant part, then its variable atoms in
 /// ascending variable order, which is the order the level's own canonical form
 /// keeps them in.
+///
+/// # Specification
+/// - requires: `level` is canonical, which is what puts its atoms in ascending
+///   variable order.
+/// - ensures: appends the constant part, the atom count, and then each atom as
+///   its variable index followed by its successor offset.
+/// - provides: the level's byte image. The atom order is the level's own
+///   canonical order rather than one chosen here, so two canonical levels agree
+///   on bytes exactly when they are equal.
+/// - panics: none.
 fn encode_level(
     out: &mut EncodedArtifact,
     level: &Level,
@@ -576,6 +619,16 @@ fn encode_level(
 }
 
 /// Write a literal: its kind, then its canonical payload.
+///
+/// # Specification
+/// - requires: `literal` is canonical, which its constructors are the only way
+///   to obtain.
+/// - ensures: appends the kind tag, then the payload each kind owes — a sign
+///   tag and digits for an integer, text for a string, and a sign tag with
+///   integral and fractional digits for a numeric.
+/// - provides: the literal's byte image; since the payload is canonical, two
+///   literals agree on bytes exactly when they denote the same value.
+/// - panics: none.
 fn encode_literal(
     out: &mut EncodedArtifact,
     literal: &Literal,
@@ -605,6 +658,14 @@ fn encode_literal(
 }
 
 /// Write length-prefixed UTF-8 text.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: appends the byte length of the UTF-8 encoding and then those
+///   bytes verbatim.
+/// - provides: the framing every text field shares, so a payload carrying no
+///   normalization of its own is still unambiguously delimited.
+/// - panics: none.
 fn encode_text(
     out: &mut EncodedArtifact,
     text: ArtifactText<'_>,
@@ -616,6 +677,13 @@ fn encode_text(
 }
 
 /// The wire tag of a base-type atom.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: maps each of the three base-type atoms to its frozen tag.
+/// - provides: the total atom-to-tag map, so a base type's byte is decided in
+///   one place rather than at each write site.
+/// - panics: none.
 #[inline]
 fn base_type_tag(base: BaseType) -> WireTag
 {
@@ -627,6 +695,13 @@ fn base_type_tag(base: BaseType) -> WireTag
 }
 
 /// The wire tag of a literal sign.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: maps each sign to its frozen tag.
+/// - provides: the total sign-to-tag map, so a sign's byte is decided in one
+///   place rather than at each write site.
+/// - panics: none.
 #[inline]
 fn sign_tag(sign: Sign) -> WireTag
 {
@@ -637,6 +712,13 @@ fn sign_tag(sign: Sign) -> WireTag
 }
 
 /// The wire tag of an injection side.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: maps each injection side to its frozen tag.
+/// - provides: the total side-to-tag map, so a side's byte is decided in one
+///   place rather than at each write site.
+/// - panics: none.
 #[inline]
 fn side_tag(side: Side) -> WireTag
 {

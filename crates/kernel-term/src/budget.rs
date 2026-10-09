@@ -62,6 +62,10 @@ pub struct GlobalIndex(pub u32);
 
 impl From<u32> for GlobalIndex
 {
+    /// The global index for a table position.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(index: u32) -> Self
     {
@@ -71,6 +75,10 @@ impl From<u32> for GlobalIndex
 
 impl From<GlobalIndex> for u32
 {
+    /// The table position the index carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(index: GlobalIndex) -> Self
     {
@@ -91,6 +99,15 @@ impl GlobalIndex
 {
     /// The offset this index reads at, saturating at the offset ceiling so a
     /// checked read rejects it rather than wrapping into a live entry.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the equal offset, or the offset ceiling on a target
+    ///   whose pointer width cannot hold this index.
+    /// - provides: the total, panic-free index-to-offset widening; the
+    ///   saturated offset lies past every vector the decoder builds, so a
+    ///   checked read rejects it rather than wrapping into a live entry.
+    /// - panics: none.
     #[inline]
     pub(crate) fn offset(self) -> EntryOffset
     {
@@ -98,6 +115,15 @@ impl GlobalIndex
     }
 
     /// The next free index after this one, saturating at the ceiling.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the index one above this one, or the `u32` ceiling
+    ///   when this index is already there.
+    /// - provides: the total successor the table walk takes; the saturated
+    ///   index repeats rather than wrapping to zero, so an exhausted table
+    ///   cannot alias entry zero.
+    /// - panics: none.
     #[inline]
     pub(crate) const fn next(self) -> Self
     {
@@ -112,6 +138,10 @@ pub struct TableEntryCount(pub usize);
 
 impl From<usize> for TableEntryCount
 {
+    /// The count for a number of table entries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(count: usize) -> Self
     {
@@ -121,6 +151,10 @@ impl From<usize> for TableEntryCount
 
 impl From<TableEntryCount> for usize
 {
+    /// The number of entries the count carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(count: TableEntryCount) -> Self
     {
@@ -130,6 +164,10 @@ impl From<TableEntryCount> for usize
 
 impl core::fmt::Display for TableEntryCount
 {
+    /// Writes the count as a decimal number.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn fmt(
         &self,
@@ -151,6 +189,10 @@ pub struct ExpandedWork(pub u64);
 
 impl From<u64> for ExpandedWork
 {
+    /// The quantity for a measured amount of expanded work.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(work: u64) -> Self
     {
@@ -160,6 +202,10 @@ impl From<u64> for ExpandedWork
 
 impl From<ExpandedWork> for u64
 {
+    /// The amount the quantity carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(work: ExpandedWork) -> Self
     {
@@ -169,6 +215,10 @@ impl From<ExpandedWork> for u64
 
 impl core::fmt::Display for ExpandedWork
 {
+    /// Writes the quantity as a decimal number.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn fmt(
         &self,
@@ -185,6 +235,16 @@ impl ExpandedWork
     pub(crate) const ONE: Self = Self(1);
 
     /// The saturating sum of two expanded-work quantities.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the sum of the two quantities, or the `u64` ceiling
+    ///   when the sum is not representable.
+    /// - provides: the accumulation the forward scan performs. Saturation is
+    ///   the specification rather than a fallback: the quantity is exactly the
+    ///   one an attacker wants to make astronomical, and a wrapping sum would
+    ///   report a small number for the largest input.
+    /// - panics: none.
     #[inline]
     pub(crate) const fn saturating_add(
         self,
@@ -202,6 +262,10 @@ pub struct LevelAtomOffset(pub u64);
 
 impl From<u64> for LevelAtomOffset
 {
+    /// The offset for a successor distance read off the wire.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(offset: u64) -> Self
     {
@@ -211,6 +275,10 @@ impl From<u64> for LevelAtomOffset
 
 impl From<LevelAtomOffset> for u64
 {
+    /// The successor distance the offset carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(offset: LevelAtomOffset) -> Self
     {
@@ -275,6 +343,13 @@ pub struct DecodeMetrics
 impl DecodeMetrics
 {
     /// Pair the three deterministic decode-budget quantities.
+    ///
+    /// # Specification
+    /// - requires: the three quantities describe the same artifact.
+    /// - ensures: returns the metrics carrying the three quantities unchanged.
+    /// - provides: the deterministic budget report the subsequent admission
+    ///   check and the telemetry a caller keeps both read.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub(crate) const fn new(
@@ -291,6 +366,9 @@ impl DecodeMetrics
     }
 
     /// The number of subterm-table entries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn table_entries(&self) -> TableEntryCount
@@ -299,6 +377,9 @@ impl DecodeMetrics
     }
 
     /// The maximum per-declaration-root expanded tree size.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn max_declaration_expanded_work(&self) -> ExpandedWork
@@ -308,6 +389,9 @@ impl DecodeMetrics
 
     /// The artifact-total expanded tree size: the saturating sum over every
     /// declaration root.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn artifact_expanded_work(&self) -> ExpandedWork

@@ -36,6 +36,15 @@ pub enum ReservedKind
 
 impl fmt::Display for ReservedKind
 {
+    /// Writes the reserved kind's name.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one fixed name per variant.
+    /// - provides: the rendering a refusal message interpolates, so a reserved
+    ///   kind names itself rather than a numeric tag.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
     #[inline]
     fn fmt(
         &self,
@@ -75,6 +84,15 @@ pub enum ReservedSlot
 
 impl fmt::Display for ReservedSlot
 {
+    /// Writes the reserved slot's description.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one fixed description per variant.
+    /// - provides: the rendering a refusal message interpolates, so a non-empty
+    ///   reserved slot names itself.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
     #[inline]
     fn fmt(
         &self,
@@ -115,6 +133,15 @@ pub enum TagSite
 
 impl fmt::Display for TagSite
 {
+    /// Writes the tag site's description.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one fixed description per variant.
+    /// - provides: the rendering an unknown-tag refusal interpolates, so the
+    ///   message says which alphabet the tag was read against.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
     #[inline]
     fn fmt(
         &self,
@@ -177,6 +204,15 @@ pub enum MalformedSite
 
 impl fmt::Display for MalformedSite
 {
+    /// Writes the malformed site's description.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one fixed description per variant.
+    /// - provides: the rendering a malformed-artifact refusal interpolates, so
+    ///   the message names the discipline the bytes broke.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
     #[inline]
     fn fmt(
         &self,
@@ -245,6 +281,17 @@ pub enum DecodeError
 
 impl fmt::Display for DecodeError
 {
+    /// Writes the decode failure's message.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: writes one message per variant, interpolating the payload a
+    ///   variant carries.
+    /// - provides: the rendering [`core::error::Error`] reporting reads; the
+    ///   message names the refusal rather than the byte offset, so it says
+    ///   nothing an attacker could not already infer.
+    /// - fails: propagates the formatter's own write failure unchanged.
+    /// - panics: none.
     #[inline]
     fn fmt(
         &self,

@@ -11,7 +11,7 @@ An order-maintenance structure: a total order over payload-carrying elements in 
 - [Examples](#examples)
 - [List labeling](#list-labeling)
 - [Handles and failures](#handles-and-failures)
-- [Contract attributes](#contract-attributes)
+- [Specification attributes](#specification-attributes)
 - [License](#license)
 
 <!-- tocstop -->
@@ -74,7 +74,7 @@ RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-orders
 
 Insertion is single-level list-labeling over a fixed label universe. An insertion takes the midpoint label of the gap between its neighbours when one exists. When the gap is exhausted, it relabels the smallest power-of-two-aligned window around the insertion point that is at most half full and spreads the window's elements evenly across it. The density cap keeps that window sparse enough for the spread to succeed, so insertion is total and O(log² n) amortized. The window buffer is allocated once per relabel and reused across the widening steps.
 
-The two-level refinement that makes insertion O(1) amortized is absent by choice: comparison, the operation consumers need, is O(1) under either scheme, and the single-level relabel rule stays fully inspectable.
+The two-level refinement that makes insertion O(1) amortized is absent by choice: comparison, the operation consumers need, is O(1) under either scheme, and the single-level relabel rule stays fully inspectable. Revisit the refinement when a real edit-trace profile shows insertion cost dominates.
 
 Labels are internal and never exposed, so no caller depends on a numeric encoding a relabel is free to change. `Pos` is the only identity.
 
@@ -84,7 +84,7 @@ A slot's generation counter is bumped each time the slot is freed, so a handle m
 
 Handle liveness is a returned classification, never a precondition: an operation on a stale or foreign handle returns `None` or `OrderError::UnknownPosition`. Every internal write returns a typed result, so a violated arena invariant surfaces as `OrderError::Inconsistent` rather than as a dropped write. `remove` returns `Result<Option<T>, OrderError>`: `Ok(None)` is a stale handle, `Err` a corrupted arena. Construction is fallible too, so the process-wide structure-id counter never wraps.
 
-## Contract attributes
+## Specification attributes
 
 The `# Specification` prose is the statement of record. A combined `#[spec(...)]` attribute mirrors each requirement and postcondition that a total, allocation-free Rust predicate can state, and every such clause is checked: negating any one in place makes a named test in this crate fail under the enforcing lane.
 

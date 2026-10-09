@@ -43,6 +43,10 @@ pub struct DeBruijnIndex(u32);
 
 impl From<u32> for DeBruijnIndex
 {
+    /// The index for a binder distance.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(index: u32) -> Self
     {
@@ -52,6 +56,10 @@ impl From<u32> for DeBruijnIndex
 
 impl From<DeBruijnIndex> for u32
 {
+    /// The binder distance the index carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(index: DeBruijnIndex) -> Self
     {
@@ -72,6 +80,10 @@ pub struct ConstantIndex(usize);
 
 impl From<usize> for ConstantIndex
 {
+    /// The index for an admission position.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(index: usize) -> Self
     {
@@ -81,6 +93,10 @@ impl From<usize> for ConstantIndex
 
 impl From<ConstantIndex> for usize
 {
+    /// The admission position the index carries.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn from(index: ConstantIndex) -> Self
     {

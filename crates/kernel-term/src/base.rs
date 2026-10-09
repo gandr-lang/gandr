@@ -49,6 +49,13 @@ pub struct Magnitude(String);
 impl Magnitude
 {
     /// The canonical zero magnitude.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the magnitude whose digits are exactly `0`.
+    /// - provides: the one zero magnitude every canonicalization collapses to,
+    ///   so equality on zero does not depend on its spelling.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn zero() -> Self
@@ -101,6 +108,9 @@ impl Magnitude
     }
 
     /// The canonical decimal digits, as owned text.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub(crate) fn to_digits(&self) -> String
@@ -118,6 +128,9 @@ impl AsRef<str> for Magnitude
     /// canonical encoding must mirror the term relation exactly, so it has to
     /// reach the payload rather than the wrapper. The digits are already
     /// canonical, so a borrow cannot expose a non-canonical spelling.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn as_ref(&self) -> &str
     {
@@ -134,6 +147,13 @@ pub struct FractionDigits(String);
 impl FractionDigits
 {
     /// The canonical empty fraction, denoting an integral value.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the fraction with no digits.
+    /// - provides: the one fraction denoting an integral value, so equality on
+    ///   an integral numeric literal does not depend on trailing zeros.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn none() -> Self
@@ -179,6 +199,9 @@ impl FractionDigits
 
     /// The canonical fractional digits, as owned text; empty for an integral
     /// value.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub(crate) fn to_digits(&self) -> String
@@ -190,6 +213,9 @@ impl FractionDigits
 impl AsRef<str> for FractionDigits
 {
     /// Borrow the canonical fractional digits; see [`Magnitude::as_ref`].
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn as_ref(&self) -> &str
     {
@@ -252,6 +278,9 @@ impl IntegerLiteral
     }
 
     /// The literal's sign.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn sign(&self) -> Sign
@@ -260,6 +289,9 @@ impl IntegerLiteral
     }
 
     /// The literal's canonical magnitude.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn magnitude(&self) -> &Magnitude
@@ -279,6 +311,14 @@ pub struct StringLiteral(String);
 impl StringLiteral
 {
     /// Wrap string content as a literal.
+    ///
+    /// # Specification
+    /// - requires: nothing; any content is admissible.
+    /// - ensures: returns the literal carrying `content` byte for byte.
+    /// - provides: the one literal constructor that canonicalizes nothing — a
+    ///   string's bytes are already its canonical form, so two string literals
+    ///   compare equal exactly when their bytes do.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub fn new(content: String) -> Self
@@ -287,6 +327,9 @@ impl StringLiteral
     }
 
     /// The string content, as owned text.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub(crate) fn to_content(&self) -> String
@@ -302,6 +345,9 @@ impl AsRef<str> for StringLiteral
     /// The payload carries no normalization beyond its own bytes, so a content
     /// encoding over it must length-prefix what it reads — the borrow supplies
     /// the bytes and states nothing about how they are framed.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     fn as_ref(&self) -> &str
     {
@@ -369,6 +415,9 @@ impl NumericLiteral
     }
 
     /// The literal's sign.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn sign(&self) -> Sign
@@ -377,6 +426,9 @@ impl NumericLiteral
     }
 
     /// The literal's integral part.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn integer_part(&self) -> &Magnitude
@@ -385,6 +437,9 @@ impl NumericLiteral
     }
 
     /// The literal's fractional part.
+    ///
+    /// # Specification
+    /// trivial.
     #[inline]
     #[must_use]
     pub const fn fraction(&self) -> &FractionDigits
@@ -408,6 +463,16 @@ pub enum Literal
 impl Literal
 {
     /// The rigid base-type atom this literal inhabits.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: maps an integer literal to [`BaseType::Integer`], a text
+    ///   literal to [`BaseType::String`], and a numeric literal to
+    ///   [`BaseType::Numeric`].
+    /// - provides: the total variant-to-atom map the checker reads, so a
+    ///   literal's base type is decided by its payload rather than by an
+    ///   annotation.
+    /// - panics: none.
     #[inline]
     #[must_use]
     pub const fn base_type(&self) -> BaseType

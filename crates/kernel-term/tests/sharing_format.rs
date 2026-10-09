@@ -57,6 +57,10 @@ mod sharing_format
 
     impl AsRef<[u8]> for Bytes
     {
+        /// Borrow the image's bytes.
+        ///
+        /// # Specification
+        /// trivial.
         fn as_ref(&self) -> &[u8]
         {
             self.0.as_slice()
@@ -96,6 +100,14 @@ mod sharing_format
     impl Depth
     {
         /// The depth one above this one.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: returns the depth one greater, or this depth at the
+        ///   representable ceiling.
+        /// - provides: the total step the depth search takes, so the search
+        ///   terminates rather than wrapping past its bound.
+        /// - panics: none.
         fn next(self) -> Self
         {
             Self(self.0.saturating_add(1))
@@ -110,12 +122,18 @@ mod sharing_format
     impl Bytes
     {
         /// An empty image.
+        ///
+        /// # Specification
+        /// trivial.
         fn new() -> Self
         {
             Self::default()
         }
 
         /// Append one literal byte.
+        ///
+        /// # Specification
+        /// trivial.
         fn byte(
             &mut self,
             byte: RawByte,
@@ -125,6 +143,15 @@ mod sharing_format
         }
 
         /// Append the minimal unsigned LEB128 encoding of `value`.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: appends the little-endian base-128 groups of `value` with
+        ///   no continuation byte past the highest set group.
+        /// - provides: the suite's own varint writer, written independently of
+        ///   the crate's, so a fixture's bytes do not inherit the encoder's
+        ///   idea of minimality.
+        /// - panics: none.
         fn varint(
             &mut self,
             value: WireValue,
@@ -143,6 +170,9 @@ mod sharing_format
         }
 
         /// Append another image verbatim.
+        ///
+        /// # Specification
+        /// trivial.
         fn append(
             &mut self,
             other: &Self,
@@ -152,12 +182,28 @@ mod sharing_format
         }
 
         /// Append the four-byte artifact magic.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: appends the four bytes `GKX1`.
+        /// - provides: the header magic spelled out here rather than read from
+        ///   the crate, so a change to the constant shows up as a refused
+        ///   fixture instead of silently agreeing with itself.
+        /// - panics: none.
         fn magic(&mut self)
         {
             self.0.extend_from_slice(b"GKX1");
         }
 
         /// Append a little-endian format version.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: appends exactly two bytes, the version's little-endian
+        ///   image.
+        /// - provides: the header's version field, written at the fixed width
+        ///   the format gives it.
+        /// - panics: none.
         fn version(
             &mut self,
             version: Version,
@@ -168,6 +214,14 @@ mod sharing_format
 
         /// Append everything from `offset` onward in `other`, which the caller
         /// keeps within `other`'s length.
+        ///
+        /// # Specification
+        /// - requires: `offset` is within `other`'s length.
+        /// - ensures: appends every byte of `other` from `offset` onward.
+        /// - provides: the splice that rebuilds an artifact with a new header
+        ///   over an unchanged tail, so a header-only variant shares the rest
+        ///   of the bytes with the artifact it came from.
+        /// - panics: panics when `offset` is past `other`'s length.
         fn append_tail(
             &mut self,
             other: &Self,
@@ -209,6 +263,15 @@ mod sharing_format
     impl RawDeclaration
     {
         /// A definition segment with every reserved slot empty.
+        ///
+        /// # Specification
+        /// - requires: `root_declared` and `root_body` name entries in
+        ///   `entries`.
+        /// - ensures: returns a segment with the checked mark, the definition
+        ///   kind, and every reserved slot at zero.
+        /// - provides: the accepted-shape baseline every refusal fixture varies
+        ///   one field of.
+        /// - panics: none.
         fn definition(
             entries: Vec<Bytes>,
             root_declared: TableIndex,
@@ -227,6 +290,15 @@ mod sharing_format
         }
 
         /// An axiom segment, which carries a declared root and no body.
+        ///
+        /// # Specification
+        /// - requires: `root_declared` names an entry in `entries`.
+        /// - ensures: returns a segment with the checked mark, the axiom kind,
+        ///   no body root, and every reserved slot at zero.
+        /// - provides: the accepted shape for a declaration whose kind carries
+        ///   one root, which is where the axiom and abstract-type distinction
+        ///   is exercised.
+        /// - panics: none.
         fn axiom(
             entries: Vec<Bytes>,
             root_declared: TableIndex,
@@ -244,6 +316,16 @@ mod sharing_format
         }
 
         /// This segment's bytes.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: appends the mark and kind bytes, the name-segment count,
+        ///   the two level counts, the entry count and the entries, the
+        ///   declared root, and — for a definition only — the body root
+        ///   followed by the four annotation slots.
+        /// - provides: the segment field order written out by hand, so the
+        ///   suite pins the order rather than deriving it from the encoder.
+        /// - panics: none.
         fn bytes(&self) -> Bytes
         {
             let mut out = Bytes::new();
@@ -271,6 +353,16 @@ mod sharing_format
     }
 
     /// A hand-built artifact: a header naming `atoms`, then the segments.
+    ///
+    /// # Specification
+    /// - requires: nothing; every field may be inconsistent with the segments,
+    ///   which is what the refusal fixtures rely on.
+    /// - ensures: returns the magic, the declared version, the atom count and
+    ///   the atoms, then the declaration count and the segments' bytes.
+    /// - provides: the hand-built artifact for shapes a well-formed encoder
+    ///   cannot produce, so a refusal can be provoked without weakening the
+    ///   encoder.
+    /// - panics: none.
     fn raw_artifact(
         version: Version,
         atoms: &[WireValue],
@@ -294,12 +386,23 @@ mod sharing_format
     }
 
     /// The version every accepted artifact declares.
+    ///
+    /// # Specification
+    /// trivial.
     fn current_version() -> Version
     {
         Version(u16::from(FORMAT_VERSION))
     }
 
     /// The value-type unit entry.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the single tag byte of the unit value type, with no
+    ///   payload.
+    /// - provides: the smallest accepted entry, used wherever a fixture needs
+    ///   one well-formed value type.
+    /// - panics: none.
     fn entry_unit_type() -> Bytes
     {
         let mut out = Bytes::new();
@@ -308,6 +411,14 @@ mod sharing_format
     }
 
     /// The universe entry at a constant level with no variable atoms.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the universe tag, the constant part, and a zero atom
+    ///   count.
+    /// - provides: the universe entry at a closed level, which is what an
+    ///   abstract type's kind needs.
+    /// - panics: none.
     fn entry_universe(constant: WireValue) -> Bytes
     {
         let mut out = Bytes::new();
@@ -318,6 +429,14 @@ mod sharing_format
     }
 
     /// The universe entry at one variable atom with the given offset.
+    ///
+    /// # Specification
+    /// - requires: nothing; the variable index and offset may be arbitrary.
+    /// - ensures: returns the universe tag, a zero constant part, an atom count
+    ///   of one, then the variable index and its offset.
+    /// - provides: the universe entry carrying one variable atom, which is
+    ///   where the level plane's offset cap is exercised.
+    /// - panics: none.
     fn entry_universe_atom(
         variable: WireValue,
         offset: WireValue,
@@ -333,6 +452,14 @@ mod sharing_format
     }
 
     /// A universe entry whose atom list names one variable twice.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a universe entry whose atom list names variable zero
+    ///   twice, at offsets one and one.
+    /// - provides: the entry no canonical level encodes, so the level plane's
+    ///   refusal of a repeated atom is reachable from bytes.
+    /// - panics: none.
     fn entry_universe_repeated_atom() -> Bytes
     {
         let mut out = Bytes::new();
@@ -347,6 +474,14 @@ mod sharing_format
     }
 
     /// A universe entry whose inline constant is written as an overlong varint.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns a universe entry whose constant part is written as a
+    ///   continuation byte followed by a zero group — a second image of zero.
+    /// - provides: the overlong varint the writer cannot produce, so the
+    ///   reader's minimality refusal is reachable from bytes.
+    /// - panics: none.
     fn entry_universe_overlong_constant() -> Bytes
     {
         let mut out = Bytes::new();
@@ -358,6 +493,14 @@ mod sharing_format
     }
 
     /// The unit value entry.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the single tag byte of the unit value, with no
+    ///   payload.
+    /// - provides: the smallest accepted value entry, used as a leaf wherever a
+    ///   fixture needs one.
+    /// - panics: none.
     fn entry_unit() -> Bytes
     {
         let mut out = Bytes::new();
@@ -366,6 +509,15 @@ mod sharing_format
     }
 
     /// A pair value entry over two global indices.
+    ///
+    /// # Specification
+    /// - requires: nothing; either index may name no entry or a later one,
+    ///   which is what the child-order fixtures rely on.
+    /// - ensures: returns the pair tag followed by the two indices in that
+    ///   order.
+    /// - provides: the two-child entry the sharing and child-order cases are
+    ///   built from.
+    /// - panics: none.
     fn entry_pair(
         first: TableIndex,
         second: TableIndex,
@@ -379,6 +531,13 @@ mod sharing_format
     }
 
     /// A bound-variable value entry.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the variable tag followed by the de Bruijn index.
+    /// - provides: the leaf entry with an inline payload, distinguishing a
+    ///   payload from a child reference in the entry shape.
+    /// - panics: none.
     fn entry_variable(index: WireValue) -> Bytes
     {
         let mut out = Bytes::new();
@@ -388,6 +547,13 @@ mod sharing_format
     }
 
     /// An entry whose tag byte lies above the frozen block.
+    ///
+    /// # Specification
+    /// - requires: `tag` is a byte the format assigns to no former.
+    /// - ensures: returns that single byte as an entry.
+    /// - provides: the unassigned-tag entry, so the node alphabet's refusal is
+    ///   reachable at a byte of the caller's choosing.
+    /// - panics: none.
     fn entry_unassigned_tag(tag: RawByte) -> Bytes
     {
         let mut out = Bytes::new();
@@ -397,6 +563,15 @@ mod sharing_format
 
     /// A dependent-arrow entry over a value-type domain and a computation-type
     /// codomain.
+    ///
+    /// # Specification
+    /// - requires: nothing; either index may name an entry of the wrong family,
+    ///   which is what the polarity fixtures rely on.
+    /// - ensures: returns the dependent-arrow tag followed by the domain and
+    ///   codomain indices in that order.
+    /// - provides: the entry whose two children are of different families,
+    ///   which is where the child-polarity check is exercised.
+    /// - panics: none.
     fn entry_pi(
         domain: TableIndex,
         codomain: TableIndex,
@@ -414,6 +589,15 @@ mod sharing_format
     // ---------------------------------------------------------------------------
 
     /// Two to the power of `exponent`, saturating rather than overflowing.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns two raised to `exponent`, or the `u64` ceiling once
+    ///   the power is not representable.
+    /// - provides: the expanded-size arithmetic the diamond fixtures are sized
+    ///   by, saturating so a large exponent bounds the search instead of
+    ///   wrapping.
+    /// - panics: none.
     fn power_of_two(exponent: Depth) -> ExpandedWork
     {
         let mut value = 1_u64;
@@ -427,6 +611,15 @@ mod sharing_format
 
     /// The largest diamond depth whose expanded size, plus the one node a
     /// declared type costs beside it, still fits `cap`.
+    ///
+    /// # Specification
+    /// - requires: `cap` is the per-declaration expanded-work cap the fixture
+    ///   must stay under.
+    /// - ensures: returns the greatest depth whose diamond, plus the one node a
+    ///   declared type costs beside it, still fits `cap`.
+    /// - provides: the largest accepted diamond, so the accepted and refused
+    ///   cases sit on either side of one cap rather than at arbitrary depths.
+    /// - panics: none.
     fn diamond_depth_within(cap: ExpandedWork) -> Depth
     {
         let mut depth = Depth(0);
@@ -439,6 +632,15 @@ mod sharing_format
     /// A repeated-diamond value of the given depth: each level pairs the level
     /// below it with itself, so the expanded size doubles while the node
     /// count grows by one.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the arena the fixture's declaration will address.
+    /// - ensures: mints `depth` pair nodes above one unit value, each pairing
+    ///   the level below it with itself, and returns the topmost id.
+    /// - provides: the shape whose expanded size doubles per level while its
+    ///   node count grows by one, which is what makes the expanded-work budget
+    ///   different from a node count.
+    /// - panics: none.
     fn diamond(
         arena: &mut TermArena,
         depth: Depth,
@@ -454,6 +656,14 @@ mod sharing_format
     }
 
     /// The expanded size of a diamond of the given depth.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns two to the power of `depth` plus one, less one, which
+    ///   is the node count of the fully expanded tree.
+    /// - provides: the expected expanded size a decode's metrics are asserted
+    ///   against, computed here rather than read back from the decoder.
+    /// - panics: none.
     fn diamond_expanded(depth: Depth) -> ExpandedWork
     {
         ExpandedWork::from(u64::from(power_of_two(depth.next())).saturating_sub(1))
@@ -462,6 +672,14 @@ mod sharing_format
     /// A value-type chain of `links` thunk-over-returner steps above the unit
     /// type, which contributes one entry for the unit and two per link,
     /// with an expanded size equal to that entry count.
+    ///
+    /// # Specification
+    /// - requires: `arena` is the arena the fixture's declaration will address.
+    /// - ensures: mints `links` thunk-over-returner steps above the unit type
+    ///   and returns the topmost id.
+    /// - provides: the shape whose entry count and expanded size are equal, so
+    ///   a table-entry cap and a work cap can be exercised apart.
+    /// - panics: none.
     fn type_chain(
         arena: &mut TermArena,
         links: LinkCount,
@@ -478,6 +696,13 @@ mod sharing_format
     }
 
     /// One checked definition over the given roots.
+    ///
+    /// # Specification
+    /// - requires: `declared` and `body` were minted in `arena`.
+    /// - ensures: returns a checked-mark definition over the two roots.
+    /// - provides: the one declaration wrapper the encoder-driven fixtures use,
+    ///   so the mark and the level signature are stated once.
+    /// - panics: none.
     fn definition_over(
         arena: &mut TermArena,
         declared: ValueTypeId,
@@ -491,6 +716,15 @@ mod sharing_format
 
     /// The decoded body root of the definition at `position`, or `None` when no
     /// declaration decoded there or the one that did is not a definition.
+    ///
+    /// # Specification
+    /// - requires: nothing; `position` may name no declaration.
+    /// - ensures: returns the body root of the definition at `position`, and
+    ///   `None` both when no declaration decoded there and when the one that
+    ///   did is not a definition.
+    /// - provides: the projection the round-trip assertions read, keeping the
+    ///   two absences from being confused with a decoded root.
+    /// - panics: none.
     fn decoded_body(
         artifact: &DecodedArtifact,
         position: Position,
@@ -505,6 +739,14 @@ mod sharing_format
 
     /// The declared-type root of the declaration at `position`, or `None` when
     /// no declaration decoded there.
+    ///
+    /// # Specification
+    /// - requires: nothing; `position` may name no declaration.
+    /// - ensures: returns the declared-type root of the declaration at
+    ///   `position`, and `None` when no declaration decoded there.
+    /// - provides: the projection that reads the root every declaration kind
+    ///   carries.
+    /// - panics: none.
     fn decoded_declared(
         artifact: &DecodedArtifact,
         position: Position,
@@ -836,6 +1078,9 @@ mod sharing_format
     // ---------------------------------------------------------------------------
 
     /// The refusal a non-canonical artifact takes.
+    ///
+    /// # Specification
+    /// trivial.
     fn non_canonical() -> DecodeError
     {
         DecodeError::Malformed {
@@ -1381,6 +1626,16 @@ mod sharing_format
 
     /// A sealed artifact: an abstract type at position zero, a definition after
     /// it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns the canonical bytes of an artifact whose first
+    ///   declaration is a sealed abstract type and whose second is a
+    ///   definition.
+    /// - provides: the only accepted artifact with a non-empty minted-atom
+    ///   table, which is what makes the table's refutation testable.
+    /// - panics: panics only through the arena and builder calls it makes, none
+    ///   of which is fallible.
     fn sealed_artifact() -> EncodedArtifact
     {
         let mut arena = TermArena::new();
@@ -1402,6 +1657,18 @@ mod sharing_format
     /// The header the sealed artifact writes is the magic, the version, a
     /// one-byte table count and one one-byte position, so its tail begins
     /// at the eighth byte.
+    ///
+    /// # Specification
+    /// - requires: nothing; `atoms` may disagree with the artifact's own
+    ///   declarations, which is the point.
+    /// - ensures: returns the sealed artifact's bytes with the magic, the
+    ///   current version, and `atoms` in place of the original header, and the
+    ///   original tail from the eighth byte onward.
+    /// - provides: the artifact whose declared table is false while every other
+    ///   byte is unchanged, so a refusal isolates the table rather than the
+    ///   surrounding shape.
+    /// - panics: panics when the sealed artifact is shorter than eight bytes,
+    ///   which its own header precludes.
     fn sealed_with_atom_table(atoms: &[WireValue]) -> Bytes
     {
         let original = Bytes(Vec::from(sealed_artifact()));
@@ -1417,6 +1684,9 @@ mod sharing_format
     }
 
     /// The refusal a refuted atom table takes.
+    ///
+    /// # Specification
+    /// trivial.
     fn refuted_atom_table() -> DecodeError
     {
         DecodeError::ReservedSlotOccupied {
