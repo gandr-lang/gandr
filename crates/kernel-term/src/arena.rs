@@ -713,6 +713,30 @@ impl TermArena
         self.alloc_value(Value::QuoteComputation(quoted))
     }
 
+    /// Mint a static application of an already-allocated type operator to an
+    /// already-allocated code.
+    ///
+    /// # Specification
+    /// - requires: `head` and `argument` resolve in this arena; whether `head`
+    ///   inhabits a static Pi whose domain `argument` checks against is checked
+    ///   at the choke point.
+    /// - ensures: appends the node and returns the value family's length before
+    ///   the push, saturated at the `u32` ceiling; while that length fits `u32`
+    ///   the id names the appended node and is strictly greater than both child
+    ///   ids, which the precondition keeps live.
+    /// - provides: the neutral static application: the vocabulary has no static
+    ///   lambda, so no arena holds a static redex and the node never reduces.
+    /// - panics: none.
+    #[inline]
+    pub fn value_static_application(
+        &mut self,
+        head: ValueId,
+        argument: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::StaticApplication(head, argument))
+    }
+
     // Computation constructors.
 
     /// Mint a lambda over an already-allocated computation body.
@@ -1033,6 +1057,28 @@ impl TermArena
         self.alloc_value_type(ValueType::Element { code, target })
     }
 
+    /// Mint a static Pi over two already-allocated value types.
+    ///
+    /// # Specification
+    /// - requires: `domain` and `codomain` resolve in this arena; whether both
+    ///   are static classifiers is formation's to check.
+    /// - ensures: appends the node and returns the value-type family's length
+    ///   before the push, saturated at the `u32` ceiling; while that length
+    ///   fits `u32` the id names the appended node and is strictly greater than
+    ///   both child ids, which the precondition keeps live.
+    /// - provides: the classifier of a type operator. Its codomain stands in
+    ///   the ambient context, so the former binds nothing.
+    /// - panics: none.
+    #[inline]
+    pub fn value_type_static_pi(
+        &mut self,
+        domain: ValueTypeId,
+        codomain: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::StaticPi { domain, codomain })
+    }
+
     /// Mint a value-type lift over an already-allocated inner value type.
     ///
     /// # Specification
@@ -1188,7 +1234,7 @@ impl TermArena
         AnyNode::Value(id) => match self.value(id) {
             Some(&Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_))
             | None => ret.is_empty(),
-            Some(&Value::Pair(first, second)) =>
+            Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) =>
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
             Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) =>
                 ret.as_slice() == [AnyNode::Value(body)],
@@ -1215,7 +1261,8 @@ impl TermArena
         AnyNode::ValueType(id) => match self.value_type(id) {
             Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_))
             | None => ret.is_empty(),
-            Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)) =>
+            Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)
+                | &ValueType::StaticPi { domain: first, codomain: second }) =>
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
             Some(&ValueType::Thunk(body)) => ret.as_slice() == [AnyNode::CompType(body)],
             Some(&ValueType::Lift { inner, .. }) => ret.as_slice() == [AnyNode::ValueType(inner)],
@@ -1241,7 +1288,7 @@ impl TermArena
                     &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
                 )
                 | None => {},
-                | Some(&Value::Pair(first, second)) => {
+                | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
                     children.push(AnyNode::Value(first));
                     children.push(AnyNode::Value(second));
                 },
@@ -1286,7 +1333,14 @@ impl TermArena
                     | &ValueType::Abstract(_),
                 )
                 | None => {},
-                | Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)) => {
+                | Some(
+                    &ValueType::Product(first, second)
+                    | &ValueType::Sum(first, second)
+                    | &ValueType::StaticPi {
+                        domain: first,
+                        codomain: second,
+                    },
+                ) => {
                     children.push(AnyNode::ValueType(first));
                     children.push(AnyNode::ValueType(second));
                 },

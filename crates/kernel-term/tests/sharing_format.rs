@@ -13,6 +13,7 @@ mod sharing_format
 {
     use gandr_kernel_term::AdmissionMark;
     use gandr_kernel_term::ArtifactImage;
+    use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ByteOffset;
     use gandr_kernel_term::CompType;
     use gandr_kernel_term::Computation;
@@ -1042,6 +1043,87 @@ mod sharing_format
         );
     }
 
+    /// The static formers read their two children back in wire order: a
+    /// static Pi's domain before its codomain, a static application's head
+    /// before its argument. Each pair is chosen distinct, so a decoder that
+    /// swapped them would re-encode the same bytes and still fail the shape
+    /// check below.
+    #[test]
+    fn a_static_family_round_trips_in_wire_order()
+    {
+        let mut arena = TermArena::new();
+        let level = gandr_kernel_strata::Level::zero();
+        let values = arena.value_type_universe(GroundSort::Value, level.clone());
+        let computations = arena.value_type_universe(GroundSort::Computation, level.clone());
+        let family = arena.value_type_static_pi(values, computations);
+        let head = arena.value_constant(ConstantIndex::from(0_usize));
+        let integer = arena.value_type_base(BaseType::Integer);
+        let argument = arena.value_quote(integer);
+        let instance = arena.value_static_application(head, argument);
+        let decoded_instance = arena.comp_type_element(instance, level);
+        let declared = arena.value_type_thunk(decoded_instance);
+        let declarations = vec![
+            MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), family),
+            ),
+            MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                DeclarationBuilder::new(&mut arena).axiom(LevelSignature::monomorphic(), declared),
+            ),
+        ];
+
+        let bytes = encode(&arena, &declarations);
+        let artifact = decode(bytes.as_image()).expect("the static family decodes");
+        assert_eq!(
+            Vec::from(bytes),
+            Vec::from(encode(artifact.arena(), artifact.declarations())),
+            "the decoded artifact re-encodes to the bytes it came from"
+        );
+        let decoded = artifact.arena();
+        let family = decoded_declared(&artifact, Position(0)).expect("the family decodes");
+        let Some(&ValueType::StaticPi { domain, codomain }) = decoded.value_type(family)
+        else {
+            panic!("the family's classifier decodes to a static Pi");
+        };
+        assert_eq!(
+            (
+                Some(&ValueType::Universe {
+                    sort: GroundSort::Value,
+                    level: gandr_kernel_strata::Level::zero(),
+                }),
+                Some(&ValueType::Universe {
+                    sort: GroundSort::Computation,
+                    level: gandr_kernel_strata::Level::zero(),
+                }),
+            ),
+            (decoded.value_type(domain), decoded.value_type(codomain)),
+            "the domain reads back before the codomain"
+        );
+        let declared = decoded_declared(&artifact, Position(1)).expect("the instance decodes");
+        let Some(&ValueType::Thunk(element)) = decoded.value_type(declared)
+        else {
+            panic!("the instance's type decodes to a thunk");
+        };
+        let Some(&CompType::Element { code, .. }) = decoded.comp_type(element)
+        else {
+            panic!("over a decode");
+        };
+        let Some(&Value::StaticApplication(head, argument)) = decoded.value(code)
+        else {
+            panic!("whose code is a static application");
+        };
+        assert_eq!(
+            Some(&Value::Constant(ConstantIndex::from(0_usize))),
+            decoded.value(head),
+            "the head reads back before the argument"
+        );
+        assert!(
+            matches!(decoded.value(argument), Some(&Value::Quote(_))),
+            "and the argument is the quoted code"
+        );
+    }
+
     #[test]
     fn the_empty_sequence_encodes_to_a_bare_header()
     {
@@ -1595,15 +1677,20 @@ mod sharing_format
     #[test]
     fn an_unassigned_node_tag_is_refused_by_name()
     {
-        // The growth room's first byte, and both ends of the reserved sharing
-        // block. The settled numbering assigns the block but this crate emits no
-        // entry carrying one, so a reader meeting one refuses it exactly as it
-        // refuses any other unassigned byte — the reservation is a numbering claim,
-        // never a parse.
+        // Both ends of the reserved sharing block, and the first byte above
+        // it, where the frozen block resumes now that the growth room is spent.
+        // The settled numbering assigns the block but this crate emits no entry
+        // carrying one, so a reader meeting one refuses it exactly as it
+        // refuses any other unassigned byte — the reservation is a numbering
+        // claim, never a parse.
         let unassigned = [
-            RawByte(0x1E),
             RawByte(u8::from(SHARING_BLOCK_FIRST)),
             RawByte(u8::from(SHARING_BLOCK_LAST)),
+            RawByte(
+                u8::from(SHARING_BLOCK_LAST)
+                    .checked_add(1)
+                    .expect("the block ends below the byte ceiling"),
+            ),
         ];
         for tag in unassigned {
             let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(

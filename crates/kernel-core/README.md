@@ -17,6 +17,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Sharing-aware conversion](#sharing-aware-conversion)
 - [Dependent arrow and rewrites](#dependent-arrow-and-rewrites)
 - [Universe families, codes and the lift](#universe-families-codes-and-the-lift)
+- [Static operators](#static-operators)
 - [Conversion replay](#conversion-replay)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
@@ -49,7 +50,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 
 - **Staging discipline.** A producer resolves every staged declaration by admitting, bypassing or abandoning it. A staged declaration left unresolved keeps its content in the arena and blocks the admission of every declaration staged before it (see [Staging order and admission](#staging-order-and-admission)).
 - **A vouched bypass.** `add_decl_unchecked` performs no checking: the caller vouches for the declaration, a wrong one can make the kernel prove anything, and `audit` reports every declaration that rests on it.
-- **A trace in the kernel's terms.** A replay's caller translates its sides and the bodies it allows unfolding into the replay's arena, maps each trace identifier to the constant it names or `ReplayNode::Other`, and maps its engine's verdict to an `EngineClaim`. A body is a closed value; a constant given none is opaque.
+- **A trace in the kernel's terms.** A replay's caller translates its sides and the bodies it allows unfolding into the replay's arena, maps each trace identifier to the constant it names or `ReplayNode::Other`, and maps its engine's verdict to an `EngineClaim`. A body is a closed value, an operator's body is closed beyond its parameters, and a constant given neither is opaque.
 - **Reduced codes.** Conversion fires no reduction, so two codes convert only when they are structurally equal. A producer hands the kernel reduced codes to avoid a refusal.
 - **`--cfg anodized_panic` for enforcement.** Built with this `cfg` across the whole dependency graph, the `#[spec]` attributes check their clauses at runtime and panic on a violation. The enforcing test lane sets it.
 
@@ -196,6 +197,18 @@ Shifting a value type and instantiating a computation type are the public rewrit
 **No cumulativity; the lift is written.** A code inhabits exactly the universe at its type's level, so a code bound for a larger universe reaches the kernel as the quote of an explicit `Lift`, and the formation walk's strictness check on that lift is the kernel's smallness check. The producer decides smallness at the site it checks and writes the lift at readmission; the kernel trusts neither the decision nor the level. The alternative, a cumulative universe rule in conversion or in checking, would make conversion directional and put subtyping into the trusted base; the reversal condition is a measured cost of the written lifts that a subsumption rule would remove.
 
 **Codes compare by their quoted types.** Structural conversion compares two quotes by the types they quote, and the replay closes a comparison of two codes as the untrusted engine's shared comparison does: α-equal codes convert, codes whose quoted types hold nothing that could still unfold are apart, and any other pair is refused rather than guessed at. Rigidity reads through quoted types and the codes they decode, so the engine's verdict of apart is one the kernel reaches in its own terms.
+
+## Static operators
+
+**Formation.** A static Pi forms only over static classifiers — a universe of either sort, or a static Pi — and refuses any other child as `StaticClassifierExpected`. It forms at the join of its children's levels and is a value type, so an operator is a value whatever it builds. The check reads each child's head; a static Pi child is formed by the walk in turn, so every leaf of a curried classifier is reached.
+
+**Application.** A static application synthesizes: its head synthesizes a static Pi, its argument checks against the domain, and it produces the codomain, which binds nothing. A head of any other type refuses as `ValueShapeMismatch` expecting a static Pi. Every static application the kernel admits is neutral: there is no static lambda for it to meet. Structural conversion compares two static applications head to head and argument to argument, and a static Pi by its two children.
+
+**δβ in the replay.** A static definition's certificate unfolds one instance of an operator. `Unfoldable::Operator` hands the replay the operator's body with its `ParameterCount` binders stripped, the innermost binder its last parameter; unfolding a value headed by it instantiates the binders at the side's first arguments, innermost first, each argument shifted past the parameters still standing outside it, and keeps any further applications over the reduct. A body standing at a static spine keeps the spine. An operator short of its arguments has no reduct and refuses as unreadable.
+
+**Alternatives.** A static lambda in the kernel would turn this δβ into a δ-step followed by a β-rule at values, owing a reduction the kernel would otherwise never fire; stripping the binders keeps the substitution the kernel already trusts for computations as the only rewrite. A dependent static Pi would need a substitution at every synthesis; no former at this vocabulary is indexed by a static argument.
+
+**Reversal.** A kernel static lambda arrives with an operator exported across a module boundary (see `gandr-kernel-term`); then the operator unfolding becomes a body unfolding, and the replay's weak head form fires static β like the computational one.
 
 ## Conversion replay
 

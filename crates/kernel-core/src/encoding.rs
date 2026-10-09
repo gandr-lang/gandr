@@ -762,6 +762,11 @@ impl ContentTable
                 record.put_tag(gandr_kernel_term::NODE_V_QUOTE_COMPUTATION);
                 record.put_content(self.content_of(AnyNode::CompType(quoted)));
             },
+            | Value::StaticApplication(head, argument) => {
+                record.put_tag(gandr_kernel_term::NODE_V_STATIC_APPLICATION);
+                record.put_content(self.content_of(AnyNode::Value(head)));
+                record.put_content(self.content_of(AnyNode::Value(argument)));
+            },
         }
     }
 
@@ -880,6 +885,11 @@ impl ContentTable
                 record.put_tag(gandr_kernel_term::NODE_VT_ABSTRACT);
                 record.put_count(ComponentCount(usize::from(atom)));
             },
+            | ValueType::StaticPi { domain, codomain } => {
+                record.put_tag(gandr_kernel_term::NODE_VT_STATIC_PI);
+                record.put_content(self.content_of(AnyNode::ValueType(domain)));
+                record.put_content(self.content_of(AnyNode::ValueType(codomain)));
+            },
         }
     }
 
@@ -952,7 +962,7 @@ fn push_children(
             | Some(
                 &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
             ) => {},
-            | Some(&Value::Pair(first, second)) => {
+            | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(first)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(second)));
             },
@@ -1001,7 +1011,14 @@ fn push_children(
                 | &ValueType::Universe { .. }
                 | &ValueType::Abstract(_),
             ) => {},
-            | Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)) => {
+            | Some(
+                &ValueType::Product(first, second)
+                | &ValueType::Sum(first, second)
+                | &ValueType::StaticPi {
+                    domain: first,
+                    codomain: second,
+                },
+            ) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(first)));
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(second)));
             },

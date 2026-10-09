@@ -3993,8 +3993,12 @@ mod tests
                             let body = value(self, body);
                             self.arena.value_lift(target.clone(), body)
                         },
-                        | &(Value::StaticLambda(_) | Value::StaticApplication(..)) => {
-                            panic!("the replay fixtures carry no static operator")
+                        | &Value::StaticApplication(head, argument) => {
+                            let (head, argument) = (value(self, head), value(self, argument));
+                            self.arena.value_static_application(head, argument)
+                        },
+                        | &Value::StaticLambda(_) => {
+                            panic!("the kernel has no static lambda: a replay fixture lifts it")
                         },
                     };
                     self.values.insert(id, copy);
@@ -4078,8 +4082,10 @@ mod tests
                             self.arena.value_type_element(code, target.clone())
                         },
                         | ValueType::Abstract(atom) => self.arena.value_type_abstract(atom),
-                        | ValueType::StaticPi { .. } => {
-                            panic!("the replay fixtures carry no static Pi")
+                        | ValueType::StaticPi { domain, codomain } => {
+                            let (domain, codomain) =
+                                (value_type(self, domain), value_type(self, codomain));
+                            self.arena.value_type_static_pi(domain, codomain)
                         },
                     };
                     self.value_types.insert(id, copy);
