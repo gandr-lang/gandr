@@ -28,7 +28,10 @@ gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
 gandr-theory-cell-complexes.workspace = true
 
+# The differential suite compares the machine's readback against the core's
+# normaliser, the one evaluator in the tree this crate shares no step with.
 [dev-dependencies]
+gandr-core-nbe.workspace = true
 proptest.workspace = true
 
 [lints]

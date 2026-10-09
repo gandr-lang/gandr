@@ -29,44 +29,17 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
-use gandr_kernel_term::IntegerLiteral;
-use gandr_kernel_term::Literal;
-use gandr_kernel_term::Magnitude;
 use gandr_kernel_term::Side;
-use gandr_kernel_term::Sign;
 use proptest::prelude::*;
 
 use crate::compare::Agreement;
 use crate::compare::same_computation;
 use crate::compare::same_value;
 use crate::generate::GeneratedRoot;
+use crate::generate::Integer;
 use crate::generate::computations;
+use crate::generate::integer;
 use crate::generate::values;
-
-/// An integer's spelling in a hand-built case.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug)]
-struct Integer(i32);
-
-/// The integer literal value `n` in `core`.
-///
-/// # Specification
-/// trivial.
-fn integer(
-    core: &mut CoreArena,
-    value: Integer,
-) -> gandr_core_term::ValueId
-{
-    let sign = if value.0 < 0_i32 {
-        Sign::Negative
-    }
-    else {
-        Sign::NonNegative
-    };
-    let digits = Magnitude::from_decimal_text(alloc::format!("{}", value.0.unsigned_abs()))
-        .expect("decimal digits");
-    core.value_literal(Literal::Integer(IntegerLiteral::new(sign, digits)))
-}
 
 /// Every covariable node of an arena is the innermost one.
 ///

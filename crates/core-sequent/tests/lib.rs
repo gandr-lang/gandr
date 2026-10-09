@@ -10,6 +10,8 @@ mod compare;
 #[cfg(test)]
 mod csl_fibration;
 #[cfg(test)]
+mod differential;
+#[cfg(test)]
 mod focus_properties;
 #[cfg(test)]
 mod generate;

@@ -26,6 +26,31 @@ use gandr_kernel_term::Side;
 use gandr_kernel_term::Sign;
 use proptest::prelude::*;
 
+/// An integer's spelling in a hand-built case.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug)]
+pub struct Integer(pub i32);
+
+/// The integer literal value `n` in `core`.
+///
+/// # Specification
+/// trivial.
+pub fn integer(
+    core: &mut CoreArena,
+    value: Integer,
+) -> ValueId
+{
+    let sign = if value.0 < 0_i32 {
+        Sign::Negative
+    }
+    else {
+        Sign::NonNegative
+    };
+    let digits = Magnitude::from_decimal_text(alloc::format!("{}", value.0.unsigned_abs()))
+        .expect("decimal digits");
+    core.value_literal(Literal::Integer(IntegerLiteral::new(sign, digits)))
+}
+
 /// A generated term and the arena it lives in.
 #[derive(Clone, Debug)]
 pub struct Generated

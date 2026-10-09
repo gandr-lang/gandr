@@ -126,6 +126,13 @@ default-features = false
 [workspace.dependencies.gandr-core-checker]
 path = "crates/core-checker"
 
+# Normalisation by evaluation over the core: weak-head evaluation and
+# readback, the oracle the L machine's readback is compared against.
+# consumers:
+# - core-sequent (dev)
+[workspace.dependencies.gandr-core-nbe]
+path = "crates/core-nbe"
+
 # The core call-by-push-value syntax, the one unified context, the definition
 # chain and the per-scope definitional environment.
 # consumers:
