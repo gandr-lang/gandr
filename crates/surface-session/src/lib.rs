@@ -30,6 +30,15 @@
 //! snapshot, so a face localizes a source range against it with
 //! [`Snapshot::localize`].
 //!
+//! # A hole-free item is evaluated
+//!
+//! [`Submission::evaluate`] runs one declaration of the revision on the
+//! dispatcher's run stage — the [`Program`](gandr_surface_dispatcher::Program)
+//! the composition built — when the checker accepted it whole: a declaration
+//! owed its body is a hole and declines, and so does a refused one. A run that
+//! reaches a goal is blamed on it rather than declined, because the item run
+//! has no hole of its own.
+//!
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in this crate's `README.md`.
 
@@ -65,6 +74,8 @@ pub use crate::session::Resumed;
 pub use crate::session::Session;
 pub use crate::session::SessionFault;
 pub use crate::session::Submission;
+pub use crate::session::evaluate;
+pub use crate::session::evaluation;
 pub use crate::session::import;
 pub use crate::session::reopened;
 pub use crate::session::resumed;

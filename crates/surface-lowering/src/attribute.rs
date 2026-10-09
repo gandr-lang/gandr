@@ -234,10 +234,11 @@ pub enum PayloadVerdict
 pub struct AttributeRegistry;
 
 /// Every registered attribute, with its schema.
-const REGISTRY: [(&str, AttributeSchema); 3_usize] = [
+const REGISTRY: [(&str, AttributeSchema); 4_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
     ("refuses", AttributeSchema::Text),
+    ("runs", AttributeSchema::Text),
 ];
 
 impl AttributeRegistry
@@ -728,6 +729,7 @@ mod tests
             ("checks", AttributeSchema::Marker),
             ("owes", AttributeSchema::Integer),
             ("refuses", AttributeSchema::Text),
+            ("runs", AttributeSchema::Text),
         ];
 
         for (spelling, schema) in expected {
@@ -766,8 +768,13 @@ mod tests
     fn a_near_misspelling_suggests_its_attribute()
     {
         // One row per registry entry: an answer fixed to any single entry
-        // fails the other two.
-        let expected = [("check", "checks"), ("owe", "owes"), ("refuse", "refuses")];
+        // fails the others.
+        let expected = [
+            ("check", "checks"),
+            ("owe", "owes"),
+            ("refuse", "refuses"),
+            ("run", "runs"),
+        ];
 
         for (written, nearest) in expected {
             assert_eq!(

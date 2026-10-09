@@ -148,6 +148,13 @@ path = "crates/core-incremental"
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
 
+# The sequent intermediate language and the L machine: focusing a core term
+# into commands, running a command, and reading a run's terminal back.
+# consumers:
+# - surface-dispatcher
+[workspace.dependencies.gandr-core-sequent]
+path = "crates/core-sequent"
+
 # The core call-by-push-value syntax, the one unified context, the definition
 # chain and the per-scope definitional environment.
 # consumers:
@@ -210,6 +217,7 @@ path = "crates/kernel-strata"
 # - core-term
 # - kernel-core
 # - surface-corpus
+# - surface-dispatcher
 # - surface-lowering
 # - surface-repl
 # - surface-session
@@ -238,7 +246,7 @@ path = "crates/storage-records"
 # - surface-dispatcher
 # - surface-lsp
 # - surface-repl
-# - surface-session (dev)
+# - surface-session
 [workspace.dependencies.gandr-surface-corpus]
 path = "crates/surface-corpus"
 

@@ -43,6 +43,7 @@ use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::evaluate::Program;
 use crate::exercised::Exercised;
 
 /// How many sources a run has lowered.
@@ -118,6 +119,9 @@ pub enum Composed<'source>
         /// that produced it: the table a checker refusal's node is located
         /// through.
         origins: OriginTable,
+        /// The module's declarations focused into the command IL, ready to
+        /// run any of them.
+        program: Program<'source>,
     },
     /// The lowering refused the source as a whole, before any declaration
     /// existed to carry a verdict: a root that is not a list of declarations.
@@ -354,11 +358,12 @@ pub fn lower_source<'source>(
 /// - requires: `module` was lowered into `arena`; `root` is the corpus root the
 ///   source sits under.
 /// - ensures: the module is adapted to the checker's input, judged, offered to
-///   the kernel and settled under `root`; the result is [`Composed::Settled`]
-///   with one report per declared name, the exercised rows its settled
-///   declarations carry, the refusals of the declarations refused at their own
-///   form, which no expectation can state, and the lowering's origin table,
-///   moved rather than copied.
+///   the kernel, built into a [`Program`] and settled under `root`, the program
+///   running each declaration that states a run outcome; the result is
+///   [`Composed::Settled`] with one report per declared name, the exercised
+///   rows its settled declarations carry, the refusals of the declarations
+///   refused at their own form, which no expectation can state, the lowering's
+///   origin table, moved rather than copied, and the program.
 /// - provides: the verdict set [`compose()`] gives a module the lowering read.
 /// - fails: [`ComposeFault::Readmission`] for a declaration the checker
 ///   accepted that the kernel does not re-derive; [`ComposeFault::Settle`] when
@@ -389,7 +394,9 @@ pub fn judge_module(
         &declarations,
     );
     readmitted(&arena, &verdicts)?;
-    let report = settle(root, &arena, &module, &verdicts).map_err(ComposeFault::Settle)?;
+    let mut program = Program::new(&arena, &module, &verdicts);
+    let report =
+        settle(root, &arena, &module, &verdicts, &mut program).map_err(ComposeFault::Settle)?;
     let exercised = Exercised::of(&arena, &module, &report);
     let unstatable = unstatable(&module);
     Ok(Composed::Settled {
@@ -397,6 +404,7 @@ pub fn judge_module(
         exercised,
         unstatable,
         origins: module.into_origins(),
+        program,
     })
 }
 

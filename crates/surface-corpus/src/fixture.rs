@@ -5,6 +5,7 @@
 //! lowering's declarations to the checker's input, check — so a witness
 //! settles exactly what a real run hands this crate.
 
+use alloc::format;
 use alloc::vec::Vec;
 
 use gandr_core_checker::CheckBudget;
@@ -16,6 +17,7 @@ use gandr_core_checker::body;
 use gandr_core_checker::check_module;
 use gandr_core_checker::signature;
 use gandr_core_term::CoreArena;
+use gandr_kernel_term::ConstantIndex;
 use gandr_surface_grammar::built_in;
 use gandr_surface_lowering::AttributeRegistry;
 use gandr_surface_lowering::DeclarationOutcome;
@@ -33,6 +35,7 @@ use quenchant_shape::shape::Maybe;
 
 use crate::report::SettleReport;
 use crate::root::CorpusRoot;
+use crate::run::RunSpelling;
 use crate::settle::settle;
 
 /// A module lowered and checked, beside the arena both wrote into.
@@ -119,7 +122,8 @@ pub fn declarations(module: &LoweredModule<'_>) -> Vec<Declaration>
         .collect()
 }
 
-/// The settle report for `source` under `root`, over its own verdicts.
+/// The settle report for `source` under `root`, over its own verdicts, each
+/// run outcome asked for spelled by [`ran_at`].
 ///
 /// # Specification
 /// trivial.
@@ -129,8 +133,24 @@ pub fn settled(
 ) -> SettleReport<'_>
 {
     let checked = checked(source);
-    settle(root, &checked.arena, &checked.module, &checked.verdicts)
-        .expect("the verdicts are the module's own")
+    settle(
+        root,
+        &checked.arena,
+        &checked.module,
+        &checked.verdicts,
+        &mut ran_at,
+    )
+    .expect("the verdicts are the module's own")
+}
+
+/// The outcome the test runner spells for the declaration at `constant`:
+/// `ran at n`, so a comparison shows which declaration was run.
+///
+/// # Specification
+/// trivial.
+pub fn ran_at(constant: ConstantIndex) -> RunSpelling
+{
+    RunSpelling::from(format!("ran at {}", usize::from(constant)))
 }
 
 /// The span from `start` to `end`.

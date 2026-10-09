@@ -265,14 +265,14 @@ mod tests
     {
         let mut repl = repl();
         let integer = base(BaseType::Integer);
-        assert_eq!(lines(&mut repl, "def y = 5 ;"), [(
-            OutKind::Type,
-            format!("y : {integer}")
-        )]);
-        assert_eq!(lines(&mut repl, "def z = y ;"), [(
-            OutKind::Type,
-            format!("z : {integer}")
-        )]);
+        assert_eq!(lines(&mut repl, "def y = 5 ;"), [
+            (OutKind::Type, format!("y : {integer}")),
+            (OutKind::Value, "5".to_owned())
+        ]);
+        assert_eq!(lines(&mut repl, "def z = y ;"), [
+            (OutKind::Type, format!("z : {integer}")),
+            (OutKind::Value, "5".to_owned())
+        ]);
     }
 
     /// A declaration owing its definition is a goal line naming its type.
@@ -297,10 +297,10 @@ mod tests
             OutKind::Goal,
             format!("h : {string}")
         )]);
-        assert_eq!(lines(&mut repl, r#"def h = "now" ;"#), [(
-            OutKind::Type,
-            format!("h : {string}")
-        )]);
+        assert_eq!(lines(&mut repl, r#"def h = "now" ;"#), [
+            (OutKind::Type, format!("h : {string}")),
+            (OutKind::Value, r#""now""#.to_owned())
+        ]);
     }
 
     /// A checker's refusal reaches the transcript as the diagnostics renderer's
@@ -315,10 +315,10 @@ mod tests
         let expected = refusals("def wrong : String ;\ndef wrong = 42 ;", RenderStyle::Plain);
         assert!(!expected.is_empty(), "the revision is refused");
         assert_eq!(refused, expected);
-        assert_eq!(lines(&mut repl, r#"def wrong = "right" ;"#), [(
-            OutKind::Type,
-            format!("wrong : {}", base(BaseType::String))
-        )]);
+        assert_eq!(lines(&mut repl, r#"def wrong = "right" ;"#), [
+            (OutKind::Type, format!("wrong : {}", base(BaseType::String))),
+            (OutKind::Value, r#""right""#.to_owned())
+        ]);
     }
 
     /// A refused chunk leaves the accepted text as it was: a name it declared
@@ -338,10 +338,10 @@ mod tests
             unresolved,
             refusals("def a = 1 ;\ndef c = b ;", RenderStyle::Plain)
         );
-        assert_eq!(lines(&mut repl, "def d = a ;"), [(
-            OutKind::Type,
-            format!("d : {}", base(BaseType::Integer))
-        )]);
+        assert_eq!(lines(&mut repl, "def d = a ;"), [
+            (OutKind::Type, format!("d : {}", base(BaseType::Integer))),
+            (OutKind::Value, "1".to_owned())
+        ]);
     }
 
     /// Under the styled rendering a refusal carries the renderer's escapes;
@@ -416,37 +416,40 @@ mod tests
         let typed = block(&mut repl, ":type 42");
         assert_eq!(typed.source, ":type 42");
         assert_eq!(typed.lines, [(OutKind::Type, format!(": {integer}"))]);
-        assert_eq!(lines(&mut repl, "def it = 1 ;"), [(
-            OutKind::Type,
-            format!("it : {integer}")
-        )]);
+        assert_eq!(lines(&mut repl, "def it = 1 ;"), [
+            (OutKind::Type, format!("it : {integer}")),
+            (OutKind::Value, "1".to_owned())
+        ]);
         assert_eq!(lines(&mut repl, ":type it"), [(
             OutKind::Type,
             format!(": {integer}")
         )]);
-        assert_eq!(lines(&mut repl, r#"def it1 = "s" ;"#), [(
-            OutKind::Type,
-            format!("it1 : {}", base(BaseType::String))
-        )]);
+        assert_eq!(lines(&mut repl, r#"def it1 = "s" ;"#), [
+            (OutKind::Type, format!("it1 : {}", base(BaseType::String))),
+            (OutKind::Value, r#""s""#.to_owned())
+        ]);
     }
 
     /// `:load` submits a file as one chunk, every declaration answering a
-    /// line, and a file that cannot be read answers why.
+    /// type line and a value line, and a file that cannot be read answers why.
     #[test]
     fn a_loaded_file_is_one_chunk()
     {
         let mut repl = repl();
         let loaded = block(&mut repl, format!(":load {}", CORPUS[0]).as_str());
-        assert_eq!(loaded.lines.len(), 5, "{:?}", loaded.lines);
+        assert_eq!(loaded.lines.len(), 10, "{:?}", loaded.lines);
         let missing = lines(&mut repl, ":load does/not/exist.gandr");
         assert!(
             matches!(missing.as_slice(), [(OutKind::Diag, line)] if line.starts_with("cannot read `does/not/exist.gandr`: ")),
             "{missing:?}"
         );
-        assert_eq!(lines(&mut repl, "def again = echo ;"), [(
-            OutKind::Type,
-            format!("again : {}", base(BaseType::Integer))
-        )]);
+        assert_eq!(lines(&mut repl, "def again = echo ;"), [
+            (
+                OutKind::Type,
+                format!("again : {}", base(BaseType::Integer))
+            ),
+            (OutKind::Value, "42".to_owned())
+        ]);
     }
 
     /// A checked declaration's line names its type exactly as the renderer
@@ -483,10 +486,10 @@ mod tests
         let spelling = spell(checkpoint.content().nodes(), root).to_string();
         let mut repl = repl();
         let _goal = lines(&mut repl, signature);
-        assert_eq!(lines(&mut repl, definition), [(
-            OutKind::Type,
-            format!("identity : {spelling}")
-        )]);
+        assert_eq!(lines(&mut repl, definition), [
+            (OutKind::Type, format!("identity : {spelling}")),
+            (OutKind::Value, "<fun>".to_owned())
+        ]);
         let debug = format!("{:?}", checkpoint.content().nodes());
         assert!(
             !spelling.contains("ThunkType") && debug.contains("ThunkType"),
@@ -618,7 +621,7 @@ mod tests
     }
 
     /// A piped session loading a corpus source and asking a type prints the
-    /// echo and one line per declaration, then the answer.
+    /// echo, a type line and a value line per declaration, then the answer.
     #[test]
     fn piped_value_prints_a_transcript()
     {
@@ -631,10 +634,15 @@ mod tests
         let expected = [
             format!("▸ :load {}", CORPUS[0]),
             format!("answer : {integer}"),
+            "= 42".to_owned(),
             format!("greeting : {string}"),
+            r#"= "hello, gandr""#.to_owned(),
             format!("nothing : {unit}"),
+            "= ()".to_owned(),
             format!("copy : {integer}"),
+            "= 42".to_owned(),
             format!("echo : {integer}"),
+            "= 42".to_owned(),
             "▸ :type answer".to_owned(),
             format!(": {integer}"),
         ];

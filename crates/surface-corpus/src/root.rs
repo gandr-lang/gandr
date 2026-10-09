@@ -4,9 +4,10 @@
 //!
 //! A source is a fixture or a gate by where it sits, never by what it says
 //! about itself. The strict root gates: every declaration must check owing
-//! nothing, and the only expectation it admits is `checks`, which asserts
-//! exactly that. An `owes` or `refuses` attribute there could describe a red
-//! declaration as green, so it is refused as a source error instead of read.
+//! nothing, and the expectations it admits are `checks`, which asserts exactly
+//! that, and `runs`, which asserts that and a run outcome besides. An `owes` or
+//! `refuses` attribute there could describe a red declaration as green, so it
+//! is refused as a source error instead of read.
 
 use core::fmt;
 
@@ -22,7 +23,7 @@ pub enum CorpusRoot
     /// The gating root: every declaration is held to *checks, owing nothing*,
     /// and an `owes` or `refuses` attribute is refused outright.
     Strict,
-    /// The fixture root: all three schemas are admitted, so a source here
+    /// The fixture root: all four schemas are admitted, so a source here
     /// asserts what the checker refuses and what it owes.
     Fixture,
 }
@@ -34,8 +35,8 @@ impl CorpusRoot
     /// # Specification
     /// - requires: nothing.
     /// - ensures: the fixture root admits every schema; the strict root admits
-    ///   `checks` alone, the one schema that asserts what the root already
-    ///   requires.
+    ///   `checks` and `runs`, the schemas that assert at least what the root
+    ///   already requires.
     /// - provides: the guard that keeps a gating source from describing itself
     ///   green.
     /// - fails: [`CorpusRefusal::ExpectationOutsideFixtureRoot`], naming the
@@ -47,8 +48,8 @@ impl CorpusRoot
     /// meets an `owes` or `refuses` expectation.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the domain is two roots by three schemas, enumerated
-    ///   against a pinned six-row table, so a widened or narrowed arm breaks
+    /// - hypothesis: L3 — the domain is two roots by four schemas, enumerated
+    ///   against a pinned eight-row table, so a widened or narrowed arm breaks
     ///   its row; the guard's effect on a whole declaration is settled end to
     ///   end.
     /// - witness: `root::tests::the_admission_table_is_pinned`
@@ -63,9 +64,12 @@ impl CorpusRoot
         match (self, schema) {
             | (
                 Self::Fixture,
-                ExpectationSchema::Checks | ExpectationSchema::Owes | ExpectationSchema::Refuses,
+                ExpectationSchema::Checks
+                | ExpectationSchema::Owes
+                | ExpectationSchema::Refuses
+                | ExpectationSchema::Runs,
             )
-            | (Self::Strict, ExpectationSchema::Checks) => Ok(()),
+            | (Self::Strict, ExpectationSchema::Checks | ExpectationSchema::Runs) => Ok(()),
             | (Self::Strict, ExpectationSchema::Owes | ExpectationSchema::Refuses) => {
                 Err(CorpusRefusal::ExpectationOutsideFixtureRoot { schema, span })
             },
@@ -117,9 +121,11 @@ mod tests
                 ExpectationSchema::Refuses,
                 refused(ExpectationSchema::Refuses),
             ),
+            (CorpusRoot::Strict, ExpectationSchema::Runs, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Checks, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Owes, Ok(())),
             (CorpusRoot::Fixture, ExpectationSchema::Refuses, Ok(())),
+            (CorpusRoot::Fixture, ExpectationSchema::Runs, Ok(())),
         ];
 
         for (root, schema, admitted) in table {

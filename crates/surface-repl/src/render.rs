@@ -498,6 +498,7 @@ fn expand(
 #[cfg(test)]
 mod tests
 {
+    use alloc::string::String;
     use alloc::string::ToString as _;
     use alloc::vec::Vec;
 
@@ -508,9 +509,14 @@ mod tests
     use gandr_core_incremental::Reference;
     use gandr_core_incremental::Sort;
     use gandr_kernel_term::BaseType;
+    use gandr_surface_diagnostics::RenderStyle;
+    use gandr_surface_render_remote::OutKind;
+    use gandr_surface_syntax::SourceText;
 
     use super::Fidelity;
     use super::spell;
+    use crate::LoopEvent;
+    use crate::SessionLoop;
 
     /// The first eight node indices.
     ///
@@ -765,5 +771,56 @@ mod tests
             codomain: n1,
         }]);
         assert_eq!(spelled(&cycle), approximate("?".into()));
+    }
+
+    /// Each class of run the fragment writes reaches the transcript as the
+    /// line of its own kind, spelled as `gandr run` prints it.
+    #[test]
+    fn eval_renders_each_outcome_class()
+    {
+        let mut repl = SessionLoop::new(RenderStyle::Plain).expect("the loop starts");
+        let mut last = |line: &str| match repl
+            .offer(SourceText::from(line))
+            .expect("the session does not fault")
+        {
+            | LoopEvent::Block(block) => block.lines.last().cloned(),
+            | other => panic!("`{line}` answers a block, not {other:?}"),
+        };
+        assert_eq!(
+            last("def answer = 42 ;"),
+            Some((OutKind::Value, String::from("42"))),
+            "a produced value renders in the structural notation"
+        );
+        assert_eq!(
+            last(r#"def text = "line\n\t\"\\tail" ;"#),
+            Some((OutKind::Value, String::from(r#""line\n\t\"\\tail""#))),
+            "string values stay one escaped transcript line"
+        );
+        assert_eq!(
+            last(
+                "def identity : +U (Integer -> -F Integer) ; def identity = thunk { fn (x) { ret x } } ;"
+            ),
+            Some((OutKind::Value, String::from("<fun>"))),
+            "a function terminal renders opaquely"
+        );
+        let _goal = last("def later : Integer ;");
+        assert_eq!(
+            last("def copy : Integer ; def copy = later ;"),
+            Some((
+                OutKind::Blame,
+                String::from("blame: `later` is owed its body")
+            )),
+            "a run reaching a goal renders its blame"
+        );
+        assert_eq!(
+            last("def small : Type ; def small = Integer ;"),
+            Some((
+                OutKind::Stuck,
+                String::from(
+                    "unrunnable: `small` is a code, which the machine carries no image of"
+                )
+            )),
+            "a run that never reaches the machine renders as a note"
+        );
     }
 }

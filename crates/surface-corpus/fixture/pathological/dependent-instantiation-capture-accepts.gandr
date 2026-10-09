@@ -1,4 +1,4 @@
-@[ checks ]
+@[ runs("<fun>") ]
 def comp(a : Type, b : Type, c : Type, f : +U[ω] (a -> -F b), g : +U[ω] (b -> -F c), x : a) -> -F c {
   run y <- f(x);
   g(y)

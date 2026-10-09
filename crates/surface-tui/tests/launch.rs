@@ -328,7 +328,8 @@ mod tests
     /// every symbol of the frame, and every style of the transcript pane —
     /// each lead in its kind's style, each echo character in the style of the
     /// role whose span covers its byte, the rest of a row's text in its
-    /// kind's style. The session's second echo crosses a row.
+    /// kind's style. The session's second echo crosses a row, and each checked
+    /// definition prints the value it runs to under its type.
     #[test]
     fn a_fixed_session_paints_as_the_golden()
     {
@@ -344,7 +345,7 @@ mod tests
         ] {
             assert_eq!(enter(&mut app, line.as_str()), Handled::Continue, "{line}");
         }
-        let area = Rect::new(0, 0, 48, 16);
+        let area = Rect::new(0, 0, 48, 18);
         let buffer = painted(&app, area);
 
         let inside = |text: String| format!("│{text:<46}│");
@@ -356,11 +357,13 @@ mod tests
         for row in [
             String::from("▸ def answer = 42 ;"),
             format!("answer : {integer}"),
+            String::from("= 42"),
             format!("▸ def later : {string} ;"),
             format!("? later : {string}"),
             String::from("▸ def copy = ("),
             String::from("  answer) ;"),
             format!("copy : {integer}"),
+            String::from("= 42"),
             String::from("▸ :type answer"),
             format!(": {integer}"),
             String::new(),
@@ -418,7 +421,7 @@ mod tests
                 y = y.saturating_add(1);
             }
         }
-        assert_eq!(y, 10, "nine rows painted");
+        assert_eq!(y, 12, "eleven rows painted");
     }
 
     /// Scripted keys drive the loop: a buffer left open is dropped by an
@@ -488,8 +491,8 @@ mod tests
     }
 
     /// When the transcript outgrows its pane, the pane shows the newest rows:
-    /// the last block's echo and type line at the bottom, the first block's
-    /// gone.
+    /// the last block's echo, type line and value line at the bottom, the
+    /// first block's gone.
     #[test]
     fn the_transcript_pane_follows_the_newest_rows()
     {
@@ -501,11 +504,12 @@ mod tests
         let integer = base(BaseType::Integer);
         let transcript: Vec<&String> = pane.iter().take(6).collect();
         assert_eq!(
-            transcript.get(4 ..),
+            transcript.get(3 ..),
             Some(
                 &[
                     &String::from("▸ def v11 = 11 ;"),
-                    &format!("v11 : {integer}")
+                    &format!("v11 : {integer}"),
+                    &String::from("= 11")
                 ][..]
             ),
             "the newest rows close the pane: {pane:#?}"

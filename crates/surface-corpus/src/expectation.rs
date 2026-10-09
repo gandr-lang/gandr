@@ -1,4 +1,4 @@
-//! The three expectation schemas, the verdict a declaration states, and the
+//! The four expectation schemas, the verdict a declaration states, and the
 //! reading of a declared name's attributes into it.
 //!
 //! # A name states one verdict or none
@@ -10,13 +10,23 @@
 //! one. A payload outside its schema's range states no verdict either, and
 //! is reported with the bytes it covers.
 //!
+//! # A run outcome refines *checks*
+//!
+//! `runs("…")` states that the declaration checks, owing nothing, and that
+//! running it produces the outcome the payload spells. It refines `checks`
+//! rather than contradicting it, so the strict root admits it.
+//!
 //! # Under the strict root
 //!
-//! The strict root holds every declaration to *checks, owing nothing*,
-//! whatever it writes. An `owes` or `refuses` attribute there is not read: its
-//! first occurrence in reading order is the corpus refusal the declaration
-//! produces instead of its verdict.
+//! The strict root holds every declaration to *checks, owing nothing*. An
+//! `owes` or `refuses` attribute there is not read: its first occurrence in
+//! reading order is the corpus refusal the declaration produces instead of its
+//! verdict. A declaration carrying neither is read as under the fixture root,
+//! where the two schemas it can carry — `checks` and `runs` — both state that
+//! it checks, owing nothing.
 
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 
 use gandr_core_checker::ObligationCount;
@@ -34,6 +44,7 @@ use crate::refusal::CorpusRefusal;
 use crate::refusal::RefusalName;
 use crate::refusal::refusal_name;
 use crate::root::CorpusRoot;
+use crate::run::RunSpelling;
 use crate::settle::SettleFault;
 
 quenchant_shape::reason_enum! {
@@ -61,7 +72,7 @@ quenchant_shape::reason_enum! {
     }
 }
 
-/// One of the three expectation schemas.
+/// One of the four expectation schemas.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ExpectationSchema
 {
@@ -71,6 +82,9 @@ pub enum ExpectationSchema
     Owes,
     /// `refuses("Name")`: the declaration is refused with the named refusal.
     Refuses,
+    /// `runs("outcome")`: the declaration checks, owing nothing, and running
+    /// it produces the outcome spelled.
+    Runs,
 }
 
 impl ExpectationSchema
@@ -79,8 +93,8 @@ impl ExpectationSchema
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `checks`, `owes` and `refuses` name their schemas; any other
-    ///   registered attribute names none.
+    /// - ensures: `checks`, `owes`, `refuses` and `runs` name their schemas;
+    ///   any other registered attribute names none.
     /// - provides: the filter that decides which attributes state a verdict.
     /// - fails: never; an attribute stating something else is the
     ///   [`expectation_schema::Absent::Unrelated`] absence.
@@ -99,6 +113,7 @@ impl ExpectationSchema
             | "checks" => Maybe::Present(Self::Checks),
             | "owes" => Maybe::Present(Self::Owes),
             | "refuses" => Maybe::Present(Self::Refuses),
+            | "runs" => Maybe::Present(Self::Runs),
             | _ => Maybe::Absent(expectation_schema::Absent::Unrelated),
         }
     }
@@ -120,24 +135,28 @@ impl fmt::Display for ExpectationSchema
             | Self::Checks => "checks",
             | Self::Owes => "owes",
             | Self::Refuses => "refuses",
+            | Self::Runs => "runs",
         })
     }
 }
 
 /// A verdict as the settle comparison reads it: what a declaration states,
 /// and what it produced, in one shape.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Outcome
 {
     /// The declaration checks, leaving this many obligations in the ledger.
     Checks(ObligationCount),
     /// The declaration is refused with the named refusal.
     Refuses(RefusalName),
+    /// The declaration checks, owing nothing, and running it produces the
+    /// outcome spelled.
+    Runs(RunSpelling),
 }
 
 impl fmt::Display for Outcome
 {
-    /// Writes `checks owing n` or `refuses Name`.
+    /// Writes `checks owing n`, `refuses Name` or `runs to outcome`.
     ///
     /// # Specification
     /// trivial.
@@ -150,12 +169,13 @@ impl fmt::Display for Outcome
         match *self {
             | Self::Checks(owed) => write!(f, "checks owing {owed}"),
             | Self::Refuses(name) => write!(f, "refuses {name}"),
+            | Self::Runs(ref spelled) => write!(f, "runs to {spelled}"),
         }
     }
 }
 
 /// What a declaration states.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Stated
 {
     /// A verdict: the one its expectation writes, or checks owing nothing when
@@ -178,7 +198,7 @@ impl fmt::Display for Stated
     ) -> fmt::Result
     {
         match *self {
-            | Self::Verdict(outcome) => fmt::Display::fmt(&outcome, f),
+            | Self::Verdict(ref outcome) => fmt::Display::fmt(outcome, f),
             | Self::Malformed(fault) => write!(f, "no verdict, {fault}"),
         }
     }
@@ -258,7 +278,7 @@ pub enum Membership
 }
 
 /// What one declared name's expectation attributes amount to under a root.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Expectations
 {
     /// Whether the name carries an expectation attribute.
@@ -277,32 +297,33 @@ pub struct Expectations
 ///   signature's before the definition's, and `arena` is the arena the lowering
 ///   minted their payloads into.
 /// - ensures: with no expectation, an unattributed name stating checks owing
-///   nothing, unguarded. Under the strict root, a fixture stating checks owing
-///   nothing whatever it writes, guarded by its first `owes` or `refuses` in
-///   reading order, with no payload read. Under the fixture root, a fixture
-///   stating its one expectation's verdict, or
+///   nothing, unguarded. Otherwise a fixture: guarded by the first expectation
+///   in reading order its root does not admit — under the strict root an `owes`
+///   or a `refuses` — and then stating checks owing nothing with no payload
+///   read; unguarded, stating its one expectation's verdict, or
 ///   [`ExpectationFault::ConflictingExpectations`] naming the first two when it
-///   carries more than one, unguarded.
+///   carries more than one.
 /// - provides: the stated side of the settle comparison.
-/// - fails: [`SettleFault::UnreadablePayload`] when the one payload the fixture
-///   root reads is absent from `arena`, or is not its schema's literal.
+/// - fails: [`SettleFault::UnreadablePayload`] when the one payload read is
+///   absent from `arena`, or is not its schema's literal.
 /// - panics: none.
 ///
 /// # Errors
-/// [`SettleFault::UnreadablePayload`] when an `owes` or `refuses` payload is
-/// not an integer or a text literal of `arena`.
+/// [`SettleFault::UnreadablePayload`] when an `owes`, `refuses` or `runs`
+/// payload is not an integer or a text literal of `arena`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each branch is driven by a source naming it and asserted
 ///   at its exact reading, beside a control one change away: a payload in and
 ///   out of range, a vocabulary name and a near miss, one expectation and two,
-///   the same expectation under both roots, and a payload read from an arena
-///   that does not hold it.
+///   the same expectation under both roots, a run outcome under the strict
+///   root, and a payload read from an arena that does not hold it.
 /// - witness: `expectation::tests::an_owes_payload_outside_the_counts_states_no_verdict`
 /// - witness: `expectation::tests::a_payload_the_arena_does_not_hold_is_unreadable`
 /// - witness: `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`
 /// - witness: `settle::tests::a_name_carrying_two_expectations_states_none`
 /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
+/// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
 #[inline]
 pub fn read<'entry, Entries>(
     root: CorpusRoot,
@@ -312,50 +333,44 @@ pub fn read<'entry, Entries>(
 where
     Entries: Iterator<Item = &'entry AttributeEntry>,
 {
-    let unguarded = Maybe::Absent(guard::Absent::Admitted);
-    let mut written = attributes.filter_map(|entry| match ExpectationSchema::of(entry.name()) {
-        | Maybe::Present(schema) => Some((schema, entry)),
-        | Maybe::Absent(expectation_schema::Absent::Unrelated) => None,
-    });
-    let Some((schema, entry)) = written.next()
+    let written: Vec<(ExpectationSchema, &AttributeEntry)> = attributes
+        .filter_map(|entry| match ExpectationSchema::of(entry.name()) {
+            | Maybe::Present(schema) => Some((schema, entry)),
+            | Maybe::Absent(expectation_schema::Absent::Unrelated) => None,
+        })
+        .collect();
+    let Some(&(schema, entry)) = written.first()
     else {
         return Ok(Expectations {
             membership: Membership::Unattributed,
             stated: owing_nothing(),
-            guard: unguarded,
+            guard: Maybe::Absent(guard::Absent::Admitted),
         });
     };
-
-    match root {
-        | CorpusRoot::Strict => {
-            let refused = core::iter::once((schema, entry))
-                .chain(written)
-                .find_map(|(schema, entry)| root.admit(schema, entry.span()).err());
-            Ok(Expectations {
-                membership: Membership::Fixture,
-                stated: owing_nothing(),
-                guard: refused.map_or(unguarded, Maybe::Present),
-            })
-        },
-        | CorpusRoot::Fixture => {
-            let stated = written.next().map_or_else(
-                || stated_by(schema, entry, arena),
-                |(_schema, second)| {
-                    Ok(Stated::Malformed(
-                        ExpectationFault::ConflictingExpectations {
-                            first: entry.span(),
-                            second: second.span(),
-                        },
-                    ))
-                },
-            );
-            stated.map(|stated| Expectations {
-                membership: Membership::Fixture,
-                stated,
-                guard: unguarded,
-            })
-        },
+    if let Some(refusal) = written
+        .iter()
+        .find_map(|&(schema, entry)| root.admit(schema, entry.span()).err())
+    {
+        return Ok(Expectations {
+            membership: Membership::Fixture,
+            stated: owing_nothing(),
+            guard: Maybe::Present(refusal),
+        });
     }
+    let stated = match written.get(1_usize) {
+        | Some(&(_schema, second)) => {
+            Stated::Malformed(ExpectationFault::ConflictingExpectations {
+                first: entry.span(),
+                second: second.span(),
+            })
+        },
+        | None => stated_by(schema, entry, arena)?,
+    };
+    Ok(Expectations {
+        membership: Membership::Fixture,
+        stated,
+        guard: Maybe::Absent(guard::Absent::Admitted),
+    })
 }
 
 /// The verdict one expectation of `schema` states, its payload read out of
@@ -397,6 +412,16 @@ fn stated_by(
                     Stated::Malformed(ExpectationFault::UnknownRefusal { span })
                 },
             })
+        },
+        | ExpectationSchema::Runs => {
+            let literal = payload(entry, arena)?;
+            let Literal::Text(ref text) = *literal
+            else {
+                return Err(unreadable);
+            };
+            Ok(Stated::Verdict(Outcome::Runs(RunSpelling::from(
+                String::from(text.as_ref()),
+            ))))
         },
     }
 }
@@ -501,13 +526,14 @@ mod tests
             ("checks", ExpectationSchema::Checks),
             ("owes", ExpectationSchema::Owes),
             ("refuses", ExpectationSchema::Refuses),
+            ("runs", ExpectationSchema::Runs),
         ];
 
         let names = AttributeRegistry::names();
         assert_eq!(
             names.len(),
             pinned.len(),
-            "the registry holds the three schemas"
+            "the registry holds the four schemas"
         );
         for (name, (spelled, schema)) in names.into_iter().zip(pinned) {
             assert_eq!(name.as_ref(), spelled, "the registry order is pinned");

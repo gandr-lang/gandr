@@ -44,6 +44,8 @@ use crate::refusal::CorpusRefusal;
 use crate::refusal::Refusal;
 use crate::report::SettleReport;
 use crate::root::CorpusRoot;
+use crate::run::RunSpelling;
+use crate::run::Runner;
 
 quenchant_shape::reason_enum! {
     /// Why a declaration produced no refusal.
@@ -54,6 +56,21 @@ quenchant_shape::reason_enum! {
             /// The checker judged the declaration checked, synthesised or
             /// owed.
             Unrefused,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a declaration carries no run outcome.
+    pub mod ran {
+        /// The declaration was not run.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// It states no run outcome, so nothing asked for one.
+            Unstated,
+            /// It states one, but was refused or owes its body, so there is
+            /// nothing to run.
+            Unaccepted,
         }
     }
 }
@@ -209,7 +226,7 @@ impl fmt::Display for Surviving
 }
 
 /// One declared name, settled: what it states beside what it produced.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DeclarationReport<'source>
 {
     /// The declared name.
@@ -226,6 +243,8 @@ pub struct DeclarationReport<'source>
     produced: Produced<'source>,
     /// The obligations its verdict left in the ledger.
     owed: ObligationCount,
+    /// The outcome its run produced, when it states one and was run.
+    ran: Maybe<RunSpelling, ran::Absent>,
 }
 
 impl<'source> DeclarationReport<'source>
@@ -280,9 +299,9 @@ impl<'source> DeclarationReport<'source>
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn stated(&self) -> Stated
+    pub const fn stated(&self) -> &Stated
     {
-        self.stated
+        &self.stated
     }
 
     /// What the name produced.
@@ -311,25 +330,33 @@ impl<'source> DeclarationReport<'source>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the produced refusal's name when one was produced, else
-    ///   checks owing the declaration's own obligations.
+    /// - ensures: the produced refusal's name when one was produced; else the
+    ///   outcome its run produced, when it states one and was run; else checks
+    ///   owing the declaration's own obligations.
     /// - provides: the side the settle comparison holds the stated verdict
     ///   against.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — both arms are driven against a stated verdict of the
-    ///   other arm and of their own, so a swapped arm or a constant count
+    /// - hypothesis: L3 — every arm is driven against a stated verdict of
+    ///   another arm and of its own, so a swapped arm or a constant count
     ///   unsettles a control row or settles a mismatched one.
     /// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
+    /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
     #[inline]
     #[must_use]
-    pub const fn outcome(&self) -> Outcome
+    pub fn outcome(&self) -> Outcome
     {
-        match self.produced.refusal() {
-            | Maybe::Present(refusal) => Outcome::Refuses(refusal.name()),
-            | Maybe::Absent(produced_refusal::Absent::Unrefused) => Outcome::Checks(self.owed),
+        match (self.produced.refusal(), &self.ran) {
+            | (Maybe::Present(refusal), _) => Outcome::Refuses(refusal.name()),
+            | (
+                Maybe::Absent(produced_refusal::Absent::Unrefused),
+                &Maybe::Present(ref spelled),
+            ) => Outcome::Runs(spelled.clone()),
+            | (Maybe::Absent(produced_refusal::Absent::Unrefused), &Maybe::Absent(_)) => {
+                Outcome::Checks(self.owed)
+            },
         }
     }
 
@@ -347,15 +374,17 @@ impl<'source> DeclarationReport<'source>
     /// - hypothesis: L3 — each axis is driven wrong in both directions beside a
     ///   corrected control: a refusal stated and none produced, one produced
     ///   and none stated, another refusal produced than stated, more and fewer
-    ///   obligations than stated, and a malformed expectation.
+    ///   obligations than stated, another run outcome than stated, and a
+    ///   malformed expectation.
     /// - witness: `settle::tests::a_wrong_stated_verdict_is_unsettled_either_way`
     /// - witness: `settle::tests::a_refusal_outside_the_vocabulary_fails_the_fixture`
+    /// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
     #[inline]
     #[must_use]
     pub fn settlement(&self) -> Settlement
     {
         match self.stated {
-            | Stated::Verdict(stated) if stated == self.outcome() => Settlement::Settled,
+            | Stated::Verdict(ref stated) if *stated == self.outcome() => Settlement::Settled,
             | Stated::Verdict(_) | Stated::Malformed(_) => Settlement::Unsettled,
         }
     }
@@ -365,9 +394,10 @@ impl<'source> DeclarationReport<'source>
     /// # Specification
     /// - requires: nothing.
     /// - ensures: with `declared` the count a stated `checks` verdict names,
-    ///   and zero for a stated refusal or a malformed expectation, the owed
-    ///   obligations past `declared` are undeclared and the declared ones past
-    ///   the owed are unproduced; at most one of the two is nonzero.
+    ///   and zero for a stated refusal, a stated run outcome or a malformed
+    ///   expectation, the owed obligations past `declared` are undeclared and
+    ///   the declared ones past the owed are unproduced; at most one of the two
+    ///   is nonzero.
     /// - provides: the surviving count a report sums.
     /// - fails: never.
     /// - panics: none.
@@ -383,7 +413,9 @@ impl<'source> DeclarationReport<'source>
     {
         let declared = match self.stated {
             | Stated::Verdict(Outcome::Checks(declared)) => usize::from(declared),
-            | Stated::Verdict(Outcome::Refuses(_)) | Stated::Malformed(_) => 0_usize,
+            | Stated::Verdict(Outcome::Refuses(_) | Outcome::Runs(_)) | Stated::Malformed(_) => {
+                0_usize
+            },
         };
         let owed = usize::from(self.owed);
         Surviving::new(
@@ -502,17 +534,20 @@ impl Error for SettleFault
 }
 
 /// Settle `verdicts` against `module` under `root`, reading expectation
-/// payloads out of `arena`.
+/// payloads out of `arena` and asking `runner` for each run outcome stated.
 ///
 /// # Specification
 /// - requires: `verdicts` are the checker's report for the declarations of
-///   `module` the lowering did not refuse, in admission order, and `arena` is
-///   the arena the lowering minted `module` into.
+///   `module` the lowering did not refuse, in admission order, `arena` is the
+///   arena the lowering minted `module` into, and `runner` runs the
+///   declarations `verdicts` accepted.
 /// - ensures: one report per declared name, in admission order: what the name's
 ///   attributes state under `root`, beside the verdict paired with it by
 ///   admission position, its lowering refusal, or — overriding both — the
-///   root's refusal of an expectation it does not admit; the report's ledger
-///   size is the size of `verdicts`' ledger.
+///   root's refusal of an expectation it does not admit; a name stating a run
+///   outcome whose verdict is checked or synthesised carries the outcome
+///   `runner` spells for it, and `runner` is asked for no other name; the
+///   report's ledger size is the size of `verdicts`' ledger.
 /// - provides: the settle comparison a corpus run is gated on.
 /// - fails: [`SettleFault`] when a verdict is missing, misaligned or left over,
 ///   or an expectation payload is unreadable in `arena`.
@@ -528,17 +563,20 @@ impl Error for SettleFault
 /// - hypothesis: L3 — every fault is driven by verdicts or an arena from
 ///   another module beside the module's own, and the pairing is exercised
 ///   across a lowering-refused declaration, whose missing verdict a consumer
-///   that paired by list position would misalign.
+///   that paired by list position would misalign; the runner is observed asked
+///   for exactly the accepted names stating a run outcome.
 /// - witness: `settle::tests::verdicts_that_are_not_the_modules_own_are_refused`
 /// - witness: `settle::tests::a_lowering_refused_declaration_consumes_no_verdict`
 /// - witness: `settle::tests::the_strict_root_refuses_an_expectation_outside_the_fixture_root`
 /// - witness: `settle::tests::every_refusal_a_source_reaches_settles_the_fixture_naming_it`
+/// - witness: `settle::tests::a_run_outcome_settles_under_either_root`
 #[inline]
 pub fn settle<'source>(
     root: CorpusRoot,
     arena: &CoreArena,
     module: &LoweredModule<'source>,
     verdicts: &ModuleReport,
+    runner: &mut dyn Runner,
 ) -> Result<SettleReport<'source>, SettleFault>
 {
     let mut judged = verdicts.judged().iter();
@@ -578,6 +616,22 @@ pub fn settle<'source>(
             | Maybe::Present(refusal) => Produced::Guarded(refusal),
             | Maybe::Absent(expectation::guard::Absent::Admitted) => produced,
         };
+        let ran = match (&expectations.stated, produced) {
+            | (
+                &Stated::Verdict(Outcome::Runs(_)),
+                Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }),
+            ) => Maybe::Present(runner.run(lowered.constant())),
+            | (
+                &Stated::Verdict(Outcome::Runs(_)),
+                Produced::Judged(Verdict::Owed(_) | Verdict::Refused(_))
+                | Produced::Unlowered(_)
+                | Produced::Guarded(_),
+            ) => Maybe::Absent(ran::Absent::Unaccepted),
+            | (
+                &Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_)) | &Stated::Malformed(_),
+                _,
+            ) => Maybe::Absent(ran::Absent::Unstated),
+        };
         declarations.push(DeclarationReport {
             name: lowered.name(),
             span: lowered.span(),
@@ -586,6 +640,7 @@ pub fn settle<'source>(
             stated: expectations.stated,
             produced,
             owed,
+            ran,
         });
     }
     if let Some(surplus) = judged.next() {
@@ -630,6 +685,9 @@ fn attributes<'table>(
 #[cfg(test)]
 mod tests
 {
+    use alloc::format;
+    use alloc::vec::Vec;
+
     use gandr_core_checker::ObligationCount;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
@@ -651,12 +709,14 @@ mod tests
     use crate::expectation::Stated;
     use crate::expectation::owing_nothing;
     use crate::fixture::checked;
+    use crate::fixture::ran_at;
     use crate::fixture::settled;
     use crate::fixture::span;
     use crate::refusal::CorpusRefusal;
     use crate::refusal::RefusalName;
     use crate::report::SettleReport;
     use crate::root::CorpusRoot;
+    use crate::run::RunSpelling;
 
     /// The one declaration `report` holds.
     ///
@@ -688,7 +748,7 @@ mod tests
 
         assert_eq!(
             only(&near).stated(),
-            Stated::Malformed(ExpectationFault::UnknownRefusal { span: at(3, 29) }),
+            &Stated::Malformed(ExpectationFault::UnknownRefusal { span: at(3, 29) }),
             "a near miss names no refusal, and the fault names the attribute"
         );
         assert_eq!(
@@ -817,7 +877,7 @@ mod tests
             let report = settled(CorpusRoot::Fixture, SourceText::from(source));
             assert_eq!(
                 only(&report).stated(),
-                stated,
+                &stated,
                 "`{source}` states its pinned verdict"
             );
         }
@@ -852,7 +912,7 @@ mod tests
         );
         assert_eq!(
             declaration.stated(),
-            owing_nothing(),
+            &owing_nothing(),
             "the strict root holds the declaration to checks owing nothing"
         );
         assert_eq!(
@@ -914,6 +974,91 @@ mod tests
             only(&named).outcome(),
             Outcome::Refuses(RefusalName::ExpectationOutsideFixtureRoot),
             "naming the guard's own refusal produces it, and still states checks"
+        );
+    }
+
+    #[test]
+    fn a_run_outcome_settles_under_either_root()
+    {
+        let ran = |position: &str| Outcome::Runs(RunSpelling::from(format!("ran at {position}")));
+        let rows = [
+            (
+                CorpusRoot::Strict,
+                r#"@[ runs("ran at 0") ] def a = 3 ;"#,
+                ran("0"),
+                Settlement::Settled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                r#"@[ runs("ran at 0") ] def a = 3 ;"#,
+                ran("0"),
+                Settlement::Settled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                r#"@[ runs("ran at 1") ] def a = 3 ;"#,
+                ran("0"),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                r#"@[ runs("ran at 0") ] def a : Integer ;"#,
+                Outcome::Checks(ObligationCount::from(1_usize)),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                r#"@[ runs("ran at 0") ] def a : Integer ; def a = "three" ;"#,
+                Outcome::Refuses(RefusalName::TypeMismatch),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Strict,
+                r#"@[ runs("ran at 0"), owes(1) ] def a : Integer ;"#,
+                Outcome::Refuses(RefusalName::ExpectationOutsideFixtureRoot),
+                Settlement::Unsettled,
+            ),
+            (
+                CorpusRoot::Fixture,
+                r#"@[ checks, runs("ran at 0") ] def a = 3 ;"#,
+                Outcome::Checks(ObligationCount::from(0_usize)),
+                Settlement::Unsettled,
+            ),
+        ];
+        for (root, source, outcome, settlement) in rows {
+            let report = settled(root, SourceText::from(source));
+            assert_eq!(
+                (only(&report).outcome(), only(&report).settlement()),
+                (outcome, settlement),
+                "`{source}` under the {root} root produces and settles as pinned"
+            );
+        }
+
+        let module = checked(SourceText::from(
+            r#"def a : Integer ; @[ runs("ran at 1") ] def b = 3 ; @[ runs("ran at 2") ] def c : Integer ; @[ checks ] def d = 4 ; @[ runs("ran at 4") ] def e : Integer ; def e = "four" ;"#,
+        ));
+        let mut asked = Vec::new();
+        let mut runner = |constant: ConstantIndex| {
+            asked.push(usize::from(constant));
+            ran_at(constant)
+        };
+        let report = settle(
+            CorpusRoot::Fixture,
+            &module.arena,
+            &module.module,
+            &module.verdicts,
+            &mut runner,
+        )
+        .expect("the verdicts are the module's own");
+        assert_eq!(
+            asked,
+            [1_usize],
+            "only the accepted declaration stating a run outcome is run"
+        );
+        assert_eq!(
+            report.declarations().len(),
+            5_usize,
+            "every name is reported, run or not"
         );
     }
 
@@ -1060,13 +1205,25 @@ mod tests
         let owed = checked(SourceText::from(r#"@[ owes(1) ] def a : Integer ;"#));
         let rows = [
             (
-                settle(CorpusRoot::Fixture, &two.arena, &two.module, &one.verdicts),
+                settle(
+                    CorpusRoot::Fixture,
+                    &two.arena,
+                    &two.module,
+                    &one.verdicts,
+                    &mut ran_at,
+                ),
                 SettleFault::MissingVerdict {
                     constant: ConstantIndex::from(1_usize),
                 },
             ),
             (
-                settle(CorpusRoot::Fixture, &one.arena, &one.module, &two.verdicts),
+                settle(
+                    CorpusRoot::Fixture,
+                    &one.arena,
+                    &one.module,
+                    &two.verdicts,
+                    &mut ran_at,
+                ),
                 SettleFault::SurplusVerdict {
                     constant: ConstantIndex::from(1_usize),
                 },
@@ -1077,6 +1234,7 @@ mod tests
                     &shifted.arena,
                     &shifted.module,
                     &one.verdicts,
+                    &mut ran_at,
                 ),
                 SettleFault::MisalignedVerdict {
                     declared: ConstantIndex::from(1_usize),
@@ -1089,6 +1247,7 @@ mod tests
                     &CoreArena::new(),
                     &owed.module,
                     &owed.verdicts,
+                    &mut ran_at,
                 ),
                 SettleFault::UnreadablePayload { span: at(3, 10) },
             ),
@@ -1099,7 +1258,14 @@ mod tests
         }
         for own in [&two, &one, &shifted, &owed] {
             assert!(
-                settle(CorpusRoot::Fixture, &own.arena, &own.module, &own.verdicts).is_ok(),
+                settle(
+                    CorpusRoot::Fixture,
+                    &own.arena,
+                    &own.module,
+                    &own.verdicts,
+                    &mut ran_at,
+                )
+                .is_ok(),
                 "a module's own verdicts and arena settle"
             );
         }

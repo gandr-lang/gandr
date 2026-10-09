@@ -7,16 +7,19 @@
 //!
 //! # Exit codes
 //!
-//! - `0`: every declaration settled; also `--help`, `--version`, a bare
-//!   invocation, `lsp --capabilities`, a language-server session ended by
-//!   `exit` after `shutdown`, a read-evaluate loop that reached the end of its
-//!   input or `:quit`, a terminal face the user left, and `tui --smoke`.
+//! - `0`: every declaration settled, or a script's run returned a value; also
+//!   `--help`, `--version`, a bare invocation, `lsp --capabilities`, a
+//!   language-server session ended by `exit` after `shutdown`, a read-evaluate
+//!   loop that reached the end of its input or `:quit`, a terminal face the
+//!   user left, and `tui --smoke`.
 //! - `1`: at least one declaration is unsettled, or a source was not read as
-//!   its root expects; also a language-server session ended before `shutdown`.
+//!   its root expects; a script's run was blamed on a goal or stopped short of
+//!   a value; also a language-server session ended before `shutdown`.
 //! - `2`: an engine fault, an unreadable source or a path naming none, a
 //!   malformed invocation, output the driver could not write, a language-server
 //!   stream that failed, a read-evaluate loop or a terminal face stopped by a
-//!   fault, or a terminal face asked for without a terminal.
+//!   fault, a terminal face asked for without a terminal, or a script that
+//!   never reached the machine.
 
 use std::io::IsTerminal as _;
 use std::io::Write as _;
@@ -27,10 +30,15 @@ use gandr_surface_diagnostics::Entry;
 use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_diagnostics::TerminalCapability;
 use gandr_surface_diagnostics::entries;
+use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Invocation;
 use gandr_surface_dispatcher::Outcome;
+use gandr_surface_dispatcher::Ran;
+use gandr_surface_dispatcher::RunStatus;
 use gandr_surface_dispatcher::RunVerdict;
+use gandr_surface_dispatcher::Script;
+use gandr_surface_dispatcher::ScriptRun;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
 use gandr_surface_dispatcher::Walk;
@@ -45,9 +53,16 @@ const UNSETTLED: u8 = 1;
 /// The exit code of a language-server session that ended before `shutdown`.
 const ABRUPT: u8 = 1;
 
+/// The exit code of a script whose run reached the machine and stopped short
+/// of a value: blamed on a goal, stuck or unfinished.
+const STOPPED: u8 = 1;
+
 /// The exit code of a fault: the engine's, a path's, the invocation's or the
 /// output's.
 const FAULTED: u8 = 2;
+
+/// The exit code of a script that never reached the machine.
+const UNREACHED: u8 = 2;
 
 /// gandr language toolchain driver.
 #[derive(Debug, clap::Parser)]
@@ -121,6 +136,16 @@ enum Command
         #[arg(long)]
         smoke: bool,
     },
+    /// Run a source as a program: check it as `check` does, then run its last
+    /// declaration and print the value.
+    ///
+    /// Exits 0 when the run returns a value, 1 when it is blamed on a goal or
+    /// stops short of one, and 2 when the source never reaches the machine.
+    Run
+    {
+        /// The source file to run.
+        path: PathBuf,
+    },
 }
 
 /// Which face of the read-evaluate loop to run.
@@ -153,11 +178,11 @@ enum Screen
 ///   `--version` print and exit `0`; any other argument error prints its usage
 ///   message and exits `2`. A bare invocation prints one status line and exits
 ///   `0`. `check` and `test` walk their paths, print what [`render`] prints,
-///   and exit `0`, `1` or `2` as the run settled, was unsettled or faulted.
-///   `lsp` serves and `lsp --capabilities` prints as [`lsp`] and
-///   [`capabilities`] state, `repl` runs as [`repl`] states, and `tui` as
-///   [`tui`] states. Output the driver cannot write is noted on standard error,
-///   when that is writable, and exits `2`.
+///   and exit `0`, `1` or `2` as the run settled, was unsettled or faulted;
+///   `run` runs its script as [`script`] states. `lsp` serves and `lsp
+///   --capabilities` prints as [`lsp`] and [`capabilities`] state, `repl` runs
+///   as [`repl`] states, and `tui` as [`tui`] states. Output the driver cannot
+///   write is noted on standard error, when that is writable, and exits `2`.
 /// - provides: the exit code as the run's verdict. The postcondition stays
 ///   prose: the exit code and the lines written are effects on the process, not
 ///   a value this call returns to a caller that could observe them. With
@@ -183,6 +208,9 @@ enum Screen
 /// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
 /// - witness: `cli::cli::the_tui_smoke_face_prints_ready`
 /// - witness: `cli::cli::the_tui_needs_a_terminal`
+/// - witness: `cli::cli::a_script_that_returns_a_value_leaves_successfully`
+/// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
+/// - witness: `cli::cli::an_ill_typed_script_is_refused_by_the_checker`
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
@@ -205,6 +233,7 @@ fn main() -> ExitCode
             paths,
         },
         | Some(Command::Test { paths }) => Invocation::Test { paths },
+        | Some(Command::Run { path }) => Invocation::Run { path },
         | Some(Command::Lsp {
             capabilities: false,
         }) => return lsp(),
@@ -446,7 +475,8 @@ fn usage(error: &clap::Error) -> ExitCode
 ///   cannot carry through the pipeline is a line on standard error. The run's
 ///   report and its verdict close standard output, and the exit code is the
 ///   verdict's.
-/// - provides: the one renderer both verbs share.
+/// - provides: the one renderer every verb that reports through the dispatcher
+///   shares.
 /// - fails: the first write error on either stream.
 /// - panics: none.
 ///
@@ -474,6 +504,7 @@ fn render(
             Ok(ExitCode::SUCCESS)
         },
         | Outcome::Run { verb, walk } => run(verb, walk, stdout, stderr),
+        | Outcome::Script(mut runnable) => script(&mut runnable, stdout, stderr),
     }
 }
 
@@ -517,5 +548,85 @@ fn run(
         | RunVerdict::Settled => ExitCode::SUCCESS,
         | RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
         | RunVerdict::Faulted => ExitCode::from(FAULTED),
+    })
+}
+
+/// Run `runnable`, printing its value on standard output and everything else
+/// on standard error, and choose the exit code.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a path that cannot be read as one source is `gandr: <path>:
+///   <fault>` on standard error. Otherwise every report `gandr check --goals`
+///   prints for the source goes to standard error as a plain snippet followed
+///   by an empty line, and every ledger line beside them; then a run that
+///   returned a value writes the value as the one line of standard output. A
+///   run blamed, stuck or unfinished, and a target that reaches a declaration
+///   the machine carries no image of, is one line on standard error: `gandr:`,
+///   the path, the target's name in backticks and the evaluation's spelling. A
+///   source carrying a refusal is `gandr: <path>: refused; nothing ran` and one
+///   declaring no name `gandr: <path>: declares no name to run`, each on
+///   standard error. The exit code is `0` for a value, `1` for a run that
+///   stopped short of one, and `2` for a script that never reached the machine.
+/// - provides: `gandr run`, with its value on the one stream a caller reads.
+/// - fails: the first write error on either stream.
+/// - panics: none.
+///
+/// # Errors
+/// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the binary is spawned on a script of each status, an
+///   absent path, a path and a second operand, and the exact standard output
+///   and exit code asserted; the value's line is asserted to be the whole of
+///   standard output.
+/// - witness: `cli::cli::a_script_that_returns_a_value_leaves_successfully`
+/// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
+/// - witness: `cli::cli::an_ill_typed_script_is_refused_by_the_checker`
+/// - witness: `cli::cli::an_outcome_only_refusal_is_visible_in_a_script_run`
+/// - witness: `cli::cli::an_absent_script_is_refused_by_path`
+/// - witness: `cli::cli::a_script_with_no_program_is_refused`
+/// - witness: `cli::cli::the_value_of_a_run_is_printed_once`
+fn script(
+    runnable: &mut Script,
+    stdout: &mut dyn std::io::Write,
+    stderr: &mut dyn std::io::Write,
+) -> std::io::Result<ExitCode>
+{
+    let ran = runnable.run();
+    let status = ran.status();
+    match ran {
+        | ScriptRun::Fault { path, fault } => {
+            writeln!(stderr, "gandr: {}: {fault}", path.display())?;
+        },
+        | ScriptRun::Source { step, ran } => {
+            for entry in entries(&step, Verb::Check(Goals::Reported)) {
+                match entry {
+                    | Entry::Report(report) => {
+                        writeln!(stderr, "{}\n", report.render(RenderStyle::Plain))?;
+                    },
+                    | Entry::Line(line) => writeln!(stderr, "{line}")?,
+                }
+            }
+            let path = match step {
+                | Step::Source { path, .. } | Step::Fault { path, .. } => path.display(),
+            };
+            match ran {
+                | Ran::Evaluated {
+                    evaluation: Evaluation::Value(value),
+                    ..
+                } => writeln!(stdout, "{value}")?,
+                | Ran::Evaluated { target, evaluation } => {
+                    writeln!(stderr, "gandr: {path}: `{target}` {evaluation}")?;
+                },
+                | Ran::Refused => writeln!(stderr, "gandr: {path}: refused; nothing ran")?,
+                | Ran::NoProgram => writeln!(stderr, "gandr: {path}: declares no name to run")?,
+            }
+        },
+    }
+    Ok(match status {
+        | RunStatus::Value => ExitCode::SUCCESS,
+        | RunStatus::Failed => ExitCode::from(STOPPED),
+        | RunStatus::Unreached => ExitCode::from(UNREACHED),
     })
 }

@@ -20,6 +20,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - [Localization descends extents](#localization-descends-extents)
 - [The parse's repairs ride beside the step](#the-parses-repairs-ride-beside-the-step)
 - [Diagnostics and goals are the renderer's](#diagnostics-and-goals-are-the-renderers)
+- [A hole-free item is evaluated](#a-hole-free-item-is-evaluated)
 - [Tests: the floor, the deferred rows, the defects](#tests-the-floor-the-deferred-rows-the-defects)
 - [License](#license)
 
@@ -47,6 +48,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - **Checkpoints across processes.** `Session::reopen`, `Reopened`, `reopened::Absent`. Witnesses: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`, `tests::checkpoint::a_store_holding_nothing_reopens_fresh`, `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`.
 - **The import scope.** `Session::resolve_import`, `ImportRow`, `import::Absent`. Witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`.
 - **The item source.** `program`, `SurfaceItems` (an `ItemSource`), `Revision`, `RevisionFault`, `fault_span::Absent`. Witnesses: `tests::items::each_unrefused_declaration_is_one_item_keyed_by_its_name`, `tests::items::the_item_source_offers_a_revision_or_names_its_fault`.
+- **Evaluation.** `Submission::evaluate`, `evaluate`, `evaluation::Absent`: a hole-free item run on the dispatcher's run stage. Witnesses: `tests::session::integer_literal_types_and_evaluates`, `tests::session::nullary_function_call_evaluates`, `tests::session::holes_decline_evaluation`.
 - **Edit-action reconstruction.** `Snapshot` (`of`, `items`, `node`, `span`, `localize`, `edit_locus`), `diff`, `apply`, `EditScript`, `Action`, `CorePath`, `ChildSlot`, `Tree`, `ItemTree`, `SourceEdit`, the reasons `addressed`, `spanned`, `located` and `body_path`; `Submission::edits`, `Session::snapshot`. Witnesses: `tests::edit::apply_of_diff_reproduces_new`, `tests::edit::literal_edit_is_one_set_int`, `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`, `tests::edit::a_submission_carries_the_edits_from_the_last_accepted_revision`, `edit::tests::descent_agrees_with_the_linear_stab_oracle`.
 
 ## Expected features
@@ -137,6 +139,12 @@ A submission's diagnostics are the reports `gandr-surface-diagnostics` renders f
 
 The prior implementation's goals were holes inside bodies, each with its expected type and local context, and it recovered a malformed declaration as such a hole. The surface has no hole term yet, so the goals here stand for whole bodies and goals over sub-term holes arrive with the hole surface; a malformed declaration is refused in place, its report the refusal at the responsible bytes, and the declarations after it lower intact. The prior attribute pass reported an ill-typed payload as the checker's type error; here the lowering types a payload against its schema where it reads it, and refuses a mismatch as `IllTypedPayload`, in the malformed-source class every type error takes.
 
+## A hole-free item is evaluated
+
+`Submission::evaluate` runs one declaration of the revision on the `Program` the dispatcher's composition built, the same run `gandr run` makes, and returns what it came to. The rule is `evaluate`, over a declaration and its program, so a face holding the submission's step applies it without the submission: a declaration the checker accepted — checked or synthesised — runs; one owed its body is a hole and declines with `evaluation::Absent::Holed`; one refused by the lowering, the checker or its root declines with `evaluation::Absent::Unaccepted`, as does a position holding no declaration and a revision refused whole. A declaration that runs into a goal elsewhere is not a hole of its own: it runs, and the run is blamed on the goal. Each evaluation is a fresh machine, so evaluating twice runs twice and nothing is cached between revisions.
+
+The prior implementation evaluated a top-level expression and reported a definition with its type alone. The fragment has no top-level expression, so the item evaluated is a declaration, and the loop prints a value line under each checked one. The alternative was evaluating nothing until expressions exist, which leaves the loop unable to show a value. The choice reverses when the surface gains a top-level expression: that item is the one evaluated, and a definition returns to its type line alone.
+
 ## Tests: the floor, the deferred rows, the defects
 
 The prior implementation's session, incremental, edit, diagnostics and goals suites, with the tests beside their source, are the floor: 162 tests. A row over a former the fragment does not have is deferred by name with that former.
@@ -144,7 +152,7 @@ The prior implementation's session, incremental, edit, diagnostics and goals sui
 | Suite | Floor | Here | Deferred |
 | ----- | ----- | ---- | -------- |
 | session, beside the source | 9 | 3 | 6 |
-| session | 42 | 9 | 33 |
+| session | 42 | 12 | 30 |
 | incremental | 13 | 9 | 4 |
 | edit, beside the source | 3 | 3 | 0 |
 | edit | 52 | 14 | 38 |
@@ -155,9 +163,9 @@ The prior implementation's session, incremental, edit, diagnostics and goals sui
 | diagnostics, obligations | 15 | 8 | 7 |
 | goals, extra | 3 | 0 | 3 |
 | goals, beside the source | 1 | 1 | 0 |
-| total | 162 | 57 | 105 |
+| total | 162 | 60 | 102 |
 
-The ported rows keep their names. A row whose prior form also evaluated its item keeps its typing half here; evaluation is deferred with the machine. `scalar_literals_carry_their_types` covers integer and string literals; the suffixed numeric literal is outside the fragment. The incremental property `incremental_equals_from_scratch` runs a chain of one to four edits per case, 200 cases, over revisions of one to six statements from a pool of six names with integer, string, reference, thunk, function-applying thunk, function-tail and signature-only bodies and `Integer`, `String` and `+U (-F Integer)` signatures, under replace, insert, delete, coordinated rename, swap, ascribe and value-only edits; each step's report must equal the dispatcher's and its typings the checker's module entry.
+The ported rows keep their names. A row whose prior form also evaluated its item keeps its typing half here, its evaluation waiting with the former the row needs. `scalar_literals_carry_their_types` covers integer and string literals; the suffixed numeric literal is outside the fragment. The three evaluation rows take the fragment's forms: `integer_literal_types_and_evaluates` declares a literal and evaluates it to `42`; `nullary_function_call_evaluates` declares a nullary function and evaluates both it and a thunk calling it to `1`; `holes_decline_evaluation` takes a signature with no definition, the fragment's goal, where the prior row took an empty block, and adds that a declaration forcing the goal runs and is blamed on it. The incremental property `incremental_equals_from_scratch` runs a chain of one to four edits per case, 200 cases, over revisions of one to six statements from a pool of six names with integer, string, reference, thunk, function-applying thunk, function-tail and signature-only bodies and `Integer`, `String` and `+U (-F Integer)` signatures, under replace, insert, delete, coordinated rename, swap, ascribe and value-only edits; each step's report must equal the dispatcher's and its typings the checker's module entry.
 
 The edit rows take the fragment's formers. `literal_edit_is_one_set_int` and the localization rows run over the incremental fixture pair, `item_insertion_leaves_neighbours_untouched` over the stale-relocation pair rewritten without operators; the changed former of `constructor_change_is_one_replace` is a literal becoming a thunk, of `comp_constructor_change_is_one_replace` a return becoming an application; `hole_fill_and_erase` fills and erases an owed declaration's body; `multi_point_edit_localizes_to_the_common_ancestor` changes a callee and its argument. `step_comp_child_order_matches_diff_and_rebuild` pins the child order over a hand-built arena holding the core's multi-child formers — `case`, bind, application, pair — since the effect formers it was written over are absent. The properties `apply_of_diff_reproduces_new` and `self_diff_is_identity` run 200 cases each over the incremental generator's revisions.
 
@@ -177,7 +185,6 @@ Deferred, with the former each needs:
 - Annotations: `value_ascription_change_is_one_set_annotation`, `binder_annotation_added_is_one_set_annotation`, `binder_annotation_dropped_is_one_set_annotation`.
 - A computation-rooted declaration body: `cross_sort_root_replace_is_reconstructed`.
 - Effects, handlers and delimited control: `resume_computation_edit_localizes`, `reified_stack_is_opaque_but_sound`, `handle_scrutinee_edit_localizes`, `handle_return_body_edit_localizes`, `perform_op_change_is_replace`, `handle_skeleton_change_is_replace`, `shift_binder_rebind_and_body_edit_compose`, `handle_skeleton_dimensions_are_replace`, `handle_clause_body_edit_localizes`, `resume_stack_edit_localizes`, `cross_constructor_change_is_replace`, `perform_signature_change_is_replace`, `perform_payload_edit_localizes`, `reset_body_edit_localizes`, `handle_second_clause_body_edit_localizes`, `handle_body_edits_round_trip`, `effect_control_pairs_round_trip`.
-- Evaluation: `integer_literal_types_and_evaluates`, `nullary_function_call_evaluates`, `holes_decline_evaluation` (with typed holes).
 - The unknown type, absent by construction: `computation_top_result_types_binds_and_applies`, `value_unknown_ascription_types_and_evaluates`.
 - Operators and the builtin prelude: `arithmetic_operators_type_check_and_evaluate`, `operator_definition_carries_across_lines`, `module_builtins_type_and_evaluate`, `comparison_operators_type_check_and_evaluate`, `boolean_operators_type_check_and_evaluate`, `string_builtin_type_and_evaluate`, `string_contains_scans_conflict_marker_text`, `rung07_builtins_type_check_and_evaluate`, `rung07_builtin_failures_are_gradual_blame`, `rung07_wrong_shape_calls_are_static_type_errors`, `regex_builtin_type_and_evaluate`, `regex_extract_failures_are_gradual_blame`, `an_unknown_prelude_member_is_declined_as_a_hole`.
 - Lists: `list_concat_type_checks_and_evaluates`, `lists_need_an_annotation_then_evaluate`, `list_each_maps_a_closure_over_a_list`, `list_reduce_folds_a_list`, `list_functional_update_builtins_evaluate`, `out_of_bounds_list_update_blames`, `list_any_and_sort_evaluate`, `list_where_filters_by_a_predicate`.

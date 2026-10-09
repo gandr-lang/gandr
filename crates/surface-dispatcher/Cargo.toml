@@ -11,11 +11,14 @@ categories = ["development-tools"]
 publish.workspace = true
 
 # The composition names every stage it runs: the grammar and the parser, the
-# lowering, the checker and the kernel bridge it carries, and the settle
-# comparison the corpus library owns.
+# lowering, the checker and the kernel bridge it carries, the settle
+# comparison the corpus library owns, and the run stage's focusing, machine
+# and readback.
 [dependencies]
 gandr-core-checker.workspace = true
+gandr-core-sequent.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-term.workspace = true
 gandr-surface-corpus.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true

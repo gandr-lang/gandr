@@ -1,13 +1,18 @@
+@[ runs("42") ]
 def answer : Integer ;
 def answer = 42 ;
 
+@[ runs("\"hello, gandr\"") ]
 def greeting : String ;
 def greeting = "hello, gandr" ;
 
+@[ runs("()") ]
 def nothing : Unit ;
 def nothing = () ;
 
+@[ runs("42") ]
 def copy = answer ;
 
+@[ runs("42") ]
 def echo : Integer ;
 def echo = copy ;

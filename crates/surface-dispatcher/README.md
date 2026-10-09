@@ -1,6 +1,6 @@
 # gandr-surface-dispatcher
 
-Routes an understood `gandr` driver invocation to the outcome the driver renders, and composes the surface pipeline the `check` and `test` verbs run: parse, lower, check, settle, over every source under the paths given.
+Routes an understood `gandr` driver invocation to the outcome the driver renders, and composes the surface pipeline the `check`, `test` and `run` verbs run: parse, lower, check, settle, over every source under the paths given, and for `run` the run stage after the check: focus, run on the L machine, read back.
 
 <!-- toc -->
 
@@ -9,6 +9,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [One composition serves both verbs](#one-composition-serves-both-verbs)
+- [The run stage follows the check](#the-run-stage-follows-the-check)
 - [The kernel re-derives every acceptance](#the-kernel-re-derives-every-acceptance)
 - [Routing performs no I/O; the walk is the verb's](#routing-performs-no-io-the-walk-is-the-verbs)
 - [Membership is location](#membership-is-location)
@@ -23,7 +24,7 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 ## Synopsis
 
-**What.** `dispatch` maps an `Invocation` to an `Outcome`. A bare invocation routes to `Outcome::Status`, whose `StatusReport` states that toolchain management is not implemented. `Invocation::Check` and `Invocation::Test` route to `Outcome::Run`: a `Walk` over the paths given and the `Verb` it runs under. Advancing the walk with `Walk::step` reads one source at a time and carries it through `compose`, which parses it, lowers it once, adapts the lowered declarations to the checker's input with `adapt`, judges them, has the kernel re-derive every acceptance, and settles each declaration against what it states. Each step is counted into a `RunReport`, whose `verdict` is the gate the driver's exit code reports.
+**What.** `dispatch` maps an `Invocation` to an `Outcome`. A bare invocation routes to `Outcome::Status`, whose `StatusReport` states that toolchain management is not implemented. `Invocation::Check` and `Invocation::Test` route to `Outcome::Run`: a `Walk` over the paths given and the `Verb` it runs under. Advancing the walk with `Walk::step` reads one source at a time and carries it through `compose`, which parses it, lowers it once, adapts the lowered declarations to the checker's input with `adapt`, judges them, has the kernel re-derive every acceptance, builds the `Program` that runs any accepted declaration, and settles each declaration against what it states. Each step is counted into a `RunReport`, whose `verdict` is the gate the driver's exit code reports. `Invocation::Run` routes to `Outcome::Script`: a `Script` of one path, which composes its source as `check` would and runs the last name it declares, its `RunStatus` the exit code `gandr run` reports.
 
 **Why.** The driver owns the argument surface and the process boundary; what an understood invocation does belongs to a library, so routing, composition and the gate can be enumerated without a process. The composition sits here, above the corpus library and the checker, because the settle comparison and the root guard must fire on the same pass that gates.
 
@@ -39,7 +40,9 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Walk`, `Step`, `Standing`, `Standing::of`, `SourceFault` and `walk_step::Absent`: the walk, and the standing a step or a session submission carries. Witnesses: `walk::tests::a_tree_is_walked_in_order`, `walk::tests::every_path_answers_in_order`, `walk::tests::each_root_stands_its_sources`.
 - `RunReport`, `RunVerdict`, `SourceCounts`, `SourceCount`, `Verb`, `Goals`, `Shown` and `shown`: the runner's report, the gate and what each verb prints. Witnesses: `report::tests::each_count_decides_its_verdict`, `report::tests::each_verb_shows_its_declarations`.
 - `Exercised` and `Row`: the fragment's exercised table, counted. Witnesses: `exercised::tests::a_module_carries_exactly_its_rows`, `exercised::tests::an_unsettled_declaration_carries_no_row`, `exercised::tests::a_near_miss_carries_no_refusal_row`, `exercised::tests::absorbing_sums_every_row`.
-- The corpus's two roots, run through the walk: `corpus::corpus::the_strict_root_checks_owing_nothing`, `corpus::corpus::the_fixture_root_settles_every_fixture`, `corpus::corpus::the_two_roots_exercise_every_row`, `corpus::corpus::a_run_lowers_each_source_once`.
+- `Program`, `Evaluation`, `ValueSpelling`, `Unfinished`, `Unrunnable`, `RunStatus`, `run_target::Absent` and `declaration_name::Absent`: the run stage. Witnesses: `evaluate::tests::a_value_runs_to_its_spelling`, `evaluate::tests::a_run_reaching_a_goal_blames_it`, `evaluate::tests::a_reference_the_machine_cannot_carry_is_never_run`, `evaluate::tests::each_outcome_class_has_its_status`, `evaluate::tests::the_run_target_is_the_last_name_declared`.
+- `Script`, `ScriptRun`, `Ran`, `execute` and `run_source`: the run verb. Witnesses: `tests::the_run_verb_routes_to_a_script`, `script::tests::each_kind_of_source_has_its_status`, `run::run::run_source_runs_source_text`, `run::run::run_source_file_runs_a_script_file`, `run::run::run_source_file_accepts_an_executable_shebang_line`, `run::run::run_source_file_reports_the_path_of_an_absent_file`, `run::run::run_source_file_surfaces_a_source_failure_unchanged`.
+- The corpus's two roots, run through the walk: `corpus::corpus::the_strict_root_checks_owing_nothing`, `corpus::corpus::the_fixture_root_settles_every_fixture`, `corpus::corpus::the_two_roots_exercise_every_row`, `corpus::corpus::a_run_lowers_each_source_once`; every run outcome they state, and the focusing of every declaration they accept: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`, `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus`, `corpus::corpus::focusing_is_total_on_the_model_corpus`, `corpus::corpus::focusing_is_total_on_the_pathological_corpus`; and the registration witness ([one walk registers every source](../surface-corpus/README.md#one-walk-registers-every-source)): `corpus::corpus::every_corpus_source_is_registered`, `corpus::corpus::a_planted_orphan_is_not_registered`.
 
 ## Expected features
 
@@ -79,11 +82,29 @@ cargo nextest run -p gandr-surface-dispatcher
 
 ## One composition serves both verbs
 
-`check` and `test` run the same walk and the same `compose`; they differ only in what `shown` prints and in what `--goals` does to the gate. A source is lowered exactly once per run, under one strictness, and each declaration gets exactly one verdict: the checker's, settled against what it states. `RunReport::lowerings` counts every lowering the crate performs, and the corpus suite asserts it equals the number of sources read.
+`check` and `test` run the same walk and the same `compose`; they differ only in what `shown` prints and in what `--goals` does to the gate. A source is lowered exactly once per run, under one strictness, and each declaration gets exactly one verdict: the checker's, settled against what it states. `RunReport::lowerings` counts every lowering the crate performs, and the corpus suite asserts it equals the number of sources read. `run` composes its one source through the same `compose`, under the root its path classifies as.
 
 The alternative was a total session pass and a separate strict tier over the same sources, which lowers each source twice and gives each declaration two verdicts that can disagree. The choice reverses only if a verb needs a different lowering of the same source, which would arrive as a parameter of the one composition rather than a second one.
 
 The session (`gandr-surface-session`) is the one other caller. It runs the same two halves `compose` runs — `lower_source`, then `judge_module` — and keeps the lowered module between them to hand the incremental checker, so a submission's verdicts are this composition's and the corpus agreement suite there compares them source by source. The halves are public rather than duplicated there because a second composition is exactly what this section rules out.
+
+## The run stage follows the check
+
+`judge_module` builds the `Program` once the kernel has readmitted every acceptance. Each declaration the checker accepted has its body focused into the command IL by `gandr-core-sequent` and is held as a transparent definition; a declaration owed its body is held opaque, and a refused one, and a code — a type, of which the machine carries no image — are held as the reason they do not run. `Program::evaluate` mints `return c` for the declaration at `c`, runs it on a fresh L machine under a budget of 2²⁴ steps, forces the terminal when it is a thunk, so a suspended computation runs and a function answers `<fun>`, and reads the terminal back into the core. Nothing runs that no caller asked for: the settle comparison runs the declarations that state a `runs` outcome, the session runs what the user entered, and `gandr run` runs one declaration. The alternative was a run pipeline of its own that composed the source again, which lowers twice and could judge differently from the `check` it follows; the choice reverses if building the program shows on the check path's measurements, when it would move behind a request.
+
+| What the run came to | `RunStatus` | `gandr run` exits |
+| -------------------- | ----------- | ----------------- |
+| `Evaluation::Value`: a value, spelled | `Value` | `0` |
+| `Evaluation::Blamed`: the run reached a declaration owed its body — returned it outside any suspension, forced, applied or matched it | `Failed` | `1` |
+| `Evaluation::Stuck`, `Evaluation::Unfinished`: any other stop short of a value; the budget spent, the store refusing, a terminal with no reading | `Failed` | `1` |
+| `Evaluation::Unrunnable`: the declaration, or one it refers to, was refused or is a code | `Unreached` | `2` |
+| `Ran::Refused`, `Ran::NoProgram`: a declaration of the source was refused, or it declares no name | `Unreached` | `2` |
+
+The three statuses are the prior implementation's script contract: `0` for a value, `1` for blame or a stuck configuration, `2` for a source that never reached the machine. A source holding any refusal — the lowering's, the checker's or its root's — does not run even when the target never refers to the refused declaration, as the prior implementation refused a script with an outcome-only refusal; a goal is no refusal, and a run that reaches one is blamed on it. Unrunnable references are found by walking the program's references before any command runs, so a run never starts that would meet a declaration the machine cannot carry.
+
+**The run target is the last name declared.** The prior implementation ran a source's final unnamed expression and called a source without one a source with no program. The fragment has no top-level expression, so the target is the declaration at the highest admission position, and a source declaring no name is `Ran::NoProgram`. The alternative, a distinguished name such as `main`, is a convention the language does not state. The choice reverses when the modules linker lowers a final unnamed expression: that expression becomes the target.
+
+**One spelling.** `Evaluation`'s `Display` is the spelling `gandr run` prints, the session's value line shows and a `runs("…")` expectation states byte for byte: an integer or a numeric literal as written, text quoted with Rust's debug escapes, `()`, a pair `(a, b)`, an injection `inl(v)` or `inr(v)`, and `<thunk>`, `<fun>` and `<code>` for what has no first-order reading; a blamed run is `` blame: `x` is owed its body ``. The prior implementation's driver printed a value's debug image (`Int(42)`) while its loop printed `42`; one spelling replaces both. The choice reverses when a printer directed by the value's type lands, and the corpus's stated outcomes are restated in its spelling.
 
 ## The kernel re-derives every acceptance
 

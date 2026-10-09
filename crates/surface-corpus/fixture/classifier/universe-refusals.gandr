@@ -10,6 +10,7 @@ def wrong_sort = Integer ;
 def graded : Type ;
 def graded = +U[1] (-F Integer) ;
 
+@[ runs("<fun>") ]
 def id(a : Type, x : a) -> -F a { ret x }
 
 def chosen : +U (-F Type) ;

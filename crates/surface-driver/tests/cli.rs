@@ -599,11 +599,12 @@ mod cli
         let transcript = stdout(&output);
         let printed: Vec<&str> = transcript.lines().collect();
         assert_eq!(
-            printed.get(.. 5),
+            printed.get(.. 6),
             Some(
                 &[
                     format!("▸ :load {}", source.display()).as_str(),
                     "answer : Integer",
+                    "= 42",
                     "▸ :type answer",
                     ": Integer",
                     "▸ def broken = missing ;",
@@ -613,7 +614,7 @@ mod cli
         );
         assert!(
             printed
-                .get(5)
+                .get(6)
                 .is_some_and(|line| line.starts_with("error[UnresolvedName]: ")),
             "{transcript}"
         );
@@ -654,6 +655,218 @@ mod cli
         assert!(
             stderr(&output).starts_with("gandr: the terminal face needs a terminal"),
             "{}",
+            stderr(&output)
+        );
+    }
+
+    /// A script of `text`, written to `name` in `scratch`, run by the driver.
+    ///
+    /// # Specification
+    ///
+    /// trivial.
+    fn run_script(
+        scratch: &Scratch,
+        name: &Path,
+        text: Text<'_>,
+    ) -> (PathBuf, Output)
+    {
+        let path = scratch.file(name, text);
+        let output = ran(gandr(&[Path::new("run").as_os_str(), path.as_os_str()]));
+        (path, output)
+    }
+
+    /// A run that returns a value prints it on standard output and exits zero.
+    #[test]
+    fn a_script_that_returns_a_value_leaves_successfully()
+    {
+        let scratch = Scratch::new(Path::new("script-value"));
+        let (_path, output) = run_script(
+            &scratch,
+            Path::new("value.gandr"),
+            Text::from("def main : +U (-F Integer) ;\ndef main = thunk { ret 42 } ;\n"),
+        );
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        assert_eq!(
+            stdout(&output),
+            "42\n",
+            "the run routes its value to the caller"
+        );
+        assert_eq!(stderr(&output), "", "a completed run writes no complaint");
+    }
+
+    /// The value of a completed run is the whole of standard output, once,
+    /// however many declarations the script holds.
+    #[test]
+    fn the_value_of_a_run_is_printed_once()
+    {
+        let scratch = Scratch::new(Path::new("script-once"));
+        let (_path, output) = run_script(
+            &scratch,
+            Path::new("once.gandr"),
+            Text::from(
+                "def answer = 42 ;\ndef copy = answer ;\ndef shown : +U (-F Integer) ;\ndef shown = thunk { ret copy } ;\n",
+            ),
+        );
+        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
+        assert_eq!(
+            stdout(&output).lines().collect::<Vec<_>>(),
+            ["42"],
+            "one value line, and nothing else on standard output"
+        );
+    }
+
+    /// A run that reaches a goal is blamed on it, on standard error, and
+    /// exits one.
+    #[test]
+    fn a_script_that_blames_leaves_with_a_failure_status()
+    {
+        let scratch = Scratch::new(Path::new("script-blame"));
+        let (path, output) = run_script(
+            &scratch,
+            Path::new("blame.gandr"),
+            Text::from(
+                "def later : +U (-F Integer) ;\ndef main : +U (-F Integer) ;\ndef main = thunk { force later } ;\n",
+            ),
+        );
+        assert_eq!(
+            code(&output),
+            Code(1_i32),
+            "a run that reaches a blame is a failure, not a success"
+        );
+        assert_eq!(stdout(&output), "", "a blamed run routes no value");
+        let blame = format!(
+            "gandr: {}: `main` blame: `later` is owed its body",
+            path.display()
+        );
+        assert!(
+            stderr(&output).lines().any(|line| line == blame),
+            "the blame names the goal reached: {}",
+            stderr(&output)
+        );
+    }
+
+    /// A script the checker refuses never reaches the machine: its refusal is
+    /// on standard error, nothing on standard output, and it exits two.
+    #[test]
+    fn an_ill_typed_script_is_refused_by_the_checker()
+    {
+        let scratch = Scratch::new(Path::new("script-ill-typed"));
+        let (path, output) = run_script(
+            &scratch,
+            Path::new("ill-typed.gandr"),
+            Text::from("def main : Integer ;\ndef main = \"five\" ;\n"),
+        );
+        assert_eq!(
+            code(&output),
+            Code(2_i32),
+            "an ill-typed script never reaches the machine"
+        );
+        assert_eq!(stdout(&output), "", "a refused script routes no result");
+        let complaint = stderr(&output);
+        assert!(
+            complaint.starts_with("error[TypeMismatch]: "),
+            "the checker's refusal is reported: {complaint}"
+        );
+        assert!(
+            complaint
+                .lines()
+                .any(|line| line == format!("gandr: {}: refused; nothing ran", path.display())),
+            "{complaint}"
+        );
+        assert!(
+            !complaint.contains('\u{1b}'),
+            "captured diagnostics stay plain: {complaint}"
+        );
+    }
+
+    /// A refusal of a declaration the run never reaches still stops the run.
+    #[test]
+    fn an_outcome_only_refusal_is_visible_in_a_script_run()
+    {
+        let scratch = Scratch::new(Path::new("script-outcome-only"));
+        let (_path, output) = run_script(
+            &scratch,
+            Path::new("outcome-only.gandr"),
+            Text::from("def wrong : Integer ;\ndef wrong = \"one\" ;\ndef main = 0 ;\n"),
+        );
+        assert_eq!(
+            code(&output),
+            Code(2_i32),
+            "an outcome-only refusal never reaches the machine"
+        );
+        assert_eq!(stdout(&output), "", "a refused script routes no result");
+        assert!(
+            stderr(&output).starts_with("error[TypeMismatch]: "),
+            "the refusal is reported: {}",
+            stderr(&output)
+        );
+    }
+
+    /// An absent script exits two, naming its path.
+    #[test]
+    fn an_absent_script_is_refused_by_path()
+    {
+        let scratch = Scratch::new(Path::new("script-absent"));
+        let absent = scratch.0.join("absent.gandr");
+        let output = ran(gandr(&[Path::new("run").as_os_str(), absent.as_os_str()]));
+        assert_eq!(
+            code(&output),
+            Code(2_i32),
+            "a source that never reached the machine is a refusal, not a run failure"
+        );
+        assert!(
+            stderr(&output).starts_with(&format!("gandr: {}: ", absent.display())),
+            "a read refusal names the path: {}",
+            stderr(&output)
+        );
+    }
+
+    /// A script declaring no name has nothing to run and exits two.
+    #[test]
+    fn a_script_with_no_program_is_refused()
+    {
+        let scratch = Scratch::new(Path::new("script-no-program"));
+        let (path, output) = run_script(
+            &scratch,
+            Path::new("nothing.gandr"),
+            Text::from("// declares nothing\n"),
+        );
+        assert_eq!(
+            code(&output),
+            Code(2_i32),
+            "a source with no runnable declaration never reaches the machine"
+        );
+        assert_eq!(
+            stderr(&output),
+            format!("gandr: {}: declares no name to run\n", path.display())
+        );
+    }
+
+    /// `run` takes exactly one operand.
+    #[test]
+    fn a_second_operand_is_refused()
+    {
+        let output = ran(gandr(&["run", "one.gandr", "two.gandr"]));
+        assert_eq!(
+            code(&output),
+            Code(2_i32),
+            "the script runner takes exactly one operand"
+        );
+    }
+
+    /// `-` is a path, not standard input, so it fails as an absent file.
+    #[test]
+    fn a_bare_dash_is_a_path_not_standard_input()
+    {
+        let output = ran(gandr(&["run", "-"]));
+        assert_eq!(
+            code(&output),
+            Code(2_i32),
+            "a bare dash is a path, so it fails as a missing file"
+        );
+        assert!(
+            stderr(&output).starts_with("gandr: -: "),
+            "the refusal names the path it tried: {}",
             stderr(&output)
         );
     }

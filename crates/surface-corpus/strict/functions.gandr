@@ -1,17 +1,23 @@
+@[ runs("<fun>") ]
 def identity : +U (Integer -> -F Integer) ;
 def identity = thunk { fn (x) { ret x } } ;
 
+@[ runs("<fun>") ]
 def first : +U (Integer -> Integer -> -F Integer) ;
 def first = thunk { fn (x) { fn (y) { ret x } } } ;
 
+@[ runs("42") ]
 def answer : Integer ;
 def answer = 42 ;
 
+@[ runs("42") ]
 def applied : +U (-F Integer) ;
 def applied = thunk { (force identity)(answer) } ;
 
+@[ runs("42") ]
 def chosen : +U (-F Integer) ;
 def chosen = thunk { ((force first)(answer))(7) } ;
 
+@[ runs("\"later\"") ]
 def delayed : +U (-F String) ;
 def delayed = thunk { ret "later" } ;

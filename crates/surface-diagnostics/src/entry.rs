@@ -287,10 +287,17 @@ impl<'step> Entries<'step>
                 },
                 | Maybe::Absent(produced_refusal::Absent::Unrefused) => Subject::Unsettled {
                     declaration,
-                    unsettlement: match declaration.stated() {
-                        | Stated::Verdict(Outcome::Checks(_)) => Unsettlement::Obligations,
-                        | Stated::Verdict(Outcome::Refuses(_)) => Unsettlement::Unproduced,
-                        | Stated::Malformed(_) => Unsettlement::Malformed,
+                    unsettlement: match (declaration.stated(), declaration.outcome()) {
+                        | (&Stated::Verdict(Outcome::Checks(_)), _)
+                        | (&Stated::Verdict(Outcome::Runs(_)), Outcome::Checks(_)) => {
+                            Unsettlement::Obligations
+                        },
+                        | (&Stated::Verdict(Outcome::Refuses(_)), _) => Unsettlement::Unproduced,
+                        | (
+                            &Stated::Verdict(Outcome::Runs(_)),
+                            Outcome::Runs(_) | Outcome::Refuses(_),
+                        ) => Unsettlement::RunOutcome,
+                        | (&Stated::Malformed(_), _) => Unsettlement::Malformed,
                     },
                 },
             },

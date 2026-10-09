@@ -1,5 +1,5 @@
 //! Routes a driver invocation into the gandr surface pipeline, and composes
-//! that pipeline: parse, lower, check, settle.
+//! that pipeline: parse, lower, check, settle, and run.
 //!
 //! The driver (`gandr-lang`) owns the argument surface and the process
 //! boundary; this crate owns what happens after an invocation is understood.
@@ -11,7 +11,8 @@
 //! [`dispatch`] reads no file and writes nothing. The `check` and `test` verbs
 //! route to a [`Walk`] over the paths they were given, and the walk's I/O —
 //! listing a directory, reading a source — happens one source at a time, as
-//! the driver advances it with [`Walk::step`].
+//! the driver advances it with [`Walk::step`]. The `run` verb routes to a
+//! [`Script`], which reads its one source when the driver runs it.
 //!
 //! # One composition serves both verbs
 //!
@@ -28,6 +29,16 @@
 //! session, which keeps the lowered module to hand the incremental checker
 //! beside the verdicts.
 //!
+//! # The run stage follows the check
+//!
+//! [`judge_module`] also focuses every accepted declaration into the command
+//! IL, and the [`Program`] it builds runs any declaration on the L machine and
+//! reads its terminal back: the settle comparison runs the declarations that
+//! state a `runs` outcome, the session runs what the user entered, and `gandr
+//! run` runs the last name a source declares. Nothing runs that no caller
+//! asked for, so `check` performs no run beyond the outcomes its sources
+//! state.
+//!
 //! # Membership is location
 //!
 //! [`classify`] decides from a source's path alone which root it sits under:
@@ -40,9 +51,11 @@
 //! reverse it, is in this crate's `README.md`.
 
 mod compose;
+mod evaluate;
 mod exercised;
 mod report;
 mod root;
+mod script;
 mod walk;
 
 use std::path::PathBuf;
@@ -56,6 +69,14 @@ pub use crate::compose::adapt;
 pub use crate::compose::compose;
 pub use crate::compose::judge_module;
 pub use crate::compose::lower_source;
+pub use crate::evaluate::Evaluation;
+pub use crate::evaluate::Program;
+pub use crate::evaluate::RunStatus;
+pub use crate::evaluate::Unfinished;
+pub use crate::evaluate::Unrunnable;
+pub use crate::evaluate::ValueSpelling;
+pub use crate::evaluate::declaration_name;
+pub use crate::evaluate::run_target;
 pub use crate::exercised::Exercised;
 pub use crate::exercised::Row;
 pub use crate::report::Goals;
@@ -68,6 +89,11 @@ pub use crate::report::Verb;
 pub use crate::report::shown;
 pub use crate::root::SourceRoot;
 pub use crate::root::classify;
+pub use crate::script::Ran;
+pub use crate::script::Script;
+pub use crate::script::ScriptRun;
+pub use crate::script::execute;
+pub use crate::script::run_source;
 pub use crate::walk::SourceFault;
 pub use crate::walk::Standing;
 pub use crate::walk::Step;
@@ -95,6 +121,12 @@ pub enum Invocation
         /// The sources and directories of sources to test, in order.
         paths: Vec<PathBuf>,
     },
+    /// `run`: run the program the source at `path` holds.
+    Run
+    {
+        /// The source file.
+        path: PathBuf,
+    },
 }
 
 /// What an invocation routed to, for the driver to render.
@@ -116,6 +148,8 @@ pub enum Outcome
         /// The walk, not yet started.
         walk: Walk,
     },
+    /// A source file to run as a program, not yet read.
+    Script(Script),
 }
 
 /// The toolchain-management status, rendered by the driver.
@@ -153,21 +187,24 @@ impl core::fmt::Display for StatusReport
 /// - ensures: each variant maps to exactly one [`Outcome`] variant: a bare
 ///   invocation to the status report, `check` to a walk run under
 ///   [`Verb::Check`] with the same goals setting, and `test` to a walk run
-///   under [`Verb::Test`], each walk over the invocation's paths in order.
-///   Routing performs no I/O of its own: a walk reads nothing until it is
-///   advanced, and building the grammar it parses with is computation. The
-///   optional `tracing` feature reports a span to the caller's subscriber.
+///   under [`Verb::Test`], each walk over the invocation's paths in order;
+///   `run` to a [`Script`] of its path. Routing performs no I/O of its own: a
+///   walk or a script reads nothing until it is advanced, and building the
+///   grammar it parses with is computation. The optional `tracing` feature
+///   reports a span to the caller's subscriber.
 /// - provides: the outcome the driver renders.
 /// - fails: never; routing is total over the invocation vocabulary.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 only — the decision surface is a three-variant match,
+/// - hypothesis: L3 only — the decision surface is a four-variant match,
 ///   enumerated exhaustively with the exact outcome asserted, the walk's paths
-///   observed through the order it visits them in.
+///   observed through the order it visits them in and the script's through the
+///   fault an absent one reports.
 /// - witness: `tests::status_routes_to_the_status_report`
 /// - witness: `tests::check_routes_to_a_walk_under_the_check_verb`
 /// - witness: `tests::the_test_verb_routes_to_a_walk`
+/// - witness: `tests::the_run_verb_routes_to_a_script`
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 #[inline]
 #[must_use]
@@ -183,6 +220,7 @@ pub fn dispatch(invocation: Invocation) -> Outcome
             verb: Verb::Test,
             walk: Walk::new(paths),
         },
+        | Invocation::Run { path } => Outcome::Script(Script::new(path)),
     }
 }
 
@@ -196,6 +234,7 @@ mod tests
     use super::Goals;
     use super::Invocation;
     use super::Outcome;
+    use super::ScriptRun;
     use super::StatusReport;
     use super::Step;
     use super::Verb;
@@ -271,6 +310,28 @@ mod tests
             first_fault_path(outcome),
             PathBuf::from("no/such/only.gandr"),
             "the walk visits the path given"
+        );
+    }
+
+    /// `run` routes to a script of its one path.
+    #[test]
+    fn the_run_verb_routes_to_a_script()
+    {
+        let outcome = dispatch(Invocation::Run {
+            path: PathBuf::from("no/such/script.gandr"),
+        });
+        let Outcome::Script(mut script) = outcome
+        else {
+            panic!("run routes to a script");
+        };
+        let ScriptRun::Fault { path, .. } = script.run()
+        else {
+            panic!("an absent script faults");
+        };
+        assert_eq!(
+            path,
+            PathBuf::from("no/such/script.gandr"),
+            "the script reads the path given"
         );
     }
 }
