@@ -53,7 +53,7 @@ mod tests
     use quenchant_shape::shape::Maybe;
 
     /// The strict corpus sources, by path from this crate.
-    const CORPUS: [&str; 2] = [
+    const CORPUS: [&str; 3] = [
         concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../surface-corpus/strict/values.gandr"
@@ -61,6 +61,10 @@ mod tests
         concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../surface-corpus/strict/functions.gandr"
+        ),
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../surface-corpus/strict/classifier/universes.gandr"
         ),
     ];
 
@@ -134,7 +138,9 @@ mod tests
     /// trivial.
     fn base(base: BaseType) -> String
     {
-        spell(&[ContentNode::Base(base)], NodeIndex::from(0)).to_string()
+        spell(&[ContentNode::Base(base)], NodeIndex::from(0))
+            .expect("a base type lays out")
+            .to_string()
     }
 
     /// A fresh session as the loop makes one, over the strict root.
@@ -483,7 +489,9 @@ mod tests
         else {
             panic!("identity is signed");
         };
-        let spelling = spell(checkpoint.content().nodes(), root).to_string();
+        let spelling = spell(checkpoint.content().nodes(), root)
+            .expect("the signature lays out")
+            .to_string();
         let mut repl = repl();
         let _goal = lines(&mut repl, signature);
         assert_eq!(lines(&mut repl, definition), [
@@ -494,6 +502,26 @@ mod tests
         assert!(
             !spelling.contains("ThunkType") && debug.contains("ThunkType"),
             "{spelling}"
+        );
+    }
+
+    /// A function whose later parameter's type reads an earlier type
+    /// parameter answers a type line in the dependent arrow's spelling: the
+    /// binder named, its universe, and the decodes written as the binder they
+    /// read; its value line follows.
+    #[test]
+    fn a_dependent_function_names_its_type_with_its_binder()
+    {
+        let mut repl = repl();
+        assert_eq!(
+            lines(&mut repl, "def id(a : Type, x : a) -> -F a { ret x }"),
+            [
+                (
+                    OutKind::Type,
+                    "id : +U ((a : Type) -> a -> -F a)".to_owned()
+                ),
+                (OutKind::Value, "<fun>".to_owned())
+            ]
         );
     }
 
@@ -630,7 +658,9 @@ mod tests
         assert!(matches!(ended, Ended::Completed));
         let integer = base(BaseType::Integer);
         let string = base(BaseType::String);
-        let unit = spell(&[ContentNode::UnitType], NodeIndex::from(0)).to_string();
+        let unit = spell(&[ContentNode::UnitType], NodeIndex::from(0))
+            .expect("the unit type lays out")
+            .to_string();
         let expected = [
             format!("▸ :load {}", CORPUS[0]),
             format!("answer : {integer}"),

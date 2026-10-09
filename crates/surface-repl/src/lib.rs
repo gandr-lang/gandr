@@ -17,10 +17,10 @@
 //!
 //! [`encode_submission`] turns what a chunk changed into a
 //! [`TranscriptBlock`](gandr_surface_render_remote::TranscriptBlock): a type
-//! line per checked declaration in [`spell`]'s one spelling, a goal line per
-//! owed one, the diagnostics renderer's report per refusal, and a card per
-//! parse repair ([`repair_cards`]). The encoder is a library function, so every
-//! face draws the same blocks.
+//! line per checked declaration, laid out by the presentation printer through
+//! [`spell`], a goal line per owed one, the diagnostics renderer's report per
+//! refusal, and a card per parse repair ([`repair_cards`]). The encoder is a
+//! library function, so every face draws the same blocks.
 //!
 //! # Two faces, one layout
 //!
@@ -68,8 +68,6 @@ pub use crate::interactive::Read;
 pub use crate::interactive::drive;
 pub use crate::interactive::run_interactive;
 pub use crate::remote::repair_cards;
-pub use crate::render::Fidelity;
-pub use crate::render::Spelling;
 pub use crate::render::spell;
 pub use crate::rows::Lead;
 pub use crate::rows::Mark;

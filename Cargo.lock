@@ -590,6 +590,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-surface-layout"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-surface-lowering"
 version = "0.0.0"
 dependencies = [
@@ -630,6 +638,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-surface-pretty"
+version = "0.0.0"
+dependencies = [
+ "expect-test",
+ "gandr-core-nbe",
+ "gandr-core-term",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "gandr-surface-layout",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-surface-render-remote"
 version = "0.0.0"
 dependencies = [
@@ -649,6 +670,7 @@ dependencies = [
  "gandr-surface-dispatcher",
  "gandr-surface-grammar",
  "gandr-surface-parser",
+ "gandr-surface-pretty",
  "gandr-surface-render-remote",
  "gandr-surface-session",
  "gandr-surface-syntax",

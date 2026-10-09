@@ -23,6 +23,7 @@ use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
+use gandr_surface_pretty::Presentation;
 use gandr_surface_render_remote::DiagCard;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::OutKind;
@@ -34,7 +35,6 @@ use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
 
 use crate::remote::repair_cards;
-use crate::render::Spelling;
 use crate::render::spell;
 
 quenchant_shape::reason_enum! {
@@ -52,6 +52,8 @@ quenchant_shape::reason_enum! {
             Refused,
             /// The item states no signature and synthesised none.
             Unsigned,
+            /// The printer reached a layout ceiling laying the type out.
+            Unpresentable,
         }
     }
 }
@@ -178,7 +180,8 @@ pub struct Encoded
 /// - requires: nothing.
 /// - ensures: the last checkpoint whose item key is `name`'s bytes answers: a
 ///   checked or owed item by its signature, a synthesised item by the type it
-///   produced, each through [`spell`].
+///   produced, each laid out through [`spell`]; a layout the printer refuses is
+///   an absence.
 /// - provides: the type a transcript line names a declaration by.
 /// - fails: never; an absence names its reason.
 /// - panics: none.
@@ -191,7 +194,7 @@ pub struct Encoded
 fn type_of(
     resume: Maybe<&Resume, submitted::Absent>,
     name: SourceFragment<'_>,
-) -> Maybe<Spelling, spelled::Absent>
+) -> Maybe<Presentation, spelled::Absent>
 {
     let Maybe::Present(resume) = resume
     else {
@@ -209,13 +212,19 @@ fn type_of(
         return Maybe::Absent(spelled::Absent::Uncheckpointed);
     };
     let content = checkpoint.content();
+    let laid_out = |presented: Result<Presentation, _>| {
+        presented.map_or(
+            Maybe::Absent(spelled::Absent::Unpresentable),
+            Maybe::Present,
+        )
+    };
     match *checkpoint.typing() {
         | Typing::Checked { .. } | Typing::Owed => match content.signature() {
-            | Maybe::Present(root) => Maybe::Present(spell(content.nodes(), root)),
+            | Maybe::Present(root) => laid_out(spell(content.nodes(), root)),
             | Maybe::Absent(_) => Maybe::Absent(spelled::Absent::Unsigned),
         },
         | Typing::Synthesised { ref produced, .. } => {
-            Maybe::Present(spell(produced.nodes(), NodeIndex::from(0)))
+            laid_out(spell(produced.nodes(), NodeIndex::from(0)))
         },
         | Typing::Refused(_) => Maybe::Absent(spelled::Absent::Refused),
     }
@@ -227,7 +236,7 @@ fn type_of(
 /// trivial.
 fn typed_line(
     name: SourceFragment<'_>,
-    spelling: Maybe<Spelling, spelled::Absent>,
+    spelling: Maybe<Presentation, spelled::Absent>,
 ) -> String
 {
     match spelling {
