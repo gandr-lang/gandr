@@ -1,0 +1,37 @@
+sign Cong {
+  sort Nat : Type;
+  oper add : (l : Nat, r : Nat) --> (sum : Nat);
+
+  rule cong2 : (
+    rule p : Nat ==> Nat,
+    rule q : Nat ==> Nat,
+    data x : Nat,
+    data y : Nat
+  ) ==> (z : Nat) {
+    node : p(x) ==> (x′);
+    node : q(y) ==> (y′);
+    node : add(x′, y′) --> (z);
+  };
+}
+
+sign Chain {
+  sort Nat : Type;
+  oper f : (a : Nat) --> (b : Nat);
+  oper g : (a : Nat) --> (b : Nat);
+  oper h : (a : Nat) --> (b : Nat);
+
+  oper pipeline : (i : Nat) --> (o : Nat) {
+    node s1 : f(i) --> (m1);
+    node s2 : g(m1) --> (m2);
+    node s3 : h(m2) --> (o);
+  };
+}
+
+oper accumulate : (stream : Stream) --> (out : Stream) {
+  node : zip(stream, state) --> (next, out);
+  feed : (next) --> (state);
+}
+
+oper split : (b : Bit) --> (_ : Bit, _ : Bit) {
+  node : tee(b) --> (_, _);
+}

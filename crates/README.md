@@ -36,8 +36,9 @@ crates/
 ├── storage-chunker/           gandr-storage-chunker           content-defined chunk boundaries and their committed parameters
 ├── storage-records/           gandr-storage-records           the authenticated ordered-record plane
 ├── storage-values/            gandr-storage-values            the content-addressed value plane: typed chunk DAG and content pointers
-├── surface-syntax/            gandr-surface-syntax            the concrete syntax tree and the mold references a grammar and a parser exchange
+├── surface-syntax/            gandr-surface-syntax            the molded concrete syntax tree and the mold references a grammar and a parser exchange
 ├── surface-grammar/           gandr-surface-grammar           the checked precedence-bounded grammar, its mold table and walk index, the built-in surface
+├── surface-parser/            gandr-surface-parser            the labeler, molder and resumable melder: source to molded tree with completion obligations
 ├── surface-dispatcher/        gandr-surface-dispatcher        routes a driver invocation into the surface pipeline
 └── surface-driver/            gandr-lang                      the `gandr` driver binary
 ```

@@ -1,0 +1,18 @@
+def anything : ?;
+
+def pure_unknown : F ?;
+def legacy_pure_unknown : F Unknown;
+
+def partial : Integer -> ?;
+def suspended : U ?;
+def choice : F Unit & ?;
+
+def pair_left : ? * Integer;
+def takes_unknown : ? -> F Unit;
+
+def parenthesized : Integer -> (?);
+
+def session_receive : ? Integer . end;
+
+def term_hole = ?;
+def named_term_hole = ?goal;

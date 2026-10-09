@@ -1,0 +1,5 @@
+#!{ printf 'literal $x and \n stay verbatim'; }
+
+#!{ echo $HOME ${HOME}; }
+
+#!{ echo ${prefix}_suffix ${x}${y}; }

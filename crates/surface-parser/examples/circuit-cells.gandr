@@ -1,0 +1,47 @@
+sign Nat {
+  sort Nat : Type;
+  oper add : (Nat, Nat) --> Nat;
+
+  rule cong2 : (
+    rule p : Nat ==> Nat,
+    rule q : Nat ==> Nat,
+    data x : Nat,
+    data y : Nat
+  ) ==> (z : Nat) {
+    node : p(x) ==> (x′);
+    node : q(y) ==> (y′);
+    node : add(x′, y′) --> (z);
+  };
+}
+
+oper accumulate : (stream : Stream(Nat)) --> (out2 : Stream(Nat)) {
+  node : zip(stream, state) --> (next, out2);
+  feed : (next) --> (state);
+}
+
+sign NatDesugared {
+  sort Nat : Type;
+  oper add : (l : Nat, r : Nat) --> (sum : Nat);
+}
+
+sign Labelled {
+  sort Nat : Type;
+  oper unit : () --> (out : Nat);
+  oper step : (i : Nat) --> (o : Nat);
+
+  rule twice : (rule p : x ==> x′, data x : Nat) ==> (o : Nat) {
+    node w1 : p(x) ==> (m);
+    node w2 : step(m) --> (o);
+  };
+}
+
+sign Invertible {
+  sort Bit : Type;
+  oper flip : (b : Bit) --> (c : Bit);
+  rule involutive : (b : Bit) <=> (c : Bit);
+}
+
+sign Reserved {
+  sort Bit : Type;
+  oper negate : (b : Bit) <-> (c : Bit);
+}

@@ -1,0 +1,40 @@
+sign ConsumedTwice {
+  sort Nat : Type;
+  oper add : (l : Nat, r : Nat) --> (sum : Nat);
+
+  rule doubled : (data x : Nat) ==> (z : Nat) {
+    node : add(x, x) --> (z);
+  };
+}
+
+sign ProducedTwice {
+  sort Nat : Type;
+  oper f : (a : Nat) --> (b : Nat);
+  oper g : (a : Nat) --> (b : Nat);
+
+  oper collide : (i : Nat, j : Nat) --> (o : Nat) {
+    node : f(i) --> (m);
+    node : g(j) --> (m);
+  };
+}
+
+sign SharedRedexPort {
+  sort Nat : Type;
+  oper add : (l : Nat, r : Nat) --> (sum : Nat);
+
+  rule overlap : (
+    rule p : Nat ==> Nat,
+    rule q : Nat ==> Nat,
+    data x : Nat
+  ) ==> (z : Nat) {
+    node : p(x) ==> (m);
+    node : q(x) ==> (n);
+    node : add(m, n) --> (z);
+  };
+}
+
+sign SortDisagreement {
+  sort Nat : Type;
+  sort Bit : Type;
+  oper narrow : (v : Nat) --> (v : Bit);
+}

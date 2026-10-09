@@ -1,0 +1,16 @@
+data NatOp : Type {
+  Zero : NatOp;
+  Succ : (n : NatOp) --> NatOp;
+  oper add(m : NatOp, n : NatOp) -> NatOp;
+}
+
+data NatRule : Type {
+  Zero : NatRule;
+  Succ : (n : NatRule) --> NatRule;
+  rule id(Zero) ==> Zero;
+}
+
+data NatRetired : Type {
+  Zero : NatRetired;
+  op stale(x : NatRetired) -> NatRetired;
+}

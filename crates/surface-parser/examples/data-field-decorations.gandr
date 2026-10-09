@@ -1,0 +1,9 @@
+data Vec(a : Type) : Type {
+  Nil : Vec(a);
+  Cons : (1 x : a, xs : Vec(a)) --> Vec(a);
+}
+
+data Expr(a : Type) : Type {
+  Lit : (x : Integer) --> Expr(a);
+  Add : (l : Expr(a), r : Expr(a)) --> Expr(a) [ctor, assoc];
+}

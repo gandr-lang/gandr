@@ -1,0 +1,16 @@
+sign CatShape {
+  sort Ob : Type;
+  sort Hom(dom: Ob, cod: Ob) : Type;
+
+  oper id : (a : Ob) --> Hom(a, a);
+  oper comp : (f : Hom(a, b), g : Hom(b, c)) --> Hom(a, c);
+
+  rule unitL : comp(id(a), f) ==> f;
+  rule unitR : comp(f, id(b)) ==> f;
+  rule assoc : comp(comp(f, g), h) ==> comp(f, comp(g, h));
+
+  rule triangle : (assoc(f, id(b), g) then comp(f, unitL(g)))
+              ==> comp(unitR(f), g);
+  rule pentagon : (assoc(comp(f, g), h, k) then assoc(f, g, comp(h, k)))
+              ==> (comp(assoc(f, g, h), k) then assoc(f, comp(g, h), k) then comp(f, assoc(g, h, k)));
+}

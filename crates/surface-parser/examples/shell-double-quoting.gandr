@@ -1,0 +1,7 @@
+#!{ echo "hello world"; }
+
+#!{ printf "col1\tcol2\n"; }
+
+#!{ echo "home is $HOME and user is ${USER}"; }
+
+#!{ printf '%s\n' "value $x"; }

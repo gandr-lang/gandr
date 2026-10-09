@@ -1,0 +1,9 @@
+op infixl 6 "<|>" ;
+op infixr 5 "<>" ;
+op prefix 9 "!" ;
+op postfix 9 "?" ;
+
+rec {
+  def even(n: Integer) -> F Bool { ret odd[<](n) }
+  def odd(n: Integer) -> F Bool { ret even[<](n) }
+}

@@ -1,0 +1,3 @@
+data Declared : Type {
+  Mk : Declared [variance];
+}

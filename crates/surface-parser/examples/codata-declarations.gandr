@@ -1,0 +1,22 @@
+codata Stream(a : Type) : Type {
+  head : a;
+  tail : Stream(a);
+}
+
+codata Iter(a : Type) : Type {
+  next : F(Option(#{ item : a, rest : Iter(a) }));
+}
+
+codata Fun(a : Type, b : Type) : Type {
+  ap(x : a) : b;
+}
+
+codata Session : Type {
+  1 step : F(Unit);
+}
+
+codata Colist(a : Type) : Type {
+  head : a;
+  tail : Colist(a);
+  rule tail(x) ==> x;
+}

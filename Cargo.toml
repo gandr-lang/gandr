@@ -14,6 +14,7 @@ members = [
   "crates/surface-dispatcher",
   "crates/surface-driver",
   "crates/surface-grammar",
+  "crates/surface-parser",
   "crates/surface-syntax",
   "crates/theory-cell-complexes",
   "crates/theory-graphs",
@@ -132,15 +133,24 @@ path = "crates/storage-records"
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
 
+# The checked precedence-bounded grammar: its mold table, its precedence
+# DAG and the built-in surface the melder pushes over.
+# consumers:
+# - surface-parser
+[workspace.dependencies.gandr-surface-grammar]
+path = "crates/surface-grammar"
+
 # The concrete syntax tree and the grammar-facing mold vocabulary it carries.
 # consumers:
 # - surface-grammar
+# - surface-parser
 [workspace.dependencies.gandr-surface-syntax]
 path = "crates/surface-syntax"
 
 # The precedence DAG, the walk machine, and the graph algorithms they read.
 # consumers:
 # - surface-grammar
+# - surface-parser
 [workspace.dependencies.gandr-theory-graphs]
 path = "crates/theory-graphs"
 
@@ -160,6 +170,7 @@ default-features = false
 # consumers:
 # - kernel-strata (dev)
 # - storage-records (dev)
+# - surface-parser (dev)
 # - theory-cell-complexes (dev)
 # - theory-graphs (dev)
 # - theory-orders (dev)

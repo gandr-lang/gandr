@@ -1,0 +1,7 @@
+#!{ [ cd build; ls ]; }
+
+#!{ [ echo hi ]; }
+
+#!{ [ cd src; grep foo ] | sort; }
+
+#!{ [ echo outer; [ echo inner ] ]; }

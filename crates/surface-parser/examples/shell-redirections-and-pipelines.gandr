@@ -1,0 +1,13 @@
+#!{ echo hi > out; }
+#!{ echo more >> out; }
+#!{ cat < in; }
+
+#!{ make 2> err; }
+#!{ make 2>&1; }
+
+#!{ cat data | sort; }
+#!{ make |& tee log; }
+
+#!{ probe && report; }
+#!{ probe || abort; }
+#!{ warm; run & }

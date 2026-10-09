@@ -1,0 +1,15 @@
+def for_each() {
+  for x in xs { drop(x); }
+}
+
+def until_done() {
+  while cond { break; }
+}
+
+def spin() {
+  loop { continue; }
+}
+
+def sift() {
+  for x in xs { if p { break; } else { continue; } }
+}
