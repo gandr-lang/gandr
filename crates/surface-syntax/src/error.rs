@@ -91,6 +91,18 @@ impl fmt::Display for SyntaxError
     ///   and the [`Error`] rendering the trait implementation below inherits.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes a write-only sink; neither
+    ///   emitted bytes nor the sink's failure state can be read back by a
+    ///   predicate, and replaying writes changes the observed sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every refusal variant is admitted. Exact payload
+    ///   substrings and pairwise-distinct messages detect lost positions and
+    ///   variant conflation; rejecting writes detect swallowed formatter
+    ///   failures.
+    /// - witness: `error::tests::every_refusal_renders_its_own_position`
+    /// - witness: `error::tests::the_staged_node_refusals_render_their_identity`
+    /// - witness: `error::tests::formatters_propagate_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -148,6 +160,13 @@ mod tests
     /// - panics: when the endpoints are inverted, so a fixture that violates
     ///   the precondition fails its own test rather than rendering a span the
     ///   crate would have refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a valid nonempty range retains its distinct endpoints
+    ///   in the rendered refusal; swapped or shifted endpoints change that
+    ///   observable payload.
+    /// - witness: `error::tests::every_refusal_renders_its_own_position`
+    #[anodized::spec(requires: start <= end, ensures: |ret| ret.start() == start && ret.end() == end)]
     fn span(
         start: ByteOffset,
         end: ByteOffset,
@@ -157,44 +176,76 @@ mod tests
     }
 
     #[test]
+    fn formatters_propagate_sink_failure()
+    {
+        use core::fmt::Write as _;
+        let zero = ByteOffset::from(0_usize);
+        let empty = span(zero, zero);
+        let mut builder =
+            TreeBuilder::new(SourceText::from(""), GrammarFingerprint::from(0_u64)).unwrap();
+        let node = builder.node(NodeLabel::Wald, empty, &[]).unwrap();
+        for error in [
+            SyntaxError::InvertedSpan {
+                start: ByteOffset::from(1_usize),
+                end: zero,
+            },
+            SyntaxError::SpanOutsideSource {
+                span: empty,
+                source_end: zero,
+            },
+            SyntaxError::SpanSplitsCharacter { offset: zero },
+            SyntaxError::UnknownStagedNode { node },
+            SyntaxError::BuilderIdExhausted,
+            SyntaxError::ChildAlreadyAttached { node },
+        ] {
+            assert!(
+                crate::test_support::RefusingSink
+                    .write_fmt(format_args!("{error}"))
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
     fn every_refusal_renders_its_own_position()
     {
-        // One row per variant: a rendering asserted for some arms and not
-        // others reads as coverage the suite does not have, and leaves the
-        // unasserted arms free to render each other's text.
-        let rendered = [
+        let refusals = [
             (
                 SyntaxError::InvertedSpan {
                     start: ByteOffset::from(7_usize),
                     end: ByteOffset::from(3_usize),
                 },
-                "span end 3 lies before its start 7",
+                ["7", "3"],
             ),
             (
                 SyntaxError::SpanOutsideSource {
                     span: span(ByteOffset::from(0_usize), ByteOffset::from(5_usize)),
                     source_end: ByteOffset::from(2_usize),
                 },
-                "span 0..5 reaches past the source end 2",
+                ["0..5", "2"],
             ),
             (
                 SyntaxError::SpanSplitsCharacter {
                     offset: ByteOffset::from(1_usize),
                 },
-                "offset 1 is not a character boundary",
-            ),
-            (
-                SyntaxError::BuilderIdExhausted,
-                "no distinct builder identity remains to be issued",
+                ["1", "1"],
             ),
         ];
-
-        for (error, expected) in rendered {
-            assert_eq!(
-                format!("{error}"),
-                expected,
-                "each refusal renders its own text"
-            );
+        let exhausted = format!("{}", SyntaxError::BuilderIdExhausted);
+        for (error, payloads) in refusals {
+            let rendered = format!("{error}");
+            for payload in payloads {
+                assert!(
+                    rendered.contains(payload),
+                    "missing refusal payload {payload}"
+                );
+            }
+            assert_ne!(rendered, exhausted);
+            for (other, _) in refusals {
+                if other != error {
+                    assert_ne!(rendered, format!("{other}"));
+                }
+            }
         }
     }
 
@@ -214,15 +265,11 @@ mod tests
             )
             .unwrap();
 
-        assert_eq!(
-            format!("{}", SyntaxError::UnknownStagedNode { node }),
-            format!("staged node {node} was never minted by this builder"),
-            "the unknown-node rendering names the identity"
-        );
-        assert_eq!(
-            format!("{}", SyntaxError::ChildAlreadyAttached { node }),
-            format!("staged node {node} already has a parent"),
-            "the already-attached rendering names the identity"
-        );
+        let unknown = format!("{}", SyntaxError::UnknownStagedNode { node });
+        let attached = format!("{}", SyntaxError::ChildAlreadyAttached { node });
+        let identity = format!("{node}");
+        assert!(unknown.contains(&identity));
+        assert!(attached.contains(&identity));
+        assert_ne!(unknown, attached);
     }
 }

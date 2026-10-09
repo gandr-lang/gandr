@@ -140,6 +140,8 @@ impl NodeLabel
     ///   half is written beside it by the digest.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the specification evaluator is not const; adding it
+    ///   would remove this callable's public compile-time availability.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the vocabulary is a finite class, enumerated
@@ -176,6 +178,8 @@ impl NodeLabel
     /// - provides: the text half of a node's digest preimage.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the specification evaluator is not const; adding it
+    ///   would remove this callable's public compile-time availability.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the vocabulary is a finite class, enumerated
@@ -198,10 +202,13 @@ impl NodeLabel
     ///   folding their digests, so layout never reaches an ancestor's identity.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the specification evaluator is not const; adding it
+    ///   would remove this callable's public compile-time availability.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the vocabulary is a finite class, enumerated
-    ///   exhaustively with each variant's exact answer asserted.
+    ///   exhaustively with each variant's exact answer asserted; changing the
+    ///   boundary between layout and content flips an observed answer.
     /// - witness: `label::tests::only_layout_is_insignificant`
     #[inline]
     #[must_use]

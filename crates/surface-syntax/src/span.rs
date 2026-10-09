@@ -97,6 +97,16 @@ impl fmt::Display for SourceFragment<'_>
     /// - provides: the quoted text a diagnostic renderer places in its message.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter's write-only sink exposes neither
+    ///   emitted bytes nor its eventual failure to a return-value predicate;
+    ///   repeating the writes would change that sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact output at empty, ordinary and boundary values
+    ///   detects payload loss and altered rendering; a rejecting sink detects a
+    ///   swallowed write failure.
+    /// - witness: `span::tests::formatters_preserve_text_and_numeric_options`
+    /// - witness: `span::tests::formatters_propagate_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -157,6 +167,16 @@ impl fmt::Display for SourceText<'_>
     /// - provides: the source echo a diagnostic renderer prints around a span.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter's write-only sink exposes neither
+    ///   emitted bytes nor its eventual failure to a return-value predicate;
+    ///   repeating the writes would change that sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact output at empty, ordinary and boundary values
+    ///   detects payload loss and altered rendering; a rejecting sink detects a
+    ///   swallowed write failure.
+    /// - witness: `span::tests::formatters_preserve_text_and_numeric_options`
+    /// - witness: `span::tests::formatters_propagate_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -179,8 +199,15 @@ impl<'source> SourceText<'source>
     ///   the end an empty span at the text's tail carries.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, ASCII and multibyte UTF-8 sources expose
+    ///   byte-count versus character-count and off-by-one mutations through
+    ///   their exact end offsets.
+    /// - witness: `span::tests::a_source_end_is_its_byte_length`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.0 == self.0.len())]
     pub fn end(self) -> ByteOffset
     {
         ByteOffset(self.0.len())
@@ -223,9 +250,17 @@ impl<'source> SourceText<'source>
     /// - witness: `span::tests::a_span_one_byte_past_the_source_end_is_refused`
     /// - witness: `span::tests::a_start_inside_a_character_is_refused`
     /// - witness: `span::tests::an_end_inside_a_character_is_refused`
+    /// - witness: `span::tests::fragment_faults_have_deterministic_precedence`
     #[inline]
-    #[spec(ensures: |ret| {
-        ret.as_ref().ok().map(|fragment| fragment.0) == self.0.get(span.start.0 .. span.end.0)
+    #[spec(ensures: |ret| match ret {
+        Ok(fragment) => self.0.get(span.start.0 .. span.end.0) == Some(fragment.0),
+        Err(SyntaxError::SpanOutsideSource { span: refused, source_end }) =>
+            refused == span && source_end.0 == self.0.len() && span.end.0 > self.0.len(),
+        Err(SyntaxError::SpanSplitsCharacter { offset }) =>
+            span.end.0 <= self.0.len()
+                && offset == if self.0.is_char_boundary(span.start.0) { span.end } else { span.start }
+                && !self.0.is_char_boundary(offset.0),
+        Err(_) => false,
     })]
     pub fn fragment(
         self,
@@ -291,6 +326,16 @@ impl fmt::Display for ByteOffset
     /// - provides: the position a diagnostic quotes.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter's write-only sink exposes neither
+    ///   emitted bytes nor its eventual failure to a return-value predicate;
+    ///   repeating the writes would change that sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact output at empty, ordinary and boundary values
+    ///   detects payload loss and altered rendering; a rejecting sink detects a
+    ///   swallowed write failure.
+    /// - witness: `span::tests::formatters_preserve_text_and_numeric_options`
+    /// - witness: `span::tests::formatters_propagate_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -343,6 +388,16 @@ impl fmt::Display for ByteLength
     /// - provides: the width a renderer reports for a node.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter's write-only sink exposes neither
+    ///   emitted bytes nor its eventual failure to a return-value predicate;
+    ///   repeating the writes would change that sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact output at empty, ordinary and boundary values
+    ///   detects payload loss and altered rendering; a rejecting sink detects a
+    ///   swallowed write failure.
+    /// - witness: `span::tests::formatters_preserve_text_and_numeric_options`
+    /// - witness: `span::tests::formatters_propagate_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -358,6 +413,20 @@ impl fmt::Display for ByteLength
 /// The range is half-open so an empty span is expressible at every position and
 /// two adjacent spans meet without overlapping, which is what lets a parent's
 /// span be the join of its children's without arithmetic on widths.
+///
+/// # Specification
+/// - ensures: the start never exceeds the end; equal endpoints name an empty
+///   range, not an invalid span.
+/// - executable: none — this type has no call boundary; its construction and
+///   joining obligations belong to `ByteSpan::new` and `ByteSpan::join`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — ordered, equal and inverted endpoint pairs distinguish
+///   retained endpoints, emptiness and refusal; exact endpoints and errors
+///   detect swapping, clamping and an off-by-one ordering guard.
+/// - witness: `span::tests::an_ordinary_span_keeps_its_endpoints`
+/// - witness: `span::tests::an_empty_span_is_admitted`
+/// - witness: `span::tests::an_inverted_span_is_refused`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ByteSpan
 {
@@ -380,6 +449,16 @@ impl fmt::Display for ByteSpan
     ///   both read.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter's write-only sink exposes neither
+    ///   emitted bytes nor its eventual failure to a return-value predicate;
+    ///   repeating the writes would change that sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact output at empty, ordinary and boundary values
+    ///   detects payload loss and altered rendering; a rejecting sink detects a
+    ///   swallowed write failure.
+    /// - witness: `span::tests::formatters_preserve_text_and_numeric_options`
+    /// - witness: `span::tests::formatters_propagate_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -401,12 +480,12 @@ impl ByteSpan
     /// - ensures: on success the span's start and end are exactly the offered
     ///   offsets, and its start is at or below its end.
     /// - provides: the only way to mint a span, so the ordering invariant holds
-    ///   of every span a tree carries. This stays a `const fn` without
-    ///   `#[spec]`: the pinned `anodized` expansion calls a non-const evaluator
-    ///   (`E0015`).
+    ///   of every span a tree carries.
     /// - fails: [`SyntaxError::InvertedSpan`], carrying both offered offsets,
     ///   when `end` is strictly below `start`.
     /// - panics: none.
+    /// - executable: none — the pinned specification evaluator is non-const;
+    ///   instrumentation would remove this constructor's const-callable API.
     ///
     /// # Errors
     /// [`SyntaxError::InvertedSpan`] when `end < start`.
@@ -461,11 +540,11 @@ impl ByteSpan
     /// - ensures: the difference between the endpoints, which is exact because
     ///   [`ByteSpan::new`] admits no inverted span, so the saturating
     ///   subtraction never reaches its floor.
-    /// - provides: the width a renderer allots to a node. This stays a `const
-    ///   fn` without `#[spec]`: the pinned `anodized` expansion calls a
-    ///   non-const evaluator (`E0015`).
+    /// - provides: the width a renderer allots to a node.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — the pinned specification evaluator is non-const;
+    ///   instrumentation would remove this method's const-callable API.
     ///
     /// # Adequacy
     /// - hypothesis: L3 only — one subtraction, separated by an empty span and
@@ -549,6 +628,16 @@ mod tests
     /// - panics: when the endpoints are inverted, so a fixture that violates
     ///   the precondition fails its own test rather than reading a span the
     ///   crate would have refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered and equal endpoints are observed through
+    ///   exact start, end and extent values; endpoint swaps or clamping differ.
+    /// - witness: `span::tests::an_ordinary_span_keeps_its_endpoints`
+    /// - witness: `span::tests::a_span_length_is_its_byte_extent`
+    #[anodized::spec(
+        requires: start <= end,
+        ensures: |ret| ret.start() == start && ret.end() == end,
+    )]
     fn span(
         start: ByteOffset,
         end: ByteOffset,
@@ -719,12 +808,90 @@ mod tests
     }
 
     #[test]
+    fn fragment_faults_have_deterministic_precedence()
+    {
+        let source = SourceText::from("éé");
+        let outside = span(ByteOffset::from(1_usize), ByteOffset::from(5_usize));
+        assert_eq!(
+            source.fragment(outside),
+            Err(SyntaxError::SpanOutsideSource {
+                span: outside,
+                source_end: ByteOffset::from(4_usize),
+            })
+        );
+        let both_split = span(ByteOffset::from(1_usize), ByteOffset::from(3_usize));
+        assert_eq!(
+            source.fragment(both_split),
+            Err(SyntaxError::SpanSplitsCharacter {
+                offset: ByteOffset::from(1_usize),
+            })
+        );
+        let tail = span(ByteOffset::from(4_usize), ByteOffset::from(4_usize));
+        assert_eq!(source.fragment(tail), Ok(SourceFragment::from("")));
+    }
+
+    #[test]
+    fn formatters_preserve_text_and_numeric_options()
+    {
+        for text in ["", "é\n\"", "source"] {
+            assert_eq!(alloc::format!("{}", SourceText::from(text)), text);
+            assert_eq!(alloc::format!("{}", SourceFragment::from(text)), text);
+        }
+        for count in [0_usize, 12, usize::MAX] {
+            assert_eq!(
+                alloc::format!("{:*>+24}", ByteOffset::from(count)),
+                alloc::format!("{count:*>+24}")
+            );
+            assert_eq!(
+                alloc::format!("{:*>+24}", ByteLength::from(count)),
+                alloc::format!("{count:*>+24}")
+            );
+        }
+        assert_eq!(
+            alloc::format!("{}", span(ByteOffset::from(0), ByteOffset::from(0))),
+            "0..0"
+        );
+        assert_eq!(
+            alloc::format!("{}", span(ByteOffset::from(2), ByteOffset::from(17))),
+            "2..17"
+        );
+    }
+
+    #[test]
+    fn formatters_propagate_sink_failure()
+    {
+        use core::fmt::Write as _;
+        let mut sink = crate::test_support::RefusingSink;
+        assert!(
+            sink.write_fmt(format_args!("{}", SourceText::from("x")))
+                .is_err()
+        );
+        assert!(
+            sink.write_fmt(format_args!("{}", SourceFragment::from("x")))
+                .is_err()
+        );
+        assert!(
+            sink.write_fmt(format_args!("{}", ByteOffset::from(0)))
+                .is_err()
+        );
+        assert!(
+            sink.write_fmt(format_args!("{}", ByteLength::from(0)))
+                .is_err()
+        );
+        assert!(
+            sink.write_fmt(format_args!(
+                "{}",
+                span(ByteOffset::from(0), ByteOffset::from(0))
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
     fn a_source_end_is_its_byte_length()
     {
-        assert_eq!(
-            SourceText::from(ACCENTED).end(),
-            ByteOffset::from(4_usize),
-            "the end counts bytes, not characters"
-        );
+        for (text, length) in [("", 0_usize), ("ab", 2), (ACCENTED, 4)] {
+            assert_eq!(SourceText::from(text).end(), ByteOffset::from(length));
+        }
     }
 }
