@@ -119,13 +119,19 @@ use gandr_kernel_core::Unfoldable;
 use gandr_kernel_core::Unfoldings;
 use gandr_kernel_core::replay;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::AdmissionMark;
 use gandr_kernel_term::AnyNode;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Declaration as KernelDeclaration;
+use gandr_kernel_term::EncodedArtifact;
 use gandr_kernel_term::GroundSort;
 use gandr_kernel_term::LevelSignature;
+use gandr_kernel_term::MarkedDeclaration;
+use gandr_kernel_term::StructuredName;
 use gandr_kernel_term::TermArena;
+use gandr_kernel_term::encode;
 use quenchant_shape::shape::Maybe;
 
 use crate::code::Certificate;
@@ -460,7 +466,7 @@ impl ArtifactAudit
 }
 
 /// A module's readmission: the kernel environment it built, one outcome per
-/// declaration, and the artifact's audit.
+/// declaration, the artifact's audit, and the declarations the kernel admitted.
 #[derive(Clone, Debug)]
 pub struct Readmission
 {
@@ -470,6 +476,9 @@ pub struct Readmission
     readmitted: Vec<Readmitted>,
     /// The union of the admitted declarations' audits.
     audit: ArtifactAudit,
+    /// The declarations the kernel admitted, as they were staged, in kernel
+    /// admission order.
+    admitted: Vec<KernelDeclaration>,
 }
 
 impl Readmission
@@ -506,6 +515,57 @@ impl Readmission
     pub const fn audit(&self) -> &ArtifactAudit
     {
         &self.audit
+    }
+
+    /// The artifact of every declaration that crossed, each under the
+    /// structured name `names` gives its module position.
+    ///
+    /// # Specification
+    /// - requires: `names` is keyed by module position, the positions the
+    ///   judged declarations carry.
+    /// - ensures: the canonical encoding of the environment's arena and the
+    ///   admitted declarations, in kernel admission order, each marked checked
+    ///   and carrying the name `names` holds at its module position, or no name
+    ///   where it holds none. A declaration that did not cross is not in the
+    ///   artifact, and a reference in it reads the kernel position its target
+    ///   took, never a name.
+    /// - provides: the export a reader decodes: a flattened member is named by
+    ///   its segments, and is still referred to by position.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module whose first declaration is marked, whose
+    ///   later ones read earlier ones, and whose last has no name, decoded and
+    ///   asserted at each declaration's exact name and the kernel position each
+    ///   reference reads.
+    /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
+    #[inline]
+    #[must_use]
+    pub fn export(
+        &self,
+        mut names: BTreeMap<ConstantIndex, StructuredName>,
+    ) -> EncodedArtifact
+    {
+        let mut marked = Vec::with_capacity(self.admitted.len());
+        for entry in &self.readmitted {
+            let (Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. }) =
+                entry.outcome
+            else {
+                continue;
+            };
+            let Some(declaration) = self.admitted.get(usize::from(admitted.position()))
+            else {
+                continue;
+            };
+            let name = names.remove(&entry.constant).unwrap_or_default();
+            marked.push(MarkedDeclaration::new(
+                AdmissionMark::Checked,
+                declaration.clone().named(name),
+            ));
+        }
+
+        encode(self.environment.arena(), &marked)
     }
 }
 
@@ -597,6 +657,7 @@ where
 {
     let mut environment = Environment::new();
     let mut positions = Positions::default();
+    let mut admitted = Vec::new();
     let mut readmitted = Vec::with_capacity(report.judged().len());
     for judged in report.judged() {
         let source = Source {
@@ -609,6 +670,7 @@ where
                 &mut environment,
                 source,
                 &mut positions,
+                &mut admitted,
                 judged.constant(),
                 Offer::Definition {
                     declared: declared.id(),
@@ -620,6 +682,7 @@ where
                 &mut environment,
                 source,
                 &mut positions,
+                &mut admitted,
                 judged.constant(),
                 Offer::Definition {
                     declared: synthesised.produced().id(),
@@ -631,6 +694,7 @@ where
                 &mut environment,
                 source,
                 &mut positions,
+                &mut admitted,
                 judged.constant(),
                 Offer::Axiom {
                     declared: entry.absence().declared().id(),
@@ -651,6 +715,7 @@ where
         environment,
         readmitted,
         audit,
+        admitted,
     }
 }
 
@@ -713,16 +778,18 @@ enum Erased
 ///
 /// # Specification
 /// - requires: `positions` holds the kernel position, and for a definition the
-///   bodies, of every module declaration that crossed so far.
+///   bodies, of every module declaration that crossed so far, and `exports` the
+///   declarations they crossed as, in kernel admission order.
 /// - ensures: the offer erased into one staging session; every certificate the
 ///   erasure collected, passed through `vouch`, replayed by the kernel in that
 ///   session; and, when each replays to convertible, the offer admitted:
 ///   [`Outcome::Defined`] for a definition and [`Outcome::Assumed`] for an
 ///   axiom, each with the kernel's receipt and audit, when the kernel admits
-///   it, recorded in `positions`. A refused erasure or a declined certificate
-///   discards the session and a rejection is truncated by the kernel, so the
-///   environment is as it was on every outcome but an admission. The replayed
-///   verdicts are returned beside the outcome.
+///   it, recorded in `positions` and its staged declaration appended to
+///   `exports`. A refused erasure or a declined certificate discards the
+///   session and a rejection is truncated by the kernel, so the environment is
+///   as it was on every outcome but an admission. The replayed verdicts are
+///   returned beside the outcome.
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
@@ -730,6 +797,7 @@ fn cross<Vouch>(
     environment: &mut Environment,
     source: Source<'_>,
     positions: &mut Positions,
+    exports: &mut Vec<KernelDeclaration>,
     constant: ConstantIndex,
     offer: Offer,
     vouch: &Vouch,
@@ -762,10 +830,12 @@ where
         },
         | Erased::Axiom { declared } => staging.axiom(LevelSignature::monomorphic(), declared),
     };
+    let staged_as = staged.declaration().clone();
     let admitted = match environment.add_decl(staged) {
         | Ok(admitted) => admitted,
         | Err(error) => return (Outcome::Rejected(error), replayed),
     };
+    exports.push(staged_as);
     let audit = environment.audit(admitted);
     match (offer, erased) {
         | (Offer::Definition { body, .. }, Erased::Definition { body: image, .. }) => {
@@ -1975,6 +2045,9 @@ impl<'source, 'positions> Erasure<'source, 'positions>
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeMap;
+    use alloc::string::String;
+    use alloc::vec;
     use alloc::vec::Vec;
 
     use gandr_core_term::CoreArena;
@@ -1988,15 +2061,21 @@ mod tests
     use gandr_kernel_core::KernelVerdict;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
+    use gandr_kernel_term::AdmissionMark;
     use gandr_kernel_term::AnyNode;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::DeclarationContent;
     use gandr_kernel_term::GroundSort;
     use gandr_kernel_term::LevelSignature;
+    use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::Side;
+    use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::TermArena;
+    use gandr_kernel_term::Value as KernelValue;
     use gandr_kernel_term::ValueType as KernelValueType;
+    use gandr_kernel_term::decode;
     use proptest::prelude::ProptestConfig;
     use proptest::prelude::prop_assert;
     use proptest::prelude::prop_assert_eq;
@@ -2764,6 +2843,87 @@ mod tests
                 ConstantIndex::from(2_usize),
             ],
             "each crossing takes the next kernel position, and the reference crosses"
+        );
+    }
+
+    #[test]
+    fn an_export_names_each_crossed_declaration_at_its_position()
+    {
+        // module M { def bad : Integer = "" ; def first : Integer = 0 ;
+        //            def second : Integer = first ; }
+        // def top : Integer = M.second ;
+        //
+        // `bad` is marked and leaves the artifact. `first` crosses at kernel
+        // position 0, so `second` reads 0 and `top` reads 1 whatever they are
+        // named, and `top` is given no name at all.
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let text = arena.value_literal(text_literal());
+        let zero = arena.value_literal(integer_literal());
+        let first = arena.value_constant(ConstantIndex::from(1_usize));
+        let second = arena.value_constant(ConstantIndex::from(2_usize));
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), Maybe::Present(integer), Maybe::Present(text)),
+            declaration(At(1), Maybe::Present(integer), Maybe::Present(zero)),
+            declaration(At(2), Maybe::Present(integer), Maybe::Present(first)),
+            declaration(At(3), Maybe::Present(integer), Maybe::Present(second)),
+        ]);
+        let named = |segments: [&str; 2]| {
+            StructuredName::from(
+                segments
+                    .into_iter()
+                    .map(|segment| NameSegment::from_text(String::from(segment)).unwrap())
+                    .collect::<Vec<NameSegment>>(),
+            )
+        };
+        let names = BTreeMap::from([
+            (ConstantIndex::from(0_usize), named(["M", "bad"])),
+            (ConstantIndex::from(1_usize), named(["M", "first"])),
+            (ConstantIndex::from(2_usize), named(["M", "second"])),
+        ]);
+        let artifact = decode(readmission.export(names).as_image()).unwrap();
+
+        let exported: Vec<(Vec<&str>, AdmissionMark, Option<&KernelValue>)> = artifact
+            .declarations()
+            .iter()
+            .map(|marked| {
+                let body = match *marked.declaration().content() {
+                    | DeclarationContent::Def { body, .. } => artifact.arena().value(body),
+                    | DeclarationContent::Axiom { .. }
+                    | DeclarationContent::AbstractType { .. } => None,
+                };
+                let name = marked
+                    .declaration()
+                    .name()
+                    .segments()
+                    .iter()
+                    .map(AsRef::as_ref)
+                    .collect();
+                (name, marked.mark(), body)
+            })
+            .collect();
+        let at = |position: usize| Some(KernelValue::Constant(ConstantIndex::from(position)));
+        assert_eq!(
+            exported
+                .iter()
+                .map(|&(ref name, mark, _)| (name.clone(), mark))
+                .collect::<Vec<_>>(),
+            [
+                (vec!["M", "first"], AdmissionMark::Checked),
+                (vec!["M", "second"], AdmissionMark::Checked),
+                (vec![], AdmissionMark::Checked),
+            ],
+            "each crossed declaration carries its own name, the marked one is absent, and \
+             an unnamed one carries none"
+        );
+        assert_eq!(
+            exported
+                .iter()
+                .skip(1)
+                .map(|&(_, _, body)| body.cloned())
+                .collect::<Vec<_>>(),
+            [at(0), at(1)],
+            "each reference reads the kernel position its target took"
         );
     }
 

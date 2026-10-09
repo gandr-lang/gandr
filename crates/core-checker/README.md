@@ -1,6 +1,6 @@
 # gandr-core-checker
 
-The core checking judgement: call-by-push-value core terms and a module of name-free declarations in, one verdict per declaration and the obligations the module owes out, every refusal classified by whose fact it is, and every acceptance re-derived by the kernel.
+The core checking judgement: call-by-push-value core terms and a module of name-free declarations in, one verdict per declaration and the obligations the module owes out, every refusal classified by whose fact it is, and every acceptance re-derived by the kernel and exported under the producer's names.
 
 <!-- toc -->
 
@@ -35,6 +35,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - [The bridge owns its rollback](#the-bridge-owns-its-rollback)
 - [One erasure machine, guarded against cycles](#one-erasure-machine-guarded-against-cycles)
 - [A lift and an unfolding cross as the kernel's own](#a-lift-and-an-unfolding-cross-as-the-kernels-own)
+- [The export carries the producer's names](#the-export-carries-the-producers-names)
 - [License](#license)
 
 <!-- tocstop -->
@@ -77,6 +78,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - `bridge::Readmitted` and `bridge::Outcome`: each declaration's outcome at its origin — defined, assumed, marked with the judgement's refusal, refused by the bridge, or rejected by the kernel. Witnesses: `bridge::tests::marks_and_holes_are_refused_beside_their_positive_controls`, `bridge::tests::hole_unknown_class_rejects_exactly`, `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`.
 - `bridge::ArtifactAudit`: the axioms the artifact rests on, one per owed hole in ledger order, so empty exactly when the ledger is. Witnesses: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`, `bridge::tests::an_empty_ledger_readmits_an_artifact_resting_on_no_axiom`, `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`, `bridge::tests::marks_and_holes_are_refused_beside_their_positive_controls`.
 - `bridge::Replayed` and `bridge::Readmitted::certificates`: the kernel's replay verdict on each unfolding a declaration rests on. Witnesses: `bridge::tests::every_readmission_certificate_replays`, `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`, `bridge::tests::a_code_constant_argument_unfolds_at_export`.
+- `bridge::Readmission::export`: the canonical artifact of the declarations that crossed, each named by its producer. Witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`.
 - `bridge::Refusal` and `bridge::Refusal::classify`: why an accepted declaration did not cross, classed into the same `FailureClass`. Witnesses: `bridge::tests::every_refusal_carries_its_pinned_class`, `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`, `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`, `bridge::tests::an_unbound_sealed_atom_is_refused`, `bridge::tests::the_machine_faults_are_refused_exactly`, `bridge::tests::a_declining_certificate_faults_the_declaration`.
 
 ## Expected features
@@ -199,7 +201,7 @@ The producer of an obligation is a signature no definition completes, which is t
 
 ## A declaration input owned here
 
-`Declaration` is defined in this crate and carries no name, span or syntax node, so the checker depends on no surface crate. A producer adapts its own declaration shape in a short function downstream of both: a lowering's completed declaration becomes a declared type and a body, its uncompleted one a declared type and a hole, its bodied one a body with no declared type, and its refused one is not offered. The `OriginToken` is the producer's index, echoed back beside the verdict for the driver to resolve. The alternative was reading the lowering's outcome type directly, which would make the judgement depend on the surface; the choice reverses if that outcome type moves below both crates.
+`Declaration` is defined in this crate and carries no name, span or syntax node, so the checker depends on no surface crate. A producer adapts its own declaration shape in a short function downstream of both: a lowering's completed declaration becomes a declared type and a body, its uncompleted one a declared type and a hole, its bodied one a body with no declared type, and its refused one is not offered. The `OriginToken` is the producer's index, echoed back beside the verdict for the driver to resolve. A name reaches the kernel only at export, keyed by the same position ([The export carries the producer's names](#the-export-carries-the-producers-names)). The alternative was reading the lowering's outcome type directly, which would make the judgement depend on the surface; the choice reverses if that outcome type moves below both crates.
 
 ## Resolution by admission position
 
@@ -272,6 +274,12 @@ Erasure runs one machine of goals and frames over an explicit stack, as the judg
 The kernel has no cumulativity and no reducible decode, so the bridge hands it neither. A code the judgement checked at a universe above its own carries a recorded lift, and its image is the kernel's explicit lift, quoted: the code decoded at its own level, lifted to the universe it was checked at, which the kernel checks raises. A decode of a code constant that crossed with a body is erased as the type its body denotes, read back through the same `CodeDefinitions::certify` the judgement used, so every unfolding is a certificate. A code constant passed as an application's argument unfolds the same way, to the quote its chain of bodies reaches: the kernel instantiates a dependent arrow by substitution, and an instantiation at the constant itself would mint the decode of a constant that no export reaches, which the kernel cannot convert with the type the judgement unfolded it to. Only the argument position unfolds — a constant elsewhere in a term, a code alias's own body among them, crosses as the constant, so the certificate for an alias of an alias still compares the constant it names. Before a declaration is staged, the kernel replays each certificate's trace against its own image of the constant and of the body, unfolding only what it admitted itself; a trace that does not replay to convertible refuses the declaration as `Refusal::CertificateDeclined`, an engine fault, and the staging is discarded. The replayed verdicts travel on the declaration's `Readmitted`. The kernel admits a code constant's lifted, elaborated body, so the constant it unfolds is the constant the judgement unfolded. `every_checked_universe_declaration_is_readmitted` and `every_readmission_certificate_replays` ask this of generated modules of universe declarations, codes, aliases and lifts; `a_code_constant_argument_unfolds_at_export` asks it of a polymorphic identity instantiated at a code alias.
 
 The alternatives were giving the kernel cumulativity and static δ-reduction in its own conversion, which widens the trusted base for what a replayed trace already certifies, and trusting the normaliser's readback unreplayed, which leaves the exported declaration related to its source by an unchecked step. Unfolding every constant in term position was tried for the instantiation and dropped: it rewrites a code alias's body to its target, and the alias's certificate then compares the wrong pair. The certificate records one δ-step for the reason the judgement's does; a readback of each code to static normal form with one trace per code replaces it when the machine decides codes under quotes, and the argument unfolding goes when the kernel's conversion unfolds what it admitted.
+
+## The export carries the producer's names
+
+`Readmission::export` encodes the environment the kernel built: each declaration that crossed, in kernel admission order, marked checked and carrying the `StructuredName` the producer gives its module position. The bridge keeps each declaration as it staged it, because the kernel's environment exposes an admitted declaration's audit and not its content, and names it only when it is written out. A flattened structure member is therefore exported as one declaration named by its segments, a declaration that did not cross is not in the artifact, and every reference in it is still the kernel position its target took; the name is never read.
+
+The alternatives were names on the checker's `Declaration`, which makes the judgement carry a surface fact it never reads, and a name table beside the artifact, which leaves the exported members nameless to anything reading the artifact alone. The choice reverses if a renamed module must export a byte-identical artifact; the names then move to that side table and the export writes none.
 
 ## License
 
