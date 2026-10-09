@@ -590,6 +590,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-surface-layout"
+version = "0.0.0"
+dependencies = [
+ "proptest",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-surface-lowering"
 version = "0.0.0"
 dependencies = [

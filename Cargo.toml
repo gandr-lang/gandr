@@ -19,6 +19,7 @@ members = [
   "crates/surface-dispatcher",
   "crates/surface-driver",
   "crates/surface-grammar",
+  "crates/surface-layout",
   "crates/surface-lowering",
   "crates/surface-lsp",
   "crates/surface-parser",
@@ -456,6 +457,7 @@ default-features = false
 # - kernel-term (dev)
 # - storage-records (dev)
 # - storage-values (dev)
+# - surface-layout (dev)
 # - surface-parser (dev)
 # - surface-session (dev)
 # - theory-cell-complexes (dev)
@@ -493,6 +495,7 @@ default-features = false
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-driver
+# - surface-layout
 # - surface-lowering
 # - surface-lsp
 # - surface-repl
