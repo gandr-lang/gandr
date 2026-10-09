@@ -74,6 +74,8 @@ fn main() -> Result<(), ChunkerError> {
 }
 ```
 
+Constant constructors, the wire discriminator, saturating token addition and the Gear table carry const-compatible specification predicates. They preserve constant evaluation; `anodized_panic` enforces the same predicates at runtime. Nominal equality observers keep primitive representations private without calling non-const trait methods.
+
 Run the crate's tests from the repository root, both normally and with executable specifications enabled:
 
 ```sh
@@ -81,7 +83,7 @@ mise exec -- cargo test -p gandr-storage-chunker
 RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing mise exec -- cargo test -p gandr-storage-chunker
 ```
 
-Nontrivial items name their executable predicates and bounded adequacy witnesses in rustdoc. The witnesses cover arithmetic and validation boundaries, exact commitment images, cut precedence, empty records, formatter refusals and partition-oracle rejection. Runtime token accumulation checks saturation with an executable predicate. Public const APIs and compile-time Gear-table generation document the pinned instrument's limitation; formatter output and structure-wide properties name their separate observers. The one-pass cost claim has no runtime cost projection and is not established by these witnesses.
+Nontrivial items name their executable predicates and bounded adequacy witnesses in rustdoc. The witnesses cover arithmetic and validation boundaries, exact commitment images, cut precedence, empty records, formatter refusals and partition-oracle rejection. Const operations carry executable predicates; formatter output and structure-wide properties name their separate observers. The one-pass cost claim has no runtime cost projection and is not established by these witnesses.
 
 ## Two profiles
 
