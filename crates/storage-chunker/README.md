@@ -81,7 +81,7 @@ mise exec -- cargo test -p gandr-storage-chunker
 RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing mise exec -- cargo test -p gandr-storage-chunker
 ```
 
-Nontrivial items name their executable predicates and bounded adequacy witnesses in rustdoc. The witnesses cover arithmetic and validation boundaries, exact commitment images, cut precedence, empty records, formatter refusals and partition-oracle rejection. Const operations retain their const APIs and document the pinned instrument's limitation; formatter output and structure-wide properties name their separate observers. The one-pass cost claim has no runtime cost projection and is not established by these witnesses.
+Nontrivial items name their executable predicates and bounded adequacy witnesses in rustdoc. The witnesses cover arithmetic and validation boundaries, exact commitment images, cut precedence, empty records, formatter refusals and partition-oracle rejection. Runtime token accumulation checks saturation with an executable predicate. Public const APIs and compile-time Gear-table generation document the pinned instrument's limitation; formatter output and structure-wide properties name their separate observers. The one-pass cost claim has no runtime cost projection and is not established by these witnesses.
 
 ## Two profiles
 
