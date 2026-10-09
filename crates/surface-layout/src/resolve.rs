@@ -804,7 +804,7 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
             return Err(broken(RenderInvariant::DocumentIdentity));
         };
         let (continuation, child, child_column, child_indentation) = match stored {
-            | DocNode::Empty => return Ok(Step::Result(self.empty()?)),
+            | DocNode::Empty => return Ok(Step::Result(self.empty(column)?)),
             | DocNode::Text(text) => return Ok(Step::Result(self.text(text, column)?)),
             | DocNode::Verbatim(verbatim) => {
                 return Ok(Step::Result(self.verbatim(verbatim, column)?));
@@ -900,18 +900,22 @@ impl<'arena, 'meter> Resolver<'arena, 'meter>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: a zero-cost, zero-byte measure ending at column zero.
+    /// - ensures: a zero-cost, zero-byte measure ending at `column`, where it
+    ///   began.
     /// - provides: the result of `Empty`.
     /// - fails: a plan or frontier ceiling.
     /// - panics: none.
     ///
     /// # Errors
     /// Returns the first error the plan or frontier charge returns.
-    fn empty(&mut self) -> Result<MeasureSet, RenderError>
+    fn empty(
+        &mut self,
+        column: Column,
+    ) -> Result<MeasureSet, RenderError>
     {
         let plan = self.plans.alloc(PlanNode::Empty, self.meter)?;
         self.singleton(Measure {
-            last_column: Column::from(0u32),
+            last_column: column,
             cost: LayoutCost::zero(),
             plan,
             output_bytes: OutputBytes::from(0u64),

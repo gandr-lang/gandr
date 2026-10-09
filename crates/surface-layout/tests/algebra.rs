@@ -331,16 +331,36 @@ mod tests
         );
     }
 
-    /// Empty documents retain the empty identity and have no stored payload.
+    /// Empty documents retain the empty identity, have no stored payload,
+    /// and end where they begin: text after an empty is charged from the
+    /// column the empty was entered at, so a break that avoids the overflow
+    /// wins over the empty branch of a choice.
     #[test]
-    fn empty_emits_nothing_and_moves_no_column() -> Result<(), BuildError>
+    fn empty_emits_nothing_and_moves_no_column() -> Result<(), RenderError>
     {
         let mut meter = BuildMeter::new(generous_limits());
-        let builder = DocBuilder::try_new(&mut meter)?;
+        let mut builder = expect_build(DocBuilder::try_new(&mut meter));
         let empty = builder.empty();
-        let arena = builder.finish()?;
-        assert_eq!(arena.flattened_image(empty)?, empty);
+        let head = expect_build(builder.text(TextSource::from("abcd")));
+        let tail = expect_build(builder.text(TextSource::from("ef")));
+        let hard_line = builder.hard_line();
+        let separator = expect_build(builder.choice(empty, hard_line));
+        let root = expect_build(builder.concat_all([head, separator, tail]));
+        let arena = expect_build(builder.finish());
+        assert_eq!(expect_build(arena.flattened_image(empty)), empty);
         assert_eq!(arena.contains(empty), DocHandleStatus::Present);
+        let options = LayoutOptions::try_new(
+            PageWidth::from(4u32),
+            ComputationWidth::from(8u32),
+            PhysicalLineEnding::Lf,
+        )?;
+        let mut render_meter = RenderMeter::new(generous_render_limits());
+        let rendered = render(&arena, root, &options, &mut render_meter)?;
+        assert_eq!(rendered.text, "abcd\nef");
+        assert_eq!(rendered.cost, LayoutCost {
+            squared_overflow: SquaredOverflow::from(0u64),
+            line_breaks: LineBreaks::from(1u64),
+        });
         Ok(())
     }
 
