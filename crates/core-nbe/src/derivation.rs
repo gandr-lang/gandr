@@ -269,12 +269,14 @@ impl Derivations
     /// # Termination
     /// - reason: the `while let Some(process) = stack.pop()` preorder loop over
     ///   an explicit stack of processes, not recursion.
-    /// - measure: the multiset of pushed processes ordered by id: a process's
-    ///   children were started after it, so every push names a larger id than
-    ///   the process popped to push it.
-    /// - boundedness: ids are bounded by the number of processes the run
-    ///   started, so the walk ends; a shared child is walked once per parent,
-    ///   which bounds the trace by the derivation's expansion as a tree.
+    /// - measure: the order in which processes answered: a goal records its
+    ///   ending when it answers, naming only children that had answered before
+    ///   it, so every push names a process that answered earlier than the one
+    ///   popped to push it — by id or not, since a re-shared child may be older
+    ///   than its parent.
+    /// - boundedness: the answered processes are finitely many, so the walk
+    ///   ends; a shared child is walked once per parent, which bounds the trace
+    ///   by the derivation's expansion as a tree.
     /// - input recursion: none.
     ///
     /// # Adequacy

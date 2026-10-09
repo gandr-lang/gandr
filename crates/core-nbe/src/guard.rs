@@ -39,6 +39,43 @@ use core::hash::Hasher;
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ContentHash(u64);
 
+impl ContentHash
+{
+    /// The fold of `content`'s `Hash` encoding, by the hash every guard is
+    /// minted with.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: equal content folds to equal words within one run.
+    /// - provides: the digest the re-sharing memo buckets its supports by, so
+    ///   one hash serves both and the fold order is fixed in this module.
+    /// - fails: never.
+    /// - panics: none.
+    #[inline]
+    #[must_use]
+    pub(crate) fn of<Content>(content: &Content) -> Self
+    where
+        Content: Hash + ?Sized,
+    {
+        let mut fold = Fold(FNV_OFFSET);
+        content.hash(&mut fold);
+        Self(fold.finish())
+    }
+}
+
+impl From<ContentHash> for u64
+{
+    /// The word `hash` carries.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn from(hash: ContentHash) -> Self
+    {
+        hash.0
+    }
+}
+
 /// The word minted with a domain node, read by the pipeline's step 2.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Guard

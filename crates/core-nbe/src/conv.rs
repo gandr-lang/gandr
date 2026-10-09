@@ -41,6 +41,7 @@ use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::Zone;
+use gandr_kernel_check_memo::MemoError;
 use gandr_kernel_term::Literal;
 
 use crate::arena::CompClosureId;
@@ -143,6 +144,9 @@ pub enum ConversionFault
     /// An evaluation the conversion machine drove was refused, in the
     /// evaluator's own vocabulary.
     Evaluation(EvalFault),
+    /// The conversion machine's re-sharing memo refused to record a goal, in
+    /// the memo's own vocabulary.
+    Memo(MemoError),
     /// The conversion machine's own bookkeeping disagreed with itself: a
     /// process named another the machine does not hold. Unreachable while
     /// the machine's own pushes are the only source of ids; reported rather

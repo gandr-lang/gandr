@@ -18,7 +18,9 @@
 //!   and structural comparison — answering a [`Settlement`].
 //! - [`decide`] runs step 4, the lazy concurrent search over goals and
 //!   evaluation channels, answering a [`MachineVerdict`] and emitting its
-//!   winning derivation through a trace sink.
+//!   winning derivation through a trace sink. It re-shares the goals it starts
+//!   fresh through a check memo keyed by [`GoalSupport`], [`ResharingMemo`] on
+//!   the engine path, and reports the [`SupportEdges`] its entries rest on.
 //! - [`Overlay`] holds sharing syntax over the core language in four flat
 //!   families, minted only over children it holds and checked by
 //!   [`Overlay::validate`] over a heap worklist; [`erase_value`] and its
@@ -43,6 +45,7 @@ mod machine;
 mod overlay;
 mod policy;
 mod readback;
+mod resharing;
 mod rules;
 
 pub use crate::arena::CompClosureId;
@@ -92,9 +95,9 @@ pub use crate::machine::MachineSettings;
 pub use crate::machine::MachineVerdict;
 pub use crate::machine::Problem;
 pub use crate::machine::ProcessCount;
+pub use crate::machine::ProcessId;
 pub use crate::machine::StepBudget;
 pub use crate::machine::StepCount;
-pub use crate::machine::TraceNode;
 pub use crate::machine::decide;
 pub use crate::overlay::Bound;
 pub use crate::overlay::CompGraft;
@@ -138,3 +141,9 @@ pub use crate::readback::ReadbackFault;
 pub use crate::readback::ReadbackMode;
 pub use crate::readback::readback_computation;
 pub use crate::readback::readback_value;
+pub use crate::resharing::EdgeCount;
+pub use crate::resharing::GoalSupport;
+pub use crate::resharing::ResharingMemo;
+pub use crate::resharing::ResharingPlane;
+pub use crate::resharing::SupportEdges;
+pub use crate::resharing::SupportSides;

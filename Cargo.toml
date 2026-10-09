@@ -92,6 +92,7 @@ path = "crates/core-term"
 
 # The support-keyed check-memo seam, generic over consumer-owned types.
 # consumers:
+# - core-nbe
 # - kernel-core
 [workspace.dependencies.gandr-kernel-check-memo]
 path = "crates/kernel-check-memo"

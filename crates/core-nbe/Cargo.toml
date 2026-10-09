@@ -13,12 +13,14 @@ publish.workspace = true
 
 # The domain and its evaluator are built over the core language's syntax and
 # context, and read levels and the leaf vocabularies through them. The
-# conversion machine emits its derivation through the kernel's decision seam.
+# conversion machine emits its derivation through the kernel's decision seam
+# and re-shares its goals through the kernel's check-memo seam.
 # The pinned anodized facade supplies core-only specification helpers;
 # logic/BigInt stays disabled in this no_std library.
 [dependencies]
 anodized.workspace = true
 gandr-core-term.workspace = true
+gandr-kernel-check-memo.workspace = true
 gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
