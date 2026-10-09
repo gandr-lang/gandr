@@ -36,14 +36,18 @@
 //! # A code constant is unfolded at export, and every unfolding replays
 //!
 //! The kernel's types hold no reducible decode: a decode of a code constant
-//! that crossed with a body is erased as the type its body denotes. Each
-//! unfolding is a [`Certificate`] from the normaliser's conversion machine
-//! that the constant converts to its body; before the declaration is staged
-//! for admission, the kernel replays every certificate's trace against its
-//! own image of the constant and of the body, unfolding only what the kernel
-//! itself admitted. A trace that does not replay to convertible refuses the
-//! declaration as [`Refusal::CertificateDeclined`], and the environment is
-//! left as it was. The replayed verdicts travel on each [`Readmitted`].
+//! that crossed with a body is erased as the type its body denotes. A code
+//! constant standing as a term — the argument a polymorphic function is
+//! instantiated at — is erased as the quote it unfolds to, because the
+//! kernel's instantiation would otherwise mint the decode of a constant that
+//! no export could reach. Each unfolding is a [`Certificate`] from the
+//! normaliser's conversion machine that the constant converts to its body;
+//! before the declaration is staged for admission, the kernel replays every
+//! certificate's trace against its own image of the constant and of the body,
+//! unfolding only what the kernel itself admitted. A trace that does not
+//! replay to convertible refuses the declaration as
+//! [`Refusal::CertificateDeclined`], and the environment is left as it was.
+//! The replayed verdicts travel on each [`Readmitted`].
 //!
 //! # An uncompleted signature enters as an axiom
 //!
@@ -1716,6 +1720,62 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         }
     }
 
+    /// Start erasing `argument`, the value an application passes.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: for a code constant without a recorded lift whose unfolding
+    ///   reaches a quote, one certificate per constant on the chain, outermost
+    ///   first, and the descent into that quote, which records no image for the
+    ///   constant; for any other value, its descent.
+    /// - provides: an instantiation at a code substitutes the type the code
+    ///   stands for, so the kernel's types hold no decode of a constant with a
+    ///   body.
+    /// - fails: [`Refusal::CertificateDeclined`] for an unfolding the
+    ///   normaliser does not certify.
+    /// - panics: none.
+    /// - intension: two loops over the unfolding chain, which the admission
+    ///   order makes finite: the first finds the quote without collecting, so a
+    ///   chain ending at a rigid constant certifies nothing.
+    fn argument(
+        &mut self,
+        argument: ValueId,
+    ) -> Result<Step, Refusal>
+    {
+        let descend = Step::Descend(CoreNode::Term(TermNode::Value(argument)));
+        if self.source.lifts.contains_key(&argument) {
+            return Ok(descend);
+        }
+        let mut reached = argument;
+        let quote = loop {
+            match self.source.arena.value(reached) {
+                | Some(&(Value::Quote(_) | Value::QuoteComputation(_))) => break reached,
+                | Some(&Value::Constant(constant)) => {
+                    match self.positions.definitions.body(constant) {
+                        | Maybe::Present(body) => reached = body,
+                        | Maybe::Absent(_) => return Ok(descend),
+                    }
+                },
+                | _ => return Ok(descend),
+            }
+        };
+        let mut code = argument;
+        while let Some(&Value::Constant(constant)) = self.source.arena.value(code) {
+            let Maybe::Present(body) = self.positions.definitions.body(constant)
+            else {
+                return Err(Refusal::MachineInvariant);
+            };
+            let certificate = self
+                .positions
+                .definitions
+                .certify(self.source.arena, code, constant)
+                .map_err(|_undecided| Refusal::CertificateDeclined { constant })?;
+            self.certificates.push(certificate);
+            code = body;
+        }
+        Ok(Step::Descend(CoreNode::Term(TermNode::Value(quote))))
+    }
+
     /// Hand `image` to the rule `frame` holds.
     ///
     /// # Specification
@@ -1750,7 +1810,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             },
             | (Frame::ApplicationHead { at, argument }, AnyNode::Computation(head)) => {
                 self.frames.push(Frame::ApplicationArgument { at, head });
-                Ok(Step::Descend(CoreNode::Term(TermNode::Value(argument))))
+                self.argument(argument)
             },
             | (Frame::ApplicationArgument { at, head }, AnyNode::Value(argument)) => {
                 Ok(self.erased_computation(at, target.computation_application(head, argument)))
@@ -2482,6 +2542,73 @@ mod tests
                 entry.outcome()
             );
         }
+    }
+
+    #[test]
+    fn a_code_constant_argument_unfolds_at_export()
+    {
+        // def Num : Type = Integer ; def n : Num = 0 ;
+        // def id : U ((a : Type) -> El a -> F (El a)) = thunk λ λ. return x ;
+        // def k : U (F Num) = thunk ((force id) Num) n ;
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let small = arena.value_type_universe(Sort::Ground(GroundSort::Value), Level::zero());
+        let code = arena.value_quote(integer);
+        let num = arena.value_constant(ConstantIndex::from(0_usize));
+        let decoded_num = arena.value_type_element(num, Level::zero());
+        let zero = arena.value_literal(integer_literal());
+        let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let element = arena.value_type_element(bound, Level::zero());
+        let returns_element = arena.comp_type_returner(element);
+        let arrow = arena.comp_type_arrow(element, returns_element);
+        let polymorphic = arena.comp_type_pi(small, arrow);
+        let identity_type = arena.value_type_thunk(polymorphic);
+        let returned = arena.computation_return(bound);
+        let inner = arena.computation_lambda(returned);
+        let outer = arena.computation_lambda(inner);
+        let identity = arena.value_thunk(outer);
+        let returns_num = arena.comp_type_returner(decoded_num);
+        let suspended = arena.value_type_thunk(returns_num);
+        let id = arena.value_constant(ConstantIndex::from(2_usize));
+        let n = arena.value_constant(ConstantIndex::from(1_usize));
+        let head = arena.computation_force(id);
+        let instantiated = arena.computation_application(head, num);
+        let applied = arena.computation_application(instantiated, n);
+        let thunk = arena.value_thunk(applied);
+        let (report, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(At(0), Maybe::Present(small), Maybe::Present(code)),
+            declaration(At(1), Maybe::Present(decoded_num), Maybe::Present(zero)),
+            declaration(
+                At(2),
+                Maybe::Present(identity_type),
+                Maybe::Present(identity),
+            ),
+            declaration(At(3), Maybe::Present(suspended), Maybe::Present(thunk)),
+        ]);
+        for judged in report.judged() {
+            assert!(
+                matches!(judged.verdict(), Verdict::Checked { .. }),
+                "the identity instantiates at the code constant: {:?}",
+                judged.verdict()
+            );
+        }
+        for entry in readmission.readmitted() {
+            assert!(
+                matches!(*entry.outcome(), Outcome::Defined { .. }),
+                "{:?} is admitted",
+                entry.outcome()
+            );
+        }
+        let convertible = Replayed {
+            constant: ConstantIndex::from(0_usize),
+            verdict: KernelVerdict::Convertible,
+        };
+        assert_eq!(
+            readmission.readmitted()[3].certificates(),
+            [convertible, convertible],
+            "the argument unfolds in term position and the declared type at its decode, \
+             each certified"
+        );
     }
 
     #[test]

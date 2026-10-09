@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc bbd7bb8306fb065d884c4c5192748738d788e038861ec358b2e994ca08c14d1c # shrinks to recipes = [CodeRecipe { shape: 0, level: 0, bump: 0, earlier: 0 }, CodeRecipe { shape: 6, level: 0, bump: 0, earlier: 0 }]
+cc a7bc14a2cc286051cee62e30853cc4e4d898e357029c3bc7336d7ad4fdba145e # shrinks to recipes = [CodeRecipe { shape: 0, level: 0, bump: 0, earlier: 0 }, CodeRecipe { shape: 6, level: 0, bump: 0, earlier: 0 }]
