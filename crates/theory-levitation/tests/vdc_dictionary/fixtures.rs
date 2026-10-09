@@ -9,6 +9,7 @@
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 
+use anodized::spec;
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::BridgeArity;
 use gandr_theory_levitation::Code;
@@ -24,6 +25,7 @@ use gandr_theory_levitation::RuleFace;
 use gandr_theory_levitation::SignDesc;
 use gandr_theory_levitation::SortRef;
 use gandr_theory_levitation::SurfaceSpan;
+use gandr_theory_levitation::TermView;
 use gandr_theory_levitation::derive_cell_var_meta;
 
 use super::harness::BaseInstance;
@@ -76,7 +78,29 @@ pub fn succ(inner: FreeTerm) -> FreeTerm
 /// The numeral `n` as `Succⁿ(Zero)`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: exactly `n` unary `Succ` constructors ending in nullary `Zero`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero and a multi-successor numeral expose exact
+///   constructor trees, rejecting a shifted count, wrong alphabet or missing
+///   terminal constructor. The iterative predicate checks every unary edge;
+///   allocation exhaustion is outside the domain.
+/// - witness: `tests::vdc_dictionary::fixtures::tests::numerals_have_exact_unary_depth_and_terminal`
+#[spec(ensures: |ref term| {
+    let mut node = term.to_node();
+    for _ in 0..usize::from(n) {
+        let TermView::Ctor { name, mut args } = node.view() else { return false; };
+        if name.as_ref() != "Succ" { return false; }
+        let Some(child) = args.next() else { return false; };
+        if args.next().is_some() { return false; }
+        node = child;
+    }
+    match node.view() {
+        TermView::Ctor { name, args } => name.as_ref() == "Zero" && args.count() == 0,
+        _ => false,
+    }
+})]
 pub fn nat(n: NumeralCount) -> FreeTerm
 {
     (0 .. usize::from(n)).fold(zero(), |acc, _| succ(acc))
@@ -414,4 +438,23 @@ pub fn single_input_corpus() -> Vec<Vec<LooseInstance>>
     (0 ..= 5_usize)
         .map(|k| vec![gen_x(nat(NumeralCount::from(k)))])
         .collect()
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn numerals_have_exact_unary_depth_and_terminal()
+    {
+        assert_eq!(nat(NumeralCount::from(0_usize)), FreeTerm::ctor("Zero", []));
+        assert_eq!(
+            nat(NumeralCount::from(3_usize)),
+            FreeTerm::ctor("Succ", [FreeTerm::ctor("Succ", [FreeTerm::ctor(
+                "Succ",
+                [FreeTerm::ctor("Zero", [])]
+            )])])
+        );
+    }
 }

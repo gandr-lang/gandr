@@ -21,6 +21,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::AttributeEmptiness;
@@ -223,10 +224,15 @@ impl PrimTy
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every primitive's spelling round-trips through
-    ///   [`Self::label`], and a declared type's spelling is the absence.
+    /// - hypothesis: L3 — every primitive has an independently pinned spelling;
+    ///   empty, differently cased and declared names are absent. Exact variants
+    ///   and spellings separate missing arms and mutually consistent renamings.
     /// - witness: `code::tests::primitive_labels_round_trip`
     #[inline]
+    #[spec(ensures: |ref prim| match *prim {
+        | Maybe::Present(prim) => prim.label().as_ref() == label.as_ref(),
+        | Maybe::Absent(_) => !matches!(label.as_ref(), "Integer" | "Boolean" | "Unit" | "String" | "Char" | "u32" | "u64" | "i32" | "i64" | "f32" | "f64" | "Unknown"),
+    })]
     pub fn from_label(label: NameRef<'_>) -> Maybe<Self, primitive_label::Absent>
     {
         let prim = match label.as_ref() {
@@ -254,11 +260,26 @@ impl PrimTy
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every variant's spelling is classified back to the
-    ///   variant.
+    /// - hypothesis: L3 — all twelve variants have pinned canonical spellings,
+    ///   including the case-sensitive and width-sensitive pairs; a swapped or
+    ///   consistently renamed pair fails independently of the reverse lookup.
     /// - witness: `code::tests::primitive_labels_round_trip`
     #[inline]
     #[must_use]
+    #[spec(ensures: |label| matches!((self, label.as_ref()),
+        | (Self::Integer, "Integer")
+        | (Self::Boolean, "Boolean")
+        | (Self::Unit, "Unit")
+        | (Self::StringTy, "String")
+        | (Self::Char, "Char")
+        | (Self::U32, "u32")
+        | (Self::U64, "u64")
+        | (Self::I32, "i32")
+        | (Self::I64, "i64")
+        | (Self::F32, "f32")
+        | (Self::F64, "f64")
+        | (Self::Unknown, "Unknown")
+    ))]
     pub fn label(self) -> NameRef<'static>
     {
         NameRef::from(match self {
@@ -395,11 +416,17 @@ impl ValueTypeRef
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the constructor-arity witness reads a parameter
-    ///   field's head as the parameter's own name.
+    /// - hypothesis: L3 — parameters, primitives and zero/nonzero-argument
+    ///   named types have exact expected heads; returning an argument, dropping
+    ///   a name or confusing a primitive with its debug spelling is separated.
     /// - witness: `wellformed::tests::the_constructor_layer_agrees_with_the_bridge_shape`
+    /// - witness: `code::tests::type_heads_ignore_arguments_but_preserve_head_spelling`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ref name| match *self.0.to_ref().head() {
+        | TypeHead::Param(ref expected) | TypeHead::Ctor(ref expected, _) => name == expected,
+        | TypeHead::Prim(prim) => name.as_ref() == prim.label().as_ref(),
+    })]
     pub fn head_name(&self) -> Name
     {
         match *self.0.to_ref().head() {
@@ -576,10 +603,12 @@ impl Attrs
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a populated and the empty Σ separate the answers.
+    /// - hypothesis: L3 — empty, singleton and duplicate-marker collections
+    ///   separate an inverted emptiness verdict and an incorrect count test.
     /// - witness: `code::tests::attribute_membership_scans_markers`
     #[inline]
     #[must_use]
+    #[spec(ensures: |empty| bool::from(empty) == self.markers.is_empty())]
     pub fn is_empty(&self) -> AttributeEmptiness
     {
         AttributeEmptiness::from(self.markers.is_empty())
@@ -592,11 +621,14 @@ impl Attrs
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a declared and an undeclared marker separate the
-    ///   answers.
+    /// - hypothesis: L3 — empty and populated collections, first and last
+    ///   positions, repeated names and absent names expose skipped positions,
+    ///   inverted membership and an incorrect uniqueness requirement.
     /// - witness: `code::tests::attribute_membership_scans_markers`
     #[inline]
     #[must_use]
+    #[spec(ensures: |present| bool::from(present)
+        == self.markers.iter().any(|attr| attr.name.as_ref() == name.as_ref()))]
     pub fn contains(
         &self,
         name: NameRef<'_>,
@@ -793,11 +825,23 @@ impl<G> Code<G>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the empty, singleton and three-field lists pin the
-    ///   unit base, the singleton base and the right nesting.
+    /// - hypothesis: L3 — the empty, singleton and three-field lists pin exact
+    ///   unit and singleton bases and a right-nested ordered product; extra
+    ///   unit tails, omitted fields, reversal and left association differ.
     /// - witness: `code::tests::product_of_folds_right_nested_with_unit_and_singleton_bases`
     #[inline]
     #[must_use]
+    #[spec(
+        captures: [
+            field_nodes = fields.iter().fold(0_usize, |count, field| {
+                count.saturating_add(usize::from(field.0.to_ref().size()))
+            }),
+            field_count = fields.len(),
+        ],
+        ensures: |ref product| usize::from(product.0.to_ref().size())
+            == field_nodes.saturating_add(field_count.saturating_sub(1)).max(1)
+            && (field_count < 2 || matches!(product.view(), CodeView::Prod(_))),
+    )]
     pub fn product_of(fields: Vec<Self>) -> Self
     {
         let mut fields = fields.into_iter().rev();
@@ -822,11 +866,13 @@ impl<G> Code<G>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L0 — no former admits a function-typed field; the witness
-    ///   reads the statement on an atom-abstraction, the one former that binds.
+    /// - hypothesis: L0 — no former represents a higher-order code. L3 — an
+    ///   atom-abstraction, at the binding boundary, must report the positive
+    ///   fragment verdict; replacing that report with false fails the witness.
     /// - witness: `code::tests::recursion_and_fragment_predicates_hold`
     #[inline]
     #[must_use]
+    #[spec(ensures: |status| bool::from(status))]
     pub fn is_first_order(&self) -> FirstOrderStatus
     {
         FirstOrderStatus::from(true)
@@ -840,11 +886,14 @@ impl<G> Code<G>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a bare `var`, a `var` under a product and a plain
-    ///   field separate the answers.
+    /// - hypothesis: L3 — bare and nested recursive occurrences, repeated sorts
+    ///   and a plain field separate omitted descendants, incorrect
+    ///   deduplication and confusing a field type with a recursive occurrence.
     /// - witness: `code::tests::recursion_and_fragment_predicates_hold`
+    /// - witness: `code::tests::recursive_sorts_preserve_order_and_repetition`
     #[inline]
     #[must_use]
+    #[spec(ensures: |recursive| bool::from(recursive) == self.recursive_sorts().next().is_some())]
     pub fn is_recursive(&self) -> RecursiveStatus
     {
         RecursiveStatus::from(self.0.heads().any(|head| matches!(*head, CodeHead::Var(_))))
@@ -855,11 +904,17 @@ impl<G> Code<G>
     /// # Specification
     /// - ensures: one item per [`Self::var`] node, in left-to-right order.
     /// - panics: none.
+    /// - executable: none — the backend places the opaque iterator return type
+    ///   in a closure signature, which Rust rejects; observing its full
+    ///   sequence would also consume the iterator before returning it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the sorting-discipline witness names the undeclared
-    ///   sort a constructor recurses at.
+    /// - hypothesis: L3 — empty and nested code trees are observed by exact
+    ///   sort sequences; left/right reversal, lost descendants, deduplication
+    ///   and mistaking a field's type head for recursion change those
+    ///   sequences.
     /// - witness: `wellformed::tests::the_sorting_discipline_indexes_the_description`
+    /// - witness: `code::tests::recursive_sorts_preserve_order_and_repetition`
     #[inline]
     pub fn recursive_sorts(&self) -> impl Iterator<Item = &Name>
     {
@@ -1152,49 +1207,88 @@ mod tests
     #[test]
     fn primitive_labels_round_trip()
     {
-        for prim in [
-            PrimTy::Integer,
-            PrimTy::Boolean,
-            PrimTy::Unit,
-            PrimTy::StringTy,
-            PrimTy::Char,
-            PrimTy::U32,
-            PrimTy::U64,
-            PrimTy::I32,
-            PrimTy::I64,
-            PrimTy::F32,
-            PrimTy::F64,
-            PrimTy::Unknown,
+        for (prim, spelling) in [
+            (PrimTy::Integer, "Integer"),
+            (PrimTy::Boolean, "Boolean"),
+            (PrimTy::Unit, "Unit"),
+            (PrimTy::StringTy, "String"),
+            (PrimTy::Char, "Char"),
+            (PrimTy::U32, "u32"),
+            (PrimTy::U64, "u64"),
+            (PrimTy::I32, "i32"),
+            (PrimTy::I64, "i64"),
+            (PrimTy::F32, "f32"),
+            (PrimTy::F64, "f64"),
+            (PrimTy::Unknown, "Unknown"),
         ] {
+            assert_eq!(prim.label().as_ref(), spelling);
             assert_eq!(
-                Maybe::Present(prim),
-                PrimTy::from_label(prim.label()),
-                "primitive spelling round-trips"
+                PrimTy::from_label(NameRef::from(spelling)),
+                Maybe::Present(prim)
             );
         }
-        assert_eq!(
-            Maybe::Absent(primitive_label::Absent::Declared),
-            PrimTy::from_label(NameRef::from("NatOp")),
-            "a user type is not a primitive"
-        );
+        for spelling in ["", "NatOp", "integer", "U32", "u16"] {
+            assert_eq!(
+                PrimTy::from_label(NameRef::from(spelling)),
+                Maybe::Absent(primitive_label::Absent::Declared)
+            );
+        }
     }
 
     #[test]
     fn attribute_membership_scans_markers()
     {
-        let attrs = Attrs::new([Attr::marker("ctor"), Attr::marker("assoc")]);
-        assert!(
-            bool::from(attrs.contains(NameRef::from("ctor"))),
-            "declared marker is present"
+        for names in [&[][..], &["ctor"][..], &["ctor", "assoc", "ctor"][..]] {
+            let attrs = Attrs::new(names.iter().copied().map(Attr::marker).collect::<Vec<_>>());
+            assert_eq!(bool::from(attrs.is_empty()), names.is_empty());
+            for name in ["ctor", "assoc", "infix", ""] {
+                assert_eq!(
+                    bool::from(attrs.contains(NameRef::from(name))),
+                    names.contains(&name)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn type_heads_ignore_arguments_but_preserve_head_spelling()
+    {
+        for (ty, expected) in [
+            (ValueTypeRef::param("a"), "a"),
+            (ValueTypeRef::prim(PrimTy::StringTy), "String"),
+            (ValueTypeRef::ctor("Nat", []), "Nat"),
+            (
+                ValueTypeRef::ctor("List", [ValueTypeRef::param("a")]),
+                "List",
+            ),
+        ] {
+            assert_eq!(ty.head_name().as_ref(), expected);
+        }
+    }
+
+    #[test]
+    fn recursive_sorts_preserve_order_and_repetition()
+    {
+        let field = Code::field(ValueTypeRef::ctor("Nat", []), Grade::One, Attrs::empty());
+        assert_eq!(
+            field.recursive_sorts().collect::<Vec<_>>(),
+            Vec::<&Name>::new()
         );
-        assert!(
-            !bool::from(attrs.contains(NameRef::from("infix"))),
-            "undeclared marker is absent"
+        assert_eq!(
+            Code::<Grade>::unit().recursive_sorts().collect::<Vec<_>>(),
+            Vec::<&Name>::new()
         );
-        assert!(!bool::from(attrs.is_empty()), "a populated Σ is non-empty");
-        assert!(
-            bool::from(Attrs::empty().is_empty()),
-            "the empty Σ is empty"
+        let code = Code::sum(
+            Code::prod(Code::var("Left"), field),
+            Code::bind(
+                AtomSort::named("a"),
+                Code::prod(Code::var("Right"), Code::var("Left")),
+            ),
         );
+        assert_eq!(
+            code.recursive_sorts().map(Name::as_ref).collect::<Vec<_>>(),
+            ["Left", "Right", "Left"]
+        );
+        assert!(bool::from(code.is_recursive()));
     }
 }

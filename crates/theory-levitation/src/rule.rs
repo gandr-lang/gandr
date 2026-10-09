@@ -16,6 +16,7 @@ use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::RuleVariableLinearity;
@@ -157,6 +158,7 @@ impl FreeTerm
     /// - witness: `rule::tests::free_variables_are_collected_in_order_with_repeats`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ref vars| vars.iter().eq(self.to_node().vars()))]
     pub fn collect_vars(&self) -> Vec<Name>
     {
         self.to_node().vars().cloned().collect()
@@ -165,7 +167,17 @@ impl FreeTerm
     /// The constructor and operation names the term applies, in pre-order.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: each applied constructor or operation is yielded once, root
+    ///   first and children left to right; variables contribute no name.
+    /// - panics: none.
+    /// - executable: none — the backend cannot instrument this opaque iterator
+    ///   return type, and its full sequence has only a consuming observer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — variable-only, nullary and mixed nested applications
+    ///   are observed through exact name sequences; including a variable,
+    ///   omitting a nullary head or reversing siblings changes the sequence.
+    /// - witness: `rule::tests::inspection_reads_mixed_applications_in_argument_order`
     #[inline]
     pub(crate) fn applied_symbols(&self) -> impl Iterator<Item = &Name>
     {
@@ -183,8 +195,17 @@ impl FreeTerm
     ///   head, kind and argument order.
     /// - panics: none.
     /// - intension: one pass over the table, appending each image whole.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — root and nested variables with present/absent images,
+    ///   mixed application kinds and nullary applications are observed as exact
+    ///   output terms and callback names. Replacing a head, traversing an image
+    ///   again or dropping an unanswered variable changes an observer.
+    /// - witness: `rule::tests::variable_replacement_preserves_applications_and_inserts_images_once`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ref result| matches!(*self.0.to_ref().head(), TermHead::Var(_))
+        || result.0.to_ref().head() == self.0.to_ref().head())]
     pub(crate) fn replace_vars<'image, I>(
         &self,
         mut image: I,
@@ -207,17 +228,25 @@ impl fmt::Display for FreeTerm
     /// # Specification
     /// - ensures: deterministic text; a constructor and an operation
     ///   application render alike, so two unequal terms can render the same.
+    /// - fails: the formatting sink's error when it refuses the rendered text.
     /// - panics: none.
+    /// - executable: none — a formatter exposes no readback of the rendered
+    ///   text or predicate predicting whether its sink accepts the write.
     /// - intension: one pass over the table in index order, where every node
     ///   follows its arguments' subtrees and its first argument is the most
     ///   recent; rendered arguments wait on a stack.
     ///
+    /// # Errors
+    /// Propagates a refusal from the formatting sink.
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — the circuit-rule rendering pins a two-argument
-    ///   application over variables, and the boundary-mismatch diagnostic pins
-    ///   both sides of a comparison.
+    /// - hypothesis: L3 — variables, nullary and mixed nested applications are
+    ///   compared with exact inspection text; a refusing sink pins the error
+    ///   boundary. Reordering arguments, adding nullary parentheses or
+    ///   discarding a write failure changes the observer.
     /// - witness: `generic::tests::desc_inspection_renders_a_circuit_rule_and_its_telescope`
     /// - witness: `wellformed::tests::a_boundary_mismatched_circuit_rule_is_declined`
+    /// - witness: `rule::tests::inspection_reads_mixed_applications_in_argument_order`
     #[inline]
     fn fmt(
         &self,
@@ -280,6 +309,14 @@ impl<'term> TermNode<'term>
     /// - ensures: one item per variable leaf, in left-to-right order: pre-order
     ///   visits leaves left to right.
     /// - panics: none.
+    /// - executable: none — the backend cannot instrument this opaque iterator
+    ///   return type, and observing its sequence consumes the returned value.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ground, distinct-leaf and repeated-leaf terms have
+    ///   exact variable sequences; reversed siblings, dropped leaves and
+    ///   deduplication change those sequences.
+    /// - witness: `rule::tests::free_variables_are_collected_in_order_with_repeats`
     #[inline]
     pub fn vars(self) -> impl Iterator<Item = &'term Name>
     {
@@ -500,12 +537,102 @@ mod tests
     }
 
     #[test]
-    fn variance_defaults_to_producer()
+    fn variable_replacement_preserves_applications_and_inserts_images_once()
     {
+        let image = FreeTerm::ctor("Image", [FreeTerm::var("x")]);
+        let source = FreeTerm::op("f", [
+            FreeTerm::var("x"),
+            FreeTerm::ctor("g", [FreeTerm::var("y")]),
+            FreeTerm::ctor("Zero", []),
+        ]);
+        let mut visited = Vec::new();
+        let result = source.replace_vars(|name| {
+            visited.push(name.clone());
+            if name.as_ref() == "x" {
+                Maybe::Present(image.to_node())
+            }
+            else {
+                Maybe::Absent(leaf_image::Absent::Kept)
+            }
+        });
+        visited.sort();
+        assert_eq!(visited, [Name::from("x"), Name::from("y")]);
         assert_eq!(
-            Variance::Producer,
-            Variance::default(),
-            "the constant variance is Producer"
+            result,
+            FreeTerm::op("f", [
+                image.clone(),
+                FreeTerm::ctor("g", [FreeTerm::var("y")]),
+                FreeTerm::ctor("Zero", [])
+            ])
+        );
+        assert_eq!(
+            FreeTerm::var("x").replace_vars(|_| Maybe::Present(image.to_node())),
+            image
+        );
+        assert_eq!(
+            FreeTerm::var("y").replace_vars(|_| Maybe::Absent(leaf_image::Absent::Kept)),
+            FreeTerm::var("y")
+        );
+    }
+
+    /// A formatting sink which refuses every write.
+    struct RefusingSink;
+
+    impl fmt::Write for RefusingSink
+    {
+        /// Refuses the supplied text.
+        ///
+        /// # Specification
+        /// - fails: always returns the formatting error.
+        /// - panics: none.
+        ///
+        /// # Errors
+        /// Always refuses the write.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — rendering a nonempty application reaches the
+        ///   refusing sink; the exact error separates acceptance from refusal.
+        /// - witness: `rule::tests::inspection_reads_mixed_applications_in_argument_order`
+        #[spec(ensures: |result| result.is_err())]
+        fn write_str(
+            &mut self,
+            _text: &str,
+        ) -> fmt::Result
+        {
+            Err(fmt::Error)
+        }
+    }
+
+    #[test]
+    fn inspection_reads_mixed_applications_in_argument_order()
+    {
+        let mixed = FreeTerm::op("f", [
+            FreeTerm::var("x"),
+            FreeTerm::ctor("G", [FreeTerm::ctor("Z", [])]),
+            FreeTerm::op("K", []),
+        ]);
+        assert_eq!(mixed.to_string(), "f(x, G(Z), K)");
+        assert_eq!(
+            mixed
+                .applied_symbols()
+                .map(Name::as_ref)
+                .collect::<Vec<_>>(),
+            ["f", "G", "Z", "K"]
+        );
+        for term in [
+            FreeTerm::var("x"),
+            FreeTerm::ctor("x", []),
+            FreeTerm::op("x", []),
+        ] {
+            assert_eq!(term.to_string(), "x");
+        }
+        assert_eq!(
+            FreeTerm::var("x").applied_symbols().collect::<Vec<_>>(),
+            Vec::<&Name>::new()
+        );
+        assert_eq!(
+            fmt::write(&mut RefusingSink, format_args!("{mixed}")),
+            Err(fmt::Error)
         );
     }
 }

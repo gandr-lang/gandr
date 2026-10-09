@@ -14,6 +14,8 @@ use alloc::format;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use anodized::spec;
+
 use crate::arity::BridgeArity;
 use crate::arity::SortRef;
 use crate::boundary::NominalSerial;
@@ -180,10 +182,19 @@ impl SortDesc
     /// # Specification
     /// - requires: each index's sort is declared by the same signature, and the
     ///   indices are in declaration order.
-    /// - ensures: the telescope is carried verbatim; nothing derives or
-    ///   defaults it, because an index the surface wrote and the description
-    ///   dropped is a claim about a theory the author did not present.
+    /// - ensures: polarity is retained and the telescope is carried verbatim;
+    ///   nothing derives or defaults it, because an index the surface wrote and
+    ///   the description dropped is a claim about a theory not presented.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — homogeneous and contrasting sort families are
+    ///   observed through checker acceptance and typed polarity diagnostics,
+    ///   rejecting a flipped tag. Index order and membership remain a boundary:
+    ///   the generic consuming conversion provides no pre-conversion borrowed
+    ///   telescope.
+    /// - witness: `wellformed::tests::the_sorting_discipline_indexes_the_description`
+    #[spec(ensures: |ref family| family.polarity == polarity)]
     #[inline]
     #[must_use]
     pub fn family<N, I>(
@@ -351,13 +362,22 @@ impl<G> CtorDesc<G>
     ///   union for an inline sum.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a product payload pins one monomial of two factors
-    ///   read in leaf order at the leaf sorts, and an inline sum pins one
-    ///   monomial per summand, both feeding the one output; the derived arities
-    ///   pass the composition check.
+    /// - hypothesis: L3 — unit, product, sum and abstraction payloads are
+    ///   observed through exact ports and maps, including a product of sums; a
+    ///   missing nullary monomial, swapped factors, omitted Cartesian pairs or
+    ///   leaking a binder changes those records.
     /// - witness: `wellformed::tests::the_constructor_layer_agrees_with_the_bridge_shape`
+    /// - witness: `desc::tests::constructor_arities_distribute_products_over_sums_and_erase_binders`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ref arity| arity.outputs.len() == 1
+        && arity.outputs.first().is_some_and(|port| port.name.as_ref() == "result" && port.sort == self.result)
+        && arity.factors.len() == arity.dest.len()
+        && arity.dest.iter().all(|dest| *dest == 0)
+        && arity.source.iter().enumerate().all(|(index, source)| usize::try_from(*source) == Ok(index))
+        && arity.source.len() == arity.inputs.len()
+        && arity.factors.iter().fold(0_u64, |total, count| total.saturating_add(u64::from(*count)))
+            == u64::try_from(arity.source.len()).unwrap_or(u64::MAX))]
     pub fn arity(&self) -> BridgeArity
     {
         /// One step of the monomial worklist.
@@ -613,11 +633,15 @@ impl<G> SignDesc<G>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the `List` retrofit recurses through `Cons` and the
-    ///   `Option` retrofit does not.
+    /// - hypothesis: L3 — empty and non-recursive tables, and a recursive
+    ///   constructor first or last, distinguish a missed endpoint, inverted
+    ///   answer and requiring every constructor rather than any constructor.
     /// - witness: `builtin::tests::list_is_recursive`
+    /// - witness: `desc::tests::description_recursion_scans_both_constructor_boundaries`
     #[inline]
     #[must_use]
+    #[spec(ensures: |recursive| bool::from(recursive)
+        == self.ctors.iter().any(|ctor| ctor.code.recursive_sorts().next().is_some()))]
     pub fn is_recursive(&self) -> RecursiveStatus
     {
         RecursiveStatus::from(
@@ -625,5 +649,64 @@ impl<G> SignDesc<G>
                 .iter()
                 .any(|ctor| bool::from(ctor.code.is_recursive())),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+    use crate::builtin::bool_desc;
+    use crate::code::AtomSort;
+    use crate::test_support::Grade;
+
+    #[test]
+    fn constructor_arities_distribute_products_over_sums_and_erase_binders()
+    {
+        let nullary = CtorDesc::<Grade>::new("Zero", Code::unit(), "Result", Attrs::empty());
+        assert_eq!(
+            nullary.arity(),
+            BridgeArity::new([], [0], [], [0], [SortRef::new("result", "Result")])
+        );
+        let payload = Code::bind(
+            AtomSort::named("a"),
+            Code::prod(
+                Code::sum(Code::unit(), Code::var("A")),
+                Code::sum(Code::var("B"), Code::var("C")),
+            ),
+        );
+        let ctor = CtorDesc::<Grade>::new("Branches", payload, "Result", Attrs::empty());
+        assert_eq!(
+            ctor.arity(),
+            BridgeArity::new(
+                [
+                    SortRef::new("x0", "B"),
+                    SortRef::new("x1", "C"),
+                    SortRef::new("x2", "A"),
+                    SortRef::new("x3", "B"),
+                    SortRef::new("x4", "A"),
+                    SortRef::new("x5", "C")
+                ],
+                [1, 1, 2, 2],
+                [0, 1, 2, 3, 4, 5],
+                [0, 0, 0, 0],
+                [SortRef::new("result", "Result")],
+            )
+        );
+    }
+
+    #[test]
+    fn description_recursion_scans_both_constructor_boundaries()
+    {
+        let mut desc = bool_desc::<Grade>();
+        assert!(!bool::from(desc.is_recursive()));
+        desc.ctors = Box::default();
+        assert!(!bool::from(desc.is_recursive()));
+        let leaf = CtorDesc::new("Leaf", Code::unit(), "Boolean", Attrs::empty());
+        let recursive = CtorDesc::new("Rec", Code::var("Boolean"), "Boolean", Attrs::empty());
+        desc.ctors = Box::from([leaf.clone(), recursive.clone()]);
+        assert!(bool::from(desc.is_recursive()));
+        desc.ctors = Box::from([recursive, leaf]);
+        assert!(bool::from(desc.is_recursive()));
     }
 }

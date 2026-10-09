@@ -45,6 +45,7 @@ use alloc::format;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::CircuitNodeBudget;
@@ -111,6 +112,16 @@ enum InterfaceRole
 /// - ensures: `{port}⟨source⟩` for the source role and `{port}⟨target⟩` for the
 ///   target role, so the two endpoints of one port are distinct.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the two roles for the same port have exact minted
+///   endpoint spellings; a missing delimiter, wrong role or captured port name
+///   changes those endpoints and their distinctness.
+/// - witness: `elaborate::tests::a_sorted_port_binds_two_distinct_endpoints`
+#[spec(ensures: |ref name| name.as_ref().strip_prefix(port.as_ref()) == Some(match role {
+    | InterfaceRole::Source => "⟨source⟩",
+    | InterfaceRole::Target => "⟨target⟩",
+}))]
 fn interface_variable(
     port: &Name,
     role: InterfaceRole,
@@ -191,14 +202,18 @@ impl RewritePort
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 only — the two forms are the whole decision surface,
-    ///   and they are separated by whether the pair carries the declaration's
-    ///   own terms; the sorted arm additionally has to keep its two endpoints
-    ///   apart, or the target would be bound by the source.
+    /// - hypothesis: L3 — sorted and pinned ports are observed as exact
+    ///   endpoint terms and the rewrite name; conflating endpoints, retaining
+    ///   the sort as a term or replacing a pinned endpoint changes the pair.
     /// - witness: `elaborate::tests::a_sorted_port_binds_two_distinct_endpoints`
     /// - witness: `elaborate::tests::a_pinned_port_binds_the_terms_it_writes`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ref pair| pair.rewrite == self.name && match self.face {
+        | PortFace::Sorted(_) => pair.source != pair.target
+            && matches!(pair.source.view(), TermView::Var(_)) && matches!(pair.target.view(), TermView::Var(_)),
+        | PortFace::Pinned { ref source, ref target } => &pair.source == source && &pair.target == target,
+    })]
     pub fn interface(&self) -> InterfacePair
     {
         match self.face {
@@ -302,7 +317,15 @@ impl InterfacePair
     /// - witness: `elaborate::tests::a_repeated_source_variable_consumes_one_argument`
     /// - witness: `elaborate::tests::an_instantiation_that_does_not_unify_declines`
     /// - witness: `elaborate::tests::a_target_endpoint_no_wire_supplies_declines`
+    /// - witness: `elaborate::tests::instantiation_observes_zero_arity_and_first_occurrence_order`
     #[inline]
+    #[spec(ensures: |ref result| match *result {
+        | Ok(ref redex) => redex.rewrite == self.rewrite,
+        | Err(PortInstantiationError::SourceArity { ref rewrite, expected, supplied }) => rewrite == &self.rewrite && expected != supplied,
+        | Err(PortInstantiationError::UnboundTargetEndpoint { ref rewrite, ref endpoints }) => rewrite == &self.rewrite && !endpoints.is_empty()
+            && endpoints.iter().all(|name| self.target.to_node().vars().any(|target| target == name)
+                && !self.source.to_node().vars().any(|source| source == name)),
+    })]
     pub fn instantiate<A, N>(
         &self,
         args: A,
@@ -475,8 +498,20 @@ impl WhiskeredCell
     /// # Specification
     /// - ensures: the new level is outermost, ahead of `inner`'s levels.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested redex whiskers and an identity composite are
+    ///   observed through exact levels and active positions; appending the new
+    ///   level innermost, losing a level or creating activity changes them.
+    /// - witness: `elaborate::tests::a_nested_whisker_reports_its_argument_path`
+    /// - witness: `elaborate::tests::an_identity_composite_has_no_active_position`
     #[inline]
     #[must_use]
+    #[spec(
+        captures: [levels = inner.whiskers.len(), was_identity = matches!(inner.active, ActiveCell::Here(_))],
+        ensures: |ref cell| cell.whiskers.len() == levels.saturating_add(1)
+            && matches!(cell.active, ActiveCell::Here(_)) == was_identity,
+    )]
     pub fn whisker<B, U>(
         head: FrameHead,
         before: B,
@@ -513,13 +548,19 @@ impl WhiskeredCell
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 only — the decision surface is the chain walk and the
-    ///   identity case, separated by a two-level whisker (which pins that the
-    ///   index is the count of unchanged arguments to the left, not a constant)
-    ///   and by an identity composite.
+    /// - hypothesis: L3 — a root redex, two nested unequal argument indices and
+    ///   a whiskered identity are observed as exact paths or absence; reversing
+    ///   levels, using the right-argument count or inventing an active identity
+    ///   position changes those results.
     /// - witness: `elaborate::tests::a_nested_whisker_reports_its_argument_path`
     /// - witness: `elaborate::tests::an_identity_composite_has_no_active_position`
+    /// - witness: `elaborate::tests::a_redex_at_the_root_needs_no_whisker`
     #[inline]
+    #[spec(ensures: |ref result| match *result {
+        | Maybe::Absent(_) => matches!(self.active, ActiveCell::Here(_)),
+        | Maybe::Present(ref position) => matches!(self.active, ActiveCell::Redex(_))
+            && position.iter().copied().map(usize::from).eq(self.whiskers.iter().map(|whisker| whisker.before.len())),
+    })]
     pub fn active_position(&self) -> Maybe<Vec<TermPositionIndex>, active_position::Absent>
     {
         match self.active {
@@ -680,7 +721,18 @@ pub enum CircuitElaborationError
 /// - witness: `elaborate::tests::two_disjoint_redexes_decline_with_incomparable_positions`
 /// - witness: `elaborate::tests::a_reconvergent_redex_is_two_occurrences_of_one_rewrite`
 /// - witness: `elaborate::tests::a_cyclic_wiring_elaborates_to_nothing`
+/// - witness: `elaborate::tests::occurrence_walk_distinguishes_opaque_roots_and_budget_refusals`
 #[inline]
+#[spec(ensures: |ref result| match *result {
+    | Ok(ref cell) => match cell.active {
+        | ActiveCell::Here(_) => cell.whiskers.is_empty(),
+        | ActiveCell::Redex(ref pair) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Redex(ref redex) if redex.rewrite == pair.rewrite)),
+    },
+    | Err(CircuitElaborationError::ManyRedexOccurrences { ref occurrences }) => occurrences.len() > 1,
+    | Err(CircuitElaborationError::Derivation(CircuitDerivationError::NodeBudget { budget })) => budget == CircuitNodeBudget::DEFAULT,
+    | Err(CircuitElaborationError::Derivation(CircuitDerivationError::CyclicWiring(ref port))) => body.nodes.iter().any(|node| node.out() == port),
+    | Err(CircuitElaborationError::PositionOffBoundary { ref rewrite, .. }) => body.nodes.iter().any(|node| matches!(*node, CircuitNode::Redex(ref redex) if &redex.rewrite == rewrite)),
+})]
 pub fn elaborate_body(body: &CircuitBody) -> Result<WhiskeredCell, CircuitElaborationError>
 {
     let derived = derive_boundaries(body).map_err(CircuitElaborationError::Derivation)?;
@@ -706,10 +758,25 @@ pub fn elaborate_body(body: &CircuitBody) -> Result<WhiskeredCell, CircuitElabor
 ///   application; the off-boundary error for a variable, which addresses no
 ///   argument.
 /// - fails: `off_boundary()` for a variable.
-/// - panics: none.
+/// - panics: none of its own; a panic in `off_boundary` propagates.
 ///
 /// # Errors
 /// Returns `off_boundary()` when `node` is a variable.
+///
+/// # Adequacy
+/// - hypothesis: L3 — variables, constructor and operation applications,
+///   including a nullary head, are observed as exact errors or ordered
+///   head/argument records; invoking the refusal callback on success, wrong
+///   alphabets or reordered arguments changes an observation.
+/// - witness: `elaborate::tests::application_and_whisker_positions_decline_off_boundary`
+#[spec(ensures: |ref result| match *result {
+    | Ok((ref head, ref args)) => match node.view() {
+        | TermView::Ctor { name, args: expected } => matches!(*head, FrameHead::Ctor(ref actual) if actual == name) && args.iter().copied().eq(expected),
+        | TermView::Op { name, args: expected } => matches!(*head, FrameHead::Op(ref actual) if actual == name) && args.iter().copied().eq(expected),
+        | TermView::Var(_) => false,
+    },
+    | Err(_) => matches!(node.view(), TermView::Var(_)),
+})]
 fn application<E, O>(
     node: TermNode<'_>,
     off_boundary: O,
@@ -737,6 +804,22 @@ where
 ///
 /// # Errors
 /// See the `- fails:` clause above.
+///
+/// # Adequacy
+/// - hypothesis: L3 — root and nested valid positions, variable boundaries and
+///   first-past argument indices on either endpoint are observed as exact cells
+///   or rewrite/path errors; ignoring a target bound, truncating a path or
+///   reversing the whisker chain changes them.
+/// - witness: `elaborate::tests::application_and_whisker_positions_decline_off_boundary`
+/// - witness: `elaborate::tests::a_redex_under_two_frames_whiskers_outermost_first`
+/// - witness: `elaborate::tests::a_redex_at_the_root_needs_no_whisker`
+#[spec(ensures: |ref result| match *result {
+    | Ok(ref cell) => cell.whiskers.len() == occurrence.position.len()
+        && cell.whiskers.iter().map(|whisker| whisker.before.len()).eq(occurrence.position.iter().copied().map(usize::from))
+        && matches!(cell.active, ActiveCell::Redex(ref pair) if pair.rewrite == occurrence.rewrite),
+    | Err(CircuitElaborationError::PositionOffBoundary { ref rewrite, ref position }) => rewrite == &occurrence.rewrite && position == &occurrence.position,
+    | Err(_) => false,
+})]
 fn whisker_along(
     derived: &DerivedBoundaries,
     occurrence: &RedexOccurrence,
@@ -822,12 +905,22 @@ fn whisker_along(
 /// See the `- fails:` clause above.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the walk's two outputs are the occurrence list and its
-///   order, separated by a two-redex body whose two occurrences read
-///   left-to-right and by a reconvergent body where one rewrite occurs twice.
+/// - hypothesis: L3 — empty, root and nested occurrence lists, distinct and
+///   reconvergent redexes, opaque endpoints, cycles and over-budget bodies have
+///   exact records or errors; lost duplicates, reversed siblings, inappropriate
+///   cycle detection and missing budget checks change them.
 /// - witness: `elaborate::tests::two_disjoint_redexes_decline_with_incomparable_positions`
 /// - witness: `elaborate::tests::a_reconvergent_redex_is_two_occurrences_of_one_rewrite`
+/// - witness: `elaborate::tests::a_cyclic_wiring_elaborates_to_nothing`
+/// - witness: `elaborate::tests::occurrence_walk_distinguishes_opaque_roots_and_budget_refusals`
 #[inline]
+#[spec(ensures: |ref result| match *result {
+    | Ok(ref occurrences) => occurrences.len() <= usize::from(CircuitNodeBudget::DEFAULT)
+        && occurrences.iter().all(|occurrence| body.nodes.iter().any(|node| matches!(*node, CircuitNode::Redex(ref redex) if redex.rewrite == occurrence.rewrite)))
+        && occurrences.iter().zip(occurrences.iter().skip(1)).all(|(first, second)| first.position <= second.position),
+    | Err(CircuitDerivationError::NodeBudget { budget }) => budget == CircuitNodeBudget::DEFAULT,
+    | Err(CircuitDerivationError::CyclicWiring(ref port)) => body.nodes.iter().any(|node| node.out() == port),
+})]
 pub fn redex_occurrences(body: &CircuitBody)
 -> Result<Vec<RedexOccurrence>, CircuitDerivationError>
 {
@@ -850,7 +943,21 @@ pub fn redex_occurrences(body: &CircuitBody)
     /// index.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends one ascend/term/descend triple per argument, in
+    ///   reverse argument order, so the stack enters leftmost arguments first.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nullary and two-argument application walks are
+    ///   observed as exact occurrence positions; a missing stack delimiter,
+    ///   reversed argument order or incorrect index changes those positions.
+    /// - witness: `elaborate::tests::two_disjoint_redexes_decline_with_incomparable_positions`
+    /// - witness: `elaborate::tests::a_body_with_no_redex_is_the_identity_rewrite`
+    #[spec(
+        captures: before = stack.len(),
+        ensures: stack.get(before ..).is_some_and(|added| added.len().is_multiple_of(3)
+            && added.chunks_exact(3).all(|steps| matches!(*steps, [Walk::Ascend, Walk::Term(_), Walk::Descend(_)]))),
+    )]
     fn push_args<'body, A>(
         stack: &mut Vec<Walk<'body>>,
         args: A,
@@ -947,6 +1054,18 @@ pub fn redex_occurrences(body: &CircuitBody)
 ///   occurrence: the declaration order the boundary language's `r(t₁, …, tₙ)`
 ///   instantiates in.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — ground, single-variable and repeated mixed-variable
+///   sources are observed through exact instantiated endpoints; sorting,
+///   retaining duplicate names or omitting a first occurrence changes them.
+/// - witness: `elaborate::tests::instantiation_observes_zero_arity_and_first_occurrence_order`
+/// - witness: `elaborate::tests::a_repeated_source_variable_consumes_one_argument`
+#[spec(ensures: |ref names| term.to_node().vars().all(|name| names.contains(name))
+    && names.iter().enumerate().all(|(index, name)| term.to_node().vars().any(|leaf| leaf == name)
+        && !names.iter().take(index).any(|prior| prior == name))
+    && names.iter().zip(names.iter().skip(1)).all(|(first, second)| term.to_node().vars().position(|name| name == first)
+        .zip(term.to_node().vars().position(|name| name == second)).is_some_and(|(first, second)| first < second)))]
 fn distinct_vars(term: &FreeTerm) -> Vec<Name>
 {
     let mut distinct: Vec<Name> = Vec::new();
@@ -965,6 +1084,17 @@ fn distinct_vars(term: &FreeTerm) -> Vec<Name>
 ///   and every other leaf is kept; applications keep their head, alphabet and
 ///   argument order.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — bound and unbound root/nested leaves, images containing
+///   another bound name and mixed application alphabets have exact output
+///   terms; repeated substitution, head changes and a dropped unbound leaf
+///   change those terms.
+/// - witness: `elaborate::tests::substitution_is_simultaneous_and_preserves_unbound_leaves`
+#[spec(ensures: |ref result| result.to_node().vars().eq(term.to_node().vars().flat_map(|name| {
+    bindings.get(name).into_iter().flat_map(|image| image.to_node().vars())
+        .chain(core::iter::once(name).filter(move |_| !bindings.contains_key(name)))
+})))]
 fn substitute(
     term: &FreeTerm,
     bindings: &BTreeMap<Name, FreeTerm>,
@@ -979,7 +1109,6 @@ fn substitute(
 #[cfg(test)]
 mod tests
 {
-    use alloc::string::ToString as _;
 
     use super::*;
     use crate::circuit::CircuitFrame;
@@ -1017,15 +1146,9 @@ mod tests
         // `rule p : Nat ==> Nat` writes the boundary sort and no terms, so the
         // pair it binds is two endpoints the sort alone does not name.
         let pair = RewritePort::sorted("p", "Nat").interface();
-        assert_eq!("p", pair.rewrite.to_string(), "the pair is the port's own");
-        assert_ne!(
-            pair.source, pair.target,
-            "the two endpoints stay apart, or the source would bind the target"
-        );
-        assert_ne!(
-            FreeTerm::var("p"),
-            pair.source,
-            "an endpoint is not the port itself"
+        assert_eq!(
+            pair,
+            InterfacePair::new("p", FreeTerm::var("p⟨source⟩"), FreeTerm::var("p⟨target⟩"))
         );
     }
 
@@ -1305,6 +1428,16 @@ mod tests
             WhiskeredCell::here(FreeTerm::var("z")).active_position(),
             "an identity composite is nowhere active"
         );
+        let nested = WhiskeredCell::whisker(
+            FrameHead::Ctor("F".into()),
+            [FreeTerm::var("before")],
+            WhiskeredCell::here(FreeTerm::var("z")),
+            [],
+        );
+        assert_eq!(
+            nested.active_position(),
+            Maybe::Absent(active_position::Absent::Identity)
+        );
     }
 
     #[test]
@@ -1433,11 +1566,218 @@ mod tests
             "a",
         );
         assert_eq!(
+            redex_occurrences(&body),
+            Err(CircuitDerivationError::CyclicWiring("a".into()))
+        );
+        assert_eq!(
             Err(CircuitElaborationError::Derivation(
                 CircuitDerivationError::CyclicWiring("a".into())
             )),
             elaborate_body(&body),
             "no boundary pair means no composite, and the decline names the port"
+        );
+    }
+
+    #[test]
+    fn instantiation_observes_zero_arity_and_first_occurrence_order()
+    {
+        let ground = InterfacePair::new(
+            "ground",
+            FreeTerm::ctor("Zero", []),
+            FreeTerm::ctor("Succ", [FreeTerm::ctor("Zero", [])]),
+        );
+        assert_eq!(
+            ground.instantiate([], "out"),
+            Ok(CircuitRedex::new(
+                "ground",
+                ground.source.clone(),
+                ground.target.clone(),
+                "out"
+            ))
+        );
+        assert_eq!(
+            ground.instantiate([FreeTerm::var("extra")], "out"),
+            Err(PortInstantiationError::SourceArity {
+                rewrite: "ground".into(),
+                expected: PortArgumentCount::from(0_usize),
+                supplied: PortArgumentCount::from(1_usize)
+            })
+        );
+        let sorted = RewritePort::sorted("p", "Nat").interface();
+        assert_eq!(
+            sorted.instantiate([], "out"),
+            Err(PortInstantiationError::SourceArity {
+                rewrite: "p".into(),
+                expected: PortArgumentCount::from(1_usize),
+                supplied: PortArgumentCount::from(0_usize)
+            })
+        );
+        let pair = InterfacePair::new(
+            "ordered",
+            FreeTerm::op("f", [
+                FreeTerm::var("b"),
+                FreeTerm::var("a"),
+                FreeTerm::var("b"),
+            ]),
+            FreeTerm::op("g", [FreeTerm::var("a"), FreeTerm::var("b")]),
+        );
+        assert_eq!(
+            pair.instantiate([FreeTerm::var("U"), FreeTerm::var("V")], "out"),
+            Ok(CircuitRedex::new(
+                "ordered",
+                FreeTerm::op("f", [
+                    FreeTerm::var("U"),
+                    FreeTerm::var("V"),
+                    FreeTerm::var("U")
+                ]),
+                FreeTerm::op("g", [FreeTerm::var("V"), FreeTerm::var("U")]),
+                "out"
+            ))
+        );
+        let unbound = InterfacePair::new(
+            "missing",
+            FreeTerm::var("x"),
+            FreeTerm::op("f", [
+                FreeTerm::var("z"),
+                FreeTerm::var("y"),
+                FreeTerm::var("z"),
+            ]),
+        );
+        assert_eq!(
+            unbound.instantiate([FreeTerm::var("a")], "out"),
+            Err(PortInstantiationError::UnboundTargetEndpoint {
+                rewrite: "missing".into(),
+                endpoints: [Name::from("z"), Name::from("y")].into()
+            })
+        );
+    }
+
+    #[test]
+    fn application_and_whisker_positions_decline_off_boundary()
+    {
+        let variable = FreeTerm::var("x");
+        let mut calls = 0_usize;
+        assert_eq!(
+            application(variable.to_node(), || {
+                calls = calls.saturating_add(1);
+                active_position::Absent::Identity
+            }),
+            Err(active_position::Absent::Identity)
+        );
+        assert_eq!(calls, 1);
+        for (term, expected_head, expected_args) in [
+            (
+                FreeTerm::ctor("Zero", []),
+                FrameHead::Ctor("Zero".into()),
+                vec![],
+            ),
+            (
+                FreeTerm::op("f", [FreeTerm::var("x"), FreeTerm::var("y")]),
+                FrameHead::Op("f".into()),
+                vec![FreeTerm::var("x"), FreeTerm::var("y")],
+            ),
+        ] {
+            let (head, args) = application::<active_position::Absent, _>(term.to_node(), || {
+                panic!("an application does not call the refusal callback")
+            })
+            .expect("application");
+            assert_eq!(head, expected_head);
+            assert_eq!(
+                args.into_iter().map(TermNode::to_term).collect::<Vec<_>>(),
+                expected_args
+            );
+        }
+        let one = FreeTerm::op("f", [FreeTerm::var("x")]);
+        let two = FreeTerm::op("f", [FreeTerm::var("x"), FreeTerm::var("y")]);
+        for (source, target, index) in [
+            (variable.clone(), one.clone(), 0_usize),
+            (one.clone(), variable, 0),
+            (one.clone(), two.clone(), 1),
+            (two, one, 1),
+        ] {
+            let occurrence = RedexOccurrence::new("p", [TermPositionIndex::from(index)]);
+            assert_eq!(
+                whisker_along(&DerivedBoundaries { source, target }, &occurrence),
+                Err(CircuitElaborationError::PositionOffBoundary {
+                    rewrite: occurrence.rewrite,
+                    position: occurrence.position
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn substitution_is_simultaneous_and_preserves_unbound_leaves()
+    {
+        let image = FreeTerm::ctor("Image", [FreeTerm::var("y")]);
+        let bindings = BTreeMap::from([
+            (Name::from("x"), image.clone()),
+            (Name::from("y"), FreeTerm::var("z")),
+        ]);
+        let source = FreeTerm::op("f", [
+            FreeTerm::var("x"),
+            FreeTerm::ctor("G", [FreeTerm::var("y")]),
+            FreeTerm::var("u"),
+        ]);
+        assert_eq!(
+            substitute(&source, &bindings),
+            FreeTerm::op("f", [
+                image.clone(),
+                FreeTerm::ctor("G", [FreeTerm::var("z")]),
+                FreeTerm::var("u")
+            ])
+        );
+        assert_eq!(substitute(&FreeTerm::var("x"), &bindings), image);
+        assert_eq!(
+            substitute(&FreeTerm::var("u"), &bindings),
+            FreeTerm::var("u")
+        );
+    }
+
+    #[test]
+    fn occurrence_walk_distinguishes_opaque_roots_and_budget_refusals()
+    {
+        assert_eq!(redex_occurrences(&CircuitBody::new([], "x")), Ok(vec![]));
+        let opaque = CircuitBody::new(
+            [
+                CircuitNode::Redex(CircuitRedex::new(
+                    "p",
+                    FreeTerm::var("w"),
+                    FreeTerm::var("t"),
+                    "w",
+                )),
+                CircuitNode::Redex(CircuitRedex::new(
+                    "later",
+                    FreeTerm::var("w"),
+                    FreeTerm::var("u"),
+                    "w",
+                )),
+            ],
+            "w",
+        );
+        assert_eq!(
+            redex_occurrences(&opaque),
+            Ok(vec![RedexOccurrence::new("p", [])])
+        );
+        let mut nodes = Vec::new();
+        let mut previous = Name::from("x");
+        for level in 0 .. 20_usize {
+            let out = Name::from(alloc::format!("w{level}"));
+            nodes.push(CircuitNode::Frame(CircuitFrame::new(
+                FrameHead::Op("double".into()),
+                [FreeTerm::var(previous.clone()), FreeTerm::var(previous)],
+                out.clone(),
+            )));
+            previous = out;
+        }
+        let body = CircuitBody::new(nodes, previous);
+        let error = CircuitDerivationError::NodeBudget {
+            budget: CircuitNodeBudget::DEFAULT,
+        };
+        assert_eq!(redex_occurrences(&body), Err(error.clone()));
+        assert_eq!(
+            elaborate_body(&body),
+            Err(CircuitElaborationError::Derivation(error))
         );
     }
 }

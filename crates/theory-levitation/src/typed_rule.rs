@@ -19,6 +19,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ContextTotality;
@@ -84,12 +85,19 @@ impl<T> PatternContext<T>
     /// Returns the first error `decode` raises on a binding's code.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a primitive field and a unit code decode into the
-    ///   context in order, an absent variable stays untyped, and a code the
-    ///   decoder refuses fails the build with the decoder's own error.
+    /// - hypothesis: L3 — empty, successful multi-binding and failed-prefix
+    ///   inputs are observed through exact bindings, errors and decoder calls;
+    ///   reordering, a skipped binding, a second decode or continuing past the
+    ///   first refusal changes an observer.
     /// - witness: `typed_rule::tests::signature_context_decodes_field_codes`
     /// - witness: `typed_rule::tests::signature_context_propagates_decode_failure`
+    /// - witness: `typed_rule::tests::context_decoding_visits_each_binding_once_and_stops_at_failure`
     #[inline]
+    #[spec(ensures: |ref result| match *result {
+        | Ok(ref context) => context.vars.len() == bindings.len()
+            && context.vars.iter().zip(bindings).all(|(bound, input)| bound.0 == input.0),
+        | Err(_) => !bindings.is_empty(),
+    })]
     pub fn from_field_codes<G, E, D>(
         bindings: &[(Name, Code<G>)],
         mut decode: D,
@@ -113,9 +121,17 @@ impl<T> PatternContext<T>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — bound and unbound names separate the answers.
+    /// - hypothesis: L3 — empty contexts, missing names and duplicate names
+    ///   with distinct types separate absence, wrong-name lookup and selecting
+    ///   a later duplicate; the returned type is the observer.
     /// - witness: `typed_rule::tests::signature_context_decodes_field_codes`
+    /// - witness: `typed_rule::tests::context_lookup_selects_the_first_duplicate`
     #[inline]
+    #[spec(ensures: |ref found| match *found {
+        | Maybe::Present(ty) => self.vars.iter().find(|binding| binding.0.as_ref() == var.as_ref())
+            .is_some_and(|binding| core::ptr::eq(core::ptr::from_ref(ty), &raw const binding.1)),
+        | Maybe::Absent(_) => self.vars.iter().all(|binding| binding.0.as_ref() != var.as_ref()),
+    })]
     pub fn type_of(
         &self,
         var: NameRef<'_>,
@@ -170,11 +186,16 @@ impl<T> TypedRuleFace<T>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a context typing the face's one variable and an empty
-    ///   context separate the answers.
+    /// - hypothesis: L3 — no declared variables, all typed variables and a
+    ///   missing declared variable separate vacuous totality from partial
+    ///   coverage; the verdict detects inverted or existential quantification.
     /// - witness: `typed_rule::tests::typed_face_context_totality_tracks_declared_variables`
+    /// - witness: `typed_rule::tests::an_empty_face_context_is_total`
     #[inline]
     #[must_use]
+    #[spec(ensures: |total| bool::from(total) == self.face.vars.iter().all(|meta| {
+        self.context.vars.iter().any(|binding| binding.0 == meta.var)
+    }))]
     pub fn is_context_total(&self) -> ContextTotality
     {
         ContextTotality::from(self.face.vars.iter().all(|meta| {
@@ -232,7 +253,24 @@ mod tests
     /// refused.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: unit, integer fields and the recursive sort `Self` decode to
+    ///   their corresponding stand-in types.
+    /// - fails: atom abstractions have their own error; every other unsupported
+    ///   former has `TestDecodeError::Unsupported`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Refuses an atom abstraction or an unsupported former.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — supported unit, integer and self-recursive codes are
+    ///   separated from a different recursive sort and a non-integer field by
+    ///   exact types/errors; missing arms and broadened support fail a witness.
+    /// - witness: `typed_rule::tests::signature_context_decodes_field_codes`
+    /// - witness: `typed_rule::tests::signature_context_propagates_decode_failure`
+    /// - witness: `typed_rule::tests::decoder_distinguishes_recursive_and_field_boundaries`
+    #[spec(ensures: |ref result| matches!(*result, Err(TestDecodeError::AtomAbstraction))
+        == matches!(code.view(), CodeView::Bind { .. }))]
     fn decode(code: &Code<Grade>) -> Result<TestType, TestDecodeError>
     {
         match code.view() {
@@ -327,6 +365,99 @@ mod tests
             Err(TestDecodeError::AtomAbstraction),
             result,
             "a field code the decoder refuses fails the context build"
+        );
+    }
+
+    #[test]
+    fn context_decoding_visits_each_binding_once_and_stops_at_failure()
+    {
+        let mut calls = Vec::new();
+        let empty = PatternContext::from_field_codes::<Grade, _, _>(&[], |code| {
+            calls.push(code.clone());
+            decode(code)
+        })
+        .expect("empty decoding succeeds");
+        assert!(empty.vars.is_empty());
+        assert!(calls.is_empty());
+        let bad = Code::bind(AtomSort::named("a"), Code::unit());
+        let bindings = [
+            (Name::from("x"), integer_field()),
+            (Name::from("y"), bad.clone()),
+            (Name::from("z"), Code::unit()),
+        ];
+        let failed = PatternContext::from_field_codes(&bindings, |code| {
+            calls.push(code.clone());
+            decode(code)
+        });
+        assert_eq!(failed, Err(TestDecodeError::AtomAbstraction));
+        assert_eq!(calls, [integer_field(), bad]);
+        calls.clear();
+        let bindings = [
+            (Name::from("y"), Code::unit()),
+            (Name::from("x"), integer_field()),
+        ];
+        let context = PatternContext::from_field_codes(&bindings, |code| {
+            calls.push(code.clone());
+            decode(code)
+        })
+        .expect("both codes decode");
+        assert_eq!(calls, [Code::unit(), integer_field()]);
+        assert_eq!(context.vars.as_ref(), [
+            (Name::from("y"), TestType::Unit),
+            (Name::from("x"), TestType::Integer)
+        ]);
+    }
+
+    #[test]
+    fn context_lookup_selects_the_first_duplicate()
+    {
+        let context = PatternContext::new([
+            (Name::from("x"), TestType::Integer),
+            (Name::from("x"), TestType::Unit),
+        ]);
+        assert_eq!(
+            context.type_of(NameRef::from("x")),
+            Maybe::Present(&TestType::Integer)
+        );
+        assert_eq!(
+            context.type_of(NameRef::from("y")),
+            Maybe::Absent(pattern_variable::Absent::Unbound)
+        );
+        assert_eq!(
+            PatternContext::<TestType>::new([]).type_of(NameRef::from("x")),
+            Maybe::Absent(pattern_variable::Absent::Unbound)
+        );
+    }
+
+    #[test]
+    fn an_empty_face_context_is_total()
+    {
+        let face = RuleFace::new(
+            FreeTerm::var("x"),
+            FreeTerm::var("x"),
+            [],
+            SurfaceSpan::new(0_usize.into(), 0_usize.into()),
+        );
+        assert!(bool::from(
+            TypedRuleFace::new(face, PatternContext::<TestType>::new([])).is_context_total()
+        ));
+    }
+
+    #[test]
+    fn decoder_distinguishes_recursive_and_field_boundaries()
+    {
+        assert_eq!(decode(&Code::var("Self")), Ok(TestType::Carrier));
+        assert_eq!(
+            decode(&Code::var("Other")),
+            Err(TestDecodeError::Unsupported)
+        );
+        assert_eq!(
+            decode(&Code::field(
+                ValueTypeRef::prim(PrimTy::Boolean),
+                Grade::One,
+                Attrs::empty()
+            )),
+            Err(TestDecodeError::Unsupported)
         );
     }
 }
