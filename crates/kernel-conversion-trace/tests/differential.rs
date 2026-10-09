@@ -44,6 +44,21 @@ mod differential
     ///
     /// The last layer is the head. Unfolding pops one layer; when the stack is
     /// empty the atom is exposed.
+    ///
+    /// # Specification
+    /// - ensures: the last layer is the next definition head; removing all
+    ///   layers exposes the carried atom.
+    /// - panics: none.
+    /// - executable: none — these are the consumer's interpretation rules for a
+    ///   data value; conversion and replay check them at use sites.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite empty, asymmetric and shared-head stacks are
+    ///   observed through exact decisions and replayed verdicts. A refuting
+    ///   comparison appended to an existing log separates atom identity from
+    ///   layer identity and checks order.
+    /// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
+    /// - witness: `differential::differential::conversion_appends_a_refutation_to_an_existing_log`
     #[derive(Clone, Debug, Eq, PartialEq)]
     struct Side
     {
@@ -54,6 +69,20 @@ mod differential
     }
 
     /// The answer a comparison produces.
+    ///
+    /// # Specification
+    /// - ensures: convertible means the compared sides expose the same atom;
+    ///   not convertible means their exposed atoms differ.
+    /// - panics: none.
+    /// - executable: none — the compared sides are external to this answer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — four finite comparisons and an appended layered
+    ///   refutation have exact atom-derived answers, separating always-positive
+    ///   and layer-derived judgements. Replay recomputes those answers from the
+    ///   recorded decisions.
+    /// - witness: `differential::differential::recording_does_not_move_the_verdict`
+    /// - witness: `differential::differential::conversion_appends_a_refutation_to_an_existing_log`
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Verdict
     {
@@ -64,6 +93,20 @@ mod differential
     }
 
     /// A trace the replay refuses.
+    ///
+    /// # Specification
+    /// - ensures: identifies the first invalid transition, an event after a
+    ///   valid close, or a trace that ends without a valid close.
+    /// - panics: none.
+    /// - executable: none — classification depends on the external terms,
+    ///   decision sequence and replay state, none of which this tag retains.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the refusal matrix distinguishes all six reasons and
+    ///   the guards on shortcut, unfolding, reduction and closing. An event
+    ///   after a close must be refused as such before its own kind is
+    ///   interpreted.
+    /// - witness: `differential::differential::replay_refuses_each_invalid_transition`
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum ReplayError
     {
@@ -91,8 +134,7 @@ mod differential
     /// seam at all.
     ///
     /// # Specification
-    /// - requires: `left` and `right` carry finite layer stacks, and `sink` is
-    ///   the instantiation whose verdicts the differential compares.
+    /// - requires: the sink obeys its declared recording behavior.
     /// - ensures: answers `Convertible` exactly when the two sides expose the
     ///   same atom once every layer is unfolded, and hands the sink one
     ///   decision per step it took, in the order it took them.
@@ -101,6 +143,17 @@ mod differential
     ///   second implementation.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — four finite comparisons expose exact verdicts at both
+    ///   shipped sinks; replay independently checks their decisions. L3 an
+    ///   existing log receives a layered refutation without losing its prefix,
+    ///   separating clearing, premature success and recording in the wrong
+    ///   order.
+    /// - witness: `differential::differential::recording_does_not_move_the_verdict`
+    /// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
+    /// - witness: `differential::differential::conversion_appends_a_refutation_to_an_existing_log`
+    #[anodized::spec(ensures: |ret| (ret == Verdict::Convertible) == (left.atom == right.atom))]
     fn convert<Sink>(
         left: &Side,
         right: &Side,
@@ -155,18 +208,27 @@ mod differential
         }
     }
 
-    /// Records one decision, building it only when the sink is live.
+    /// Sends a decision only when the sink is live.
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: forwards `decision` to `sink` exactly when `Sink::ACTIVITY`
-    ///   is `SinkActivity::Active`, and returns without touching the sink
-    ///   otherwise, so the sink-off instantiation monomorphizes to the strategy
-    ///   with no seam at all.
+    /// - ensures: forwards the already constructed decision to an active sink;
+    ///   an inactive sink is left unchanged.
     /// - provides: the guarded emit every recording site in the strategy goes
     ///   through.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite workload observes exact nonzero recording
+    ///   counts and zero null counts; an existing log retains its prefix. These
+    ///   distinguish dropped active events and altered state on the inactive
+    ///   path, not the cost of constructing an argument before this function is
+    ///   entered.
+    /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
+    /// - witness: `differential::differential::conversion_appends_a_refutation_to_an_existing_log`
+    #[anodized::spec(captures: [before = sink.recorded_count()], ensures:
+        !matches!(Sink::ACTIVITY, SinkActivity::Inactive) || sink.recorded_count() == before)]
     fn record<Sink>(
         sink: &mut Sink,
         decision: ConversionDecision<NodeName>,
@@ -188,8 +250,8 @@ mod differential
     /// same logic.
     ///
     /// # Specification
-    /// - requires: `decisions` is the trace one `convert` run recorded for
-    ///   `left` and `right`, in recording order.
+    /// - requires: nothing; arbitrary decision sequences are admitted and
+    ///   malformed traces are refused.
     /// - ensures: `Ok(verdict)` re-derived from the atoms the trace closed on,
     ///   having checked every decision against the terms — a named constant
     ///   heads the side its decision acts on, a reduction follows its own
@@ -207,6 +269,28 @@ mod differential
     ///   `ReplayError::UnexpectedDecision` for a kind this replay has no rule
     ///   for.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// - `ReplayError::HeadMismatch`: a named head or atom disagrees.
+    /// - `ReplayError::UnpairedUnfold`: unfolding and reduction do not pair.
+    /// - `ReplayError::ClosedTooEarly`: a close leaves unprocessed layers.
+    /// - `ReplayError::DecisionAfterClose`: an event follows a valid close.
+    /// - `ReplayError::NeverClosed`: the trace ends without a valid close.
+    /// - `ReplayError::UnexpectedDecision`: this replay has no rule for a kind.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — valid traces rederive exact atom-based verdicts
+    ///   independently of the strategy. L3 every refusal guard is exercised
+    ///   with a malformed finite trace, including error precedence after
+    ///   closing. Exact error variants separate skipped checks, mismatched
+    ///   heads and incorrect state transitions.
+    /// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
+    /// - witness: `differential::differential::a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with`
+    /// - witness: `differential::differential::replay_refuses_each_invalid_transition`
+    #[anodized::spec(ensures: |ret| ret.as_ref().ok().is_none_or(|verdict|
+        (*verdict == Verdict::Convertible) == (left.atom == right.atom)
+        && matches!(decisions.last(), Some(ConversionDecision::ComparedShared { left: first, right: second })
+            if *first == left.atom && *second == right.atom)))]
     fn replay(
         left: &Side,
         right: &Side,
@@ -290,6 +374,22 @@ mod differential
 
     /// One comparison the differential runs, with the decision count its trace
     /// must have.
+    ///
+    /// # Specification
+    /// - ensures: the verdict agrees with the exposed atoms, and the count
+    ///   names the strategy's retained decisions including its closing event.
+    /// - panics: none.
+    /// - executable: none — data-item expansion does not check construction;
+    ///   the fixture builder checks verdicts and differential runs check
+    ///   counts.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — each of the four fixture comparisons is run at both
+    ///   sinks; its verdict and exact retained count are observed. Shared
+    ///   heads, bare unequal atoms and asymmetric layers separate incorrect
+    ///   expected answers or counts.
+    /// - witness: `differential::differential::recording_does_not_move_the_verdict`
+    /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
     struct Case
     {
         /// The left-hand term.
@@ -305,7 +405,24 @@ mod differential
     /// The comparisons the differential runs.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: fixture verdicts agree with their atoms; every case closes
+    ///   with at least one recorded decision, and both verdicts are
+    ///   represented.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the four fixture cases are executed at both sinks and
+    ///   replayed; exact answers and event counts reject inconsistent fixture
+    ///   metadata. The predicate checks the atom relation and coverage, not the
+    ///   whole trace count.
+    /// - witness: `differential::differential::recording_does_not_move_the_verdict`
+    /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
+    /// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
+    #[anodized::spec(ensures: |ret| ret.iter().all(|case|
+        (case.verdict == Verdict::Convertible) == (case.left.atom == case.right.atom)
+        && usize::from(case.decisions) >= 1)
+        && ret.iter().any(|case| case.verdict == Verdict::Convertible)
+        && ret.iter().any(|case| case.verdict == Verdict::NotConvertible))]
     fn cases() -> Vec<Case>
     {
         vec![
@@ -469,6 +586,198 @@ mod differential
             Err(ReplayError::UnpairedUnfold),
             replay(&left, &right, &truncated),
             "and so is a reduction with no unfolding decision before it"
+        );
+    }
+    #[test]
+    fn conversion_appends_a_refutation_to_an_existing_log()
+    {
+        let left = Side {
+            layers: vec![NodeName(1), NodeName(2)],
+            atom: NodeName(5),
+        };
+        let right = Side {
+            layers: vec![NodeName(2)],
+            atom: NodeName(6),
+        };
+        let mut log = TraceLog::new();
+        log.record(ConversionDecision::Force {
+            thunk: NodeName(99),
+        });
+        assert_eq!(Verdict::NotConvertible, convert(&left, &right, &mut log));
+        let expected = [
+            ConversionDecision::Force {
+                thunk: NodeName(99),
+            },
+            ConversionDecision::ConstShortcut {
+                constant: NodeName(2),
+            },
+            ConversionDecision::Unfold {
+                constant: NodeName(1),
+            },
+            ConversionDecision::ReduceLeft { redex: NodeName(1) },
+            ConversionDecision::ComparedShared {
+                left: NodeName(5),
+                right: NodeName(6),
+            },
+        ];
+        assert_eq!(DecisionCount::from(5), log.recorded_count());
+        assert!(log.decisions().copied().eq(expected));
+    }
+
+    #[test]
+    fn replay_refuses_each_invalid_transition()
+    {
+        let layered = Side {
+            layers: vec![NodeName(1)],
+            atom: NodeName(5),
+        };
+        let bare = Side {
+            layers: Vec::new(),
+            atom: NodeName(5),
+        };
+        let failures: [(&Side, &Side, &[ConversionDecision<NodeName>], ReplayError); 14] = [
+            (&bare, &bare, &[], ReplayError::NeverClosed),
+            (
+                &layered,
+                &bare,
+                &[
+                    ConversionDecision::Unfold {
+                        constant: NodeName(1),
+                    },
+                    ConversionDecision::Unfold {
+                        constant: NodeName(1),
+                    },
+                ],
+                ReplayError::UnpairedUnfold,
+            ),
+            (
+                &layered,
+                &bare,
+                &[ConversionDecision::ReduceRight { redex: NodeName(1) }],
+                ReplayError::UnpairedUnfold,
+            ),
+            (
+                &layered,
+                &bare,
+                &[
+                    ConversionDecision::Unfold {
+                        constant: NodeName(2),
+                    },
+                    ConversionDecision::ReduceLeft { redex: NodeName(2) },
+                ],
+                ReplayError::HeadMismatch,
+            ),
+            (
+                &layered,
+                &bare,
+                &[
+                    ConversionDecision::Unfold {
+                        constant: NodeName(2),
+                    },
+                    ConversionDecision::ReduceLeft { redex: NodeName(1) },
+                ],
+                ReplayError::UnpairedUnfold,
+            ),
+            (
+                &bare,
+                &layered,
+                &[ConversionDecision::ConstShortcut {
+                    constant: NodeName(1),
+                }],
+                ReplayError::HeadMismatch,
+            ),
+            (
+                &layered,
+                &bare,
+                &[ConversionDecision::ConstShortcut {
+                    constant: NodeName(1),
+                }],
+                ReplayError::HeadMismatch,
+            ),
+            (
+                &layered,
+                &layered,
+                &[
+                    ConversionDecision::Unfold {
+                        constant: NodeName(1),
+                    },
+                    ConversionDecision::ConstShortcut {
+                        constant: NodeName(1),
+                    },
+                ],
+                ReplayError::UnpairedUnfold,
+            ),
+            (
+                &layered,
+                &bare,
+                &[
+                    ConversionDecision::Unfold {
+                        constant: NodeName(1),
+                    },
+                    ConversionDecision::ComparedShared {
+                        left: NodeName(5),
+                        right: NodeName(5),
+                    },
+                ],
+                ReplayError::UnpairedUnfold,
+            ),
+            (
+                &layered,
+                &bare,
+                &[ConversionDecision::ComparedShared {
+                    left: NodeName(5),
+                    right: NodeName(5),
+                }],
+                ReplayError::ClosedTooEarly,
+            ),
+            (
+                &bare,
+                &layered,
+                &[ConversionDecision::ComparedShared {
+                    left: NodeName(5),
+                    right: NodeName(5),
+                }],
+                ReplayError::ClosedTooEarly,
+            ),
+            (
+                &bare,
+                &bare,
+                &[ConversionDecision::ComparedShared {
+                    left: NodeName(6),
+                    right: NodeName(5),
+                }],
+                ReplayError::HeadMismatch,
+            ),
+            (
+                &bare,
+                &bare,
+                &[ConversionDecision::ComparedShared {
+                    left: NodeName(5),
+                    right: NodeName(6),
+                }],
+                ReplayError::HeadMismatch,
+            ),
+            (
+                &bare,
+                &bare,
+                &[
+                    ConversionDecision::ComparedShared {
+                        left: NodeName(5),
+                        right: NodeName(5),
+                    },
+                    ConversionDecision::Force { thunk: NodeName(9) },
+                ],
+                ReplayError::DecisionAfterClose,
+            ),
+        ];
+        for (left, right, decisions, expected) in failures {
+            assert_eq!(Err(expected), replay(left, right, decisions));
+        }
+        assert_eq!(
+            Err(ReplayError::UnexpectedDecision),
+            replay(&bare, &bare, &[ConversionDecision::Force {
+                thunk: NodeName(9)
+            }]),
         );
     }
 }
