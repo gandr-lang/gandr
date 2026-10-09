@@ -38,6 +38,7 @@ use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::LoweringRefusal;
 use gandr_surface_lowering::OriginTable;
 use gandr_surface_parser::MeldError;
+use gandr_surface_parser::ObligationInstance;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -231,27 +232,188 @@ mod lowering
     }
 }
 
+/// What the lowering made of one parsed source, before any checking.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per source, moved once into its judgement; the module is the common variant, \
+              and boxing it would add an allocation per source to shrink the rare refused one"
+)]
+#[derive(Clone, Debug)]
+pub enum Lowered<'source>
+{
+    /// The lowering read the source's declarations, minting their core nodes
+    /// in `arena`.
+    Module
+    {
+        /// The lowered module.
+        module: LoweredModule<'source>,
+        /// The arena its core nodes were minted in.
+        arena: CoreArena,
+    },
+    /// The lowering refused the source as a whole for a reason of the
+    /// author's or of the fragment's: a root that is not a list of
+    /// declarations.
+    Refused(LoweringRefusal<'source>),
+}
+
+/// One source parsed and lowered: what the lowering made of it, beside the
+/// completion obligations the parser recorded while committing its tree.
+#[derive(Clone, Debug)]
+pub struct Lowering<'source>
+{
+    /// The parser's completion obligations, verbatim and in its order.
+    obligations: Vec<ObligationInstance>,
+    /// What the lowering made of the tree.
+    lowered: Lowered<'source>,
+}
+
+impl<'source> Lowering<'source>
+{
+    /// The parser's completion obligations, verbatim and in its order: each
+    /// repair the parser made to commit a tree the source did not spell whole.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn obligations(&self) -> &[ObligationInstance]
+    {
+        &self.obligations
+    }
+
+    /// What the lowering made of the tree, the obligations given up.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_lowered(self) -> Lowered<'source>
+    {
+        self.lowered
+    }
+}
+
+/// Parse and lower one source: the first half of the composition.
+///
+/// # Specification
+/// - requires: `grammar` is the checked grammar the source is parsed under.
+/// - ensures: the source is parsed once and lowered once into a fresh arena
+///   against the empty outermost scope, and `lowerings` is exactly one more. A
+///   module the lowering reads is [`Lowered::Module`] with the arena it was
+///   minted in; a source the lowering refuses as a whole for a reason of the
+///   author's or of the fragment's is [`Lowered::Refused`]. Either carries the
+///   parser's completion obligations unchanged.
+/// - provides: the lowering [`compose()`] judges, for a caller that keeps the
+///   lowered module beside the verdicts — the session, which hands the same
+///   module to the incremental checker.
+/// - fails: [`ComposeFault::Parse`] when the parser cannot commit its tree;
+///   [`ComposeFault::Lowering`] for a whole-module refusal of the engine-fault
+///   class.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ComposeFault::Parse`]: the tree could not be committed.
+/// - [`ComposeFault::Lowering`]: the lowering faulted before any declaration
+///   could be trusted.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the surfaces are the routing of a read module, of a
+///   refused one and of the obligations, separated by a recovering source whose
+///   obligations are compared with the parser's own, a source refused whole,
+///   and the lowering count asserted at one per call.
+/// - witness: `compose::tests::a_lowering_carries_the_parse_obligations`
+/// - witness: `compose::tests::a_root_that_is_no_list_of_declarations_is_refused_whole`
+/// - witness: `compose::tests::each_composition_lowers_once`
+#[inline]
+pub fn lower_source<'source>(
+    grammar: &Pbg,
+    source: SourceText<'source>,
+    lowerings: &mut LoweringCount,
+) -> Result<Lowering<'source>, ComposeFault<'source>>
+{
+    let parsed = parse(grammar, source).map_err(ComposeFault::Parse)?;
+    let obligations = parsed.obligations().to_vec();
+    let tree = parsed.into_tree();
+    let mut arena = CoreArena::new();
+    let lowered = match lowering::lower(grammar, &tree, &mut arena, lowerings) {
+        | Ok(module) => Lowered::Module { module, arena },
+        | Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
+            return Err(ComposeFault::Lowering(refusal));
+        },
+        | Err(refusal) => Lowered::Refused(refusal),
+    };
+    Ok(Lowering {
+        obligations,
+        lowered,
+    })
+}
+
+/// Judge one lowered module: the second half of the composition.
+///
+/// # Specification
+/// - requires: `module` was lowered into `arena`; `root` is the corpus root the
+///   source sits under.
+/// - ensures: the module is adapted to the checker's input, judged, offered to
+///   the kernel and settled under `root`; the result is [`Composed::Settled`]
+///   with one report per declared name, the exercised rows its settled
+///   declarations carry, the refusals of the declarations refused at their own
+///   form, which no expectation can state, and the lowering's origin table,
+///   moved rather than copied.
+/// - provides: the verdict set [`compose()`] gives a module the lowering read.
+/// - fails: [`ComposeFault::Readmission`] for a declaration the checker
+///   accepted that the kernel does not re-derive; [`ComposeFault::Settle`] when
+///   the settle comparison refuses the verdicts.
+/// - panics: none.
+///
+/// # Errors
+/// - [`ComposeFault::Readmission`]: the kernel disagreed with the checker.
+/// - [`ComposeFault::Settle`]: the verdicts are not the module's own.
+///
+/// # Adequacy
+/// - hypothesis: L2 — sources with every verdict kind are judged and each
+///   declaration asserted at its exact stated and produced verdicts, the kernel
+///   acting as the external oracle on every acceptance.
+/// - witness: `compose::tests::a_module_settles_every_declaration_once`
+/// - witness: `compose::tests::the_root_decides_what_an_expectation_means`
+/// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
+#[inline]
+pub fn judge_module(
+    root: CorpusRoot,
+    module: LoweredModule<'_>,
+    mut arena: CoreArena,
+) -> Result<Composed<'_>, ComposeFault<'_>>
+{
+    let declarations = adapt(&module);
+    let verdicts = check_module(
+        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
+        &declarations,
+    );
+    readmitted(&arena, &verdicts)?;
+    let report = settle(root, &arena, &module, &verdicts).map_err(ComposeFault::Settle)?;
+    let exercised = Exercised::of(&arena, &module, &report);
+    let unstatable = unstatable(&module);
+    Ok(Composed::Settled {
+        report,
+        exercised,
+        unstatable,
+        origins: module.into_origins(),
+    })
+}
+
 /// Carry one source through the pipeline: parse, lower, adapt, check, settle.
 ///
 /// # Specification
 /// - requires: `grammar` is the checked grammar the source is parsed under;
 ///   `root` is the corpus root the source sits under.
-/// - ensures: the source is parsed once and lowered once, and `lowerings` is
-///   exactly one more. A module the lowering reads is adapted to the checker's
-///   input, judged, offered to the kernel and settled under `root`; the result
-///   is [`Composed::Settled`] with one report per declared name, the exercised
-///   rows its settled declarations carry, the refusals of the declarations
-///   refused at their own form, which no expectation can state, and the
-///   lowering's origin table, moved rather than copied. A source the lowering
-///   refuses as a whole for a reason of the author's or of the fragment's is
-///   [`Composed::Refused`] with that refusal.
+/// - ensures: [`lower_source`] then, for a module the lowering read,
+///   [`judge_module`]: the source is parsed once and lowered once, and
+///   `lowerings` is exactly one more. A module the lowering reads is
+///   [`Composed::Settled`] with one report per declared name; a source the
+///   lowering refuses as a whole for a reason of the author's or of the
+///   fragment's is [`Composed::Refused`] with that refusal.
 /// - provides: the one verdict set a run gives the source, whichever verb runs
 ///   it.
-/// - fails: [`ComposeFault::Parse`] when the parser cannot commit its tree;
-///   [`ComposeFault::Lowering`] for a whole-module refusal of the engine-fault
-///   class; [`ComposeFault::Readmission`] for a declaration the checker
-///   accepted that the kernel does not re-derive; [`ComposeFault::Settle`] when
-///   the settle comparison refuses the verdicts.
+/// - fails: as [`lower_source`] and [`judge_module`].
 /// - panics: none.
 /// - intension: one parse, one lowering, one judgement, one readmission and one
 ///   settle per source; [`LoweringCount`] is the declared projection of the
@@ -283,32 +445,11 @@ pub fn compose<'source>(
     lowerings: &mut LoweringCount,
 ) -> Result<Composed<'source>, ComposeFault<'source>>
 {
-    let tree = parse(grammar, source)
-        .map_err(ComposeFault::Parse)?
-        .into_tree();
-    let mut arena = CoreArena::new();
-    let module = match lowering::lower(grammar, &tree, &mut arena, lowerings) {
-        | Ok(module) => module,
-        | Err(refusal) if refusal.classify() == FailureClass::EngineFault => {
-            return Err(ComposeFault::Lowering(refusal));
-        },
-        | Err(refusal) => return Ok(Composed::Refused(refusal)),
-    };
-    let declarations = adapt(&module);
-    let verdicts = check_module(
-        &mut CheckingContext::new(&mut arena, CheckBudget::DEFAULT),
-        &declarations,
-    );
-    readmitted(&arena, &verdicts)?;
-    let report = settle(root, &arena, &module, &verdicts).map_err(ComposeFault::Settle)?;
-    let exercised = Exercised::of(&arena, &module, &report);
-    let unstatable = unstatable(&module);
-    Ok(Composed::Settled {
-        report,
-        exercised,
-        unstatable,
-        origins: module.into_origins(),
-    })
+    let lowering = lower_source(grammar, source, lowerings)?;
+    match lowering.into_lowered() {
+        | Lowered::Module { module, arena } => judge_module(root, module, arena),
+        | Lowered::Refused(refusal) => Ok(Composed::Refused(refusal)),
+    }
 }
 
 /// The refusals of the declarations of `module` refused at their own form.
@@ -468,9 +609,11 @@ mod tests
 
     use super::ComposeFault;
     use super::Composed;
+    use super::Lowered;
     use super::LoweringCount;
     use super::adapt;
     use super::compose;
+    use super::lower_source;
     use super::readmitted;
 
     /// The built-in grammar.
@@ -624,6 +767,42 @@ def wrong = "text" ;"#,
                 "each composition lowers exactly once"
             );
         }
+    }
+
+    #[test]
+    fn a_lowering_carries_the_parse_obligations()
+    {
+        let grammar = grammar();
+        let mut lowerings = LoweringCount::default();
+        for (source, refused) in [
+            ("def bad = 1 ~ 2 ;\ndef good = 2 ;", false),
+            ("def good = 2 ;", false),
+            ("def bad = 1 ~ 2 ;\nret 3", true),
+        ] {
+            let parsed = parse(&grammar, SourceText::from(source)).expect("parses");
+            let lowering = lower_source(&grammar, SourceText::from(source), &mut lowerings)
+                .expect("lowers without a fault");
+            assert_eq!(
+                lowering.obligations(),
+                parsed.obligations(),
+                "the parser's obligations, verbatim, for {source:?}"
+            );
+            assert_eq!(
+                matches!(lowering.into_lowered(), Lowered::Refused(_)),
+                refused,
+                "{source:?} is read as a module or refused whole"
+            );
+        }
+        assert_eq!(
+            usize::from(lowerings),
+            3_usize,
+            "each lowering is counted once"
+        );
+        let recovering = parse(&grammar, SourceText::from("def bad = 1 ~ 2 ;")).expect("parses");
+        assert!(
+            !recovering.obligations().is_empty(),
+            "the recovering source carries obligations, so the comparison witnesses something"
+        );
     }
 
     #[test]

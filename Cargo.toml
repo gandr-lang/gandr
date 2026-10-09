@@ -23,6 +23,7 @@ members = [
   "crates/surface-lsp",
   "crates/surface-parser",
   "crates/surface-render-remote",
+  "crates/surface-session",
   "crates/surface-syntax",
   "crates/theory-cell-complexes",
   "crates/theory-cell-complexes-tools",
@@ -123,8 +124,16 @@ default-features = false
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-session
 [workspace.dependencies.gandr-core-checker]
 path = "crates/core-checker"
+
+# Incremental checking over the core judgement: the item seam, validated
+# resume, content-addressed checkpoints and the synthesis stream.
+# consumers:
+# - surface-session
+[workspace.dependencies.gandr-core-incremental]
+path = "crates/core-incremental"
 
 # Normalisation by evaluation over the core: weak-head evaluation and
 # readback, the oracle the L machine's readback is compared against.
@@ -144,6 +153,7 @@ path = "crates/core-nbe"
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-lowering
+# - surface-session
 [workspace.dependencies.gandr-core-term]
 path = "crates/core-term"
 
@@ -193,6 +203,7 @@ path = "crates/kernel-strata"
 # - kernel-core
 # - surface-corpus
 # - surface-lowering
+# - surface-session (dev)
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
 
@@ -216,6 +227,7 @@ path = "crates/storage-records"
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-lsp
+# - surface-session (dev)
 [workspace.dependencies.gandr-surface-corpus]
 path = "crates/surface-corpus"
 
@@ -233,6 +245,7 @@ path = "crates/surface-diagnostics"
 # - surface-diagnostics
 # - surface-driver
 # - surface-lsp
+# - surface-session
 [workspace.dependencies.gandr-surface-dispatcher]
 path = "crates/surface-dispatcher"
 
@@ -245,6 +258,7 @@ path = "crates/surface-dispatcher"
 # - surface-lowering
 # - surface-lsp
 # - surface-parser
+# - surface-session
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
 
@@ -254,6 +268,7 @@ path = "crates/surface-grammar"
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
+# - surface-session
 [workspace.dependencies.gandr-surface-lowering]
 path = "crates/surface-lowering"
 
@@ -295,6 +310,7 @@ path = "crates/surface-render-remote"
 # - surface-lowering
 # - surface-lsp
 # - surface-parser
+# - surface-session
 [workspace.dependencies.gandr-surface-syntax]
 path = "crates/surface-syntax"
 
@@ -387,6 +403,7 @@ default-features = false
 # - storage-records (dev)
 # - storage-values (dev)
 # - surface-parser (dev)
+# - surface-session (dev)
 # - theory-cell-complexes (dev)
 # - theory-circuit-algebras (dev)
 # - theory-coherent-resolutions (dev)
@@ -422,6 +439,7 @@ default-features = false
 # - surface-driver
 # - surface-lowering
 # - surface-lsp
+# - surface-session
 # - theory-cell-complexes
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras

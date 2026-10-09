@@ -27,15 +27,16 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 
 **Why.** The driver owns the argument surface and the process boundary; what an understood invocation does belongs to a library, so routing, composition and the gate can be enumerated without a process. The composition sits here, above the corpus library and the checker, because the settle comparison and the root guard must fire on the same pass that gates.
 
-**How.** `dispatch` is a total match over the closed `Invocation` enum. `compose` is one short function; the only call into the lowering sits in a private module that counts it. The walk lists directories with an explicit stack, classifies each source by its canonical path, and keeps one source's text at a time.
+**How.** `dispatch` is a total match over the closed `Invocation` enum. `compose` is `lower_source` then `judge_module`, two short functions; the only call into the lowering sits in a private module that counts it. The walk lists directories with an explicit stack, classifies each source by its canonical path, and keeps one source's text at a time.
 
 ## Provided features
 
 - `Invocation`, `Outcome`, `StatusReport` and `dispatch`: routing. Witnesses: `tests::status_routes_to_the_status_report`, `tests::check_routes_to_a_walk_under_the_check_verb`, `tests::the_test_verb_routes_to_a_walk`.
 - `compose`, `Composed`, `ComposeFault` and `LoweringCount`: the composition. Witnesses: `compose::tests::a_module_settles_every_declaration_once`, `compose::tests::a_root_that_is_no_list_of_declarations_is_refused_whole`, `compose::tests::each_composition_lowers_once`, `compose::tests::the_root_decides_what_an_expectation_means`, `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`, `compose::tests::a_kernel_disagreement_is_an_engine_fault`.
+- `lower_source`, `Lowering`, `Lowered` and `judge_module`: the composition's two halves, for a caller that keeps the lowered module beside the verdicts. Witnesses: `compose::tests::a_lowering_carries_the_parse_obligations`, `compose::tests::a_module_settles_every_declaration_once`.
 - `adapt`: the lowering's module as the checker's declaration input. Witness: `compose::tests::each_outcome_adapts_to_its_halves`.
 - `SourceRoot` and `classify`: the root a source sits under, by its path. Witnesses: `root::tests::a_path_under_no_root_is_strict`, `root::tests::the_innermost_root_decides`, `root::tests::pending_counts_only_directly_inside_a_fixture_root`, `root::tests::the_file_name_never_classifies`, `root::tests::each_root_settles_under_its_corpus_root`.
-- `Walk`, `Step`, `Standing`, `SourceFault` and `walk_step::Absent`: the walk. Witnesses: `walk::tests::a_tree_is_walked_in_order`, `walk::tests::every_path_answers_in_order`, `walk::tests::each_root_stands_its_sources`.
+- `Walk`, `Step`, `Standing`, `Standing::of`, `SourceFault` and `walk_step::Absent`: the walk, and the standing a step or a session submission carries. Witnesses: `walk::tests::a_tree_is_walked_in_order`, `walk::tests::every_path_answers_in_order`, `walk::tests::each_root_stands_its_sources`.
 - `RunReport`, `RunVerdict`, `SourceCounts`, `SourceCount`, `Verb`, `Goals`, `Shown` and `shown`: the runner's report, the gate and what each verb prints. Witnesses: `report::tests::each_count_decides_its_verdict`, `report::tests::each_verb_shows_its_declarations`.
 - `Exercised` and `Row`: the fragment's exercised table, counted. Witnesses: `exercised::tests::a_module_carries_exactly_its_rows`, `exercised::tests::an_unsettled_declaration_carries_no_row`, `exercised::tests::a_near_miss_carries_no_refusal_row`, `exercised::tests::absorbing_sums_every_row`.
 - The corpus's two roots, run through the walk: `corpus::corpus::the_strict_root_checks_owing_nothing`, `corpus::corpus::the_fixture_root_settles_every_fixture`, `corpus::corpus::the_two_roots_exercise_every_row`, `corpus::corpus::a_run_lowers_each_source_once`.
@@ -81,6 +82,8 @@ cargo nextest run -p gandr-surface-dispatcher
 `check` and `test` run the same walk and the same `compose`; they differ only in what `shown` prints and in what `--goals` does to the gate. A source is lowered exactly once per run, under one strictness, and each declaration gets exactly one verdict: the checker's, settled against what it states. `RunReport::lowerings` counts every lowering the crate performs, and the corpus suite asserts it equals the number of sources read.
 
 The alternative was a total session pass and a separate strict tier over the same sources, which lowers each source twice and gives each declaration two verdicts that can disagree. The choice reverses only if a verb needs a different lowering of the same source, which would arrive as a parameter of the one composition rather than a second one.
+
+The session (`gandr-surface-session`) is the one other caller. It runs the same two halves `compose` runs — `lower_source`, then `judge_module` — and keeps the lowered module between them to hand the incremental checker, so a submission's verdicts are this composition's and the corpus agreement suite there compares them source by source. The halves are public rather than duplicated there because a second composition is exactly what this section rules out.
 
 ## The kernel re-derives every acceptance
 

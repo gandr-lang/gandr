@@ -198,7 +198,7 @@ The four defects are each witnessed absent in `tests/defects.rs`: `the_generator
 
 ## Consumer and open rows
 
-The first consumer is a session crate above the surface dispatcher, not yet in the workspace: it lowers each submission, hands the program to `IncrementalSession`, and streams the result.
+The first consumer is `gandr-surface-session`: it lowers each submission, hands the program to `IncrementalSession`, and reports the resume beside the dispatcher's composition of the same text.
 
 Open: **session checkpoints in the storage tier.** `CheckpointStore` is the seam where the storage value plane takes over from the file store, persisting checkpoint sets as values with the storage tier's own integrity and retention.
 

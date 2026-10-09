@@ -68,6 +68,53 @@ pub enum Standing
     Lowered,
 }
 
+impl Standing
+{
+    /// How `composed`, a source under `root`, stands against its root.
+    ///
+    /// # Specification
+    /// - requires: `composed` is what a source under `root` became.
+    /// - ensures: a pending source refused whole, or carrying a declaration
+    ///   refused at its own form, is [`Self::Pending`], and one carrying
+    ///   neither [`Self::Lowered`]; a strict or fixture source refused whole is
+    ///   [`Self::Refused`]; otherwise [`Self::Settled`] exactly when every
+    ///   declaration settled, and [`Self::Unsettled`] when one did not.
+    /// - provides: the standing a walk step and a session submission carry,
+    ///   read by one function so the two cannot disagree.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each arm is reached by a source of its root and
+    ///   shape, asserted at its exact standing.
+    /// - witness: `walk::tests::each_root_stands_its_sources`
+    #[inline]
+    #[must_use]
+    pub fn of(
+        root: SourceRoot,
+        composed: &Composed<'_>,
+    ) -> Self
+    {
+        match (root, composed) {
+            | (SourceRoot::Pending, &Composed::Refused(_)) => Self::Pending,
+            | (SourceRoot::Pending, &Composed::Settled { ref unstatable, .. }) => {
+                if unstatable.is_empty() {
+                    Self::Lowered
+                }
+                else {
+                    Self::Pending
+                }
+            },
+            | (SourceRoot::Strict | SourceRoot::Fixture, &Composed::Refused(_)) => Self::Refused,
+            | (SourceRoot::Strict | SourceRoot::Fixture, &Composed::Settled { ref report, .. }) => {
+                match report.tally().settlement() {
+                    | Settlement::Settled => Self::Settled,
+                    | Settlement::Unsettled => Self::Unsettled,
+                }
+            },
+        }
+    }
+}
+
 /// Why a path could not be carried through the pipeline.
 #[derive(Debug)]
 pub enum SourceFault<'walk>
@@ -391,7 +438,7 @@ impl Walk
             self.report.lowerings_mut(),
         ) {
             | Ok(composed) => {
-                let standing = standing(root, &composed);
+                let standing = Standing::of(root, &composed);
                 self.report.read(root, &composed, standing);
                 Step::Source {
                     path: &self.path,
@@ -421,35 +468,6 @@ fn entry_path(entry: &Entry) -> &Path
     match *entry {
         | Entry::Directory(ref path) | Entry::Source(ref path) => path,
         | Entry::Argument => Path::new(""),
-    }
-}
-
-/// How `composed`, a source under `root`, stands against its root.
-///
-/// # Specification
-/// trivial.
-fn standing(
-    root: SourceRoot,
-    composed: &Composed<'_>,
-) -> Standing
-{
-    match (root, composed) {
-        | (SourceRoot::Pending, &Composed::Refused(_)) => Standing::Pending,
-        | (SourceRoot::Pending, &Composed::Settled { ref unstatable, .. }) => {
-            if unstatable.is_empty() {
-                Standing::Lowered
-            }
-            else {
-                Standing::Pending
-            }
-        },
-        | (SourceRoot::Strict | SourceRoot::Fixture, &Composed::Refused(_)) => Standing::Refused,
-        | (SourceRoot::Strict | SourceRoot::Fixture, &Composed::Settled { ref report, .. }) => {
-            match report.tally().settlement() {
-                | Settlement::Settled => Standing::Settled,
-                | Settlement::Unsettled => Standing::Unsettled,
-            }
-        },
     }
 }
 

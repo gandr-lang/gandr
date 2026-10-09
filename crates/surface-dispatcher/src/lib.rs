@@ -22,6 +22,12 @@
 //! run that same function over the same walk and differ only in what they
 //! print, so a source has one verdict per run whichever verb ran it.
 //!
+//! Its two halves are public: [`lower_source`] parses and lowers, and
+//! [`judge_module`] judges, readmits and settles what the lowering read.
+//! [`compose()`] is exactly the one then the other; the halves exist for the
+//! session, which keeps the lowered module to hand the incremental checker
+//! beside the verdicts.
+//!
 //! # Membership is location
 //!
 //! [`classify`] decides from a source's path alone which root it sits under:
@@ -43,9 +49,13 @@ use std::path::PathBuf;
 
 pub use crate::compose::ComposeFault;
 pub use crate::compose::Composed;
+pub use crate::compose::Lowered;
+pub use crate::compose::Lowering;
 pub use crate::compose::LoweringCount;
 pub use crate::compose::adapt;
 pub use crate::compose::compose;
+pub use crate::compose::judge_module;
+pub use crate::compose::lower_source;
 pub use crate::exercised::Exercised;
 pub use crate::exercised::Row;
 pub use crate::report::Goals;

@@ -1,0 +1,40 @@
+[package]
+name = "gandr-surface-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The interactive session above the dispatcher: the item source, incremental submission and checkpoint persistence"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "incremental", "language-server", "repl"]
+categories = ["compilers", "development-tools"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The session runs the dispatcher's two composition halves over the built-in
+# grammar, reads the lowered module's declarations and import scope, and hands
+# the same declarations to the incremental checker with its checkpoint stores.
+[dependencies]
+gandr-core-checker.workspace = true
+gandr-core-incremental.workspace = true
+gandr-core-term.workspace = true
+gandr-surface-dispatcher.workspace = true
+gandr-surface-grammar.workspace = true
+gandr-surface-lowering.workspace = true
+gandr-surface-syntax.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+gandr-kernel-term.workspace = true
+gandr-surface-corpus.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,5 @@
+def target(x: Integer) -> F Integer {
+  ret 2
+}
+def shown : U (F Integer) ;
+def shown = thunk { (force target)(0) } ;

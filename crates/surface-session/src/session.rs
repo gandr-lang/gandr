@@ -1,0 +1,809 @@
+//! The session: one call per revision that lowers, judges, resumes and
+//! persists, and the submission it reports.
+//!
+//! # Lowered once, judged whole, resumed beside it
+//!
+//! A submission lowers its revision once. The lowered module goes two ways:
+//! the dispatcher's [`judge_module`] judges, readmits and settles it, which is
+//! the report — the same verdicts `gandr check` gives the text — and the item
+//! source's [`program`] offers the same declarations to the incremental
+//! checker, which adopts every checkpoint that still answers, judges the rest
+//! and persists the set. A revision the lowering refuses as a whole is
+//! reported and leaves the session as it was.
+
+use core::fmt;
+use std::path::Path;
+
+use gandr_core_checker::CheckBudget;
+use gandr_core_incremental::BackendArtifact;
+use gandr_core_incremental::CheckpointObserver;
+use gandr_core_incremental::CheckpointStore;
+use gandr_core_incremental::CheckpointStoreError;
+use gandr_core_incremental::IncrementalSession;
+use gandr_core_incremental::ItemCount;
+use gandr_core_incremental::ProgramError;
+use gandr_core_incremental::Resume;
+use gandr_core_incremental::ResumeCensus;
+use gandr_core_incremental::ResumeError;
+use gandr_core_incremental::SessionError;
+use gandr_core_incremental::SynthesisStream;
+use gandr_core_incremental::address_of;
+use gandr_core_incremental::restore;
+use gandr_core_incremental::restored;
+use gandr_core_incremental::submitted;
+use gandr_surface_dispatcher::ComposeFault;
+use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Lowered;
+use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::SourceRoot;
+use gandr_surface_dispatcher::Standing;
+use gandr_surface_dispatcher::Step;
+use gandr_surface_dispatcher::judge_module;
+use gandr_surface_dispatcher::lower_source;
+use gandr_surface_grammar::Pbg;
+use gandr_surface_lowering::ImportIndex;
+use gandr_surface_lowering::ImportUri;
+use gandr_surface_lowering::LoweredModule;
+use gandr_surface_lowering::namespace::NamePath;
+use gandr_surface_lowering::namespace::Scope;
+use gandr_surface_syntax::ByteSpan;
+use gandr_surface_syntax::SourceText;
+use quenchant_shape::shape::Maybe;
+
+use crate::item_source::program;
+
+quenchant_shape::reason_enum! {
+    /// Why a submission carries no resume.
+    pub mod resumed {
+        /// The reason none is carried.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The lowering refused the revision as a whole, so it offered no
+            /// items to resume over.
+            RefusedWhole,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a path resolves to no import.
+    pub mod import {
+        /// The reason none resolves.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The latest accepted revision binds no import at the path.
+            Unbound,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a reopened session restored no checkpoints.
+    pub mod reopened {
+        /// The reason none was restored.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The lowering refused the revision as a whole, so it has no
+            /// program to restore checkpoints for.
+            RefusedWhole,
+            /// The store holds no checkpoints for the revision's program.
+            NotStored,
+            /// The checkpoints held for it were judged by another backend.
+            OtherBackend,
+            /// The address restored at is not the revision's program's.
+            AddressMismatch,
+        }
+    }
+}
+
+/// An observer that takes no part: the session reports persistence through
+/// the submission, not through events.
+struct Quiet;
+
+impl CheckpointObserver for Quiet
+{
+}
+
+/// One import of the latest accepted revision, owned so it outlives the text
+/// that declared it.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ImportRow
+{
+    /// The address the import names.
+    uri: ImportUri,
+    /// The bytes the import declaration covered in its revision.
+    span: ByteSpan,
+}
+
+impl ImportRow
+{
+    /// The address the import names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn uri(&self) -> &ImportUri
+    {
+        &self.uri
+    }
+
+    /// The bytes the import declaration covered in its revision.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn span(&self) -> ByteSpan
+    {
+        self.span
+    }
+}
+
+/// The import scope of one revision: its rows and the namespace binding each
+/// alias to its row.
+#[derive(Clone, Debug)]
+struct Imports
+{
+    /// The imports, in source order.
+    rows: Vec<ImportRow>,
+    /// Each alias bound to its row's position.
+    scope: Scope<ImportIndex, ByteSpan>,
+}
+
+impl Imports
+{
+    /// The scope of a revision that declared no import.
+    ///
+    /// # Specification
+    /// trivial.
+    fn empty() -> Self
+    {
+        Self {
+            rows: Vec::new(),
+            scope: Scope::new(),
+        }
+    }
+
+    /// The import scope `module` declared.
+    ///
+    /// # Specification
+    /// trivial.
+    fn of(module: &LoweredModule<'_>) -> Self
+    {
+        Self {
+            rows: module
+                .imports()
+                .iter()
+                .map(|declaration| ImportRow {
+                    uri: declaration.uri().clone(),
+                    span: declaration.span(),
+                })
+                .collect(),
+            scope: module.import_scope().clone(),
+        }
+    }
+
+    /// The row `path` resolves to.
+    ///
+    /// # Specification
+    /// trivial.
+    fn resolve(
+        &self,
+        path: &NamePath,
+    ) -> Maybe<&ImportRow, import::Absent>
+    {
+        match self.scope.resolve(path) {
+            // The scope and the rows are the same module's, so every position
+            // the scope binds has its row.
+            | Maybe::Present(binding) => match self.rows.get(usize::from(binding.data)) {
+                | Some(row) => Maybe::Present(row),
+                | None => Maybe::Absent(import::Absent::Unbound),
+            },
+            | Maybe::Absent(_) => Maybe::Absent(import::Absent::Unbound),
+        }
+    }
+}
+
+/// Whether a submission's checkpoints reached the store.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum Persistence
+{
+    /// The store holds the submission's checkpoints at its program's address.
+    Stored,
+    /// The store refused them and holds what it held before; the session still
+    /// resumes from the submission.
+    Failed(CheckpointStoreError),
+}
+
+/// What the incremental checker made of an accepted submission.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Resumed
+{
+    /// The census of the pass: items encoded, recalled, adopted and judged.
+    census: ResumeCensus,
+    /// Whether the checkpoints were persisted.
+    persistence: Persistence,
+}
+
+impl Resumed
+{
+    /// The census of the pass.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn census(&self) -> ResumeCensus
+    {
+        self.census
+    }
+
+    /// Whether the checkpoints were persisted.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn persistence(&self) -> Persistence
+    {
+        self.persistence
+    }
+}
+
+/// What one submitted revision became: the dispatcher's composition of its
+/// text, its standing, and what the incremental checker made of it.
+#[derive(Clone, Debug)]
+pub struct Submission<'text>
+{
+    /// The root the session's source sits under.
+    root: SourceRoot,
+    /// The revision's text, which every span of `composed` is measured
+    /// against.
+    text: SourceText<'text>,
+    /// What the revision became: the composition `gandr check` gives the same
+    /// text.
+    composed: Composed<'text>,
+    /// How it stands against its root.
+    standing: Standing,
+    /// What the incremental checker made of it.
+    resumed: Maybe<Resumed, resumed::Absent>,
+}
+
+impl<'text> Submission<'text>
+{
+    /// The root the session's source sits under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn root(&self) -> SourceRoot
+    {
+        self.root
+    }
+
+    /// The revision's text.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn text(&self) -> SourceText<'text>
+    {
+        self.text
+    }
+
+    /// What the revision became.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn composed(&self) -> &Composed<'text>
+    {
+        &self.composed
+    }
+
+    /// How the revision stands against its root.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn standing(&self) -> Standing
+    {
+        self.standing
+    }
+
+    /// What the incremental checker made of the revision.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn resumed(&self) -> Maybe<Resumed, resumed::Absent>
+    {
+        self.resumed
+    }
+
+    /// The submission as the walk step of a source at `path`: the shape every
+    /// renderer of a step reads.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a [`Step::Source`] at `path` carrying this submission's root,
+    ///   text, composition and standing unchanged.
+    /// - provides: the diagnostics a face renders, through the renderer the
+    ///   batch verbs use.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every corpus source's submission is turned into a
+    ///   step and compared field by field with the step the dispatcher's walk
+    ///   yields for the same path.
+    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    #[inline]
+    #[must_use]
+    pub fn into_step<'step>(
+        self,
+        path: &'step Path,
+    ) -> Step<'step>
+    where
+        'text: 'step,
+    {
+        Step::Source {
+            path,
+            root: self.root,
+            text: self.text,
+            composed: self.composed,
+            standing: self.standing,
+        }
+    }
+}
+
+/// Why a session could not take a revision, or could not reopen over one: an
+/// engine fault, never a verdict about the revision.
+#[derive(Clone, Debug)]
+pub enum SessionFault<'text>
+{
+    /// The dispatcher's composition faulted.
+    Compose(ComposeFault<'text>),
+    /// The lowered declarations' admission positions do not ascend.
+    Unordered(ProgramError),
+    /// The incremental checker could not resume; the session judges its next
+    /// revision whole.
+    Resume(ResumeError),
+    /// The checkpoint store failed while restoring, or while persisting with
+    /// no resume left to report.
+    Store(CheckpointStoreError),
+}
+
+impl fmt::Display for SessionFault<'_>
+{
+    /// Writes the fault and what it names.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        match *self {
+            | Self::Compose(ref fault) => fault.fmt(f),
+            | Self::Unordered(ref error) => error.fmt(f),
+            | Self::Resume(ref error) => write!(f, "resume failed: {error}"),
+            | Self::Store(ref error) => write!(f, "the checkpoint store failed: {error}"),
+        }
+    }
+}
+
+impl core::error::Error for SessionFault<'_>
+{
+}
+
+/// A session reopened over a revision, and whether its checkpoints were
+/// restored.
+pub struct Reopened<Store>
+{
+    /// The reopened session.
+    session: Session<Store>,
+    /// How many items' checkpoints were restored.
+    restored: Maybe<ItemCount, reopened::Absent>,
+}
+
+impl<Store> fmt::Debug for Reopened<Store>
+{
+    /// Writes the session and what was restored; the store is opaque.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.debug_struct("Reopened")
+            .field("session", &self.session)
+            .field("restored", &self.restored)
+            .finish()
+    }
+}
+
+impl<Store> Reopened<Store>
+{
+    /// How many items' checkpoints were restored.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn restored(&self) -> Maybe<ItemCount, reopened::Absent>
+    {
+        self.restored
+    }
+
+    /// The reopened session.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_session(self) -> Session<Store>
+    {
+        self.session
+    }
+}
+
+/// The interactive session over successive revisions of one source.
+pub struct Session<Store>
+{
+    /// The grammar every revision is parsed under.
+    grammar: Pbg,
+    /// The root the source sits under, which decides what its expectations
+    /// mean.
+    root: SourceRoot,
+    /// The incremental checker's latest resume and its checkpoint store.
+    incremental: IncrementalSession<Store>,
+    /// The import scope of the latest accepted revision.
+    imports: Imports,
+    /// Every lowering the session performed.
+    lowerings: LoweringCount,
+}
+
+impl<Store> fmt::Debug for Session<Store>
+{
+    /// Writes the root, the latest resume and the import scope; the grammar
+    /// and the store are opaque.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn fmt(
+        &self,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result
+    {
+        f.debug_struct("Session")
+            .field("root", &self.root)
+            .field("incremental", &self.incremental)
+            .field("imports", &self.imports)
+            .field("lowerings", &self.lowerings)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<Store> Session<Store>
+{
+    /// A session with nothing submitted, parsing under `grammar` a source
+    /// under `root`, persisting into `store` as `backend`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn new(
+        grammar: Pbg,
+        root: SourceRoot,
+        store: Store,
+        backend: BackendArtifact,
+    ) -> Self
+    {
+        Self {
+            grammar,
+            root,
+            incremental: IncrementalSession::new(store, backend, CheckBudget::DEFAULT),
+            imports: Imports::empty(),
+            lowerings: LoweringCount::default(),
+        }
+    }
+
+    /// A session reopened over `revision`, resuming from the checkpoints
+    /// `store` holds for it.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: `revision` is lowered once. When the lowering reads a module
+    ///   and `store` holds checkpoints `backend` judged for its program, the
+    ///   session resumes from them and their item count is reported; otherwise
+    ///   the session is fresh, as [`Self::new`] makes it, and the reason is
+    ///   reported. Either way the session's import scope is the revision's.
+    /// - provides: a session that outlives the process that wrote its
+    ///   checkpoints: its next submission adopts every restored checkpoint that
+    ///   still answers.
+    /// - fails: [`SessionFault::Compose`] when the parser cannot commit the
+    ///   revision's tree or the lowering faults; [`SessionFault::Unordered`]
+    ///   when its admission positions do not ascend; [`SessionFault::Store`]
+    ///   when the store fails to load; [`SessionFault::Resume`] when the
+    ///   restored set holds no item order.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the surfaces are the restored resume, the fresh
+    ///   fallback and the import scope, separated by a file store written by
+    ///   one session, the session dropped, and a second session reopened over
+    ///   the same directory whose next submission adopts every unchanged item;
+    ///   and by a store that holds nothing for the revision.
+    /// - witness: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`
+    /// - witness: `tests::checkpoint::a_store_holding_nothing_reopens_fresh`
+    #[inline]
+    pub fn reopen(
+        grammar: Pbg,
+        root: SourceRoot,
+        mut store: Store,
+        backend: BackendArtifact,
+        revision: SourceText<'_>,
+    ) -> Result<Reopened<Store>, SessionFault<'_>>
+    where
+        Store: CheckpointStore,
+    {
+        let mut lowerings = LoweringCount::default();
+        let lowering =
+            lower_source(&grammar, revision, &mut lowerings).map_err(SessionFault::Compose)?;
+        let (imports, restored) = match lowering.into_lowered() {
+            | Lowered::Refused(_) => (
+                Imports::empty(),
+                Maybe::Absent(reopened::Absent::RefusedWhole),
+            ),
+            | Lowered::Module { module, arena } => {
+                let program = program(&module, arena).map_err(SessionFault::Unordered)?;
+                let address = address_of(&program).map_err(SessionFault::Store)?;
+                let restored = match restore(&mut store, &program, address, backend, &mut Quiet)
+                    .map_err(SessionFault::Store)?
+                {
+                    | Maybe::Present(checkpoints) => {
+                        let count = ItemCount::from(checkpoints.items().len());
+                        let resume =
+                            Resume::from_checkpoints(checkpoints).map_err(SessionFault::Resume)?;
+                        Maybe::Present((resume, count))
+                    },
+                    | Maybe::Absent(reason) => Maybe::Absent(unrestored(reason)),
+                };
+                (Imports::of(&module), restored)
+            },
+        };
+        let (incremental, restored) = match restored {
+            | Maybe::Present((resume, count)) => (
+                IncrementalSession::reopen(store, backend, resume),
+                Maybe::Present(count),
+            ),
+            | Maybe::Absent(reason) => (
+                IncrementalSession::new(store, backend, CheckBudget::DEFAULT),
+                Maybe::Absent(reason),
+            ),
+        };
+        Ok(Reopened {
+            session: Self {
+                grammar,
+                root,
+                incremental,
+                imports,
+                lowerings,
+            },
+            restored,
+        })
+    }
+
+    /// Submit one revision: lower it, judge it, resume the incremental checker
+    /// over it and persist its checkpoints.
+    ///
+    /// # Specification
+    /// - requires: `revision` is the whole text of the session's source.
+    /// - ensures: `revision` is lowered exactly once, and the lowering count is
+    ///   one more. A revision the lowering reads is judged by the dispatcher's
+    ///   [`judge_module`] — the composition `gandr check` gives the same text
+    ///   under the same root — and the same declarations are submitted to the
+    ///   incremental checker, which resumes from the latest accepted revision
+    ///   and persists the new checkpoints; the session then holds the
+    ///   revision's resume and import scope. A revision the lowering refuses as
+    ///   a whole is reported as [`Composed::Refused`] with no resume, and the
+    ///   session is unchanged.
+    /// - provides: a report whose verdicts are the batch pipeline's, beside the
+    ///   census of what the resume adopted.
+    /// - fails: [`SessionFault::Compose`] when the composition faults, with the
+    ///   session unchanged; [`SessionFault::Unordered`] when the lowered
+    ///   positions do not ascend, unchanged; [`SessionFault::Resume`] when the
+    ///   resume fails, the incremental checker then holding no resume so the
+    ///   next revision is judged whole.
+    /// - panics: none.
+    /// - economy: the lowered arena is cloned once per accepted revision, so
+    ///   the judgement and the resume each check over their own copy.
+    ///
+    /// # Errors
+    /// As above. A failure to persist is not an error: the submission
+    /// reports it as [`Persistence::Failed`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 for the report — every source of both corpus roots is
+    ///   submitted whole and its submission compared with the dispatcher's step
+    ///   for the same path, field by field; L3 for the session state —
+    ///   successive revisions asserted at the census, the synthesis stream and
+    ///   the import scope they leave, and a refused revision asserted to leave
+    ///   them unchanged.
+    /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
+    /// - witness: `tests::session::successful_submissions_publish_whole_program_synthesis`
+    /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
+    #[inline]
+    pub fn submit<'text>(
+        &mut self,
+        revision: SourceText<'text>,
+    ) -> Result<Submission<'text>, SessionFault<'text>>
+    where
+        Store: CheckpointStore,
+    {
+        let lowering = lower_source(&self.grammar, revision, &mut self.lowerings)
+            .map_err(SessionFault::Compose)?;
+        let (module, arena) = match lowering.into_lowered() {
+            | Lowered::Module { module, arena } => (module, arena),
+            | Lowered::Refused(refusal) => {
+                let composed = Composed::Refused(refusal);
+                return Ok(Submission {
+                    root: self.root,
+                    text: revision,
+                    standing: Standing::of(self.root, &composed),
+                    composed,
+                    resumed: Maybe::Absent(resumed::Absent::RefusedWhole),
+                });
+            },
+        };
+        // economy: one arena copy per accepted revision; the reversal is a
+        // report assembled from the resume's own verdicts, which retires the
+        // whole-module judgement and this copy with it.
+        let mut items = program(&module, arena.clone()).map_err(SessionFault::Unordered)?;
+        let imports = Imports::of(&module);
+        let composed =
+            judge_module(self.root.corpus_root(), module, arena).map_err(SessionFault::Compose)?;
+        let (census, persistence) = match self.incremental.submit(&mut items, &mut Quiet) {
+            | Ok(census) => (census, Persistence::Stored),
+            | Err(SessionError::Resume(error)) => return Err(SessionFault::Resume(error)),
+            // The incremental session keeps the new resume when persisting
+            // fails; were it to hold none, there is no census to report, so
+            // the store's failure fails the submission instead.
+            | Err(SessionError::Store(error)) => match self.incremental.last() {
+                | Maybe::Present(resume) => (resume.census(), Persistence::Failed(error)),
+                | Maybe::Absent(_) => return Err(SessionFault::Store(error)),
+            },
+        };
+        self.imports = imports;
+        Ok(Submission {
+            root: self.root,
+            text: revision,
+            standing: Standing::of(self.root, &composed),
+            composed,
+            resumed: Maybe::Present(Resumed {
+                census,
+                persistence,
+            }),
+        })
+    }
+
+    /// The root the session's source sits under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn root(&self) -> SourceRoot
+    {
+        self.root
+    }
+
+    /// The grammar every revision is parsed under.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn grammar(&self) -> &Pbg
+    {
+        &self.grammar
+    }
+
+    /// Every lowering the session performed: one per submission.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn lowerings(&self) -> LoweringCount
+    {
+        self.lowerings
+    }
+
+    /// The resume of the latest accepted revision: its typings, adoptions and
+    /// item order.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn last(&self) -> Maybe<&Resume, submitted::Absent>
+    {
+        self.incremental.last()
+    }
+
+    /// The synthesis stream of the latest accepted revision.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn stream(&self) -> Maybe<SynthesisStream, submitted::Absent>
+    {
+        self.incremental.stream()
+    }
+
+    /// The import of the latest accepted revision `path` names.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the row of the import whose alias the latest accepted
+    ///   revision bound at `path`, or [`import::Absent::Unbound`] when it bound
+    ///   none there; before any accepted revision every path is unbound.
+    /// - provides: the import scope persisting across submissions: a revision
+    ///   the lowering refuses — among them one declaring an alias twice —
+    ///   leaves the scope of the revision before it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the surfaces are a bound alias, an unbound path and a
+    ///   refused revision, separated by two accepted revisions each resolving
+    ///   its own aliases and a third declaring an alias twice that leaves the
+    ///   second's scope.
+    /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
+    #[inline]
+    pub fn resolve_import(
+        &self,
+        path: &NamePath,
+    ) -> Maybe<&ImportRow, import::Absent>
+    {
+        self.imports.resolve(path)
+    }
+
+    /// The checkpoint store, once the session is done.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_store(self) -> Store
+    {
+        self.incremental.into_store()
+    }
+}
+
+/// The reason a restore's absence gives a reopened session.
+///
+/// # Specification
+/// trivial.
+const fn unrestored(reason: restored::Absent) -> reopened::Absent
+{
+    match reason {
+        | restored::Absent::AddressMismatch => reopened::Absent::AddressMismatch,
+        | restored::Absent::NotStored => reopened::Absent::NotStored,
+        | restored::Absent::OtherBackend => reopened::Absent::OtherBackend,
+    }
+}
