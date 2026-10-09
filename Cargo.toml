@@ -216,6 +216,7 @@ default-features = false
 # consumers:
 # - kernel-strata (dev)
 # - storage-records (dev)
+# - storage-values (dev)
 # - surface-parser (dev)
 # - theory-cell-complexes (dev)
 # - theory-circuit-algebras (dev)

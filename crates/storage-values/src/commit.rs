@@ -374,9 +374,15 @@ where
     /// [`ValueError`] — as listed above.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 agreement — committing and dereferencing return the
-    ///   value, deterministically, across seams the scanner placed — plus L3
-    ///   for the outermost close, separated by a value whose root would cut.
+    /// - hypothesis: L2 agreement — the constructors cut, read off the stored
+    ///   chunks, are the ones a reference scanner recomputes from the flat form
+    ///   alone, over generated values and profiles biased toward runs ending at
+    ///   the cap and one record past it; committing and dereferencing return
+    ///   the value across seams the scanner placed — plus L3 for the outermost
+    ///   close, separated by a value whose root would cut, and for kappa one,
+    ///   where every constructor below the root is cut whatever the cap.
+    /// - witness: `tests::laws::the_cuts_agree_with_a_reference_scanner`
+    /// - witness: `tests::laws::an_edit_under_every_cut_affects_exactly_its_path`
     /// - witness: `tests::values::a_committed_value_derefs_back_equal`
     /// - witness: `tests::values::a_value_larger_than_one_chunk_is_read_across_seams`
     /// - witness: `tests::flat::flat_bytes_equal_the_single_chunk_body`
@@ -469,9 +475,15 @@ fn one_more(count: TokenCount) -> Result<TokenCount, ValueError>
 /// [`ValueError`] — as listed above.
 ///
 /// # Adequacy
-/// - hypothesis: L2 agreement — the same value commits to the same root in two
-///   stores, shared subtrees are stored once, and an early edit adds few chunks
-///   — plus L3 for the chunk-local refusal and each emission fault.
+/// - hypothesis: L2 agreement — the same value commits to the same manifest in
+///   an empty store and in one already holding generated values, some sharing
+///   its subtrees and some under other profiles, the store ending with exactly
+///   the union of the two; shared subtrees are stored once, and an early edit
+///   adds few chunks — plus L3 for the chunk-local refusal, each emission
+///   fault, and a value mutated after its commit, which commits to a new root
+///   while the store grows by exactly the chunks the edit affected.
+/// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
+/// - witness: `tests::laws::a_value_mutated_after_commit_commits_anew_and_the_old_pointer_still_reads_the_old_value`
 /// - witness: `tests::values::the_same_value_commits_to_the_same_pointer`
 /// - witness: `tests::values::a_shared_subtree_is_stored_once`
 /// - witness: `tests::values::an_early_edit_moves_only_its_own_chunk_under_chunk_local_bases`

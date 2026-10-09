@@ -260,6 +260,7 @@ dependencies = [
  "blake3",
  "gandr-storage-chunker",
  "gandr-storage-records",
+ "proptest",
 ]
 
 [[package]]

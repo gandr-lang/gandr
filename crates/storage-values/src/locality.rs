@@ -118,7 +118,13 @@ pub fn expected_chunk_bound(
 ///
 /// # Adequacy
 /// - hypothesis: L2 agreement — the mean measured over every leaf edit of a
-///   corpus sits inside the bound, and an early edit shares most chunks.
+///   corpus sits inside the bound, and an early edit shares most chunks — plus
+///   L3 at kappa one, where every constructor is its own chunk and each leaf
+///   edit of a value with no repeated subtree measures exactly its root path
+///   affected and every other chunk shared, and for a value mutated after its
+///   commit, whose affected count equals the store's growth.
+/// - witness: `tests::laws::an_edit_under_every_cut_affects_exactly_its_path`
+/// - witness: `tests::laws::a_value_mutated_after_commit_commits_anew_and_the_old_pointer_still_reads_the_old_value`
 /// - witness: `tests::values::measured_chunk_counts_sit_inside_the_locality_bound`
 /// - witness: `tests::values::an_early_edit_moves_only_its_own_chunk_under_chunk_local_bases`
 #[inline]

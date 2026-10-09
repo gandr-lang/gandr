@@ -26,9 +26,10 @@ blake3.workspace = true
 gandr-storage-chunker.workspace = true
 
 # The record plane supplies a real node image for the domain-separation
-# witness.
+# witness; proptest generates the values and profiles the laws range over.
 [dev-dependencies]
 gandr-storage-records.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true

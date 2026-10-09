@@ -206,8 +206,10 @@ impl TokenSink for FlatSink
 /// [`ValueError`] — as listed above.
 ///
 /// # Adequacy
-/// - hypothesis: L2 agreement — encode then decode is the identity, and the
-///   bytes equal a single chunk's body.
+/// - hypothesis: L2 agreement — encode then decode is the identity over
+///   generated values of every shape, deep, wide and with repeated subtrees,
+///   and the bytes equal a single chunk's body.
+/// - witness: `tests::laws::every_generated_value_round_trips_flat`
 /// - witness: `tests::flat::a_flat_form_round_trips`
 /// - witness: `tests::flat::flat_bytes_equal_the_single_chunk_body`
 #[inline]

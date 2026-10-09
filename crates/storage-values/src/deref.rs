@@ -45,10 +45,14 @@ use crate::tokens::CanonicalValue;
 /// [`ValueError`] — as listed above.
 ///
 /// # Adequacy
-/// - hypothesis: L2 agreement — a committed value derefs back equal — plus L3
-///   for the offset, separated by a hand-built non-zero offset that must
-///   address a different subtree of the same chunk than offset zero, and for
-///   the wrong-kind refusal, separated by a word whose leading byte is a tag.
+/// - hypothesis: L2 agreement — every generated value derefs back equal under
+///   every generated profile, and the dereffed value's flat bytes are the
+///   original's, the flat encoder holding no store and no scanner — plus L3 for
+///   the offset, separated by a hand-built non-zero offset that must address a
+///   different subtree of the same chunk than offset zero, and for the
+///   wrong-kind refusal, separated by a word whose leading byte is a tag.
+/// - witness: `tests::laws::every_generated_value_commits_and_derefs_back_equal`
+/// - witness: `tests::laws::chunking_is_invisible_to_the_flat_form`
 /// - witness: `tests::values::a_committed_value_derefs_back_equal`
 /// - witness: `tests::values::an_interior_pointer_derefs_to_its_own_subtree`
 /// - witness: `tests::values::a_word_is_never_read_as_a_tag`
