@@ -265,7 +265,7 @@ fn value_statement_uses_val_keyword() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let renamed = [
         "val value = expression;",
-        "def use() -> F Integer { val value = expression; ret value }",
+        "def use() -> -F Integer { val value = expression; ret value }",
     ];
     for src in renamed {
         let result = parse(pbg, SourceText::from(src))?;
@@ -294,7 +294,7 @@ fn bind_statement_uses_run_keyword() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let renamed = [
         "run value <- action;",
-        "def bind() -> F Integer { run value <- action; ret value }",
+        "def bind() -> -F Integer { run value <- action; ret value }",
     ];
     for src in renamed {
         let result = parse(pbg, SourceText::from(src))?;
@@ -331,13 +331,13 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
     // the reserved `with` view on `case`. The bare spellings are unchanged.
     let pbg = built();
     let annotated = [
-        "if flag -> F Integer { ret 1 } else { ret 2 }",
-        "if flag -> F Integer { ret 1 } else if other -> F Integer { ret 2 } else { ret 3 }",
-        "if flag { ret 1 } else if other -> F Integer { ret 2 } else { ret 3 }",
-        "case subject -> F Integer { Inl(x) => ret x, Inr(y) => ret y }",
-        "case subject with view -> F Integer { Inl(x) => ret x, Inr(y) => ret y }",
-        "case subject -> F Integer { }",
-        "if flag -> U[1] (F Integer) -> F Integer { ret f } else { ret g }",
+        "if flag -> -F Integer { ret 1 } else { ret 2 }",
+        "if flag -> -F Integer { ret 1 } else if other -> -F Integer { ret 2 } else { ret 3 }",
+        "if flag { ret 1 } else if other -> -F Integer { ret 2 } else { ret 3 }",
+        "case subject -> -F Integer { Inl(x) => ret x, Inr(y) => ret y }",
+        "case subject with view -> -F Integer { Inl(x) => ret x, Inr(y) => ret y }",
+        "case subject -> -F Integer { }",
+        "if flag -> +U[1] (-F Integer) -> -F Integer { ret f } else { ret g }",
     ];
     for src in annotated {
         let result = parse(pbg, SourceText::from(src))?;
@@ -373,7 +373,7 @@ fn eliminator_answer_types_mold_clean() -> Result<(), Box<dyn Error>>
     // after the body requires repair. A missing scrutinee is a hole the molder
     // fills without an obligation, so its refusal belongs to lowering, not to
     // the parser.
-    let rejected = ["if flag { ret 1 } -> F Integer else { ret 2 }"];
+    let rejected = ["if flag { ret 1 } -> -F Integer else { ret 2 }"];
     for src in rejected {
         let result = parse(pbg, SourceText::from(src))?;
         assert!(
@@ -392,9 +392,9 @@ fn run_binder_annotation_molds_clean() -> Result<(), Box<dyn Error>>
     // on the tile after the pattern.
     let pbg = built();
     let annotated = [
-        "run value : F Integer <- action;",
-        "def bind() -> F Integer { run value : F Integer <- action; ret value }",
-        "def bind() -> F Integer { run (left, right) : F Integer <- action; ret left }",
+        "run value : -F Integer <- action;",
+        "def bind() -> -F Integer { run value : -F Integer <- action; ret value }",
+        "def bind() -> -F Integer { run (left, right) : -F Integer <- action; ret left }",
     ];
     for src in annotated {
         let result = parse(pbg, SourceText::from(src))?;
@@ -539,8 +539,8 @@ fn circuit_arrows_leave_the_shorter_tiles_alone() -> Result<(), Box<dyn Error>>
     let unchanged: &[&str] = &[
         "case x { A => 1, B => 2 }",
         "run value <- action;",
-        "def le() -> F Boolean { ret a <= b }",
-        "def eq() -> F Boolean { ret a == b }",
+        "def le() -> -F Boolean { ret a <= b }",
+        "def eq() -> -F Boolean { ret a == b }",
         "def arrow : A -> B;",
     ];
     for &src in unchanged {
@@ -660,8 +660,8 @@ fn circuit_contextual_keywords_still_bind_as_names() -> Result<(), Box<dyn Error
         "def sort = 1;",
         "def node = 1;",
         "def feed = 1;",
-        "def use() -> F Integer { val node = 1; ret node }",
-        "def project(sort: Integer) -> F Integer { ret sort }",
+        "def use() -> -F Integer { val node = 1; ret node }",
+        "def project(sort: Integer) -> -F Integer { ret sort }",
         "def record = #{ node = 1, feed = 2 };",
     ];
     for &src in binding {
@@ -1533,12 +1533,12 @@ fn unknown_type_molds_zero_obligation() -> Result<(), Box<dyn Error>>
         "def f : ?;",
         // The returner payload is a value position: `F ?` is the pure
         // returner over the value unknown, NOT the computation top.
-        "def f : F ?;",
+        "def f : -F ?;",
         // Arrow result, thunk body, lazy-product member: computation
         // positions.
         "def f : Integer -> ?;",
-        "def f : U ?;",
-        "def f : F Unit & ?;",
+        "def f : +U ?;",
+        "def f : -F Unit & ?;",
         // Product member: the `?`-led infix shape must not confuse the
         // classifier (the atom completes, the `*` continues the type).
         "def f : ? * Integer;",
@@ -1546,7 +1546,7 @@ fn unknown_type_molds_zero_obligation() -> Result<(), Box<dyn Error>>
         "def f : (?);",
         // The legacy keyword keeps its value-primitive reading beside the
         // atom.
-        "def f : F Unknown;",
+        "def f : -F Unknown;",
         // The receive-session prefix keeps its own `?`-led reading: a type,
         // `.`, and a session tail following the `?` selects `?T.S`.
         "def s : ? Integer . end;",

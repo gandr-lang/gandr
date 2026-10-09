@@ -475,13 +475,13 @@ fn built_in_adaptations_name_their_rules() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
-/// The prefix type formers `F` and `U` end their form only once their operand
+/// The prefix type formers `-F` and `+U` end their form only once their operand
 /// is filled, and open no delimiter, so they name no closing class.
 #[test]
 fn prefix_formers_keep_required_type_tails_unclosed() -> Result<(), Box<dyn Error>>
 {
     let pbg = built_in()?;
-    for label in ["F", "U"] {
+    for label in ["-F", "+U"] {
         let mold = only_type_opener(&pbg, TileLabel(label));
         assert!(
             !bool::from(pbg.mold_is_form_last(mold)),

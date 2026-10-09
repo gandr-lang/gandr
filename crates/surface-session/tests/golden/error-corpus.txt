@@ -13,8 +13,8 @@ error[TypeMismatch]: the type this term synthesises does not convert to the type
 error[ShapeMismatch]: the rule here requires an arrow `A → C`
   ╭▸ shape-arrow.gandr:4:18
   │
-1 │ def h : U (F Integer) ;
-  │            ───────── the type met, where an arrow `A → C` is required
+1 │ def h : +U (-F Integer) ;
+  │             ────────── the type met, where an arrow `A → C` is required
   ‡
 4 │ def g = thunk { (force h)(1) } ;
   │                  ━━━━━━━ malformed source
@@ -22,7 +22,7 @@ error[ShapeMismatch]: the rule here requires an arrow `A → C`
   ╰ note: unsettled `g` states checks owing 0
 
 === shape-thunk ===
-error[ShapeMismatch]: the rule here requires a thunk type `U C`
+error[ShapeMismatch]: the rule here requires a thunk type `+U C`
   ╭▸ shape-thunk.gandr:2:23
   │
 2 │ def y = thunk { force 1 } ;
@@ -31,11 +31,11 @@ error[ShapeMismatch]: the rule here requires a thunk type `U C`
   ╰ note: unsettled `y` states checks owing 0
 
 === shape-returner ===
-error[ShapeMismatch]: the rule here requires a returner `F A`
+error[ShapeMismatch]: the rule here requires a returner `-F A`
   ╭▸ shape-returner.gandr:2:17
   │
-1 │ def f : U (Integer -> F Integer) ;
-  │            ──────────────────── the type met, where a returner `F A` is required
+1 │ def f : +U (Integer -> -F Integer) ;
+  │             ───────────────────── the type met, where a returner `-F A` is required
 2 │ def f = thunk { ret 1 } ;
   │                 ━━━━━ malformed source
   │

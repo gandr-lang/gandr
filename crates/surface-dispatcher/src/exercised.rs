@@ -623,11 +623,11 @@ mod tests
         let table = [
             (
                 r#"def answer : Integer ; def answer = 42 ;
-def identity : U (Integer -> F Integer) ;
+def identity : +U (Integer -> -F Integer) ;
 def identity = thunk { fn (x) { ret x } } ;
-def applied : U (F Integer) ;
+def applied : +U (-F Integer) ;
 def applied = thunk { (force identity)(answer) } ;
-def konst : U (Integer -> Integer -> F Integer) ;
+def konst : +U (Integer -> Integer -> -F Integer) ;
 def konst = thunk { fn (x) { fn (y) { ret x } } } ;"#,
                 vec![
                     (Row::LambdaChecks, 2_usize),
@@ -645,11 +645,11 @@ def konst = thunk { fn (x) { fn (y) { ret x } } } ;"#,
                 vec![(Row::UndefinedTypeHead, 1_usize)],
             ),
             (
-                r#"@[ refuses("ShapeMismatch") ] def a : U (Integer -> F Integer) ; def a = thunk { ret 3 } ;"#,
+                r#"@[ refuses("ShapeMismatch") ] def a : +U (Integer -> -F Integer) ; def a = thunk { ret 3 } ;"#,
                 vec![(Row::ShapeRefusal, 1_usize)],
             ),
             (
-                r#"@[ refuses("NotSynthesisable") ] def a : U (F Integer) ; def a = thunk { (fn (x) { ret x })(3) } ;"#,
+                r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { (fn (x) { ret x })(3) } ;"#,
                 vec![(Row::NonSynthesisableHead, 1_usize)],
             ),
             (
@@ -697,7 +697,7 @@ def konst = thunk { fn (x) { fn (y) { ret x } } } ;"#,
 def b : Natural ;
 @[ refuses("TypeMismatch") ] def c : Integer * Integer ;
 def d : Integer ;
-@[ refuses("UnresolvedName") ] def e : U (F Integer) ; def e = thunk { ret 3 } ;"#,
+@[ refuses("UnresolvedName") ] def e : +U (-F Integer) ; def e = thunk { ret 3 } ;"#,
         ));
         assert_eq!(
             rows,
@@ -710,7 +710,7 @@ def d : Integer ;
     fn a_near_miss_carries_no_refusal_row()
     {
         let rows = rows_of(SourceText::from(
-            r#"@[ refuses("NotSynthesisable") ] def a : U (F Integer) ; def a = thunk { force (thunk { ret 3 }) } ;
+            r#"@[ refuses("NotSynthesisable") ] def a : +U (-F Integer) ; def a = thunk { force (thunk { ret 3 }) } ;
 @[ refuses("ShapeMismatch") ] def b : Integer ; def b = thunk { ret 3 } ;
 @[ refuses("OutOfFragment") ] def c = fn (x) { ret x } ;"#,
         ));

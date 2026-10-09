@@ -487,7 +487,7 @@ mod recognition
                 site(20_usize, 24_usize),
             ),
             (
-                "def f(list: Integer) -> F Integer { ret list }",
+                "def f(list: Integer) -> -F Integer { ret list }",
                 site(6_usize, 10_usize),
             ),
             (

@@ -1918,10 +1918,10 @@ mod tests
     {
         let sources = [
             "def deep = thunk { ret thunk { ret thunk { ret 1 } } } ;\n",
-            "def target(x: Integer) -> F Integer {\n  ret 1\n}\ndef shown : U (F Integer) ;\ndef shown = thunk { (force target)(0) } ;\n",
+            "def target(x: Integer) -> -F Integer {\n  ret 1\n}\ndef shown : +U (-F Integer) ;\ndef shown = thunk { (force target)(0) } ;\n",
             "def a = 1 ;\ndef b = 2 ;\ndef c = 3 ;\n",
             "def owed : Integer ;\ndef reads = owed ;\n",
-            "def f(x: Integer) -> F Integer { ret x }\ndef twice = thunk { (force f)(\"text\") } ;\n",
+            "def f(x: Integer) -> -F Integer { ret x }\ndef twice = thunk { (force f)(\"text\") } ;\n",
         ];
         for source in sources {
             let snapshot = snapshot_of(SourceText::from(source));

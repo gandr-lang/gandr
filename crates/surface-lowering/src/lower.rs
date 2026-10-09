@@ -24,11 +24,11 @@
 //! # A node's produced sort is a function of its own form
 //!
 //! The classification never pushes an expected sort into a place that has to
-//! re-derive it: `U` produces a value type and `F` a computation type, a thunk
-//! is a value and a lambda is a computation, and a grouping is whatever it
-//! wraps. So a sort mismatch is decided where the node stands rather than where
-//! its result is consumed, and every refusal carries the sort its own position
-//! demanded.
+//! re-derive it: `+U` produces a value type and `-F` a computation type, a
+//! thunk is a value and a lambda is a computation, and a grouping is whatever
+//! it wraps. So a sort mismatch is decided where the node stands rather than
+//! where its result is consumed, and every refusal carries the sort its own
+//! position demanded.
 //!
 //! # Three insertions, by the sort of the position
 //!
@@ -548,7 +548,7 @@ enum Lowered
     /// A function tail: its declared type, when it states one, and its body.
     Function
     {
-        /// `U (A1 -> … -> An -> C)`, from the parameter and result types.
+        /// `+U (A1 -> … -> An -> C)`, from the parameter and result types.
         signature: Maybe<ValueTypeId, lowered::Absent>,
         /// `thunk (λ … λ. block)`.
         body: ValueId,
@@ -2085,7 +2085,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         self.apply_former(site, former, argument)
     }
 
-    /// Classify a type former written as its own keyword: `U C` or `F A`.
+    /// Classify a type former written as its own keyword: `+U C` or `-F A`.
     ///
     /// # Specification
     /// - requires: `site` is a thunk type or a returner type in type position.
@@ -2589,8 +2589,8 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - ensures: `(x1: A1, …, xn: An) -> C { b }` mints its body as `thunk (λ
     ///   … λ. b)`, one lambda per parameter with the binder tile's origin and
     ///   the thunk marked as inserted at the declaration form, and its declared
-    ///   type as `U (A1 -> … -> An -> C)`, one arrow per parameter with the
-    ///   binder tile's origin and `U` the declaration form's; a tail missing a
+    ///   type as `+U (A1 -> … -> An -> C)`, one arrow per parameter with the
+    ///   binder tile's origin and `+U` the declaration form's; a tail missing a
     ///   parameter or result type mints the body alone; nothing is minted when
     ///   the block did not lower.
     /// - provides: the function tail's two halves, from one reading.
@@ -2632,7 +2632,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
         })
     }
 
-    /// Mint a function tail's declared type, `U (A1 -> … -> An -> C)`.
+    /// Mint a function tail's declared type, `+U (A1 -> … -> An -> C)`.
     ///
     /// # Specification
     /// - requires: `parameters` are the function's own.
@@ -3839,15 +3839,15 @@ mod tests
     fn the_thunk_and_returner_heads_lower_to_their_formers()
     {
         let mut arena = CoreArena::new();
-        let module = lowered(SourceText::from("def x : U (F Integer) ;"), &mut arena);
+        let module = lowered(SourceText::from("def x : +U (-F Integer) ;"), &mut arena);
         let declared = declared_of(outcomes(&module)[0]);
         let Some(&ValueType::Thunk(suspended)) = arena.value_type(declared)
         else {
-            panic!("`U` lowers to the thunk type");
+            panic!("`+U` lowers to the thunk type");
         };
         let Some(&CompType::Returner(returned)) = arena.comp_type(suspended)
         else {
-            panic!("`F` lowers to the returner type");
+            panic!("`-F` lowers to the returner type");
         };
 
         assert_eq!(
@@ -3858,17 +3858,63 @@ mod tests
     }
 
     #[test]
+    fn the_bridge_tokens_are_compound_and_sum_is_unaffected()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let sum = |start: usize, end: usize| LoweringRefusal::OutOfFragment {
+            span: at(start, end),
+            form: FormName::from(NamedKind("sum_type")),
+            sort: FragmentSort::ValueType,
+            boundary: FragmentBoundary::Unadmitted,
+        };
+
+        let mut arena = CoreArena::new();
+        let module = lowered(SourceText::from("def x : +U(-F Integer) ;"), &mut arena);
+        assert!(
+            matches!(
+                arena.value_type(declared_of(outcomes(&module)[0])),
+                Some(&ValueType::Thunk(_))
+            ),
+            "`+U` against a bracket is the bridge"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def s : Integer + Unit ;")),
+            sum(8_usize, 22_usize),
+            "`A + B` is the sum"
+        );
+        assert_eq!(
+            refusal(SourceText::from("def s : Integer +Unit ;")),
+            sum(8_usize, 21_usize),
+            "a sign against a word that begins with the bridge letter is still the sum"
+        );
+        for source in [
+            "def x : Integer +U Integer ;",
+            "def x : Integer -F Integer ;",
+        ] {
+            assert_eq!(
+                refusal(SourceText::from(source)),
+                LoweringRefusal::MalformedForm {
+                    span: at(16_usize, 26_usize),
+                    form: FormName::DECLARATION,
+                    fault: FormFault::ExtraOperand,
+                },
+                "a bridge after an operand is no sum, and `{source}` is refused"
+            );
+        }
+    }
+
+    #[test]
     fn an_arrow_lowers_under_a_thunk_type()
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def g : U (Integer -> F Integer) ;"),
+            SourceText::from("def g : +U (Integer -> -F Integer) ;"),
             &mut arena,
         );
         let declared = declared_of(outcomes(&module)[0]);
         let Some(&ValueType::Thunk(suspended)) = arena.value_type(declared)
         else {
-            panic!("`U` lowers to the thunk type");
+            panic!("`+U` lowers to the thunk type");
         };
         let Some(&CompType::Arrow { domain, codomain }) = arena.comp_type(suspended)
         else {
@@ -4069,7 +4115,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def f(x: Integer, y: String) -> F Integer { run z <- ret y ; ret x }",
+                "def f(x: Integer, y: String) -> -F Integer { run z <- ret y ; ret x }",
             ),
             &mut arena,
         );
@@ -4119,7 +4165,7 @@ mod tests
                 Some(ValueType::Base(BaseType::String)),
                 Some(ValueType::Base(BaseType::Integer)),
             ],
-            "the declared type is `U (Integer -> String -> F Integer)`"
+            "the declared type is `+U (Integer -> String -> -F Integer)`"
         );
 
         let Some(&Value::Thunk(suspended)) = arena.value(body)
@@ -4171,7 +4217,7 @@ mod tests
     {
         let mut arena = CoreArena::new();
         let module = lowered(
-            SourceText::from("def main() -> F Integer { ret 3 }"),
+            SourceText::from("def main() -> -F Integer { ret 3 }"),
             &mut arena,
         );
         let [
@@ -4194,7 +4240,7 @@ mod tests
 
         assert!(
             matches!(arena.comp_type(suspended), Some(&CompType::Returner(_))),
-            "no arrow stands between `U` and the result"
+            "no arrow stands between `+U` and the result"
         );
         assert!(
             matches!(
@@ -4210,7 +4256,7 @@ mod tests
     {
         for source in [
             "def f(x: Integer) { ret x }",
-            "def f(x, y: Integer) -> F Integer { ret y }",
+            "def f(x, y: Integer) -> -F Integer { ret y }",
         ] {
             let mut arena = CoreArena::new();
             let module = lowered(SourceText::from(source), &mut arena);
@@ -4410,7 +4456,7 @@ mod tests
         let mut arena = CoreArena::new();
         let module = lowered(
             SourceText::from(
-                "def f(x: Integer) -> Integer { ret x } def g(x: Integer) -> F Integer { ret x }",
+                "def f(x: Integer) -> Integer { ret x } def g(x: Integer) -> -F Integer { ret x }",
             ),
             &mut arena,
         );
@@ -4594,9 +4640,9 @@ mod tests
         let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
 
         assert_eq!(
-            refusal(SourceText::from("def a : Integer -> F Integer ;")),
+            refusal(SourceText::from("def a : Integer -> -F Integer ;")),
             LoweringRefusal::OutOfFragment {
-                span: at(8_usize, 28_usize),
+                span: at(8_usize, 29_usize),
                 form: FormName::from(NamedKind("function_type")),
                 sort: FragmentSort::ValueType,
                 boundary: FragmentBoundary::WrongSort,
@@ -4681,7 +4727,7 @@ mod tests
                 ),
             ),
             (
-                "def a = thunk { run y : F Integer <- ret 1; ret y } ;",
+                "def a = thunk { run y : -F Integer <- ret 1; ret y } ;",
                 unadmitted(
                     22_usize,
                     23_usize,

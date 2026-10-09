@@ -3,7 +3,6 @@
 The checked precedence-bounded grammar of the gandr surface: rules over a precedence DAG, three build-time gates, the mold table a parser reads, the walk index over it, the built-in surface, and the mold highlighter.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [References](#references)
 - [Provided features](#provided-features)
@@ -16,11 +15,11 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Closing class](#closing-class)
 - [Walk index and comparison table](#walk-index-and-comparison-table)
 - [Built-in surface](#built-in-surface)
+- [The bridges and the universe are built-in spellings](#the-bridges-and-the-universe-are-built-in-spellings)
 - [Named-kind inventory](#named-kind-inventory)
 - [Highlighter](#highlighter)
 - [Fingerprint](#fingerprint)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -146,7 +145,16 @@ Each rule's tiles form a graph under adjacency. Every tile in one strongly conne
 
 ## Built-in surface
 
-`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2364 molds, 77 labels projected to more than one mold, and the fingerprint `0x6a74_f2ef_1d8a_5c07`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
+`built_in` is the gandr surface: 21 precedence groups and 19 tighter-than edges, then the term forms, the type-and-shell forms and the circuit forms. The groups form one expression chain, one pattern chain and one type chain whose union, intersection and lazy-product bands are mutually incomparable between the sum and arrow bands; the item group stands apart from all three. Its pinned shape is 2371 molds, 77 labels projected to more than one mold, and the fingerprint `0x8828_d8a1_38da_19ff`; a change to any form, group or edge moves the fingerprint, and the test pinning it states the change.
+
+## The bridges and the universe are built-in spellings
+
+The shifts between the value and the computation sorts, Levy's `U` and `F`, are spelled `+U` and `-F`: the sign names the sort the bridge produces, so the suspension `+U C` is a value type, positive, and the returner `-F A` a computation type, negative. Each is one compound tile, which the labeler forms only when the letter ends there: `+Unit` stays the sign before the word `Unit`, and `A + B` is the sum however it is spaced. A type has no unary sign, so the compound tile takes no reading from the sum; `A +U B` reads as a bridge after an operand, which the lowering refuses. The bare letters `U` and `F` are ordinary type names. The universe is the reserved word `Type`, with an optional bracket naming its sort by the same signs and, after a comma, its level: `Type`, `Type[-]`, `Type[+, 1]`. The rules keep the kinds `u_type` and `f_type`, the names the tree-sitter grammar gives the two formers, and `universe_type` joins the kinds only this grammar has.
+
+- Alternatives: keeping `U` and `F` as aliases beside the new spellings, which reserves two capital letters from every program and leaves two spellings for one former; a run-time notation through which a library declares the spellings, which needs user-declared notation the surface does not have.
+- Reversal: once user-declared notation is admitted, these spellings move into the prelude that declares them.
+
+The respelling moved the pinned shape from 2364 molds and the fingerprint `0x6a74_f2ef_1d8a_5c07`: the two formers' keyword tiles became the compound tiles, and the universe rule added seven molds.
 
 ## Named-kind inventory
 
@@ -162,13 +170,13 @@ The classification, in order:
 
 - The comment and shebang rules' tiles are `Comment` and `Directive`; every tile of a shell list separator or a redirection is `Operator`.
 - Literals, string pieces, escapes, constructors, type names, type variables, hole names, shell variables, environment assignments and shell words take their class by label; keywords, operators and primitive types take theirs by spelling.
-- A label several rules share is told apart by its rule or its neighbours: `?` is a `Hole`, the gradual type or a receive; `!` is part of `fork!` and an operator elsewhere; `_` is a parameter inside a parenthesised list and a variable elsewhere.
-- An `identifier` takes the role of its place: a definition after `def`, `rec`, `op`, `oper`, `rule` or `data`; a binding after `as`, `for`, `leta`, `unpack`, `module`, `node` or `feed`; a parameter inside a parenthesised list or an implicit `@[…]` binder; a member after `.`, inside a record `#{…}` or a block of fields; a label for a world, a session branch or a `select`'s label; a call for the operation a circuit node applies; a number for a grade in `U[…]` and `thunk[…]`; an attribute or decoration name is `Other`.
+- A label several rules share is told apart by its rule or its neighbours: `?` is a `Hole`, the gradual type or a receive; `!` is part of `fork!` and an operator elsewhere; `+` and `-` are keywords, the sort literals, inside a universe's bracket and operators elsewhere; `_` is a parameter inside a parenthesised list and a variable elsewhere.
+- An `identifier` takes the role of its place: a definition after `def`, `rec`, `op`, `oper`, `rule` or `data`; a binding after `as`, `for`, `leta`, `unpack`, `module`, `node` or `feed`; a parameter inside a parenthesised list or an implicit `@[…]` binder; a member after `.`, inside a record `#{…}` or a block of fields; a label for a world, a session branch or a `select`'s label; a call for the operation a circuit node applies; a number for a grade in `+U[…]` and `thunk[…]`; an attribute or decoration name is `Other`.
 - Every other tile — a bracket, a separator, a delimiter — is `Other`.
 
 Layout has no mold: a layout node opening with `//` or `/*` is a `Comment`, one opening with `#!` a `Directive`, and whitespace, grout and a minted close take no span. Every tile is one span, and adjacent spans of one role stay two. The enclosing bracket is read by one walk over the rules' forms in mold-id order, the order the mold table numbers them, with the open brackets of the current form on a stack: an opener pushes, a closer pops, and each branch of an alternative starts from the brackets open before it. The walk is checked against the mold table occurrence by occurrence.
 
-Every mold of the built-in surface has a role, 2364 of 2364. Four places the grammar does not tell apart take a coarse role, which a semantic overlay refines: a definition's name is a `FunctionDef` whether it names a function or a value; the head of an application `f(x)` is an expression atom, so a `Variable`; a shell command's head and its arguments are one `shell_word` class, so all `Path`; and the first field of a record expression `#{ x = 1, … }` is an expression atom where later fields are `Member`s.
+Every mold of the built-in surface has a role, 2371 of 2371. Four places the grammar does not tell apart take a coarse role, which a semantic overlay refines: a definition's name is a `FunctionDef` whether it names a function or a value; the head of an application `f(x)` is an expression atom, so a `Variable`; a shell command's head and its arguments are one `shell_word` class, so all `Path`; and the first field of a record expression `#{ x = 1, … }` is an expression atom where later fields are `Member`s.
 
 - Alternatives: a table keyed by a token's lexeme class, which cannot tell a definition's name from a reference, or `?` the hole from `?` the receive, since each pair is one label; tree-sitter highlight queries over the surface's tree-sitter grammar, which keep a second parser and its query files in step with this grammar by hand and cannot read the molded tree the pipeline holds.
 - Reversal: a role that depends on more than the mold — a name's resolved kind, a binding's uses — belongs to a semantic overlay over these spans; the classification leaves the grammar when the grammar stops determining it, as user-declared operators would make an operator's spelling a run-time fact. Punctuation is `Other`; a renderer that styles it apart adds a role to the seam.

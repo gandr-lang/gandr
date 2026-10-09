@@ -839,7 +839,7 @@ def wrong = "text" ;"#,
             &grammar,
             CorpusRoot::Fixture,
             SourceText::from(
-                r#"@[ refuses("OutOfFragment") ] def rec f(x: Integer) -> F Integer { ret x }
+                r#"@[ refuses("OutOfFragment") ] def rec f(x: Integer) -> -F Integer { ret x }
 @[ refuses("UnresolvedName") ] def g = missing ;
 def h = 1 ;"#,
             ),

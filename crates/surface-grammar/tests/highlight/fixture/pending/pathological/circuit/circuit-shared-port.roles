@@ -4,7 +4,7 @@
 16..20 Keyword "sort"
 21..24 Type "Nat"
 25..26 Other ":"
-27..31 Type "Type"
+27..31 TypeBuiltin "Type"
 31..32 Other ";"
 35..39 Keyword "oper"
 40..41 FunctionDef "f"

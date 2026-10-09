@@ -344,7 +344,7 @@ fn an_unbound_variable_is_a_type_error()
 fn an_undeclared_type_name_in_a_signature_is_refused_by_name()
 {
     let mut session = session(SourceRoot::Strict);
-    let refused = submit(&mut session, "def f(x: NoSuchType) -> F Integer { ret 1 }");
+    let refused = submit(&mut session, "def f(x: NoSuchType) -> -F Integer { ret 1 }");
     let Composed::Settled { ref report, .. } = *refused.composed()
     else {
         panic!("the definition lowers");
@@ -356,7 +356,7 @@ fn an_undeclared_type_name_in_a_signature_is_refused_by_name()
         ),
         "an undeclared type name in a signature is refused by its name: {report:?}"
     );
-    let accepted = submit(&mut session, "def f(x: Integer) -> F Integer { ret 1 }");
+    let accepted = submit(&mut session, "def f(x: Integer) -> -F Integer { ret 1 }");
     assert_eq!(
         rows(accepted.composed()),
         vec![("f".to_owned(), checks(), Settlement::Settled)],

@@ -8,8 +8,8 @@
 //! * **Candidate menu.** A lexeme maps to grammar tile labels
 //!   ([`candidate_labels`]): a lowercase word tries its own text (catching
 //!   keywords like `def`) then `identifier` / `type_variable`; an uppercase
-//!   word tries its text (catching primitives like `Integer` and the `F` / `U`
-//!   keywords) then `constructor` / `type_identifier`; punctuation is its exact
+//!   word tries its text (catching primitives like `Integer` and the `Type`
+//!   keyword) then `constructor` / `type_identifier`; punctuation is its exact
 //!   text. The candidate [`MoldId`]s are gathered into a sorted, de-duplicated
 //!   set — no hash-iteration or allocation-address order reaches the decision.
 //!   The uppercase-word reservation (`UPPER_KEYWORDS`) is a preference, not a
@@ -410,16 +410,18 @@ pub fn candidate_labels<'text>(
 /// type names).
 ///
 /// A reserved uppercase word (a primitive type `Integer` / `String` / …, or the
-/// type keywords `F` / `U`) PREFERS its own tile — the
+/// universe `Type`) PREFERS its own tile — the
 /// `constructor` / `type_identifier` menu would leave `Integer` tied between
 /// the primitive-type atom and a spurious `type_identifier` reading at every
 /// type slot. The reservation is a preference, not a ban: at a slot where the
 /// reserved tile is structurally inadmissible (a declaration's NAME position),
 /// [`Molder::gather_reserved_fallback`] re-admits the generic labels so the
-/// word can still name the declaration (`sign Unknown`).
+/// word can still name the declaration (`sign Unknown`). `U` and `F` are not
+/// reserved: the bridges are the compound tiles `+U` and `-F`, and the bare
+/// letters are names like any other.
 const UPPER_KEYWORDS: &[&str] = &[
     "Any", "Unknown", "Never", "Boolean", "Integer", "Char", "String", "Symbol", "Unit", "Void",
-    "F", "U", "Path",
+    "Path", "Type",
 ];
 
 /// Return the next non-space token after `index`.
@@ -1493,7 +1495,7 @@ mod tests
         // byte-identical across 100 runs. Nothing process-varying (hash order,
         // allocation address) reaches the decision.
         let pbg = built()?;
-        let src = "def f() -> F Integer { ret (x * x) } square(9) [1, 2, 3]";
+        let src = "def f() -> -F Integer { ret (x * x) } square(9) [1, 2, 3]";
 
         let reference = mold_and_hash(&pbg, SourceText::from(src))?;
         for _ in 0 .. 100_u32 {

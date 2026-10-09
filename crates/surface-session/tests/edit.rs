@@ -277,7 +277,7 @@ fn constructor_change_is_one_replace()
 #[test]
 fn comp_constructor_change_is_one_replace()
 {
-    let function = "def f(x: Integer) -> F Integer { ret x }\n";
+    let function = "def f(x: Integer) -> -F Integer { ret x }\n";
     let base = snapshot(&format!("{function}def v = thunk {{ ret 1 }} ;\n"));
     let edited = snapshot(&format!("{function}def v = thunk {{ (force f)(1) }} ;\n"));
     let script = diff_sound(&base, &edited);
@@ -372,9 +372,9 @@ fn edit_locus_contains_the_diff()
 #[test]
 fn multi_point_edit_localizes_to_the_common_ancestor()
 {
-    let functions = "def f(x: Integer) -> F Integer { ret x }\n\
-                     def g(x: Integer) -> F Integer { ret x }\n\
-                     def shown : U (F Integer) ;\n";
+    let functions = "def f(x: Integer) -> -F Integer { ret x }\n\
+                     def g(x: Integer) -> -F Integer { ret x }\n\
+                     def shown : +U (-F Integer) ;\n";
     let base = snapshot(&format!(
         "{functions}def shown = thunk {{ (force f)(1) }} ;\n"
     ));

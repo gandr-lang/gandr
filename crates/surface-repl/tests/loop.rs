@@ -453,7 +453,7 @@ mod tests
     #[test]
     fn a_checked_definition_names_its_type_in_the_renderers_spelling()
     {
-        let signature = "def identity : U (Integer -> F Integer) ;";
+        let signature = "def identity : +U (Integer -> -F Integer) ;";
         let definition = "def identity = thunk { fn (x) { ret x } } ;";
         let mut session = session();
         let _submission = session

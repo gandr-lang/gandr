@@ -4,7 +4,7 @@
 20..24 Keyword "sort"
 25..28 Type "Bit"
 29..30 Other ":"
-31..35 Type "Type"
+31..35 TypeBuiltin "Type"
 35..36 Other ";"
 39..43 Keyword "oper"
 44..48 FunctionDef "flip"

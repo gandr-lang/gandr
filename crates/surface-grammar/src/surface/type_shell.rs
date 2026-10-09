@@ -76,7 +76,7 @@ fn add_type_rules(
     ));
     // The first-class module package type `package [ T , U ] PAYLOAD`. The
     // bracketed list binds the signature's abstract type components over the
-    // payload, which is the thunked module returner `U[r] (F …)`.
+    // payload, which is the thunked module returner `+U[r] (-F …)`.
     //
     // **The grade is written once.** A package's grade and its payload thunk's
     // grade are the same `r`, so the surface carries no grade of its own and
@@ -131,24 +131,31 @@ fn add_type_rules(
         type_product,
         TileLabel("*"),
     ));
+    // The bridges are compound tiles, the sign naming the row each produces:
+    // `-F A` the returner, a computation type from a value type, and `+U[r]
+    // C` the suspension, a value type from a computation type. The labeler
+    // makes `+U` and `-F` one tile each, so the letters are names again and
+    // the sum's `+` and the difference's `-` keep their own tiles. The rule
+    // names keep the kinds `f_type` and `u_type` the tree-sitter grammar
+    // names, so a consumer dispatching on kinds reads the bridges as before.
     rules.push(rule(
         RuleName("f_type"),
         ty,
         type_application,
-        Regex::seq([tile(TileLabel("F")), Regex::sort(ty)]),
+        Regex::seq([tile(TileLabel("-F")), Regex::sort(ty)]),
     ));
     // The `grade` (`number` | `identifier` | `ω`) helper is inline-only.
     // Referencing it as `tile(TileLabel("grade"))` in the thunk-type annotation
-    // left an unmatchable placeholder terminal — a real `U[1] T` could only
-    // parse through `U`'s spurious `constructor` / `type_identifier` molds. The
-    // grade shape is inlined so `U[1] T` molds directly, and the folded kind is
-    // recorded as an adaptation.
+    // left an unmatchable placeholder terminal — a real `+U[1] T` could only
+    // parse through a spurious `constructor` / `type_identifier` mold. The
+    // grade shape is inlined so `+U[1] T` molds directly, and the folded kind
+    // is recorded as an adaptation.
     let mut u_type = rule(
         RuleName("u_type"),
         ty,
         type_application,
         Regex::seq([
-            tile(TileLabel("U")),
+            tile(TileLabel("+U")),
             Regex::optional(Regex::seq([
                 tile(TileLabel("[")),
                 grade_shape(),
@@ -163,6 +170,30 @@ fn add_type_rules(
         AdaptationReason("folded into u_type / thunk_expression: the `number | identifier | ω` grade is inlined in the `[ … ]` annotation, not a placeholder tile nor a standalone type atom competing with a type variable"),
     ));
     rules.push(u_type);
+    // The universe `Type[s, l]`: the sort literal `+` for the universe of
+    // value types or `-` for the universe of computation types, then the
+    // level. Both halves may be left off — `Type[+]` at the default level,
+    // bare `Type` positive at it — and the lowering supplies them, so the
+    // grammar spells exactly what the author wrote. The level is a numeral
+    // until level binders have a spelling. The tree-sitter grammar has no
+    // universe, so the kind is in `PBG_ONLY_KINDS`.
+    rules.push(rule(
+        RuleName("universe_type"),
+        ty,
+        type_atom,
+        Regex::seq([
+            tile(TileLabel("Type")),
+            Regex::optional(Regex::seq([
+                tile(TileLabel("[")),
+                Regex::alt([tile(TileLabel("+")), tile(TileLabel("-"))]),
+                Regex::optional(Regex::seq([
+                    tile(TileLabel(",")),
+                    tile(TileLabel("number")),
+                ])),
+                tile(TileLabel("]")),
+            ])),
+        ]),
+    ));
     rules.push(rule(
         RuleName("at_type"),
         ty,
@@ -897,7 +928,8 @@ fn binary_infix_rule(
     )
 }
 
-/// Build the inline grade shape `number | identifier | ω` for the `U[…]` type.
+/// Build the inline grade shape `number | identifier | ω` for the `+U[…]`
+/// type.
 ///
 /// # Specification
 /// trivial.

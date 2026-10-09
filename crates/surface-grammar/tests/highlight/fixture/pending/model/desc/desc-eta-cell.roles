@@ -1,7 +1,7 @@
 0..4 Keyword "data"
 5..9 Type "Wrap"
 10..11 Other ":"
-12..16 Type "Type"
+12..16 TypeBuiltin "Type"
 17..18 Other "{"
 21..27 Constructor "MkWrap"
 28..29 Other ":"

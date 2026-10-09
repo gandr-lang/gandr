@@ -458,8 +458,8 @@ impl fmt::Display for Shape
     ) -> fmt::Result
     {
         f.write_str(match self.0 {
-            | ExpectedShape::Thunk => "a thunk type `U C`",
-            | ExpectedShape::Returner => "a returner `F A`",
+            | ExpectedShape::Thunk => "a thunk type `+U C`",
+            | ExpectedShape::Returner => "a returner `-F A`",
             | ExpectedShape::Arrow => "an arrow `A → C`",
         })
     }

@@ -1,7 +1,7 @@
 0..4 Keyword "data"
 5..11 Type "NatDiv"
 12..13 Other ":"
-14..18 Type "Type"
+14..18 TypeBuiltin "Type"
 19..20 Other "{"
 23..27 Constructor "Zero"
 28..29 Other ":"

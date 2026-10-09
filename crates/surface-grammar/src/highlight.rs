@@ -56,13 +56,13 @@ const OPENERS: &[&str] = &[
 /// The tiles that close the innermost open bracket.
 const CLOSERS: &[&str] = &[")", "]", "subshell_close", "}"];
 
-/// The words the surface reads as keywords where a form molds them, the type
-/// formers spelled as words included.
+/// The words the surface reads as keywords where a form molds them, the
+/// compound bridge tiles included.
 const KEYWORDS: &[&str] = &[
-    "F", "U", "acquire", "as", "at", "break", "case", "close", "co", "codata", "continue", "data",
-    "def", "drop", "dup", "else", "end", "extern", "feed", "fn", "for", "forall", "force", "fork",
-    "from", "glob", "hold", "if", "import", "in", "infix", "infixl", "infixr", "leta", "loop",
-    "migrate", "module", "mu", "node", "offer", "op", "oper", "pack", "package", "postfix",
+    "+U", "-F", "acquire", "as", "at", "break", "case", "close", "co", "codata", "continue",
+    "data", "def", "drop", "dup", "else", "end", "extern", "feed", "fn", "for", "forall", "force",
+    "fork", "from", "glob", "hold", "if", "import", "in", "infix", "infixl", "infixr", "leta",
+    "loop", "migrate", "module", "mu", "node", "offer", "op", "oper", "pack", "package", "postfix",
     "prefix", "rec", "recv", "release", "ret", "rule", "run", "select", "send", "sign", "sort",
     "tail", "then", "thunk", "type", "unpack", "val", "while", "with",
 ];
@@ -105,10 +105,10 @@ const OPERATORS: &[&str] = &[
     "~>",
 ];
 
-/// The primitive type spellings.
+/// The primitive type spellings, and the universe.
 const PRIMITIVE_TYPES: &[&str] = &[
-    "Any", "Boolean", "Char", "Integer", "Never", "Path", "String", "Symbol", "Unit", "Unknown",
-    "Void", "f32", "f64", "i32", "i64", "u32", "u64",
+    "Any", "Boolean", "Char", "Integer", "Never", "Path", "String", "Symbol", "Type", "Unit",
+    "Unknown", "Void", "f32", "f64", "i32", "i64", "u32", "u64",
 ];
 
 /// The keywords whose next identifier names what the declaration defines.
@@ -605,11 +605,12 @@ fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
 ///   parameter inside a parenthesised list and a variable elsewhere; `!` is
 ///   part of the keyword after `fork` and an operator elsewhere; `?` is a hole
 ///   under the hole rule, the gradual type under its rule and an operator
-///   elsewhere; literals, string pieces, escapes, constructors, type names,
-///   type variables, hole names, shell variables, environment assignments and
-///   shell words take their class; keywords, operators and primitive types take
-///   theirs by spelling; every other tile — a bracket, a separator, a
-///   delimiter, a label no class names — is [`HlRole::Other`].
+///   elsewhere; `+` and `-` are the sort literals, keywords, inside a universe
+///   and operators elsewhere; literals, string pieces, escapes, constructors,
+///   type names, type variables, hole names, shell variables, environment
+///   assignments and shell words take their class; keywords, operators and
+///   primitive types take theirs by spelling; every other tile — a bracket, a
+///   separator, a delimiter, a label no class names — is [`HlRole::Other`].
 /// - panics: none.
 ///
 /// # Adequacy
@@ -640,6 +641,7 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
         },
         | "!" if left_crosses("fork") => HlRole::Keyword,
         | "!" => HlRole::Operator,
+        | "+" | "-" if facts.kind.0 == "universe_type" => HlRole::Keyword,
         | "?" => match facts.kind.0 {
             | "hole" => HlRole::Hole,
             | "unknown_type" => HlRole::TypeBuiltin,
@@ -896,6 +898,12 @@ mod tests
             ("?", "receive_session_type", HlRole::Operator),
             ("!", "fork_statement", HlRole::Keyword),
             ("!", "send_session_type", HlRole::Operator),
+            ("+U", "u_type", HlRole::Keyword),
+            ("-F", "f_type", HlRole::Keyword),
+            ("Type", "universe_type", HlRole::TypeBuiltin),
+            ("+", "universe_type", HlRole::Keyword),
+            ("-", "universe_type", HlRole::Keyword),
+            ("+", "sum_type", HlRole::Operator),
             ("_", "wildcard", HlRole::Variable),
             ("shell_word", "shell_word", HlRole::Path),
             ("variable_name", "variable_name", HlRole::Variable),

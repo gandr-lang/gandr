@@ -2,5 +2,5 @@ def p = here(7);
 def r = here(7);
 
 walk(r,
-  fn(u, v, q) { (? : (U[1](F(Path(Integer, 7, u)))) -> F(Path(Integer, 7, v))) },
+  fn(u, v, q) { (? : (+U[1](-F(Path(Integer, 7, u)))) -> -F(Path(Integer, 7, v))) },
   fn(u) { fn(w) { force w } })(thunk { ret p })

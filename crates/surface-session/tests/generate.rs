@@ -26,7 +26,7 @@ pub enum Ascription
     Integer,
     /// `String`.
     Text,
-    /// `U (F Integer)`: a delayed integer computation.
+    /// `+U (-F Integer)`: a delayed integer computation.
     Delayed,
 }
 
@@ -44,7 +44,7 @@ pub enum Body
     Delay(u64),
     /// A thunk applying the function of this index to `0`.
     Call(usize),
-    /// A function tail `(x: Integer) -> F Integer` returning an integer
+    /// A function tail `(x: Integer) -> -F Integer` returning an integer
     /// literal; it carries its own signature, so the statement's ascription
     /// is not written.
     Function(u64),
@@ -262,7 +262,7 @@ pub fn render(statements: &[Stmt]) -> String
         if let Body::Function(literal) = statement.body {
             writeln!(
                 text,
-                "def d{name}(x: Integer) -> F Integer {{ ret {literal} }}"
+                "def d{name}(x: Integer) -> -F Integer {{ ret {literal} }}"
             )
             .expect("a string takes every write");
             continue;
@@ -271,7 +271,7 @@ pub fn render(statements: &[Stmt]) -> String
             let written = match ascription {
                 | Ascription::Integer => "Integer",
                 | Ascription::Text => "String",
-                | Ascription::Delayed => "U (F Integer)",
+                | Ascription::Delayed => "+U (-F Integer)",
             };
             writeln!(text, "def d{name} : {written} ;").expect("a string takes every write");
         }

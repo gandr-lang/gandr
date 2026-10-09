@@ -18,8 +18,8 @@
 //!
 //! Lexical ambiguity (a lowercase word is an `identifier` or a `type_variable`;
 //! an uppercase word is a `constructor`, a `type_identifier`, or a keyword like
-//! `F` / `Integer`) is **not** resolved here: the labeler emits the class and
-//! the exact text, and the molder enumerates the candidate molds over the
+//! `Type` / `Integer`) is **not** resolved here: the labeler emits the class
+//! and the exact text, and the molder enumerates the candidate molds over the
 //! text-as-label plus the class's generic labels, picking the obligation
 //! minimum (`crate::mold::candidate_labels`).
 
@@ -49,7 +49,7 @@ pub enum Lexeme
     /// A lowercase-led word: an `identifier`, a `type_variable`, or a keyword.
     LowerWord,
     /// An uppercase-led word: a `constructor`, a `type_identifier`, a primitive
-    /// type name, or an uppercase keyword (`F` / `U`).
+    /// type name, or an uppercase keyword (`Type`).
     UpperWord,
     /// A numeric literal with no primitive-type suffix.
     Number,
@@ -1796,6 +1796,9 @@ fn scan_punct_or_unknown(
     {
         return ScanResult::new(Lexeme::Punct, pos.advance(ByteWidth::TWO));
     }
+    if let Some(end) = bridge_end(bytes, pos) {
+        return ScanResult::new(Lexeme::Punct, end);
+    }
     punct_len(bytes, pos).map_or_else(
         || {
             // A single stray byte (advance by its UTF-8 width to stay total).
@@ -1804,6 +1807,53 @@ fn scan_punct_or_unknown(
         },
         |width| ScanResult::new(Lexeme::Punct, pos.advance(width)),
     )
+}
+
+/// The compound bridge tiles: the sign that names the row a bridge produces,
+/// and the bridge's letter, as one tile.
+///
+/// `+U` is the suspension, a positive type from a negative one, and `-F` the
+/// returner, a negative type from a positive one. The pair is one tile only
+/// when the letter ends there: `+Unit` is the sign `+` before the word `Unit`,
+/// so the sum `A +Unit` and the difference `a -Foo` lex as they did before the
+/// bridges took the sign. A type has no unary sign, so `+U` never stands for
+/// `+` applied to a name `U`, and `A + B` is the sum whatever its spacing; `A
+/// +U B` is the bridge after an operand, which the lowering refuses as an
+/// operand its form does not take.
+const BRIDGES: [&[u8]; 2] = [b"+U", b"-F"];
+
+/// The end of the compound bridge tile at `pos`, if one starts there.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the offset two bytes past `pos` when the bytes there spell `+U`
+///   or `-F` and the byte after neither continues a word nor opens a prime;
+///   none otherwise.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each bridge, a bridge letter continuing into a word or a
+///   prime, the sum and difference signs before a name, a spaced sign, and a
+///   bridge before punctuation and at the end of input separate the decision.
+/// - witness: `label::tests::bridge_tiles_end_where_their_letter_does`
+fn bridge_end(
+    bytes: SourceBytes<'_>,
+    pos: ByteOffset,
+) -> Option<ByteOffset>
+{
+    let end = pos.advance(ByteWidth::TWO);
+    let spelled = BRIDGES
+        .iter()
+        .any(|bridge| bool::from(bytes.span_matches(pos, end, BytePattern(bridge))));
+    let continues = bytes
+        .byte(end)
+        .is_some_and(|byte| bool::from(byte.is_word_continue()))
+        || bool::from(bytes.span_matches(
+            end,
+            end.advance(ByteWidth::THREE),
+            BytePattern(&PRIME_UTF8),
+        ));
+    (spelled && !continues).then_some(end)
 }
 
 /// Return the byte length of an operator/punctuation tile at `pos`, if any.
@@ -1862,7 +1912,7 @@ mod tests
         for src in [
             "",
             "   ",
-            "def f() -> F Integer { ret (x * x) }",
+            "def f() -> -F Integer { ret (x * x) }",
             "// comment\n/* nested /* block */ */\n#!/usr/bin/env gandr\nx",
             "1u32 + 2.5f64 - .5e-3 * 42",
             "@[doc(\"d\")] def x = #{ a = 1 };",
@@ -2313,6 +2363,61 @@ mod tests
         assert_eq!(
             tiles(SourceFragment::from("~"), &label(SourceFragment::from("~"))),
             vec![(Lexeme::Unknown, "~".to_owned())]
+        );
+    }
+
+    #[test]
+    fn bridge_tiles_end_where_their_letter_does()
+    {
+        let lexed = |src: &str| tiles(SourceFragment::from(src), &label(SourceFragment::from(src)));
+        let punct = |text: &str| (Lexeme::Punct, text.to_owned());
+        let upper = |text: &str| (Lexeme::UpperWord, text.to_owned());
+        let lower = |text: &str| (Lexeme::LowerWord, text.to_owned());
+        assert_eq!(
+            lexed("+U[ω] (A -> -F B)"),
+            vec![
+                punct("+U"),
+                punct("["),
+                punct("ω"),
+                punct("]"),
+                punct("("),
+                upper("A"),
+                punct("->"),
+                punct("-F"),
+                upper("B"),
+                punct(")"),
+            ],
+            "each bridge is one tile, before a bracket or a space"
+        );
+        assert_eq!(
+            lexed("-F(+U)"),
+            vec![punct("-F"), punct("("), punct("+U"), punct(")")],
+            "a bridge ends before punctuation and at the end of input"
+        );
+        assert_eq!(
+            lexed("A +Unit"),
+            vec![upper("A"), punct("+"), upper("Unit")],
+            "a sign before a word beginning with the letter is the sum"
+        );
+        assert_eq!(
+            lexed("a -Foo"),
+            vec![lower("a"), punct("-"), upper("Foo")],
+            "and the difference"
+        );
+        assert_eq!(
+            lexed("A + U"),
+            vec![upper("A"), punct("+"), upper("U")],
+            "a spaced sign is its own tile, and the letter a word"
+        );
+        assert_eq!(
+            lexed("U′ F_"),
+            vec![upper("U′"), upper("F_")],
+            "a letter continued by a word byte or a prime is a word"
+        );
+        assert_eq!(
+            lexed("+U′"),
+            vec![punct("+"), upper("U′")],
+            "and the sign before it is the sum"
         );
     }
     #[test]

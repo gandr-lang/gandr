@@ -310,17 +310,17 @@ enum Admission
 ///
 /// # Specification
 /// - requires: nothing; any table and index are admissible.
-/// - ensures: `Integer`, `String` and `Unit` for the base and unit types; `U C`
-///   and `F A` for the thunk and returner formers, their argument parenthesized
-///   unless it is an atom; `A -> C` for an arrow, right associative, its domain
-///   parenthesized only when it is itself an arrow; an abstract type by its
-///   name. Every node the surface cannot write yet — the numeric atom,
-///   products, sums, universes, lifts, elements, dependent arrows, unresolved
-///   nodes, a term, an index past the table, and a former over an argument of
-///   the wrong polarity — is written `?`, and the spelling is then
-///   [`Fidelity::Approximate`]; otherwise it is [`Fidelity::Faithful`]. A table
-///   that would take more than a fixed visit budget, which only a malformed one
-///   does, spells `?`.
+/// - ensures: `Integer`, `String` and `Unit` for the base and unit types; `+U
+///   C` and `-F A` for the thunk and returner formers, their argument
+///   parenthesized unless it is an atom; `A -> C` for an arrow, right
+///   associative, its domain parenthesized only when it is itself an arrow; an
+///   abstract type by its name. Every node the surface cannot write yet — the
+///   numeric atom, products, sums, universes, lifts, elements, dependent
+///   arrows, unresolved nodes, a term, an index past the table, and a former
+///   over an argument of the wrong polarity — is written `?`, and the spelling
+///   is then [`Fidelity::Approximate`]; otherwise it is [`Fidelity::Faithful`].
+///   A table that would take more than a fixed visit budget, which only a
+///   malformed one does, spells `?`.
 /// - provides: the one spelling a transcript line names a type by; read back as
 ///   a signature, a faithful spelling lowers to the type it was spelled from.
 /// - fails: never.
@@ -381,10 +381,10 @@ pub fn spell(
                     return Spelling::unknown();
                 };
                 let former = if matches!(task, Task::Thunk) {
-                    "U"
+                    "+U"
                 }
                 else {
-                    "F"
+                    "-F"
                 };
                 pieces.push(Piece {
                     text: format!("{former} {}", argument.as_argument()),
@@ -418,7 +418,7 @@ pub fn spell(
 /// - requires: `node` is a type, of the polarity its position admits.
 /// - ensures: an atom for a base type the surface names, the unit type, and an
 ///   abstract type with a textual name; [`Expanded::Unknown`] for every other
-///   leaf the surface cannot write; for `U`, `F` and an arrow, pushes the
+///   leaf the surface cannot write; for `+U`, `-F` and an arrow, pushes the
 ///   former's join below its children's spells, each child admitting the
 ///   polarity its former takes, and answers [`Expanded::Deferred`].
 /// - provides: one step of [`spell`]'s walk.
@@ -587,7 +587,7 @@ mod tests
                 ContentNode::Returner(n2),
                 integer.clone(),
             ]),
-            faithful("U (F Integer)".into())
+            faithful("+U (-F Integer)".into())
         );
         assert_eq!(
             spelled(&[
@@ -599,7 +599,7 @@ mod tests
                 integer,
                 ContentNode::Returner(n2),
             ]),
-            faithful("U (Integer -> F Integer)".into())
+            faithful("+U (Integer -> -F Integer)".into())
         );
     }
 
@@ -613,7 +613,7 @@ mod tests
         let integer = ContentNode::Base(BaseType::Integer);
         assert_eq!(
             spelled(&[ContentNode::Returner(n1), integer.clone()]),
-            faithful("F Integer".into())
+            faithful("-F Integer".into())
         );
         assert_eq!(
             spelled(&[
@@ -622,7 +622,7 @@ mod tests
                 ContentNode::Returner(n3),
                 ContentNode::UnitType,
             ]),
-            faithful("F (U (F Unit))".into())
+            faithful("-F (+U (-F Unit))".into())
         );
         assert_eq!(
             spelled(&[
@@ -639,7 +639,7 @@ mod tests
                 ContentNode::Returner(n5),
                 ContentNode::UnitType,
             ]),
-            faithful("Integer -> String -> F Unit".into())
+            faithful("Integer -> String -> -F Unit".into())
         );
         assert_eq!(
             spelled(&[
@@ -651,14 +651,14 @@ mod tests
                 integer,
                 ContentNode::Returner(n2),
             ]),
-            faithful("U (F Integer) -> F Integer".into())
+            faithful("+U (-F Integer) -> -F Integer".into())
         );
     }
 
-    /// A former reads its argument at the polarity it takes: `U` over a value
-    /// type, `F` over a computation type, an arrow from a computation type, and
-    /// a term at the root each spell approximately, at exactly the misplaced
-    /// node.
+    /// A former reads its argument at the polarity it takes: `+U` over a value
+    /// type, `-F` over a computation type, an arrow from a computation type,
+    /// and a term at the root each spell approximately, at exactly the
+    /// misplaced node.
     #[test]
     fn ty_dispatches_on_polarity()
     {
@@ -666,7 +666,7 @@ mod tests
         let integer = ContentNode::Base(BaseType::Integer);
         assert_eq!(
             spelled(&[ContentNode::ThunkType(n1), integer.clone()]),
-            approximate("U ?".into())
+            approximate("+U ?".into())
         );
         assert_eq!(
             spelled(&[
@@ -674,7 +674,7 @@ mod tests
                 ContentNode::Returner(n2),
                 integer.clone(),
             ]),
-            approximate("F ?".into())
+            approximate("-F ?".into())
         );
         assert_eq!(
             spelled(&[
@@ -685,7 +685,7 @@ mod tests
                 ContentNode::Returner(n2),
                 integer,
             ]),
-            approximate("? -> F Integer".into())
+            approximate("? -> -F Integer".into())
         );
         assert_eq!(spelled(&[ContentNode::Unit]), approximate("?".into()));
     }
@@ -719,7 +719,7 @@ mod tests
                 ContentNode::Returner(n2),
                 ContentNode::Base(BaseType::Numeric),
             ]),
-            approximate("U (F ?)".into())
+            approximate("+U (-F ?)".into())
         );
     }
 
@@ -740,8 +740,8 @@ mod tests
             ContentNode::UnitType,
         ];
         let spelling = spell(&nodes, n0);
-        assert_eq!(spelling.to_string(), "U (String -> F Unit)");
-        assert_eq!(AsRef::<str>::as_ref(&spelling), "U (String -> F Unit)");
+        assert_eq!(spelling.to_string(), "+U (String -> -F Unit)");
+        assert_eq!(AsRef::<str>::as_ref(&spelling), "+U (String -> -F Unit)");
         let debug = format!("{nodes:?}");
         assert!(
             debug.contains("ThunkType") && !spelling.to_string().contains("ThunkType"),
@@ -757,7 +757,7 @@ mod tests
         let [n0, n1, .., n7] = indices();
         assert_eq!(
             spelled(&[ContentNode::ThunkType(n7)]),
-            approximate("U ?".into())
+            approximate("+U ?".into())
         );
         assert_eq!(spelled(&[]), approximate("?".into()));
         let cycle: Vec<ContentNode> = Vec::from([ContentNode::ThunkType(n1), ContentNode::Arrow {

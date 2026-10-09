@@ -5503,7 +5503,7 @@ mod tests
         let sources = [
             "#!{ echo a b c d e f; ls | grep x && echo y; }",
             "#!{ [ cd d; ls ] | sort; echo ${x}${y} \"z $w\"; }",
-            "def f(x: Integer) -> F Integer { ret (x * x + 1) }",
+            "def f(x: Integer) -> -F Integer { ret (x * x + 1) }",
             "data Tree(a) { Leaf, Node(l: Tree(a), v: a, r: Tree(a)) }",
             "def s = \"a ${ f(\"${x}\") } b\";",
             "case v { Inl(x) => x, Inr(y) => y }",

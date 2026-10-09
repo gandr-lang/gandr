@@ -75,7 +75,7 @@ pub enum FragmentSort
     Declaration,
     /// A value type, the sort a declaration is declared at.
     ValueType,
-    /// A computation type, reached under `U` and `F` and to an arrow's right.
+    /// A computation type, reached under `+U` and `-F` and to an arrow's right.
     CompType,
     /// A value, the sort a definition's body is at.
     Value,

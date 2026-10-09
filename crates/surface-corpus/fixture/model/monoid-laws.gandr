@@ -2,21 +2,21 @@
 def unit = 0;
 
 @[ refuses("OutOfFragment") ]
-def mul(x: Integer, y: Integer) -> F Integer {
+def mul(x: Integer, y: Integer) -> -F Integer {
   ret x + y
 }
 
 @[ refuses("OutOfFragment") ]
-def unitL(x: Integer) -> F Path(Integer, mul(unit, x), x) {
+def unitL(x: Integer) -> -F Path(Integer, mul(unit, x), x) {
   ret here(x)
 }
 
 @[ refuses("OutOfFragment") ]
-def unitR(x: Integer) -> F Path(Integer, mul(x, unit), x) {
+def unitR(x: Integer) -> -F Path(Integer, mul(x, unit), x) {
   ret here(x)
 }
 
 @[ refuses("OutOfFragment") ]
-def assoc(x: Integer, y: Integer, z: Integer) -> F Path(Integer, mul(mul(x, y), z), mul(x, mul(y, z))) {
+def assoc(x: Integer, y: Integer, z: Integer) -> -F Path(Integer, mul(mul(x, y), z), mul(x, mul(y, z))) {
   ret here(mul(mul(x, y), z))
 }

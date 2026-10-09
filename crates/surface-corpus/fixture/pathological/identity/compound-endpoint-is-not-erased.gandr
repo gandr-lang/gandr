@@ -1,9 +1,9 @@
 @[ refuses("OutOfFragment") ]
-def dbl(x: Integer) -> F Integer {
+def dbl(x: Integer) -> -F Integer {
   ret (x + x)
 }
 
 @[ refuses("OutOfFragment") ]
-def refuted(x: Integer) -> F Path(Integer, dbl(x), x) {
+def refuted(x: Integer) -> -F Path(Integer, dbl(x), x) {
   ret 5
 }

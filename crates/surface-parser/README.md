@@ -39,7 +39,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 
 ## Provided features
 
-- `label`, `Token` and `Lexeme`: the total lossless labeler. Witnesses: `label::tests::span_tiling_is_total_and_gapless`, `label::tests::stray_bytes_are_unknown_never_a_panic`, `label::tests::multi_byte_operators_munch_maximally`.
+- `label`, `Token` and `Lexeme`: the total lossless labeler. Witnesses: `label::tests::span_tiling_is_total_and_gapless`, `label::tests::stray_bytes_are_unknown_never_a_panic`, `label::tests::multi_byte_operators_munch_maximally`, `label::tests::bridge_tiles_end_where_their_letter_does`.
 - `Molder`, `candidate_labels`, `CandidateLabel` and `TokenText`: per-token mold choice by least obligation delta, deterministic across runs. Witnesses: `mold::tests::picks_the_obligation_minimum_mold`, `mold::tests::molding_is_deterministic_across_runs`, `mold::tests::unmoldable_token_takes_the_unmolded_path`.
 - `MeldState`, `MoldedTile`, `TileText`, `SpaceText` and `MeldError`: the total push machine and its commit into a molded tree. Witnesses: `meld::tests::infix_reduces_after_precedence`, `meld::tests::brackets_close_on_the_matching_delimiter`, `meld::tests::a_foreign_source_is_refused_at_commit`, `tests::contracts::arbitrary_real_mold_streams_parse_totally`, `tests::contracts::trace_precedence_climbs_like_figure_23`.
 - `Frontier`, `MoldAdmissibility`, `FormContinuation`, `OperandContinuation`, `HeadOperandPresence` and `OpenFormPresence`: the slope-head queries the molder ranks candidates by. Witnesses: `meld::tests::admits_a_form_first_mid_at_a_fresh_slot`, `meld::tests::admits_rejects_a_stray_closer`, `meld::tests::expected_sort_reads_the_open_slot`.
@@ -95,7 +95,7 @@ Two different objects share the word. A completion obligation is produced here, 
 
 ## Label, mold, meld
 
-The labeler classifies lexemes and stops there. A lowercase word could be an identifier, a type variable or a keyword; an uppercase word a constructor, a type name or a primitive; `-` a prefix or an infix operator. Which one is decided by the molder, in context, never by the labeler — teaching the labeler grammar would duplicate the grammar and drift from it. Multi-byte operators munch longest first, so the shorter tiles `->`, `<-`, `==` and `<=` never shadow the circuit arrows `-->`, `<->`, `==>` and `<=>` that extend them. Shell blocks, strings and interpolations switch the labeler into their own lexical modes.
+The labeler classifies lexemes and stops there. A lowercase word could be an identifier, a type variable or a keyword; an uppercase word a constructor, a type name or a primitive; `-` a prefix or an infix operator. Which one is decided by the molder, in context, never by the labeler — teaching the labeler grammar would duplicate the grammar and drift from it. Multi-byte operators munch longest first, so the shorter tiles `->`, `<-`, `==` and `<=` never shadow the circuit arrows `-->`, `<->`, `==>` and `<=>` that extend them. The bridges `+U` and `-F` are one tile each only where the letter ends, so `+Unit` stays a sign and a word and the sum keeps its spellings. Shell blocks, strings and interpolations switch the labeler into their own lexical modes.
 
 The molder's candidates for a token are the union of the grammar's molds for each label the token could carry, visited in ascending `MoldId` order. The pre-filter drops every candidate the slope head cannot admit — a closer with no matching open form, an operator with no left operand — and most tokens are left with one, taken without a dry-run. The survivors are dry-run in a `Mark` / `rollback_to` transaction and ranked by their obligation delta, then form continuation, then sort compatibility, then the completion cost `finalize` reports, then the smaller `MoldId`; a bounded lookahead settles the families whose openers tie and diverge only at a later tile. Nothing process-dependent reaches the choice, so molding is a function of the token stream.
 
@@ -139,7 +139,7 @@ The language's sources live in `gandr-surface-corpus` (`crates/surface-corpus/`)
 
 ## Grammar contracts witnessed by a parse
 
-Three of the grammar's contracts can only be witnessed by parsing: that each type operator the precedence table declares right-associative chains cleanly, that every recursion-marker instantiation parses cleanly, and that a chain mixing incomparable set operators is refused a clean reading. They live here, in `tests::grammar`, because the dependency runs from this crate to the grammar; the grammar's own suite keeps the contracts it can state without a parser.
+Four of the grammar's contracts can only be witnessed by parsing: that each type operator the precedence table declares right-associative chains cleanly, that every recursion-marker instantiation parses cleanly, that a chain mixing incomparable set operators is refused a clean reading, and that every spelling of the universe reads cleanly wherever a type stands. They live here, in `tests::grammar`, because the dependency runs from this crate to the grammar; the grammar's own suite keeps the contracts it can state without a parser.
 
 ## License
 

@@ -1,4 +1,4 @@
 @[ refuses("OutOfFragment") ]
-def lookup(env: Integer) -> F String {
+def lookup(env: Integer) -> -F String {
   env.get("HOME")
 }

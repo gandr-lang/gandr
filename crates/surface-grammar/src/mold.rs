@@ -1956,7 +1956,7 @@ fn seq_facet(
     }
     // An infix form has required holes either side of its operator, so the
     // operator completes the form once the tail is filled; a prefix former
-    // such as `U` has no required head and stays required-tail only.
+    // such as `+U` has no required head and stays required-tail only.
     let mut complete_last = right.complete_last.clone();
     if right.flags.form_nullable().0
         || (right.flags.required_last().0 && left.flags.required_first().0)

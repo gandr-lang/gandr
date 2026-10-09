@@ -4,7 +4,7 @@ codata Stream(a : Type) : Type {
 }
 
 codata Iter(a : Type) : Type {
-  next : F(Option(#{ item : a, rest : Iter(a) }));
+  next : -F(Option(#{ item : a, rest : Iter(a) }));
 }
 
 codata Fun(a : Type, b : Type) : Type {
@@ -12,7 +12,7 @@ codata Fun(a : Type, b : Type) : Type {
 }
 
 codata Session : Type {
-  1 step : F(Unit);
+  1 step : -F(Unit);
 }
 
 codata Colist(a : Type) : Type {

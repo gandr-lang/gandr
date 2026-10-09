@@ -9,8 +9,8 @@ goal: `owed` states checks owing 0; produced checks owing 1
 goal: `later` states checks owing 0; produced checks owing 1
   ╭▸ goal-thunk.gandr:1:1
   │
-1 │ def later : U (Integer -> F Integer) ;
-  ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ surviving obligations: 1 undeclared, 0 unproduced
+1 │ def later : +U (Integer -> -F Integer) ;
+  ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ surviving obligations: 1 undeclared, 0 unproduced
 
 === goal-beside-a-refusal ===
 goal: `owed` states checks owing 0; produced checks owing 1

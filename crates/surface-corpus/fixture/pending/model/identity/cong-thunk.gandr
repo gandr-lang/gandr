@@ -1,4 +1,4 @@
-def double(x: Integer) -> F Integer {
+def double(x: Integer) -> -F Integer {
   ret (x + x)
 }
 

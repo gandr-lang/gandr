@@ -3,7 +3,7 @@ data Outer : Type {
   Some : (n : Integer) --> Outer;
 }
 
-def by_literal(m : Outer) -> F Integer {
+def by_literal(m : Outer) -> -F Integer {
   case m {
     Some(0) => ret 0,
     None => ret 1

@@ -1,7 +1,7 @@
 0..6 Keyword "codata"
 7..13 Type "Scaled"
 14..15 Other ":"
-16..20 Type "Type"
+16..20 TypeBuiltin "Type"
 21..22 Other "{"
 25..32 Member "doubled"
 33..34 Other ":"

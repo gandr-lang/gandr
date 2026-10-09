@@ -2,7 +2,7 @@ def greeting = "the value zone";
 
 def pair = (greeting, greeting);
 
-def identity(x: Integer) -> F Integer {
+def identity(x: Integer) -> -F Integer {
   ret x
 }
 

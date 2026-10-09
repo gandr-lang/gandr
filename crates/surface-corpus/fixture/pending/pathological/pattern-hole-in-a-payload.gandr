@@ -3,7 +3,7 @@ data Maybe : Type {
   Just : (x : Integer) --> Maybe;
 }
 
-def describe(m : Maybe) -> F Integer {
+def describe(m : Maybe) -> -F Integer {
   case m {
     Just(?) => ret 100,
     Nothing => ret 200

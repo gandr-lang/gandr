@@ -1,6 +1,6 @@
-def k : U (F Integer) ;
+def k : +U (-F Integer) ;
 def k = thunk {
   ret 1
 } ;
-def later : U (Integer -> F Integer) ;
+def later : +U (Integer -> -F Integer) ;
 def tail = (

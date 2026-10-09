@@ -1,4 +1,4 @@
-def pick() -> F Integer {
+def pick() -> -F Integer {
   case (Inl(42) : Integer + String) {
     Inl(x) => ret (x + 1),
     Inr(s) => ret 0

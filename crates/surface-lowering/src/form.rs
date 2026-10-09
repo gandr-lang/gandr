@@ -327,9 +327,9 @@ pub enum Former
     TypeHead,
     /// A type head applied to arguments, `Foo(A)`.
     TypeApplication,
-    /// The thunk type `U C`.
+    /// The thunk type `+U C`.
     ThunkType,
-    /// The returner type `F A`.
+    /// The returner type `-F A`.
     ReturnerType,
     /// The arrow type `A -> C`.
     ArrowType,

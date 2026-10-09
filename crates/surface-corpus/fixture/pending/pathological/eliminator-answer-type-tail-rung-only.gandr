@@ -1,1 +1,1 @@
-if false { ret 0 } else if true -> F Integer { ret 1 } else { ret 2 }
+if false { ret 0 } else if true -> -F Integer { ret 1 } else { ret 2 }

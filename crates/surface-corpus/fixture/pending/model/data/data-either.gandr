@@ -3,7 +3,7 @@ data Either(a : Type, b : Type) : Type {
   Right : (y : b) --> Either(a, b);
 }
 
-def from_left() -> F Integer {
+def from_left() -> -F Integer {
   case (Left(5) : Either(Integer, String)) {
     Left(x) => ret x,
     Right(y) => ret 0

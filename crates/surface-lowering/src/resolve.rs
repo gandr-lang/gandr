@@ -3,7 +3,7 @@
 //!
 //! # Type heads are identifiers, resolved through a table
 //!
-//! `Unit`, `Integer`, `String`, `U` and `F` resolve through a table, exactly
+//! `Unit`, `Integer`, `String`, `+U` and `-F` resolve through a table, exactly
 //! as a term name resolves through the declaration table. The grammar lexes
 //! some of them as keywords of their own forms, but the lowering still reads
 //! each head's spelling and asks the table: a misspelled head is an unresolved
@@ -15,7 +15,7 @@
 //! argument answers from the unary table; a head applied to more answers from
 //! nothing, because the fragment has no former of two arguments. Nothing
 //! pushes an expected sort down into the lookup: a head *determines* the sort
-//! it produces — `U` a value type, `F` a computation type — and whether that
+//! it produces — `+U` a value type, `-F` a computation type — and whether that
 //! sort suits the position is decided where the produced node stands.
 //!
 //! # Two scopes, innermost first
@@ -195,7 +195,7 @@ pub enum HeadArity
 {
     /// The head was written bare, as `Integer`.
     Nullary,
-    /// The head was written applied to one argument, as `U C` or `Foo(A)`.
+    /// The head was written applied to one argument, as `+U C` or `Foo(A)`.
     Unary,
     /// The head was written applied to more than one argument, as `Foo(A, B)`.
     Polyadic(OperandCount),
@@ -237,9 +237,9 @@ pub enum TypeAtom
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum TypeFormer
 {
-    /// `U C`, the thunk of a computation type, which is a value type.
+    /// `+U C`, the thunk of a computation type, which is a value type.
     Thunk,
-    /// `F A`, the returner over a value type, which is a computation type.
+    /// `-F A`, the returner over a value type, which is a computation type.
     Returner,
 }
 
@@ -252,7 +252,7 @@ const TYPE_ATOMS: [(&str, TypeAtom); 3_usize] = [
 
 /// The unary type heads, with the spellings the surface writes them as.
 const TYPE_FORMERS: [(&str, TypeFormer); 2_usize] =
-    [("U", TypeFormer::Thunk), ("F", TypeFormer::Returner)];
+    [("+U", TypeFormer::Thunk), ("-F", TypeFormer::Returner)];
 
 /// The value-type atom `name` spells, when the nullary table answers it.
 ///
@@ -528,7 +528,7 @@ mod tests
     #[test]
     fn a_near_miss_nullary_head_answers_nothing()
     {
-        for spelling in ["Integ", "Integers", "integer", "U", ""] {
+        for spelling in ["Integ", "Integers", "integer", "+U", ""] {
             assert_eq!(
                 type_atom(SurfaceName::from(spelling)),
                 Maybe::Absent(type_head::Absent::Unregistered),
@@ -540,7 +540,7 @@ mod tests
     #[test]
     fn every_unary_type_head_answers_its_former()
     {
-        let expected = [("U", TypeFormer::Thunk), ("F", TypeFormer::Returner)];
+        let expected = [("+U", TypeFormer::Thunk), ("-F", TypeFormer::Returner)];
 
         for (spelling, former) in expected {
             assert_eq!(

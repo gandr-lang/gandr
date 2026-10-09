@@ -1,10 +1,10 @@
-def leak(p: package [ T ] U[ω] (F #{ seed: T })) -> F Integer {
-  unpack m : package [ T ] U[ω] (F #{ seed: T }) = p;
+def leak(p: package [ T ] +U[ω] (-F #{ seed: T })) -> -F Integer {
+  unpack m : package [ T ] +U[ω] (-F #{ seed: T }) = p;
   run r <- force m;
   r.seed
 }
 
-def counter : package [ T ] U[ω] (F #{ seed: T });
+def counter : package [ T ] +U[ω] (-F #{ seed: T });
 def counter = pack [ Integer ] thunk { ret #{ seed = 7 } };
 
 leak(counter)

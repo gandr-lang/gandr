@@ -1687,8 +1687,8 @@ impl Pbg
     ///
     /// # Adequacy
     /// - hypothesis: L3 pointwise plus L2 generative — an infix type operator
-    ///   completes cleanly, the prefix formers `F` and `U` do not, and over the
-    ///   built-in surface the flag and the required-tail flag partition
+    ///   completes cleanly, the prefix formers `-F` and `+U` do not, and over
+    ///   the built-in surface the flag and the required-tail flag partition
     ///   [`form_last`](Self::form_last).
     /// - witness: `tests::surface::infix_type_operator_keeps_clean_completion`
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
@@ -1711,9 +1711,10 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus L2 generative — the prefix formers `F`
-    ///   and `U` need their operand, and over the built-in surface the flag and
-    ///   the clean-completion flag partition [`form_last`](Self::form_last).
+    /// - hypothesis: L3 pointwise plus L2 generative — the prefix formers `-F`
+    ///   and `+U` need their operand, and over the built-in surface the flag
+    ///   and the clean-completion flag partition
+    ///   [`form_last`](Self::form_last).
     /// - witness: `tests::surface::prefix_formers_keep_required_type_tails_unclosed`
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
     #[inline]

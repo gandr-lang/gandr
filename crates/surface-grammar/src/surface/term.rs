@@ -420,8 +420,8 @@ fn module_signature() -> Regex
 ///
 /// **A type component may bind parameters**, reusing [`head_params`] verbatim
 /// so a family's binder list is spelled exactly as a `data` head spells one:
-/// `type Home(a : Ob, b : Ob) = U[ω] (a -> F b)`. That is the *manifest* family
-/// — the form an instance supplies a kinded component with — and it is a
+/// `type Home(a : Ob, b : Ob) = +U[ω] (a -> -F b)`. That is the *manifest*
+/// family — the form an instance supplies a kinded component with — and it is a
 /// declaration rather than a type-level lambda, which is why it needs no
 /// expression-level binder and no new sort. Without it the kinded component
 /// declares a family nothing can satisfy: a signature could state `type Home :
@@ -1679,7 +1679,7 @@ fn unpack_statement() -> Regex
 /// Build a computation-binding statement: `run PAT : B <- E ;`.
 ///
 /// The optional `: B` names the **bound computation's** type, so it is a
-/// computation type (`F A`, and the other negative formers) rather than the
+/// computation type (`-F A`, and the other negative formers) rather than the
 /// type of the name the pattern binds. The binder keyword already says which
 /// category is bound; the annotation says which computation type the source is
 /// checked against, and the lowerer spends it through the existing computation

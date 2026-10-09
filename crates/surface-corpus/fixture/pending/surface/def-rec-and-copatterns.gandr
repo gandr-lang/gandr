@@ -1,4 +1,4 @@
-def rec fact(n: Integer) -> F Integer {
+def rec fact(n: Integer) -> -F Integer {
   fact[<](n)
 }
 
@@ -12,8 +12,8 @@ def rec loopy(n: Integer) -> Stream(Integer) {
   _ => nats(n)
 }
 
-def rec measured(n: Integer) -> F Integer { ret measured[n <](n) }
-def rec explicit(n: Integer) -> F Integer { ret explicit[n = 1](n) }
-def rec sized(n: Integer) -> F Integer { ret sized[size = 1](n) }
-def rec bounded(n: Integer) -> F Integer { ret bounded[cost = 1](n) }
-def rec tailing(n: Integer) -> F Integer { ret tailing[tail](n) }
+def rec measured(n: Integer) -> -F Integer { ret measured[n <](n) }
+def rec explicit(n: Integer) -> -F Integer { ret explicit[n = 1](n) }
+def rec sized(n: Integer) -> -F Integer { ret sized[size = 1](n) }
+def rec bounded(n: Integer) -> -F Integer { ret bounded[cost = 1](n) }
+def rec tailing(n: Integer) -> -F Integer { ret tailing[tail](n) }

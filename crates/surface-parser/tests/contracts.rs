@@ -102,9 +102,9 @@ fn module_declarations_mold_zero_obligation() -> Result<(), Box<dyn Error>>
     let pbg = built();
     let cases = [
         "module M { def x = 1; def y : Integer; }",
-        r#"module M : #{ x: Integer, f: F Integer } {
+        r#"module M : #{ x: Integer, f: -F Integer } {
   def x = 1;
-  def f(a: Integer) -> F Integer { ret a }
+  def f(a: Integer) -> -F Integer { ret a }
 }"#,
     ];
     for src in cases {
@@ -139,15 +139,15 @@ fn prefix_type_formers_group_required_operands() -> Result<(), Box<dyn Error>>
 {
     let pbg = built();
     let cases: [(&str, bool); 9] = [
-        ("F Integer", true),
-        ("U Integer", true),
-        ("F ?", true),
-        ("U ?", true),
-        ("def suspended : U ?;", true),
-        ("List(F Integer, U ?)", true),
+        ("-F Integer", true),
+        ("+U Integer", true),
+        ("-F ?", true),
+        ("+U ?", true),
+        ("def suspended : +U ?;", true),
+        ("List(-F Integer, +U ?)", true),
         ("Integer -> Integer", true),
-        ("F", false),
-        ("List(F, U)", false),
+        ("-F", false),
+        ("List(-F, +U)", false),
     ];
     for (src, expected_clean) in cases {
         let result = parse(pbg, SourceText::from(src))?;

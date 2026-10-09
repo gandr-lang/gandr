@@ -62,20 +62,20 @@ const ERROR_CORPUS: [Case; 13] = [
     Case {
         name: "shape-arrow",
         descriptor: "ShapeMismatch:an arrow `A → C`",
-        source: "def h : U (F Integer) ;\ndef h = thunk { ret 1 } ;\ndef g : U (F Integer) ;\ndef g \
+        source: "def h : +U (-F Integer) ;\ndef h = thunk { ret 1 } ;\ndef g : +U (-F Integer) ;\ndef g \
                  = thunk { (force h)(1) } ;\n",
         locus: "force h",
     },
     Case {
         name: "shape-thunk",
-        descriptor: "ShapeMismatch:a thunk type `U C`",
-        source: "def y : U (F Integer) ;\ndef y = thunk { force 1 } ;\n",
+        descriptor: "ShapeMismatch:a thunk type `+U C`",
+        source: "def y : +U (-F Integer) ;\ndef y = thunk { force 1 } ;\n",
         locus: "1",
     },
     Case {
         name: "shape-returner",
-        descriptor: "ShapeMismatch:a returner `F A`",
-        source: "def f : U (Integer -> F Integer) ;\ndef f = thunk { ret 1 } ;\n",
+        descriptor: "ShapeMismatch:a returner `-F A`",
+        source: "def f : +U (Integer -> -F Integer) ;\ndef f = thunk { ret 1 } ;\n",
         locus: "ret 1",
     },
     Case {
@@ -143,7 +143,7 @@ const GOAL_CORPUS: [(&str, &str); 3] = [
     ("goal-value", "def owed : Integer ;\ndef answer = 42 ;\n"),
     (
         "goal-thunk",
-        "def later : U (Integer -> F Integer) ;\ndef answer = 42 ;\n",
+        "def later : +U (Integer -> -F Integer) ;\ndef answer = 42 ;\n",
     ),
     (
         "goal-beside-a-refusal",

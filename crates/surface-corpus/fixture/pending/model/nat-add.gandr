@@ -1,1 +1,1 @@
-module NatAdd : #{ type M = Integer, zero : M, add : U[ω] (M -> M -> F M) } { def zero = 0; def add(x: Integer, y: Integer) -> F Integer { ret x + y } }
+module NatAdd : #{ type M = Integer, zero : M, add : +U[ω] (M -> M -> -F M) } { def zero = 0; def add(x: Integer, y: Integer) -> -F Integer { ret x + y } }

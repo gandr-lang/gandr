@@ -21,8 +21,8 @@
 //! # Six decisions that interlock
 //!
 //! **Names resolve through tables with no fallthrough.** `Unit`, `Integer`,
-//! `String`, `U` and `F` answer from a type-head table indexed by arity, and a
-//! term name answers from the enclosing binders, then the module's earlier
+//! `String`, `+U` and `-F` answer from a type-head table indexed by arity, and
+//! a term name answers from the enclosing binders, then the module's earlier
 //! declarations. Nothing falls through to an opaque atom: an unanswered name is
 //! a refusal with a span, so a misspelling is a mistake rather than a new
 //! nominal type.

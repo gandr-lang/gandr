@@ -3,7 +3,7 @@ data Maybe(a : Type) : Type {
   Some : (x : a) --> Maybe(a);
 }
 
-def unwrap_or_zero() -> F Integer {
+def unwrap_or_zero() -> -F Integer {
   case (Some(3) : Maybe(Integer)) {
     None => ret 0,
     Some(x) => ret x
