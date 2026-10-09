@@ -45,8 +45,6 @@ impl Strictness
     ///   one, which is what makes `l < m` the comparison `l + 1 ≤ m`.
     /// - provides: the one place the two comparison modes differ.
     /// - panics: none.
-    /// - executable: none — the specification expansion calls a non-const
-    ///   evaluator, so an attribute would remove this const-callable API.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — strict and non-strict comparisons on equal atoms and
@@ -54,6 +52,7 @@ impl Strictness
     ///   exact comparison verdicts.
     /// - witness: `order::tests::leq_is_reflexive_and_lt_is_irreflexive_on_atoms`
     /// - witness: `order::tests::var_is_strictly_below_its_successor`
+    #[spec(ensures: |ret| ret.0 == if self.0 { 1_u128 } else { 0_u128 })]
     #[inline]
     #[must_use]
     pub(crate) const fn shift(self) -> OrderShift
