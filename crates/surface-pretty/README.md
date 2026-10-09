@@ -115,12 +115,12 @@ The prior implementation spelled its own surface — `Π(x : A). B`, `→`, `U` 
 
 ## Break points
 
-A break point is a choice between the byte the one-line spelling carries there and a line break: after an arrow, an infix symbol and a comma, a space or a break indented two columns; before a bracket's closer, nothing or a break. The inline branch stands first. Each choice is independent of the others, as in the prior implementation, so the least-cost layout may break inside a parenthesized operand where that alone fits the page: the narrow page of the example above breaks inside `+U (a -> -F b)`.
+A break point is a choice between the byte the one-line spelling carries there and a line break: after an arrow, an infix symbol and a comma, a space or a break indented two columns; before a bracket's closer, nothing or a break. The broken branch stands first, matching the layout engine's left-biased fallback when both alternatives are width-tainted. Each choice is independent of the others, so the least-cost layout may break inside a parenthesized operand where that alone fits the page: the narrow page of the example above breaks inside `+U (a -> -F b)`.
 
 - **Alternatives.** A group per arrow chain, breaking all of its arrows or none, outer chains before inner, reads as the prior implementation's long dependent arrow did; under the cost order, overflow then line count, it takes more lines than a single inner break, and the engine would choose it only if inner breaks were offered inside the outer group's broken branch alone.
 - **Reversal.** A reader rules that a chain breaks whole; the walk then builds chain groups and the goldens move with it.
 
-The computation width is twice the page. Past it the engine resolves without its optimality guarantee, keeping the cheapest layout so far, so a presentation wider than twice the page may stay on one line where a break would have helped: the depth-limit golden's narrow page is one line of 166 columns. A wider computation width lets every document reach more memoized states; twice the page holds every golden but that one inside the guarantee. The choice reverses on a reader's presentation that a wider computation width lays out better at a cost the reader accepts.
+The computation width is twice the page. Past it the engine resolves without its optimality guarantee: a frontier wins over a tainted promise, and two tainted promises retain the left alternative. At zero columns, both the inline space and the two-column continuation indentation exceed the computation width; the broken separator remains the fallback (`goldens::tests::doubly_tainted_pair_keeps_the_broken_separator`). A wider computation width admits more memoized states; twice the page bounds that work. The choice reverses when a wider computation width improves a presentation at an acceptable cost.
 
 ## Binder names
 
@@ -156,7 +156,7 @@ Deferred, with the former each needs:
 | `annotations_are_transparent` | an annotated value; no core value carries one |
 | `here_witness_pins_identity_notation` | the identity witness |
 
-The crate carries 14 tests: the eight ported rows and six that are new — every type former's spelling, universes, binder names, every value leaf, malformed sources, and fidelity by node.
+The crate carries 15 tests: the eight ported rows and seven additional witnesses — every type former's spelling, universes, binder names, every value leaf, malformed sources, fidelity by node, and the doubly-tainted separator at zero columns.
 
 ## License
 

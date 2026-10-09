@@ -978,9 +978,9 @@ impl Walk<'_, '_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the inline branch is exactly one space, so the flattened
-    ///   image is the one-line spelling; the broken branch starts the
-    ///   continuation two columns in.
+    /// - ensures: the inline branch is exactly one space; the broken branch
+    ///   starts the continuation two columns in and is the left alternative,
+    ///   retained when both alternatives are width-tainted.
     /// - provides: the break after an arrow, an infix symbol and a comma.
     /// - fails: the builder's refusal.
     /// - panics: none.
@@ -995,7 +995,7 @@ impl Walk<'_, '_, '_>
         let space = self.leaf(Glyphs(" "))?;
         let line = self.builder.hard_line();
         let indented = self.builder.nest(NestAmount::from(CONTINUATION), line)?;
-        let choice = self.builder.choice(space, indented)?;
+        let choice = self.builder.choice(indented, space)?;
         Ok(self.builder.concat(head, choice)?)
     }
 
@@ -1003,8 +1003,9 @@ impl Walk<'_, '_, '_>
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the inline branch is empty, so the flattened image is the
-    ///   one-line spelling; the broken branch puts the closer on its own line.
+    /// - ensures: the inline branch is empty; the broken branch puts the closer
+    ///   on its own line and is the left alternative, retained when both
+    ///   alternatives are width-tainted.
     /// - provides: the break before a bracket's closer.
     /// - fails: the builder's refusal.
     /// - panics: none.
@@ -1018,7 +1019,7 @@ impl Walk<'_, '_, '_>
     {
         let none = self.builder.empty();
         let line = self.builder.hard_line();
-        let choice = self.builder.choice(none, line)?;
+        let choice = self.builder.choice(line, none)?;
         Ok(self.builder.concat(head, choice)?)
     }
 
