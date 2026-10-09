@@ -81,6 +81,8 @@ use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 use gandr_kernel_term::WireTag;
+use quenchant_arith::arith;
+use quenchant_shape::shape::Maybe;
 
 use crate::rewrite::BinderDepth;
 
@@ -280,7 +282,10 @@ impl ContentEncoding
         let mut remaining = value.0;
         loop {
             let low = u8::try_from(remaining & 0x7f).unwrap_or(0_u8);
-            remaining = remaining.wrapping_shr(7);
+            remaining = u64::from(arith::div(
+                arith::Int::from(remaining),
+                arith::Int::from(128_u64),
+            ));
             if remaining == 0_u64 {
                 self.0.push(low);
                 return;
@@ -401,9 +406,17 @@ impl ContentEncoding
         let mut state = BASIS;
         for &byte in &self.0 {
             state ^= u128::from(byte);
-            state = state.wrapping_mul(PRIME);
+            // reason: FNV-1a multiplies modulo 2^128.
+            state = u128::from(arith::wrapping_mul(
+                arith::Int::from(state),
+                arith::Int::from(PRIME),
+            ));
         }
-        let high = u64::try_from(state.wrapping_shr(64)).unwrap_or(u64::MAX);
+        let high = u128::from(arith::div(
+            arith::Int::from(state),
+            arith::Int::from(0x0000_0000_0000_0001_0000_0000_0000_0000_u128),
+        ));
+        let high = u64::try_from(high).unwrap_or(u64::MAX);
         let low = u64::try_from(state & u128::from(u64::MAX)).unwrap_or(u64::MAX);
         ContentDigest::new(DigestWord::from(high), DigestWord::from(low))
     }
@@ -614,12 +627,21 @@ impl ContentTable
     /// - ensures: the id this table already holds for those exact bytes, or a
     ///   fresh id whose record is appended to the stream; ids are assigned in
     ///   stream order, and byte-equal records take one id however many nodes
-    ///   spell them.
+    ///   spell them. The record count is at most the stream's byte length: each
+    ///   fresh record appends a nonempty length-prefixed image before the count
+    ///   advances. On supported targets that allocation is bounded by
+    ///   `isize::MAX`, below `u64::MAX`; no representable table overflows it.
     /// - provides: the canonical content numbering — the step that makes a
     ///   re-minted spine reuse its untouched leaf, which an arena-identity key
     ///   forfeits.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 for the count/stream bound; content-collapse witnesses
+    ///   exercise reuse and fresh records, not an unallocatable u64 ceiling.
+    /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
+    #[spec(ensures: u128::try_from(self.stream.0.len()).is_ok_and(|bytes| u128::from(self.records) <= bytes))]
     fn intern(
         &mut self,
         record: ContentEncoding,
@@ -630,7 +652,11 @@ impl ContentTable
         }
         let id = ContentId(self.records);
         self.stream.put_record(&record);
-        self.records = self.records.saturating_add(1);
+        // Each record occupies memory, so the allocated table bounds this count.
+        self.records = u64::from(arith::add(
+            arith::Int::from(self.records),
+            arith::Int::from(1_u64),
+        ));
         let _prior = self.interned.insert(record, id);
         id
     }
@@ -1139,6 +1165,20 @@ pub enum SupportGoal
     ),
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a support goal carries no expected type.
+    mod expected_type {
+        /// The goal derives an answer rather than checking against a supplied type.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// A synthesis goal has no supplied expected type.
+            Synthesis,
+            /// A formation goal asks for a universe level.
+            Formation,
+        }
+    }
+}
+
 impl SupportGoal
 {
     /// The direction tag this goal writes into a support's encoding.
@@ -1176,17 +1216,28 @@ impl SupportGoal
     /// The expected type this goal checks against, if it checks at all.
     ///
     /// # Specification
-    /// trivial.
+    /// - provides: the checked type, or [`Absent`] with `Synthesis` for a
+    ///   synthesis goal and `Formation` for a universe-formation goal.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — synthesis and checking supports differ even over the
+    ///   same subject; the expected component belongs only to checking.
+    /// - witness: `encoding::tests::the_direction_is_part_of_the_key`
+    ///
+    /// [`Absent`]: expected_type::Absent
     #[inline]
-    const fn expected(self) -> Option<AnyNode>
+    const fn expected(self) -> Maybe<AnyNode, expected_type::Absent>
     {
         match self {
-            | Self::CheckValue(_, expected) => Some(AnyNode::ValueType(expected)),
-            | Self::CheckComp(_, expected) => Some(AnyNode::CompType(expected)),
-            | Self::SynthValue(_)
-            | Self::SynthComp(_)
-            | Self::ValueTypeLevel(_)
-            | Self::CompTypeLevel(_) => None,
+            | Self::CheckValue(_, expected) => Maybe::Present(AnyNode::ValueType(expected)),
+            | Self::CheckComp(_, expected) => Maybe::Present(AnyNode::CompType(expected)),
+            | Self::SynthValue(_) | Self::SynthComp(_) => {
+                Maybe::Absent(expected_type::Absent::Synthesis)
+            },
+            | Self::ValueTypeLevel(_) | Self::CompTypeLevel(_) => {
+                Maybe::Absent(expected_type::Absent::Formation)
+            },
         }
     }
 }
@@ -1246,11 +1297,13 @@ pub fn encode_support(
     encoding.put_tag(goal.direction());
     encoding.put_content(subject);
     match expected {
-        | Some(id) => {
+        | Maybe::Present(id) => {
             encoding.put_tag(component_present());
             encoding.put_content(id);
         },
-        | None => encoding.put_tag(component_absent()),
+        | Maybe::Absent(expected_type::Absent::Synthesis | expected_type::Absent::Formation) => {
+            encoding.put_tag(component_absent());
+        },
     }
     encoding.put_count(ComponentCount(folded.len()));
     for id in folded {

@@ -11,15 +11,17 @@ keywords = ["content-addressing", "gandr", "kernel", "memoization", "type-checke
 categories = ["compilers"]
 publish.workspace = true
 
-# The certified trusted base depends only on other kernel crates and
-# core/alloc. Dev-dependencies are exempt: test code is not shipped trust.
-# The pinned anodized facade supplies core-only specification helpers;
-# logic/BigInt stays disabled in this no_std library.
+# The certified trusted base uses kernel crates and core/alloc. Pinned
+# arithmetic and absence types add no runtime allocation or std dependency.
+# The anodized facade supplies core-only specification helpers; logic/BigInt
+# stays disabled. Dev-dependencies are outside shipped trust.
 [dependencies]
 anodized.workspace = true
 gandr-kernel-check-memo.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+quenchant-arith.workspace = true
+quenchant-shape.workspace = true
 
 [dev-dependencies]
 

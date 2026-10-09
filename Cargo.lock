@@ -185,6 +185,8 @@ dependencies = [
  "gandr-kernel-check-memo",
  "gandr-kernel-strata",
  "gandr-kernel-term",
+ "quenchant-arith",
+ "quenchant-shape",
 ]
 
 [[package]]
@@ -320,6 +322,35 @@ dependencies = [
  "regex-syntax",
  "unarray",
 ]
+
+[[package]]
+name = "quenchant-anodized"
+version = "0.0.0"
+source = "git+https://github.com/gandr-lang/quenchant?rev=111850988c96b7b33ee898f54c017ca645243e7f#111850988c96b7b33ee898f54c017ca645243e7f"
+dependencies = [
+ "quenchant-spec-macros",
+]
+
+[[package]]
+name = "quenchant-arith"
+version = "0.0.0"
+source = "git+https://github.com/gandr-lang/quenchant?rev=111850988c96b7b33ee898f54c017ca645243e7f#111850988c96b7b33ee898f54c017ca645243e7f"
+dependencies = [
+ "quenchant-anodized",
+]
+
+[[package]]
+name = "quenchant-shape"
+version = "0.0.0"
+source = "git+https://github.com/gandr-lang/quenchant?rev=111850988c96b7b33ee898f54c017ca645243e7f#111850988c96b7b33ee898f54c017ca645243e7f"
+dependencies = [
+ "quenchant-anodized",
+]
+
+[[package]]
+name = "quenchant-spec-macros"
+version = "0.0.0"
+source = "git+https://github.com/gandr-lang/quenchant?rev=111850988c96b7b33ee898f54c017ca645243e7f#111850988c96b7b33ee898f54c017ca645243e7f"
 
 [[package]]
 name = "quote"

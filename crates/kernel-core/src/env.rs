@@ -88,6 +88,7 @@ use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
+use quenchant_arith::arith;
 
 use crate::check;
 use crate::error::KernelError;
@@ -262,8 +263,8 @@ impl StagedMarks
     /// - fails: never.
     /// - panics: none.
     #[inline]
-    #[spec(captures: [entry_len = self.marks.len(), entry_contains_mark = self.marks.contains(&mark)], ensures: self.marks.len()
-        == entry_len.saturating_sub(usize::from(entry_contains_mark)))]
+    #[spec(captures: [entry_len = self.marks.len(), entry_contains_mark = self.marks.contains(&mark)], ensures: arith::Int::from(self.marks.len())
+        == arith::sub(arith::Int::from(entry_len), arith::Int::from(usize::from(entry_contains_mark))))]
     fn resolve(
         &mut self,
         mark: ArenaWatermark,
@@ -309,7 +310,11 @@ impl StagedMarks
         let mut found: usize = 0;
         for &held in &self.marks {
             if held.clamped_into(ArenaWatermark::default(), mark) != held {
-                found = found.saturating_add(1);
+                // At most marks.len() distinct entries contribute to this count.
+                found = usize::from(arith::add(
+                    arith::Int::from(found),
+                    arith::Int::from(1_usize),
+                ));
             }
         }
         OutstandingCount(found)
@@ -794,7 +799,7 @@ impl Environment
     // were truncated away rather than committed. Whether the declaration is
     // *well-typed* is what the body decides and is not restated here.
     #[spec(captures: [entry_len = self.entries.len()], ensures: |ret| ret.is_err()
-        || (self.entries.len() == entry_len.saturating_add(1)
+        || (arith::Int::from(self.entries.len()) == arith::add(arith::Int::from(entry_len), arith::Int::from(1_usize))
             && self.admission_floor == self.arena.watermark()))]
     pub fn add_decl(
         &mut self,
@@ -897,7 +902,7 @@ impl Environment
     ///   later rejection leaving bypassed content resolvable.
     /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
     /// - witness: `env::tests::a_rejection_keeps_bypassed_content_resolvable`
-    #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark()], ensures: self.entries.len() == entry_len.saturating_add(1)
+    #[spec(captures: [entry_len = self.entries.len(), entry_watermark = self.arena.watermark()], ensures: arith::Int::from(self.entries.len()) == arith::add(arith::Int::from(entry_len), arith::Int::from(1_usize))
         && self
             .entries
             .last()

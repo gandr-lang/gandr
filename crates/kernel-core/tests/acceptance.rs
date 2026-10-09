@@ -41,6 +41,7 @@ mod acceptance
     use gandr_kernel_term::TermArena;
     use gandr_kernel_term::ValueId;
     use gandr_kernel_term::ValueTypeId;
+    use quenchant_arith::arith;
 
     /// The depth of a self-similar composite fixture.
     #[repr(transparent)]
@@ -101,11 +102,11 @@ mod acceptance
     ///   depth reaches.
     fn two_to_the(depth: CompositeDepth) -> GoalCount
     {
-        GoalCount(
-            1_u64
-                .checked_shl(depth.0)
-                .expect("the pinned depths are small"),
-        )
+        let mut count = arith::Int::from(1_u64);
+        for _ in 0 .. depth.0 {
+            count = arith::mul(count, arith::Int::from(2_u64));
+        }
+        GoalCount(u64::from(count))
     }
 
     /// The memoless goal-expansion law: `5 * 2^d - 2` in total.
@@ -121,12 +122,11 @@ mod acceptance
     ///   depth reaches.
     fn memoless_total(depth: CompositeDepth) -> GoalCount
     {
-        GoalCount(
-            5_u64
-                .checked_mul(two_to_the(depth).0)
-                .and_then(|scaled| scaled.checked_sub(2))
-                .expect("the closed form fits"),
-        )
+        let scaled = arith::mul(
+            arith::Int::from(5_u64),
+            arith::Int::from(two_to_the(depth).0),
+        );
+        GoalCount(u64::from(arith::sub(scaled, arith::Int::from(2_u64))))
     }
 
     /// The memoless term-plane law: `3 * 2^d - 1` body checks.
@@ -141,12 +141,11 @@ mod acceptance
     /// - panics: when the form leaves the representable range.
     fn memoless_term(depth: CompositeDepth) -> GoalCount
     {
-        GoalCount(
-            3_u64
-                .checked_mul(two_to_the(depth).0)
-                .and_then(|scaled| scaled.checked_sub(1))
-                .expect("the closed form fits"),
-        )
+        let scaled = arith::mul(
+            arith::Int::from(3_u64),
+            arith::Int::from(two_to_the(depth).0),
+        );
+        GoalCount(u64::from(arith::sub(scaled, arith::Int::from(1_u64))))
     }
 
     /// The memoless type-plane law: `2^(d+1) - 1` type formations.
@@ -160,13 +159,11 @@ mod acceptance
     /// - panics: when the form leaves the representable range.
     fn memoless_type(depth: CompositeDepth) -> GoalCount
     {
-        GoalCount(
-            two_to_the(depth)
-                .0
-                .checked_mul(2)
-                .and_then(|doubled| doubled.checked_sub(1))
-                .expect("the closed form fits"),
-        )
+        let doubled = arith::mul(
+            arith::Int::from(two_to_the(depth).0),
+            arith::Int::from(2_u64),
+        );
+        GoalCount(u64::from(arith::sub(doubled, arith::Int::from(1_u64))))
     }
 
     /// The memoized term-plane law: `d + 1` body checks plus one leaf
@@ -184,11 +181,10 @@ mod acceptance
     ///   depth reaches.
     fn memoized_term(depth: CompositeDepth) -> GoalCount
     {
-        GoalCount(
-            u64::from(depth.0)
-                .checked_add(2)
-                .expect("the depth is small"),
-        )
+        GoalCount(u64::from(arith::add(
+            arith::Int::from(u64::from(depth.0)),
+            arith::Int::from(2_u64),
+        )))
     }
 
     /// The memoized type-plane law: `d + 1` type formations.
@@ -202,11 +198,10 @@ mod acceptance
     /// - panics: when the sum leaves the representable range.
     fn memoized_type(depth: CompositeDepth) -> GoalCount
     {
-        GoalCount(
-            u64::from(depth.0)
-                .checked_add(1)
-                .expect("the depth is small"),
-        )
+        GoalCount(u64::from(arith::add(
+            arith::Int::from(u64::from(depth.0)),
+            arith::Int::from(1_u64),
+        )))
     }
 
     /// The `d + 1` spine levels a depth-`d` edit re-checks.
@@ -220,11 +215,10 @@ mod acceptance
     /// - panics: when the sum leaves the representable range.
     fn edit_locality(depth: CompositeDepth) -> GoalCount
     {
-        GoalCount(
-            u64::from(depth.0)
-                .checked_add(1)
-                .expect("the depth is small"),
-        )
+        GoalCount(u64::from(arith::add(
+            arith::Int::from(u64::from(depth.0)),
+            arith::Int::from(1_u64),
+        )))
     }
 
     /// An unconstrained level context binding no prenex parameters.
@@ -614,12 +608,12 @@ mod acceptance
                 memoless.expansions(),
                 "memoless expansions are 5 * 2^d - 2 at depth {depth:?}"
             );
+            let memoized_total = arith::add(
+                arith::Int::from(u64::from(memoized_term(depth))),
+                arith::Int::from(u64::from(memoized_type(depth))),
+            );
             assert_eq!(
-                ExpansionCount::from(
-                    u64::from(memoized_term(depth))
-                        .checked_add(u64::from(memoized_type(depth)))
-                        .expect("the closed form fits")
-                ),
+                ExpansionCount::from(u64::from(memoized_total)),
                 memoized.expansions(),
                 "memoized expansions are 2d + 3 at depth {depth:?}"
             );
@@ -786,11 +780,10 @@ mod acceptance
             let (verdict, edited) = check_with(&mut arena, &declaration, &mut live);
             assert_eq!(Ok(()), verdict, "the edited pair checks at depth {depth:?}");
 
-            let extra = GoalCount(
-                u64::from(edited.plane_expansions(SupportPlane::Term))
-                    .checked_sub(u64::from(plain.plane_expansions(SupportPlane::Term)))
-                    .expect("the edited spelling costs at least as much"),
-            );
+            let extra = GoalCount(u64::from(arith::sub(
+                arith::Int::from(u64::from(edited.plane_expansions(SupportPlane::Term))),
+                arith::Int::from(u64::from(plain.plane_expansions(SupportPlane::Term))),
+            )));
             assert_eq!(
                 edit_locality(depth),
                 extra,

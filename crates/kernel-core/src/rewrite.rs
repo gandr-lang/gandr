@@ -73,6 +73,8 @@ use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
+use quenchant_arith::arith;
+use quenchant_shape::shape::Maybe;
 
 use crate::encoding::ContentEncoding;
 use crate::encoding::ContentTable;
@@ -155,9 +157,13 @@ impl BinderDepth
     /// - fails: never.
     /// - panics: none.
     #[inline]
-    const fn deeper(self) -> Self
+    fn deeper(self) -> Self
     {
-        Self(self.0.saturating_add(1))
+        // reason: binder depth uses u32::MAX as its conservative ceiling.
+        Self(u32::from(arith::saturating_add(
+            arith::Int::from(self.0),
+            arith::Int::from(1_u32),
+        )))
     }
 
     /// The amount that raises an index past a telescope of `slots` binders.
@@ -171,9 +177,13 @@ impl BinderDepth
     /// - panics: none.
     #[inline]
     #[must_use]
-    pub const fn past(slots: Self) -> Self
+    pub fn past(slots: Self) -> Self
     {
-        Self(slots.0.saturating_add(1))
+        // reason: the shift amount clamps at the representable binder ceiling.
+        Self(u32::from(arith::saturating_add(
+            arith::Int::from(slots.0),
+            arith::Int::from(1_u32),
+        )))
     }
 }
 
@@ -797,17 +807,25 @@ where
                 // the walk has crossed binders the replacement has to be carried
                 // under. The sub-walk leaves exactly one result on the stack,
                 // which is what this goal's parent was going to read anyway.
-                if let Some(replacement) = carried_occurrence(arena, step, node, depth) {
-                    tasks.push(RewriteTask::Record(node, depth, step));
-                    tasks.push(RewriteTask::Open(
-                        AnyNode::Value(replacement),
-                        BinderDepth::NONE,
-                        Rewrite::Shift {
-                            cutoff: BinderDepth::NONE,
-                            amount: depth,
-                        },
-                    ));
-                    continue;
+                match carried_occurrence(arena, step, node, depth) {
+                    | Maybe::Present(replacement) => {
+                        tasks.push(RewriteTask::Record(node, depth, step));
+                        tasks.push(RewriteTask::Open(
+                            AnyNode::Value(replacement),
+                            BinderDepth::NONE,
+                            Rewrite::Shift {
+                                cutoff: BinderDepth::NONE,
+                                amount: depth,
+                            },
+                        ));
+                        continue;
+                    },
+                    | Maybe::Absent(
+                        carrying::Absent::Shift
+                        | carrying::Absent::NoCrossedBinders
+                        | carrying::Absent::DifferentOccurrence
+                        | carrying::Absent::UnreadableValue,
+                    ) => {},
                 }
                 tasks.push(RewriteTask::Close(node, depth, step));
                 push_rewrite_children(arena, node, depth, &mut tasks, step);
@@ -831,6 +849,24 @@ where
     results.pop().unwrap_or_else(|| outcome_of(root))
 }
 
+quenchant_shape::reason_enum! {
+    /// Why the ordinary rewrite path needs no carrying shift.
+    mod carrying {
+        /// A carrying shortcut does not apply to this rewrite goal.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// Shifting substitutes no replacement.
+            Shift,
+            /// A replacement at depth zero crosses no binders.
+            NoCrossedBinders,
+            /// The node is not the variable occurrence being substituted.
+            DifferentOccurrence,
+            /// The ordinary unreadable-node path must handle this id.
+            UnreadableValue,
+        }
+    }
+}
+
 /// The replacement a substitution has to carry under crossed binders, when this
 /// goal is the occurrence being substituted and there are binders to cross.
 ///
@@ -845,32 +881,47 @@ where
 ///   has been crossed, and the node is the variable occurrence the depth names;
 ///   nothing in every other case, including a substitution at depth zero, which
 ///   takes the ordinary close path instead.
-/// - provides: the one site that decides a replacement must be carried in under
-///   crossed binders rather than handed back as it stands.
+/// - provides: a replacement or [`Absent`]: `Shift` selects shifting,
+///   `NoCrossedBinders` needs no raise, `DifferentOccurrence` is not the
+///   target, and `UnreadableValue` leaves the ordinary unreadable-node path in
+///   charge.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — crossing a binder raises the replacement, while depth
+///   zero, a different occurrence and a shift retain their ordinary paths.
+/// - witness: `rewrite::tests::a_replacement_is_carried_under_the_binders_it_crosses`
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+/// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+///
+/// [`Absent`]: carrying::Absent
 #[inline]
 fn carried_occurrence(
     arena: &TermArena,
     rewrite: Rewrite,
     node: AnyNode,
     depth: BinderDepth,
-) -> Option<ValueId>
+) -> Maybe<ValueId, carrying::Absent>
 {
     let Rewrite::Substitute { replacement } = rewrite
     else {
-        return None;
+        return Maybe::Absent(carrying::Absent::Shift);
     };
     if depth == BinderDepth::NONE {
-        return None;
+        return Maybe::Absent(carrying::Absent::NoCrossedBinders);
     }
     let AnyNode::Value(id) = node
     else {
-        return None;
+        return Maybe::Absent(carrying::Absent::DifferentOccurrence);
     };
-    match *arena.value(id)? {
+    let Some(value) = arena.value(id)
+    else {
+        return Maybe::Absent(carrying::Absent::UnreadableValue);
+    };
+    match *value {
         | Value::Variable(index) if BinderDepth::from(u32::from(index)) == depth => {
-            Some(replacement)
+            Maybe::Present(replacement)
         },
         | Value::Variable(_)
         | Value::Constant(_)
@@ -879,7 +930,7 @@ fn carried_occurrence(
         | Value::Pair(..)
         | Value::Injection(..)
         | Value::Thunk(_)
-        | Value::Lift { .. } => None,
+        | Value::Lift { .. } => Maybe::Absent(carrying::Absent::DifferentOccurrence),
     }
 }
 
@@ -1215,8 +1266,8 @@ fn close_value(
 /// - ensures: for a shift, the index rises by the amount exactly when it is at
 ///   or above the cutoff measured from this depth, and stands otherwise; for a
 ///   substitution, an index below the depth stands, an index equal to it
-///   becomes the replacement, and an index above it lowers by one. Every
-///   arithmetic step saturates rather than wrapping.
+///   becomes the replacement, and an index above it lowers by one. Shift
+///   cutoffs and raised indices clamp at the representable ceiling.
 /// - provides: the whole variable rule of both machines, written once.
 /// - fails: never.
 /// - panics: none.
@@ -1231,12 +1282,21 @@ fn rewrite_variable(
     let index = BinderDepth::from(u32::from(index));
     match rewrite {
         | Rewrite::Shift { cutoff, amount } => {
-            let effective = BinderDepth(cutoff.0.saturating_add(depth.0));
+            // reason: a cutoff beyond the index range uses its conservative ceiling.
+            let effective = BinderDepth(u32::from(arith::saturating_add(
+                arith::Int::from(cutoff.0),
+                arith::Int::from(depth.0),
+            )));
             if index < effective {
                 id
             }
             else {
-                arena.value_variable(DeBruijnIndex::from(index.0.saturating_add(amount.0)))
+                // reason: the shift specification clamps an out-of-range raised index.
+                let raised = u32::from(arith::saturating_add(
+                    arith::Int::from(index.0),
+                    arith::Int::from(amount.0),
+                ));
+                arena.value_variable(DeBruijnIndex::from(raised))
             }
         },
         | Rewrite::Substitute { replacement } => match index.cmp(&depth) {
@@ -1246,7 +1306,12 @@ fn rewrite_variable(
             // before it ever schedules this close.
             | core::cmp::Ordering::Equal => replacement,
             | core::cmp::Ordering::Greater => {
-                arena.value_variable(DeBruijnIndex::from(index.0.saturating_sub(1)))
+                // index > depth >= 0, so removing this binder cannot underflow.
+                let lowered = u32::from(arith::sub(
+                    arith::Int::from(index.0),
+                    arith::Int::from(1_u32),
+                ));
+                arena.value_variable(DeBruijnIndex::from(lowered))
             },
         },
     }
@@ -1501,6 +1566,7 @@ mod tests
     use gandr_kernel_term::Value;
     use gandr_kernel_term::ValueId;
     use gandr_kernel_term::ValueType;
+    use quenchant_arith::arith;
 
     use super::BinderDepth;
     use super::ContentTable;
@@ -1816,6 +1882,10 @@ mod tests
     {
         /// Build a self-similar value whose expansion is exponential in `depth`
         /// and whose distinct-node count is linear in it.
+        ///
+        /// # Specification
+        /// - provides: a shared pair spine with exactly `levels` links.
+        /// - panics: none.
         fn shared_composite(
             arena: &mut TermArena,
             levels: ChainLength,
@@ -1825,7 +1895,10 @@ mod tests
             let mut remaining = levels.0;
             while remaining > 0 {
                 node = arena.value_pair(node, node);
-                remaining = remaining.saturating_sub(1);
+                remaining = u32::from(arith::sub(
+                    arith::Int::from(remaining),
+                    arith::Int::from(1_u32),
+                ));
             }
             node
         }

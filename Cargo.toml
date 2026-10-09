@@ -141,6 +141,26 @@ version = "1.11.0"
 default-features = false
 features = ["std"]
 
+# Profile-independent arithmetic families; strict operations are the default.
+# features:
+# - none: core-only arithmetic, without unsafe fast mode or instrumentation
+# consumers:
+# - kernel-core
+[workspace.dependencies.quenchant-arith]
+git = "https://github.com/gandr-lang/quenchant"
+rev = "111850988c96b7b33ee898f54c017ca645243e7f"
+default-features = false
+
+# Named non-failure absence, sealed at each kernel decision site.
+# features:
+# - none: core-only shapes without instrumentation
+# consumers:
+# - kernel-core
+[workspace.dependencies.quenchant-shape]
+git = "https://github.com/gandr-lang/quenchant"
+rev = "111850988c96b7b33ee898f54c017ca645243e7f"
+default-features = false
+
 # The lint wall. Every group is denied at priority -1 so an individual `allow`
 # below it wins; every allow states the class it exempts. A lint leaves this
 # wall only with the reason recorded beside it.

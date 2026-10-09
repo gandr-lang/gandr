@@ -487,11 +487,11 @@ impl Level
     /// - witness: `order::tests::lt_is_irreflexive`
     #[spec(ensures: |ret| ret.is_ok() == (
         self.atoms().all(|(variable, offset)| other.offset_of(variable).is_some_and(|bound| {
-            u128::from(offset).saturating_add(1) <= u128::from(bound)
+            u128::from(offset).checked_add(1).is_some_and(|shifted| shifted <= u128::from(bound))
         }))
-            && u128::from(self.constant_part()).saturating_add(1)
-                <= other.atoms().map(|(_, offset)| u128::from(offset))
-                    .fold(u128::from(other.constant_part()), u128::max)
+            && u128::from(self.constant_part()).checked_add(1).is_some_and(|shifted|
+                shifted <= other.atoms().map(|(_, offset)| u128::from(offset))
+                    .fold(u128::from(other.constant_part()), u128::max))
     ) && self.succ().map_or(true, |successor| {
         ret.is_ok() == successor.leq_with_evidence(other).is_ok()
     }))]
@@ -558,17 +558,21 @@ impl Level
 /// # Adequacy
 /// - hypothesis: L3 — the pointwise domination test is the decision surface,
 ///   and it is carried by the public faces' witnesses, since this is their
-///   whole body; the residue is the shift arithmetic, which is `u128`-wide, so
-///   no representable input can make it overflow — pinned by the ceiling unit
-///   case.
+///   whole body. Checked shifts and spikes cannot overflow: level components
+///   are at most `u64::MAX` and the shift is at most one, widened to `u128`.
+///   Their refusal branches therefore exclude no representable input. Widening
+///   the components requires a distinct overflow carrier: a zero valuation
+///   would not refute every unrepresentable-spike case.
 /// - witness: `order::tests::comparison_is_total_at_the_offset_ceiling`
+/// - witness: `order::tests::strict_comparison_at_the_constant_ceiling_refutes_at_the_zero_valuation`
+/// - witness: `order::tests::an_atom_refutation_spikes_above_the_constant_ceiling`
 #[spec(ensures: |ret| ret.is_ok() == (
     left.atoms().all(|(variable, offset)| right.offset_of(variable).is_some_and(|bound| {
-        u128::from(offset).saturating_add(u128::from(strict.shift())) <= u128::from(bound)
+        u128::from(offset).checked_add(u128::from(strict.shift())).is_some_and(|shifted| shifted <= u128::from(bound))
     }))
-        && u128::from(left.constant_part()).saturating_add(u128::from(strict.shift()))
-            <= right.atoms().map(|(_, offset)| u128::from(offset))
-                .fold(u128::from(right.constant_part()), u128::max)
+        && u128::from(left.constant_part()).checked_add(u128::from(strict.shift())).is_some_and(|shifted|
+            shifted <= right.atoms().map(|(_, offset)| u128::from(offset))
+                .fold(u128::from(right.constant_part()), u128::max))
 ))]
 fn compare(
     left: &Level,
@@ -579,14 +583,29 @@ fn compare(
     let shift = u128::from(strict.shift());
     let mut atoms = Vec::with_capacity(left.atoms_map().len());
     for (&variable, &left_offset) in left.atoms_map() {
-        let dominating =
-            right.atoms_map().get(&variable).copied().filter(|&bound| {
-                u128::from(left_offset).saturating_add(shift) <= u128::from(bound)
+        let Some(shifted_left) = u128::from(left_offset).checked_add(shift)
+        else {
+            return Err(LeqRefutation {
+                strict,
+                valuation: BTreeMap::new(),
             });
+        };
+        let dominating = right
+            .atoms_map()
+            .get(&variable)
+            .copied()
+            .filter(|&bound| shifted_left <= u128::from(bound));
         let Some(right_offset) = dominating
         else {
+            let Some(spike) = spike_value(right)
+            else {
+                return Err(LeqRefutation {
+                    strict,
+                    valuation: BTreeMap::new(),
+                });
+            };
             let mut valuation = BTreeMap::new();
-            let _previous = valuation.insert(variable, spike_value(right));
+            let _previous = valuation.insert(variable, spike);
             return Err(LeqRefutation { strict, valuation });
         };
         atoms.push(AtomBound {
@@ -595,7 +614,13 @@ fn compare(
             right_offset,
         });
     }
-    let shifted_constant = u128::from(left.constant_part()).saturating_add(shift);
+    let Some(shifted_constant) = u128::from(left.constant_part()).checked_add(shift)
+    else {
+        return Err(LeqRefutation {
+            strict,
+            valuation: BTreeMap::new(),
+        });
+    };
     let constant = if shifted_constant <= u128::from(right.constant_part()) {
         ConstantBound::Constant
     }
@@ -625,18 +650,19 @@ fn compare(
 ///
 /// # Specification
 /// - requires: `right` is canonical, guaranteed by construction.
-/// - ensures: returns one more than the largest of the right level's constant
-///   part and its atom offsets, saturating at the `u128` ceiling.
+/// - ensures: returns Some of one more than the largest right component. The
+///   None branch refuses an unrepresentable spike; it is unreachable because
+///   every component is u64-wide and the successor is u128-wide.
 /// - provides: the value the refutation branch spikes a variable to, so that a
 ///   left atom the right level does not dominate overtakes it there.
 /// - panics: none.
-fn spike_value(right: &Level) -> LevelValue
+fn spike_value(right: &Level) -> Option<LevelValue>
 {
     let mut ceiling = u128::from(right.constant_part());
     for (_variable, offset) in right.atoms() {
         ceiling = ceiling.max(u128::from(offset));
     }
-    LevelValue::from(ceiling.saturating_add(1_u128))
+    ceiling.checked_add(1_u128).map(LevelValue::from)
 }
 
 /// Checks a domination witness against its two levels.
@@ -652,7 +678,9 @@ fn spike_value(right: &Level) -> LevelValue
 ///   enough to audit, against which the decision procedure is
 ///   self-incriminating.
 /// - fails: the first [`EvidenceError`] encountered, walking atoms in ascending
-///   variable order and the constant bound last.
+///   variable order and the constant bound last. An unrepresentable shifted
+///   atom or constant refuses with its corresponding insufficient-bound error;
+///   widening u64 components into u128 currently excludes those branches.
 /// - panics: none.
 ///
 /// # Errors
@@ -677,15 +705,15 @@ fn spike_value(right: &Level) -> LevelValue
             bound.variable == variable
                 && bound.left_offset == offset
                 && right.offset_of(variable) == Some(bound.right_offset)
-                && u128::from(offset).saturating_add(u128::from(witness.strict.shift()))
-                    <= u128::from(bound.right_offset)
+                && u128::from(offset).checked_add(u128::from(witness.strict.shift()))
+                    .is_some_and(|shifted| shifted <= u128::from(bound.right_offset))
         })
         && match witness.constant {
             ConstantBound::Constant => u128::from(left.constant_part())
-                .saturating_add(u128::from(witness.strict.shift())) <= u128::from(right.constant_part()),
+                .checked_add(u128::from(witness.strict.shift())).is_some_and(|shifted| shifted <= u128::from(right.constant_part())),
             ConstantBound::Atom(variable) => right.offset_of(variable).is_some_and(|offset| {
-                u128::from(left.constant_part()).saturating_add(u128::from(witness.strict.shift()))
-                    <= u128::from(offset)
+                u128::from(left.constant_part()).checked_add(u128::from(witness.strict.shift()))
+                    .is_some_and(|shifted| shifted <= u128::from(offset))
             }),
         }
 ))]
@@ -717,7 +745,11 @@ pub fn validate_witness(
         if bound.left_offset != left_offset || actual_right != Some(bound.right_offset) {
             return Err(EvidenceError::AtomOffsetMismatch { variable });
         }
-        if u128::from(bound.left_offset).saturating_add(shift) > u128::from(bound.right_offset) {
+        let Some(shifted) = u128::from(bound.left_offset).checked_add(shift)
+        else {
+            return Err(EvidenceError::InsufficientAtomBound { variable });
+        };
+        if shifted > u128::from(bound.right_offset) {
             return Err(EvidenceError::InsufficientAtomBound { variable });
         }
     }
@@ -726,7 +758,10 @@ pub fn validate_witness(
             variable: stray.variable,
         });
     }
-    let shifted_constant = u128::from(left.constant_part()).saturating_add(shift);
+    let Some(shifted_constant) = u128::from(left.constant_part()).checked_add(shift)
+    else {
+        return Err(EvidenceError::InsufficientConstantBound);
+    };
     match witness.constant {
         | ConstantBound::Constant => {
             if shifted_constant > u128::from(right.constant_part()) {
@@ -1122,6 +1157,48 @@ mod tests
         assert!(
             !bool::from(ceiling.lt(&ceiling)),
             "lt stays total (and irreflexive) at the ceiling"
+        );
+    }
+
+    #[test]
+    fn strict_comparison_at_the_constant_ceiling_refutes_at_the_zero_valuation()
+    {
+        let ceiling = Level::constant(LevelConstant::from(u64::MAX));
+        let refutation = ceiling
+            .lt_with_evidence(&ceiling)
+            .expect_err("the strict order is irreflexive at the ceiling");
+        assert_eq!(Strictness::STRICT, refutation.strict());
+        assert!(refutation.valuation().is_empty());
+        assert_eq!(Ok(()), validate_refutation(&ceiling, &ceiling, &refutation));
+    }
+
+    #[test]
+    fn an_atom_refutation_spikes_above_the_constant_ceiling()
+    {
+        let left = Level::var(x());
+        let right = Level::constant(LevelConstant::from(u64::MAX));
+        let refutation = left
+            .leq_with_evidence(&right)
+            .expect_err("an unbounded variable exceeds every constant");
+        assert_eq!(
+            BTreeMap::from([(x(), LevelValue::from(0x1_0000_0000_0000_0000_u128))]),
+            *refutation.valuation(),
+        );
+        assert_eq!(Ok(()), validate_refutation(&left, &right, &refutation));
+    }
+
+    #[test]
+    fn forged_witness_insufficient_constant_at_the_ceiling_is_rejected()
+    {
+        let ceiling = Level::constant(LevelConstant::from(u64::MAX));
+        let forged = LeqWitness {
+            strict: Strictness::STRICT,
+            atoms: vec![],
+            constant: ConstantBound::Constant,
+        };
+        assert_eq!(
+            Err(EvidenceError::InsufficientConstantBound),
+            validate_witness(&ceiling, &ceiling, &forged),
         );
     }
 

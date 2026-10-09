@@ -67,6 +67,7 @@ use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
+use quenchant_arith::arith;
 
 use crate::encoding::ContentEncoding;
 use crate::encoding::ContentTable;
@@ -214,9 +215,13 @@ impl LooseDepth
     /// # Specification
     /// trivial.
     #[inline]
-    const fn under_binder(self) -> Self
+    fn under_binder(self) -> Self
     {
-        Self(self.0.saturating_sub(1))
+        // reason: crossing a binder leaves a closed body's reach at zero.
+        Self(u32::from(arith::saturating_sub(
+            arith::Int::from(self.0),
+            arith::Int::from(1_u32),
+        )))
     }
 
     /// Where the reached slice of `context` starts — the offset of the first
@@ -239,7 +244,11 @@ impl LooseDepth
     ) -> ContextOffset
     {
         let wanted = usize::try_from(self.0).unwrap_or(usize::MAX);
-        ContextOffset(context.len().saturating_sub(wanted))
+        // reason: an overestimated reach widens the slice to the whole context.
+        ContextOffset(usize::from(arith::saturating_sub(
+            arith::Int::from(context.len()),
+            arith::Int::from(wanted),
+        )))
     }
 }
 
@@ -976,7 +985,13 @@ impl LooseDepths
             return LooseDepth::WIDEST;
         };
         match *node {
-            | Value::Variable(index) => LooseDepth(u32::from(index).saturating_add(1)),
+            | Value::Variable(index) => {
+                // reason: an unrepresentable reach conservatively uses the whole context.
+                LooseDepth(u32::from(arith::saturating_add(
+                    arith::Int::from(u32::from(index)),
+                    arith::Int::from(1_u32),
+                )))
+            },
             | Value::Constant(_) | Value::Unit | Value::Literal(_) => LooseDepth(0),
             | Value::Pair(first, second) => {
                 self.cached_value(first).join(self.cached_value(second))

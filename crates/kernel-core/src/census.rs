@@ -13,6 +13,8 @@
 //! what it returned — so no extensional clause anywhere references it, and
 //! retuning it leaves every verdict witness green.
 
+use quenchant_arith::arith;
+
 use crate::support::SupportPlane;
 
 /// How many goal expansions one plane performed, or was served.
@@ -50,9 +52,13 @@ impl ExpansionCount
     /// - panics: none.
     #[inline]
     #[must_use]
-    const fn successor(self) -> Self
+    fn successor(self) -> Self
     {
-        Self(self.0.saturating_add(1))
+        // reason: census measurements clamp at u64::MAX without refusing a check.
+        Self(u64::from(arith::saturating_add(
+            arith::Int::from(self.0),
+            arith::Int::from(1_u64),
+        )))
     }
 
     /// The sum of two counts, saturating at the ceiling.
@@ -67,12 +73,16 @@ impl ExpansionCount
     /// - panics: none.
     #[inline]
     #[must_use]
-    const fn plus(
+    fn plus(
         self,
         other: Self,
     ) -> Self
     {
-        Self(self.0.saturating_add(other.0))
+        // reason: the combined measurement has the same u64::MAX ceiling.
+        Self(u64::from(arith::saturating_add(
+            arith::Int::from(self.0),
+            arith::Int::from(other.0),
+        )))
     }
 }
 
@@ -171,7 +181,7 @@ impl ExpansionCensus
     /// - fails: never.
     /// - panics: none.
     #[inline]
-    pub(crate) const fn record(
+    pub(crate) fn record(
         &mut self,
         plane: SupportPlane,
         kind: ExpansionKind,
@@ -233,7 +243,7 @@ impl ExpansionCensus
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn expansions(&self) -> ExpansionCount
+    pub fn expansions(&self) -> ExpansionCount
     {
         self.term_expanded.plus(self.type_expanded)
     }
@@ -244,7 +254,7 @@ impl ExpansionCensus
     /// trivial.
     #[inline]
     #[must_use]
-    pub const fn recalls(&self) -> ExpansionCount
+    pub fn recalls(&self) -> ExpansionCount
     {
         self.term_recalled.plus(self.type_recalled)
     }

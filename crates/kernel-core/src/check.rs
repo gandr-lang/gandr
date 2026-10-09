@@ -136,6 +136,8 @@ use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
+use quenchant_arith::arith;
+use quenchant_shape::shape::Maybe;
 
 use crate::census::ExpansionCensus;
 use crate::census::ExpansionKind;
@@ -670,6 +672,18 @@ enum Produced
     Checked,
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a memo outcome cannot supply the term register.
+    mod term_outcome {
+        /// A result belongs to the other checking machine.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// A universe level is a formation answer, not a term answer.
+            Formation,
+        }
+    }
+}
+
 impl Produced
 {
     /// This answer in the memo's outcome vocabulary.
@@ -697,20 +711,25 @@ impl Produced
     ///   input.
     /// - ensures: the register value a term goal's answer carries, and nothing
     ///   for a formation level, which is not an answer to a term goal.
-    /// - provides: the guard that makes a shared memo safe between the two
-    ///   machines: a support carrying the wrong shape is declined and
-    ///   recomputed rather than trusted, which costs one recomputation and
-    ///   cannot fabricate a verdict.
+    /// - provides: the term register or [`Absent::Formation`], which declines a
+    ///   formation answer and forces recomputation.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a formation answer cannot satisfy a term goal; the
+    ///   mirror-plane poison witness observes recomputation and the verdict.
+    /// - witness: `acceptance::acceptance::a_formation_shaped_answer_in_a_term_support_is_declined_and_recomputed`
+    ///
+    /// [`Absent::Formation`]: term_outcome::Absent::Formation
     #[inline]
-    const fn of_outcome(outcome: &NodeOutcome) -> Option<Self>
+    const fn of_outcome(outcome: &NodeOutcome) -> Maybe<Self, term_outcome::Absent>
     {
         match *outcome {
-            | NodeOutcome::ValueType(id) => Some(Self::ValueType(id)),
-            | NodeOutcome::CompType(id) => Some(Self::CompType(id)),
-            | NodeOutcome::Checked => Some(Self::Checked),
-            | NodeOutcome::Formed(_) => None,
+            | NodeOutcome::ValueType(id) => Maybe::Present(Self::ValueType(id)),
+            | NodeOutcome::CompType(id) => Maybe::Present(Self::CompType(id)),
+            | NodeOutcome::Checked => Maybe::Present(Self::Checked),
+            | NodeOutcome::Formed(_) => Maybe::Absent(term_outcome::Absent::Formation),
         }
     }
 
@@ -897,6 +916,42 @@ enum Frame
     Memoize(NodeSupport),
 }
 
+quenchant_shape::reason_enum! {
+    /// Why a raw context slot is unavailable.
+    mod context_slot {
+        /// The requested de Bruijn index names no context slot.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The index is at or beyond the context length.
+            OutOfScope,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why no variable type can be raised into the use context.
+    mod variable_type {
+        /// The variable has no binding in this context.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// No raw slot exists at the variable's de Bruijn index.
+            Unbound,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why the admission log supplies no constant type.
+    mod constant_type {
+        /// The constant has no prior admitted declaration.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// The requested index is outside the admission log.
+            Unadmitted,
+        }
+    }
+}
+
 /// The value type bound at de Bruijn `index`, if in scope. The context head is
 /// index zero.
 ///
@@ -905,21 +960,38 @@ enum Frame
 ///   index zero names its last slot.
 /// - ensures: the slot `index` names when it is in scope, and nothing when the
 ///   index reaches past the context.
-/// - provides: the raw context lookup `lookup` raises into the use site's
-///   context.
+/// - provides: the raw slot or [`Absent::OutOfScope`] when the index names no
+///   slot, including an index not representable as `usize`.
 /// - fails: never — an out-of-scope index is the absence, which the caller
 ///   refuses on.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — inner and outer slots distinguish reversal and off-by-one
+///   errors; empty, exact-length and maximal indices observe absence.
+/// - witness: `check::tests::a_variable_synthesizes_its_context_type`
+///
+/// [`Absent::OutOfScope`]: context_slot::Absent::OutOfScope
 #[inline]
 fn slot(
     context: &[ValueTypeId],
     index: DeBruijnIndex,
-) -> Option<ValueTypeId>
+) -> Maybe<ValueTypeId, context_slot::Absent>
 {
-    let steps = usize::try_from(u32::from(index)).ok()?;
-    let last = context.len().checked_sub(1)?;
-    let position = last.checked_sub(steps)?;
-    context.get(position).copied()
+    let Ok(steps) = usize::try_from(u32::from(index))
+    else {
+        return Maybe::Absent(context_slot::Absent::OutOfScope);
+    };
+    if steps >= context.len() {
+        return Maybe::Absent(context_slot::Absent::OutOfScope);
+    }
+    // The range guard establishes length > steps; both subtractions are exact.
+    let remaining = arith::sub(arith::Int::from(context.len()), arith::Int::from(steps));
+    let position = usize::from(arith::sub(remaining, arith::Int::from(1_usize)));
+    match context.get(position) {
+        | Some(&found) => Maybe::Present(found),
+        | None => Maybe::Absent(context_slot::Absent::OutOfScope),
+    }
 }
 
 /// The value type bound at de Bruijn `index`, **read into the context the
@@ -933,14 +1005,14 @@ fn slot(
 ///
 /// # Specification
 /// - requires: `context` is the machine's typing context, outermost first.
-/// - ensures: `Some(type)` — the slot raised past the binders between it and
-///   the use site — exactly when `index` names a slot in scope; `None` when it
-///   reaches past the context, which the caller refuses on.
-/// - provides: the variable rule's whole content. The context's provenance and
-///   raised-content equality remain prose-only: the context carries no origin
-///   token, and checking the shifted result would repeat the mutating rewrite
-///   or require an allocating entry snapshot.
-/// - fails: never — an out-of-scope index is the `None`, not an error here.
+/// - ensures: the slot raised past the binders between it and the use site
+///   exactly when `index` names a slot in scope.
+/// - provides: the raised type or [`Absent::Unbound`] when the variable names
+///   no context slot. The context's provenance and raised-content equality
+///   remain prose-only: the context carries no origin token, and checking the
+///   shifted result would repeat the mutating rewrite or require an allocating
+///   entry snapshot.
+/// - fails: never — an out-of-scope index is non-failure absence here.
 /// - panics: none.
 ///
 /// # Adequacy
@@ -949,18 +1021,25 @@ fn slot(
 ///   raising a closed type is the identity) and by the shifting machine's own
 ///   witnesses at a family where indices occur.
 /// - witness: `check::tests::a_variable_synthesizes_its_context_type`
+///
+/// [`Absent::Unbound`]: variable_type::Absent::Unbound
 #[inline]
 fn lookup(
     arena: &mut TermArena,
     session: &mut SupportContext,
     context: &[ValueTypeId],
     index: DeBruijnIndex,
-) -> Option<ValueTypeId>
+) -> Maybe<ValueTypeId, variable_type::Absent>
 {
-    let found = slot(context, index)?;
+    let found = match slot(context, index) {
+        | Maybe::Present(found) => found,
+        | Maybe::Absent(context_slot::Absent::OutOfScope) => {
+            return Maybe::Absent(variable_type::Absent::Unbound);
+        },
+    };
     let amount = BinderDepth::past(BinderDepth::from(u32::from(index)));
     let (table, rewrites) = session.rewrite_parts();
-    Some(shift_value_type(
+    Maybe::Present(shift_value_type(
         arena,
         table,
         rewrites,
@@ -979,19 +1058,29 @@ fn lookup(
 ///   nothing for a position the log does not hold — which is what makes a
 ///   forward reference into the append-only log a refusal rather than a
 ///   resolution.
-/// - provides: the constant rule's resolution step.
+/// - provides: the declared type or [`Absent::Unadmitted`] when the index names
+///   no prior admitted declaration.
 /// - fails: never — an unresolved position is the absence, which the caller
 ///   refuses on.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a prior declaration supplies its type; a forward
+///   reference refuses instead of resolving an unrelated entry.
+/// - witness: `env::tests::a_definition_referencing_a_prior_one_checks`
+/// - witness: `env::tests::a_forward_constant_reference_is_unbound`
+///
+/// [`Absent::Unadmitted`]: constant_type::Absent::Unadmitted
 #[inline]
 fn resolve_constant(
     entries: &[AdmittedDeclaration],
     index: ConstantIndex,
-) -> Option<ValueTypeId>
+) -> Maybe<ValueTypeId, constant_type::Absent>
 {
-    entries
-        .get(usize::from(index))
-        .map(AdmittedDeclaration::declared_id)
+    match entries.get(usize::from(index)) {
+        | Some(entry) => Maybe::Present(entry.declared_id()),
+        | None => Maybe::Absent(constant_type::Absent::Unadmitted),
+    }
 }
 
 /// Run the checker machine from an initial goal and context to a verdict,
@@ -1062,7 +1151,10 @@ where
         if matches!(M::ACTIVITY, MemoActivity::Active) {
             let support = NodeSupport::build(arena, session, goal.support(), context.as_slice());
             if let Some(hit) = memo.recall(&support) {
-                recalled = Produced::of_outcome(hit.outcome());
+                recalled = match Produced::of_outcome(hit.outcome()) {
+                    | Maybe::Present(outcome) => Some(outcome),
+                    | Maybe::Absent(term_outcome::Absent::Formation) => None,
+                };
             }
             if recalled.is_none() {
                 frames.push(Frame::Memoize(support));
@@ -1077,13 +1169,21 @@ where
             | None => match goal {
                 | Goal::SynthValue(id) => match read_value(arena, id)? {
                     | Value::Variable(index) => {
-                        let synthesized = lookup(arena, session, context.as_slice(), index)
-                            .ok_or(KernelError::UnboundVariable { index })?;
+                        let synthesized = match lookup(arena, session, context.as_slice(), index) {
+                            | Maybe::Present(synthesized) => synthesized,
+                            | Maybe::Absent(variable_type::Absent::Unbound) => {
+                                return Err(KernelError::UnboundVariable { index });
+                            },
+                        };
                         Produced::ValueType(synthesized)
                     },
                     | Value::Constant(index) => {
-                        let synthesized = resolve_constant(judgement.entries, index)
-                            .ok_or(KernelError::UnboundConstant { index })?;
+                        let synthesized = match resolve_constant(judgement.entries, index) {
+                            | Maybe::Present(synthesized) => synthesized,
+                            | Maybe::Absent(constant_type::Absent::Unadmitted) => {
+                                return Err(KernelError::UnboundConstant { index });
+                            },
+                        };
                         Produced::ValueType(synthesized)
                     },
                     | Value::Unit => Produced::ValueType(arena.value_type_unit()),
@@ -1814,7 +1914,11 @@ where
                 ceiling: MAX_CODE_OBLIGATIONS,
             });
         }
-        drained = drained.saturating_add(1);
+        // The preceding ceiling guard bounds this increment.
+        drained = usize::from(arith::add(
+            arith::Int::from(drained),
+            arith::Int::from(1_usize),
+        ));
         let universe = arena.value_type_universe(obligation.level);
         let _checked = run(
             arena,
@@ -2061,6 +2165,25 @@ mod tests
             integer,
             produced.value_type().expect("a value type"),
             "index zero names the innermost slot"
+        );
+        let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let produced = synth_value(&mut arena, vec![unit, integer], outer)
+            .expect("the outermost slot remains in scope");
+        assert_eq!(unit, produced.value_type().expect("a value type"));
+        assert_eq!(
+            Err(KernelError::UnboundVariable {
+                index: DeBruijnIndex::from(0_u32)
+            }),
+            synth_value(&mut arena, Vec::new(), variable),
+            "an empty context has no innermost slot"
+        );
+        let maximal = arena.value_variable(DeBruijnIndex::from(u32::MAX));
+        assert_eq!(
+            Err(KernelError::UnboundVariable {
+                index: DeBruijnIndex::from(u32::MAX)
+            }),
+            synth_value(&mut arena, vec![unit, integer], maximal),
+            "a maximal external index is absent without arithmetic failure"
         );
         let escaping = arena.value_variable(DeBruijnIndex::from(2_u32));
         assert_eq!(

@@ -149,6 +149,8 @@ mod adversarial_depth
         Null,
     }
 
+    use quenchant_arith::arith;
+
     /// The number of goal expansions a chain of `CHAIN_LINKS` links costs on
     /// each plane. Every node of the chain is distinct, so the memo
     /// collapses nothing and the two instantiations agree — which is what
@@ -169,12 +171,11 @@ mod adversarial_depth
     {
         // Two term goals per link (the thunk's check and the returner's check),
         // plus the unit leaf's check, its synthesis, and the root's own check.
-        ExpansionCount::from(
-            u64::from(CHAIN_LINKS)
-                .checked_mul(2)
-                .and_then(|scaled| scaled.checked_add(2))
-                .expect("the closed form fits"),
-        )
+        let scaled = arith::mul(
+            arith::Int::from(u64::from(CHAIN_LINKS)),
+            arith::Int::from(2_u64),
+        );
+        ExpansionCount::from(u64::from(arith::add(scaled, arith::Int::from(2_u64))))
     }
 
     #[test]
@@ -316,7 +317,7 @@ mod adversarial_depth
                 panic!("every link of the rewritten chain is a thunk over a returner");
             };
             cursor = next;
-            links = links.saturating_add(1);
+            links = u32::from(arith::add(arith::Int::from(links), arith::Int::from(1_u32)));
         }
         assert_eq!(
             REWRITE_CHAIN_LINKS, links,

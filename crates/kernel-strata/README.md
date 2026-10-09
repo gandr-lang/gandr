@@ -11,7 +11,7 @@ The certified kernel's level oracle: universe levels over zero, variables, succe
 - [Examples](#examples)
 - [Evidence and its validators](#evidence-and-its-validators)
 - [The level language](#the-level-language)
-- [Contract attributes](#contract-attributes)
+- [Specification attributes](#specification-attributes)
 - [Differential suites](#differential-suites)
 - [Relationship to `gandr-theory-orders`](#relationship-to-gandr-theory-orders)
 - [License](#license)
@@ -83,13 +83,15 @@ The firing log behind a derivation carries, at each step, the atom its instance 
 
 `EvidenceSubject` names what a seed or goal refers to: a declared level variable, or the pinned bottom generator that carries constants. The crate's `Option` returns — `Level::offset_of`, `ModelValue::as_finite` and the model lookups — are genuine absence, and each contract says so. A violated constraint is reported by `ConstraintIndex`.
 
+Order shifts and counter-valuation spikes use checked addition, never saturation: truncating a natural-number successor would change the relation in the [level algebra](#references). An unrepresentable shift routes to refusal; a validator rejects an insufficient atom or constant bound. The comparison's zero-valuation overflow branch is unreachable because its components are u64-wide and its arithmetic is u128-wide. Widening components requires a distinct overflow carrier before that exclusion changes: a zero valuation does not refute every unrepresentable-spike case. The alternative, saturating the widened sums, hides that obligation. Ceiling witnesses check strict irreflexivity, a spike exactly one past u64::MAX and rejection of a forged strict bound; they do not claim to exercise an unreachable u128 overflow.
+
 ## The level language
 
 Declared constraints are variable-only: each side has constant part `0` and at least one atom. Query constants ride a pinned bottom generator `⊥`, ordered below every in-scope variable by clauses added at query time. That encoding is sound, conservative and loop-immune because no declared clause mentions `⊥`; the module docs of `poset` carry the argument. With no constraints declared, entailment agrees with the free-fragment oracle on every input.
 
 The stratification design excludes level inference and unification, generalization, displacement, constraint hypotheses beyond the declared landmark poset, `imax`, and cumulativity.
 
-## Contract attributes
+## Specification attributes
 
 The `# Specification` prose is the statement of record; a combined `#[spec(...)]` attribute mirrors it where the clause is a cheap runtime predicate.
 
@@ -99,7 +101,7 @@ The `# Specification` prose is the statement of record; a combined `#[spec(...)]
 - `compile` requires the variable-only guard the constraint constructor establishes, and `push_family` a nonempty body.
 - `HornClause::new` returns `Some` exactly when the body is nonempty.
 
-`Level::succ`, `Level::eval`, `LandmarkPoset::admit`, `consistency_certificate` and `horn::saturate` keep prose-only postconditions. `leq_with_evidence` and `lt_with_evidence` rely on their independent validators instead of an attribute: a check would re-walk the atoms with a `BTreeMap` lookup each on the kernel's hottest comparison path.
+`Level::succ`, `Level::eval`, `LandmarkPoset::admit`, `consistency_certificate` and `horn::saturate` keep prose-only postconditions. The free-order faces carry executable predicates: `leq_with_evidence` validates returned evidence, while `lt_with_evidence` and the shared comparison mirror checked domination. These re-walk the atoms only in the enforcing lane; the ordinary comparison performs no duplicate traversal.
 
 Termination of the saturation and derivation engines is argued in their `- intension:` clauses.
 

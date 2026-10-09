@@ -8,6 +8,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
 - [Examples](#examples)
+- [Arithmetic and absence](#arithmetic-and-absence)
 - [Memo binding conditions](#memo-binding-conditions)
 - [Key derivation](#key-derivation)
 - [Memo measurements](#memo-measurements)
@@ -17,7 +18,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Dependent arrow and rewrites](#dependent-arrow-and-rewrites)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
-- [Contract attributes](#contract-attributes)
+- [Specification attributes](#specification-attributes)
 - [License](#license)
 
 <!-- tocstop -->
@@ -90,6 +91,14 @@ fn example() -> Result<(), KernelError> {
 cargo nextest run -p gandr-kernel-core
 RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-kernel-core
 ```
+
+## Arithmetic and absence
+
+Arithmetic uses [quenchant-arith](https://github.com/gandr-lang/quenchant/tree/111850988c96b7b33ee898f54c017ca645243e7f/crates/quenchant-arith): strict operations for counts bounded by allocated data or a preceding guard, wrapping multiplication only for FNV-1a modulo 2^128, and saturation only for the stated census ceilings, binder-index ceilings and conservative context reach. Defaults, unsafe `fast` mode and optional instrumentation remain off. The alternative was primitive arithmetic with profile-dependent overflow behavior or a local copy of these families; one maintained implementation gives each operation an explicit, profile-independent meaning. Reconsider when the arithmetic domain changes or a published release replaces the shared source pin.
+
+Non-failure absence uses [quenchant-shape](https://github.com/gandr-lang/quenchant/tree/111850988c96b7b33ee898f54c017ca645243e7f/crates/quenchant-shape), with a sealed reason enum at each decision site rather than an undifferentiated `Option`. A failure remains a typed error, never a fabricated value. The six sites distinguish a formation answer from a term answer, an out-of-scope slot, an unbound variable, an unadmitted constant, a substitution needing no carrying shift, and a goal without an expected type. Reconsider a reason only when its caller gains a distinct response to it; container lookups and external traits retain their own boundary types.
+
+Content numbering remains zero-based and infallible. Every fresh record first appends a nonempty framed image, so the count is bounded by the allocated byte stream. Supported targets bound that allocation by `isize::MAX`, below `u64::MAX`. The latter ceiling is not an observable state; a test that installs an impossible private count would test another state space. The enforcing specification checks the count/stream bound, and the existing content-collapse and sharing witnesses exercise both fresh and reused records. A fallible mint was rejected: it adds an unreachable error, and neither silent diagnostic failure nor a change to one-based numbering has a semantic justification. Revisit the boundary if content numbering stops being backed by this in-memory stream or target widths exceed 64 bits.
 
 ## Memo binding conditions
 
@@ -191,7 +200,7 @@ An inert mutation identifies what the design does not depend on.
 
 Two guards are pinned as kills. Removing the outstanding-staged-content guard from `add_decl` is killed by the witness that the later staging's root still resolves after the refusal. Shortening the node-tag block below the dangling sentinel is a build failure, because the reservation is an anonymous `const` assertion: a named unused constant is never evaluated, so `const _NAME: () = assert!(..)` would not guard.
 
-## Contract attributes
+## Specification attributes
 
 The `# Specification` prose is the statement of record. A combined `#[spec(...)]` attribute mirrors expressible requirements and postconditions, and each predicate appears verbatim in its prose clause. Both admission choke points carry one:
 
