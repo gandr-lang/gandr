@@ -1,0 +1,28 @@
+[package]
+name = "gandr-theory-levitation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Datatypes as descriptions for gandr: the first-order code universe, the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs over descriptions, and host well-formedness"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "generic-programming", "levitation", "no-std"]
+categories = ["data-structures", "no-std"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[dependencies]
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

@@ -29,6 +29,7 @@ crates/
 ├── theory-coherent-resolutions/   gandr-theory-coherent-resolutions   firing, critical pairs, replayable coherence certificates, budgeted completion
 ├── theory-deep-inference/         gandr-theory-deep-inference         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web, the flow projection
 ├── theory-graphs/                 gandr-theory-graphs                 the precedence DAG, the walk machine, and the graph algorithms they read
+├── theory-levitation/             gandr-theory-levitation             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
 ├── theory-orders/                 gandr-theory-orders                 order maintenance with constant-time comparison
 ├── kernel-strata/                 gandr-kernel-strata                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   gandr-kernel-term                   the term arena, the sharing format, the decode budgets

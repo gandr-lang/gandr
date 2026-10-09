@@ -27,6 +27,7 @@ members = [
   "crates/theory-coherent-resolutions",
   "crates/theory-deep-inference",
   "crates/theory-graphs",
+  "crates/theory-levitation",
   "crates/theory-orders",
 ]
 
@@ -308,6 +309,7 @@ default-features = false
 # - theory-coherent-resolutions (dev)
 # - theory-deep-inference (dev)
 # - theory-graphs (dev)
+# - theory-levitation (dev)
 # - theory-orders (dev)
 [workspace.dependencies.proptest]
 version = "1.11.0"
@@ -340,6 +342,7 @@ default-features = false
 # - theory-circuit-algebras
 # - theory-coherent-resolutions
 # - theory-deep-inference
+# - theory-levitation
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"
