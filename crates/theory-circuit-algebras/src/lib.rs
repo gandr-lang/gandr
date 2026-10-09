@@ -1,6 +1,6 @@
 //! The diagram view of gandr's circuit algebras: monogamous acyclic wirings
-//! with interfaces, the spine reading of a command pattern, and
-//! embedding-based matching with its convexity check.
+//! with interfaces, the spine reading of a command pattern, embedding-based
+//! matching with its convexity check, and the diagram normal form.
 //!
 //! A [`Wiring`] is one diagram with an interface: [`Generator`]s (the
 //! hyperedges, each a [`GeneratorLabel`] over ordered source and target
@@ -8,8 +8,8 @@
 //! built only by [`Wiring::assemble`], which refuses everything outside the
 //! monogamous acyclic fragment — a fan-in, a fan-out, an out-of-range wire, a
 //! repeated port, a produced input, a consumed output, an undeclared open wire
-//! and a directed cycle — so every theorem the matcher quotes has its
-//! hypotheses as an invariant of the type. [`read_spine`] reads a sequent
+//! and a directed cycle — so every theorem the matcher and the canon quote has
+//! its hypotheses as an invariant of the type. [`read_spine`] reads a sequent
 //! command pattern as a wiring.
 //!
 //! [`embeddings`] finds every [`Embedding`] of a pattern wiring into a target
@@ -19,6 +19,12 @@
 //! complement otherwise. An [`Embedding`] is a certificate:
 //! [`Embedding::check`] re-derives every conjunct it claims from the two
 //! diagrams and refuses a forgery by the conjunct it fails.
+//!
+//! [`canonicalize`] renumbers a wiring into its [`CanonicalDiagram`], whose
+//! equality is diagram identity rather than presentation identity, and returns
+//! the [`Relabelling`] that [`Relabelling::verify`] checks against the input.
+//! [`same_diagram`] decides whether two wirings denote one diagram, with both
+//! relabellings on one arm and the located [`DiagramDivergence`] on the other.
 //!
 //! The crate is `no_std` and depends on `core`, `alloc`, the cell-shape
 //! substrate `gandr-theory-cell-complexes` and the shape vocabulary of
@@ -84,6 +90,7 @@ macro_rules! edges {
 
 mod interface;
 mod matching;
+mod normal_form;
 
 pub use crate::interface::BijectionClash;
 pub use crate::interface::ComponentCount;
@@ -134,3 +141,17 @@ pub use crate::matching::convexity_warrant;
 pub use crate::matching::embedding_image;
 pub use crate::matching::embeddings;
 pub use crate::matching::embeddings_by_sweep;
+pub use crate::normal_form::CanonicalDiagram;
+pub use crate::normal_form::Canonicalization;
+pub use crate::normal_form::DiagramDivergence;
+pub use crate::normal_form::DiagramEquality;
+pub use crate::normal_form::Leg;
+pub use crate::normal_form::PortCount;
+pub use crate::normal_form::PortPosition;
+pub use crate::normal_form::Relabelling;
+pub use crate::normal_form::RelabellingDefect;
+pub use crate::normal_form::SharedCanon;
+pub use crate::normal_form::canonicalize;
+pub use crate::normal_form::relabelled_generator;
+pub use crate::normal_form::relabelled_wire;
+pub use crate::normal_form::same_diagram;

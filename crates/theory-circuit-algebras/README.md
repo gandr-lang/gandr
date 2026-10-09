@@ -1,6 +1,6 @@
 # gandr-theory-circuit-algebras
 
-The diagram view of gandr's circuit algebras: monogamous acyclic wirings with interfaces, the spine reading of a sequent command pattern, and embedding-based matching with its convexity check and certificate reader.
+The diagram view of gandr's circuit algebras: monogamous acyclic wirings with interfaces, the spine reading of a sequent command pattern, embedding-based matching with its convexity check and certificate reader, and the diagram normal form that decides when two presentations denote one diagram.
 
 <!-- toc -->
 
@@ -16,6 +16,10 @@ The diagram view of gandr's circuit algebras: monogamous acyclic wirings with in
 - [Convexity](#convexity)
 - [Verdicts do not travel](#verdicts-do-not-travel)
 - [Certificates](#certificates)
+- [The diagram normal form](#the-diagram-normal-form)
+- [Edge orientation](#edge-orientation)
+- [Evidence, not equality](#evidence-not-equality)
+- [What the canon does not decide](#what-the-canon-does-not-decide)
 - [Crate boundary](#crate-boundary)
 - [Boundary wrappers](#boundary-wrappers)
 - [License](#license)
@@ -24,11 +28,11 @@ The diagram view of gandr's circuit algebras: monogamous acyclic wirings with in
 
 ## Synopsis
 
-**What.** A `Wiring` is one diagram with an interface: `Generator`s, each a `GeneratorLabel` over ordered source and target `Wire`s, and an `Interface` of input and output ports. `Wiring::assemble` is its only constructor and refuses everything outside the monogamous acyclic fragment. `read_spine` reads a sequent command pattern from `gandr-theory-cell-complexes` as a wiring. `embeddings` finds every `Embedding` of a pattern wiring into a target wiring, convexity decided by a route computed from the pattern, and keeps every structurally complete candidate that fails convexity as a `ConvexityRefusal` naming the path. `Embedding::check` reads an embedding as a certificate against two diagrams and refuses a forgery by the conjunct it fails; `Matching::ambiguity` names where several admitted readings of one pattern diverge. The crate is `no_std` and depends on `core`, `alloc`, `gandr-theory-cell-complexes` and `quenchant-shape`.
+**What.** A `Wiring` is one diagram with an interface: `Generator`s, each a `GeneratorLabel` over ordered source and target `Wire`s, and an `Interface` of input and output ports. `Wiring::assemble` is its only constructor and refuses everything outside the monogamous acyclic fragment. `read_spine` reads a sequent command pattern from `gandr-theory-cell-complexes` as a wiring. `embeddings` finds every `Embedding` of a pattern wiring into a target wiring, convexity decided by a route computed from the pattern, and keeps every structurally complete candidate that fails convexity as a `ConvexityRefusal` naming the path. `Embedding::check` reads an embedding as a certificate against two diagrams and refuses a forgery by the conjunct it fails; `Matching::ambiguity` names where several admitted readings of one pattern diverge. `canonicalize` renumbers a wiring into its `CanonicalDiagram` and returns the `Relabelling` that did it, which `Relabelling::verify` checks as an isomorphism against the input; `same_diagram` decides whether two wirings denote one diagram and answers with the shared form and both relabellings, or with the first place the two forms part. The crate is `no_std` and depends on `core`, `alloc`, `gandr-theory-cell-complexes` and `quenchant-shape`.
 
-**Why.** A circuit pattern is neither a spine nor a tree: it may have several roots, reconverge, or hold components with no wire between them, so the substrate's one-sided matcher over command patterns cannot match it. Matching becomes sub-diagram embedding, and an embedding is a legal rewrite site only when it is convex. Both the embedding and the convexity verdict are claims a consumer has to be able to refute, so each comes with the data that refutes it.
+**Why.** A circuit pattern is neither a spine nor a tree: it may have several roots, reconverge, or hold components with no wire between them, so the substrate's one-sided matcher over command patterns cannot match it. Matching becomes sub-diagram embedding, and an embedding is a legal rewrite site only when it is convex. Both the embedding and the convexity verdict are claims a consumer has to be able to refute, so each comes with the data that refutes it. Two presentations of one diagram differ only in how they number wires and generators, so a consumer that keys on diagrams needs one representative per class, and a verdict that two diagrams are one is a claim too, with the isomorphism as its evidence.
 
-**How.** Monogamy, at most one producer and one consumer per wire, means one assigned wire forces the generators on either side of it, so the search seeds one choice per connected component and propagates the rest. Every walk is a loop over explicit frames; nothing recurses on diagram size. Absence and refusal are values: a lookup that can miss returns `Maybe` with a named reason, a refused operation returns `Result` with a typed refusal naming its locus.
+**How.** Monogamy, at most one producer and one consumer per wire, means one assigned wire forces the generators on either side of it, so the search seeds one choice per connected component and propagates the rest. The same forcing makes the canon a traversal rather than a search: the boundary numbers its wires by position, each numbered wire numbers its producer and consumer, and only a component the boundary never reaches needs a seed, chosen by trying every member. Every walk is a loop over explicit frames; nothing recurses on diagram size. Absence and refusal are values: a lookup that can miss returns `Maybe` with a named reason, a refused operation returns `Result` with a typed refusal naming its locus.
 
 ## References
 
@@ -36,6 +40,9 @@ The diagram view of gandr's circuit algebras: monogamous acyclic wirings with in
 - Paweł Sobociński, Paul W. Wilson, and Fabio Zanasi. "CARTOGRAPHER: A Tool for String Diagrammatic Reasoning (Tool Paper)." In _8th Conference on Algebra and Coalgebra in Computer Science (CALCO 2019)_, LIPIcs 139, pages 20:1–20:7, 2019. `doi:10.4230/LIPIcs.CALCO.2019.20` — diagrams as hypergraph cospans with ordered ports, matched and rewritten under convexity, the representation `Wiring` reads.
 - Piergiulio Katis, Nicoletta Sabadini, and Robert F. C. Walters. "Feedback, Trace and Fixed-Point Semantics." _RAIRO – Theoretical Informatics and Applications_ 36, 2 (2002). `doi:10.1051/ita:2002009` — feedback as a primitive distinct from trace, the ground for cutting a delayed back-edge open rather than reading the closed loop.
 - Pierre-Louis Curien and Hugo Herbelin. "The Duality of Computation." In _Proceedings of the Fifth ACM SIGPLAN International Conference on Functional Programming (ICFP '00)_, pages 233–243, September 2000. `doi:10.1145/351240.351262` — the command `⟨p | c⟩` of a producer against a consumer that the spine reading lays out as a diagram.
+- Jovana Obradović. "Cyclic operads: syntactic, algebraic and categorified aspects." PhD thesis, Université Paris Diderot – Paris 7 – Sorbonne Paris Cité, 2017. `hal:tel-01676983` — the corolla and edge decompositions, the two extremes the canon's edge orientation is chosen between.
+- Antonin Delpeuch and Jamie Vicary. "Normalization for Planar String Diagrams and a Quadratic Equivalence Algorithm." _Logical Methods in Computer Science_ 18, 1 (2022), paper 10. `doi:10.46298/lmcs-18(1:10)2022`; preprint `arXiv:1804.07832` — the planar quotient, up to exchange moves, that does not stand in for the symmetric one the canon decides.
+- Shahn Majid and Konstanze Rietsch. "Planar Spider Theorem and Asymmetric Frobenius Algebras." Preprint, 2021. `arXiv:2109.12106` — the spider normal form for diagrams whose wires merge, outside the monogamous fragment and not built here.
 
 ## Provided features
 
@@ -47,12 +54,17 @@ The diagram view of gandr's circuit algebras: monogamous acyclic wirings with in
 - `connectivity`, `convexity_warrant`, `Connectivity`, `ConvexityWarrant`: the convexity route a pattern earns, computed and audited. Witnesses: `matching::tests::a_spine_pattern_is_strongly_connected`, `matching::tests::a_disconnected_pattern_is_not_strongly_connected`, `matching::tests::the_discharge_and_the_sweep_agree_where_both_apply`.
 - `Embedding::claim`, `Embedding::check`, `EmbeddingObstruction`, `SeamHalf`: the certificate reader, refusing each forged conjunct by name. Witnesses: `matching::tests::the_searches_certificates_verify_against_their_own_diagrams` and the twelve `matching::tests::a_certificate_*` and `matching::tests::a_non_convex_certificate_is_refused_with_the_offending_path` refusals.
 - `Matching::ambiguity`, `Ambiguity`, `Divergence`, `Discriminator`: the first difference of each later admission from the first. Witnesses: `matching::tests::a_unique_or_absent_match_reports_no_ambiguity`, `matching::tests::a_multi_admission_reports_its_first_divergences_in_order`, `matching::tests::a_bare_wire_ambiguity_discriminates_on_the_wire`, `matching::tests::two_orderings_of_port_free_generators_diverge_at_the_first_generator`.
+- `canonicalize`, `CanonicalDiagram`, `Canonicalization`, `CanonicalDiagram::to_wiring`: one representative per class of presentations, numbered by a traversal and readable back as a diagram. Witnesses: `normal_form::tests::canonicalization_is_total_and_its_witness_verifies`, `normal_form::tests::the_boundary_is_numbered_before_the_interior`, `normal_form::tests::an_anchored_component_is_ordered_by_the_boundary_and_not_by_its_labels`, `normal_form::tests::a_visited_hyperedge_numbers_its_sources_before_its_targets`, `normal_form::tests::a_presentation_permutation_has_one_canonical_form`, `normal_form::tests::canonicalization_is_idempotent`, `normal_form::tests::a_component_with_no_boundary_port_is_seeded_by_minimizing`, `normal_form::tests::components_with_no_boundary_port_are_committed_in_canonical_order`, `normal_form::tests::the_least_linearization_is_compared_past_its_first_record`, `normal_form::tests::two_isomorphic_anchorless_components_still_have_one_form`, `normal_form::tests::an_isolated_wire_is_numbered_from_the_boundary_alone`, and the property `tests::normal_form::every_presentation_permutation_canonicalizes_alike`.
+- `same_diagram`, `DiagramEquality`, `SharedCanon`, `DiagramDivergence`: whether two wirings denote one diagram, with both relabellings on one arm and the first divergence on the other. Witnesses: `normal_form::tests::the_canon_agrees_with_the_cospan_isomorphism_oracle`, `normal_form::tests::the_canon_separates_a_permuted_boundary`, `normal_form::tests::the_canon_separates_a_permuted_port_list`, `normal_form::tests::the_canon_separates_a_label_worn_at_two_sorts`, `normal_form::tests::the_canon_separates_one_generator_multiset_wired_two_ways`, `normal_form::tests::same_diagram_locates_a_count_difference`, `normal_form::tests::same_diagram_locates_a_boundary_difference`, `normal_form::tests::same_diagram_locates_a_hyperedge_difference`.
+- `Relabelling`, `Relabelling::verify`, `RelabellingDefect`, `Leg`, `PortPosition`, `PortCount`, the lookups `Relabelling::image_of_wire` and `Relabelling::image_of_generator` with their `relabelled_wire` and `relabelled_generator` absence reasons: the renumbering as a checkable isomorphism, a defect refused by its locus. Witnesses: `normal_form::tests::the_verifier_refuses_a_defective_wire_map`, `normal_form::tests::the_verifier_refuses_a_defective_generator_map`, `normal_form::tests::the_verifier_refuses_a_record_that_does_not_correspond`, `normal_form::tests::the_verifier_refuses_a_boundary_that_does_not_commute`.
+- `CanonicalDiagram` as a map key: `Ord` and `Hash`, holding no address, stamp or session state, so presentations of one diagram land on one entry. Witnesses: `normal_form::tests::presentations_of_one_diagram_collapse_to_one_key`, `normal_form::tests::equal_canonical_forms_hash_alike`.
 
 ## Expected features
 
 - **Diagrams inside the fragment.** A caller hands the matcher only what `Wiring::assemble` accepts. A body closed by a delayed feedback loop is cyclic and refused; the caller cuts the delay open before matching, and reads no verdict back onto the closed form.
 - **A sized budget.** The caller sizes `MatchBudget` for its pattern and target. The search declines with `MatchObstruction::BudgetExhausted` rather than return a partial enumeration, so a budget too small for the work is a refusal the caller sees, never a silently short answer.
 - **Rule-sized patterns.** The certificate reader checks generator injectivity pairwise, quadratic in the pattern's generator count, and the search copies its partial assignment once per candidate seed; both are sized for rule patterns against a body, not for patterns the size of the target.
+- **Anchorless components of modest size.** A component the boundary never reaches is canonicalized by trying each of its `k` generators as the seed, `O(k²)` in that component; a diagram with large closed components pays that cost on every `canonicalize` and `same_diagram`.
 
 ## Examples
 
@@ -133,6 +145,51 @@ fn example() -> Result<(), Box<dyn core::error::Error>> {
 }
 ```
 
+Decide that two presentations denote one diagram and check the evidence.
+
+```rust
+use gandr_theory_circuit_algebras::DiagramEquality;
+use gandr_theory_circuit_algebras::Generator;
+use gandr_theory_circuit_algebras::GeneratorLabel;
+use gandr_theory_circuit_algebras::GeneratorSort;
+use gandr_theory_circuit_algebras::Interface;
+use gandr_theory_circuit_algebras::Wire;
+use gandr_theory_circuit_algebras::WireCount;
+use gandr_theory_circuit_algebras::Wiring;
+use gandr_theory_circuit_algebras::canonicalize;
+use gandr_theory_circuit_algebras::same_diagram;
+
+fn example() -> Result<(), Box<dyn core::error::Error>> {
+    let value = |name: &str| GeneratorLabel::new(name, GeneratorSort::Value);
+    let wires = |indices: &[usize]| -> Vec<Wire> { indices.iter().copied().map(Wire::from).collect() };
+    // f: (0) -> (1), then g: (1) -> (2)
+    let left = Wiring::assemble(
+        WireCount::from(3),
+        vec![
+            Generator::new(value("f"), wires(&[0]), wires(&[1])),
+            Generator::new(value("g"), wires(&[1]), wires(&[2])),
+        ],
+        Interface::new(wires(&[0]), wires(&[2])),
+    )?;
+    // The same composite, its wires renumbered and its generators relisted.
+    let right = Wiring::assemble(
+        WireCount::from(3),
+        vec![
+            Generator::new(value("g"), wires(&[0]), wires(&[1])),
+            Generator::new(value("f"), wires(&[2]), wires(&[0])),
+        ],
+        Interface::new(wires(&[2]), wires(&[1])),
+    )?;
+    let DiagramEquality::Same(shared) = same_diagram(&left, &right) else {
+        return Err("two presentations of one diagram".into());
+    };
+    assert_eq!(Ok(()), shared.left().verify(&left, shared.form()));
+    assert_eq!(Ok(()), shared.right().verify(&right, shared.form()));
+    assert_eq!(shared.form(), canonicalize(&left).form());
+    Ok(())
+}
+```
+
 Run the tests:
 
 ```sh
@@ -186,6 +243,45 @@ Convexity is broken by the existence of a path, and closing a delayed feedback l
 
 An `Embedding` is evidence its consumer refutes, not evidence its producer asserts. `Embedding::claim` is public so a certificate from outside the search — stored, transmitted, or produced by another matcher — can be read; a claim asserts nothing. `Embedding::check` re-derives every conjunct from the two diagrams in a fixed order and refuses at the first that fails, naming the locus: the image's length, then per pattern generator its range, label, arity and incidence, then generator injectivity, then the wire map's totality, range and width, then the seam, then the warrant, then the sweep. The seam is derived data, the wire map restricted to the pattern's interface, so a seam that disagrees is a forgery rather than a second opinion. Extra wire pairs outside the pattern are refused rather than ignored, because two certificates differing only in them would compare unequal while denoting one embedding.
 
+## The diagram normal form
+
+Two presentations of one diagram differ only in how they number wires and generators. The relation `same_diagram` decides is cospan isomorphism over the port bijection: a renumbering that preserves every label, arity and ordered port list and commutes with both interface legs position by position. `canonicalize` picks one representative per class by renumbering in the one order a traversal admits:
+
+1. The boundary takes the lowest wire numbers, the input leg in order and then the output leg, skipping a wire already numbered. An isomorphism fixes boundary positions, so numbering by position is invariant.
+2. A cursor walks the numbered wires in order and visits each wire's producer, then its consumer. A visited generator takes the next generator number and numbers its unnumbered ports, sources in port order and then targets. No step chooses.
+3. A component the boundary never reaches has no anchor, so every member is tried as its seed and the least linearization wins; the anchorless components are then committed in the order of their winners. Both minimums range over the diagram's own content, and both read the whole linearization, because members sharing a label and an arity tie on their first record.
+
+Two premises carry the procedure. Monogamy makes the walk choice-free and the wiring a faithful index: a wire with two producers could only be recorded by losing one. Boundary honesty makes the numbering total, an isolated wire being numbered only because both legs declare it, and leaves the producer-before-consumer order unobservable, because when the cursor reaches a wire at most one of its sides is unvisited. Acyclicity is not a premise: the traversal stops on its visited sets and is canonical with or without a cycle.
+
+A component with a boundary port costs one traversal and an anchorless component of `k` generators costs `k`; nothing searches, because one numbered wire forces a generator. An earlier implementation of this design built each trial linearization's records to compare it, cloning every label once per trial; this one compares a trial against the incumbent by reading both traversals in place and builds records once, from the winner. The form is identical.
+
+The tests check the canon against a cospan-isomorphism oracle that searches generator bijections over every ordered pair of 31 fixtures (`normal_form::tests::the_canon_agrees_with_the_cospan_isomorphism_oracle`), and a property renumbers and relists generated diagrams biased toward anchorless components, port-free generators and isolated wires, where an order leak would surface (`tests::normal_form::every_presentation_permutation_canonicalizes_alike`).
+
+## Edge orientation
+
+A canonical linearization can cut a diagram at a vertex, a generator and the pieces its removal leaves (the corolla decomposition), or at an edge, a wire and its two sides; mixed styles lie between. The canon takes the edge orientation, as a traversal. Monogamy tells a wire's two sides apart by direction, so the edge cut chooses nothing, while removing a generator leaves one piece per port to be sequenced in an order the corolla does not supply. The order a vertex cut would borrow is the port order the traversal already consumes, and an interface is a list of wires, so its anchor is already an edge datum. A traversal also owes no confluence argument, because no rewriting relation produces the form.
+
+- **Alternatives.** The corolla decomposition or a mixed style, produced by rewriting toward a normal form that then has to be shown confluent; a general graph canonicalizer, which searches where monogamy forces.
+- **Reversal.** A generator whose ports are not totally ordered, which gives the traversal a tie-break of its own and moves the choice toward a mixed style.
+
+## Evidence, not equality
+
+`same_diagram` answers with evidence on both arms. `DiagramEquality::Same` carries the shared form with both relabellings, the two halves of the isomorphism between the inputs; `DiagramEquality::Distinct` carries the first place the forms part as a `DiagramDivergence`. `Relabelling` has no public constructor, and `Relabelling::verify` re-derives from the source and the form that the relabelling is a bijection on wires and on generators, that each record is its source generator's image (label, then each leg's arity and ports), and that both legs commute; a defect is a `RelabellingDefect` naming its locus.
+
+`same_diagram` compares what no renumbering changes, the wire count, the generator count and each leg's arity, before canonicalizing either side, so diagrams that differ there are told apart without a traversal and the divergence names those counts before any port or record. An earlier implementation of this design canonicalized both sides first and compared each leg's arity and ports together, input leg then output leg. The verdict is identical; the located divergence differs only for two diagrams that differ both in an input port and in the output leg's arity, where this one names the arity.
+
+## What the canon does not decide
+
+- **The rewriting normal form.** That runs a rule system to completion and is a property of the theory; the canon is a property of the representation and rewrites nothing.
+- **Construction terms.** A circuit also reads as a term built from merger and contraction, and a canonical form of those terms is another object at another layer. That the two canons agree is neither assumed nor established here.
+- **Planar equivalence.** Wires here cross freely and the interface is the only order; the planar quotient up to exchange moves is a different relation.
+- **Merging wires.** The spider normal form for diagrams whose wires merge lies outside the monogamous fragment.
+
+`CanonicalDiagram` is a map key, but interning diagrams by content, minting identities from the key, is refused: a content key is sound only once the diagram form is shown to agree with the construction-term reading of the same circuit.
+
+- **Alternatives.** An interner over the diagram form now, whose identities a later disagreement with the construction-term canon would split; an interner keyed on construction terms, which waits on that canon.
+- **Reversal.** The agreement is established; interning lands with its storage reader.
+
 ## Crate boundary
 
 No rewriting engine depends on this crate. A matcher reaches an engine only through a seam supplied where the engine is instantiated, so the engines stay generic over the cell alphabet and this crate stays a leaf above the substrate.
@@ -194,8 +290,6 @@ The crate takes no edge to `gandr-theory-graphs`. It needs weakly connected comp
 
 - **Alternatives.** Adding a components procedure to `gandr-theory-graphs` with this crate as its one reader spreads one unit across two crates and still leaves port order here; taking the edge for cycle evidence alone puts a graph library under the substrate's path for one call.
 - **Reversal.** `gandr-theory-graphs` gains a components procedure for a second reader, or a later alphabet needs a wiring's condensation.
-
-The crate does not decide whether two presentations denote the same diagram: a canonical form and a same-diagram decision are not provided today. Interning diagrams by content is refused for now, because a content key is only sound once the canonical diagram form is shown to agree with the construction-term reading of the same circuit; interning lands with its storage reader once that agreement is established.
 
 ## Boundary wrappers
 

@@ -3,17 +3,27 @@ name = "gandr-theory-circuit-algebras"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "The diagram view of gandr's circuit algebras: monogamous acyclic wirings with interfaces, the spine reading of a command pattern, and embedding-based matching with its convexity check and certificate reader"
+description = "The diagram view of gandr's circuit algebras: monogamous acyclic wirings with interfaces, the spine reading of a command pattern, embedding-based matching with its convexity check and certificate reader, and the diagram normal form with its checkable relabelling"
 readme = "README.md"
 repository.workspace = true
 license.workspace = true
 keywords = ["gandr", "no-std", "rewriting", "string-diagrams"]
 categories = ["algorithms", "data-structures", "no-std"]
 publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
 
 [dependencies]
 gandr-theory-cell-complexes.workspace = true
 quenchant-shape.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
 
 [lints]
 workspace = true

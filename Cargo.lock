@@ -308,6 +308,7 @@ name = "gandr-theory-circuit-algebras"
 version = "0.0.0"
 dependencies = [
  "gandr-theory-cell-complexes",
+ "proptest",
  "quenchant-shape",
 ]
 

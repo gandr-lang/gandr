@@ -195,6 +195,7 @@ default-features = false
 # - storage-records (dev)
 # - surface-parser (dev)
 # - theory-cell-complexes (dev)
+# - theory-circuit-algebras (dev)
 # - theory-graphs (dev)
 # - theory-orders (dev)
 [workspace.dependencies.proptest]
