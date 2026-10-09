@@ -158,7 +158,7 @@ item        := a word, bytes or child record c emitted | 0x00 || BLAKE3(preimage
 residue(c)  := the first eight bytes of BLAKE3(preimage(c)), as u64le
 ```
 
-Each emitted record joins the scanner's count once, at the next boundary event. Every constructor exit except the outermost is a candidate: the scanner cuts when the pending count reaches the cap, otherwise when the residue is divisible by kappa. The outermost constructor becomes the root chunk directly, avoiding an extra pointer-only root.
+Each record appended to a body joins the scanner's count once, at the next boundary event: every record the value emits, and the one child record that takes a cut subtree's place in its parent. Every constructor exit except the outermost is a candidate: the scanner cuts when the pending count reaches the cap, otherwise when the residue is divisible by kappa, and a cut empties the count. The outermost constructor becomes the root chunk directly, avoiding an extra pointer-only root.
 
 ## Verification and decode budgets
 
