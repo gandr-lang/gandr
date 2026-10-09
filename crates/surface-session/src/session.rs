@@ -23,6 +23,7 @@ use core::fmt;
 use std::path::Path;
 
 use gandr_core_checker::CheckBudget;
+use gandr_core_checker::Verdict;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::CheckpointObserver;
 use gandr_core_incremental::CheckpointStore;
@@ -39,10 +40,15 @@ use gandr_core_incremental::address_of;
 use gandr_core_incremental::restore;
 use gandr_core_incremental::restored;
 use gandr_core_incremental::submitted;
+use gandr_kernel_term::ConstantIndex;
+use gandr_surface_corpus::DeclarationReport;
+use gandr_surface_corpus::Produced;
 use gandr_surface_dispatcher::ComposeFault;
 use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Lowered;
 use gandr_surface_dispatcher::LoweringCount;
+use gandr_surface_dispatcher::Program;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_dispatcher::Step;
@@ -73,6 +79,23 @@ quenchant_shape::reason_enum! {
             /// The lowering refused the revision as a whole, so it offered no
             /// items to resume over.
             RefusedWhole,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a session declines to evaluate an item.
+    pub mod evaluation {
+        /// The reason nothing runs.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The declaration is owed its body: a hole, which declines
+            /// evaluation.
+            Holed,
+            /// No declaration the checker accepted sits at the position: it
+            /// was refused, the position holds none, or the revision was
+            /// refused as a whole.
+            Unaccepted,
         }
     }
 }
@@ -418,6 +441,88 @@ impl<'text> Submission<'text>
             composed: self.composed,
             standing: self.standing,
         }
+    }
+
+    /// Run the hole-free item at `constant` of this revision.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: as [`evaluate`] over the declaration the revision's report
+    ///   carries at `constant` and the program its composition built; a
+    ///   position holding no declaration and a revision refused as a whole
+    ///   decline with [`evaluation::Absent::Unaccepted`].
+    /// - provides: the evaluation a face prints a value line from.
+    /// - fails: as [`evaluate`], and the two absences the ensures clause names.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — as [`evaluate`].
+    /// - witness: `tests::session::integer_literal_types_and_evaluates`
+    /// - witness: `tests::session::nullary_function_call_evaluates`
+    /// - witness: `tests::session::holes_decline_evaluation`
+    #[inline]
+    pub fn evaluate(
+        &mut self,
+        constant: ConstantIndex,
+    ) -> Maybe<Evaluation<'text>, evaluation::Absent>
+    {
+        let Composed::Settled {
+            ref report,
+            ref mut program,
+            ..
+        } = self.composed
+        else {
+            return Maybe::Absent(evaluation::Absent::Unaccepted);
+        };
+        match report
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.constant() == constant)
+        {
+            | Some(declaration) => evaluate(declaration, program),
+            | None => Maybe::Absent(evaluation::Absent::Unaccepted),
+        }
+    }
+}
+
+/// Run `declaration` on `program` when it is a hole-free item: one the
+/// checker accepted whole.
+///
+/// # Specification
+/// - requires: `program` is the one the composition reporting `declaration`
+///   built.
+/// - ensures: a declaration whose produced verdict is checked or synthesised
+///   runs as the dispatcher's run stage runs it, and what the run came to is
+///   returned — a value, the blame of a goal it reaches, or why it stopped or
+///   never ran. A declaration owed its body declines with
+///   [`evaluation::Absent::Holed`]; one refused, by the lowering, the checker
+///   or its root, declines with [`evaluation::Absent::Unaccepted`]. Nothing
+///   runs for a declined item.
+/// - provides: the one rule for what a session evaluates, shared by a
+///   submission and by a face holding the submission's step.
+/// - fails: the declining absences the ensures clause names.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an integer literal, a call of a nullary function and a
+///   goal are submitted, and each asserted at its exact evaluation or absence.
+/// - witness: `tests::session::integer_literal_types_and_evaluates`
+/// - witness: `tests::session::nullary_function_call_evaluates`
+/// - witness: `tests::session::holes_decline_evaluation`
+#[inline]
+pub fn evaluate<'text>(
+    declaration: &DeclarationReport<'text>,
+    program: &mut Program<'text>,
+) -> Maybe<Evaluation<'text>, evaluation::Absent>
+{
+    match declaration.produced() {
+        | Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
+            Maybe::Present(program.evaluate(declaration.constant()))
+        },
+        | Produced::Judged(Verdict::Owed(_)) => Maybe::Absent(evaluation::Absent::Holed),
+        | Produced::Judged(Verdict::Refused(_)) | Produced::Unlowered(_) | Produced::Guarded(_) => {
+            Maybe::Absent(evaluation::Absent::Unaccepted)
+        },
     }
 }
 

@@ -13,16 +13,21 @@ use gandr_core_incremental::ItemCount;
 use gandr_core_incremental::SynthesisEvent;
 use gandr_core_incremental::Typing;
 use gandr_kernel_term::BaseType;
+use gandr_kernel_term::ConstantIndex;
+use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::Produced;
 use gandr_surface_corpus::RefusalName;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::SourceRoot;
 use gandr_surface_dispatcher::Standing;
 use gandr_surface_lowering::LoweringRefusal;
+use gandr_surface_lowering::SurfaceName;
 use gandr_surface_lowering::namespace::DottedName;
 use gandr_surface_lowering::namespace::NamePath;
+use gandr_surface_session::evaluation;
 use gandr_surface_session::import;
 use gandr_surface_session::resumed;
 use quenchant_shape::shape::Maybe;
@@ -502,5 +507,95 @@ fn import_namespace_carries_across_lines_and_resolves_source_declarations()
         uri(&list),
         Maybe::Present("file:///lib/list.gandr".to_owned()),
         "and every other alias of the accepted revision"
+    );
+}
+
+/// The position the settled composition admitted `name` at.
+///
+/// # Specification
+/// trivial.
+fn constant_of(
+    composed: &Composed<'_>,
+    name: SurfaceName<'_>,
+) -> ConstantIndex
+{
+    let Composed::Settled { ref report, .. } = *composed
+    else {
+        panic!("refused as a whole: {composed:?}");
+    };
+    report
+        .declarations()
+        .iter()
+        .find(|declaration| declaration.name() == name)
+        .map_or_else(
+            || panic!("`{name}` is declared: {report:?}"),
+            DeclarationReport::constant,
+        )
+}
+
+/// An integer literal types to `Integer` and evaluates to itself.
+#[test]
+fn integer_literal_types_and_evaluates()
+{
+    let mut session = session(SourceRoot::Strict);
+    let mut submission = submit(&mut session, "def answer = 42 ;");
+    let typings = resumed(&session);
+    assert!(
+        matches!(typings.as_slice(), [answer] if produced(answer) == [ContentNode::Base(BaseType::Integer)]),
+        "`answer : Integer`: {typings:?}"
+    );
+    let answer = constant_of(submission.composed(), SurfaceName::from("answer"));
+    assert!(
+        matches!(submission.evaluate(answer), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == "42"),
+        "`answer` evaluates to itself"
+    );
+}
+
+/// A nullary function binds a thunk, and a call of it runs its body.
+#[test]
+fn nullary_function_call_evaluates()
+{
+    let mut session = session(SourceRoot::Strict);
+    let mut submission = submit(
+        &mut session,
+        "def step() -> -F Integer { ret 1 }\ndef called : +U (-F Integer) ;\ndef called = thunk { step() } ;",
+    );
+    assert_eq!(
+        rows(submission.composed()),
+        vec![
+            ("step".to_owned(), checks(), Settlement::Settled),
+            ("called".to_owned(), checks(), Settlement::Settled),
+        ],
+        "both declarations check"
+    );
+    for name in ["step", "called"] {
+        let constant = constant_of(submission.composed(), SurfaceName::from(name));
+        assert!(
+            matches!(submission.evaluate(constant), Maybe::Present(Evaluation::Value(ref value)) if value.as_ref() == "1"),
+            "`{name}` runs the nullary body"
+        );
+    }
+}
+
+/// A declaration owed its body is a goal and is not evaluated; one that runs
+/// into it is, and is blamed on it.
+#[test]
+fn holes_decline_evaluation()
+{
+    let mut session = session(SourceRoot::Strict);
+    let mut submission = submit(
+        &mut session,
+        "def later : +U (-F Integer) ;\ndef main : +U (-F Integer) ;\ndef main = thunk { force later } ;",
+    );
+    let later = constant_of(submission.composed(), SurfaceName::from("later"));
+    assert_eq!(
+        submission.evaluate(later),
+        Maybe::Absent(evaluation::Absent::Holed),
+        "the goal is not evaluated"
+    );
+    let main = constant_of(submission.composed(), SurfaceName::from("main"));
+    assert!(
+        matches!(submission.evaluate(main), Maybe::Present(Evaluation::Blamed(name)) if name.to_string() == "later"),
+        "the run that reaches the goal is blamed on it"
     );
 }

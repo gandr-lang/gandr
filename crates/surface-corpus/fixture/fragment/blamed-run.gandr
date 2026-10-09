@@ -1,0 +1,6 @@
+@[ owes(1) ]
+def later : +U (-F Integer) ;
+
+@[ runs("blame: `later` is owed its body") ]
+def main : +U (-F Integer) ;
+def main = thunk { force later } ;

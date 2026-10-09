@@ -13,9 +13,11 @@ def universe = Type ;
 def widened : Type[+, 1] ;
 def widened = String ;
 
+@[ runs("5") ]
 def five : small ;
 def five = 5 ;
 
+@[ runs("<fun>") ]
 def id(a : Type, x : a) -> -F a { ret x }
 
 def at_integer : +U (-F Integer) ;
@@ -27,6 +29,7 @@ def at_string = thunk { id(String, "text") } ;
 def at_small : +U (-F small) ;
 def at_small = thunk { id(small, five) } ;
 
+@[ runs("<fun>") ]
 def perform(c : Type[-], t : +U c) -> c { force t }
 
 def performed : +U (-F Integer) ;

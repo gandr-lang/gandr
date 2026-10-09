@@ -1,4 +1,4 @@
-@[ checks ]
+@[ runs("0") ]
 def unit = 0;
 
 @[ refuses("OutOfFragment") ]

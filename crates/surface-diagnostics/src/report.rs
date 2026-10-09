@@ -117,6 +117,8 @@ pub enum Unsettlement
     Obligations,
     /// It states a refusal it did not produce.
     Unproduced,
+    /// It states a run outcome, and its run produced another.
+    RunOutcome,
     /// Its expectation states no verdict.
     Malformed,
 }
@@ -136,6 +138,7 @@ impl fmt::Display for Unsettlement
         f.write_str(match *self {
             | Self::Obligations => "surviving obligations",
             | Self::Unproduced => "unproduced refusal",
+            | Self::RunOutcome => "another run outcome",
             | Self::Malformed => "malformed expectation",
         })
     }
@@ -516,7 +519,10 @@ impl<'step> Report<'step>
             ),
             | Subject::Unsettled {
                 declaration,
-                unsettlement: unsettlement @ (Unsettlement::Unproduced | Unsettlement::Malformed),
+                unsettlement:
+                    unsettlement @ (Unsettlement::Unproduced
+                    | Unsettlement::RunOutcome
+                    | Unsettlement::Malformed),
             } => Annotations::at(
                 declaration.span(),
                 Label::Class(Class::Unsettled(unsettlement)),

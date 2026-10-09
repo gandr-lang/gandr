@@ -105,8 +105,8 @@ enum Unsettled
     /// Both sides are *checks*, owing different counts: only obligations
     /// survive.
     Obligations,
-    /// Anything else: a refusal on either side, or an expectation stating no
-    /// verdict.
+    /// Anything else: a refusal on either side, a stated run outcome, or an
+    /// expectation stating no verdict.
     Verdict,
 }
 
@@ -117,10 +117,12 @@ enum Unsettled
 fn unsettled_by(declaration: &DeclarationReport<'_>) -> Unsettled
 {
     match (declaration.stated(), declaration.outcome()) {
-        | (Stated::Verdict(Outcome::Checks(_)), Outcome::Checks(_)) => Unsettled::Obligations,
-        | (Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_)) | Stated::Malformed(_), _) => {
-            Unsettled::Verdict
-        },
+        | (&Stated::Verdict(Outcome::Checks(_)), Outcome::Checks(_)) => Unsettled::Obligations,
+        | (
+            &(Stated::Verdict(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_))
+            | Stated::Malformed(_)),
+            _,
+        ) => Unsettled::Verdict,
     }
 }
 
@@ -587,6 +589,7 @@ mod tests
     use crate::compose::LoweringCount;
     use crate::compose::adapt;
     use crate::compose::compose;
+    use crate::evaluate::Program;
     use crate::exercised::Exercised;
     use crate::root::SourceRoot;
     use crate::walk::Standing;
@@ -711,12 +714,20 @@ def broken = missing ;"#,
             &mut CheckingContext::new(&mut arena, CheckBudget::from(0_usize)),
             &adapt(&module),
         );
+        let mut program = Program::new(&arena, &module, &verdicts);
         let composed = Composed::Settled {
-            report: settle(CorpusRoot::Fixture, &arena, &module, &verdicts)
-                .expect("the verdicts are the module's"),
+            report: settle(
+                CorpusRoot::Fixture,
+                &arena,
+                &module,
+                &verdicts,
+                &mut program,
+            )
+            .expect("the verdicts are the module's"),
             exercised: Exercised::default(),
             unstatable: Vec::new(),
             origins: module.into_origins(),
+            program,
         };
         let mut engine = RunReport::default();
         engine.read(SourceRoot::Fixture, &composed, Standing::Settled);

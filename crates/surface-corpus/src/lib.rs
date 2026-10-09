@@ -1,13 +1,14 @@
 //! **The expectation language over a lowered module and its verdicts**: the
-//! `checks`, `owes` and `refuses` schemas read off the attribute side table,
-//! the strict and fixture corpus roots, the settle comparison, and the report
-//! a runner reads its counts from.
+//! `checks`, `owes`, `refuses` and `runs` schemas read off the attribute side
+//! table, the strict and fixture corpus roots, the settle comparison, and the
+//! report a runner reads its counts from.
 //!
 //! The crate reads what the lowering and the checker already produced and
-//! decides one predicate over it. There is no parser here, no file walk and no
-//! process exit: a caller hands over a lowered module, the checker's report for
-//! the same module, the arena both wrote into, and the root the source sits
-//! under, and receives a [`SettleReport`].
+//! decides one predicate over it. There is no parser here, no machine, no file
+//! walk and no process exit: a caller hands over a lowered module, the
+//! checker's report for the same module, the arena both wrote into, the root
+//! the source sits under, and a [`Runner`] that spells a declaration's run
+//! outcome, and receives a [`SettleReport`].
 //!
 //! # Four decisions that interlock
 //!
@@ -22,8 +23,8 @@
 //! [`ExpectationOutsideFixtureRoot`](CorpusRefusal::ExpectationOutsideFixtureRoot),
 //! and every declaration is held to *checks, owing nothing* whatever it
 //! states, so a red declaration cannot describe itself green. Under the
-//! [fixture root](CorpusRoot::Fixture) the three schemas assert what the
-//! checker refuses and what it owes.
+//! [fixture root](CorpusRoot::Fixture) the four schemas assert what the
+//! checker refuses, what it owes and what a run produces.
 //!
 //! **A declared obligation is signed, not waived.** The ledger size is part of
 //! every report, settled or not, so an assumption is never silent.
@@ -43,7 +44,9 @@
 //! use gandr_core_checker::check_module;
 //! use gandr_core_checker::signature;
 //! use gandr_core_term::CoreArena;
+//! use gandr_kernel_term::ConstantIndex;
 //! use gandr_surface_corpus::CorpusRoot;
+//! use gandr_surface_corpus::RunSpelling;
 //! use gandr_surface_corpus::Seal;
 //! use gandr_surface_corpus::Settlement;
 //! use gandr_surface_corpus::settle;
@@ -105,7 +108,9 @@
 //!     &declarations,
 //! );
 //!
-//! let report = settle(CorpusRoot::Fixture, &arena, &module, &verdicts)?;
+//! // No declaration states a run outcome, so the runner is never asked.
+//! let mut runner = |_constant: ConstantIndex| RunSpelling::from(String::new());
+//! let report = settle(CorpusRoot::Fixture, &arena, &module, &verdicts, &mut runner)?;
 //! let tally = report.tally();
 //! assert_eq!(
 //!     tally.settlement(),
@@ -138,6 +143,7 @@ mod fixture;
 mod refusal;
 mod report;
 mod root;
+mod run;
 mod settle;
 
 pub use crate::expectation::ExpectationFault;
@@ -157,10 +163,13 @@ pub use crate::report::SettleCounts;
 pub use crate::report::SettleReport;
 pub use crate::report::Tally;
 pub use crate::root::CorpusRoot;
+pub use crate::run::RunSpelling;
+pub use crate::run::Runner;
 pub use crate::settle::DeclarationReport;
 pub use crate::settle::Produced;
 pub use crate::settle::SettleFault;
 pub use crate::settle::Settlement;
 pub use crate::settle::Surviving;
 pub use crate::settle::produced_refusal;
+pub use crate::settle::ran;
 pub use crate::settle::settle;

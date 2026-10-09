@@ -152,6 +152,10 @@ impl core::fmt::Display for SourceFault<'_>
 
 /// One step of a walk.
 #[derive(Debug)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "a walk yields one step per source and the caller consumes it in place; boxing the composition would allocate once per source to shrink a value that is never stored"
+)]
 pub enum Step<'walk>
 {
     /// One source, carried through the pipeline.
@@ -408,12 +412,8 @@ impl Walk
     fn source(&mut self) -> Step<'_>
     {
         self.answered = Answered::Yes;
-        let root = match std::fs::canonicalize(&self.path) {
-            | Ok(canonical) => classify(&canonical),
-            | Err(error) => return self.unreadable(error),
-        };
-        self.text = match std::fs::read_to_string(&self.path) {
-            | Ok(text) => text,
+        let root = match read_source(&self.path, &mut self.text) {
+            | Ok(root) => root,
             | Err(error) => return self.unreadable(error),
         };
         let grammar = match self.grammar {
@@ -452,6 +452,25 @@ impl Walk
             },
         }
     }
+}
+
+/// Classify the source at `path` by its canonical path, and read its text
+/// into `text`.
+///
+/// # Specification
+/// trivial.
+///
+/// # Errors
+/// The I/O error canonicalizing or reading the path met, a path naming a
+/// directory or text that is not UTF-8 among them.
+pub fn read_source(
+    path: &Path,
+    text: &mut String,
+) -> std::io::Result<SourceRoot>
+{
+    let canonical = std::fs::canonicalize(path)?;
+    *text = std::fs::read_to_string(path)?;
+    Ok(classify(&canonical))
 }
 
 /// The path an entry reached by listing names.

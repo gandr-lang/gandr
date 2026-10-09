@@ -203,7 +203,7 @@ The alternative was to collect every refusal of a declaration. It was declined b
 
 ## Attributes: a closed registry and a side table
 
-The registry is closed: `checks` takes no payload, `owes` an integer, `refuses` a text. Five diagnostics cover what an attribute can get wrong, checked in this order: an unknown name, with the registered name within edit distance two when one exists; the same attribute written twice for one declared name, naming the first; a payload that is not a value at all, decided before the schema is consulted because being no value is a different fact from being the wrong one; a missing payload; and a payload of a form the schema does not admit, a payload on a marker included. A payload is read as a value under no binder, and the schema types it at the literal: an integer or a text.
+The registry is closed: `checks` takes no payload, `owes` an integer, `refuses` and `runs` a text. Five diagnostics cover what an attribute can get wrong, checked in this order: an unknown name, with the registered name within edit distance two when one exists; the same attribute written twice for one declared name, naming the first; a payload that is not a value at all, decided before the schema is consulted because being no value is a different fact from being the wrong one; a missing payload; and a payload of a form the schema does not admit, a payload on a marker included. A payload is read as a value under no binder, and the schema types it at the literal: an integer or a text.
 
 An admitted attribute is filed under the content identity of the declaration form it decorates. The molded tree folds an attribute block into the declaration it decorates, so that identity covers the attributes themselves.
 

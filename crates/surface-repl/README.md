@@ -17,7 +17,7 @@ The read-evaluate loop over the interactive session: the completeness gate, the 
 - [Types are spelled from the checkpoints](#types-are-spelled-from-the-checkpoints)
 - [Repairs are cards](#repairs-are-cards)
 - [The transcript](#the-transcript)
-- [What evaluation adds](#what-evaluation-adds)
+- [A checked declaration prints what it runs to](#a-checked-declaration-prints-what-it-runs-to)
 - [Tests: the floor, the deferred rows, the defect](#tests-the-floor-the-deferred-rows-the-defect)
 - [License](#license)
 
@@ -25,7 +25,7 @@ The read-evaluate loop over the interactive session: the completeness gate, the 
 
 ## Synopsis
 
-**What.** A `SessionLoop` takes lines and answers `LoopEvent`s. A line opening with `:` while no buffer waits is a meta-command — `:type <expression>`, `:load <file>`, `:reset`, `:help`, `:quit` or `:q`; any other line joins the buffer, and once the parser expects no further token the buffer is submitted to a `gandr-surface-session` `Session` as the next chunk of one growing revision. `encode_submission` turns the session's answer into a `gandr-surface-render-remote` `TranscriptBlock`: the echo with its highlight spans, a type line `name : T` per checked declaration the chunk introduced or settled, a goal line per declaration it left owing, the diagnostics renderer's report per refusal, and a warning per parse repair. `run_batch` drives the loop over any reader and writes a plain transcript; `run_interactive` drives it over a terminal through a line editor.
+**What.** A `SessionLoop` takes lines and answers `LoopEvent`s. A line opening with `:` while no buffer waits is a meta-command — `:type <expression>`, `:load <file>`, `:reset`, `:help`, `:quit` or `:q`; any other line joins the buffer, and once the parser expects no further token the buffer is submitted to a `gandr-surface-session` `Session` as the next chunk of one growing revision. `encode_submission` turns the session's answer into a `gandr-surface-render-remote` `TranscriptBlock`: the echo with its highlight spans, a type line `name : T` per checked declaration the chunk introduced or settled followed by the line of what running it came to, a goal line per declaration it left owing, the diagnostics renderer's report per refusal, and a warning per parse repair. `run_batch` drives the loop over any reader and writes a plain transcript; `run_interactive` drives it over a terminal through a line editor.
 
 **Why.** The session judges revisions; a person types lines. The loop is what stands between: it decides when a buffer is worth submitting, owns the text the session judges, decides what of a revision is new, and says it in the vocabulary every renderer reads, so the line editor, the terminal face `gandr tui` and a pipe show the same lines.
 
@@ -40,7 +40,7 @@ The read-evaluate loop over the interactive session: the completeness gate, the 
 
 - **The gate.** `completeness` and the parser's `CompletionStatus`, re-exported. Witnesses: `loop::tests::an_open_form_is_incomplete`, `loop::tests::a_bare_atom_is_complete`, `loop::tests::a_hole_is_complete`, `loop::tests::a_declaration_waits_for_its_terminator`, `loop::tests::unused_completion_status_name_stays_in_scope`.
 - **The loop.** `SessionLoop`, `SessionLoop::new`, `offer`, `finish`, `prompt`, `discard`; `LoopEvent`, `Prompt`, `LoopError`, `Faulted`, `finished::Absent`. Witnesses: `loop::tests::an_open_form_continues`, `loop::tests::a_complete_atom_submits`, `loop::tests::a_definition_is_visible_on_the_next_line`, `loop::tests::a_refused_chunk_is_not_kept`, `loop::tests::quit_stops_the_loop`, `loop::tests::the_meta_commands_answer`, `loop::tests::the_type_command_answers_without_keeping_the_probe`, `loop::tests::a_loaded_file_is_one_chunk`, `loop::tests::an_incomplete_buffer_is_submitted_at_end_of_input`, `loop::tests::finishing_an_empty_loop_yields_nothing`, `loop::tests::finishing_twice_reports_once`.
-- **The encoder.** `encode_submission`, `Offer`, `Echo`, `Subject`, `Standings`, `Encoded`, `Disposition`, `spelled::Absent`. Witnesses: `loop::tests::a_hole_encodes_as_a_goal_line`, `loop::tests::a_later_definition_settles_an_earlier_goal`, `loop::tests::an_outcome_only_refusal_is_visible_in_the_repl`, `loop::tests::styled_session_diagnostics_reach_the_repl_transcript`, `loop::tests::a_checked_definition_names_its_type_in_the_renderers_spelling`.
+- **The encoder.** `encode_submission`, `Offer`, `Echo`, `Subject`, `Standings`, `Encoded`, `Disposition`, `spelled::Absent`. Witnesses: `loop::tests::a_hole_encodes_as_a_goal_line`, `loop::tests::a_later_definition_settles_an_earlier_goal`, `loop::tests::an_outcome_only_refusal_is_visible_in_the_repl`, `loop::tests::styled_session_diagnostics_reach_the_repl_transcript`, `loop::tests::a_checked_definition_names_its_type_in_the_renderers_spelling`, `render::tests::eval_renders_each_outcome_class`.
 - **The type renderer.** `spell`, `Spelling`, `Fidelity`. Witnesses: `render::tests::value_ty_covers_every_reachable_former`, `render::tests::comp_ty_covers_every_reachable_former`, `render::tests::ty_dispatches_on_polarity`, `render::tests::fidelity_tracks_unsupported_nodes_not_user_punctuation`, `render::tests::types_render_without_debug`, `render::tests::a_malformed_table_spells_unknown`, `loop::tests::corpus_types_spell_as_their_source_writes_them`.
 - **The echo's highlights.** `highlight_source`, `span_order`, `SpanOrder`. Witnesses: `highlight::tests::a_keyword_is_classified`, `highlight::tests::spans_are_sorted_and_disjoint`, `highlight::tests::the_disjointness_predicate_rejects_an_overlap`, `highlight::tests::an_unclassifiable_buffer_yields_no_panic`, `loop::tests::a_submission_carries_highlight_spans`, `loop::tests::transcript_spans_are_sorted_and_disjoint`.
 - **Repair cards.** `repair_cards`. Witnesses: `remote::tests::cards_preserve_the_report_rows`, `remote::tests::a_clean_source_produces_no_cards`.
@@ -57,6 +57,7 @@ The read-evaluate loop over the interactive session: the completeness gate, the 
 $ printf 'def answer = 42 ;\n:type answer\ndef later : String ;\n' | gandr repl
 ▸ def answer = 42 ;
 answer : Integer
+= 42
 ▸ :type answer
 : Integer
 ▸ def later : String ;
@@ -105,25 +106,25 @@ The session carries the parse's repairs beside its step. The encoder takes those
 
 A block's layout is `rows`: the echo's rows, then each result line's, each row carrying its line's kind, its lead and its text without a terminator, and its byte offset in that line's text, so a renderer can lay the echo's highlight spans over it. A line's first row opens with its kind's mark — `▸` the echo, `?` a goal, `·` a note, `=` a value, `!` blame; a type line spells its own `name : T` and a diagnostic opens with its own severity, so neither takes a mark — a later row with text is indented to the mark's width, and a later empty row carries nothing. The rows are the one spelling of a block's layout both faces read: `write_block` prints each row on a line of its own, and a full-screen face paints the same rows, so the two never disagree about a mark or an indent. The batch face writes refusals plainly; the terminal face colours them when standard output is a terminal. A fault — a grammar that did not build, input that is not text, an editor that failed, a session fault — ends a face with `Ended::Faulted`, after the blocks before it are flushed; a refusal is a transcript line, never a fault.
 
-## What evaluation adds
+## A checked declaration prints what it runs to
 
-The loop types and does not run. Evaluation arrives with the next unit on the interactive lane: a checked declaration without holes is run and its value printed as a value line, a stuck or blamed run as a line of its own kind, and the script runner `gandr run` beside `gandr repl`. The render row that spells evaluation outcomes lands with it.
+After the type line of each declaration the checker accepted, the encoder asks the session to evaluate it and writes what the run came to on a line of its own kind: `=` and the value, `!` and the goal the run was blamed on, or `·` and why it stopped short or never reached the machine — a code, of which the machine carries no image, among them. The text is the run stage's one spelling, the one `gandr run` prints and a `runs` expectation states. A goal line takes no run; a probe answers with its type alone. The prior implementation evaluated a top-level expression and gave a definition its type line alone; the fragment has no top-level expression, so the declaration is the item evaluated ([a hole-free item is evaluated](../surface-session/README.md#a-hole-free-item-is-evaluated)). The choice reverses with the session's: when the surface gains a top-level expression, that expression's line carries the value and a definition returns to its type line alone.
 
 ## Tests: the floor, the deferred rows, the defect
 
-The prior implementation's loop and highlight suites and its type renderer's suite are the floor: 28 tests. 27 are here under their names; the 28th waits for evaluation.
+The prior implementation's loop and highlight suites and its type renderer's suite are the floor: 28 tests, all here under their names.
 
 | Suite | Floor | Here | Deferred |
 | ----- | ----- | ---- | -------- |
 | loop | 18 | 18 | 0 |
 | highlight | 4 | 4 | 0 |
-| render | 6 | 5 | 1 |
+| render | 6 | 6 | 0 |
 
-The crate carries 42 tests: the 27 ported rows, the two repair-card rows of the prior implementation's render-bus projection, and thirteen rows for what is new here — reading a meta-command, answering each, the probe, `:load`, the dropped chunk, a goal settled later, the declaration terminator, the terminal face over a scripted source, unreadable input, the malformed table, a checked definition's spelling, the corpus spelling, and a block's rows.
+The crate carries 43 tests: the 28 ported rows, the two repair-card rows of the prior implementation's render-bus projection, and thirteen rows for what is new here — reading a meta-command, answering each, the probe, `:load`, the dropped chunk, a goal settled later, the declaration terminator, the terminal face over a scripted source, unreadable input, the malformed table, a checked definition's spelling, the corpus spelling, and a block's rows.
 
-The ported rows take the fragment's forms. `a_complete_atom_submits` submits `42` and expects the lowering's refusal of it as a whole, exactly as the diagnostics renderer writes it. `a_hole_encodes_as_a_goal_line` takes a signature without a definition, the fragment's goal. `an_outcome_only_refusal_is_visible_in_the_repl` takes a definition the checker refuses against an earlier signature and expects the renderer's own report over the session's revision. `piped_value_prints_a_transcript` pipes `:load` of a strict corpus source and `:type`, the typing half of the prior row; its value lines wait for evaluation. `unused_completion_status_name_stays_in_scope` names the gate's answer through this crate and asserts the empty buffer complete. `an_unclassifiable_buffer_yields_no_panic` asserts the spans over unreadable text ordered and inside it. The render rows run over the checker's content tables, the prior surface types' formers each mapped to the content former that carries them.
+The ported rows take the fragment's forms. `a_complete_atom_submits` submits `42` and expects the lowering's refusal of it as a whole, exactly as the diagnostics renderer writes it. `a_hole_encodes_as_a_goal_line` takes a signature without a definition, the fragment's goal. `an_outcome_only_refusal_is_visible_in_the_repl` takes a definition the checker refuses against an earlier signature and expects the renderer's own report over the session's revision. `piped_value_prints_a_transcript` pipes `:load` of a strict corpus source and `:type`, and expects each declaration's type line and value line. `eval_renders_each_outcome_class` offers a loop a run of each class the fragment writes — a value, a string with escapes, a function, a run blamed on a goal, and a code that never reaches the machine — and expects the transcript's last line at its exact kind and text; the prior row's stuck class is the note line here, since a well-typed fragment program reaches no stuck configuration. `unused_completion_status_name_stays_in_scope` names the gate's answer through this crate and asserts the empty buffer complete. `an_unclassifiable_buffer_yields_no_panic` asserts the spans over unreadable text ordered and inside it. The render rows run over the checker's content tables, the prior surface types' formers each mapped to the content former that carries them.
 
-Deferred, with what each needs: `eval_renders_each_outcome_class`, evaluation. The prior render-bus row `advertised_capabilities_match_the_live_path` waits with the capability form the renderer seam does not carry.
+Deferred, with what it needs: the prior render-bus row `advertised_capabilities_match_the_live_path` waits with the capability form the renderer seam does not carry.
 
 One defect of the prior implementation is absent: a transcript line named its type through a `Debug` image. Absent at L2: `loop::tests::a_checked_definition_names_its_type_in_the_renderers_spelling` reads the checked signature from a session's checkpoint and expects the loop's line to be `spell`'s spelling of it, and `loop::tests::corpus_types_spell_as_their_source_writes_them` expects every corpus signature's line to be the source's own text.
 

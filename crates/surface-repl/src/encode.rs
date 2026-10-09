@@ -19,6 +19,7 @@ use gandr_surface_diagnostics::Entry;
 use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_diagnostics::entries;
 use gandr_surface_dispatcher::Composed;
+use gandr_surface_dispatcher::Evaluation;
 use gandr_surface_dispatcher::Goals;
 use gandr_surface_dispatcher::Step;
 use gandr_surface_dispatcher::Verb;
@@ -27,6 +28,7 @@ use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::OutKind;
 use gandr_surface_render_remote::TranscriptBlock;
 use gandr_surface_session::Submission;
+use gandr_surface_session::evaluate;
 use gandr_surface_syntax::ByteOffset;
 use gandr_surface_syntax::SourceFragment;
 use quenchant_shape::shape::Maybe;
@@ -252,6 +254,35 @@ fn card_line(card: &DiagCard) -> String
     }
 }
 
+/// The transcript line of what one run came to: its kind and its text.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a value is a value line, a run blamed on a goal a blame line, and
+///   a run that stopped short of a value or never reached the machine a note
+///   line; the text is the evaluation's one spelling, the one `gandr run`
+///   prints.
+/// - provides: the value line's kind and text, so every face marks a run's
+///   class the same way.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a run of each class the fragment writes is submitted to a
+///   loop and the transcript's line asserted at its exact kind and text.
+/// - witness: `render::tests::eval_renders_each_outcome_class`
+fn evaluation_line(evaluation: &Evaluation<'_>) -> (OutKind, String)
+{
+    let kind = match *evaluation {
+        | Evaluation::Value(_) => OutKind::Value,
+        | Evaluation::Blamed(_) => OutKind::Blame,
+        | Evaluation::Stuck(_) | Evaluation::Unfinished(_) | Evaluation::Unrunnable(_) => {
+            OutKind::Stuck
+        },
+    };
+    (kind, evaluation.to_string())
+}
+
 /// The transcript block of `submission`, made for `offer`, and whether its
 /// chunk is kept.
 ///
@@ -264,24 +295,29 @@ fn card_line(card: &DiagCard) -> String
 ///   check --goals` would print for the revision, each its own line; then, when
 ///   nothing was refused, one line per declaration the chunk introduced or
 ///   whose outcome differs from `prior` — `name : T` as a type line when it
-///   checks owing nothing, as a goal line when it owes; then a warning line per
-///   parse repair inside the chunk. A probe answers instead with the one type
-///   line `: T`. The disposition keeps the chunk, with the standings of the
-///   whole revision, exactly when the subject is declarations and nothing was
-///   refused.
+///   checks owing nothing, as a goal line when it owes — and, after the type
+///   line of a declaration the session evaluates, the line of what its run came
+///   to: a value line spelling the value, a blame line naming the goal reached,
+///   or a note line for a run that stopped short or never reached the machine;
+///   then a warning line per parse repair inside the chunk. A probe answers
+///   instead with the one type line `: T`. The disposition keeps the chunk,
+///   with the standings of the whole revision, exactly when the subject is
+///   declarations and nothing was refused.
 /// - provides: the one encoding every face draws, so the batch transcript, the
 ///   terminal and a later interface show the same lines.
 /// - fails: never.
 /// - panics: none.
 /// - intension: one pass over the report entries and one over the declarations;
-///   each named declaration's checkpoint is found by a scan of the resume.
+///   each named declaration's checkpoint is found by a scan of the resume, and
+///   each evaluated declaration runs once on a fresh machine.
 ///
 /// # Adequacy
 /// - hypothesis: L2 — a refusal's line equals the diagnostics renderer's own
 ///   rendering of the same report; a type line equals the renderer's spelling
 ///   of the checkpoint's type; L3 — a goal, a refusal that drops the chunk, a
-///   declaration completed by a later chunk, and a probe are each asserted at
-///   their exact lines and disposition.
+///   declaration completed by a later chunk, a probe, and a run of each class
+///   the fragment writes are each asserted at their exact lines and
+///   disposition.
 /// - witness: `loop::tests::an_outcome_only_refusal_is_visible_in_the_repl`
 /// - witness: `loop::tests::a_checked_definition_names_its_type_in_the_renderers_spelling`
 /// - witness: `loop::tests::a_hole_encodes_as_a_goal_line`
@@ -289,6 +325,7 @@ fn card_line(card: &DiagCard) -> String
 /// - witness: `loop::tests::a_refused_chunk_is_not_kept`
 /// - witness: `loop::tests::a_later_definition_settles_an_earlier_goal`
 /// - witness: `loop::tests::the_type_command_answers_without_keeping_the_probe`
+/// - witness: `render::tests::eval_renders_each_outcome_class`
 #[inline]
 #[must_use]
 pub fn encode_submission(
@@ -305,7 +342,7 @@ pub fn encode_submission(
         subject,
     } = offer;
     let cards = repair_cards(submission.obligations(), chunk);
-    let step = submission.into_step(Path::new(""));
+    let mut step = submission.into_step(Path::new(""));
     let mut lines: Vec<(OutKind, String)> = Vec::new();
     let mut refused = false;
     for entry in entries(&step, Verb::Check(Goals::Reported)) {
@@ -323,7 +360,12 @@ pub fn encode_submission(
     }
     let mut standings = Standings::default();
     if let Step::Source {
-        composed: Composed::Settled { ref report, .. },
+        composed:
+            Composed::Settled {
+                ref report,
+                ref mut program,
+                ..
+            },
         ..
     } = step
     {
@@ -334,8 +376,11 @@ pub fn encode_submission(
             let introduced = chunk <= declaration.span().start();
             let changed = prior.0.get(&name) != Some(&outcome);
             if !refused && (introduced || changed) {
-                match (subject, outcome) {
-                    | (Subject::Probe { name: probe }, Outcome::Checks(_)) if probe == name => {
+                match (subject, &outcome) {
+                    | (
+                        Subject::Probe { name: probe },
+                        &(Outcome::Checks(_) | Outcome::Runs(_)),
+                    ) if probe == name => {
                         let spelling = type_of(resume, fragment);
                         let line = match spelling {
                             | Maybe::Present(spelling) => format!(": {spelling}"),
@@ -343,18 +388,24 @@ pub fn encode_submission(
                         };
                         lines.push((OutKind::Type, line));
                     },
-                    | (Subject::Declarations, Outcome::Checks(owed)) => {
-                        let kind = if usize::from(owed) == 0 {
-                            OutKind::Type
+                    | (Subject::Declarations, &Outcome::Checks(owed)) if usize::from(owed) > 0 => {
+                        lines.push((
+                            OutKind::Goal,
+                            typed_line(fragment, type_of(resume, fragment)),
+                        ));
+                    },
+                    | (Subject::Declarations, &(Outcome::Checks(_) | Outcome::Runs(_))) => {
+                        lines.push((
+                            OutKind::Type,
+                            typed_line(fragment, type_of(resume, fragment)),
+                        ));
+                        if let Maybe::Present(evaluation) = evaluate(declaration, program) {
+                            lines.push(evaluation_line(&evaluation));
                         }
-                        else {
-                            OutKind::Goal
-                        };
-                        lines.push((kind, typed_line(fragment, type_of(resume, fragment))));
                     },
                     | (
                         Subject::Probe { .. } | Subject::Declarations,
-                        Outcome::Checks(_) | Outcome::Refuses(_),
+                        &(Outcome::Checks(_) | Outcome::Refuses(_) | Outcome::Runs(_)),
                     ) => {},
                 }
             }
