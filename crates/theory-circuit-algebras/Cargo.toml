@@ -1,0 +1,19 @@
+[package]
+name = "gandr-theory-circuit-algebras"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The diagram view of gandr's circuit algebras: monogamous acyclic wirings with interfaces, the spine reading of a command pattern, and embedding-based matching with its convexity check and certificate reader"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "no-std", "rewriting", "string-diagrams"]
+categories = ["algorithms", "data-structures", "no-std"]
+publish.workspace = true
+
+[dependencies]
+gandr-theory-cell-complexes.workspace = true
+quenchant-shape.workspace = true
+
+[lints]
+workspace = true

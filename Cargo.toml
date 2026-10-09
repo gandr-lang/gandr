@@ -17,6 +17,7 @@ members = [
   "crates/surface-parser",
   "crates/surface-syntax",
   "crates/theory-cell-complexes",
+  "crates/theory-circuit-algebras",
   "crates/theory-graphs",
   "crates/theory-orders",
 ]
@@ -147,6 +148,13 @@ path = "crates/surface-grammar"
 [workspace.dependencies.gandr-surface-syntax]
 path = "crates/surface-syntax"
 
+# The cell-shape substrate: command patterns, matching, the reduction order,
+# the cell alphabet and its store.
+# consumers:
+# - theory-circuit-algebras
+[workspace.dependencies.gandr-theory-cell-complexes]
+path = "crates/theory-cell-complexes"
+
 # The precedence DAG, the walk machine, and the graph algorithms they read.
 # consumers:
 # - surface-grammar
@@ -195,6 +203,7 @@ default-features = false
 # consumers:
 # - kernel-core
 # - theory-cell-complexes
+# - theory-circuit-algebras
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
 rev = "111850988c96b7b33ee898f54c017ca645243e7f"

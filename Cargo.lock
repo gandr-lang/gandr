@@ -300,6 +300,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-circuit-algebras"
+version = "0.0.0"
+dependencies = [
+ "gandr-theory-cell-complexes",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-theory-graphs"
 version = "0.0.0"
 dependencies = [
