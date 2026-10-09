@@ -87,7 +87,17 @@ struct ReadSourceError
 impl fmt::Display for ReadSourceError
 {
     /// # Specification
-    /// trivial.
+    /// - ensures: writes the failed path and underlying IO failure.
+    /// - fails: propagates a formatter refusal.
+    /// - executable: none — `Formatter` exposes neither its sink nor written
+    ///   bytes for a postcondition; both observations require an external sink.
+    ///
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a real directory-read error retains path and cause in
+    ///   its display; a refusing `fmt::Write` sink must return `fmt::Error`.
+    ///   Exact incidental wording is not pinned.
+    /// - witness: `tests::acceptance::source_inventory_and_reads_preserve_context`
     fn fmt(
         &self,
         f: &mut fmt::Formatter<'_>,
@@ -105,6 +115,131 @@ impl Error for ReadSourceError
     {
         Some(&self.source)
     }
+}
+
+#[test]
+fn tree_readers_preserve_preorder_and_missing_nodes() -> Result<(), Box<dyn Error>>
+{
+    let pbg = built();
+    let source = "def a = (x); def x = 0;";
+    let result = parse(pbg, SourceText::from(source))?;
+    assert!(bool::from(result.is_clean()));
+    let tree = result.tree();
+    let root = tree.root();
+    assert_eq!(descendant_tiles(tree, root), [
+        "def", "a", "=", "(", "x", ")", ";", "def", "x", "=", "0", ";"
+    ]);
+    let group = find_meld_with_tile(tree, root, TileText::from("x"))
+        .expect("the nested group precedes the later binder");
+    assert_eq!(direct_tiles(tree, group), ["(", "x", ")"]);
+    let first_x = tree
+        .positions()
+        .find(|&at| {
+            matches!(label_of(tree, at), Some(NodeLabel::Tile(_)))
+                && span(tree, at).is_some_and(|span| {
+                    usize::from(span.start()) == source.find('x').expect("first x")
+                })
+        })
+        .expect("the first source x has a tile");
+    let Some(NodeLabel::Tile(first_mold)) = label_of(tree, first_x)
+    else {
+        panic!("the selected node is a tile");
+    };
+    assert_eq!(mold_of(tree, root, TileText::from("x")), Some(first_mold));
+    assert_eq!(
+        mold_label_of(pbg, tree, root, TileText::from("x")).as_deref(),
+        Some("identifier")
+    );
+    assert_eq!(
+        mold_sort_of(pbg, tree, root, TileText::from("x")),
+        Some(gandr_surface_grammar::Sort::Expression)
+    );
+    assert_eq!(descendant_tiles(tree, first_x), ["x"]);
+    assert!(descendant_grout_ends(tree, root).is_empty());
+    let top = significant_children(tree, root);
+    assert_eq!(top.len(), 2);
+    assert_eq!(direct_tiles(tree, top[0]), ["def", "a", "=", ";"]);
+    assert_eq!(direct_tiles(tree, top[1]), ["def", "x", "=", "0", ";"]);
+    let absent = NodeIndex::from(usize::MAX);
+    for start in [root, absent] {
+        assert_eq!(
+            find_meld_with_tile(tree, start, TileText::from("absent")),
+            None
+        );
+        assert_eq!(mold_of(tree, start, TileText::from("absent")), None);
+        assert_eq!(
+            mold_label_of(pbg, tree, start, TileText::from("absent")),
+            None
+        );
+        assert_eq!(
+            mold_sort_of(pbg, tree, start, TileText::from("absent")),
+            None
+        );
+    }
+    assert!(children(tree, absent).is_empty());
+    assert!(significant_children(tree, absent).is_empty());
+    assert!(direct_tiles(tree, absent).is_empty());
+    assert!(descendant_tiles(tree, absent).is_empty());
+    assert!(descendant_grout_ends(tree, absent).is_empty());
+    assert_eq!(text(tree, absent), "");
+    let unicode = parse(pbg, SourceText::from("\"é\""))?;
+    assert_eq!(text(unicode.tree(), unicode.tree().root()), "\"é\"");
+    Ok(())
+}
+
+#[test]
+fn source_inventory_and_reads_preserve_context() -> Result<(), Box<dyn Error>>
+{
+    struct RefusingSink;
+    impl fmt::Write for RefusingSink
+    {
+        /// # Specification
+        /// trivial.
+        fn write_str(
+            &mut self,
+            _text: &str,
+        ) -> fmt::Result
+        {
+            Err(fmt::Error)
+        }
+    }
+    let root = corpus_root();
+    let paths = gandr_files(&root);
+    assert!(paths.contains(&root.join("strict/values.gandr")));
+    assert!(paths.contains(&root.join("fixture/surface/typed-holes.gandr")));
+    assert!(
+        paths
+            .iter()
+            .all(|path| path.starts_with(&root)
+                && path.extension().is_some_and(|ext| ext == "gandr"))
+    );
+    assert!(
+        paths
+            .windows(2)
+            .all(|pair| matches!(pair, [left, right] if left <= right))
+    );
+    assert!(gandr_files(&root.join("strict/values.gandr/child")).is_empty());
+    assert_eq!(
+        read_source(&root.join("strict/values.gandr"))?,
+        include_str!("../../surface-corpus/strict/values.gandr")
+    );
+    let error = read_source(&root).expect_err("directories are not UTF-8 source files");
+    assert_eq!(error.path, root);
+    assert!(
+        error
+            .source()
+            .and_then(|cause| cause.downcast_ref::<std::io::Error>())
+            .is_some_and(|cause| core::ptr::eq(&raw const error.source, &raw const *cause))
+    );
+    let rendered = error.to_string();
+    assert!(rendered.contains(&root.display().to_string()));
+    assert!(rendered.contains(&error.source.to_string()));
+
+    assert_eq!(
+        fmt::write(&mut RefusingSink, format_args!("{error}")),
+        Err(fmt::Error)
+    );
+    Ok(())
 }
 
 #[test]
@@ -1698,8 +1833,19 @@ fn expected_completion_names_the_next_tile_or_hole()
 /// Read a UTF-8 source fixture while retaining its path on failure.
 ///
 /// # Specification
+/// - ensures: successful reads preserve UTF-8 text, including layout.
+/// - fails: a read or UTF-8 failure retains the supplied path and cause.
+///
 /// # Errors
 /// The read failure, carrying `path`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a committed UTF-8 fixture is compared byte-for-byte with
+///   its compile-time contents; reading a directory refuses with the original
+///   path and IO cause. Message context and a refusing formatter distinguish
+///   error erasure and swallowed sink failures.
+/// - witness: `tests::acceptance::source_inventory_and_reads_preserve_context`
+#[anodized::spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.path == path, |_| true))]
 fn read_source(path: &Path) -> Result<String, ReadSourceError>
 {
     std::fs::read_to_string(path).map_err(|source| ReadSourceError {
@@ -1711,7 +1857,18 @@ fn read_source(path: &Path) -> Result<String, ReadSourceError>
 /// The first form (any depth, pre-order) whose direct tiles include `wanted`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns the first pre-order Meld or Wald whose direct Tile
+///   children include wanted; returns None when no such form exists.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — a nested group containing x precedes a later definition
+///   whose direct binder is also x. Exact selected direct tiles reject
+///   breadth-first search, ancestor matching and reversed child order; absent
+///   text and an invalid start index cover refusal. The predicate checks a
+///   returned match; the witness additionally checks first-match selection.
+/// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
+#[anodized::spec(ensures: |ret| ret.is_none_or(|found| matches!(tree.node(found).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Meld(_) | NodeLabel::Wald)) && tree.children(found).any(|child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_))) && tree.fragment(child).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)))))]
 fn find_meld_with_tile(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -1736,7 +1893,16 @@ fn find_meld_with_tile(
 /// The texts of a form's direct tiles, left to right.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns the fragments of direct Tile children, in child order;
+///   nested tiles and layout are excluded.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — a group nested before a later definition separates direct
+///   children from descendants and depth-first from breadth-first traversal.
+///   Missing indices and absent text exercise the empty boundaries.
+/// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
+#[anodized::spec(ensures: |ret| ret.iter().map(String::as_str).eq(tree.children(id).filter(|&child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).map(|child| tree.fragment(child).map_or("", <&str>::from))))]
 fn direct_tiles(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -1749,10 +1915,20 @@ fn direct_tiles(
         .collect()
 }
 
-/// The texts of every tile under `id` (any depth), in source order.
+/// The texts of every tile under `id` (any depth), in pre-order.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns Tile fragments in pre-order, including id itself when it
+///   is a tile; missing indices produce an empty sequence.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact nested-group and later-definition tile sequences
+///   expose breadth-first order, skipped children and accidental layout
+///   inclusion. A tile root and an absent index cover traversal boundaries; the
+///   predicate independently checks root coverage and missing-node behavior.
+/// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
+#[anodized::spec(ensures: |ret| ret.len() <= tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).count() && (id != tree.root() || ret.len() == tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).count()) && (tree.node(id).is_some() || ret.is_empty()))]
 fn descendant_tiles(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -1770,14 +1946,25 @@ fn descendant_tiles(
 }
 
 /// The end offset of every piece of grout and every minted close under `id`,
-/// in source order.
+/// in pre-order.
 ///
 /// A repair's extent is only visible through what it minted: the melder
 /// appends a minted end for each form it force-closes, so where those land is
 /// what "bounded at the declaration boundary" means concretely.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns span ends of Grout and `GhostClose` nodes in pre-order;
+///   ordinary tiles, layout and absent indices contribute nothing.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — malformed declarations followed by valid definitions
+///   expose repair positions at the declaration boundary, including nested
+///   forced closes; moving a repair into the next declaration changes its
+///   endpoint. Root coverage and absent indices are checked independently.
+/// - witness: `tests::acceptance::unclosed_definition_delimiter_does_not_absorb_following_definition`
+/// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
+#[anodized::spec(ensures: |ret| ret.len() <= tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. }))).count() && (id != tree.root() || ret.len() == tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. }))).count()) && (tree.node(id).is_some() || ret.is_empty()))]
 fn descendant_grout_ends(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -1801,7 +1988,16 @@ fn descendant_grout_ends(
 /// The mold of the first tile under `id` (pre-order) whose text is `wanted`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns the mold of the first pre-order Tile with wanted text;
+///   missing text or an absent starting node returns None.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — repeated x text in a nested expression and a later binder
+///   has context-dependent molds; exact first-match identity detects reversed
+///   or breadth-first traversal. Missing text and indices cover None.
+/// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
+#[anodized::spec(ensures: |ret| ret.is_none_or(|mold| tree.positions().any(|at| tree.node(at).map(gandr_surface_syntax::Node::label) == Some(NodeLabel::Tile(mold)) && tree.fragment(at).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)))))]
 fn mold_of(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -1824,7 +2020,16 @@ fn mold_of(
 /// The grammar label of the first tile under `id` whose text is `wanted`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns the grammar label of the first matching pre-order Tile;
+///   absent text, node or grammar mold returns None.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — the first repeated token is read in expression rather
+///   than binder context. Its known grammar label and sort, plus absent text
+///   and indices, reject wrong mold lookup and lost optional failure.
+/// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
+#[anodized::spec(ensures: |ret| ret.as_ref().is_none_or(|value| tree.positions().any(|at| match tree.node(at).map(gandr_surface_syntax::Node::label) { Some(NodeLabel::Tile(mold)) => tree.fragment(at).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)) && pbg.mold(mold).is_ok_and(|definition| definition.label == value.as_str()), _ => false })))]
 fn mold_label_of(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -1839,7 +2044,16 @@ fn mold_label_of(
 /// The grammar sort of the first tile under `id` whose text is `wanted`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns the grammar sort of the first matching pre-order Tile;
+///   absent text, node or grammar mold returns None.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — the first repeated token is read in expression rather
+///   than binder context. Its known grammar label and sort, plus absent text
+///   and indices, reject wrong mold lookup and lost optional failure.
+/// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
+#[anodized::spec(ensures: |ret| ret.as_ref().is_none_or(|value| tree.positions().any(|at| match tree.node(at).map(gandr_surface_syntax::Node::label) { Some(NodeLabel::Tile(mold)) => tree.fragment(at).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)) && pbg.mold(mold).is_ok_and(|definition| definition.sort == *value), _ => false })))]
 fn mold_sort_of(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -1854,9 +2068,20 @@ fn mold_sort_of(
 /// The melder state after molding the first `upto` tokens of `src`.
 ///
 /// # Specification
-/// - ensures: layout tokens are recorded, so a commit over the prefix's text
-///   spans it exactly.
+/// - ensures: molds at most upto labeled tokens, preserving layout; any exposed
+///   open-form mold belongs to pbg. An oversized prefix means all tokens.
 /// - panics: none.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — every token prefix of real source compares
+///   non-destructive completion with committed finalization. Empty, complete
+///   and oversized prefixes reject off-by-one cutoff and dropped layout; the
+///   predicate checks the observable open-form grammar identity without cloning
+///   state.
+/// - witness: `tests::acceptance::expected_agrees_with_committed_finalize`
+/// - witness: `tests::acceptance::expected_completion_names_the_next_tile_or_hole`
+#[anodized::spec(ensures: |ret| ret.open_form_mold().is_none_or(|mold| pbg.mold(mold).is_ok()))]
 fn push_prefix<'pbg>(
     pbg: &'pbg Pbg,
     source: SourceFragment<'_>,

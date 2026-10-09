@@ -461,11 +461,22 @@ fn no_obligations_on_well_formed_fragments() -> Result<(), Box<dyn Error>>
     Ok(())
 }
 
-/// The number of nodes reachable from `id`, proving the tree is
-/// well-formed.
+/// The number of handles visited from `id`, including the starting handle.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: counts the starting handle and every reachable child, saturating
+///   at `usize::MAX`; an absent starting handle counts once.
+///
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — synthesized real-mold and bracket streams compare
+///   reachable counts with the committed storage count, including empty
+///   streams; skipping a subtree or double-visiting a child changes the
+///   equality. Saturation is not exercised because no addressable tree reaches
+///   it.
+/// - witness: `tests::contracts::arbitrary_real_mold_streams_parse_totally`
+/// - witness: `tests::contracts::arbitrary_bracket_streams_parse_totally`
+#[anodized::spec(ensures: |ret| usize::from(ret) >= 1 && (id != tree.root() || usize::from(ret) == usize::from(tree.node_count())) && (tree.node(id).is_some() || usize::from(ret) == 1))]
 fn count_nodes(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -568,9 +579,23 @@ fn trace_precedence_climbs_like_figure_23() -> Result<(), Box<dyn Error>>
 /// A synthetic arithmetic grammar: atoms, `*` (tight), `+` (loose), parens.
 ///
 /// # Specification
+/// - ensures: the checked fixture has one mold for each arithmetic terminal.
+/// - fails: a precedence or grammar construction refusal.
+///
 /// # Errors
 /// A refusal from the precedence or grammar build, which this fixed grammar
 /// never meets.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact committed arithmetic trees distinguish
+///   multiplication from addition precedence, left association and parenthesis
+///   reset. Singleton terminal menus are required by stream construction;
+///   missing or duplicate molds fail before a trace can masquerade as the
+///   intended fixture.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_left_associates_like_figure_24`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+#[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["n", "*", "+", "(", ")"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
 fn arith_pbg() -> Result<Pbg, Box<dyn Error>>
 {
     let mut spec = PrecSpec::new();
@@ -624,8 +649,21 @@ fn arith_pbg() -> Result<Pbg, Box<dyn Error>>
 /// assemble.
 ///
 /// # Specification
+/// - ensures: a successful tree retains source and pbg identity and has a Wald
+///   root after pushing every supplied tile in order.
+/// - fails: propagates a melder commit refusal.
+///
 /// # Errors
 /// The melder's refusal at commit, which an assembled source never meets.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact arithmetic trees observe operand order, precedence
+///   and parenthesis boundaries after whole-stream commits. These fixtures
+///   cover success; source-mismatch refusal is witnessed at the public commit
+///   API.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+#[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |tree| tree.source() == source && tree.grammar() == pbg.fingerprint() && tree.node(tree.root()).map(gandr_surface_syntax::Node::label) == Some(NodeLabel::Wald)))]
 fn commit_stream<'source>(
     pbg: &Pbg,
     tiles: &[MoldedTile],
@@ -643,7 +681,16 @@ fn commit_stream<'source>(
 /// The source a stream of tiles assembles: their texts, abutting.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: concatenates every tile text in input order without separators;
+///   an empty stream produces empty text.
+///
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — empty and bracket-heavy generated streams commit
+///   against the assembled source and retain exactly its text-carrying byte
+///   coverage. Reordering, dropping or inserting text changes source agreement.
+/// - witness: `tests::contracts::arbitrary_bracket_streams_parse_totally`
+#[anodized::spec(ensures: |ret| tiles.iter().try_fold(ret.as_str(), |rest, tile| rest.strip_prefix(<&str>::from(tile.text()))) == Some(""))]
 fn assembled(tiles: &[MoldedTile]) -> String
 {
     tiles.iter().map(|tile| <&str>::from(tile.text())).collect()
@@ -652,7 +699,19 @@ fn assembled(tiles: &[MoldedTile]) -> String
 /// Build a molded-tile stream from `(label)` pairs over `pbg`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: every label has exactly one candidate mold in pbg.
+/// - ensures: one tile per input label, in order, with that sole mold and text.
+/// - panics: when a label has no unique mold.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — unequal arithmetic operators and parentheses are
+///   committed into exact expected trees. Replacing a mold, reordering a tile
+///   or changing its text changes precedence, source agreement or direct child
+///   observations.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+#[anodized::spec(requires: labels.iter().all(|&label| pbg.candidates(label).len() == 1), ensures: |ret| ret.len() == labels.len() && ret.iter().zip(labels).all(|(tile, &label)| Some(&tile.mold()) == pbg.candidates(label).first() && <&str>::from(tile.text()) == label.0))]
 fn stream(
     pbg: &Pbg,
     labels: &[TileLabel],
@@ -667,8 +726,19 @@ fn stream(
 /// The sole mold id declared for `label`.
 ///
 /// # Specification
-/// - panics: when `label` has other than one mold, so a fixture grammar that
-///   breaks the premise fails its own test.
+/// - requires: label has exactly one candidate mold.
+/// - ensures: returns that mold.
+/// - panics: when the candidate count is not one.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct arithmetic terminals select distinct operator
+///   roles in exact precedence and association trees; selecting another
+///   terminal or an invalid mold changes those trees. Invalid fixture menus are
+///   excluded by the documented precondition and the fixture predicate.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_left_associates_like_figure_24`
+#[anodized::spec(requires: pbg.candidates(label).len() == 1, ensures: |ret| pbg.candidates(label).first() == Some(&ret))]
 fn only(
     pbg: &Pbg,
     label: TileLabel,
@@ -682,7 +752,19 @@ fn only(
 /// The single child of the root.
 ///
 /// # Specification
+/// - requires: the root has exactly one child.
+/// - ensures: returns that child.
 /// - panics: when the root has other than one child.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — arithmetic witnesses inspect the returned node as the
+///   outer operator and its nested operand tree; returning the root or a
+///   descendant changes its direct tiles. Multi-root trees are outside this
+///   helper.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+#[anodized::spec(requires: tree.children(tree.root()).len() == 1, ensures: |ret| tree.children(tree.root()).next() == Some(ret))]
 fn sole_meld(tree: &SyntaxTree<'_>) -> NodeIndex
 {
     let top = children(tree, tree.root());
@@ -693,7 +775,18 @@ fn sole_meld(tree: &SyntaxTree<'_>) -> NodeIndex
 /// Whether the direct tile children of `id` include `wanted`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: true exactly when a direct Tile child has wanted text; nested
+///   descendants and non-tile children do not qualify.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — the outer addition contains + but not its nested
+///   multiplication operator; parenthesized addition is likewise absent from
+///   outer direct tiles. Positive and negative observations reject descendant
+///   leakage.
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+#[anodized::spec(ensures: |ret| bool::from(ret) == tree.children(id).any(|child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_))) && tree.fragment(child).map_or("", <&str>::from) == <&str>::from(wanted)))]
 fn has_tile(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -707,7 +800,18 @@ fn has_tile(
 /// The texts of a form's direct tile children, left to right.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns direct Tile fragments in child order, excluding layout
+///   and all nested tiles.
+///
+///
+/// # Adequacy
+/// - hypothesis: L3 — parenthesis tiles remain the exact pair around a nested
+///   addition; including descendant operators or reversing direct children
+///   changes the pair. Arithmetic precedence witnesses also inspect mixed
+///   children.
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
+/// - witness: `tests::contracts::trace_precedence_climbs_like_figure_23`
+#[anodized::spec(ensures: |ret| ret.iter().map(String::as_str).eq(tree.children(id).filter(|&child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).map(|child| tree.fragment(child).map_or("", <&str>::from))))]
 fn direct_tiles(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -726,7 +830,20 @@ fn direct_tiles(
 /// sentinels (boundary bias: extremes and the out-of-range edge).
 ///
 /// # Specification
-/// trivial.
+/// - requires: `mold_count` is positive and below `u32::MAX`, so both index
+///   ranges are nonempty.
+/// - ensures: samples real mold indices and nearby out-of-range sentinels.
+/// - executable: none — anodized wraps the body in a closure whose impl
+///   Strategy return type is rejected by Rust (E0562).
+///
+///
+/// # Adequacy
+/// - hypothesis: L2 — bounded streams sample the real grammar and sentinel
+///   edge, then compare reachable storage, grammar identity and deterministic
+///   replay. This is sampled evidence, not proof that every index or
+///   probability is visited; the precondition keeps both generated ranges
+///   meaningful.
+/// - witness: `tests::contracts::arbitrary_real_mold_streams_parse_totally`
 fn tile_index(mold_count: MoldCount) -> impl Strategy<Value = MoldId>
 {
     let mold_count = u32::from(mold_count);
@@ -776,7 +893,11 @@ proptest! {
             .expect("commit is total on a well-formed slope");
         prop_assert_eq!(tree.grammar(), pbg.fingerprint());
         let reachable = count_nodes(&tree, tree.root());
-        prop_assert!(usize::from(reachable) >= 1);
+        prop_assert_eq!(usize::from(reachable), usize::from(tree.node_count()));
+        let covered: usize = tree.positions().filter_map(|at| tree.node(at))
+            .filter(|node| bool::from(node.label().carries_text()))
+            .map(|node| usize::from(node.span().length())).sum();
+        prop_assert_eq!(covered, source.len());
 
         // Determinism: an identical run yields an identical committed tree.
         let mut replay = MeldState::new(pbg);
@@ -826,7 +947,20 @@ proptest! {
 /// A bracket-heavy vocabulary strategy over the arithmetic grammar.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: samples only n, +, *, ( and ).
+/// - executable: none — an opaque Strategy exposes values only by running a
+///   random value tree; a predicate would consume a separate sample rather than
+///   inspect the returned strategy.
+///
+///
+/// # Adequacy
+/// - hypothesis: L2 — bounded generated bracket streams and checkpoint splits
+///   exercise the arithmetic vocabulary through committed source coverage and
+///   resume equality. Sampling is not an exhaustive or probability-distribution
+///   claim; the deterministic figure trees cover every terminal role.
+/// - witness: `tests::contracts::arbitrary_bracket_streams_parse_totally`
+/// - witness: `tests::contracts::checkpoint_resume_equals_uninterrupted`
+/// - witness: `tests::contracts::trace_brackets_reset_precedence_like_figure_33`
 fn arith_label() -> impl Strategy<Value = TileLabel>
 {
     prop_oneof![
@@ -859,7 +993,11 @@ proptest! {
             .commit(SourceText::from(source.as_str()))
             .expect("bracket stream commits");
         let reachable = count_nodes(&tree, tree.root());
-        prop_assert!(usize::from(reachable) >= 1);
+        prop_assert_eq!(usize::from(reachable), usize::from(tree.node_count()));
+        let covered: usize = tree.positions().filter_map(|at| tree.node(at))
+            .filter(|node| bool::from(node.label().carries_text()))
+            .map(|node| usize::from(node.span().length())).sum();
+        prop_assert_eq!(covered, source.len());
     }
 }
 

@@ -249,7 +249,13 @@ impl SourceOffset
     /// - ensures: the offset's value, widened; a host whose pointer is narrower
     ///   than 32 bits saturates rather than wraps.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, an ordinary offset and the wire ceiling expose
+    ///   widened byte positions; truncation or wrap changes the endpoints.
+    /// - witness: `meld::tests::coordinate_conversions_cover_empty_inverted_and_ceiling`
     #[inline]
+    #[anodized::spec(ensures: |ret| usize::from(ret) == usize::try_from(self.0).unwrap_or(usize::MAX))]
     fn byte_offset(self) -> ByteOffset
     {
         ByteOffset::from(usize::try_from(self.0).unwrap_or(usize::MAX))
@@ -304,7 +310,15 @@ impl SourceSpan
     ///
     /// # Errors
     /// [`SyntaxError::InvertedSpan`] when `start` lies past `end`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, ordered, inverted and wire-ceiling spans
+    ///   expose exact endpoints or the inverted-span payload. Swapping
+    ///   endpoints or clamping an inversion into an empty success changes the
+    ///   result.
+    /// - witness: `meld::tests::coordinate_conversions_cover_empty_inverted_and_ceiling`
     #[inline]
+    #[anodized::spec(ensures: |ret| match ret { Ok(span) => span.start() == self.start.byte_offset() && span.end() == self.end.byte_offset(), Err(SyntaxError::InvertedSpan { start, end }) => start == self.start.byte_offset() && end == self.end.byte_offset() && start > end, _ => false })]
     fn byte_span(self) -> Result<ByteSpan, SyntaxError>
     {
         ByteSpan::new(self.start.byte_offset(), self.end.byte_offset())
@@ -402,12 +416,15 @@ impl StackIndex
     /// - fails: returns `None` on `usize::MAX` overflow rather than panicking.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — the successor is taken on every form continuation;
-    ///   the ceiling arm is unreachable because slope indices stay far below
-    ///   `usize::MAX`.
-    /// - witness: `tests::acceptance::corpus_parses_totally`
+    /// - hypothesis: L3 — zero, one below the host ceiling and the ceiling
+    ///   expose exact successor or absence. Wrapping, saturating into a
+    ///   duplicate index or rejecting the last representable successor changes
+    ///   the result.
+    /// - witness: `meld::tests::coordinate_conversions_cover_empty_inverted_and_ceiling`
     #[inline]
+    #[anodized::spec(ensures: |ret| ret.map(usize::from) == self.0.checked_add(1))]
     fn next(self) -> Option<Self>
     {
         usize::from(self).checked_add(1).map(Self::from)
@@ -421,12 +438,15 @@ impl StackIndex
     /// - fails: returns `None` on `usize::MAX` overflow rather than panicking.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — the floor is consumed by form continuation collapse;
-    ///   the ceiling arm is unreachable because slope indices stay far below
-    ///   `usize::MAX`.
-    /// - witness: `tests::acceptance::corpus_parses_totally`
+    /// - hypothesis: L3 — zero, one below the host ceiling and the ceiling
+    ///   expose exact successor or absence. Wrapping, saturating into a
+    ///   duplicate index or rejecting the last representable successor changes
+    ///   the result.
+    /// - witness: `meld::tests::coordinate_conversions_cover_empty_inverted_and_ceiling`
     #[inline]
+    #[anodized::spec(ensures: |ret| ret.map(usize::from) == self.0.checked_add(1))]
     fn floor_after(self) -> Option<StackFloor>
     {
         self.next().map(StackFloor::from)
@@ -748,9 +768,15 @@ impl AsRef<[u8]> for ByteChunk<'_>
 ///   [`Oblig::UnmoldedTok`].
 /// - panics: none.
 ///
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
+///
 /// # Adequacy
-/// - hypothesis: L1 — a two-field record; retention is witnessed at the push
-///   seam.
+/// - hypothesis: L3 — caller text survives ownership and source-span
+///   construction across empty, Unicode and unknown-mold pushes. Dropping bytes
+///   or changing the chosen mold changes the committed labels and
+///   reconstruction.
+/// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
 /// - witness: `meld::tests::single_atom_commits_to_one_token`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MoldedTile
@@ -772,11 +798,15 @@ impl MoldedTile
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L1 — direct field initialization.
-    /// - witness: `meld::tests::single_atom_commits_to_one_token`
+    /// - hypothesis: L3 — empty and multibyte text, embedded NUL and an unknown
+    ///   mold expose exact retained bytes and identity at push. Trimming, UTF-8
+    ///   byte miscount or substituting a mold changes spans or repairs.
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.mold == mold && ret.text.as_ref() == <&str>::from(text))]
     pub fn new(
         mold: MoldId,
         text: TileText<'_>,
@@ -1033,9 +1063,17 @@ impl FormTable
 /// boundary repair must not fire on.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: exactly item and module-member sorts are declaration positions.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all six sorts distinguish declaration positions from
+///   value and instantiation slots. Omitting module members or accepting a
+///   value sort changes whether declaration-boundary repair can cross it.
+/// - witness: `meld::tests::declaration_positions_are_exactly_item_and_module_member`
 #[inline]
 #[must_use]
+#[anodized::spec(ensures: |ret| ret.0 == matches!(sort, Sort::Item | Sort::ModuleMember))]
 const fn is_item_position(sort: Sort) -> ItemPosition
 {
     ItemPosition(matches!(sort, Sort::Item | Sort::ModuleMember))
@@ -1064,12 +1102,17 @@ const fn is_item_position(sort: Sort) -> ItemPosition
 /// - intension: the slope is a `Vec` processed with checked arithmetic;
 ///   emission is append-only; obligations accumulate in buffer order.
 ///
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
+///
 /// # Adequacy
-/// - hypothesis: L3 — totality over arbitrary molds, the three-rule traces,
-///   resume-equivalence, and finalize non-destructiveness each exercise a
-///   distinct behavior.
-/// - witness: `meld::tests::single_atom_commits_to_one_token`
-/// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
+/// - hypothesis: L3 — complete and partial streams, marked candidates and
+///   serialized continuations expose exact trees, source and obligations.
+///   Losing a buffer, crossing a form barrier or retaining stale caches changes
+///   continuation.
+/// - witness: `meld::tests::checkpoint_resume_is_equivalent`
+/// - witness: `meld::tests::mark_rollback_restores_state_exactly`
+/// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
 pub struct MeldState<'pbg>
 {
     /// The grammar this state melds against.
@@ -1117,11 +1160,15 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L1 — direct initialization; the empty commit is witnessed.
+    /// - hypothesis: L3 — the empty state commits to a Wald root over the
+    ///   requested grammar with no source or repairs. Seeded cells, stale
+    ///   buffers or the wrong grammar change the tree or its fingerprint.
     /// - witness: `meld::tests::empty_state_commits_to_a_root`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.source.is_empty() && ret.emit.is_empty() && ret.stack.is_empty() && ret.frontiers.is_empty() && ret.operators.is_empty() && ret.barriers.is_empty() && ret.obligations.is_empty() && ret.spaces.is_empty() && ret.pbg.fingerprint() == pbg.fingerprint())]
     pub fn new(pbg: &'pbg Pbg) -> Self
     {
         Self {
@@ -1155,11 +1202,17 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never; totally defined on every input.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — Shift, Reduce, Degrout, and the unmolded path are
-    ///   each exercised, and totality holds over arbitrary mold sequences.
+    /// - hypothesis: L3 — valid atoms and operators, ambiguous precedence,
+    ///   unknown molds, empty text and multibyte source expose exact tree spans
+    ///   and repair classes. Dropped bytes, a wrong reduction or an unreported
+    ///   fallback changes the source, structure or obligations.
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    /// - witness: `meld::tests::infix_reduces_after_precedence`
     /// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
     #[inline]
+    #[anodized::spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..) == Some(tile.text.as_ref()) && (self.pbg.mold(tile.mold).is_ok() || self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok)))]
     pub fn push(
         &mut self,
         tile: &MoldedTile,
@@ -1235,12 +1288,16 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a continuing tile and a non-continuing atom over the
-    ///   same open form distinguish the query.
-    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - hypothesis: L3 — an empty slope, an open bracket and its closer versus
+    ///   an unrelated atom expose continuation. Selecting an outer or closed
+    ///   frontier, or ignoring the grammar adjacency, flips a boundary
+    ///   decision.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| bool::from(ret) == (self.stack.iter().rev().find_map(|cell| match cell.role { Role::FormTile { mold, open: true, .. } => Some(mold), _ => None })).is_some_and(|open| self.pbg.adjacencies().binary_search(&(open, mold)).is_ok()))]
     pub fn would_continue_form(
         &self,
         mold: MoldId,
@@ -1303,14 +1360,17 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a closing `"` with no open string, a wide-menu
-    ///   identifier at operand position, and a continuing form-mid distinguish
-    ///   the gate.
+    /// - hypothesis: L3 — arbitrary missing molds remain available as the total
+    ///   fallback, while a closer at an empty slope is rejected and becomes
+    ///   admissible only inside its matching form. Reversing either gate
+    ///   changes it.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     /// - witness: `meld::tests::admits_rejects_a_stray_closer`
-    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| (self.pbg.mold(mold).is_ok() || bool::from(ret)) && (self.open_form_mold().is_some() || !matches!(self.classify(mold), Kind::FormEnd) || !bool::from(ret)))]
     pub fn admits(
         &self,
         mold: MoldId,
@@ -1334,12 +1394,15 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a fresh slot (no open mold) and an open bracket
-    ///   interior distinguish the result.
-    /// - witness: `tests::acceptance::corpus_parses_totally`
+    /// - hypothesis: L3 — no frontier, an open bracket and its completed form
+    ///   expose the optional mold; stale caches or selecting a closed frontier
+    ///   change the answer.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret == self.stack.iter().rev().find_map(|cell| match cell.role { Role::FormTile { mold, open: true, .. } => Some(mold), _ => None }))]
     pub fn open_form_mold(&self) -> Option<MoldId>
     {
         let index = self.nearest_open_form()?;
@@ -1368,12 +1431,17 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L1 — a projection of the slope head; witnessed through
-    ///   [`admits`](MeldState::admits) which consumes it.
-    /// - witness: `meld::tests::admits_a_form_first_mid_at_a_fresh_slot`
+    /// - hypothesis: L3 — empty, open-form, operand and operator heads expose
+    ///   all four snapshot fields before and after each push. A stale flag,
+    ///   wrong head sort or frontier from the preceding state changes the
+    ///   snapshot.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.open == self.stack.iter().rev().find_map(|cell| match cell.role { Role::FormTile { mold, open: true, .. } => Some(mold), _ => None }) && bool::from(ret.head_operand) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)) && ret.head_sort == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort) && ret.expected == self.expected_operand_sort())]
     pub fn admissibility_frontier(&self) -> Frontier
     {
         let open = self.open_form_mold();
@@ -1402,12 +1470,15 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a fresh top-level slot and an open bracket interior
-    ///   distinguish the flag.
-    /// - witness: `tests::acceptance::corpus_parses_totally`
+    /// - hypothesis: L3 — fresh, opened and closed bracket states expose the
+    ///   presence flag. Counting closed form tiles or missing an open frontier
+    ///   changes it.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| bool::from(ret) == self.stack.iter().any(|cell| matches!(cell.role, Role::FormTile { open: true, .. })))]
     pub fn has_open_form(&self) -> OpenFormPresence
     {
         OpenFormPresence::from(self.nearest_open_form().is_some())
@@ -1475,14 +1546,17 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never; invalid molds are ignored.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — an unclosed value delimiter before a fresh
-    ///   declaration head distinguishes bounded repair from sibling absorption,
-    ///   across the delimiter's sort and the surviving head's family.
+    /// - hypothesis: L3 — damaged delimiters before a new declaration and
+    ///   well-formed container members expose source-preserving repair and
+    ///   separate items. Swallowing a sibling, closing a legitimate member or
+    ///   inserting phantom source bytes changes the reconstructed tree.
     /// - witness: `tests::acceptance::unclosed_definition_delimiter_does_not_absorb_following_definition`
     /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
     /// - witness: `tests::contracts::declaration_boundary_stays_stable_under_layout`
     #[inline]
+    #[anodized::spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
     pub fn settle_declaration_boundary(
         &mut self,
         candidates: &[MoldId],
@@ -1530,7 +1604,16 @@ impl<'pbg> MeldState<'pbg>
     /// statement rather than opening one.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: recognizes exactly item-position first molds that also have a
+    ///   same-form successor; missing molds are false.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — declaration heads, inlined members and a terminating
+    ///   semicolon differ at sort, FIRST and successor boundaries. Their repair
+    ///   behavior exposes admitting a terminator or rejecting a real head.
+    /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
+    #[anodized::spec(ensures: |ret| bool::from(ret) == self.pbg.mold(mold).is_ok_and(|def| matches!(def.sort, Sort::Item | Sort::ModuleMember) && bool::from(self.pbg.mold_is_form_first(mold)) && bool::from(self.pbg.mold_has_successor(mold))))]
     fn opens_declaration(
         &self,
         mold: MoldId,
@@ -1558,7 +1641,16 @@ impl<'pbg> MeldState<'pbg>
     /// only in the degenerate `def def` case.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns the nearest open frontier whose original form start
+    ///   opens a declaration, or none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a declaration already advanced beyond its head, with
+    ///   nested damaged value syntax, exposes the repair floor. Looking only at
+    ///   the current tile instead of its form start absorbs following siblings.
+    /// - witness: `tests::acceptance::unclosed_definition_delimiter_does_not_absorb_following_definition`
+    #[anodized::spec(ensures: |ret| ret.is_none_or(|index| self.frontiers.contains(&index.0) && self.form_start_index(StackIndex::from(index)).and_then(|start| self.stack.get(start.0)).is_some_and(|cell| matches!(cell.role, Role::FormTile { mold, .. } if bool::from(self.opens_declaration(mold))))))]
     fn open_declaration_frontier(&self) -> Option<FrontierIndex>
     {
         self.frontiers.iter().rev().find_map(|&index| {
@@ -1585,12 +1677,17 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a form-end closer, a form-first mid, and an infix
-    ///   operator at a fresh slot each distinguish the gate.
-    /// - witness: `meld::tests::admits_rejects_a_stray_closer`
+    /// - hypothesis: L3 — fresh, open-form and operand snapshots distinguish a
+    ///   closer, a form-first mid and a binary operator. Stale context,
+    ///   removing the unknown fallback or admitting a stray closer changes the
+    ///   decision.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `meld::tests::admits_a_form_first_mid_at_a_fresh_slot`
     #[inline]
     #[must_use]
+    #[anodized::spec(requires: *frontier == self.admissibility_frontier(), ensures: |ret| (self.pbg.mold(mold).is_ok() || bool::from(ret)) && (frontier.open.is_some() || !matches!(self.classify(mold), Kind::FormEnd) || !bool::from(ret)))]
     pub fn admits_at(
         &self,
         mold: MoldId,
@@ -1671,9 +1768,19 @@ impl<'pbg> MeldState<'pbg>
     /// a soundness-safe narrowing, never a rejection of a real reading).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: admits the expected sort and item-sort molds; a missing mold
+    ///   uses the item fallback.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — expression versus pattern slots and an item fallback
+    ///   expose sort filtering. Treating all sorts alike or rejecting the item
+    ///   exception changes admitted candidates and committed forms.
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| bool::from(ret) == self.pbg.mold(mold).map_or(true, |def| def.sort == expected || def.sort == Sort::Item))]
     fn sort_admits(
         &self,
         mold: MoldId,
@@ -1706,12 +1813,16 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a call `(` after an operand, a fresh paren `(`, and
-    ///   an infix operator distinguish the classification.
-    /// - witness: `tests::acceptance::corpus_parses_totally`
+    /// - hypothesis: L3 — a binary operator versus an atom and fresh
+    ///   parenthesis exposes the continuation rank. Admitting an atom or a
+    ///   prefix operator as a left continuation changes disambiguation.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| bool::from(ret) == matches!(self.classify(mold), Kind::FormStart { absorb_left: true } | Kind::Operator(OpShape::Infix | OpShape::Postfix)))]
     pub fn continues_operand(
         &self,
         mold: MoldId,
@@ -1727,8 +1838,17 @@ impl<'pbg> MeldState<'pbg>
     /// Return whether the topmost slope cell is a completed operand.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: reports whether the final slope cell is an operand; an empty
+    ///   slope is false.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, open-form, operator and completed-operand
+    ///   heads expose admission and expected-sort transitions. Mistaking a
+    ///   frontier or operator for an operand changes those public queries.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     #[inline]
+    #[anodized::spec(ensures: |ret| bool::from(ret) == self.stack.last().is_some_and(|cell| matches!(cell.role, Role::Operand)))]
     fn head_is_operand(&self) -> HeadOperandPresence
     {
         HeadOperandPresence::from(matches!(
@@ -1746,8 +1866,17 @@ impl<'pbg> MeldState<'pbg>
     /// start (and before the operand-continuation tiebreak can prefer it).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns the head cell sort only when the head is an operand;
+    ///   empty and operator heads yield none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, operand and operator heads expose the optional
+    ///   sort. Reading below the head or returning an operator sort changes
+    ///   which left-absorbing forms are admitted.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
     #[inline]
+    #[anodized::spec(ensures: |ret| ret == self.stack.last().filter(|cell| matches!(cell.role, Role::Operand)).map(|cell| cell.sort))]
     fn head_operand_sort(&self) -> Option<Sort>
     {
         let cell = self.stack.last()?;
@@ -1775,12 +1904,16 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — an expression slot, a pattern slot, and the top level
-    ///   distinguish the returned sort.
+    /// - hypothesis: L3 — an empty slope and unsaturated operator or form slots
+    ///   expose expected sorts; the expression default and a pattern boundary
+    ///   distinguish wrong defaults from reading the wrong open hole.
     /// - witness: `meld::tests::expected_sort_reads_the_open_slot`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| !self.stack.is_empty() || ret == Sort::Expression)]
     pub fn expected_operand_sort(&self) -> Sort
     {
         // The scan's Operand arm is a no-op, so it starts at the topmost
@@ -1829,7 +1962,18 @@ impl<'pbg> MeldState<'pbg>
     /// right, if any (the first `≐`-successor step that crosses a sort).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns the first right-crossed recursive sort, or none for
+    ///   no sort or a missing mold.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a missing mold and open expression versus pattern
+    ///   slots expose absence and the expected hole sort. Inventing a default
+    ///   for a missing mold or crossing the wrong side changes the query or
+    ///   molding.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[anodized::spec(ensures: |ret| ret.is_none() || self.pbg.mold(mold).is_ok())]
     fn frontier_hole_sort(
         &self,
         mold: MoldId,
@@ -1865,7 +2009,19 @@ impl<'pbg> MeldState<'pbg>
     /// the repair path for real incompleteness is unchanged.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: closes complete non-continuing frontiers without consuming
+    ///   source or adding repairs; a required tail or continuing tile keeps its
+    ///   form open.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bare completable hole, a named hole and an
+    ///   enclosing closer expose the exact clean tree. Closing before a name,
+    ///   absorbing the enclosing delimiter or minting an unnecessary repair
+    ///   changes it.
+    /// - witness: `meld::tests::completable_hole_closes_without_obligation`
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    #[anodized::spec(captures: before = (self.source.len(), self.obligations.len(), self.frontiers.len()), ensures: |_| self.source.len() == before.0 && self.obligations.len() == before.1 && self.frontiers.len() <= before.2)]
     fn settle_completable(
         &mut self,
         incoming: MoldId,
@@ -1920,21 +2076,25 @@ impl<'pbg> MeldState<'pbg>
     /// - ensures: closes, innermost first, every open required-tail frontier
     ///   whose tail is whole and which `incoming` does not continue, reducing
     ///   the tail's operators into one operand first; stops at the first
-    ///   frontier that is not; flags no obligation.
+    ///   frontier that is not; flags no obligation and preserves source.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a tail ending in a prefix operator's operand, a tail
     ///   an operator tighter than the form continues, and a tail a looser
     ///   operator follows separate the settlement, each observed through the
-    ///   form the commit builds.
+    ///   form the commit builds. Absent and nested tails distinguish premature
+    ///   closure from a completed operand.
     /// - witness: `meld::tests::a_required_tail_runs_as_far_as_its_group_yields`
     /// - witness: `tests::grammar::every_type_operator_spelling_reads_cleanly`
+    /// - witness: `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
     ///
     /// # Termination
     /// Each pass closes the nearest open frontier, which drops it from the
     /// frontier cache, or stops; the inner loop reduces one operator above
     /// the frontier per step.
+    #[anodized::spec(captures: before = (self.source.len(), self.obligations.len()), ensures: |_| self.source.len() == before.0 && self.obligations.len() == before.1)]
     fn settle_filled_required_tail(
         &mut self,
         incoming: Incoming<'_>,
@@ -1976,10 +2136,31 @@ impl<'pbg> MeldState<'pbg>
     /// - hypothesis: L3 — through
     ///   [`settle_filled_required_tail`](Self::settle_filled_required_tail): a
     ///   prefix operator with its operand is whole, one without it is not.
+    ///   First/last roles and adjacent-role compatibility give an independent
+    ///   predicate for the scan state; changing operand alternation, sort or
+    ///   empty-tail handling changes it. Invalid frontiers return false.
     /// - witness: `meld::tests::a_required_tail_runs_as_far_as_its_group_yields`
+    /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
     ///
     /// # Termination
     /// One step per cell above the frontier.
+    #[anodized::spec(ensures: |ret| {
+        let index = usize::from(frontier);
+        let expected = self.stack.get(index).and_then(|cell| match cell.role {
+            Role::FormTile { mold, .. } if bool::from(self.pbg.mold_has_required_tail(mold)) => self.frontier_hole_sort(mold),
+            Role::Operand | Role::Operator { .. } | Role::FormTile { .. } => None,
+        });
+        let tail = index.checked_add(1).and_then(|start| self.stack.get(start ..)).unwrap_or(&[]);
+        bool::from(ret) == expected.is_some_and(|sort| {
+            tail.first().is_some_and(|cell| matches!(cell.role, Role::Operand | Role::Operator { shape: OpShape::Prefix, .. }))
+                && tail.last().is_some_and(|cell| matches!(cell.role, Role::Operand | Role::Operator { shape: OpShape::Postfix, .. }))
+                && tail.iter().all(|cell| cell.sort == sort && !matches!(cell.role, Role::FormTile { .. }))
+                && tail.iter().zip(tail.iter().skip(1)).all(|(left, right)| {
+                    matches!(left.role, Role::Operand | Role::Operator { shape: OpShape::Postfix, .. })
+                        != matches!(right.role, Role::Operand | Role::Operator { shape: OpShape::Prefix, .. })
+                })
+        })
+    })]
     fn tail_is_whole(
         &self,
         frontier: FrontierIndex,
@@ -2043,11 +2224,34 @@ impl<'pbg> MeldState<'pbg>
     /// # Adequacy
     /// - hypothesis: L3 — through
     ///   [`settle_filled_required_tail`](Self::settle_filled_required_tail): an
-    ///   operator tighter than the form and one looser separate the answer.
+    ///   operator tighter than the form and one looser separate the answer
+    ///   through committed type trees. Prefix-only shapes, wrong sorts and
+    ///   absent frontiers cannot extend a completed operand; token menus use
+    ///   existential rather than universal candidate choice.
     /// - witness: `meld::tests::a_required_tail_runs_as_far_as_its_group_yields`
+    /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
     ///
     /// # Termination
     /// One step per mold a label of the token may take.
+    #[anodized::spec(ensures: |ret| {
+        let context = self.stack.get(usize::from(frontier)).and_then(|cell| match cell.role {
+            Role::FormTile { mold, .. } => Some((self.pbg.mold(mold).ok()?.prec, self.frontier_hole_sort(mold)?)),
+            Role::Operand | Role::Operator { .. } => None,
+        });
+        bool::from(ret) == context.is_some_and(|(form, hole)| {
+            let qualifying = |tile| self.pbg.mold(tile).is_ok_and(|definition| {
+                definition.sort == hole
+                    && matches!(self.classify(tile), Kind::Operator(OpShape::Infix | OpShape::Postfix) | Kind::FormStart { absorb_left: true })
+                    && bool::from(self.pbg.dag().lt(form, definition.prec, Assoc::Right))
+            });
+            match incoming {
+                Incoming::Tile(tile) => qualifying(tile),
+                Incoming::Token(labels) => <&[&str]>::from(labels).iter()
+                    .flat_map(|&label| self.pbg.candidates(TileLabel(label)).iter().copied())
+                    .any(qualifying),
+            }
+        })
+    })]
     fn extends_tail(
         &self,
         frontier: FrontierIndex,
@@ -2096,7 +2300,17 @@ impl<'pbg> MeldState<'pbg>
     /// exactly one matching operand above its frontier.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns the sole completed, correctly sorted operand
+    ///   immediately above a required-tail frontier; otherwise none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an absent operand, one completed operand and an
+    ///   opened nested operand expose closure and completion charges. Accepting
+    ///   an unfinished or nonadjacent cell prematurely closes the parent form.
+    /// - witness: `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    #[anodized::spec(ensures: |ret| ret.is_none_or(|index| Some(index.0) == frontier.0.checked_add(1) && index.0.checked_add(1) == Some(self.stack.len()) && self.stack.get(index.0).is_some_and(|cell| matches!(cell.role, Role::Operand))))]
     fn required_tail_operand(
         &self,
         frontier: FrontierIndex,
@@ -2133,11 +2347,13 @@ impl<'pbg> MeldState<'pbg>
     ///   false otherwise.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a tail that is one operand, a tail that is an open
-    ///   inner form and an absent tail separate the query, each observed
-    ///   through the obligations `finalize` reports.
+    /// - hypothesis: L3 — absent, completed and newly opened operands expose
+    ///   the exact missing-tile count. Treating a nested opener as absent or a
+    ///   non-operand as a filled tail changes the completion penalty.
     /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    #[anodized::spec(ensures: |ret| !bool::from(ret) || (bool::from(self.pbg.mold_has_required_tail(mold)) && self.stack.get(frontier.0.saturating_add(1)).is_some_and(|cell| matches!(cell.role, Role::Operand | Role::FormTile { start: true, .. }))))]
     fn tail_is_under_way(
         &self,
         frontier: FrontierIndex,
@@ -2190,11 +2406,16 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a bare hole before a form closer (settled) and a hole
-    ///   before a name word (kept open) distinguish the pass.
-    /// - witness: `tests::acceptance::hole_positions_mold_zero_obligation`
+    /// - hypothesis: L3 — a bare hole before its enclosing closer versus a hole
+    ///   with its own name exposes clean sibling structure. Premature closure,
+    ///   absorbing the outer delimiter or adding source/repair material changes
+    ///   it.
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[inline]
+    #[anodized::spec(captures: before = (self.source.len(), self.obligations.len(), self.frontiers.len()), ensures: |_| self.source.len() == before.0 && self.obligations.len() == before.1 && self.frontiers.len() <= before.2)]
     pub fn settle_shadowing_frontiers(
         &mut self,
         labels: CandidateLabels<'_>,
@@ -2227,7 +2448,16 @@ impl<'pbg> MeldState<'pbg>
     /// Return whether any `≐`-successor of `mold` carries a label in `labels`.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: recognizes a same-form successor whose grammar label is in
+    ///   the supplied set; empty and absent sets are false.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — matching, absent and empty labels at a live form
+    ///   frontier expose continuation. Crossing to another form or accepting
+    ///   any label with the same prefix changes whether the hole remains open.
+    /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
+    #[anodized::spec(ensures: |ret| bool::from(ret) == <&[&'static str]>::from(labels).iter().any(|&label| self.pbg.candidates(TileLabel(label)).iter().any(|&right| self.pbg.adjacencies().binary_search(&(mold, right)).is_ok())))]
     fn successor_label_in(
         &self,
         mold: MoldId,
@@ -2259,7 +2489,17 @@ impl<'pbg> MeldState<'pbg>
     /// below it at close (a call `(`, a projection `.`).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends a start cell carrying the supplied mold, sort and
+    ///   absorption flag; it is open exactly when a successor exists.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — opening brackets and left-absorbing forms expose the
+    ///   initial frontier and final child order. Losing the start flag, wrong
+    ///   identity or ignoring absorption changes closure and source spans.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[anodized::spec(captures: before = self.stack.len(), ensures: |_| self.stack.len() == before.saturating_add(1) && self.stack.last().is_some_and(|last| last.emit == cell.emit && matches!(last.role, Role::FormTile { mold: actual, sort: actual_sort, open, start: true, absorb_left: actual_absorb } if actual == mold && actual_sort == sort && open == bool::from(self.pbg.mold_has_successor(mold)) && actual_absorb == bool::from(absorb_left))))]
     fn open_form(
         &mut self,
         mold: MoldId,
@@ -2289,7 +2529,19 @@ impl<'pbg> MeldState<'pbg>
     /// ([`Oblig::MissingTile`]) and a stray mid opens a fresh partial form.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: advances a matching frontier and closes an end tile; an
+    ///   unmatched end records a missing opener, while a mid starts a partial
+    ///   form.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — matched brackets, a stray closer and nested complete
+    ///   holes expose exact structure and repair classes. Closing the wrong
+    ///   frontier, dropping the closer or inventing source text changes them.
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    /// - witness: `tests::acceptance::malformed_programs_repair_predictably`
+    #[anodized::spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
     fn continue_form(
         &mut self,
         mold: MoldId,
@@ -2362,7 +2614,16 @@ impl<'pbg> MeldState<'pbg>
     /// (which for a shell block holds every juxtaposed command atom).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns the highest stack position carrying an open form, or
+    ///   none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — no forms, nested forms and reopening an older
+    ///   frontier expose the exact nearest position. A stale cache, wrong
+    ///   insertion order or counting a closed tile changes it.
+    /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
+    #[anodized::spec(ensures: |ret| ret.map(usize::from) == self.stack.iter().rposition(|cell| matches!(cell.role, Role::FormTile { open: true, .. })))]
     fn nearest_open_form(&self) -> Option<FrontierIndex>
     {
         self.frontiers.last().copied().map(FrontierIndex::from)
@@ -2371,7 +2632,17 @@ impl<'pbg> MeldState<'pbg>
     /// Clear or set the open frontier flag of the form tile at `index`.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: updates a form cell flag when present and keeps the sorted
+    ///   frontier cache exact; other cells and absent indices are unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — closing and reopening nearest and older frontiers,
+    ///   repeated flags and an absent index expose role bits and nearest
+    ///   positions. Duplicate cache entries, lost older entries or an unsorted
+    ///   reinsert changes subsequent queries.
+    /// - witness: `meld::tests::frontier_flags_and_successor_labels_handle_boundary_positions`
+    #[anodized::spec(ensures: |_| self.frontiers.iter().copied().eq(self.stack.iter().enumerate().filter_map(|(index, cell)| matches!(cell.role, Role::FormTile { open: true, .. }).then_some(index))) && self.stack.get(index.0).is_none_or(|cell| match cell.role { Role::FormTile { open: actual, .. } => actual == bool::from(open), _ => true }))]
     fn set_form_open(
         &mut self,
         index: StackIndex,
@@ -2417,7 +2688,19 @@ impl<'pbg> MeldState<'pbg>
     /// any interior operators first, and wraps the run in a meld operand.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: replaces the form span, including an absorbed left operand,
+    ///   with one operand named by its opening mold; source is unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — complete brackets, an optional one-tile hole and a
+    ///   hole nested inside a group expose exact meld identity and child order.
+    ///   Naming the form by its closer, absorbing a sibling or losing a child
+    ///   changes it.
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    /// - witness: `meld::tests::completable_hole_closes_without_obligation`
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    #[anodized::spec(captures: before = (self.source.len(), self.stack.len()), ensures: |_| self.source.len() == before.0 && self.stack.len() <= before.1)]
     fn close_form(
         &mut self,
         end_index: StackIndex,
@@ -2486,7 +2769,18 @@ impl<'pbg> MeldState<'pbg>
     /// slope cell, so interleaved operand content costs nothing.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns the highest form-start position at or below the
+    ///   supplied end, or none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested form starts, the base boundary and a closed
+    ///   inner form expose the repair floor and final sibling ownership.
+    ///   Selecting an outer start or skipping the boundary index changes child
+    ///   order.
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    #[anodized::spec(ensures: |ret| ret.map(usize::from) == self.stack.iter().enumerate().rev().find_map(|(index, cell)| (index <= end_index.0 && matches!(cell.role, Role::FormTile { start: true, .. })).then_some(index)))]
     fn form_start_index(
         &self,
         end_index: StackIndex,
@@ -2511,7 +2805,20 @@ impl<'pbg> MeldState<'pbg>
     /// precedence.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: reduces taking, ambiguous and cross-sort operator heads until
+    ///   the incoming tile can shift; source is unchanged and ambiguity is
+    ///   flagged at its span.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — taking and yielding precedence, incomparable
+    ///   operators and cross-sort boundaries expose tree nesting and exact
+    ///   repair spans. Reversing comparison or flagging the head instead of the
+    ///   incoming tile changes those observations.
+    /// - witness: `meld::tests::infix_reduces_after_precedence`
+    /// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
+    /// - witness: `meld::tests::precedence_comparison_preserves_relation_priority`
+    #[anodized::spec(captures: before = (self.source.len(), self.operators.len()), ensures: |_| self.source.len() == before.0 && self.operators.len() <= before.1)]
     fn reduce_toward(
         &mut self,
         tau_sort: Sort,
@@ -2550,7 +2857,18 @@ impl<'pbg> MeldState<'pbg>
     /// Return the operator-precedence relation between a head operator and τ.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: same-form adjacency wins before sort disagreement; otherwise
+    ///   left-taking precedes right-yielding, with incomparable precedence
+    ///   ambiguous.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — adjacent molds with disagreeing sorts, equal-
+    ///   precedence left association, higher/lower precedence and
+    ///   incomparability expose every relation. Reordering priority or swapping
+    ///   direction changes the selected reduction.
+    /// - witness: `meld::tests::precedence_comparison_preserves_relation_priority`
+    #[anodized::spec(ensures: |ret| ret == if self.pbg.adjacencies().binary_search(&(head_mold, tau_mold)).is_ok() { Rel::Match } else if head_sort != tau_sort { Rel::CrossSort } else if bool::from(self.pbg.dag().gt(head_prec, tau_prec, Assoc::Left)) { Rel::Takes } else if bool::from(self.pbg.dag().lt(head_prec, tau_prec, Assoc::Right)) { Rel::Yields } else { Rel::Ambiguous })]
     fn compare(
         &self,
         head_mold: MoldId,
@@ -2580,7 +2898,16 @@ impl<'pbg> MeldState<'pbg>
     /// Return whether `(left, right)` is a same-form `≐` adjacency.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: recognizes exactly the ordered pair in the grammar adjacency
+    ///   relation.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an opener/closer pair, its reverse and an absent mold
+    ///   expose directed membership. Reversing the pair or using undirected
+    ///   membership changes form continuation.
+    /// - witness: `meld::tests::precedence_comparison_preserves_relation_priority`
+    #[anodized::spec(ensures: |ret| bool::from(ret) == self.pbg.adjacencies().binary_search(&(left, right)).is_ok())]
     fn adjacent(
         &self,
         left: MoldId,
@@ -2594,7 +2921,25 @@ impl<'pbg> MeldState<'pbg>
     /// query's expected next tile).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns the smallest same-form successor of this mold, or
+    ///   none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — real form successors and an absent mold expose the
+    ///   optional least identity. An off-by-one partition or taking a
+    ///   neighboring form successor changes completion.
+    /// - witness: `meld::tests::precedence_comparison_preserves_relation_priority`
+    #[anodized::spec(ensures: |ret| {
+        let adjacencies = self.pbg.adjacencies();
+        ret.map_or_else(
+            || adjacencies.binary_search_by_key(&mold, |&(left, _)| left).is_err(),
+            |successor| adjacencies.binary_search(&(mold, successor)).is_ok_and(|index| {
+                index.checked_sub(1).and_then(|previous| adjacencies.get(previous))
+                    .is_none_or(|&(left, _)| left != mold)
+            }),
+        )
+    })]
     fn first_successor(
         &self,
         mold: MoldId,
@@ -2626,11 +2971,16 @@ impl<'pbg> MeldState<'pbg>
     ///   any other tile is an operand or an operator by its bounds.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a closing bracket followed by a required operand is
-    ///   separated from one that ends its form, each observed through the form
-    ///   its trailing operand lands in.
+    /// - hypothesis: L3 — unknown molds, atoms, unary/binary operators, form
+    ///   boundaries and required-tail brackets expose the tile kind and final
+    ///   child ownership. Wrong arity or treating a required operand as a
+    ///   closed form changes repairs and spans.
+    /// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
+    /// - witness: `meld::tests::operator_shapes_preserve_uncaptured_neighbors`
     /// - witness: `meld::tests::a_bracket_before_a_required_tail_keeps_its_form_open`
+    #[anodized::spec(ensures: |ret| self.pbg.mold(mold).is_ok() || ret == Kind::Operand)]
     fn classify(
         &self,
         mold: MoldId,
@@ -2668,6 +3018,15 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator below and above a form barrier and a
+    ///   completed operand expose the reducible head position. Crossing a
+    ///   barrier or skipping the top operator changes reduction and child
+    ///   ownership.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[anodized::spec(ensures: |ret| ret.map(usize::from) == self.stack.iter().enumerate().rev().take_while(|&(_, cell)| !matches!(cell.role, Role::FormTile { .. })).find_map(|(index, cell)| matches!(cell.role, Role::Operator { .. }).then_some(index)))]
     fn topmost_operator_index(&self) -> Option<OperatorIndex>
     {
         let operator = self.operators.last().copied()?;
@@ -2680,7 +3039,16 @@ impl<'pbg> MeldState<'pbg>
     /// Return the `(mold, prec, sort)` of the operator at `index`, if any.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns the exact operator payload at the index; absent and
+    ///   non-operator cells yield none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator, adjacent operands and an absent index
+    ///   expose the optional mold/precedence/sort payload. Reading a neighbor
+    ///   or returning an operand as an operator changes the reduction key.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[anodized::spec(ensures: |ret| ret == self.stack.get(index.0).and_then(|cell| match cell.role { Role::Operator { mold, prec, sort, .. } => Some((mold, prec, sort)), _ => None }))]
     fn operator_at(
         &self,
         index: OperatorIndex,
@@ -2701,7 +3069,19 @@ impl<'pbg> MeldState<'pbg>
     /// operand inserts a convex grout child ([`Oblig::MissingMeld`]).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: replaces an operator and only its shape-required operands
+    ///   with a meld; absent operands become zero-width grout and missing-meld
+    ///   obligations.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — prefix, postfix and infix shapes with complete and
+    ///   absent operands expose child order, retained neighbors and zero-width
+    ///   repair spans. Capturing an unneeded neighbor or dropping a required
+    ///   operand changes the tree and source.
+    /// - witness: `meld::tests::operator_shapes_preserve_uncaptured_neighbors`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    #[anodized::spec(captures: before = (self.source.len(), self.stack.len()), ensures: |_| self.source.len() == before.0 && self.stack.len() <= before.1)]
     fn reduce_operator(
         &mut self,
         index: OperatorIndex,
@@ -2823,6 +3203,16 @@ impl<'pbg> MeldState<'pbg>
     /// - ensures: no operator and no open form frontier remains at or above
     ///   `floor`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested operators and open forms above a floor, plus
+    ///   an already-complete region, expose exact final child order and repair
+    ///   material. Reducing below the floor, skipping a head or adding written
+    ///   bytes changes the committed tree.
+    /// - witness: `meld::tests::infix_reduces_after_precedence`
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    #[anodized::spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before && self.highest_reducible(floor).is_none())]
     fn collapse(
         &mut self,
         floor: StackFloor,
@@ -2848,6 +3238,13 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a floor at, below and above nested reducible heads
+    ///   exposes the selected action and index. Reversing priority, including a
+    ///   closed form or using a strict floor comparison changes the action.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[anodized::spec(ensures: |ret| ret == self.stack.iter().enumerate().rev().take_while(|&(index, _)| index >= floor.0).find_map(|(index, cell)| match cell.role { Role::Operator { .. } => Some(CollapseStep::ReduceOperator(OperatorIndex::from(index))), Role::FormTile { open: true, .. } => Some(CollapseStep::ForceCloseForm(FrontierIndex::from(index))), _ => None }))]
     fn highest_reducible(
         &self,
         floor: StackFloor,
@@ -2893,6 +3290,16 @@ impl<'pbg> MeldState<'pbg>
     ///   reached a last tile gains a ghost end and one [`Oblig::MissingTile`]
     ///   over the frontier tile's span.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — complete optional tails, missing required tails and
+    ///   paired versus unclassed closers expose exact minted labels and repair
+    ///   counts. Minting a ghost for a complete form or writing ghost text
+    ///   changes the committed structure or preserved source.
+    /// - witness: `meld::tests::completable_hole_closes_without_obligation`
+    /// - witness: `meld::tests::minted_close_round_trips_and_refuses_unknown_class`
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    #[anodized::spec(captures: before = self.source.len(), ensures: |_| self.source.len() == before)]
     fn force_close_form(
         &mut self,
         frontier: FrontierIndex,
@@ -2992,7 +3399,18 @@ impl<'pbg> MeldState<'pbg>
     /// Return whether the cell at `index` is an operand.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: reports whether the addressed cell is an operand; absent
+    ///   indices are false.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both sides of unary/binary operators, absent edge
+    ///   operands and form barriers expose exact repair spans and captured
+    ///   children. Accepting a form/operator cell or reading a neighboring
+    ///   index changes the tree.
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    /// - witness: `meld::tests::operator_shapes_preserve_uncaptured_neighbors`
+    #[anodized::spec(ensures: |ret| bool::from(ret) == self.stack.get(index.0).is_some_and(|cell| matches!(cell.role, Role::Operand)))]
     fn is_operand_at(
         &self,
         index: StackIndex,
@@ -3007,7 +3425,26 @@ impl<'pbg> MeldState<'pbg>
     /// Push a cell onto the top of the slope, maintaining the head caches.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends the supplied cell unchanged and keeps all role caches
+    ///   exact.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — operand, operator and open/closed form pushes expose
+    ///   exact head queries before and after splices. A missing index, wrong
+    ///   role cache or shifted identity changes the selected reduction.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[anodized::spec(captures: before = self.stack.len(), ensures: |_| self.stack.len() == before.saturating_add(1) && self.stack.last() == Some(&cell) && {
+            let mut frontiers = self.frontiers.iter();
+            let mut operators = self.operators.iter();
+            let mut barriers = self.barriers.iter();
+            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
+                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
+                Role::Operator { .. } => operators.next() == Some(&index),
+                Role::Operand => true,
+            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
+        })]
     fn push_cell(
         &mut self,
         cell: Cell,
@@ -3021,7 +3458,20 @@ impl<'pbg> MeldState<'pbg>
     /// `index` (which must be the current top — pushes only).
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the index follows every existing entry in each applicable
+    ///   cache.
+    /// - ensures: records an operator once, a form barrier once and an open
+    ///   frontier once; operands add nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all three role classes, open versus closed form flags
+    ///   and shifted survivors expose exact cache positions. Recording a role
+    ///   in the wrong cache, duplicating an entry or losing an open flag
+    ///   changes subsequent head queries.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[anodized::spec(captures: before = (self.frontiers.len(), self.operators.len(), self.barriers.len()), ensures: |_| self.frontiers.len() == before.0.saturating_add(usize::from(matches!(cell.role, Role::FormTile { open: true, .. }))) && self.operators.len() == before.1.saturating_add(usize::from(matches!(cell.role, Role::Operator { .. }))) && self.barriers.len() == before.2.saturating_add(usize::from(matches!(cell.role, Role::FormTile { .. }))))]
     fn index_cell(
         &mut self,
         index: StackIndex,
@@ -3046,7 +3496,16 @@ impl<'pbg> MeldState<'pbg>
     /// at most once.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: removes exactly cached indices at or above the floor,
+    ///   retaining lower prefixes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — top and middle splices and floors at retained indices
+    ///   expose exact lower prefixes and shifted survivor caches. Removing the
+    ///   cell below the floor or retaining the boundary entry changes a query.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[anodized::spec(captures: before = (self.frontiers.partition_point(|index| *index < floor.0), self.operators.partition_point(|index| *index < floor.0), self.barriers.partition_point(|index| *index < floor.0)), ensures: |_| self.frontiers.len() == before.0 && self.operators.len() == before.1 && self.barriers.len() == before.2 && self.frontiers.iter().chain(self.operators.iter()).chain(self.barriers.iter()).all(|index| *index < floor.0))]
     fn unindex_from(
         &mut self,
         floor: StackFloor,
@@ -3068,7 +3527,26 @@ impl<'pbg> MeldState<'pbg>
     /// streaming mutation maintains them incrementally).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: replaces every cache with the exact ascending role indices of
+    ///   the current stack.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed-role streams, middle splices and resumed
+    ///   checkpoints expose exact role indices. Missing, duplicate or stale
+    ///   shifted entries change the nearest frontier or reducible operator.
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[anodized::spec(ensures: |_| {
+            let mut frontiers = self.frontiers.iter();
+            let mut operators = self.operators.iter();
+            let mut barriers = self.barriers.iter();
+            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
+                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
+                Role::Operator { .. } => operators.next() == Some(&index),
+                Role::Operand => true,
+            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
+        })]
     fn rebuild_head_caches(&mut self)
     {
         self.frontiers.clear();
@@ -3093,12 +3571,24 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never (test-only assertion).
     /// - panics: on any cache/scan divergence (the test failure signal).
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — every mutation class (push, splice-reduce, form
-    ///   open/close flips, rollback, checkpoint resume) is crossed with the
-    ///   validator over real corpus-shaped token streams.
+    /// - hypothesis: L3 — mixed-role streams, middle splices and resumed
+    ///   checkpoints expose exact role indices. Missing, duplicate or stale
+    ///   shifted entries change the nearest frontier or reducible operator.
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
     #[cfg(test)]
+    #[anodized::spec(ensures: |_| {
+            let mut frontiers = self.frontiers.iter();
+            let mut operators = self.operators.iter();
+            let mut barriers = self.barriers.iter();
+            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
+                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
+                Role::Operator { .. } => operators.next() == Some(&index),
+                Role::Operand => true,
+            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
+        })]
     fn assert_head_caches_exact(&self)
     {
         let mut frontiers = Vec::new();
@@ -3128,7 +3618,27 @@ impl<'pbg> MeldState<'pbg>
     /// re-indexing the replacement at `low`.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: replaces a valid nonempty range by one cell and keeps shifted
+    ///   survivors indexed; invalid ranges append the cell defensively.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a top replacement, a middle splice retaining upper
+    ///   cells, an empty range and an out-of-range end expose exact cell order
+    ///   and cached positions. Dropping shifted survivors, off-by-one drains or
+    ///   rejecting instead of appending changes the resulting stack.
+    /// - witness: `meld::tests::stack_splices_keep_shifted_cache_positions_exact`
+    #[anodized::spec(captures: before = self.stack.len(), ensures: |_| self.stack.len() == if range.low.0 >= range.high_exclusive.0 || range.high_exclusive.0 > before { before.saturating_add(1) } else { before.saturating_sub(range.high_exclusive.0.saturating_sub(range.low.0)).saturating_add(1) }
+        && {
+            let mut frontiers = self.frontiers.iter();
+            let mut operators = self.operators.iter();
+            let mut barriers = self.barriers.iter();
+            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
+                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
+                Role::Operator { .. } => operators.next() == Some(&index),
+                Role::Operand => true,
+            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
+        })]
     fn replace_range(
         &mut self,
         range: StackRange,
@@ -3163,7 +3673,17 @@ impl<'pbg> MeldState<'pbg>
     /// Push an unmolded token: a total fallback for an out-of-range mold.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends all text as item-sort convex grout, records one
+    ///   unmolded-token obligation and pushes an operand spanning those bytes.
+    /// - panics: buffer counts above the wire ceiling assert in debug builds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, multibyte, NUL and consecutive unknown tiles
+    ///   expose exact source bytes, spans and one obligation per push. Dropping
+    ///   empty tiles, counting characters as bytes or misclassifying grout
+    ///   changes the committed tree and obligation multiplicity.
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    #[anodized::spec(captures: before = (self.source.len(), self.obligations.len(), self.stack.len()), ensures: |_| self.source.get(before.0 ..) == Some(<&str>::from(text)) && self.obligations.len() == before.1.saturating_add(1) && self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok) && self.stack.len() == before.2.saturating_add(1) && self.stack.last().is_some_and(|cell| cell.sort == Sort::Item && matches!(cell.role, Role::Operand)))]
     fn push_unmolded(
         &mut self,
         text: SourceFragment<'_>,
@@ -3193,13 +3713,17 @@ impl<'pbg> MeldState<'pbg>
     /// - ensures: returns `count` exactly when it fits the `u32` wire ceiling;
     ///   saturates at `u32::MAX` beyond it (parser buffers never approach 4
     ///   GiB; a `debug_assert` records the invariant).
-    /// - panics: none.
+    /// - panics: a count above `u32::MAX` in debug builds.
+    /// - executable: none — the generic output exposes only construction
+    ///   through `From<u32>`, not equality or an inverse; checking it would
+    ///   require a new bound or repeating an arbitrary conversion.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every source append and emission routes through the
-    ///   conversion on ordinary inputs; the saturating arm is unreachable in
-    ///   practice.
-    /// - witness: `tests::acceptance::corpus_parses_totally`
+    /// - hypothesis: L3 — zero and the wire ceiling are observed as concrete
+    ///   offsets and emission identities. Narrowing or signed conversion
+    ///   changes these endpoints; the debug guard beyond the ceiling is not an
+    ///   unconditional no-panic guarantee.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
     fn wire_len<T>(count: CheckpointCount) -> T
     where
         T: From<u32>,
@@ -3215,7 +3739,16 @@ impl<'pbg> MeldState<'pbg>
     /// Append `text` to the source buffer and return its span.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends the supplied bytes and returns their half-open wire
+    ///   span; an empty fragment has a point span.
+    /// - panics: buffer counts above the wire ceiling assert in debug builds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and multibyte fragments at successive positions
+    ///   expose exact byte offsets and preserved text. Character counting,
+    ///   inclusive endpoints or replacement instead of append changes the span.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[anodized::spec(captures: before = self.source.len(), ensures: |ret| self.source.get(before ..) == Some(<&str>::from(text)) && u32::from(ret.start) == u32::try_from(before).unwrap_or(u32::MAX) && u32::from(ret.end) == u32::try_from(self.source.len()).unwrap_or(u32::MAX))]
     fn append_source(
         &mut self,
         text: SourceFragment<'_>,
@@ -3230,7 +3763,17 @@ impl<'pbg> MeldState<'pbg>
     /// Append a leaf to the emission log and return its id.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends one token operation with the supplied label and
+    ///   endpoints, returning its zero-based wire identity.
+    /// - panics: buffer counts above the wire ceiling assert in debug builds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — consecutive token emissions with unequal UTF-8 widths
+    ///   expose exact identity, label and endpoints through a built tree. A
+    ///   one-based identity or swapped span changes children or rejects the
+    ///   tree.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[anodized::spec(captures: before = self.emit.len(), ensures: |ret| ret.0 == u32::try_from(before).unwrap_or(u32::MAX) && self.emit.len() == before.saturating_add(1) && self.emit.last() == Some(&EmitOp::Token { label, start: u32::from(span.start), end: u32::from(span.end) }))]
     fn emit_token(
         &mut self,
         label: NodeLabel,
@@ -3249,7 +3792,18 @@ impl<'pbg> MeldState<'pbg>
     /// Append an interior node to the emission log and return its id.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends one interior operation with the supplied label,
+    ///   endpoints and ordered children, returning its zero-based wire
+    ///   identity.
+    /// - panics: buffer counts above the wire ceiling assert in debug builds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reversed child/source order and a forward child
+    ///   reference expose exact ordered payloads and typed rejection. Sorting
+    ///   children by source or accepting an unavailable identity changes the
+    ///   tree or error.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[anodized::spec(captures: before = (self.emit.len(), children.len()), ensures: |ret| ret.0 == u32::try_from(before.0).unwrap_or(u32::MAX) && self.emit.len() == before.0.saturating_add(1) && self.emit.last().is_some_and(|op| matches!(op, EmitOp::Interior { label: actual, start, end, children } if *actual == label && *start == u32::from(span.start) && *end == u32::from(span.end) && children.len() == before.1)))]
     fn emit_interior(
         &mut self,
         label: NodeLabel,
@@ -3270,7 +3824,17 @@ impl<'pbg> MeldState<'pbg>
     /// Record an obligation instance at a source span.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends exactly the supplied class and checked span; inverted
+    ///   spans leave the obligation buffer unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — valid empty/nonempty and inverted spans expose exact
+    ///   class, endpoints and retained multiplicity. Accepting an inverted span
+    ///   or overwriting the previous flag changes buffered completion
+    ///   obligations.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[anodized::spec(captures: before = self.obligations.len(), ensures: |_| match span.byte_span() { Ok(checked) => self.obligations.len() == before.saturating_add(1) && self.obligations.last() == Some(&ObligationInstance::new(class, checked)), Err(_) => self.obligations.len() == before })]
     fn flag(
         &mut self,
         class: Oblig,
@@ -3292,12 +3856,16 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L1 — a projection over the buffer; contents are witnessed
-    ///   by the obligation tests.
+    /// - hypothesis: L3 — mixed classes and repeated flags expose the borrowed
+    ///   accumulation-order buffer. Filtering, sorting or substituting a copy
+    ///   changes its identity or observed class/span sequence.
     /// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
+    /// - witness: `meld::tests::delta_reflects_the_buffered_obligations`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| core::ptr::eq(&raw const *ret, &raw const *self.obligations.as_slice()))]
     pub fn obligations(&self) -> &[ObligationInstance]
     {
         &self.obligations
@@ -3313,12 +3881,16 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a buffer with and without an `AmbiguousPrec` shifts
-    ///   the delta at the maximum class.
+    /// - hypothesis: L3 — buffered obligations in several classes, including
+    ///   repetitions, expose independent per-class inserted counts and zero
+    ///   absent classes. Skipping a flag or merging classes changes the delta.
     /// - witness: `meld::tests::delta_reflects_the_buffered_obligations`
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| Oblig::all().into_iter().all(|class| u32::from(ret.inserted(class)) == u32::try_from(self.obligations.iter().filter(|obligation| obligation.class == class).count()).unwrap_or(u32::MAX)))]
     pub fn delta(&self) -> Delta
     {
         let mut delta = Delta::empty();
@@ -3351,16 +3923,19 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a state with an open bracket and one with a saturated
-    ///   operator distinguish expected closers from expected holes, querying at
-    ///   every prefix leaves the commit unchanged, and every token prefix of
-    ///   the witnessed sources bounds its commit with a missing-operand excess
-    ///   observed.
+    /// - hypothesis: L3 — empty stacks, missing unary/binary operands, open
+    ///   forms, completable optional tails and occupied required tails expose
+    ///   exact expected material and repair spans without changing the
+    ///   checkpoint. Charging a completed tail, omitting a missing side or
+    ///   advancing the machine changes these observations.
     /// - witness: `meld::tests::finalize_is_non_destructive`
-    /// - witness: `tests::acceptance::expected_agrees_with_committed_finalize`
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.expected.len() <= self.stack.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, _ => false }))]
     pub fn finalize(&self) -> Completion
     {
         let mut expected: Vec<Expected> = Vec::new();
@@ -3464,12 +4039,19 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — every token prefix of the witnessed sources bounds
-    ///   its commit, with the missing-operand excess observed.
-    /// - witness: `tests::acceptance::expected_agrees_with_committed_finalize`
+    /// - hypothesis: L3 — empty stacks, missing unary/binary operands, open
+    ///   forms, completable optional tails and occupied required tails expose
+    ///   exact expected material and repair spans without changing the
+    ///   checkpoint. Charging a completed tail, omitting a missing side or
+    ///   advancing the machine changes these observations.
+    /// - witness: `meld::tests::finalize_is_non_destructive`
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.expected.len() <= self.stack.len() && ret.obligations.len() <= self.stack.len().saturating_mul(2) && ret.obligations.iter().all(|obligation| match obligation.class { Oblig::MissingMeld => obligation.span.start() == obligation.span.end(), Oblig::MissingTile => true, _ => false }))]
     pub fn expected(&self) -> Completion
     {
         self.finalize()
@@ -3498,13 +4080,18 @@ impl<'pbg> MeldState<'pbg>
     /// [`MeldError::SourceMismatch`] when `source` differs from the assembled
     /// text; [`MeldError::Build`] when the flat arena cannot be assembled.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — empty input, a single atom, a nested bracket, and an
-    ///   infix chain each build a distinct well-formed root; a source that is
-    ///   not the assembled text is refused.
-    /// - witness: `meld::tests::single_atom_commits_to_one_token`
+    /// - hypothesis: L3 — empty, complete and partial streams plus a foreign
+    ///   source expose the root, source identity, ordered children and exact
+    ///   completion repairs. Accepting different source bytes, losing grammar
+    ///   identity or dropping a missing operand changes the returned tree or
+    ///   typed error.
+    /// - witness: `meld::tests::a_foreign_source_is_refused_at_commit`
     /// - witness: `meld::tests::empty_state_commits_to_a_root`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
     #[inline]
+    #[anodized::spec(captures: before = (self.source.as_str() == <&str>::from(source), self.pbg.fingerprint()), ensures: |ret| match ret.as_ref() { Ok(tree) => before.0 && tree.source() == source && tree.grammar() == before.1 && tree.node(tree.root()).is_some_and(|node| node.label() == NodeLabel::Wald), Err(error) => before.0 || matches!(error, MeldError::SourceMismatch) })]
     pub fn commit(
         self,
         source: SourceText<'_>,
@@ -3536,12 +4123,18 @@ impl<'pbg> MeldState<'pbg>
     /// # Errors
     /// As [`commit`](MeldState::commit).
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a clean parse (empty completion) and an incomplete
-    ///   one (force-close obligations) distinguish the returned obligation set.
-    /// - witness: `tests::acceptance::incomplete_input_flags_statement_local_obligations`
+    /// - hypothesis: L3 — empty, complete and partial streams plus a foreign
+    ///   source expose the root, source identity, ordered children and exact
+    ///   completion repairs. Accepting different source bytes, losing grammar
+    ///   identity or dropping a missing operand changes the returned tree or
+    ///   typed error.
     /// - witness: `meld::tests::a_foreign_source_is_refused_at_commit`
+    /// - witness: `meld::tests::empty_state_commits_to_a_root`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
     #[inline]
+    #[anodized::spec(captures: before = (self.source.as_str() == <&str>::from(source), self.pbg.fingerprint()), ensures: |ret| match ret.as_ref() { Ok(pair) => before.0 && pair.0.source() == source && pair.0.grammar() == before.1 && pair.0.node(pair.0.root()).is_some_and(|node| node.label() == NodeLabel::Wald), Err(error) => before.0 || matches!(error, MeldError::SourceMismatch) })]
     pub fn commit_with_obligations(
         mut self,
         source: SourceText<'_>,
@@ -3561,6 +4154,16 @@ impl<'pbg> MeldState<'pbg>
     ///
     /// # Specification
     /// trivial.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty streams, unequal-width fragments and layout
+    ///   interleaved with top-level operands expose a Wald covering the source
+    ///   and stable source-order children. Missing layout, a short root span or
+    ///   an incorrect child order changes source reconstruction.
+    /// - witness: `meld::tests::empty_state_commits_to_a_root`
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    #[anodized::spec(captures: before = self.emit.len(), ensures: |ret| ret.0 == u32::try_from(before).unwrap_or(u32::MAX) && self.emit.last().is_some_and(|op| matches!(op, EmitOp::Interior { label: NodeLabel::Wald, start: 0, end, children } if *end == u32::try_from(self.source.len()).unwrap_or(u32::MAX).max(self.stack.iter().map(|cell| cell.end).max().unwrap_or(0)) && children.len() == self.stack.len().saturating_add(self.spaces.len()) && children.windows(2).all(|pair| matches!(pair, &[left, right] if self.emit_start(left) <= self.emit_start(right))))))]
     fn wrap_root(&mut self) -> EmitId
     {
         // Collect the top-level operands and the floating layout-space tokens,
@@ -3591,7 +4194,16 @@ impl<'pbg> MeldState<'pbg>
     /// Return the source start of an emission-log entry (0 if out of range).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns the stored start of either emission variant; an
+    ///   unavailable identity yields zero.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonzero token start, an interior start and an
+    ///   unavailable identity expose exact offsets and the fallback. Reading
+    ///   end instead of start or indexing unchecked changes ordering or panics.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[anodized::spec(ensures: |ret| u32::from(ret) == usize::try_from(id.0).ok().and_then(|index| self.emit.get(index)).map_or(0, |op| match *op { EmitOp::Token { start, .. } | EmitOp::Interior { start, .. } => start }))]
     fn emit_start(
         &self,
         id: EmitId,
@@ -3624,6 +4236,15 @@ impl<'pbg> MeldState<'pbg>
     /// # Errors
     /// - [`MeldError::Build`] when the tree builder refuses a node.
     /// - [`MeldError::Corrupt`] when the log names an id outside itself.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — child order deliberately differing from source order,
+    ///   a forward child, an invalid root and an inverted span expose the
+    ///   borrowed source and precise build/corruption errors. Sorting edges,
+    ///   accepting forward references or losing span validation changes the
+    ///   tree or error.
+    /// - witness: `meld::tests::emission_preserves_byte_spans_child_order_and_errors`
+    #[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |tree| tree.source() == source && tree.grammar() == self.pbg.fingerprint() && tree.node(tree.root()).is_some()))]
     fn build_tree<'source>(
         &self,
         source: SourceText<'source>,
@@ -3677,12 +4298,17 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — checkpoint then resume reproduces the exact
-    ///   continuation, byte-round-trip included.
+    /// - hypothesis: L3 — a partial form with layout and repair material
+    ///   round-trips through bytes and resumes to the uninterrupted final
+    ///   digest and obligations. Omitting a buffer or retaining only its length
+    ///   changes continuation.
     /// - witness: `meld::tests::checkpoint_resume_is_equivalent`
+    /// - witness: `meld::tests::checkpoint_bytes_round_trip`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.fingerprint == self.pbg.fingerprint() && ret.source == self.source && ret.emit == self.emit && ret.stack == self.stack && ret.obligations == self.obligations && ret.spaces == self.spaces)]
     pub fn checkpoint(&self) -> Checkpoint
     {
         Checkpoint {
@@ -3708,12 +4334,32 @@ impl<'pbg> MeldState<'pbg>
     ///   [`Checkpoint::fingerprint`]).
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — resume plus remaining pushes equals the uninterrupted
-    ///   run.
+    /// - hypothesis: L3 — partial nested forms and operators resume to the
+    ///   uninterrupted tree, obligations and head queries. Restoring a stale
+    ///   cache or losing source/layout changes the next admission or final
+    ///   tree; grammar identity is the stated caller precondition.
     /// - witness: `meld::tests::checkpoint_resume_is_equivalent`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     #[inline]
     #[must_use]
+    #[anodized::spec(requires: cp.fingerprint == pbg.fingerprint(), ensures: |ret| ret.pbg.fingerprint() == pbg.fingerprint()
+        && ret.source == cp.source
+        && ret.emit == cp.emit
+        && ret.stack == cp.stack
+        && ret.obligations == cp.obligations
+        && ret.spaces == cp.spaces
+        && {
+            let mut frontiers = ret.frontiers.iter();
+            let mut operators = ret.operators.iter();
+            let mut barriers = ret.barriers.iter();
+            ret.stack.iter().enumerate().all(|(index, cell)| match cell.role {
+                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
+                Role::Operator { .. } => operators.next() == Some(&index),
+                Role::Operand => true,
+            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
+        })]
     pub fn resume(
         pbg: &'pbg Pbg,
         cp: &Checkpoint,
@@ -3751,11 +4397,15 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a parse with interleaved trivia reconstructs the
-    ///   exact source and digests identically to the trivia-free parse.
+    /// - hypothesis: L3 — whitespace and comments interleaved with syntax
+    ///   expose exact source reconstruction and equal content digests to the
+    ///   trivia-free form. Dropping bytes, pushing trivia onto the slope or
+    ///   charging completion obligations changes these observations.
     /// - witness: `parse::tests::parse_is_lossless_and_hash_stable`
     #[inline]
+    #[anodized::spec(captures: before = (self.source.len(), self.emit.len(), self.spaces.len(), self.stack.len(), self.obligations.len()), ensures: |_| self.source.get(before.0 ..) == Some(<&str>::from(text)) && self.emit.len() == before.1.saturating_add(1) && self.spaces.len() == before.2.saturating_add(1) && self.spaces.last().is_some_and(|id| id.0 == u32::try_from(before.1).unwrap_or(u32::MAX)) && self.stack.len() == before.3 && self.obligations.len() == before.4)]
     pub fn space(
         &mut self,
         text: SpaceText<'_>,
@@ -3788,12 +4438,19 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a mark, a candidate push, and a rollback restore the
-    ///   pre-push state exactly (byte, slope, and obligation identical).
+    /// - hypothesis: L3 — marks before and after dry-run pushes, pooled reuse
+    ///   and nested form changes expose exact rollback and subsequent
+    ///   continuation. Missing a length, retaining an old slope or stale role
+    ///   indices changes the restored checkpoint; pooling is exercised without
+    ///   an allocation-count claim.
     /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.source_len == self.source.len() && ret.emit_len == self.emit.len() && ret.oblig_len == self.obligations.len() && ret.spaces_len == self.spaces.len() && ret.stack == self.stack && ret.frontiers == self.frontiers && ret.operators == self.operators && ret.barriers == self.barriers)]
     pub fn mark(&self) -> Mark
     {
         Mark {
@@ -3824,12 +4481,18 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a rollback through a pooled mark restores the exact
-    ///   pre-push state, byte-for-byte with the allocating path.
+    /// - hypothesis: L3 — marks before and after dry-run pushes, pooled reuse
+    ///   and nested form changes expose exact rollback and subsequent
+    ///   continuation. Missing a length, retaining an old slope or stale role
+    ///   indices changes the restored checkpoint; pooling is exercised without
+    ///   an allocation-count claim.
     /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
     #[inline]
+    #[anodized::spec(ensures: |_| mark.source_len == self.source.len() && mark.emit_len == self.emit.len() && mark.oblig_len == self.obligations.len() && mark.spaces_len == self.spaces.len() && mark.stack == self.stack && mark.frontiers == self.frontiers && mark.operators == self.operators && mark.barriers == self.barriers)]
     pub fn mark_into(
         &self,
         mark: &mut Mark,
@@ -3857,11 +4520,17 @@ impl<'pbg> MeldState<'pbg>
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — rollback after a push reproduces the marked state and
-    ///   a fresh push over it is identical to one without the dry-run.
+    /// - hypothesis: L3 — a marked candidate which changes emissions, source,
+    ///   slope and obligations is rolled back before another candidate. Exact
+    ///   checkpoint and continuation equality detect a forgotten buffer or
+    ///   stale cache; same-state provenance remains a caller obligation beyond
+    ///   the checked length and UTF-8 boundary conditions.
     /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     #[inline]
+    #[anodized::spec(requires: mark.source_len <= self.source.len() && self.source.is_char_boundary(mark.source_len) && mark.emit_len <= self.emit.len() && mark.oblig_len <= self.obligations.len() && mark.spaces_len <= self.spaces.len(), ensures: |_| mark.source_len == self.source.len() && mark.emit_len == self.emit.len() && mark.oblig_len == self.obligations.len() && mark.spaces_len == self.spaces.len() && mark.stack == self.stack && mark.frontiers == self.frontiers && mark.operators == self.operators && mark.barriers == self.barriers)]
     pub fn rollback_to(
         &mut self,
         mark: &Mark,
@@ -3894,12 +4563,16 @@ impl<'pbg> MeldState<'pbg>
     ///   delta.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — a candidate that flags an obligation and one that
-    ///   does not separate the delta.
+    /// - hypothesis: L3 — a nonempty prefix, a candidate adding two repair
+    ///   classes, an empty candidate tail and a mark beyond the current buffer
+    ///   expose per-class tail counts. Including the prefix, confusing classes
+    ///   or reading a stale suffix changes candidate minimization.
     /// - witness: `meld::tests::delta_since_reads_only_the_candidate_tail`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| Oblig::all().into_iter().all(|class| u32::from(ret.inserted(class)) == u32::try_from(self.obligations.iter().skip(mark.oblig_len).filter(|obligation| obligation.class == class).count()).unwrap_or(u32::MAX)))]
     pub fn delta_since(
         &self,
         mark: &Mark,
@@ -3932,9 +4605,15 @@ impl<'pbg> MeldState<'pbg>
 /// - fails: never.
 /// - panics: none.
 ///
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
+///
 /// # Adequacy
-/// - hypothesis: L1 — a two-field snapshot; witnessed through `admits_at`.
-/// - witness: `meld::tests::admits_rejects_a_stray_closer`
+/// - hypothesis: L3 — empty, open-form, operand and operator contexts expose
+///   cached admission against the current machine. A stale open mold or lost
+///   head sort changes candidate admission; same-state freshness is a caller
+///   condition.
+/// - witness: `meld::tests::frontier_queries_follow_open_close_and_operand_transitions`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Frontier
 {
@@ -3969,14 +4648,16 @@ pub struct Frontier
 /// - fails: never.
 /// - panics: none.
 ///
-/// # Adequacy
-/// - hypothesis: L1 — a snapshot record; behavior is witnessed by the
-///   mark/rollback test.
-/// - witness: `meld::tests::mark_rollback_restores_state_exactly`
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
 ///
-/// The `Default` mark is an empty pool slot for
-/// [`mark_into`](MeldState::mark_into) — never a valid rollback target until
-/// filled.
+/// # Adequacy
+/// - hypothesis: L3 — source, emissions, layout, obligations and role caches
+///   changed by candidate pushes are restored to their marked state. A lost
+///   length or stale slope changes exact checkpoint and subsequent
+///   continuation.
+/// - witness: `meld::tests::mark_rollback_restores_state_exactly`
+/// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Mark
 {
@@ -4021,10 +4702,16 @@ pub enum Expected
 /// - fails: never.
 /// - panics: none.
 ///
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
+///
 /// # Adequacy
-/// - hypothesis: L3 — a complete and an incomplete prefix distinguish an empty
-///   completion from a non-empty one.
-/// - witness: `meld::tests::finalize_is_non_destructive`
+/// - hypothesis: L3 — missing operator sides and required/optional form tails
+///   expose expected future input separately from zero-width or frontier
+///   repairs. A missing side, wrong span or charged complete tail changes the
+///   query.
+/// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+/// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Completion
 {
@@ -4061,9 +4748,19 @@ impl Completion
     /// Return whether the input is already complete (no expected material).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: reports whether no future material is expected, independently
+    ///   of already-reported missing left operands.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an operator lacking its right operand versus one with
+    ///   only a missing left operand exposes future expectation separately from
+    ///   repairs. Conflating buffered repairs with expected input changes the
+    ///   status.
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| bool::from(ret) == self.expected.is_empty())]
     pub fn is_complete(&self) -> CompletionStatus
     {
         CompletionStatus::from(self.expected.is_empty())
@@ -4089,7 +4786,18 @@ impl fmt::Display for MeldError
     /// Describe the commit failure in prose.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: formats the failure variant and its contextual payload,
+    ///   propagating a formatter-sink failure.
+    /// - panics: none.
+    /// - executable: none — `Formatter` exposes neither the emitted bytes nor
+    ///   sink state; replaying formatting would write to the sink again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — failures produced by commit and decoding expose
+    ///   distinct descriptions, numeric context and refusal by a failing sink.
+    ///   Losing a tag/span or swallowing a sink error changes those
+    ///   observations without pinning the prose.
+    /// - witness: `meld::tests::public_errors_preserve_context_and_sink_failures`
     #[inline]
     fn fmt(
         &self,
@@ -4111,8 +4819,19 @@ impl Error for MeldError
     /// Return the tree builder's error when it caused the failure.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: only a builder failure exposes its original typed cause;
+    ///   mismatch and corruption have no underlying source.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — public commits of foreign source and malformed
+    ///   checkpoint images expose source mismatch, corruption and the original
+    ///   inverted span cause. Erasing the cause, swapping its endpoints or
+    ///   attaching one to a structural error changes consumer error-chain
+    ///   inspection.
+    /// - witness: `meld::tests::public_errors_preserve_context_and_sink_failures`
     #[inline]
+    #[anodized::spec(ensures: |ret| match *self { Self::Build(ref error) => ret.and_then(|cause| cause.downcast_ref::<SyntaxError>()).is_some_and(|actual| core::ptr::eq(&raw const *actual, &raw const *error)), Self::SourceMismatch | Self::Corrupt => ret.is_none() })]
     fn source(&self) -> Option<&(dyn Error + 'static)>
     {
         match *self {
@@ -4156,7 +4875,18 @@ impl fmt::Display for CheckpointError
     /// Describe the decoding failure in prose.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: formats the failure variant and its contextual payload,
+    ///   propagating a formatter-sink failure.
+    /// - panics: none.
+    /// - executable: none — `Formatter` exposes neither the emitted bytes nor
+    ///   sink state; replaying formatting would write to the sink again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — failures produced by commit and decoding expose
+    ///   distinct descriptions, numeric context and refusal by a failing sink.
+    ///   Losing a tag/span or swallowing a sink error changes those
+    ///   observations without pinning the prose.
+    /// - witness: `meld::tests::public_errors_preserve_context_and_sink_failures`
     #[inline]
     fn fmt(
         &self,
@@ -4193,11 +4923,18 @@ impl Error for CheckpointError
 ///   for truncated, mis-tagged, or malformed input.
 /// - panics: none.
 ///
+/// - executable: none — this data type has no call boundary; its construction,
+///   observers and transitions carry the executable clauses.
+///
 /// # Adequacy
-/// - hypothesis: L3 — a non-trivial parse round-trips through bytes and resumes
-///   equivalently; truncated input fails closed.
+/// - hypothesis: L3 — empty and mixed-role snapshots, exact wire vocabularies
+///   and truncated records expose restored continuation and typed errors.
+///   Losing a field, changing tags or endpoint order changes golden bytes or
+///   the resumed parse; unbounded hostile allocation lengths are not proved
+///   safe.
 /// - witness: `meld::tests::checkpoint_resume_is_equivalent`
-/// - witness: `meld::tests::checkpoint_bytes_round_trip`
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Checkpoint
 {
@@ -4240,11 +4977,20 @@ impl Checkpoint
     /// - fails: never.
     /// - panics: none.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L1 — a deterministic encoder; the round trip is witnessed.
+    /// - hypothesis: L3 — empty and mixed-role checkpoints round-trip and
+    ///   resume with exact source, grammar, obligations and child order. The
+    ///   fixed-width golden stream and closed-tag matrix distinguish a
+    ///   coordinated encoder/decoder endian or tag change which a round trip
+    ///   alone would miss.
     /// - witness: `meld::tests::checkpoint_bytes_round_trip`
+    /// - witness: `meld::tests::checkpoint_resume_is_equivalent`
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    /// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
     #[inline]
     #[must_use]
+    #[anodized::spec(ensures: |ret| ret.as_ref().get(.. 8) == Some(u64::from(self.fingerprint).to_le_bytes().as_slice()) && ret.as_ref().get(8 .. 16) == Some(u64::try_from(self.source.len()).unwrap_or(u64::MAX).to_le_bytes().as_slice()) && ret.as_ref().get(16 .. 16_usize.saturating_add(self.source.len())) == Some(self.source.as_bytes()))]
     pub fn to_bytes(&self) -> CheckpointBytes
     {
         let mut writer = Writer { bytes: Vec::new() };
@@ -4285,11 +5031,19 @@ impl Checkpoint
     /// Returns [`CheckpointError::Truncated`], [`CheckpointError::BadTag`], or
     /// [`CheckpointError::Malformed`] for an ill-formed stream.
     ///
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — the round trip and truncated/mis-tagged inputs are
-    ///   distinguished.
+    /// - hypothesis: L3 — valid snapshots, truncation at field boundaries,
+    ///   invalid UTF-8 and every closed tag expose restored fields and precise
+    ///   decoder errors. Wrong endian, accepted unknown tags or lost payloads
+    ///   change these observations. Resource-exhausting lengths and cross-field
+    ///   semantic validity are not established by the round-trip witnesses.
     /// - witness: `meld::tests::checkpoint_bytes_round_trip`
+    /// - witness: `meld::tests::checkpoint_resume_is_equivalent`
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    /// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
     #[inline]
+    #[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |checkpoint| bytes.as_ref().get(.. 8) == Some(u64::from(checkpoint.fingerprint).to_le_bytes().as_slice()) && bytes.as_ref().get(8 .. 16) == Some(u64::try_from(checkpoint.source.len()).unwrap_or(u64::MAX).to_le_bytes().as_slice()) && bytes.as_ref().get(16 .. 16_usize.saturating_add(checkpoint.source.len())) == Some(checkpoint.source.as_bytes())))]
     pub fn from_bytes(bytes: CheckpointBytesRef<'_>) -> Result<Self, CheckpointError>
     {
         let mut reader = Reader { bytes, pos: 0 };
@@ -4350,7 +5104,17 @@ impl Writer
     /// Write one byte.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends exactly the little-endian bytes of the supplied
+    ///   scalar, without changing the existing prefix.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal bytes in each scalar width, a retained prefix
+    ///   and zero/maximum values expose the exact encoded stream. Reversing
+    ///   endian, truncating high bytes or replacing the prefix changes the
+    ///   golden bytes.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before ..) == Some(u8::from(value).to_le_bytes().as_slice()))]
     fn u8(
         &mut self,
         value: WireByte,
@@ -4362,7 +5126,17 @@ impl Writer
     /// Write a little-endian `u16`.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends exactly the little-endian bytes of the supplied
+    ///   scalar, without changing the existing prefix.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal bytes in each scalar width, a retained prefix
+    ///   and zero/maximum values expose the exact encoded stream. Reversing
+    ///   endian, truncating high bytes or replacing the prefix changes the
+    ///   golden bytes.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before ..) == Some(u16::from(value).to_le_bytes().as_slice()))]
     fn u16(
         &mut self,
         value: WireU16,
@@ -4375,7 +5149,17 @@ impl Writer
     /// Write a little-endian `u32`.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends exactly the little-endian bytes of the supplied
+    ///   scalar, without changing the existing prefix.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal bytes in each scalar width, a retained prefix
+    ///   and zero/maximum values expose the exact encoded stream. Reversing
+    ///   endian, truncating high bytes or replacing the prefix changes the
+    ///   golden bytes.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before ..) == Some(u32::from(value).to_le_bytes().as_slice()))]
     fn u32(
         &mut self,
         value: WireU32,
@@ -4388,7 +5172,17 @@ impl Writer
     /// Write a little-endian `u64`.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends exactly the little-endian bytes of the supplied
+    ///   scalar, without changing the existing prefix.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal bytes in each scalar width, a retained prefix
+    ///   and zero/maximum values expose the exact encoded stream. Reversing
+    ///   endian, truncating high bytes or replacing the prefix changes the
+    ///   golden bytes.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before ..) == Some(u64::from(value).to_le_bytes().as_slice()))]
     fn u64(
         &mut self,
         value: WireU64,
@@ -4401,7 +5195,17 @@ impl Writer
     /// Write a length as a `u64`.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends the count as eight little-endian bytes, saturating
+    ///   only if the host count exceeds the wire width.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonzero count and the host ceiling expose all eight
+    ///   wire bytes and cursor continuation. Encoding the host-width integer or
+    ///   a big-endian length changes the golden stream; hosts wider than u64
+    ///   are outside the exercised configurations.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before ..) == Some(u64::try_from(usize::from(value)).unwrap_or(u64::MAX).to_le_bytes().as_slice()))]
     fn len(
         &mut self,
         value: CheckpointCount,
@@ -4414,7 +5218,17 @@ impl Writer
     /// Write a length-prefixed byte blob.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: appends an eight-byte little-endian length followed by the
+    ///   exact payload, including empty or non-UTF-8 bytes.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, multibyte and non-text payloads after a
+    ///   retained prefix expose the encoded length and exact bytes. Character
+    ///   counting, a dropped empty prefix or payload rewriting changes the wire
+    ///   stream.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = self.bytes.len(), ensures: |_| self.bytes.get(before .. before.saturating_add(8)) == Some(u64::try_from(value.as_ref().len()).unwrap_or(u64::MAX).to_le_bytes().as_slice()) && self.bytes.get(before.saturating_add(8) ..) == Some(value.as_ref()))]
     fn blob(
         &mut self,
         value: ByteChunk<'_>,
@@ -4448,6 +5262,16 @@ impl Reader<'_>
     ///
     /// # Errors
     /// [`CheckpointError::Truncated`] when the stream ends early.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact, short and empty ranges, exhausted input and
+    ///   overflowing cursor arithmetic expose returned bytes and cursor
+    ///   position. Partial advancement or copied/substituted chunks change
+    ///   these observations; the returned borrow prevents a postcondition from
+    ///   borrowing the reader again, so cursor framing is observed after
+    ///   releasing the chunk.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = (self.pos, self.bytes), ensures: |ret| before.0.checked_add(usize::from(count)).and_then(|end| before.1.as_ref().get(before.0 .. end)).map_or_else(|| matches!(ret, Err(CheckpointError::Truncated)), |expected| ret.as_ref().is_ok_and(|chunk| core::ptr::eq(&raw const *chunk.as_ref(), &raw const *expected))))]
     fn take(
         &mut self,
         count: ByteCount,
@@ -4478,6 +5302,14 @@ impl Reader<'_>
     ///
     /// # Errors
     /// [`CheckpointError::Truncated`] when the stream ends early.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixed unequal-byte scalar and every shorter input
+    ///   expose exact decoded value and success/failure cursor position. Wrong
+    ///   endian, short-input acceptance or partial advancement changes the
+    ///   result or the next field; maximum values detect narrowing.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = (self.pos, self.pos.checked_add(1).and_then(|end| self.bytes.as_ref().get(self.pos .. end)).and_then(|bytes| <[u8; 1]>::try_from(bytes).ok()).map(u8::from_le_bytes)), ensures: |ret| ret.map(u8::from) == before.1.ok_or(CheckpointError::Truncated) && self.pos == if before.1.is_some() { before.0.saturating_add(1) } else { before.0 })]
     fn u8(&mut self) -> Result<WireByte, CheckpointError>
     {
         let bytes = self.take(ByteCount::from(1))?;
@@ -4500,6 +5332,14 @@ impl Reader<'_>
     ///
     /// # Errors
     /// [`CheckpointError::Truncated`] when the stream ends early.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixed unequal-byte scalar and every shorter input
+    ///   expose exact decoded value and success/failure cursor position. Wrong
+    ///   endian, short-input acceptance or partial advancement changes the
+    ///   result or the next field; maximum values detect narrowing.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = (self.pos, self.pos.checked_add(2).and_then(|end| self.bytes.as_ref().get(self.pos .. end)).and_then(|bytes| <[u8; 2]>::try_from(bytes).ok()).map(u16::from_le_bytes)), ensures: |ret| ret.map(u16::from) == before.1.ok_or(CheckpointError::Truncated) && self.pos == if before.1.is_some() { before.0.saturating_add(2) } else { before.0 })]
     fn u16(&mut self) -> Result<WireU16, CheckpointError>
     {
         let slice = self.take(ByteCount::from(2))?;
@@ -4521,6 +5361,14 @@ impl Reader<'_>
     ///
     /// # Errors
     /// [`CheckpointError::Truncated`] when the stream ends early.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixed unequal-byte scalar and every shorter input
+    ///   expose exact decoded value and success/failure cursor position. Wrong
+    ///   endian, short-input acceptance or partial advancement changes the
+    ///   result or the next field; maximum values detect narrowing.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = (self.pos, self.pos.checked_add(4).and_then(|end| self.bytes.as_ref().get(self.pos .. end)).and_then(|bytes| <[u8; 4]>::try_from(bytes).ok()).map(u32::from_le_bytes)), ensures: |ret| ret.map(u32::from) == before.1.ok_or(CheckpointError::Truncated) && self.pos == if before.1.is_some() { before.0.saturating_add(4) } else { before.0 })]
     fn u32(&mut self) -> Result<WireU32, CheckpointError>
     {
         let slice = self.take(ByteCount::from(4))?;
@@ -4542,6 +5390,14 @@ impl Reader<'_>
     ///
     /// # Errors
     /// [`CheckpointError::Truncated`] when the stream ends early.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fixed unequal-byte scalar and every shorter input
+    ///   expose exact decoded value and success/failure cursor position. Wrong
+    ///   endian, short-input acceptance or partial advancement changes the
+    ///   result or the next field; maximum values detect narrowing.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = (self.pos, self.pos.checked_add(8).and_then(|end| self.bytes.as_ref().get(self.pos .. end)).and_then(|bytes| <[u8; 8]>::try_from(bytes).ok()).map(u64::from_le_bytes)), ensures: |ret| ret.map(u64::from) == before.1.ok_or(CheckpointError::Truncated) && self.pos == if before.1.is_some() { before.0.saturating_add(8) } else { before.0 })]
     fn u64(&mut self) -> Result<WireU64, CheckpointError>
     {
         let slice = self.take(ByteCount::from(8))?;
@@ -4563,6 +5419,15 @@ impl Reader<'_>
     ///
     /// # Errors
     /// [`CheckpointError`] for a truncated or ill-formed stream.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary and maximum wire counts plus a short length
+    ///   field expose host conversion and cursor position. Narrowing a length
+    ///   or rewinding after a complete but unrepresentable value changes the
+    ///   result; the conversion-failure branch depends on the target pointer
+    ///   width.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = (self.pos, self.pos.checked_add(8).and_then(|end| self.bytes.as_ref().get(self.pos .. end)).and_then(|bytes| <[u8; 8]>::try_from(bytes).ok()).map(u64::from_le_bytes)), ensures: |ret| ret.map(usize::from) == before.1.ok_or(CheckpointError::Truncated).and_then(|value| usize::try_from(value).map_err(|_error| CheckpointError::Malformed)) && self.pos == if before.1.is_some() { before.0.saturating_add(8) } else { before.0 })]
     fn len(&mut self) -> Result<CheckpointCount, CheckpointError>
     {
         let wire_value = self.u64()?;
@@ -4583,6 +5448,15 @@ impl Reader<'_>
     ///
     /// # Errors
     /// [`CheckpointError`] for a truncated or ill-formed stream.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and arbitrary-byte payloads, a truncated length
+    ///   and a truncated payload expose exact bytes and cursor framing. An
+    ///   incorrect prefix width, partial payload consumption or a substituted
+    ///   buffer changes these observations; cursor state is inspected after the
+    ///   result borrow ends.
+    /// - witness: `meld::tests::wire_values_preserve_bytes_and_cursor_failure_boundaries`
+    #[anodized::spec(captures: before = (self.pos, self.bytes), ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, CheckpointError::Truncated | CheckpointError::Malformed), |chunk| before.1.as_ref().get(before.0 .. before.0.saturating_add(8)) == Some(u64::try_from(chunk.as_ref().len()).unwrap_or(u64::MAX).to_le_bytes().as_slice()) && before.0.checked_add(8).and_then(|start| { let end = start.checked_add(chunk.as_ref().len())?; before.1.as_ref().get(start .. end) }).is_some_and(|expected| core::ptr::eq(&raw const *chunk.as_ref(), &raw const *expected))))]
     fn blob(&mut self) -> Result<ByteChunk<'_>, CheckpointError>
     {
         let count = self.len()?;
@@ -4601,6 +5475,17 @@ impl Reader<'_>
 ///
 /// # Errors
 /// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — token/interior golden records and each strict record
+///   prefix expose exact labels, endpoints, child order and error boundaries. A
+///   changed discriminant or length interpretation changes the decoded
+///   structure; resource-exhausting child counts are outside this bounded
+///   matrix.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[anodized::spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0
+    && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| tag <= 1 || *error == CheckpointError::BadTag { tag }), |op| before.1 == Some(match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { .. } => 1 })
+    && reader.pos == before.0.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) })))]
 fn read_emit_op(reader: &mut Reader<'_>) -> Result<EmitOp, CheckpointError>
 {
     let wire_tag = reader.u8()?;
@@ -4641,7 +5526,18 @@ fn read_emit_op(reader: &mut Reader<'_>) -> Result<EmitOp, CheckpointError>
 /// Write an emission-log entry.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: appends the token/interior discriminant, label, endpoints and,
+///   for interiors, the ordered length-prefixed child identities.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — token and interior records, empty and ordered children
+///   and maximum identities expose exact byte payloads and decoded order.
+///   Swapping endpoints, dropping a child or reversing its order changes the
+///   golden record.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[anodized::spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&match *op { EmitOp::Token { .. } => 0, EmitOp::Interior { .. } => 1 })
+    && writer.bytes.len() == before.saturating_add(match *op { EmitOp::Token { label, .. } => (match label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(9), EmitOp::Interior { label, ref children, .. } => (match label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }).saturating_add(17).saturating_add(children.len().saturating_mul(4)) }))]
 fn write_emit_op(
     writer: &mut Writer,
     op: &EmitOp,
@@ -4683,6 +5579,14 @@ fn write_emit_op(
 ///
 /// # Errors
 /// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — each golden label payload, each strict record prefix and
+///   unknown outer/nested discriminants expose exact values, consumed width and
+///   typed errors. Wrong payload order, over-consumption or acceptance of
+///   unknown tags changes these observations.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[anodized::spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| reader.pos >= before.0 && ret.as_ref().map_or_else(|error| before.1.map_or_else(|| *error == CheckpointError::Truncated, |tag| (1 ..= 6).contains(&tag) || *error == CheckpointError::BadTag { tag }), |label| before.1 == Some(u8::from(label.tag())) && reader.pos == before.0.saturating_add(match *label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 })))]
 fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
 {
     let wire_tag = reader.u8()?;
@@ -4716,7 +5620,17 @@ fn read_label(reader: &mut Reader<'_>) -> Result<NodeLabel, CheckpointError>
 /// Write a node label: its pinned digest tag, then its payload.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: appends the pinned label tag and its little-endian payload;
+///   payload-free labels occupy one byte, molds five, and grout or ghosts four.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every label family with unequal-byte mold and sort
+///   payloads and all nested shape/class tags exposes exact golden bytes.
+///   Swapping a tag, losing payload bytes or writing an extra payload changes
+///   the wire form and cursor.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[anodized::spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before) == Some(&u8::from(label.tag())) && writer.bytes.len() == before.saturating_add(match label { NodeLabel::Wald | NodeLabel::Space => 1_usize, NodeLabel::Meld(_) | NodeLabel::Tile(_) => 5, NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => 4 }))]
 fn write_label(
     writer: &mut Writer,
     label: NodeLabel,
@@ -4742,7 +5656,17 @@ fn write_label(
 /// Write a grout-shape tag.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: appends the vocabulary's single-byte tag, preserving the prior
+///   bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every declared variant has an independent golden tag; the
+///   full byte domain distinguishes unknown discriminants. Swapping two
+///   variants, changing the tag width or clobbering a prefix changes the bytes
+///   or typed error.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[anodized::spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before ..) == Some([match shape { GroutShape::Convex => 0, GroutShape::Prefix => 1, GroutShape::Postfix => 2, GroutShape::Infix => 3 }].as_slice()))]
 fn write_shape(
     writer: &mut Writer,
     shape: GroutShape,
@@ -4767,6 +5691,13 @@ fn write_shape(
 ///
 /// # Errors
 /// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all 256 byte values and empty input expose the closed
+///   variant mapping, offending tag and exact cursor. Accepting an unknown tag,
+///   swapping variants or advancing on truncation changes these observations.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[anodized::spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [GroutShape::Convex, GroutShape::Prefix, GroutShape::Postfix, GroutShape::Infix].get(usize::from(tag)).copied().ok_or(CheckpointError::BadTag { tag })) && reader.pos == before.0.saturating_add(usize::from(before.1.is_some())))]
 fn read_shape(reader: &mut Reader<'_>) -> Result<GroutShape, CheckpointError>
 {
     let wire_tag = reader.u8()?;
@@ -4782,7 +5713,17 @@ fn read_shape(reader: &mut Reader<'_>) -> Result<GroutShape, CheckpointError>
 /// Write a closing-class tag.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: appends the vocabulary's single-byte tag, preserving the prior
+///   bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every declared variant has an independent golden tag; the
+///   full byte domain distinguishes unknown discriminants. Swapping two
+///   variants, changing the tag width or clobbering a prefix changes the bytes
+///   or typed error.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[anodized::spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before ..) == Some([match class { ClosingClass::Paren => 0, ClosingClass::Bracket => 1, ClosingClass::Brace => 2 }].as_slice()))]
 fn write_class(
     writer: &mut Writer,
     class: ClosingClass,
@@ -4806,6 +5747,13 @@ fn write_class(
 ///
 /// # Errors
 /// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all 256 byte values and empty input expose the closed
+///   variant mapping, offending tag and exact cursor. Accepting an unknown tag,
+///   swapping variants or advancing on truncation changes these observations.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[anodized::spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [ClosingClass::Paren, ClosingClass::Bracket, ClosingClass::Brace].get(usize::from(tag)).copied().ok_or(CheckpointError::BadTag { tag })) && reader.pos == before.0.saturating_add(usize::from(before.1.is_some())))]
 fn read_class(reader: &mut Reader<'_>) -> Result<ClosingClass, CheckpointError>
 {
     let wire_tag = reader.u8()?;
@@ -4828,6 +5776,20 @@ fn read_class(reader: &mut Reader<'_>) -> Result<ClosingClass, CheckpointError>
 ///
 /// # Errors
 /// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all role layouts and form flags, every strict record
+///   prefix and unknown role/sort/shape tags expose fields, cursor and error
+///   kind. Reordering payloads, losing flag independence or accepting a bad tag
+///   changes the decoded cell; reference validity is checked when building a
+///   tree.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[anodized::spec(captures: before = reader.pos, ensures: |ret| reader.pos >= before
+    && ret.as_ref().map_or(true, |cell| reader.pos == before.saturating_add(match cell.role { Role::Operand => 15_usize, Role::FormTile { .. } | Role::Operator { .. } => 24 })
+    && reader.bytes.as_ref().get(before .. before.saturating_add(4)) == Some(cell.emit.0.to_le_bytes().as_slice())
+    && reader.bytes.as_ref().get(before.saturating_add(4) .. before.saturating_add(8)) == Some(cell.start.to_le_bytes().as_slice())
+    && reader.bytes.as_ref().get(before.saturating_add(8) .. before.saturating_add(12)) == Some(cell.end.to_le_bytes().as_slice())
+    && reader.bytes.as_ref().get(before.saturating_add(14)) == Some(&(match cell.role { Role::Operand => 0, Role::FormTile { .. } => 1, Role::Operator { .. } => 2 }))))]
 fn read_cell(reader: &mut Reader<'_>) -> Result<Cell, CheckpointError>
 {
     let wire_emit_id = reader.u32()?;
@@ -4897,6 +5859,13 @@ fn read_cell(reader: &mut Reader<'_>) -> Result<Cell, CheckpointError>
 ///
 /// # Errors
 /// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the full u16 tag domain and both truncated widths expose
+///   the closed sort vocabulary and cursor position. Ignoring the high byte,
+///   accepting an unknown sort or advancing on truncation changes the result.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[anodized::spec(captures: before = (reader.pos, reader.pos.checked_add(2).and_then(|end| reader.bytes.as_ref().get(reader.pos .. end)).and_then(|bytes| <[u8; 2]>::try_from(bytes).ok()).map(u16::from_le_bytes)), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember].get(usize::from(tag)).copied().ok_or(CheckpointError::Malformed)) && reader.pos == if before.1.is_some() { before.0.saturating_add(2) } else { before.0 })]
 fn read_sort(reader: &mut Reader<'_>) -> Result<Sort, CheckpointError>
 {
     let wire_tag = reader.u16()?;
@@ -4907,7 +5876,16 @@ fn read_sort(reader: &mut Reader<'_>) -> Result<Sort, CheckpointError>
 /// Write an obligation instance.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: appends the class and two little-endian endpoints, saturating
+///   offsets at the u32 wire ceiling.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a nonempty obligation and the host offset ceiling expose
+///   exact class, endpoint order and saturated wire values. Swapping endpoints,
+///   changing class or narrowing modulo the ceiling changes the bytes.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[anodized::spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.len() == before.saturating_add(9) && writer.bytes.get(before) == Some(&u8::from(obligation.class.index())) && writer.bytes.get(before.saturating_add(1) .. before.saturating_add(5)) == Some(u32::try_from(usize::from(obligation.span.start())).unwrap_or(u32::MAX).to_le_bytes().as_slice()) && writer.bytes.get(before.saturating_add(5) .. before.saturating_add(9)) == Some(u32::try_from(usize::from(obligation.span.end())).unwrap_or(u32::MAX).to_le_bytes().as_slice()))]
 fn write_obligation(
     writer: &mut Writer,
     obligation: ObligationInstance,
@@ -4922,7 +5900,17 @@ fn write_obligation(
 /// Write an obligation class tag.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: appends the vocabulary's single-byte tag, preserving the prior
+///   bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every declared variant has an independent golden tag; the
+///   full byte domain distinguishes unknown discriminants. Swapping two
+///   variants, changing the tag width or clobbering a prefix changes the bytes
+///   or typed error.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[anodized::spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before ..) == Some([match class { Oblig::MissingMeld => 0, Oblig::MissingTile => 1, Oblig::IncompleteTile => 2, Oblig::UnmoldedTok => 3, Oblig::InconMeld => 4, Oblig::ExtraMeld => 5, Oblig::ReservedKeyword => 6, Oblig::AmbiguousPrec => 7 }].as_slice()))]
 fn write_oblig(
     writer: &mut Writer,
     class: Oblig,
@@ -4942,6 +5930,19 @@ fn write_oblig(
 ///
 /// # Errors
 /// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact nonempty and ceiling spans, each strict record
+///   prefix, an unknown class and an inverted span expose values, cursor and
+///   typed errors. Swapping endpoints or accepting inversion changes the
+///   result.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[anodized::spec(captures: before = reader.pos, ensures: |ret| reader.pos >= before
+    && reader.pos <= before.saturating_add(9)
+    && ret.as_ref().map_or(true, |obligation| reader.pos == before.saturating_add(9)
+    && reader.bytes.as_ref().get(before) == Some(&u8::from(obligation.class.index()))
+    && reader.bytes.as_ref().get(before.saturating_add(1) .. before.saturating_add(5)) == Some(u32::try_from(usize::from(obligation.span.start())).unwrap_or(u32::MAX).to_le_bytes().as_slice())
+    && reader.bytes.as_ref().get(before.saturating_add(5) .. before.saturating_add(9)) == Some(u32::try_from(usize::from(obligation.span.end())).unwrap_or(u32::MAX).to_le_bytes().as_slice())))]
 fn read_obligation(reader: &mut Reader<'_>) -> Result<ObligationInstance, CheckpointError>
 {
     let class = read_oblig(reader)?;
@@ -4965,6 +5966,13 @@ fn read_obligation(reader: &mut Reader<'_>) -> Result<ObligationInstance, Checkp
 ///
 /// # Errors
 /// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all 256 byte values and empty input expose the closed
+///   variant mapping, offending tag and exact cursor. Accepting an unknown tag,
+///   swapping variants or advancing on truncation changes these observations.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[anodized::spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [Oblig::MissingMeld, Oblig::MissingTile, Oblig::IncompleteTile, Oblig::UnmoldedTok, Oblig::InconMeld, Oblig::ExtraMeld, Oblig::ReservedKeyword, Oblig::AmbiguousPrec].get(usize::from(tag)).copied().ok_or(CheckpointError::BadTag { tag })) && reader.pos == before.0.saturating_add(usize::from(before.1.is_some())))]
 fn read_oblig(reader: &mut Reader<'_>) -> Result<Oblig, CheckpointError>
 {
     let wire_tag = reader.u8()?;
@@ -4984,7 +5992,21 @@ fn read_oblig(reader: &mut Reader<'_>) -> Result<Oblig, CheckpointError>
 /// Write a slope cell.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: appends identity, endpoints, sort and role with the role-specific
+///   payload; form flags are canonical zero/one bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — operand, operator and every form-flag combination with
+///   unequal payloads expose exact field order and round-trip values. Swapping
+///   span endpoints or role fields, losing a flag or changing width alters the
+///   golden record.
+/// - witness: `meld::tests::checkpoint_compound_records_preserve_payloads`
+#[anodized::spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.len() == before.saturating_add(match cell.role { Role::Operand => 15_usize, Role::FormTile { .. } | Role::Operator { .. } => 24 })
+    && writer.bytes.get(before .. before.saturating_add(4)) == Some(cell.emit.0.to_le_bytes().as_slice())
+    && writer.bytes.get(before.saturating_add(4) .. before.saturating_add(8)) == Some(cell.start.to_le_bytes().as_slice())
+    && writer.bytes.get(before.saturating_add(8) .. before.saturating_add(12)) == Some(cell.end.to_le_bytes().as_slice())
+    && writer.bytes.get(before.saturating_add(14)) == Some(&(match cell.role { Role::Operand => 0, Role::FormTile { .. } => 1, Role::Operator { .. } => 2 })))]
 fn write_cell(
     writer: &mut Writer,
     cell: Cell,
@@ -5028,7 +6050,16 @@ fn write_cell(
 /// Write a grammar sort tag.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: appends the sort's two-byte little-endian grout tag, preserving
+///   the prior bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all six sort tags, a retained prefix and a following
+///   field expose the two-byte vocabulary. A one-byte encoding or changed
+///   variant assignment changes the golden stream.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[anodized::spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before ..) == Some(u16::from(sort.grout_sort()).to_le_bytes().as_slice()))]
 fn write_sort(
     writer: &mut Writer,
     sort: Sort,
@@ -5039,7 +6070,17 @@ fn write_sort(
 /// Write an operator shape tag.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: appends the vocabulary's single-byte tag, preserving the prior
+///   bytes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every declared variant has an independent golden tag; the
+///   full byte domain distinguishes unknown discriminants. Swapping two
+///   variants, changing the tag width or clobbering a prefix changes the bytes
+///   or typed error.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[anodized::spec(captures: before = writer.bytes.len(), ensures: |_| writer.bytes.get(before ..) == Some([match shape { OpShape::Prefix => 0, OpShape::Infix => 1, OpShape::Postfix => 2 }].as_slice()))]
 fn write_shape_op(
     writer: &mut Writer,
     shape: OpShape,
@@ -5063,6 +6104,13 @@ fn write_shape_op(
 ///
 /// # Errors
 /// [`CheckpointError`] for a truncated or ill-formed stream.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all 256 byte values and empty input expose the closed
+///   variant mapping, offending tag and exact cursor. Accepting an unknown tag,
+///   swapping variants or advancing on truncation changes these observations.
+/// - witness: `meld::tests::checkpoint_tags_cover_closed_vocabularies`
+#[anodized::spec(captures: before = (reader.pos, reader.bytes.as_ref().get(reader.pos).copied()), ensures: |ret| ret == before.1.ok_or(CheckpointError::Truncated).and_then(|tag| [OpShape::Prefix, OpShape::Infix, OpShape::Postfix].get(usize::from(tag)).copied().ok_or(CheckpointError::BadTag { tag })) && reader.pos == before.0.saturating_add(usize::from(before.1.is_some())))]
 fn read_shape_op(reader: &mut Reader<'_>) -> Result<OpShape, CheckpointError>
 {
     let wire_tag = reader.u8()?;
@@ -5120,6 +6168,1404 @@ mod tests
     use crate::testing::label;
     use crate::testing::root_digest;
     use crate::testing::tile_texts;
+
+    #[test]
+    fn public_errors_preserve_context_and_sink_failures() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = paren_pbg()?;
+        let mismatch = MeldState::new(&pbg)
+            .commit(SourceText::from("foreign"))
+            .unwrap_err();
+        assert!(matches!(mismatch, super::MeldError::SourceMismatch));
+        assert!(mismatch.source().is_none());
+        let mut state = MeldState::new(&pbg);
+        state.emit_interior(
+            NodeLabel::Wald,
+            super::SourceSpan::point(super::SourceOffset::from(0)),
+            vec![super::EmitId(u32::MAX)],
+        );
+        let bytes = state.checkpoint().to_bytes();
+        let checkpoint = Checkpoint::from_bytes(CheckpointBytesRef::from(&bytes))?;
+        let corrupt = MeldState::resume(&pbg, &checkpoint)
+            .commit(SourceText::from(""))
+            .unwrap_err();
+        assert!(matches!(corrupt, super::MeldError::Corrupt));
+        assert!(corrupt.source().is_none());
+        let mut state = MeldState::new(&pbg);
+        state.append_source(super::SourceFragment::from("abc"));
+        state.emit_token(
+            NodeLabel::Tile(only(&pbg, TileLabel("x"))),
+            super::SourceSpan::new(super::SourceOffset::from(3), super::SourceOffset::from(2)),
+        );
+        let bytes = state.checkpoint().to_bytes();
+        let checkpoint = Checkpoint::from_bytes(CheckpointBytesRef::from(&bytes))?;
+        let build = MeldState::resume(&pbg, &checkpoint)
+            .commit(SourceText::from("abc"))
+            .unwrap_err();
+        let cause = build
+            .source()
+            .and_then(|error| error.downcast_ref::<gandr_surface_syntax::SyntaxError>());
+        assert!(
+            matches!(cause, Some(gandr_surface_syntax::SyntaxError::InvertedSpan { start, end }) if usize::from(*start) == 3 && usize::from(*end) == 2)
+        );
+        let build_text = format!("{build}");
+        assert!(build_text.contains('3') && build_text.contains('2'));
+        let messages = [format!("{mismatch}"), format!("{corrupt}"), build_text];
+        for (index, message) in messages.iter().enumerate() {
+            assert!(
+                messages
+                    .iter()
+                    .skip(index + 1)
+                    .all(|other| other != message)
+            );
+        }
+        for error in [&mismatch, &corrupt, &build] {
+            assert_eq!(
+                core::fmt::Write::write_fmt(
+                    &mut crate::testing::RefusingSink,
+                    format_args!("{error}")
+                ),
+                Err(core::fmt::Error)
+            );
+        }
+        let truncated =
+            Checkpoint::from_bytes(CheckpointBytesRef::from([].as_slice())).unwrap_err();
+        assert_eq!(truncated, CheckpointError::Truncated);
+        let mut bad_tag = vec![0; 24];
+        bad_tag[16] = 1;
+        bad_tag.push(255);
+        let bad_tag =
+            Checkpoint::from_bytes(CheckpointBytesRef::from(bad_tag.as_slice())).unwrap_err();
+        assert_eq!(bad_tag, CheckpointError::BadTag { tag: 255 });
+        assert!(format!("{bad_tag}").contains("255"));
+        let mut invalid_utf8 = vec![0; 16];
+        invalid_utf8[8] = 1;
+        invalid_utf8.push(0xff);
+        let malformed =
+            Checkpoint::from_bytes(CheckpointBytesRef::from(invalid_utf8.as_slice())).unwrap_err();
+        assert_eq!(malformed, CheckpointError::Malformed);
+        let messages = [
+            format!("{truncated}"),
+            format!("{bad_tag}"),
+            format!("{malformed}"),
+        ];
+        for (index, message) in messages.iter().enumerate() {
+            assert!(
+                messages
+                    .iter()
+                    .skip(index + 1)
+                    .all(|other| other != message)
+            );
+        }
+        for error in [truncated, bad_tag, malformed] {
+            assert_eq!(
+                core::fmt::Write::write_fmt(
+                    &mut crate::testing::RefusingSink,
+                    format_args!("{error}")
+                ),
+                Err(core::fmt::Error)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn declaration_positions_are_exactly_item_and_module_member()
+    {
+        for (sort, expected) in [
+            (Sort::Item, true),
+            (Sort::ModuleMember, true),
+            (Sort::Expression, false),
+            (Sort::Pattern, false),
+            (Sort::Type, false),
+            (Sort::Instantiation, false),
+        ] {
+            assert_eq!(
+                bool::from(super::is_item_position(sort)),
+                expected,
+                "{sort:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn checkpoint_compound_records_preserve_payloads() -> Result<(), Box<dyn Error>>
+    {
+        let labels: &[(NodeLabel, &[u8])] = &[
+            (NodeLabel::Wald, &[1]),
+            (NodeLabel::Space, &[6]),
+            (NodeLabel::Meld(MoldId::from(0x0123_4567)), &[
+                2, 0x67, 0x45, 0x23, 1,
+            ]),
+            (NodeLabel::Tile(MoldId::from(0x89ab_cdef)), &[
+                3, 0xef, 0xcd, 0xab, 0x89,
+            ]),
+            (
+                NodeLabel::Grout {
+                    sort: GroutSort::from(0x1234),
+                    shape: GroutShape::Infix,
+                },
+                &[4, 0x34, 0x12, 3],
+            ),
+            (
+                NodeLabel::GhostClose {
+                    sort: GroutSort::from(0xabcd),
+                    class: ClosingClass::Brace,
+                },
+                &[5, 0xcd, 0xab, 2],
+            ),
+        ];
+        for &(label, golden) in labels {
+            let mut writer = super::Writer { bytes: vec![0xee] };
+            super::write_label(&mut writer, label);
+            assert_eq!(writer.bytes.first(), Some(&0xee));
+            assert_eq!(&writer.bytes[1 ..], golden);
+            writer.bytes.push(0xdd);
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(writer.bytes.as_slice()),
+                pos: 1,
+            };
+            assert_eq!(super::read_label(&mut reader), Ok(label));
+            assert_eq!(reader.pos, golden.len() + 1);
+            assert_eq!(u8::from(reader.u8()?), 0xdd);
+            for cut in 1 .. golden.len() {
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(&golden[.. cut]),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_label(&mut reader),
+                    Err(CheckpointError::Truncated)
+                );
+            }
+        }
+        for tag in 0_u8 ..= u8::MAX {
+            if !(1 ..= 6).contains(&tag) {
+                let bytes = [tag];
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_label(&mut reader),
+                    Err(CheckpointError::BadTag { tag })
+                );
+                assert_eq!(reader.pos, 1);
+            }
+            for (outer, limit) in [(4, 4), (5, 3)] {
+                if tag >= limit {
+                    let bytes = [outer, 0x34, 0x12, tag];
+                    let mut reader = super::Reader {
+                        bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                        pos: 0,
+                    };
+                    assert_eq!(
+                        super::read_label(&mut reader),
+                        Err(CheckpointError::BadTag { tag })
+                    );
+                    assert_eq!(reader.pos, 4);
+                }
+            }
+        }
+        let emissions = [
+            (
+                super::EmitOp::Token {
+                    label: NodeLabel::Space,
+                    start: 0x0102_0304,
+                    end: 0xa1a2_a3a4,
+                },
+                vec![0, 6, 4, 3, 2, 1, 0xa4, 0xa3, 0xa2, 0xa1],
+            ),
+            (
+                super::EmitOp::Interior {
+                    label: NodeLabel::Wald,
+                    start: 0,
+                    end: 2,
+                    children: vec![super::EmitId(0x0102_0304), super::EmitId(u32::MAX)],
+                },
+                vec![
+                    1, 1, 0, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 4, 3, 2, 1, 0xff, 0xff,
+                    0xff, 0xff,
+                ],
+            ),
+            (
+                super::EmitOp::Interior {
+                    label: NodeLabel::Wald,
+                    start: 0,
+                    end: 0,
+                    children: Vec::new(),
+                },
+                vec![1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            ),
+        ];
+        for (op, golden) in emissions {
+            let mut writer = super::Writer { bytes: Vec::new() };
+            super::write_emit_op(&mut writer, &op);
+            assert_eq!(writer.bytes, golden);
+            writer.bytes.push(0xdd);
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(writer.bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(super::read_emit_op(&mut reader), Ok(op));
+            assert_eq!(reader.pos, golden.len());
+            assert_eq!(u8::from(reader.u8()?), 0xdd);
+            for cut in 0 .. golden.len() {
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(&golden[.. cut]),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_emit_op(&mut reader),
+                    Err(CheckpointError::Truncated)
+                );
+            }
+        }
+        for tag in 2_u8 ..= u8::MAX {
+            let bytes = [tag];
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_emit_op(&mut reader),
+                Err(CheckpointError::BadTag { tag })
+            );
+            assert_eq!(reader.pos, 1);
+        }
+        let mut roles = vec![(super::Role::Operand, vec![0])];
+        for (shape, tag) in [
+            (super::OpShape::Prefix, 0),
+            (super::OpShape::Infix, 1),
+            (super::OpShape::Postfix, 2),
+        ] {
+            roles.push((
+                super::Role::Operator {
+                    mold: MoldId::from(0x0123_4567),
+                    prec: super::Prec::new(super::PrecIndex::from(0x1234)),
+                    sort: Sort::Pattern,
+                    shape,
+                },
+                vec![2, 0x67, 0x45, 0x23, 1, 0x34, 0x12, 1, 0, tag],
+            ));
+        }
+        for open in [false, true] {
+            for start in [false, true] {
+                for absorb_left in [false, true] {
+                    roles.push((
+                        super::Role::FormTile {
+                            mold: MoldId::from(0x0123_4567),
+                            sort: Sort::ModuleMember,
+                            open,
+                            start,
+                            absorb_left,
+                        },
+                        vec![
+                            1,
+                            0x67,
+                            0x45,
+                            0x23,
+                            1,
+                            5,
+                            0,
+                            u8::from(open),
+                            u8::from(start),
+                            u8::from(absorb_left),
+                        ],
+                    ));
+                }
+            }
+        }
+        for (role, suffix) in roles {
+            let cell = super::Cell {
+                emit: super::EmitId(0x0102_0304),
+                start: 0x1122_3344,
+                end: 0x5566_7788,
+                sort: Sort::Type,
+                role,
+            };
+            let mut golden = vec![
+                4, 3, 2, 1, 0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55, 3, 0,
+            ];
+            golden.extend_from_slice(&suffix);
+            let mut writer = super::Writer { bytes: Vec::new() };
+            super::write_cell(&mut writer, cell);
+            assert_eq!(writer.bytes, golden);
+            writer.bytes.push(0xdd);
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(writer.bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(super::read_cell(&mut reader), Ok(cell));
+            assert_eq!(reader.pos, golden.len());
+            assert_eq!(u8::from(reader.u8()?), 0xdd);
+            let cuts = match role {
+                | super::Role::Operand => 0 .. 15,
+                | super::Role::Operator {
+                    shape: super::OpShape::Prefix,
+                    ..
+                }
+                | super::Role::FormTile {
+                    open: false,
+                    start: false,
+                    absorb_left: false,
+                    ..
+                } => 15 .. 24,
+                | _ => 0 .. 0,
+            };
+            for cut in cuts {
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(&golden[.. cut]),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_cell(&mut reader),
+                    Err(CheckpointError::Truncated)
+                );
+            }
+        }
+        for tag in 3_u8 ..= u8::MAX {
+            let mut bytes = vec![0; 14];
+            bytes.push(tag);
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_cell(&mut reader),
+                Err(CheckpointError::BadTag { tag })
+            );
+            assert_eq!(reader.pos, 15);
+        }
+        for (bytes, error, consumed) in [
+            (
+                vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff],
+                CheckpointError::Malformed,
+                14,
+            ),
+            (
+                vec![
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0xff, 0xff, 0, 0, 0,
+                ],
+                CheckpointError::Malformed,
+                21,
+            ),
+            (
+                vec![
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0,
+                ],
+                CheckpointError::Malformed,
+                23,
+            ),
+            (
+                vec![
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 3,
+                ],
+                CheckpointError::BadTag { tag: 3 },
+                24,
+            ),
+        ] {
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(super::read_cell(&mut reader), Err(error));
+            assert_eq!(reader.pos, consumed);
+        }
+        let obligation = super::ObligationInstance::new(
+            Oblig::AmbiguousPrec,
+            gandr_surface_syntax::ByteSpan::new(
+                ByteOffset::from(0x0102_0304),
+                ByteOffset::from(0x1122_3344),
+            )?,
+        );
+        let golden = [7, 4, 3, 2, 1, 0x44, 0x33, 0x22, 0x11];
+        let mut writer = super::Writer { bytes: Vec::new() };
+        super::write_obligation(&mut writer, obligation);
+        assert_eq!(writer.bytes, golden);
+        let mut reader = super::Reader {
+            bytes: CheckpointBytesRef::from(golden.as_slice()),
+            pos: 0,
+        };
+        assert_eq!(super::read_obligation(&mut reader), Ok(obligation));
+        assert_eq!(reader.pos, 9);
+        for cut in 0 .. golden.len() {
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(&golden[.. cut]),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_obligation(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+        }
+        let point = gandr_surface_syntax::ByteSpan::new(
+            ByteOffset::from(usize::MAX),
+            ByteOffset::from(usize::MAX),
+        )?;
+        let mut writer = super::Writer { bytes: Vec::new() };
+        super::write_obligation(
+            &mut writer,
+            super::ObligationInstance::new(Oblig::MissingMeld, point),
+        );
+        assert_eq!(writer.bytes, vec![
+            0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+        ]);
+        let mut reader = super::Reader {
+            bytes: CheckpointBytesRef::from(writer.bytes.as_slice()),
+            pos: 0,
+        };
+        let decoded = super::read_obligation(&mut reader)?;
+        assert_eq!(
+            usize::from(decoded.span.start()),
+            usize::try_from(u32::MAX)?
+        );
+        assert_eq!(decoded.span.start(), decoded.span.end());
+        for (bytes, error, consumed) in [
+            (vec![8], CheckpointError::BadTag { tag: 8 }, 1),
+            (
+                vec![0, 2, 0, 0, 0, 1, 0, 0, 0],
+                CheckpointError::Malformed,
+                9,
+            ),
+        ] {
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(super::read_obligation(&mut reader), Err(error));
+            assert_eq!(reader.pos, consumed);
+        }
+        let pbg = paren_pbg()?;
+        let mut state = MeldState::new(&pbg);
+        for text in ["(", "x"] {
+            state.push(&MoldedTile::new(
+                only(&pbg, TileLabel(text)),
+                TileText::from(text),
+            ));
+        }
+        let checkpoint = state.checkpoint();
+        let bytes = checkpoint.to_bytes();
+        for cut in 0 .. bytes.as_ref().len() {
+            assert_eq!(
+                Checkpoint::from_bytes(CheckpointBytesRef::from(&bytes.as_ref()[.. cut])),
+                Err(CheckpointError::Truncated)
+            );
+        }
+        let mut malformed = super::Writer { bytes: Vec::new() };
+        malformed.u64(super::WireU64::from(0));
+        malformed.blob(super::ByteChunk::from(b"\xff".as_slice()));
+        assert_eq!(
+            Checkpoint::from_bytes(CheckpointBytesRef::from(malformed.bytes.as_slice())),
+            Err(CheckpointError::Malformed)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn checkpoint_tags_cover_closed_vocabularies() -> Result<(), Box<dyn Error>>
+    {
+        {
+            let variants = [
+                GroutShape::Convex,
+                GroutShape::Prefix,
+                GroutShape::Postfix,
+                GroutShape::Infix,
+            ];
+            for (index, &variant) in variants.iter().enumerate() {
+                let mut writer = super::Writer { bytes: vec![0xee] };
+                super::write_shape(&mut writer, variant);
+                assert_eq!(writer.bytes, vec![0xee, u8::try_from(index)?]);
+            }
+            for tag in 0_u8 ..= u8::MAX {
+                let bytes = [tag];
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_shape(&mut reader),
+                    variants
+                        .get(usize::from(tag))
+                        .copied()
+                        .ok_or(CheckpointError::BadTag { tag })
+                );
+                assert_eq!(reader.pos, 1);
+            }
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from([].as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_shape(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+            assert_eq!(reader.pos, 0);
+        }
+        {
+            let variants = [
+                ClosingClass::Paren,
+                ClosingClass::Bracket,
+                ClosingClass::Brace,
+            ];
+            for (index, &variant) in variants.iter().enumerate() {
+                let mut writer = super::Writer { bytes: vec![0xee] };
+                super::write_class(&mut writer, variant);
+                assert_eq!(writer.bytes, vec![0xee, u8::try_from(index)?]);
+            }
+            for tag in 0_u8 ..= u8::MAX {
+                let bytes = [tag];
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_class(&mut reader),
+                    variants
+                        .get(usize::from(tag))
+                        .copied()
+                        .ok_or(CheckpointError::BadTag { tag })
+                );
+                assert_eq!(reader.pos, 1);
+            }
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from([].as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_class(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+            assert_eq!(reader.pos, 0);
+        }
+        {
+            let variants = [
+                super::OpShape::Prefix,
+                super::OpShape::Infix,
+                super::OpShape::Postfix,
+            ];
+            for (index, &variant) in variants.iter().enumerate() {
+                let mut writer = super::Writer { bytes: vec![0xee] };
+                super::write_shape_op(&mut writer, variant);
+                assert_eq!(writer.bytes, vec![0xee, u8::try_from(index)?]);
+            }
+            for tag in 0_u8 ..= u8::MAX {
+                let bytes = [tag];
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_shape_op(&mut reader),
+                    variants
+                        .get(usize::from(tag))
+                        .copied()
+                        .ok_or(CheckpointError::BadTag { tag })
+                );
+                assert_eq!(reader.pos, 1);
+            }
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from([].as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_shape_op(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+            assert_eq!(reader.pos, 0);
+        }
+        {
+            let variants = [
+                Oblig::MissingMeld,
+                Oblig::MissingTile,
+                Oblig::IncompleteTile,
+                Oblig::UnmoldedTok,
+                Oblig::InconMeld,
+                Oblig::ExtraMeld,
+                Oblig::ReservedKeyword,
+                Oblig::AmbiguousPrec,
+            ];
+            for (index, &variant) in variants.iter().enumerate() {
+                let mut writer = super::Writer { bytes: vec![0xee] };
+                super::write_oblig(&mut writer, variant);
+                assert_eq!(writer.bytes, vec![0xee, u8::try_from(index)?]);
+            }
+            for tag in 0_u8 ..= u8::MAX {
+                let bytes = [tag];
+                let mut reader = super::Reader {
+                    bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                    pos: 0,
+                };
+                assert_eq!(
+                    super::read_oblig(&mut reader),
+                    variants
+                        .get(usize::from(tag))
+                        .copied()
+                        .ok_or(CheckpointError::BadTag { tag })
+                );
+                assert_eq!(reader.pos, 1);
+            }
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from([].as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_oblig(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+            assert_eq!(reader.pos, 0);
+        }
+        let variants = [
+            Sort::Item,
+            Sort::Pattern,
+            Sort::Expression,
+            Sort::Type,
+            Sort::Instantiation,
+            Sort::ModuleMember,
+        ];
+        for (index, &variant) in variants.iter().enumerate() {
+            let mut writer = super::Writer { bytes: vec![0xee] };
+            super::write_sort(&mut writer, variant);
+            assert_eq!(writer.bytes, vec![0xee, u8::try_from(index)?, 0]);
+        }
+        for tag in 0_u16 ..= u16::MAX {
+            let bytes = tag.to_le_bytes();
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_sort(&mut reader),
+                variants
+                    .get(usize::from(tag))
+                    .copied()
+                    .ok_or(CheckpointError::Malformed)
+            );
+            assert_eq!(reader.pos, 2);
+        }
+        for bytes in [[].as_slice(), [0].as_slice()] {
+            let mut reader = super::Reader {
+                bytes: CheckpointBytesRef::from(bytes),
+                pos: 0,
+            };
+            assert_eq!(
+                super::read_sort(&mut reader),
+                Err(CheckpointError::Truncated)
+            );
+            assert_eq!(reader.pos, 0);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn wire_values_preserve_bytes_and_cursor_failure_boundaries() -> Result<(), Box<dyn Error>>
+    {
+        let mut writer = super::Writer { bytes: vec![0xaa] };
+        writer.u8(super::WireByte::from(0xab));
+        writer.u16(super::WireU16::from(0x1234));
+        writer.u32(super::WireU32::from(0x0123_4567));
+        writer.u64(super::WireU64::from(0x0123_4567_89ab_cdef));
+        writer.len(super::CheckpointCount::from(3));
+        writer.blob(super::ByteChunk::from("é\0".as_bytes()));
+        assert_eq!(writer.bytes, vec![
+            0xaa, 0xab, 0x34, 0x12, 0x67, 0x45, 0x23, 0x01, 0xef, 0xcd, 0xab, 0x89, 0x67, 0x45,
+            0x23, 0x01, 3, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0xc3, 0xa9, 0
+        ]);
+        let mut reader = super::Reader {
+            bytes: super::CheckpointBytesRef::from(writer.bytes.as_slice()),
+            pos: 1,
+        };
+        assert_eq!(u8::from(reader.u8()?), 0xab);
+        assert_eq!(reader.pos, 2);
+        assert_eq!(u16::from(reader.u16()?), 0x1234);
+        assert_eq!(reader.pos, 4);
+        assert_eq!(u32::from(reader.u32()?), 0x0123_4567);
+        assert_eq!(reader.pos, 8);
+        assert_eq!(u64::from(reader.u64()?), 0x0123_4567_89ab_cdef);
+        assert_eq!(reader.pos, 16);
+        assert_eq!(usize::from(reader.len()?), 3);
+        assert_eq!(reader.pos, 24);
+        assert_eq!(reader.blob()?.as_ref(), "é\0".as_bytes());
+        assert_eq!(reader.pos, 35);
+        assert_eq!(reader.u8(), Err(super::CheckpointError::Truncated));
+        assert_eq!(reader.pos, 35);
+        assert!(reader.take(super::ByteCount::from(0))?.as_ref().is_empty());
+        assert_eq!(reader.pos, 35);
+        assert_eq!(
+            reader.take(super::ByteCount::from(usize::MAX)),
+            Err(super::CheckpointError::Truncated)
+        );
+        assert_eq!(reader.pos, 35);
+        let data = [0xff; 8];
+        for length in 0 .. 8 {
+            let bytes = super::CheckpointBytesRef::from(&data[.. length]);
+            let mut reader = super::Reader { bytes, pos: 0 };
+            assert_eq!(reader.u64(), Err(super::CheckpointError::Truncated));
+            assert_eq!(reader.pos, 0);
+            assert_eq!(reader.len(), Err(super::CheckpointError::Truncated));
+            assert_eq!(reader.pos, 0);
+            assert_eq!(reader.blob(), Err(super::CheckpointError::Truncated));
+            assert_eq!(reader.pos, 0);
+            if length < 4 {
+                assert_eq!(reader.u32(), Err(super::CheckpointError::Truncated));
+                assert_eq!(reader.pos, 0);
+            }
+            if length < 2 {
+                assert_eq!(reader.u16(), Err(super::CheckpointError::Truncated));
+                assert_eq!(reader.pos, 0);
+            }
+        }
+        let mut reader = super::Reader {
+            bytes: super::CheckpointBytesRef::from(data.as_slice()),
+            pos: 0,
+        };
+        assert_eq!(
+            reader.len().map(usize::from),
+            usize::try_from(u64::MAX).map_err(|_error| super::CheckpointError::Malformed)
+        );
+        assert_eq!(reader.pos, 8);
+        let short_payload: &[u8] = &[4, 0, 0, 0, 0, 0, 0, 0, 1, 2];
+        let mut reader = super::Reader {
+            bytes: super::CheckpointBytesRef::from(short_payload),
+            pos: 0,
+        };
+        assert_eq!(reader.blob(), Err(super::CheckpointError::Truncated));
+        assert_eq!(reader.pos, 8);
+        let mut writer = super::Writer { bytes: Vec::new() };
+        for bytes in [b"".as_slice(), b"\xff\0".as_slice()] {
+            writer.blob(super::ByteChunk::from(bytes));
+        }
+        assert_eq!(writer.bytes, vec![
+            0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0xff, 0
+        ]);
+        let mut reader = super::Reader {
+            bytes: super::CheckpointBytesRef::from(writer.bytes.as_slice()),
+            pos: 0,
+        };
+        assert!(reader.blob()?.as_ref().is_empty());
+        assert_eq!(reader.pos, 8);
+        assert_eq!(reader.blob()?.as_ref(), b"\xff\0");
+        assert_eq!(reader.pos, 18);
+        for byte in [0, 0xff] {
+            let mut writer = super::Writer { bytes: Vec::new() };
+            writer.u8(super::WireByte::from(byte));
+            writer.u16(super::WireU16::from(u16::from_le_bytes([byte; 2])));
+            writer.u32(super::WireU32::from(u32::from_le_bytes([byte; 4])));
+            writer.u64(super::WireU64::from(u64::from_le_bytes([byte; 8])));
+            assert_eq!(writer.bytes, vec![byte; 15]);
+            let mut reader = super::Reader {
+                bytes: super::CheckpointBytesRef::from(writer.bytes.as_slice()),
+                pos: 0,
+            };
+            assert_eq!(u8::from(reader.u8()?), byte);
+            assert_eq!(u16::from(reader.u16()?), u16::from_le_bytes([byte; 2]));
+            assert_eq!(u32::from(reader.u32()?), u32::from_le_bytes([byte; 4]));
+            assert_eq!(u64::from(reader.u64()?), u64::from_le_bytes([byte; 8]));
+            assert_eq!(reader.pos, 15);
+        }
+        let mut writer = super::Writer { bytes: Vec::new() };
+        writer.len(super::CheckpointCount::from(usize::MAX));
+        assert_eq!(writer.bytes, u64::try_from(usize::MAX)?.to_le_bytes());
+        Ok(())
+    }
+
+    #[test]
+    fn emission_preserves_byte_spans_child_order_and_errors() -> Result<(), Box<dyn Error>>
+    {
+        assert_eq!(
+            MeldState::wire_len::<u32>(super::CheckpointCount::from(0)),
+            0
+        );
+        assert_eq!(
+            MeldState::wire_len::<u32>(super::CheckpointCount::from(usize::try_from(u32::MAX)?)),
+            u32::MAX
+        );
+        let pbg = paren_pbg()?;
+        let atom = only(&pbg, TileLabel("x"));
+        let mut state = MeldState::new(&pbg);
+        let first = state.append_source(super::SourceFragment::from("é"));
+        let empty = state.append_source(super::SourceFragment::from(""));
+        let second = state.append_source(super::SourceFragment::from("x"));
+        assert_eq!(
+            first,
+            super::SourceSpan::new(super::SourceOffset::from(0), super::SourceOffset::from(2))
+        );
+        assert_eq!(
+            empty,
+            super::SourceSpan::point(super::SourceOffset::from(2))
+        );
+        assert_eq!(
+            second,
+            super::SourceSpan::new(super::SourceOffset::from(2), super::SourceOffset::from(3))
+        );
+        let left = state.emit_token(NodeLabel::Tile(atom), first);
+        let right = state.emit_token(NodeLabel::Tile(atom), second);
+        assert_eq!((left.0, right.0), (0, 1));
+        let root_span = super::SourceSpan::new(first.start, second.end);
+        let root = state.emit_interior(NodeLabel::Wald, root_span, vec![right, left]);
+        assert_eq!(root.0, 2);
+        assert_eq!(state.emit_start(right), second.start);
+        assert_eq!(state.emit_start(root), first.start);
+        assert_eq!(
+            state.emit_start(super::EmitId(u32::MAX)),
+            super::SourceOffset::from(0)
+        );
+        let source = SourceText::from("éx");
+        let tree = state.build_tree(source, root)?;
+        assert_eq!(tile_texts(&tree, tree.root()), vec!["x", "é"]);
+        assert_eq!(crate::testing::reconstruct(&tree), "éx");
+        state.flag(Oblig::UnmoldedTok, first);
+        state.flag(Oblig::InconMeld, empty);
+        let inverted = super::SourceSpan::new(second.end, second.start);
+        state.flag(Oblig::AmbiguousPrec, inverted);
+        assert_eq!(state.obligations, vec![
+            super::ObligationInstance::new(Oblig::UnmoldedTok, first.byte_span()?),
+            super::ObligationInstance::new(Oblig::InconMeld, empty.byte_span()?)
+        ]);
+        assert_eq!(u32::from(state.delta().inserted(Oblig::UnmoldedTok)), 1);
+        assert_eq!(u32::from(state.delta().inserted(Oblig::InconMeld)), 1);
+        assert_eq!(u32::from(state.delta().inserted(Oblig::AmbiguousPrec)), 0);
+        assert!(matches!(
+            state.build_tree(source, super::EmitId(u32::MAX)),
+            Err(super::MeldError::Corrupt)
+        ));
+        let forward =
+            state.emit_interior(NodeLabel::Wald, root_span, vec![super::EmitId(u32::MAX)]);
+        assert!(matches!(
+            state.build_tree(source, forward),
+            Err(super::MeldError::Corrupt)
+        ));
+        let mut state = MeldState::new(&pbg);
+        let bad = state.emit_token(NodeLabel::Tile(atom), inverted);
+        assert!(matches!(
+            state.build_tree(source, bad),
+            Err(super::MeldError::Build(
+                gandr_surface_syntax::SyntaxError::InvertedSpan { .. }
+            ))
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn precedence_comparison_preserves_relation_priority() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = paren_pbg()?;
+        let state = MeldState::new(&pbg);
+        let open = only(&pbg, TileLabel("("));
+        let close = only(&pbg, TileLabel(")"));
+        let prec = pbg.mold(open)?.prec;
+        assert!(bool::from(state.adjacent(open, close)));
+        assert!(!bool::from(state.adjacent(close, open)));
+        assert_eq!(state.first_successor(open), Some(close));
+        assert_eq!(state.first_successor(close), None);
+        assert_eq!(state.first_successor(MoldId::from(u32::MAX)), None);
+        assert_eq!(
+            state.compare(open, prec, Sort::Expression, close, prec, Sort::Pattern),
+            super::Rel::Match
+        );
+        let pbg = infix_pbg()?;
+        let state = MeldState::new(&pbg);
+        let atom = only(&pbg, TileLabel("x"));
+        let plus = only(&pbg, TileLabel("+"));
+        let atom_prec = pbg.mold(atom)?.prec;
+        let plus_prec = pbg.mold(plus)?.prec;
+        assert_eq!(
+            state.compare(
+                atom,
+                atom_prec,
+                Sort::Expression,
+                plus,
+                plus_prec,
+                Sort::Expression
+            ),
+            super::Rel::Takes
+        );
+        assert_eq!(
+            state.compare(
+                plus,
+                plus_prec,
+                Sort::Expression,
+                atom,
+                atom_prec,
+                Sort::Expression
+            ),
+            super::Rel::Yields
+        );
+        assert_eq!(
+            state.compare(
+                plus,
+                plus_prec,
+                Sort::Expression,
+                plus,
+                plus_prec,
+                Sort::Expression
+            ),
+            super::Rel::Takes
+        );
+        assert_eq!(
+            state.compare(
+                plus,
+                plus_prec,
+                Sort::Expression,
+                atom,
+                atom_prec,
+                Sort::Pattern
+            ),
+            super::Rel::CrossSort
+        );
+        let pbg = ambiguous_pbg()?;
+        let state = MeldState::new(&pbg);
+        let left = only(&pbg, TileLabel("@a"));
+        let right = only(&pbg, TileLabel("@b"));
+        assert_eq!(
+            state.compare(
+                left,
+                pbg.mold(left)?.prec,
+                Sort::Expression,
+                right,
+                pbg.mold(right)?.prec,
+                Sort::Expression
+            ),
+            super::Rel::Ambiguous
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn missing_operator_operands_are_zero_width_repairs() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = infix_pbg()?;
+        let atom = only(&pbg, TileLabel("x"));
+        let plus = only(&pbg, TileLabel("+"));
+        let cases: &[(&str, &[usize])] =
+            &[("+", &[0, 1]), ("+x", &[0]), ("x+", &[2]), ("x+x", &[])];
+        for &(source, points) in cases {
+            let mut state = MeldState::new(&pbg);
+            for text in source.split("").filter(|part| !part.is_empty()) {
+                let mold = if text == "+" { plus } else { atom };
+                state.push(&MoldedTile::new(mold, TileText::from(text)));
+            }
+            let completion = state.expected();
+            let expected = if source.ends_with('+') {
+                vec![Expected::Hole(Sort::Expression)]
+            }
+            else {
+                Vec::new()
+            };
+            assert_eq!(completion.expected(), expected);
+            assert_eq!(bool::from(completion.is_complete()), !source.ends_with('+'));
+            let mut pending: Vec<_> = completion
+                .obligations()
+                .iter()
+                .map(|obligation| {
+                    (
+                        obligation.class,
+                        usize::from(obligation.span.start()),
+                        usize::from(obligation.span.end()),
+                    )
+                })
+                .collect();
+            pending.sort_unstable();
+            let expected: Vec<_> = points
+                .iter()
+                .map(|&point| (Oblig::MissingMeld, point, point))
+                .collect();
+            assert_eq!(pending, expected, "{source}");
+            let (tree, obligations) = state.commit_with_obligations(SourceText::from(source))?;
+            assert_eq!(crate::testing::reconstruct(&tree), source);
+            let observed: Vec<_> = obligations
+                .iter()
+                .map(|obligation| {
+                    (
+                        obligation.class,
+                        usize::from(obligation.span.start()),
+                        usize::from(obligation.span.end()),
+                    )
+                })
+                .collect();
+            assert_eq!(observed, expected, "{source}");
+            let grouts: Vec<_> = tree
+                .positions()
+                .filter_map(|position| tree.node(position))
+                .filter(|node| {
+                    matches!(node.label(), NodeLabel::Grout {
+                        shape: GroutShape::Convex,
+                        ..
+                    })
+                })
+                .map(|node| {
+                    (
+                        usize::from(node.span().start()),
+                        usize::from(node.span().end()),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                grouts,
+                points
+                    .iter()
+                    .map(|&point| (point, point))
+                    .collect::<Vec<_>>()
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn operator_shapes_preserve_uncaptured_neighbors() -> Result<(), Box<dyn Error>>
+    {
+        for (operator, expression, source, expected) in [
+            (
+                "~",
+                Regex::seq([Regex::tile(TileLabel("~")), Regex::sort(Sort::Expression)]),
+                "x~x",
+                vec![vec!["x"], vec!["~", "x"]],
+            ),
+            (
+                "!",
+                Regex::seq([Regex::sort(Sort::Expression), Regex::tile(TileLabel("!"))]),
+                "x!x",
+                vec![vec!["x", "!"], vec!["x"]],
+            ),
+        ] {
+            let mut spec = PrecSpec::new();
+            let atom_prec = spec.insert("atom", Assoc::Non)?;
+            let operator_prec = spec.insert("operator", Assoc::Left)?;
+            spec.add_edge(atom_prec, operator_prec)?;
+            let pbg = Pbg::build(PrecDag::build(&spec)?, vec![
+                Rule::new(
+                    RuleName("operator"),
+                    Sort::Expression,
+                    operator_prec,
+                    expression,
+                ),
+                Rule::new(
+                    RuleName("atom"),
+                    Sort::Expression,
+                    atom_prec,
+                    Regex::tile(TileLabel("x")),
+                ),
+            ])?;
+            let atom = only(&pbg, TileLabel("x"));
+            let operation = only(&pbg, TileLabel(operator));
+            let mut state = MeldState::new(&pbg);
+            for text in source.split("").filter(|part| !part.is_empty()) {
+                let mold = if text == "x" { atom } else { operation };
+                state.push(&MoldedTile::new(mold, TileText::from(text)));
+            }
+            let (tree, obligations) = state.commit_with_obligations(SourceText::from(source))?;
+            assert!(obligations.is_empty(), "{source}: {obligations:?}");
+            assert_eq!(crate::testing::reconstruct(&tree), source);
+            let observed: Vec<_> = tree
+                .children(tree.root())
+                .map(|child| tile_texts(&tree, child))
+                .collect();
+            assert_eq!(observed, expected, "{source}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn stack_splices_keep_shifted_cache_positions_exact() -> Result<(), Box<dyn Error>>
+    {
+        let mut spec = PrecSpec::new();
+        let atom = spec.insert("atom", Assoc::Non)?;
+        let multiply = spec.insert("multiply", Assoc::Left)?;
+        let add = spec.insert("add", Assoc::Left)?;
+        spec.add_edge(atom, multiply)?;
+        spec.add_edge(multiply, add)?;
+        let pbg = Pbg::build(PrecDag::build(&spec)?, vec![
+            Rule::new(
+                RuleName("atom"),
+                Sort::Expression,
+                atom,
+                Regex::tile(TileLabel("x")),
+            ),
+            Rule::new(
+                RuleName("group"),
+                Sort::Expression,
+                atom,
+                Regex::seq([
+                    Regex::tile(TileLabel("(")),
+                    Regex::sort(Sort::Expression),
+                    Regex::tile(TileLabel(")")),
+                ]),
+            ),
+            Rule::new(
+                RuleName("add"),
+                Sort::Expression,
+                add,
+                Regex::seq([
+                    Regex::sort(Sort::Expression),
+                    Regex::tile(TileLabel("+")),
+                    Regex::sort(Sort::Expression),
+                ]),
+            ),
+            Rule::new(
+                RuleName("multiply"),
+                Sort::Expression,
+                multiply,
+                Regex::seq([
+                    Regex::sort(Sort::Expression),
+                    Regex::tile(TileLabel("*")),
+                    Regex::sort(Sort::Expression),
+                ]),
+            ),
+        ])?;
+        let mut state = MeldState::new(&pbg);
+        for text in ["(", "x", "+", "x", "*"] {
+            state.push(&MoldedTile::new(
+                only(&pbg, TileLabel(text)),
+                TileText::from(text),
+            ));
+        }
+        let initial = state.stack.clone();
+        let replacement = initial[1];
+        assert_eq!(state.operators, vec![2, 4]);
+        state.replace_range(
+            super::StackRange::new(super::StackIndex::from(1), super::StackIndex::from(3)),
+            replacement,
+        );
+        assert_eq!(state.stack, vec![
+            initial[0],
+            replacement,
+            initial[3],
+            initial[4]
+        ]);
+        assert_eq!(state.frontiers, vec![0]);
+        assert_eq!(state.operators, vec![3]);
+        assert_eq!(
+            state.topmost_operator_index(),
+            Some(super::OperatorIndex::from(3))
+        );
+        assert_eq!(
+            state.highest_reducible(super::StackFloor::from(3)),
+            Some(super::CollapseStep::ReduceOperator(
+                super::OperatorIndex::from(3)
+            ))
+        );
+        assert_eq!(state.highest_reducible(super::StackFloor::from(4)), None);
+        assert_eq!(
+            state.operator_at(super::OperatorIndex::from(3)),
+            Some((only(&pbg, TileLabel("*")), multiply, Sort::Expression))
+        );
+        assert_eq!(state.operator_at(super::OperatorIndex::from(1)), None);
+        assert_eq!(
+            state.operator_at(super::OperatorIndex::from(usize::MAX)),
+            None
+        );
+        state.push_cell(initial[0]);
+        assert_eq!(state.topmost_operator_index(), None);
+        assert_eq!(
+            state.highest_reducible(super::StackFloor::from(0)),
+            Some(super::CollapseStep::ForceCloseForm(
+                super::FrontierIndex::from(4)
+            ))
+        );
+        let before = state.stack.clone();
+        for range in [
+            super::StackRange::new(super::StackIndex::from(2), super::StackIndex::from(2)),
+            super::StackRange::new(
+                super::StackIndex::from(0),
+                super::StackIndex::from(usize::MAX),
+            ),
+        ] {
+            state.replace_range(range, replacement);
+        }
+        let mut expected = before;
+        expected.extend_from_slice(&[replacement, replacement]);
+        assert_eq!(state.stack, expected);
+        assert_eq!(state.operators, vec![3]);
+        assert_eq!(state.frontiers, vec![0, 4]);
+        state.replace_range(
+            super::StackRange::new(super::StackIndex::from(5), super::StackIndex::from(7)),
+            replacement,
+        );
+        assert_eq!(state.stack, expected[.. 6]);
+        state.assert_head_caches_exact();
+        Ok(())
+    }
+
+    #[test]
+    fn frontier_flags_and_successor_labels_handle_boundary_positions() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = paren_pbg()?;
+        let open = only(&pbg, TileLabel("("));
+        let mut state = MeldState::new(&pbg);
+        assert_eq!(state.nearest_open_form(), None);
+        assert_eq!(state.frontier_hole_sort(MoldId::from(u32::MAX)), None);
+        for index in [0_usize, usize::MAX] {
+            let frontier = super::FrontierIndex::from(index);
+            assert!(!bool::from(state.tail_is_whole(frontier)));
+            assert!(!bool::from(
+                state.extends_tail(frontier, super::Incoming::Tile(open))
+            ));
+        }
+        let absent_labels: &[&[&str]] = &[&[], &["absent"], &[" )"]];
+        for &labels in absent_labels {
+            assert!(!bool::from(
+                state.successor_label_in(open, super::CandidateLabels::from(labels))
+            ));
+        }
+        let closing: &[&str] = &[")"];
+        assert!(bool::from(state.successor_label_in(
+            open,
+            super::CandidateLabels::from(closing)
+        )));
+        for _ in 0_u8 .. 2_u8 {
+            state.push(&MoldedTile::new(open, TileText::from("(")));
+        }
+        assert_eq!(state.frontiers, vec![0, 1]);
+        for (index, flag, expected) in [
+            (0_usize, false, vec![1_usize]),
+            (0, true, vec![0, 1]),
+            (1, false, vec![0]),
+            (1, true, vec![0, 1]),
+            (1, true, vec![0, 1]),
+        ] {
+            state.set_form_open(super::StackIndex::from(index), super::FormOpen::from(flag));
+            assert_eq!(state.frontiers, expected);
+            assert_eq!(
+                state.nearest_open_form().map(usize::from),
+                expected.last().copied()
+            );
+            state.assert_head_caches_exact();
+        }
+        let before = state.checkpoint().to_bytes();
+        state.set_form_open(
+            super::StackIndex::from(usize::MAX),
+            super::FormOpen::from(false),
+        );
+        assert_eq!(state.checkpoint().to_bytes(), before);
+        assert_eq!(state.frontiers, vec![0, 1]);
+        Ok(())
+    }
+
+    #[test]
+    fn coordinate_conversions_cover_empty_inverted_and_ceiling()
+    {
+        for raw in [0_u32, 7, u32::MAX] {
+            let observed = usize::from(super::SourceOffset::from(raw).byte_offset());
+            assert_eq!(
+                u64::try_from(observed).unwrap(),
+                u64::from(raw).min(u64::try_from(usize::MAX).unwrap_or(u64::MAX))
+            );
+        }
+        for (raw, next) in [
+            (0_usize, Some(1_usize)),
+            (usize::MAX.saturating_sub(1), Some(usize::MAX)),
+            (usize::MAX, None),
+        ] {
+            let index = super::StackIndex::from(raw);
+            assert_eq!(index.next().map(usize::from), next);
+            assert_eq!(index.floor_after().map(usize::from), next);
+        }
+        for (start, end) in [(0_u32, 0_u32), (2, 5), (u32::MAX, u32::MAX)] {
+            let span = super::SourceSpan::new(
+                super::SourceOffset::from(start),
+                super::SourceOffset::from(end),
+            )
+            .byte_span()
+            .unwrap();
+            assert_eq!(
+                usize::from(span.start()),
+                usize::try_from(start).unwrap_or(usize::MAX)
+            );
+            assert_eq!(
+                usize::from(span.end()),
+                usize::try_from(end).unwrap_or(usize::MAX)
+            );
+        }
+        assert!(matches!(
+            super::SourceSpan::new(super::SourceOffset::from(5), super::SourceOffset::from(2))
+                .byte_span(),
+            Err(gandr_surface_syntax::SyntaxError::InvertedSpan { .. })
+        ));
+    }
+
+    #[test]
+    fn push_preserves_unknown_and_multibyte_source() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = infix_pbg()?;
+        let mut state = MeldState::new(&pbg);
+        let invalid = MoldId::from(u32::MAX);
+        let mut expected = String::new();
+        for text in ["", "é", "\0", "tail"] {
+            let start = expected.len();
+            let tile = MoldedTile::new(invalid, TileText::from(text));
+            assert_eq!(tile.mold(), invalid);
+            assert_eq!(<&str>::from(tile.text()), text);
+            state.push(&tile);
+            expected.push_str(text);
+            assert_eq!(state.source, expected);
+            let obligation = state.obligations().last().unwrap();
+            assert_eq!(obligation.class, Oblig::UnmoldedTok);
+            assert_eq!(usize::from(obligation.span.start()), start);
+            assert_eq!(usize::from(obligation.span.end()), expected.len());
+        }
+        let (tree, obligations) =
+            state.commit_with_obligations(SourceText::from(expected.as_str()))?;
+        assert_eq!(crate::testing::reconstruct(&tree), "é\0tail");
+        assert_eq!(
+            obligations
+                .iter()
+                .filter(|obligation| obligation.class == Oblig::UnmoldedTok)
+                .count(),
+            4
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn frontier_queries_follow_open_close_and_operand_transitions() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = paren_pbg()?;
+        let open = only(&pbg, TileLabel("("));
+        let close = only(&pbg, TileLabel(")"));
+        let atom = only(&pbg, TileLabel("x"));
+        let mut state = MeldState::new(&pbg);
+        let invalid = MoldId::from(u32::MAX);
+        assert_eq!(state.open_form_mold(), None);
+        assert!(!bool::from(state.has_open_form()));
+        assert!(!bool::from(state.would_continue_form(close)));
+        assert!(!bool::from(state.admits(close)));
+        assert!(bool::from(state.admits(invalid)));
+        assert!(bool::from(state.sort_admits(invalid, Sort::Pattern)));
+        let frontier = state.admissibility_frontier();
+        assert_eq!(frontier.open, None);
+        assert_eq!(frontier.head_sort, None);
+        assert!(!bool::from(frontier.head_operand));
+        assert_eq!(frontier.expected, Sort::Expression);
+        state.push(&MoldedTile::new(open, TileText::from("(")));
+        assert_eq!(state.open_form_mold(), Some(open));
+        assert!(bool::from(state.has_open_form()));
+        assert!(bool::from(state.would_continue_form(close)));
+        assert!(!bool::from(state.would_continue_form(atom)));
+        assert!(bool::from(
+            state.admits_at(close, &state.admissibility_frontier())
+        ));
+        state.push(&MoldedTile::new(atom, TileText::from("x")));
+        assert_eq!(state.head_operand_sort(), Some(Sort::Expression));
+        assert!(bool::from(state.admissibility_frontier().head_operand));
+        state.push(&MoldedTile::new(close, TileText::from(")")));
+        assert_eq!(state.open_form_mold(), None);
+        assert!(!bool::from(state.has_open_form()));
+        assert_eq!(state.head_operand_sort(), Some(Sort::Expression));
+        let pbg = infix_pbg()?;
+        let plus = only(&pbg, TileLabel("+"));
+        let atom = only(&pbg, TileLabel("x"));
+        let mut state = MeldState::new(&pbg);
+        assert!(bool::from(state.continues_operand(plus)));
+        assert!(!bool::from(state.continues_operand(atom)));
+        assert!(!bool::from(state.admits(plus)));
+        state.push(&MoldedTile::new(atom, TileText::from("x")));
+        assert!(bool::from(state.admits(plus)));
+        state.push(&MoldedTile::new(plus, TileText::from("+")));
+        assert_eq!(state.head_operand_sort(), None);
+        assert!(!bool::from(state.admissibility_frontier().head_operand));
+        assert_eq!(state.expected_operand_sort(), Sort::Expression);
+        Ok(())
+    }
 
     #[test]
     fn empty_state_commits_to_a_root() -> Result<(), Box<dyn Error>>
@@ -5375,6 +7821,15 @@ mod tests
     ///
     /// # Errors
     /// The builder's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the checked fixture is consumed by a parser scenario
+    ///   asserting exact tree nesting, repair classes and spans. Omitting a
+    ///   terminal, duplicating its mold or changing the form/precedence
+    ///   relation changes those observations rather than merely the fixture
+    ///   shape.
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    #[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["(", ")", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
     fn paren_pbg() -> Result<Pbg, Box<dyn Error>>
     {
         let mut spec = PrecSpec::new();
@@ -5571,6 +8026,15 @@ mod tests
     ///
     /// # Errors
     /// The builder's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the checked fixture is consumed by a parser scenario
+    ///   asserting exact tree nesting, repair classes and spans. Omitting a
+    ///   terminal, duplicating its mold or changing the form/precedence
+    ///   relation changes those observations rather than merely the fixture
+    ///   shape.
+    /// - witness: `meld::tests::infix_reduces_after_precedence`
+    #[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["+", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
     fn infix_pbg() -> Result<Pbg, Box<dyn Error>>
     {
         let mut spec = PrecSpec::new();
@@ -5650,6 +8114,15 @@ mod tests
     ///
     /// # Errors
     /// The builder's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the checked fixture is consumed by a parser scenario
+    ///   asserting exact tree nesting, repair classes and spans. Omitting a
+    ///   terminal, duplicating its mold or changing the form/precedence
+    ///   relation changes those observations rather than merely the fixture
+    ///   shape.
+    /// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
+    #[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["@a", "@b", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
     fn ambiguous_pbg() -> Result<Pbg, Box<dyn Error>>
     {
         let mut spec = PrecSpec::new();
@@ -6080,6 +8553,15 @@ mod tests
     ///
     /// # Errors
     /// The builder's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the checked fixture is consumed by a parser scenario
+    ///   asserting exact tree nesting, repair classes and spans. Omitting a
+    ///   terminal, duplicating its mold or changing the form/precedence
+    ///   relation changes those observations rather than merely the fixture
+    ///   shape.
+    /// - witness: `meld::tests::completable_hole_does_not_absorb_enclosing_closer`
+    #[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["?", "name", "(", ")", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1)))]
     fn completable_pbg() -> Result<Pbg, Box<dyn Error>>
     {
         let mut spec = PrecSpec::new();
@@ -6120,6 +8602,16 @@ mod tests
     /// - requires: `label` declares exactly one mold.
     /// - ensures: that mold's id.
     /// - panics: when `label` declares none or several.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unique terminals selected in the independent
+    ///   parenthesis and infix fixtures feed exact child-order and precedence
+    ///   witnesses. Selecting another label or a neighboring mold changes the
+    ///   resulting parse; non-singleton menus violate the assertion
+    ///   precondition.
+    /// - witness: `meld::tests::brackets_close_on_the_matching_delimiter`
+    /// - witness: `meld::tests::infix_reduces_after_precedence`
+    #[anodized::spec(requires: pbg.candidates(label).len() == 1, ensures: |ret| pbg.candidates(label).first() == Some(&ret))]
     fn only(
         pbg: &Pbg,
         label: TileLabel,
