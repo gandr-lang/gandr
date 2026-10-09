@@ -201,6 +201,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-core-incremental"
+version = "0.0.0"
+dependencies = [
+ "blake3",
+ "gandr-core-checker",
+ "gandr-core-term",
+ "gandr-kernel-check-memo",
+ "gandr-kernel-strata",
+ "gandr-kernel-term",
+ "gandr-theory-orders",
+ "proptest",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-core-nbe"
 version = "0.0.0"
 dependencies = [

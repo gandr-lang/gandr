@@ -1,0 +1,1692 @@
+//! Canonical content: an item's or a type's nodes as a table numbered by
+//! discovery, free of arena ids and admission positions.
+//!
+//! # One table per item, numbered by discovery
+//!
+//! An item's content is every node reachable from its signature and its body,
+//! each listed once, numbered in the order a breadth-first walk from the two
+//! roots first discovers it, children left to right. A child is named by its
+//! number, a constant by the [`Reference`] its position resolves to. Two
+//! items built in two arenas, with different ids, have equal tables exactly
+//! when their node graphs are the same graph with the same sharing: sharing
+//! that differs makes the tables differ, which costs a reuse and never a wrong
+//! answer. The walk visits each node once, so the table is linear in the
+//! item's distinct nodes whatever its sharing, and it needs no stack: the
+//! queue holds the frontier, and a node is written when it leaves the queue,
+//! by which time every child already has its number.
+//!
+//! # An id the arena does not hold
+//!
+//! An id that resolves to nothing is a fact about another arena. It is listed
+//! as [`ContentNode::Unresolved`] with its sort, so encoding stays total, and
+//! a table holding one is opaque: its item is never adopted and never
+//! persisted.
+
+use alloc::collections::BTreeMap;
+use alloc::collections::VecDeque;
+use alloc::vec::Vec;
+
+use gandr_core_checker::body;
+use gandr_core_checker::signature;
+use gandr_core_term::CompType;
+use gandr_core_term::CompTypeId;
+use gandr_core_term::Computation;
+use gandr_core_term::ComputationId;
+use gandr_core_term::CoreArena;
+use gandr_core_term::Value;
+use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
+use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
+use gandr_kernel_strata::Level;
+use gandr_kernel_term::BaseType;
+use gandr_kernel_term::DeBruijnIndex;
+use gandr_kernel_term::Literal;
+use gandr_kernel_term::Side;
+use quenchant_shape::shape::Maybe;
+
+use crate::boundary::NodeIndex;
+use crate::region::Layout;
+use crate::region::Program;
+use crate::region::Reference;
+
+quenchant_shape::reason_enum! {
+    /// Why a type table could not be minted back into an arena.
+    pub mod seating {
+        /// The reason no node was minted.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The table holds an id another arena minted.
+            Unresolved,
+            /// The table holds a node that is its own descendant, which no
+            /// arena can mint child before parent.
+            Cyclic,
+            /// The table names an item the program does not hold.
+            Unplaced,
+            /// The table is not a value type, or a child has the wrong sort.
+            IllSorted,
+            /// The type holds a term — the code of an element type — and a
+            /// seat mints types alone.
+            Unseatable,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why an arena node has no site in an item's table.
+    pub mod site {
+        /// The reason no site is held.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The item's walk never reached the node.
+            Unreached,
+        }
+    }
+}
+
+quenchant_shape::reason_enum! {
+    /// Why a content node names no reference.
+    pub mod referencing {
+        /// The reason no reference is named.
+        #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+        pub enum Absent {
+            /// The node is neither a constant nor an abstract type.
+            NotAReference,
+        }
+    }
+}
+
+/// The four node sorts of the core vocabulary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Sort
+{
+    /// A value.
+    Value,
+    /// A computation.
+    Computation,
+    /// A value type.
+    ValueType,
+    /// A computation type.
+    CompType,
+}
+
+/// A node of a core arena, of any sort.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ArenaNode
+{
+    /// A value node.
+    Value(ValueId),
+    /// A computation node.
+    Computation(ComputationId),
+    /// A value-type node.
+    ValueType(ValueTypeId),
+    /// A computation-type node.
+    CompType(CompTypeId),
+}
+
+/// One node of a content table: a core former over table indices.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ContentNode
+{
+    /// A bound variable.
+    Variable
+    {
+        /// The zone its index counts in.
+        zone: Zone,
+        /// The index.
+        index: DeBruijnIndex,
+    },
+    /// A constant, by what its position names.
+    Constant(Reference),
+    /// The unit value.
+    Unit,
+    /// A literal.
+    Literal(Literal),
+    /// A pair of values.
+    Pair(NodeIndex, NodeIndex),
+    /// A sum injection.
+    Injection(Side, NodeIndex),
+    /// A thunk of a computation.
+    Thunk(NodeIndex),
+    /// A universe lift of a value.
+    ValueLift
+    {
+        /// The target level.
+        target: Level,
+        /// The value lifted.
+        body: NodeIndex,
+    },
+    /// A lambda over its body.
+    Lambda(NodeIndex),
+    /// An application of a computation to a value.
+    Application(NodeIndex, NodeIndex),
+    /// A return of a value.
+    Return(NodeIndex),
+    /// A bind of a computation into a continuation.
+    Bind(NodeIndex, NodeIndex),
+    /// A force of a value.
+    Force(NodeIndex),
+    /// A sum elimination.
+    Case
+    {
+        /// The scrutinee.
+        scrutinee: NodeIndex,
+        /// The left branch.
+        on_left: NodeIndex,
+        /// The right branch.
+        on_right: NodeIndex,
+    },
+    /// A base-type atom.
+    Base(BaseType),
+    /// The unit type.
+    UnitType,
+    /// A product type.
+    Product(NodeIndex, NodeIndex),
+    /// A sum type.
+    Sum(NodeIndex, NodeIndex),
+    /// A thunk type.
+    ThunkType(NodeIndex),
+    /// A universe.
+    Universe(Level),
+    /// A lift of a value type.
+    TypeLift
+    {
+        /// The type lifted.
+        inner: NodeIndex,
+        /// The target level.
+        target: Level,
+    },
+    /// The type a code denotes.
+    Element
+    {
+        /// The code.
+        code: NodeIndex,
+        /// The level it is read at.
+        target: Level,
+    },
+    /// A sealed abstract type, by what its position names.
+    Abstract(Reference),
+    /// A returner type.
+    Returner(NodeIndex),
+    /// A non-dependent arrow.
+    Arrow
+    {
+        /// The domain.
+        domain: NodeIndex,
+        /// The codomain.
+        codomain: NodeIndex,
+    },
+    /// A dependent arrow.
+    Pi
+    {
+        /// The domain.
+        domain: NodeIndex,
+        /// The codomain, under the domain's binder.
+        codomain: NodeIndex,
+    },
+    /// An id of this sort the arena resolves to nothing.
+    Unresolved(Sort),
+}
+
+/// The children of one content node, each with the sort it must have.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Children
+{
+    /// The children in order; slots past `count` are unused.
+    slots: [(NodeIndex, Sort); 3],
+    /// How many slots hold a child.
+    count: usize,
+}
+
+impl Default for Sort
+{
+    /// The value sort, which only fills unused child slots.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    fn default() -> Self
+    {
+        Self::Value
+    }
+}
+
+impl Children
+{
+    /// The children listed in `children`, in order.
+    ///
+    /// # Specification
+    /// - requires: at most three children, which every former satisfies.
+    /// - ensures: the first `children.len()` slots, in order.
+    /// - panics: none.
+    fn of(children: &[(NodeIndex, Sort)]) -> Self
+    {
+        let mut slots = [(NodeIndex::default(), Sort::Value); 3];
+        let mut count = 0_usize;
+        for (slot, &child) in slots.iter_mut().zip(children) {
+            *slot = child;
+            count = count.saturating_add(1);
+        }
+        Self { slots, count }
+    }
+
+    /// The children, in order.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (NodeIndex, Sort)> + '_
+    {
+        self.slots.iter().copied().take(self.count)
+    }
+}
+
+impl ContentNode
+{
+    /// The node's sort.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn sort(&self) -> Sort
+    {
+        match *self {
+            | Self::Variable { .. }
+            | Self::Constant(_)
+            | Self::Unit
+            | Self::Literal(_)
+            | Self::Pair(..)
+            | Self::Injection(..)
+            | Self::Thunk(_)
+            | Self::ValueLift { .. } => Sort::Value,
+            | Self::Lambda(_)
+            | Self::Application(..)
+            | Self::Return(_)
+            | Self::Bind(..)
+            | Self::Force(_)
+            | Self::Case { .. } => Sort::Computation,
+            | Self::Base(_)
+            | Self::UnitType
+            | Self::Product(..)
+            | Self::Sum(..)
+            | Self::ThunkType(_)
+            | Self::Universe(_)
+            | Self::TypeLift { .. }
+            | Self::Element { .. }
+            | Self::Abstract(_) => Sort::ValueType,
+            | Self::Returner(_) | Self::Arrow { .. } | Self::Pi { .. } => Sort::CompType,
+            | Self::Unresolved(sort) => sort,
+        }
+    }
+
+    /// The node's children, in order, each with the sort its former requires.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: every child index the node holds, left to right, beside the
+    ///   sort the core vocabulary gives that position.
+    /// - panics: none.
+    pub(crate) fn children(&self) -> Children
+    {
+        use Sort::CompType as C;
+        use Sort::Computation as M;
+        use Sort::Value as V;
+        use Sort::ValueType as A;
+        match *self {
+            | Self::Variable { .. }
+            | Self::Constant(_)
+            | Self::Unit
+            | Self::Literal(_)
+            | Self::Base(_)
+            | Self::UnitType
+            | Self::Universe(_)
+            | Self::Abstract(_)
+            | Self::Unresolved(_) => Children::default(),
+            | Self::Pair(first, second) => Children::of(&[(first, V), (second, V)]),
+            | Self::Injection(_, body)
+            | Self::ValueLift { body, .. }
+            | Self::Return(body)
+            | Self::Force(body) => Children::of(&[(body, V)]),
+            | Self::Thunk(body) | Self::Lambda(body) => Children::of(&[(body, M)]),
+            | Self::Application(head, argument) => Children::of(&[(head, M), (argument, V)]),
+            | Self::Bind(bound, rest) => Children::of(&[(bound, M), (rest, M)]),
+            | Self::Case {
+                scrutinee,
+                on_left,
+                on_right,
+            } => Children::of(&[(scrutinee, V), (on_left, M), (on_right, M)]),
+            | Self::Product(first, second) | Self::Sum(first, second) => {
+                Children::of(&[(first, A), (second, A)])
+            },
+            | Self::ThunkType(body) => Children::of(&[(body, C)]),
+            | Self::TypeLift { inner, .. } | Self::Returner(inner) => Children::of(&[(inner, A)]),
+            | Self::Element { code, .. } => Children::of(&[(code, V)]),
+            | Self::Arrow { domain, codomain } | Self::Pi { domain, codomain } => {
+                Children::of(&[(domain, A), (codomain, C)])
+            },
+        }
+    }
+
+    /// The reference a constant or an abstract type names.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn reference(&self) -> Maybe<&Reference, referencing::Absent>
+    {
+        match *self {
+            | Self::Constant(ref reference) | Self::Abstract(ref reference) => {
+                Maybe::Present(reference)
+            },
+            | Self::Variable { .. }
+            | Self::Unit
+            | Self::Literal(_)
+            | Self::Pair(..)
+            | Self::Injection(..)
+            | Self::Thunk(_)
+            | Self::ValueLift { .. }
+            | Self::Lambda(_)
+            | Self::Application(..)
+            | Self::Return(_)
+            | Self::Bind(..)
+            | Self::Force(_)
+            | Self::Case { .. }
+            | Self::Base(_)
+            | Self::UnitType
+            | Self::Product(..)
+            | Self::Sum(..)
+            | Self::ThunkType(_)
+            | Self::Universe(_)
+            | Self::TypeLift { .. }
+            | Self::Element { .. }
+            | Self::Returner(_)
+            | Self::Arrow { .. }
+            | Self::Pi { .. }
+            | Self::Unresolved(_) => Maybe::Absent(referencing::Absent::NotAReference),
+        }
+    }
+}
+
+/// Where an arena node sits in the table of the item that reached it.
+#[repr(transparent)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Sites(BTreeMap<ArenaNode, NodeIndex>);
+
+impl Sites
+{
+    /// The table index of `node`, when the item's walk reached it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn of(
+        &self,
+        node: ArenaNode,
+    ) -> Maybe<NodeIndex, site::Absent>
+    {
+        match self.0.get(&node) {
+            | Some(&index) => Maybe::Present(index),
+            | None => Maybe::Absent(site::Absent::Unreached),
+        }
+    }
+}
+
+/// Whether a table holds an id another arena minted.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Opacity
+{
+    /// Every node resolved.
+    Transparent,
+    /// Some node did not resolve; the item is never adopted or persisted.
+    Opaque,
+}
+
+/// An item's canonical content: its reference and its two halves as one table.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ItemContent
+{
+    /// The item's own reference: its key and occurrence.
+    reference: Reference,
+    /// The signature's root, or why there is none.
+    signature: Maybe<NodeIndex, signature::Absent>,
+    /// The body's root, or why there is none.
+    body: Maybe<NodeIndex, body::Absent>,
+    /// Every node reachable from the roots, numbered by discovery.
+    nodes: Vec<ContentNode>,
+}
+
+impl ItemContent
+{
+    /// The item's own reference.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn reference(&self) -> &Reference
+    {
+        &self.reference
+    }
+
+    /// The signature's root, or why there is none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn signature(&self) -> Maybe<NodeIndex, signature::Absent>
+    {
+        self.signature
+    }
+
+    /// The body's root, or why there is none.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub const fn body(&self) -> Maybe<NodeIndex, body::Absent>
+    {
+        self.body
+    }
+
+    /// Every node reachable from the roots, numbered by discovery.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn nodes(&self) -> &[ContentNode]
+    {
+        &self.nodes
+    }
+
+    /// The content of these parts, as the decoder reassembles it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn from_parts(
+        reference: Reference,
+        signature: Maybe<NodeIndex, signature::Absent>,
+        body: Maybe<NodeIndex, body::Absent>,
+        nodes: Vec<ContentNode>,
+    ) -> Self
+    {
+        Self {
+            reference,
+            signature,
+            body,
+            nodes,
+        }
+    }
+
+    /// Whether every node of the item resolved.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn opacity(&self) -> Opacity
+    {
+        opacity_of(&self.nodes)
+    }
+
+    /// The signature's type, as a type table of its own.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the table of every node reachable from the signature root,
+    ///   renumbered by discovery from that root alone, so it equals the table
+    ///   [`TypeContent::of_value_type`] gives the signature in its arena.
+    /// - provides: `signature::Absent::Unsigned` for an unsigned item.
+    /// - panics: none.
+    pub(crate) fn signature_type(&self) -> Maybe<TypeContent, signature::Absent>
+    {
+        match self.signature {
+            | Maybe::Present(root) => Maybe::Present(TypeContent {
+                nodes: renumber(&self.nodes, root),
+            }),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+}
+
+/// A type's canonical content: every node reachable from it, numbered by
+/// discovery, the type itself first.
+#[repr(transparent)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct TypeContent
+{
+    /// The nodes; the root is the first.
+    nodes: Vec<ContentNode>,
+}
+
+impl TypeContent
+{
+    /// The nodes; the root is the first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn nodes(&self) -> &[ContentNode]
+    {
+        &self.nodes
+    }
+
+    /// The content of these nodes, as the decoder reassembles it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) const fn from_nodes(nodes: Vec<ContentNode>) -> Self
+    {
+        Self { nodes }
+    }
+
+    /// The content of the value type `ty` of `program`'s arena.
+    ///
+    /// # Specification
+    /// - requires: nothing — an unresolved id is admissible and listed as
+    ///   unresolved.
+    /// - ensures: the table the item encoding gives the same node, renumbered
+    ///   from it, so a type compares equal to itself across arenas.
+    /// - provides: the comparison form of types: answers, verdicts and seats
+    ///   are compared by it, never by arena id.
+    /// - panics: none.
+    #[inline]
+    #[must_use]
+    pub fn of_value_type(
+        program: &Program,
+        ty: ValueTypeId,
+    ) -> Self
+    {
+        Self::of(program.arena(), program.layout(), ArenaNode::ValueType(ty))
+    }
+
+    /// The content of the node `root` of `arena`, constants resolved through
+    /// `layout`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the discovery-numbered table of every node reachable from
+    ///   `root`, `root` first.
+    /// - panics: none.
+    pub(crate) fn of(
+        arena: &CoreArena,
+        layout: &Layout,
+        root: ArenaNode,
+    ) -> Self
+    {
+        let mut encoder = Encoder::new(arena, layout);
+        let _root = encoder.discover(root);
+        encoder.drain();
+        Self {
+            nodes: encoder.nodes,
+        }
+    }
+
+    /// Every reference the type names, anywhere in it.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn references(&self) -> impl Iterator<Item = &Reference>
+    {
+        self.nodes.iter().filter_map(|node| match node.reference() {
+            | Maybe::Present(reference) => Some(reference),
+            | Maybe::Absent(_) => None,
+        })
+    }
+
+    /// Mint the type into `arena`, constants placed through `layout`.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: on success a value type of `arena` whose content is this
+    ///   table, its shared nodes minted once.
+    /// - provides: the seat an adopted synthesised type is read from.
+    /// - fails: `seating::Absent` naming why: an unresolved node, a cycle, a
+    ///   reference the program does not hold, a table that is no value type, or
+    ///   a former holding a term, which a seat never needs while formed types
+    ///   hold none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the surfaces are the post-order mint and its three
+    ///   refusals, separated by a shared arrow type minted back equal, and a
+    ///   cyclic, an unresolved and an ill-sorted table each refused by name.
+    /// - witness: `content::tests::a_type_minted_back_has_its_own_content`
+    /// - witness: `content::tests::an_unmintable_table_is_refused_by_name`
+    pub(crate) fn mint(
+        &self,
+        arena: &mut CoreArena,
+        layout: &Layout,
+    ) -> Maybe<ValueTypeId, seating::Absent>
+    {
+        match mint_table(&self.nodes, arena, layout) {
+            | Maybe::Present(Minted::ValueType(id)) => Maybe::Present(id),
+            | Maybe::Present(Minted::CompType(_)) => Maybe::Absent(seating::Absent::IllSorted),
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        }
+    }
+}
+
+/// An item's content beside where its arena nodes sit in it.
+pub struct Encoded
+{
+    /// The content.
+    pub content: ItemContent,
+    /// The table index of every arena node the walk reached.
+    pub sites: Sites,
+}
+
+/// The content of the item at `ordinal` of a program.
+///
+/// # Specification
+/// - requires: `ordinal` names an item of `layout`; another ordinal encodes an
+///   empty unsigned hole under an unoccupied reference.
+/// - ensures: the item's reference, its two roots and the discovery-numbered
+///   table of every node reachable from them, the signature's root first.
+/// - provides: the item's identity, the sites its verdict is projected through,
+///   and the table its footprint is read from — one walk for all three.
+/// - panics: none.
+/// - intension: reads each reachable node once and allocates one table entry
+///   per distinct node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the surfaces are the discovery order, the sharing and the
+///   id-freedom, separated by two arenas building one item in different
+///   allocation orders, a shared subterm listed once, a constant resolved to
+///   its item's reference, and an unresolved id listed by sort.
+/// - witness: `content::tests::content_is_free_of_arena_ids`
+/// - witness: `content::tests::a_shared_node_is_listed_once`
+/// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
+pub fn encode_item(
+    arena: &CoreArena,
+    layout: &Layout,
+    ordinal: crate::boundary::ItemOrdinal,
+) -> Encoded
+{
+    let mut encoder = Encoder::new(arena, layout);
+    let (reference, signature, body) = match layout.items.get(usize::from(ordinal)) {
+        | Some(item) => {
+            let declaration = item.declaration();
+            let signature = declaration
+                .signature()
+                .map(|ty| encoder.discover(ArenaNode::ValueType(ty)));
+            let body = declaration
+                .body()
+                .map(|term| encoder.discover(ArenaNode::Value(term)));
+            let reference = layout
+                .references
+                .get(usize::from(ordinal))
+                .cloned()
+                .unwrap_or(Reference::Unoccupied);
+            (reference, signature, body)
+        },
+        | None => (
+            Reference::Unoccupied,
+            Maybe::Absent(signature::Absent::Unsigned),
+            Maybe::Absent(body::Absent::Hole),
+        ),
+    };
+    encoder.drain();
+    Encoded {
+        content: ItemContent {
+            reference,
+            signature,
+            body,
+            nodes: encoder.nodes,
+        },
+        sites: Sites(encoder.seen),
+    }
+}
+
+/// Whether `nodes` holds an unresolved node.
+///
+/// # Specification
+/// trivial.
+pub fn opacity_of(nodes: &[ContentNode]) -> Opacity
+{
+    if nodes
+        .iter()
+        .any(|node| matches!(*node, ContentNode::Unresolved(_)))
+    {
+        Opacity::Opaque
+    }
+    else {
+        Opacity::Transparent
+    }
+}
+
+/// The breadth-first walk that numbers an arena graph by discovery.
+struct Encoder<'arena, 'layout>
+{
+    /// The arena read.
+    arena: &'arena CoreArena,
+    /// The program positions resolve through.
+    layout: &'layout Layout,
+    /// The number each discovered node took.
+    seen: BTreeMap<ArenaNode, NodeIndex>,
+    /// The discovered nodes not yet written, in discovery order.
+    queue: VecDeque<ArenaNode>,
+    /// The written nodes, in discovery order.
+    nodes: Vec<ContentNode>,
+}
+
+impl<'arena, 'layout> Encoder<'arena, 'layout>
+{
+    /// An empty walk over `arena`.
+    ///
+    /// # Specification
+    /// trivial.
+    const fn new(
+        arena: &'arena CoreArena,
+        layout: &'layout Layout,
+    ) -> Self
+    {
+        Self {
+            arena,
+            layout,
+            seen: BTreeMap::new(),
+            queue: VecDeque::new(),
+            nodes: Vec::new(),
+        }
+    }
+
+    /// The number of `node`, numbering and queueing it on first discovery.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the number `node` took when first discovered; a node
+    ///   discovered now takes the next number and joins the queue.
+    /// - panics: none.
+    fn discover(
+        &mut self,
+        node: ArenaNode,
+    ) -> NodeIndex
+    {
+        let next = NodeIndex::from(self.seen.len());
+        let index = *self.seen.entry(node).or_insert(next);
+        if index == next {
+            self.queue.push_back(node);
+        }
+        index
+    }
+
+    /// Write every queued node, discovering its children as it is written.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the queue is empty and the table holds one entry per number
+    ///   handed out, in number order.
+    /// - panics: none.
+    fn drain(&mut self)
+    {
+        while let Some(node) = self.queue.pop_front() {
+            let written = self.read(node);
+            self.nodes.push(written);
+        }
+    }
+
+    /// The content node of `node`, its children discovered left to right.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the former of `node` over its children's numbers, a constant
+    ///   resolved to its reference, or the unresolved node of its sort.
+    /// - panics: none.
+    fn read(
+        &mut self,
+        node: ArenaNode,
+    ) -> ContentNode
+    {
+        let arena = self.arena;
+        match node {
+            | ArenaNode::Value(id) => match arena.value(id) {
+                | Some(value) => self.read_value(value),
+                | None => ContentNode::Unresolved(Sort::Value),
+            },
+            | ArenaNode::Computation(id) => match arena.computation(id) {
+                | Some(computation) => self.read_computation(computation),
+                | None => ContentNode::Unresolved(Sort::Computation),
+            },
+            | ArenaNode::ValueType(id) => match arena.value_type(id) {
+                | Some(value_type) => self.read_value_type(value_type),
+                | None => ContentNode::Unresolved(Sort::ValueType),
+            },
+            | ArenaNode::CompType(id) => match arena.comp_type(id) {
+                | Some(comp_type) => self.read_comp_type(comp_type),
+                | None => ContentNode::Unresolved(Sort::CompType),
+            },
+        }
+    }
+
+    /// The content node of a value.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_value(
+        &mut self,
+        value: &Value,
+    ) -> ContentNode
+    {
+        match *value {
+            | Value::Variable { zone, index } => ContentNode::Variable { zone, index },
+            | Value::Constant(position) => ContentNode::Constant(self.layout.resolve(position)),
+            | Value::Unit => ContentNode::Unit,
+            | Value::Literal(ref literal) => ContentNode::Literal(literal.clone()),
+            | Value::Pair(first, second) => {
+                let first = self.discover(ArenaNode::Value(first));
+                ContentNode::Pair(first, self.discover(ArenaNode::Value(second)))
+            },
+            | Value::Injection(side, body) => {
+                ContentNode::Injection(side, self.discover(ArenaNode::Value(body)))
+            },
+            | Value::Thunk(body) => ContentNode::Thunk(self.discover(ArenaNode::Computation(body))),
+            | Value::Lift { ref target, body } => ContentNode::ValueLift {
+                target: target.clone(),
+                body: self.discover(ArenaNode::Value(body)),
+            },
+        }
+    }
+
+    /// The content node of a computation.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_computation(
+        &mut self,
+        computation: &Computation,
+    ) -> ContentNode
+    {
+        match *computation {
+            | Computation::Lambda(body) => {
+                ContentNode::Lambda(self.discover(ArenaNode::Computation(body)))
+            },
+            | Computation::Application(head, argument) => {
+                let head = self.discover(ArenaNode::Computation(head));
+                ContentNode::Application(head, self.discover(ArenaNode::Value(argument)))
+            },
+            | Computation::Return(value) => {
+                ContentNode::Return(self.discover(ArenaNode::Value(value)))
+            },
+            | Computation::Bind(bound, rest) => {
+                let bound = self.discover(ArenaNode::Computation(bound));
+                ContentNode::Bind(bound, self.discover(ArenaNode::Computation(rest)))
+            },
+            | Computation::Force(value) => {
+                ContentNode::Force(self.discover(ArenaNode::Value(value)))
+            },
+            | Computation::Case {
+                scrutinee,
+                on_left,
+                on_right,
+            } => {
+                let scrutinee = self.discover(ArenaNode::Value(scrutinee));
+                let on_left = self.discover(ArenaNode::Computation(on_left));
+                ContentNode::Case {
+                    scrutinee,
+                    on_left,
+                    on_right: self.discover(ArenaNode::Computation(on_right)),
+                }
+            },
+        }
+    }
+
+    /// The content node of a value type.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_value_type(
+        &mut self,
+        value_type: &ValueType,
+    ) -> ContentNode
+    {
+        match *value_type {
+            | ValueType::Base(base) => ContentNode::Base(base),
+            | ValueType::Unit => ContentNode::UnitType,
+            | ValueType::Product(first, second) => {
+                let first = self.discover(ArenaNode::ValueType(first));
+                ContentNode::Product(first, self.discover(ArenaNode::ValueType(second)))
+            },
+            | ValueType::Sum(first, second) => {
+                let first = self.discover(ArenaNode::ValueType(first));
+                ContentNode::Sum(first, self.discover(ArenaNode::ValueType(second)))
+            },
+            | ValueType::Thunk(body) => {
+                ContentNode::ThunkType(self.discover(ArenaNode::CompType(body)))
+            },
+            | ValueType::Universe(ref level) => ContentNode::Universe(level.clone()),
+            | ValueType::Lift { inner, ref target } => ContentNode::TypeLift {
+                inner: self.discover(ArenaNode::ValueType(inner)),
+                target: target.clone(),
+            },
+            | ValueType::Element { code, ref target } => ContentNode::Element {
+                code: self.discover(ArenaNode::Value(code)),
+                target: target.clone(),
+            },
+            | ValueType::Abstract(position) => ContentNode::Abstract(self.layout.resolve(position)),
+        }
+    }
+
+    /// The content node of a computation type.
+    ///
+    /// # Specification
+    /// trivial.
+    fn read_comp_type(
+        &mut self,
+        comp_type: &CompType,
+    ) -> ContentNode
+    {
+        match *comp_type {
+            | CompType::Returner(result) => {
+                ContentNode::Returner(self.discover(ArenaNode::ValueType(result)))
+            },
+            | CompType::Arrow { domain, codomain } => {
+                let domain = self.discover(ArenaNode::ValueType(domain));
+                ContentNode::Arrow {
+                    domain,
+                    codomain: self.discover(ArenaNode::CompType(codomain)),
+                }
+            },
+            | CompType::Pi { domain, codomain } => {
+                let domain = self.discover(ArenaNode::ValueType(domain));
+                ContentNode::Pi {
+                    domain,
+                    codomain: self.discover(ArenaNode::CompType(codomain)),
+                }
+            },
+        }
+    }
+}
+
+/// The table of every node reachable from `root` in `nodes`, renumbered by
+/// discovery from `root`.
+///
+/// # Specification
+/// - requires: nothing — an out-of-range child is listed as unresolved.
+/// - ensures: the table a walk from `root` alone would have written.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the surface is the renumbering, separated by a signature
+///   whose nodes the body's discovery interleaves, compared with the type
+///   encoded on its own.
+/// - witness: `content::tests::a_signature_renumbers_to_its_own_type_content`
+pub fn renumber(
+    nodes: &[ContentNode],
+    root: NodeIndex,
+) -> Vec<ContentNode>
+{
+    let mut numbers: BTreeMap<NodeIndex, NodeIndex> = BTreeMap::new();
+    let mut queue = VecDeque::new();
+    let mut table = Vec::new();
+    let _root = numbers.insert(root, NodeIndex::from(0_usize));
+    queue.push_back(root);
+    while let Some(old) = queue.pop_front() {
+        let Some(node) = nodes.get(usize::from(old))
+        else {
+            table.push(ContentNode::Unresolved(Sort::Value));
+            continue;
+        };
+        let mut discover = |child: NodeIndex| {
+            let next = NodeIndex::from(numbers.len());
+            let number = *numbers.entry(child).or_insert(next);
+            if number == next {
+                queue.push_back(child);
+            }
+            number
+        };
+        table.push(map_children(node, &mut discover));
+    }
+    table
+}
+
+/// `node` with every child index replaced by its image under `image`, applied
+/// left to right.
+///
+/// # Specification
+/// trivial.
+pub fn map_children<Image>(
+    node: &ContentNode,
+    image: &mut Image,
+) -> ContentNode
+where
+    Image: FnMut(NodeIndex) -> NodeIndex,
+{
+    match *node {
+        | ContentNode::Variable { .. }
+        | ContentNode::Constant(_)
+        | ContentNode::Unit
+        | ContentNode::Literal(_)
+        | ContentNode::Base(_)
+        | ContentNode::UnitType
+        | ContentNode::Universe(_)
+        | ContentNode::Abstract(_)
+        | ContentNode::Unresolved(_) => node.clone(),
+        | ContentNode::Pair(first, second) => {
+            let first = image(first);
+            ContentNode::Pair(first, image(second))
+        },
+        | ContentNode::Injection(side, body) => ContentNode::Injection(side, image(body)),
+        | ContentNode::Thunk(body) => ContentNode::Thunk(image(body)),
+        | ContentNode::ValueLift { ref target, body } => ContentNode::ValueLift {
+            target: target.clone(),
+            body: image(body),
+        },
+        | ContentNode::Lambda(body) => ContentNode::Lambda(image(body)),
+        | ContentNode::Application(head, argument) => {
+            let head = image(head);
+            ContentNode::Application(head, image(argument))
+        },
+        | ContentNode::Return(value) => ContentNode::Return(image(value)),
+        | ContentNode::Bind(bound, rest) => {
+            let bound = image(bound);
+            ContentNode::Bind(bound, image(rest))
+        },
+        | ContentNode::Force(value) => ContentNode::Force(image(value)),
+        | ContentNode::Case {
+            scrutinee,
+            on_left,
+            on_right,
+        } => {
+            let scrutinee = image(scrutinee);
+            let on_left = image(on_left);
+            ContentNode::Case {
+                scrutinee,
+                on_left,
+                on_right: image(on_right),
+            }
+        },
+        | ContentNode::Product(first, second) => {
+            let first = image(first);
+            ContentNode::Product(first, image(second))
+        },
+        | ContentNode::Sum(first, second) => {
+            let first = image(first);
+            ContentNode::Sum(first, image(second))
+        },
+        | ContentNode::ThunkType(body) => ContentNode::ThunkType(image(body)),
+        | ContentNode::TypeLift { inner, ref target } => ContentNode::TypeLift {
+            inner: image(inner),
+            target: target.clone(),
+        },
+        | ContentNode::Element { code, ref target } => ContentNode::Element {
+            code: image(code),
+            target: target.clone(),
+        },
+        | ContentNode::Returner(result) => ContentNode::Returner(image(result)),
+        | ContentNode::Arrow { domain, codomain } => {
+            let domain = image(domain);
+            ContentNode::Arrow {
+                domain,
+                codomain: image(codomain),
+            }
+        },
+        | ContentNode::Pi { domain, codomain } => {
+            let domain = image(domain);
+            ContentNode::Pi {
+                domain,
+                codomain: image(codomain),
+            }
+        },
+    }
+}
+
+/// A type node minted into an arena.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Minted
+{
+    /// A value type.
+    ValueType(ValueTypeId),
+    /// A computation type.
+    CompType(CompTypeId),
+}
+
+/// Where the post-order mint stands at one table entry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MintState
+{
+    /// Not reached.
+    Fresh,
+    /// Reached; its children are being minted.
+    Open,
+    /// Minted.
+    Done(Minted),
+}
+
+/// One step of the post-order mint.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MintFrame
+{
+    /// Reach the entry: open it and queue its children.
+    Enter(NodeIndex),
+    /// Mint the entry from its minted children.
+    Exit(NodeIndex),
+}
+
+/// Mint the type table `nodes`, rooted at its first entry, into `arena`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: on success the root's minted node; each entry is minted once,
+///   after its children.
+/// - fails: as [`TypeContent::mint`].
+/// - panics: none.
+fn mint_table(
+    nodes: &[ContentNode],
+    arena: &mut CoreArena,
+    layout: &Layout,
+) -> Maybe<Minted, seating::Absent>
+{
+    let mut states = alloc::vec![MintState::Fresh; nodes.len()];
+    let mut frames = alloc::vec![MintFrame::Enter(NodeIndex::from(0_usize))];
+    while let Some(frame) = frames.pop() {
+        match frame {
+            | MintFrame::Enter(index) => {
+                let (Some(state), Some(node)) = (
+                    states.get_mut(usize::from(index)),
+                    nodes.get(usize::from(index)),
+                )
+                else {
+                    return Maybe::Absent(seating::Absent::IllSorted);
+                };
+                match *state {
+                    | MintState::Done(_) => {},
+                    | MintState::Open => return Maybe::Absent(seating::Absent::Cyclic),
+                    | MintState::Fresh => {
+                        *state = MintState::Open;
+                        frames.push(MintFrame::Exit(index));
+                        let children = node.children();
+                        let first = frames.len();
+                        frames.extend(children.iter().map(|(child, _)| MintFrame::Enter(child)));
+                        if let Some(pushed) = frames.get_mut(first ..) {
+                            pushed.reverse();
+                        }
+                    },
+                }
+            },
+            | MintFrame::Exit(index) => {
+                let Some(node) = nodes.get(usize::from(index))
+                else {
+                    return Maybe::Absent(seating::Absent::IllSorted);
+                };
+                let minted = match mint_node(node, &states, arena, layout) {
+                    | Maybe::Present(minted) => minted,
+                    | Maybe::Absent(reason) => return Maybe::Absent(reason),
+                };
+                if let Some(state) = states.get_mut(usize::from(index)) {
+                    *state = MintState::Done(minted);
+                }
+            },
+        }
+    }
+    match states.first() {
+        | Some(&MintState::Done(minted)) => Maybe::Present(minted),
+        | Some(&(MintState::Fresh | MintState::Open)) | None => {
+            Maybe::Absent(seating::Absent::IllSorted)
+        },
+    }
+}
+
+/// The value type minted for the entry `index`.
+///
+/// # Specification
+/// trivial.
+fn minted_value_type(
+    states: &[MintState],
+    index: NodeIndex,
+) -> Maybe<ValueTypeId, seating::Absent>
+{
+    match states.get(usize::from(index)) {
+        | Some(&MintState::Done(Minted::ValueType(id))) => Maybe::Present(id),
+        | Some(&(MintState::Done(Minted::CompType(_)) | MintState::Fresh | MintState::Open))
+        | None => Maybe::Absent(seating::Absent::IllSorted),
+    }
+}
+
+/// The computation type minted for the entry `index`.
+///
+/// # Specification
+/// trivial.
+fn minted_comp_type(
+    states: &[MintState],
+    index: NodeIndex,
+) -> Maybe<CompTypeId, seating::Absent>
+{
+    match states.get(usize::from(index)) {
+        | Some(&MintState::Done(Minted::CompType(id))) => Maybe::Present(id),
+        | Some(&(MintState::Done(Minted::ValueType(_)) | MintState::Fresh | MintState::Open))
+        | None => Maybe::Absent(seating::Absent::IllSorted),
+    }
+}
+
+/// Mint one type entry whose children are all minted.
+///
+/// # Specification
+/// - requires: every child of `node` is `Done` in `states`.
+/// - ensures: the type node of `node`'s former over its children's minted
+///   nodes.
+/// - fails: `Unresolved` for an unresolved entry, `Unplaced` for a reference
+///   the program does not hold, `IllSorted` for a child of the wrong sort, and
+///   `Unseatable` for a former that holds a term.
+/// - panics: none.
+fn mint_node(
+    node: &ContentNode,
+    states: &[MintState],
+    arena: &mut CoreArena,
+    layout: &Layout,
+) -> Maybe<Minted, seating::Absent>
+{
+    let ill_sorted = Maybe::Absent(seating::Absent::IllSorted);
+    match *node {
+        | ContentNode::Base(base) => Maybe::Present(Minted::ValueType(arena.value_type_base(base))),
+        | ContentNode::UnitType => Maybe::Present(Minted::ValueType(arena.value_type_unit())),
+        | ContentNode::Universe(ref level) => {
+            Maybe::Present(Minted::ValueType(arena.value_type_universe(level.clone())))
+        },
+        | ContentNode::Abstract(ref reference) => match place(layout, reference) {
+            | Maybe::Present(position) => {
+                Maybe::Present(Minted::ValueType(arena.value_type_abstract(position)))
+            },
+            | Maybe::Absent(reason) => Maybe::Absent(reason),
+        },
+        | ContentNode::Product(first, second) => {
+            match (
+                minted_value_type(states, first),
+                minted_value_type(states, second),
+            ) {
+                | (Maybe::Present(first), Maybe::Present(second)) => {
+                    Maybe::Present(Minted::ValueType(arena.value_type_product(first, second)))
+                },
+                | _ => ill_sorted,
+            }
+        },
+        | ContentNode::Sum(first, second) => {
+            match (
+                minted_value_type(states, first),
+                minted_value_type(states, second),
+            ) {
+                | (Maybe::Present(first), Maybe::Present(second)) => {
+                    Maybe::Present(Minted::ValueType(arena.value_type_sum(first, second)))
+                },
+                | _ => ill_sorted,
+            }
+        },
+        | ContentNode::ThunkType(body) => match minted_comp_type(states, body) {
+            | Maybe::Present(body) => {
+                Maybe::Present(Minted::ValueType(arena.value_type_thunk(body)))
+            },
+            | Maybe::Absent(_) => ill_sorted,
+        },
+        | ContentNode::TypeLift { inner, ref target } => match minted_value_type(states, inner) {
+            | Maybe::Present(inner) => Maybe::Present(Minted::ValueType(
+                arena.value_type_lift(inner, target.clone()),
+            )),
+            | Maybe::Absent(_) => ill_sorted,
+        },
+        | ContentNode::Returner(result) => match minted_value_type(states, result) {
+            | Maybe::Present(result) => {
+                Maybe::Present(Minted::CompType(arena.comp_type_returner(result)))
+            },
+            | Maybe::Absent(_) => ill_sorted,
+        },
+        | ContentNode::Arrow { domain, codomain } => {
+            match (
+                minted_value_type(states, domain),
+                minted_comp_type(states, codomain),
+            ) {
+                | (Maybe::Present(domain), Maybe::Present(codomain)) => {
+                    Maybe::Present(Minted::CompType(arena.comp_type_arrow(domain, codomain)))
+                },
+                | _ => ill_sorted,
+            }
+        },
+        | ContentNode::Pi { domain, codomain } => {
+            match (
+                minted_value_type(states, domain),
+                minted_comp_type(states, codomain),
+            ) {
+                | (Maybe::Present(domain), Maybe::Present(codomain)) => {
+                    Maybe::Present(Minted::CompType(arena.comp_type_pi(domain, codomain)))
+                },
+                | _ => ill_sorted,
+            }
+        },
+        | ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
+        | ContentNode::Element { .. }
+        | ContentNode::Variable { .. }
+        | ContentNode::Constant(_)
+        | ContentNode::Unit
+        | ContentNode::Literal(_)
+        | ContentNode::Pair(..)
+        | ContentNode::Injection(..)
+        | ContentNode::Thunk(_)
+        | ContentNode::ValueLift { .. }
+        | ContentNode::Lambda(_)
+        | ContentNode::Application(..)
+        | ContentNode::Return(_)
+        | ContentNode::Bind(..)
+        | ContentNode::Force(_)
+        | ContentNode::Case { .. } => Maybe::Absent(seating::Absent::Unseatable),
+    }
+}
+
+/// The admission position the item `reference` names takes in `layout`.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the position of the item whose own reference is `reference`.
+/// - provides: `Unplaced` when no item of the program carries it.
+/// - panics: none.
+fn place(
+    layout: &Layout,
+    reference: &Reference,
+) -> Maybe<gandr_kernel_term::ConstantIndex, seating::Absent>
+{
+    match layout.ordinal_of(reference) {
+        | Maybe::Present(ordinal) => match layout.items.get(usize::from(ordinal)) {
+            | Some(item) => Maybe::Present(item.declaration().constant()),
+            | None => Maybe::Absent(seating::Absent::Unplaced),
+        },
+        | Maybe::Absent(_) => Maybe::Absent(seating::Absent::Unplaced),
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use gandr_core_checker::Declaration;
+    use gandr_core_checker::OriginToken;
+    use gandr_core_checker::body;
+    use gandr_core_checker::signature;
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::ValueId;
+    use gandr_core_term::ValueTypeId;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::IntegerLiteral;
+    use gandr_kernel_term::Literal;
+    use gandr_kernel_term::Magnitude;
+    use gandr_kernel_term::Sign;
+    use quenchant_shape::shape::Maybe;
+
+    use super::ContentNode;
+    use super::Opacity;
+    use super::Sort;
+    use super::TypeContent;
+    use super::encode_item;
+    use super::seating;
+    use crate::boundary::ItemOrdinal;
+    use crate::boundary::NodeIndex;
+    use crate::boundary::Occurrence;
+    use crate::region::Item;
+    use crate::region::ItemKey;
+    use crate::region::Program;
+    use crate::region::Reference;
+
+    /// The program of one item `it` at position 0 with `signature` and `body`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn single(
+        arena: CoreArena,
+        signature: Maybe<ValueTypeId, signature::Absent>,
+        body: Maybe<ValueId, body::Absent>,
+    ) -> Program
+    {
+        Program::new(arena, vec![Item::new(
+            ItemKey::from("it"),
+            Declaration::new(
+                ConstantIndex::from(0_usize),
+                signature,
+                body,
+                OriginToken::from(0_usize),
+            ),
+        )])
+        .expect("one item ascends")
+    }
+
+    /// The integer literal zero.
+    ///
+    /// # Specification
+    /// trivial.
+    fn zero() -> Literal
+    {
+        Literal::Integer(IntegerLiteral::new(Sign::NonNegative, Magnitude::zero()))
+    }
+
+    /// `U (Integer → F Integer)`, its one `Integer` node shared by domain and
+    /// result, built in `arena`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn shared_arrow(arena: &mut CoreArena) -> ValueTypeId
+    {
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returner = arena.comp_type_returner(integer);
+        let arrow = arena.comp_type_arrow(integer, returner);
+        arena.value_type_thunk(arrow)
+    }
+
+    #[test]
+    fn a_type_minted_back_has_its_own_content()
+    {
+        let mut source = CoreArena::new();
+        let ty = shared_arrow(&mut source);
+        let program = single(
+            source,
+            Maybe::Present(ty),
+            Maybe::Absent(body::Absent::Hole),
+        );
+        let content = TypeContent::of_value_type(&program, ty);
+        assert_eq!(
+            content.nodes().len(),
+            4_usize,
+            "thunk, arrow, the shared integer once, returner"
+        );
+        let mut target = CoreArena::new();
+        // Unrelated nodes first, so the minted ids differ from the source's.
+        let _noise = target.value_type_unit();
+        let _noise = target.value_type_base(BaseType::String);
+        let mut minted_into = single(
+            target,
+            Maybe::Absent(signature::Absent::Unsigned),
+            Maybe::Absent(body::Absent::Hole),
+        );
+        let minted = {
+            let (arena, layout) = minted_into.parts_mut();
+            content.mint(arena, layout)
+        };
+        let Maybe::Present(minted) = minted
+        else {
+            panic!("a type table of admitted formers seats: {minted:?}");
+        };
+        assert_eq!(
+            TypeContent::of_value_type(&minted_into, minted),
+            content,
+            "the minted type reads back as the table it came from, sharing and all"
+        );
+    }
+
+    #[test]
+    fn an_unmintable_table_is_refused_by_name()
+    {
+        let level = Level::zero();
+        let cases = [
+            (
+                vec![ContentNode::Product(
+                    NodeIndex::from(0_usize),
+                    NodeIndex::from(0_usize),
+                )],
+                seating::Absent::Cyclic,
+            ),
+            (
+                vec![ContentNode::Unresolved(Sort::ValueType)],
+                seating::Absent::Unresolved,
+            ),
+            (
+                vec![ContentNode::Abstract(Reference::Item {
+                    key: ItemKey::from("elsewhere"),
+                    occurrence: Occurrence::from(0_usize),
+                })],
+                seating::Absent::Unplaced,
+            ),
+            (
+                vec![
+                    ContentNode::Returner(NodeIndex::from(1_usize)),
+                    ContentNode::Base(BaseType::Integer),
+                ],
+                seating::Absent::IllSorted,
+            ),
+            (
+                vec![
+                    ContentNode::Element {
+                        code: NodeIndex::from(1_usize),
+                        target: level,
+                    },
+                    ContentNode::Constant(Reference::Unoccupied),
+                ],
+                seating::Absent::Unseatable,
+            ),
+        ];
+        for (nodes, expected) in cases {
+            let mut program = single(
+                CoreArena::new(),
+                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Absent(body::Absent::Hole),
+            );
+            let (arena, layout) = program.parts_mut();
+            assert_eq!(
+                TypeContent::from_nodes(nodes).mint(arena, layout),
+                Maybe::Absent(expected),
+                "each unmintable table names its reason"
+            );
+        }
+    }
+
+    #[test]
+    fn content_is_free_of_arena_ids()
+    {
+        let build = |noise: usize| {
+            let mut arena = CoreArena::new();
+            for _ in 0 .. noise {
+                let _unused = arena.value_unit();
+                let _unused = arena.value_type_unit();
+            }
+            let ty = arena.value_type_base(BaseType::Integer);
+            let literal = arena.value_literal(zero());
+            let program = single(arena, Maybe::Present(ty), Maybe::Present(literal));
+            encode_item(
+                program.arena(),
+                program.layout(),
+                ItemOrdinal::from(0_usize),
+            )
+            .content
+        };
+        let plain = build(0_usize);
+        assert_eq!(plain, build(5_usize), "ids differ, content does not");
+        assert_eq!(
+            plain.nodes(),
+            [
+                ContentNode::Base(BaseType::Integer),
+                ContentNode::Literal(zero())
+            ],
+            "the signature root first, then the body's"
+        );
+        assert_eq!(
+            plain.reference(),
+            &Reference::Item {
+                key: ItemKey::from("it"),
+                occurrence: Occurrence::from(0_usize),
+            },
+            "the item is named by key and occurrence, not by position"
+        );
+    }
+
+    #[test]
+    fn a_shared_node_is_listed_once()
+    {
+        let mut shared = CoreArena::new();
+        let literal = shared.value_literal(zero());
+        let pair = shared.value_pair(literal, literal);
+        let shared = single(
+            shared,
+            Maybe::Absent(signature::Absent::Unsigned),
+            Maybe::Present(pair),
+        );
+        let shared =
+            encode_item(shared.arena(), shared.layout(), ItemOrdinal::from(0_usize)).content;
+        assert_eq!(
+            shared.nodes(),
+            [
+                ContentNode::Pair(NodeIndex::from(1_usize), NodeIndex::from(1_usize)),
+                ContentNode::Literal(zero()),
+            ],
+            "one entry for the shared literal"
+        );
+        let mut apart = CoreArena::new();
+        let first = apart.value_literal(zero());
+        let second = apart.value_literal(zero());
+        let pair = apart.value_pair(first, second);
+        let apart = single(
+            apart,
+            Maybe::Absent(signature::Absent::Unsigned),
+            Maybe::Present(pair),
+        );
+        let apart = encode_item(apart.arena(), apart.layout(), ItemOrdinal::from(0_usize)).content;
+        assert_eq!(apart.nodes().len(), 3_usize, "two literals, two entries");
+        assert_ne!(shared, apart, "sharing is part of the content");
+    }
+
+    #[test]
+    fn an_unresolved_id_makes_the_item_opaque()
+    {
+        let mut larger = CoreArena::new();
+        let _first = larger.value_unit();
+        let foreign = larger.value_unit();
+        let program = single(
+            CoreArena::new(),
+            Maybe::Absent(signature::Absent::Unsigned),
+            Maybe::Present(foreign),
+        );
+        let content = encode_item(
+            program.arena(),
+            program.layout(),
+            ItemOrdinal::from(0_usize),
+        )
+        .content;
+        assert_eq!(
+            content.nodes(),
+            [ContentNode::Unresolved(Sort::Value)],
+            "the id is listed by its sort"
+        );
+        assert_eq!(content.opacity(), Opacity::Opaque, "and the item is opaque");
+    }
+
+    #[test]
+    fn a_signature_renumbers_to_its_own_type_content()
+    {
+        let mut arena = CoreArena::new();
+        let ty = shared_arrow(&mut arena);
+        let literal = arena.value_literal(zero());
+        let returned = arena.computation_return(literal);
+        let lambda = arena.computation_lambda(returned);
+        let thunk = arena.value_thunk(lambda);
+        let program = single(arena, Maybe::Present(ty), Maybe::Present(thunk));
+        let content = encode_item(
+            program.arena(),
+            program.layout(),
+            ItemOrdinal::from(0_usize),
+        )
+        .content;
+        let interleaved: Vec<&ContentNode> = content.nodes().iter().collect();
+        assert!(
+            matches!(interleaved.get(1), Some(&&ContentNode::Thunk(_))),
+            "the body's root is discovered before the signature's children"
+        );
+        assert_eq!(
+            content.signature_type(),
+            Maybe::Present(TypeContent::of_value_type(&program, ty)),
+            "the signature renumbered from its root is the type encoded alone"
+        );
+    }
+}

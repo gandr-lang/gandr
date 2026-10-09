@@ -1,0 +1,42 @@
+[package]
+name = "gandr-core-incremental"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Incremental checking over the core judgement: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "incremental", "memoization", "type-checking"]
+categories = ["caching", "compilers"]
+publish.workspace = true
+autotests = false
+
+# One integration target, each area file its own `cfg(test)` module, so a
+# witness path reads `tests::<area>::<name>`.
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+# The crate answers for the core judgement one item at a time, so it reads the
+# checker's declaration input, verdicts and support, and the core vocabulary
+# with the leaves it shares with the kernel. The check-memo seam is the one
+# memo the batch and incremental runs share; the order-maintenance structure
+# carries item identity across revisions; BLAKE3 is the digest family the
+# storage tier addresses content with, used here directly because this layer
+# sits below storage. The file backend needs `std`.
+[dependencies]
+blake3.workspace = true
+gandr-core-checker.workspace = true
+gandr-core-term.workspace = true
+gandr-kernel-check-memo.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-theory-orders.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

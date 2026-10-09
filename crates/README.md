@@ -40,6 +40,7 @@ crates/
 ├── core-term/                     gandr-core-term                     the core syntax and the one unified context
 ├── core-nbe/                      gandr-core-nbe                      the glued value domain, evaluation, readback, conversion (search-free steps and the concurrent machine), the sharing overlay, its erasure and its measure
 ├── core-checker/                  gandr-core-checker                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger and the refusal vocabulary
+├── core-incremental/              gandr-core-incremental              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
 ├── storage-chunker/               gandr-storage-chunker               content-defined chunk boundaries and their committed parameters
 ├── storage-records/               gandr-storage-records               the authenticated ordered-record plane
 ├── storage-values/                gandr-storage-values                the content-addressed value plane: typed chunk DAG and content pointers

@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
   "crates/core-checker",
+  "crates/core-incremental",
   "crates/core-nbe",
   "crates/core-term",
   "crates/kernel-check-memo",
@@ -80,6 +81,7 @@ default-features = false
 
 # BLAKE3 hashing for content and node identities.
 # consumers:
+# - core-incremental
 # - storage-records
 # - storage-values
 # - surface-syntax
@@ -115,6 +117,7 @@ default-features = false
 # The checking judgement: the name-free declaration input, the verdicts, the
 # obligation ledger and the refusal vocabulary.
 # consumers:
+# - core-incremental
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
@@ -125,6 +128,7 @@ path = "crates/core-checker"
 # chain and the per-scope definitional environment.
 # consumers:
 # - core-checker
+# - core-incremental
 # - core-nbe
 # - surface-corpus
 # - surface-diagnostics
@@ -135,6 +139,7 @@ path = "crates/core-term"
 
 # The support-keyed check-memo seam, generic over consumer-owned types.
 # consumers:
+# - core-incremental
 # - core-nbe
 # - kernel-core
 [workspace.dependencies.gandr-kernel-check-memo]
@@ -158,6 +163,7 @@ path = "crates/kernel-core"
 # The certified kernel's universe-level oracle.
 # consumers:
 # - core-checker (dev)
+# - core-incremental
 # - core-nbe
 # - core-term
 # - kernel-core
@@ -169,6 +175,7 @@ path = "crates/kernel-strata"
 # the leaf vocabularies the core language reads rather than restates.
 # consumers:
 # - core-checker
+# - core-incremental
 # - core-nbe
 # - core-term
 # - kernel-core
@@ -314,6 +321,13 @@ path = "crates/theory-graphs"
 [workspace.dependencies.gandr-theory-levitation]
 path = "crates/theory-levitation"
 
+# The order-maintenance structure: stable handles over a total order with
+# constant-time comparison.
+# consumers:
+# - core-incremental
+[workspace.dependencies.gandr-theory-orders]
+path = "crates/theory-orders"
+
 # Graph storage and algorithms. Reached only through `theory-graphs`, which
 # owns the dependency and exposes none of its types; the grammar's
 # closing-class derivation reads its strongly-connected-component
@@ -329,6 +343,7 @@ default-features = false
 # - std: the test runner, its random source and failure persistence
 # consumers:
 # - core-checker (dev)
+# - core-incremental (dev)
 # - kernel-strata (dev)
 # - storage-records (dev)
 # - storage-values (dev)
@@ -360,6 +375,7 @@ default-features = false
 # - none: core-only shapes without instrumentation
 # consumers:
 # - core-checker
+# - core-incremental
 # - kernel-core
 # - surface-corpus
 # - surface-diagnostics
