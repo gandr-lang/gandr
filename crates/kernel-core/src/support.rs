@@ -123,6 +123,20 @@ impl SupportContext
         (&mut self.table, &mut self.rewrites)
     }
 
+    /// The binder reach of a computation-type node, cached for the session.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn comp_type_reach(
+        &mut self,
+        arena: &TermArena,
+        root: CompTypeId,
+    ) -> LooseDepth
+    {
+        self.reaches.comp_type_reach(arena, root)
+    }
+
     /// How many rewrites of `plane` this session has recorded.
     ///
     /// The two rewrites account separately, so a suite can pin the shifting

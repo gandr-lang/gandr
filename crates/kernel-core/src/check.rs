@@ -85,14 +85,25 @@
 //! | `synth_comp` Application, Pi head      | `SynthComp(head)`            | `SynthApply`, then `ProduceComp` at the instance    |
 //! | `synth_comp` Force                     | `SynthValue(value)`          | `SynthForce`                                        |
 //! | `synth_comp` Return                    | `SynthValue(value)`          | `SynthReturn`                                       |
-//! | `synth_comp` Bind                      | `SynthComp(bound)`           | `SynthBind`, `ScopeExit`                            |
-//! | `synth_comp` Case                      | `SynthValue(scrutinee)`      | `SynthCaseScrutinee` / `AfterLeft` / `AfterRight`, `ScopeExit` |
+//! | `synth_comp` Bind                      | `SynthComp(bound)`           | `SynthBind`, `ScopeExit`, then `Strengthen`         |
+//! | `synth_comp` Case                      | `SynthValue(scrutinee)`      | `SynthCaseScrutinee` / `AfterLeft` / `AfterRight`, `ScopeExit`, each branch strengthened |
 //! | `synth_comp` Lambda                    | leaf, not inferable          | —                                                   |
-//! | `check_comp` Lambda, Arrow / Pi        | `CheckComp(body, codomain)`  | `ScopeExit`                                         |
+//! | `check_comp` Lambda, Arrow             | `CheckComp(body, codomain↑)` | `ScopeExit`                                         |
+//! | `check_comp` Lambda, Pi                | `CheckComp(body, codomain)`  | `ScopeExit`                                         |
 //! | `check_comp` Return                    | `CheckValue(value, result)`  | —                                                   |
-//! | `check_comp` Bind                      | `SynthComp(bound)`           | `CheckBind`, `ScopeExit`                            |
-//! | `check_comp` Case                      | `SynthValue(scrutinee)`      | `CheckCaseScrutinee` / `AfterLeft`, `ScopeExit`     |
+//! | `check_comp` Bind                      | `SynthComp(bound)`           | `CheckBind` against `expected↑`, `ScopeExit`        |
+//! | `check_comp` Case                      | `SynthValue(scrutinee)`      | `CheckCaseScrutinee` / `AfterLeft` against `expected↑`, `ScopeExit` |
 //! | `check_comp` synth fallthrough         | `SynthComp(computation)`     | `ConvertComp`                                       |
+//!
+//! **A type keeps the scope it was written in.** A plain arrow's codomain is
+//! written outside the arrow's binder — formation and the reach walk read it
+//! there — so a lambda checked against it weakens it (`↑`) by the binder it
+//! steps under, where a dependent arrow's codomain is already written under
+//! it. A bind or a case moves its expected type under its binder the same way,
+//! and a type synthesized under a binder is strengthened back out of it,
+//! refused as [`KernelError::BinderEscape`] when it mentions the value bound.
+//! While every type was closed each of these was the identity; a code in a
+//! context of types is what makes them load-bearing.
 //!
 //! **The two `Element` rows are the arms that answer without descending.** Each
 //! reads the level off the node and records the code obligation with the sort
@@ -161,8 +172,10 @@ use crate::error::NonInferableForm;
 use crate::error::RegisterFault;
 use crate::levels::LevelContext;
 use crate::rewrite::BinderDepth;
+use crate::rewrite::shift_comp_type;
 use crate::rewrite::shift_value_type;
 use crate::rewrite::substitute_comp_type;
+use crate::support::LooseDepth;
 use crate::support::NodeOutcome;
 use crate::support::NodeSupport;
 use crate::support::SupportContext;
@@ -894,7 +907,8 @@ enum Frame
     /// A returner synthesis: the value is synthesized.
     SynthReturn,
     /// A bind synthesis: the bound computation is synthesized; the body source
-    /// is held, and the body's type becomes the bind's.
+    /// is held, and the body's type, strengthened past the bind's binder,
+    /// becomes the bind's.
     SynthBind(ComputationId),
     /// A case synthesis: the scrutinee is synthesized; both branch sources are
     /// held.
@@ -929,7 +943,8 @@ enum Frame
         on_left: ComputationId,
         /// The right branch source.
         on_right: ComputationId,
-        /// The expected type both branches check against.
+        /// The expected type both branches check against, written outside
+        /// their binders.
         expected: CompTypeId,
     },
     /// A case check: the left branch checked; the right source, right summand
@@ -940,11 +955,15 @@ enum Frame
         on_right: ComputationId,
         /// The right summand, a context slot for the right branch.
         right: ValueTypeId,
-        /// The expected type the right branch checks against.
+        /// The expected type the right branch checks against, already read
+        /// from under its binder.
         expected: CompTypeId,
     },
     /// A binder scope closes: pop the innermost context slot.
     ScopeExit,
+    /// A binder scope has closed: strengthen the computation type synthesized
+    /// under it back out of it.
+    Strengthen,
     /// The goal this frame was pushed for is now answered; record it.
     ///
     /// Pushed **before** the goal's own continuations, so it pops after all of
@@ -1084,6 +1103,91 @@ fn lookup(
         BinderDepth::NONE,
         amount,
     ))
+}
+
+/// `subject`, written outside one binder, read under it.
+///
+/// # Specification
+/// - requires: `subject` is written in the context the binder extends.
+/// - ensures: every free index of `subject` raised by one, so each names the
+///   slot it named from under the binder; a closed type comes back unchanged.
+/// - provides: the weakening a lambda checked against a plain arrow, a bind and
+///   a case each take on the type they check their body against.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a codomain naming a code bound outside the arrow, checked
+///   from under the lambda and from under a bind, each separated from the
+///   unweakened reading by the variable it would otherwise name.
+/// - witness: `check::tests::a_plain_arrow_reads_its_codomain_outside_its_binder`
+/// - witness: `check::tests::a_bind_reads_its_expected_type_outside_its_binder`
+#[inline]
+fn weakened(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    subject: CompTypeId,
+) -> CompTypeId
+{
+    let (table, rewrites) = session.rewrite_parts();
+    shift_comp_type(
+        arena,
+        table,
+        rewrites,
+        subject,
+        BinderDepth::NONE,
+        BinderDepth::from(1_u32),
+    )
+}
+
+/// `subject`, synthesized under one binder, read outside it.
+///
+/// The binder's variable is replaced by the index one past the outer context —
+/// a variable nothing outside the binder can name — and every other index is
+/// lowered by one. The replacement survives exactly where the binder's variable
+/// occurred, and the reach walk sees it as an index past the context.
+///
+/// # Specification
+/// - requires: `outside` is the context the binder extended, its slot already
+///   popped; `subject` was synthesized under that binder.
+/// - ensures: `subject` with every free index lowered by one, exactly when it
+///   does not mention the binder's variable; a closed type comes back
+///   unchanged.
+/// - provides: the strengthening a synthesized bind and each synthesized case
+///   branch take.
+/// - fails: [`KernelError::BinderEscape`] when `subject` mentions the binder's
+///   variable or reaches past the context it was synthesized in.
+/// - panics: none.
+///
+/// # Errors
+/// [`KernelError::BinderEscape`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a type naming a code bound outside the bind, which
+///   lowers, and a type naming the bound value, which is refused.
+/// - witness: `check::tests::a_bind_strengthens_its_type_past_its_binder`
+fn strengthened(
+    arena: &mut TermArena,
+    session: &mut SupportContext,
+    outside: &[ValueTypeId],
+    subject: CompTypeId,
+) -> Result<CompTypeId, KernelError>
+{
+    let escape = |arena: &TermArena| KernelError::BinderEscape {
+        actual: comp_type_witness(arena, subject),
+    };
+    let Ok(width) = u32::try_from(outside.len())
+    else {
+        return Err(escape(arena));
+    };
+    let fresh = arena.value_variable(DeBruijnIndex::from(width));
+    let (table, rewrites) = session.rewrite_parts();
+    let lowered = substitute_comp_type(arena, table, rewrites, subject, fresh);
+    if session.comp_type_reach(arena, lowered) > LooseDepth::from(width) {
+        return Err(escape(arena));
+    }
+
+    Ok(lowered)
 }
 
 /// The declared value type of a prior admitted declaration.
@@ -1379,16 +1483,20 @@ where
                     },
                 },
                 | Goal::CheckComp(id, expected) => match read_computation(arena, id)? {
-                    // A lambda checks against either arrow the same way: push
-                    // the domain as the innermost context slot and check the
-                    // body against the codomain. The dependent arrow's codomain
-                    // is already written under that binder, which is exactly the
-                    // context the push establishes, so the two arms are one.
+                    // A lambda pushes the arrow's domain as the innermost
+                    // context slot and checks its body against the codomain
+                    // read from under that slot. The dependent arrow's codomain
+                    // is written under the binder already; the plain arrow's is
+                    // written outside it, so it is weakened past the slot.
                     | Computation::Lambda(body) => match arena.comp_type(expected) {
-                        | Some(
-                            &CompType::Arrow { domain, codomain }
-                            | &CompType::Pi { domain, codomain },
-                        ) => {
+                        | Some(&CompType::Arrow { domain, codomain }) => {
+                            let scoped = weakened(arena, session, codomain);
+                            context.push(domain);
+                            frames.push(Frame::ScopeExit);
+                            goal = Goal::CheckComp(body, scoped);
+                            continue 'expand;
+                        },
+                        | Some(&CompType::Pi { domain, codomain }) => {
                             context.push(domain);
                             frames.push(Frame::ScopeExit);
                             goal = Goal::CheckComp(body, codomain);
@@ -1556,6 +1664,7 @@ where
                     match arena.comp_type(bound_type) {
                         | Some(&CompType::Returner(result)) => {
                             context.push(result);
+                            frames.push(Frame::Strengthen);
                             frames.push(Frame::ScopeExit);
                             goal = Goal::SynthComp(body);
                             continue 'expand;
@@ -1589,7 +1698,7 @@ where
                     }
                 },
                 | Frame::SynthCaseAfterLeft { on_right, right } => {
-                    let left_type = produced.comp_type()?;
+                    let left_type = strengthened(arena, session, &context, produced.comp_type()?)?;
                     context.push(right);
                     frames.push(Frame::SynthCaseAfterRight { left_type });
                     frames.push(Frame::ScopeExit);
@@ -1597,7 +1706,7 @@ where
                     continue 'expand;
                 },
                 | Frame::SynthCaseAfterRight { left_type } => {
-                    let right_type = produced.comp_type()?;
+                    let right_type = strengthened(arena, session, &context, produced.comp_type()?)?;
                     match convertible_comp_types(arena, left_type, right_type) {
                         | Convertibility::Convertible => {
                             produced = Produced::CompType(left_type);
@@ -1616,9 +1725,10 @@ where
                     let bound_type = produced.comp_type()?;
                     match arena.comp_type(bound_type) {
                         | Some(&CompType::Returner(result)) => {
+                            let scoped = weakened(arena, session, expected);
                             context.push(result);
                             frames.push(Frame::ScopeExit);
-                            goal = Goal::CheckComp(body, expected);
+                            goal = Goal::CheckComp(body, scoped);
                             continue 'expand;
                         },
                         | _ => {
@@ -1638,14 +1748,15 @@ where
                     let scrutinee_type = produced.value_type()?;
                     match arena.value_type(scrutinee_type) {
                         | Some(&ValueType::Sum(left, right)) => {
+                            let scoped = weakened(arena, session, expected);
                             context.push(left);
                             frames.push(Frame::CheckCaseAfterLeft {
                                 on_right,
                                 right,
-                                expected,
+                                expected: scoped,
                             });
                             frames.push(Frame::ScopeExit);
-                            goal = Goal::CheckComp(on_left, expected);
+                            goal = Goal::CheckComp(on_left, scoped);
                             continue 'expand;
                         },
                         | _ => {
@@ -1669,6 +1780,11 @@ where
                 },
                 | Frame::ScopeExit => {
                     let _popped = context.pop();
+                },
+                | Frame::Strengthen => {
+                    let synthesized = produced.comp_type()?;
+                    produced =
+                        Produced::CompType(strengthened(arena, session, &context, synthesized)?);
                 },
             }
         }
@@ -2031,6 +2147,7 @@ mod tests
     use gandr_kernel_strata::LevelConstant;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::CompType;
+    use gandr_kernel_term::CompTypeId;
     use gandr_kernel_term::ComputationId;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::DeBruijnIndex;
@@ -2788,6 +2905,164 @@ mod tests
             Ok(()),
             environment.add_decl(definition).map(|_admitted| ()),
             "the dependent identity admits through the checked choke point"
+        );
+    }
+
+    /// Admit `Π (A : U 0). inner` with the body `thunk body`, both built by
+    /// `build` against the universe and the fuss-free level; the body carries
+    /// every lambda, the outer binder's included.
+    ///
+    /// # Specification
+    /// trivial.
+    fn admit_polymorphic(
+        build: impl FnOnce(&mut TermArena, ValueTypeId, Level) -> (CompTypeId, ComputationId)
+    ) -> Result<(), KernelError>
+    {
+        let mut environment = Environment::new();
+        let definition = {
+            let mut staging = environment.stage();
+            let mint = staging.arena();
+            let zero = level(LevelConstant::from(0));
+            let universe = mint.value_type_universe(GroundSort::Value, zero.clone());
+            let (inner, body) = build(mint, universe, zero);
+            let outer = mint.comp_type_pi(universe, inner);
+            let declared = mint.value_type_thunk(outer);
+            let thunk = mint.value_thunk(body);
+            staging.def(LevelSignature::monomorphic(), declared, thunk)
+        };
+        environment.add_decl(definition).map(|_admitted| ())
+    }
+
+    /// `λ λ. body`.
+    ///
+    /// # Specification
+    /// trivial.
+    fn under_two(
+        mint: &mut TermArena,
+        body: ComputationId,
+    ) -> ComputationId
+    {
+        let inner = mint.computation_lambda(body);
+        mint.computation_lambda(inner)
+    }
+
+    /// `Π (A : U 0). El A → F (El A)`: the plain arrow's codomain names `A`
+    /// at index zero, outside the arrow's own binder, so the lambda reads it
+    /// one binder further out; and the same arrow returning at a second code
+    /// is refused, so the reading is the one that separates the two.
+    #[test]
+    fn a_plain_arrow_reads_its_codomain_outside_its_binder()
+    {
+        let identity = admit_polymorphic(|mint, _universe, zero| {
+            let code = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let element = mint.value_type_element(code, zero);
+            let returner = mint.comp_type_returner(element);
+            let inner = mint.comp_type_arrow(element, returner);
+            let returned = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let body = mint.computation_return(returned);
+            (inner, under_two(mint, body))
+        });
+        assert_eq!(
+            Ok(()),
+            identity,
+            "the identity over a plain inner arrow admits"
+        );
+
+        let crossed = admit_polymorphic(|mint, universe, zero| {
+            let first = mint.value_variable(DeBruijnIndex::from(1_u32));
+            let domain = mint.value_type_element(first, zero.clone());
+            let second = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let result = mint.value_type_element(second, zero);
+            let returner = mint.comp_type_returner(result);
+            let arrow = mint.comp_type_arrow(domain, returner);
+            let inner = mint.comp_type_pi(universe, arrow);
+            let returned = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let body = mint.computation_return(returned);
+            let innermost = mint.computation_lambda(body);
+            (inner, under_two(mint, innermost))
+        });
+        assert!(
+            matches!(crossed, Err(KernelError::ValueTypeMismatch(_))),
+            "a value of the first code returned at the second is refused: {crossed:?}"
+        );
+    }
+
+    /// `Π (A : U 0). El A → F (El A)` with the body `y ← return x; return y`:
+    /// the bind checks its body against the expected type read from under its
+    /// own binder, so `A` is found two binders further out, not one.
+    #[test]
+    fn a_bind_reads_its_expected_type_outside_its_binder()
+    {
+        let admitted = admit_polymorphic(|mint, _universe, zero| {
+            let code = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let element = mint.value_type_element(code, zero);
+            let returner = mint.comp_type_returner(element);
+            let inner = mint.comp_type_arrow(element, returner);
+            let argument = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let bound = mint.computation_return(argument);
+            let payload = mint.value_variable(DeBruijnIndex::from(0_u32));
+            let body = mint.computation_return(payload);
+            let sequence = mint.computation_bind(bound, body);
+            (inner, under_two(mint, sequence))
+        });
+        assert_eq!(
+            Ok(()),
+            admitted,
+            "a bind under the polymorphic identity admits"
+        );
+    }
+
+    /// A bind synthesizes its body's type strengthened past its binder: a type
+    /// naming a code bound outside lowers by one, and a type naming the bound
+    /// value itself is refused, since no type outside the binder states it.
+    #[test]
+    fn a_bind_strengthens_its_type_past_its_binder()
+    {
+        let mut arena = TermArena::new();
+        let zero = level(LevelConstant::from(0));
+        let universe = arena.value_type_universe(GroundSort::Value, zero.clone());
+        let code = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let element = arena.value_type_element(code, zero.clone());
+        let argument = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let bound = arena.computation_return(argument);
+        let payload = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let body = arena.computation_return(payload);
+        let sequence = arena.computation_bind(bound, body);
+        let produced = synth_comp(&mut arena, vec![universe, element], sequence)
+            .expect("a bind returning its payload synthesizes");
+        let produced_type = produced.comp_type().expect("a computation type");
+        let Some(&CompType::Returner(result)) = arena.comp_type(produced_type)
+        else {
+            panic!("a bind over a return synthesizes a returner");
+        };
+        let Some(&ValueType::Element { code: named, .. }) = arena.value_type(result)
+        else {
+            panic!("the payload's type is read off its code");
+        };
+        assert_eq!(
+            Some(&Value::Variable(DeBruijnIndex::from(1_u32))),
+            arena.value(named),
+            "the payload's type names the code one binder out from the bind"
+        );
+
+        let returns_universe = arena.comp_type_returner(universe);
+        let made = arena.value_type_thunk(returns_universe);
+        let decoded = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let decoded_element = arena.value_type_element(decoded, zero);
+        let picked = arena.comp_type_returner(decoded_element);
+        let pick_type = arena.comp_type_pi(universe, picked);
+        let pick = arena.value_type_thunk(pick_type);
+        let make = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let bound = arena.computation_force(make);
+        let picker = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let head = arena.computation_force(picker);
+        let chosen = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let body = arena.computation_application(head, chosen);
+        let dependent = arena.computation_bind(bound, body);
+        let escaped = synth_comp(&mut arena, vec![made, pick], dependent);
+        assert!(
+            matches!(escaped, Err(KernelError::BinderEscape { .. })),
+            "a type naming the bound code is refused: {escaped:?}"
         );
     }
 

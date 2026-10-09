@@ -501,6 +501,14 @@ pub enum KernelError
     ComputationTypeMismatch(CompTypeMismatch),
     /// The two branches of a synthesized `case` produced inconvertible types.
     CaseBranchMismatch(CompTypeMismatch),
+    /// A bind's body or a case branch synthesized a computation type that
+    /// mentions the value its binder introduced, so no type outside the binder
+    /// states what it computes.
+    BinderEscape
+    {
+        /// The type synthesized under the binder.
+        actual: CompTypeWitness,
+    },
     /// A level variable's index reached or exceeded the declaration's prenex
     /// parameter count.
     LevelVariableOutOfScope
@@ -639,6 +647,9 @@ impl core::fmt::Display for KernelError
             },
             | Self::CaseBranchMismatch(_) => {
                 f.write_str("the two branches of a case produced inconvertible types")
+            },
+            | Self::BinderEscape { .. } => {
+                f.write_str("a type synthesized under a binder mentions the value it bound")
             },
             | Self::LevelVariableOutOfScope { .. } => {
                 f.write_str("a level variable escaped the declaration's prenex parameters")

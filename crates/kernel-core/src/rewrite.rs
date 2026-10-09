@@ -605,6 +605,42 @@ where
     run_rewrite(arena, table, memo, rewrite, AnyNode::Computation(subject)).computation_or(subject)
 }
 
+/// The shifted form of a computation-type node; see [`shift_value_type`].
+///
+/// # Specification
+/// - requires: as [`shift_value_type`].
+/// - ensures: as [`shift_value_type`], over the computation-type family.
+/// - provides: the weakening a type written outside a binder takes when the
+///   check steps under that binder: a plain arrow's codomain under its lambda,
+///   and the expected type of a bind's body or a case branch. The inherited
+///   session and rewrite clauses remain prose-only for the same reason as
+///   [`shift_value_type`].
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — as [`shift_value_type`]; the residue is the dependent
+///   arrow, whose codomain steps the depth in by one and whose domain does not,
+///   observed through the check rules that weaken by it.
+/// - witness: `check::tests::a_plain_arrow_reads_its_codomain_outside_its_binder`
+/// - witness: `check::tests::a_bind_reads_its_expected_type_outside_its_binder`
+#[inline]
+#[must_use]
+pub(crate) fn shift_comp_type<M>(
+    arena: &mut TermArena,
+    table: &mut ContentTable,
+    memo: &mut M,
+    subject: CompTypeId,
+    cutoff: BinderDepth,
+    amount: BinderDepth,
+) -> CompTypeId
+where
+    M: CheckMemo<RewriteSupport, RewriteOutcome>,
+{
+    let rewrite = Rewrite::Shift { cutoff, amount };
+    run_rewrite(arena, table, memo, rewrite, AnyNode::CompType(subject)).comp_type_or(subject)
+}
+
 /// The computation type `subject` with its innermost binder instantiated at
 /// `replacement`.
 ///
