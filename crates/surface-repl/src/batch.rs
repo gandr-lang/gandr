@@ -7,12 +7,12 @@ use std::io::Write;
 
 use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_grammar::PbgError;
-use gandr_surface_render_remote::OutKind;
 use gandr_surface_render_remote::TranscriptBlock;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 use rustyline::error::ReadlineError;
 
+use crate::rows::rows;
 use crate::session_loop::LoopError;
 use crate::session_loop::LoopEvent;
 use crate::session_loop::SessionLoop;
@@ -66,76 +66,12 @@ pub enum Ended
     Faulted(Fault),
 }
 
-/// The mark a transcript line opens with.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Mark(&'static str);
-
-/// Text written under one mark: an echo or a result line, which may hold
-/// several lines.
-#[repr(transparent)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Marked<'text>(&'text str);
-
-/// The mark a line of `kind` opens with in the plain transcript.
-///
-/// # Specification
-/// - requires: nothing.
-/// - ensures: `▸ ` for the echo, `= ` for a value, `? ` for a goal, `· ` for a
-///   note or a stuck evaluation, `! ` for blame; nothing for a type line, which
-///   spells its own `name : T`, nor for a diagnostic, which opens with its own
-///   severity.
-/// - provides: the plain face's kind marks, so a transcript without colour
-///   still tells its lines apart.
-/// - fails: never.
-/// - panics: none.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a piped session's transcript is asserted line by line.
-/// - witness: `loop::tests::piped_value_prints_a_transcript`
-const fn mark(kind: OutKind) -> Mark
-{
-    Mark(match kind {
-        | OutKind::Source => "▸ ",
-        | OutKind::Value => "= ",
-        | OutKind::Goal => "? ",
-        | OutKind::Stuck | OutKind::Info => "· ",
-        | OutKind::Blame => "! ",
-        | OutKind::Type | OutKind::Diag => "",
-    })
-}
-
-/// Write `text` under `mark`: the first line after the mark, every later line
-/// indented to the mark's width.
-///
-/// # Specification
-/// trivial.
-fn write_marked<Output>(
-    output: &mut Output,
-    Mark(mark): Mark,
-    Marked(text): Marked<'_>,
-) -> io::Result<()>
-where
-    Output: Write,
-{
-    let indent = " ".repeat(mark.chars().count());
-    for (index, line) in text.lines().enumerate() {
-        match (index, line.is_empty()) {
-            | (0, _) => writeln!(output, "{mark}{line}")?,
-            | (_, true) => writeln!(output)?,
-            | (_, false) => writeln!(output, "{indent}{line}")?,
-        }
-    }
-    Ok(())
-}
-
 /// Write `block` as plain text.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the echo, then each line in order, each under its kind's mark, a
-///   line holding several lines indented to its mark's width after the first;
-///   no colour, so the transcript is the same on every terminal.
+/// - ensures: each of the block's [`rows`] on a line of its own, its lead and
+///   then its text; no colour, so the transcript is the same on every terminal.
 /// - provides: the plain transcript every face prints.
 /// - fails: the writer's error.
 /// - panics: none.
@@ -154,9 +90,8 @@ pub fn write_block<Output>(
 where
     Output: Write,
 {
-    write_marked(output, mark(OutKind::Source), Marked(&block.source))?;
-    for &(kind, ref line) in &block.lines {
-        write_marked(output, mark(kind), Marked(line))?;
+    for row in rows(block) {
+        writeln!(output, "{}{}", <&str>::from(row.lead), row.text)?;
     }
     Ok(())
 }

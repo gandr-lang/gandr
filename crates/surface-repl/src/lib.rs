@@ -22,11 +22,12 @@
 //! parse repair ([`repair_cards`]). The encoder is a library function, so every
 //! face draws the same blocks.
 //!
-//! # Two faces
+//! # Two faces, one layout
 //!
 //! [`run_batch`] reads any line source and writes a plain transcript,
 //! deterministically; [`run_interactive`] reads a terminal through a line
-//! editor. Both drive the same loop.
+//! editor. Both drive the same loop. A block's [`rows()`] are its one layout:
+//! [`write_block`] prints them, and a full-screen face paints the same rows.
 //!
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in this crate's `README.md`.
@@ -41,6 +42,7 @@ mod interactive;
 mod meta;
 mod remote;
 mod render;
+mod rows;
 mod session_loop;
 
 pub use gandr_surface_parser::CompletionStatus;
@@ -69,6 +71,10 @@ pub use crate::remote::repair_cards;
 pub use crate::render::Fidelity;
 pub use crate::render::Spelling;
 pub use crate::render::spell;
+pub use crate::rows::Lead;
+pub use crate::rows::Mark;
+pub use crate::rows::Row;
+pub use crate::rows::rows;
 pub use crate::session_loop::Faulted;
 pub use crate::session_loop::LoopError;
 pub use crate::session_loop::LoopEvent;

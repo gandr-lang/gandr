@@ -43,9 +43,11 @@ mod tests
     use gandr_surface_repl::completeness;
     use gandr_surface_repl::drive;
     use gandr_surface_repl::finished;
+    use gandr_surface_repl::rows;
     use gandr_surface_repl::run_batch;
     use gandr_surface_repl::span_order;
     use gandr_surface_repl::spell;
+    use gandr_surface_repl::write_block;
     use gandr_surface_session::Session;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
@@ -637,6 +639,49 @@ mod tests
             format!(": {integer}"),
         ];
         assert_eq!(transcript.lines().collect::<Vec<_>>(), expected);
+    }
+
+    /// A block's rows: the echo's rows across a `\r\n`, a diagnostic's rows,
+    /// a note whose empty middle row is bare, and no row for an empty line;
+    /// each row starts at its byte offset in its own text, and the plain
+    /// transcript prints exactly these rows.
+    #[test]
+    fn a_block_lays_out_as_rows()
+    {
+        let block = TranscriptBlock {
+            source: String::from("def a = (\r\n1) ;"),
+            source_hl: Vec::new(),
+            lines: Vec::from([
+                (OutKind::Diag, String::from("error: first\n  --> here\n")),
+                (OutKind::Info, String::from("a\n\nb")),
+                (OutKind::Goal, String::new()),
+            ]),
+        };
+        let laid: Vec<(OutKind, &str, &str, usize)> = rows(&block)
+            .map(|row| {
+                (
+                    row.kind,
+                    <&str>::from(row.lead),
+                    row.text,
+                    usize::from(row.start),
+                )
+            })
+            .collect();
+        assert_eq!(laid, [
+            (OutKind::Source, "▸ ", "def a = (", 0_usize),
+            (OutKind::Source, "  ", "1) ;", 11),
+            (OutKind::Diag, "", "error: first", 0),
+            (OutKind::Diag, "", "  --> here", 13),
+            (OutKind::Info, "· ", "a", 0),
+            (OutKind::Info, "", "", 2),
+            (OutKind::Info, "  ", "b", 3),
+        ]);
+        let mut written = Vec::new();
+        write_block(&mut written, &block).expect("a vector takes every write");
+        assert_eq!(
+            String::from_utf8(written).expect("the transcript is UTF-8"),
+            "▸ def a = (\n  1) ;\nerror: first\n  --> here\n· a\n\n  b\n"
+        );
     }
 
     /// Text the grammar cannot read is reported in the transcript.
