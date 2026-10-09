@@ -19,9 +19,10 @@ name = "tests"
 path = "tests/lib.rs"
 
 # The session runs the dispatcher's two composition halves over the built-in
-# grammar, reads the lowered module's declarations, origins and import scope,
-# hands the same declarations to the incremental checker with its checkpoint
-# stores, and names the kernel's literals and indices in its edit actions.
+# grammar, carries the parser's completion obligations, reads the lowered
+# module's declarations, origins and import scope, hands the same
+# declarations to the incremental checker with its checkpoint stores, and
+# names the kernel's literals and indices in its edit actions.
 [dependencies]
 gandr-core-checker.workspace = true
 gandr-core-incremental.workspace = true
@@ -30,11 +31,13 @@ gandr-kernel-term.workspace = true
 gandr-surface-dispatcher.workspace = true
 gandr-surface-grammar.workspace = true
 gandr-surface-lowering.workspace = true
+gandr-surface-parser.workspace = true
 gandr-surface-syntax.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]
 gandr-surface-corpus.workspace = true
+gandr-surface-diagnostics.workspace = true
 proptest.workspace = true
 
 [lints]

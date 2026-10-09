@@ -10,6 +10,14 @@
 //! checker, which adopts every checkpoint that still answers, judges the rest
 //! and persists the set. A revision the lowering refuses as a whole is
 //! reported and leaves the session as it was.
+//!
+//! # The parse's repairs ride beside the step
+//!
+//! The step a face renders carries the composition, which holds no trace of
+//! the repairs the parser made to reach a tree. The submission carries them:
+//! the parse's completion obligations, taken from the lowering before it is
+//! consumed, on every path, re-sorted from the parse's severity order into
+//! source order because a reader meets them in the text.
 
 use core::fmt;
 use std::path::Path;
@@ -46,6 +54,7 @@ use gandr_surface_lowering::ImportUri;
 use gandr_surface_lowering::LoweredModule;
 use gandr_surface_lowering::namespace::NamePath;
 use gandr_surface_lowering::namespace::Scope;
+use gandr_surface_parser::ObligationInstance;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -273,6 +282,8 @@ pub struct Submission<'text>
     resumed: Maybe<Resumed, resumed::Absent>,
     /// The edits from the latest accepted revision before it.
     edits: Maybe<EditScript, resumed::Absent>,
+    /// The parse's completion obligations, in source order.
+    obligations: Vec<ObligationInstance>,
 }
 
 impl<'text> Submission<'text>
@@ -343,6 +354,36 @@ impl<'text> Submission<'text>
             | Maybe::Present(ref edits) => Maybe::Present(edits),
             | Maybe::Absent(reason) => Maybe::Absent(reason),
         }
+    }
+
+    /// The completion obligations the parse of the revision recorded, in
+    /// source order: the repairs it made to reach a tree.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the obligations the parse buffered for this revision,
+    ///   each class and span unchanged, ordered by span — start, then end —
+    ///   rather than by the parse's severity, equal spans keeping the parse's
+    ///   order; empty for a clean parse. A revision the lowering refuses as a
+    ///   whole carries its obligations too.
+    /// - provides: the parser's repairs, which the step a face renders does not
+    ///   carry.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the surfaces are the carried set, its order and its
+    ///   lifetime, separated by a clean source, a recovering source whose
+    ///   severity order and source order disagree, a source refused whole, and
+    ///   a clean revision after a recovering one, each asserted at its exact
+    ///   rows against the parse's own buffer.
+    /// - witness: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`
+    /// - witness: `tests::diag_obligations::rows_are_in_source_order_not_severity_order`
+    /// - witness: `tests::diag_obligations::a_clean_source_reports_no_obligations`
+    #[inline]
+    #[must_use]
+    pub fn obligations(&self) -> &[ObligationInstance]
+    {
+        &self.obligations
     }
 
     /// The submission as the walk step of a source at `path`: the shape every
@@ -652,9 +693,11 @@ impl<Store> Session<Store>
     ///   session then holds the revision's resume, import scope and snapshot. A
     ///   revision the lowering refuses as a whole is reported as
     ///   [`Composed::Refused`] with no resume and no edits, and the session is
-    ///   unchanged.
+    ///   unchanged. Either way the submission carries the parse's completion
+    ///   obligations, in source order.
     /// - provides: a report whose verdicts are the batch pipeline's, beside the
-    ///   census of what the resume adopted and the edits that led to it.
+    ///   census of what the resume adopted, the edits that led to it and the
+    ///   repairs the parser made.
     /// - fails: [`SessionFault::Compose`] when the composition faults, with the
     ///   session unchanged; [`SessionFault::Unordered`] when the lowered
     ///   positions do not ascend, unchanged; [`SessionFault::Resume`] when the
@@ -681,6 +724,7 @@ impl<Store> Session<Store>
     /// - witness: `tests::session::successful_submissions_publish_whole_program_synthesis`
     /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
     /// - witness: `tests::edit::a_submission_carries_the_edits_from_the_last_accepted_revision`
+    /// - witness: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`
     #[inline]
     pub fn submit<'text>(
         &mut self,
@@ -691,6 +735,8 @@ impl<Store> Session<Store>
     {
         let lowering = lower_source(&self.grammar, revision, &mut self.lowerings)
             .map_err(SessionFault::Compose)?;
+        let mut obligations = lowering.obligations().to_vec();
+        obligations.sort_by_key(|obligation| obligation.span);
         let (module, arena) = match lowering.into_lowered() {
             | Lowered::Module { module, arena } => (module, arena),
             | Lowered::Refused(refusal) => {
@@ -702,6 +748,7 @@ impl<Store> Session<Store>
                     composed,
                     resumed: Maybe::Absent(resumed::Absent::RefusedWhole),
                     edits: Maybe::Absent(resumed::Absent::RefusedWhole),
+                    obligations,
                 });
             },
         };
@@ -737,6 +784,7 @@ impl<Store> Session<Store>
                 persistence,
             }),
             edits: Maybe::Present(edits),
+            obligations,
         })
     }
 

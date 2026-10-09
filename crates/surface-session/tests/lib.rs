@@ -13,7 +13,15 @@ mod checkpoint;
 #[cfg(test)]
 mod corpus;
 #[cfg(test)]
+mod diag;
+#[cfg(test)]
+mod diag_attr;
+#[cfg(test)]
+mod diag_obligations;
+#[cfg(test)]
 mod edit;
+#[cfg(test)]
+mod goals;
 #[cfg(test)]
 mod incremental;
 #[cfg(test)]

@@ -18,6 +18,8 @@ The interactive session: each revision of one source lowered, judged exactly as 
 - [The import scope persists across submissions](#the-import-scope-persists-across-submissions)
 - [Edits are a diff of the lowered core](#edits-are-a-diff-of-the-lowered-core)
 - [Localization descends extents](#localization-descends-extents)
+- [The parse's repairs ride beside the step](#the-parses-repairs-ride-beside-the-step)
+- [Diagnostics and goals are the renderer's](#diagnostics-and-goals-are-the-renderers)
 - [Tests: the floor, the deferred rows, the defects](#tests-the-floor-the-deferred-rows-the-defects)
 - [License](#license)
 
@@ -25,7 +27,7 @@ The interactive session: each revision of one source lowered, judged exactly as 
 
 ## Synopsis
 
-**What.** A `Session` takes successive revisions of one source through `Session::submit`. Each revision is lowered once; the dispatcher's `judge_module` judges, readmits and settles the lowered module, and the same declarations, offered by the item source as a `Program`, go to the incremental checker, which adopts every checkpoint that still answers, judges the rest and persists the set. The `Submission` carries the dispatcher's `Composed` and `Standing` for the text, the resume's census and whether the checkpoints were stored, and the edit actions from the latest accepted revision, and turns into the dispatcher's `Step` so a face renders it through the same renderer the batch verbs use. `Session::reopen` restores a session over the checkpoints an earlier one wrote.
+**What.** A `Session` takes successive revisions of one source through `Session::submit`. Each revision is lowered once; the dispatcher's `judge_module` judges, readmits and settles the lowered module, and the same declarations, offered by the item source as a `Program`, go to the incremental checker, which adopts every checkpoint that still answers, judges the rest and persists the set. The `Submission` carries the dispatcher's `Composed` and `Standing` for the text, the resume's census and whether the checkpoints were stored, the edit actions from the latest accepted revision and the parse's completion obligations, and turns into the dispatcher's `Step` so a face renders it through the same renderer the batch verbs use. `Session::reopen` restores a session over the checkpoints an earlier one wrote.
 
 **Why.** The REPL, the language server and a terminal interface all need what the batch pipeline does not keep: the latest resume to adopt from, a checkpoint store that outlives the process, and the import scope of the last revision that lowered. Holding that state once, below every face, means each face is a loop over `submit` and a renderer of steps, and every face's verdicts are the batch pipeline's.
 
@@ -40,7 +42,8 @@ The interactive session: each revision of one source lowered, judged exactly as 
 ## Provided features
 
 - **The session.** `Session`, `Session::new`, `Session::submit`, `Session::last`, `Session::stream`, `Session::lowerings`, `Session::into_store`; `Submission`, `Resumed`, `Persistence`, `resumed::Absent`, `SessionFault`. Witnesses: `tests::corpus::every_source_submits_as_the_walk_composes_it`, `tests::session::whole_file_submit_carries_definitions_forward`, `tests::session::successful_submissions_publish_whole_program_synthesis`, `tests::session::failed_submission_retains_latest_synthesis`.
-- **The step a face renders.** `Submission::into_step`: the submission as the dispatcher's `Step::Source`. Witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`.
+- **The step a face renders.** `Submission::into_step`: the submission as the dispatcher's `Step::Source`. Witnesses: `tests::corpus::every_source_submits_as_the_walk_composes_it`, `tests::diag::error_corpus_reports_match_goldens`, `tests::diag::goal_corpus_reports_match_goldens`.
+- **The parser's repairs.** `Submission::obligations`: the parse's completion obligations, in source order. Witnesses: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`, `tests::diag_obligations::rows_are_in_source_order_not_severity_order`, `tests::diag_obligations::a_clean_source_reports_no_obligations`.
 - **Checkpoints across processes.** `Session::reopen`, `Reopened`, `reopened::Absent`. Witnesses: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`, `tests::checkpoint::a_store_holding_nothing_reopens_fresh`, `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`.
 - **The import scope.** `Session::resolve_import`, `ImportRow`, `import::Absent`. Witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`.
 - **The item source.** `program`, `SurfaceItems` (an `ItemSource`), `Revision`, `RevisionFault`, `fault_span::Absent`. Witnesses: `tests::items::each_unrefused_declaration_is_one_item_keyed_by_its_name`, `tests::items::the_item_source_offers_a_revision_or_names_its_fault`.
@@ -122,6 +125,18 @@ The recorded design is this contract over the prior implementation's named surfa
 
 `Snapshot::localize` returns the body node whose span encloses a range with the fewest bytes, the outermost of a shared span and the leftmost at one depth — the prior implementation's rule, so a contiguous edit's locus is the common ancestor of the changes it induces. The prior implementation descended the nesting of its origin map. Here a node's recorded origin need not enclose its children: a function's lambda records its parameter. A snapshot therefore spans each node by its extent, the hull of its own origin and its children's extents, which nests by construction. The descent examines the children of the enclosing nodes alone, level by level, so its work follows the locus's depth; it keeps every enclosing sibling rather than the first, which keeps it exact where a point touches two siblings. A linear scan of every node is its oracle. The extent step retires if the lowering's origins come to nest, when each extent equals its origin.
 
+## The parse's repairs ride beside the step
+
+`Submission::obligations` carries the completion obligations the parse recorded — each repair's class and the bytes held responsible — on both paths, a revision judged and one refused whole. The step a face renders holds the composition, which keeps no trace of the repairs, so the submission takes them from the lowering before consuming it. The parse orders them by severity, the order its minimization folds; the submission orders them by span, the order a reader meets them, equal spans keeping the parse's order. The rows are the revision's: a clean revision after a recovering one carries none.
+
+The recorded design is the prior implementation's: the lowering carried the parse's buffer verbatim, and the report projected it into source-ordered rows of a published vocabulary, which a render bus turned into cards and a JSON report serialized. Here the rows are the parser's own `ObligationInstance`s, since no face reads a published vocabulary yet; the vocabulary, the cards and the codec arrive with the first face that consumes them. The alternative was to add the obligations to the dispatcher's step, which every batch verb would then carry unread. The choice reverses when the step itself carries the parse's obligations; the submission then forwards the step's.
+
+## Diagnostics and goals are the renderer's
+
+A submission's diagnostics are the reports `gandr-surface-diagnostics` renders from its step under the verb a face runs: a refusal at its own locus, an unsettled declaration, and under `check --goals` a goal. A goal is a declaration owed its body — a signature with no definition — which the checker answers with the hole rule and the incremental checker marks as a hole in the item's footprint; the goals suite checks that the two predicates agree item by item.
+
+The prior implementation's goals were holes inside bodies, each with its expected type and local context, and it recovered a malformed declaration as such a hole. The surface has no hole term yet, so the goals here stand for whole bodies and goals over sub-term holes arrive with the hole surface; a malformed declaration is refused in place, its report the refusal at the responsible bytes, and the declarations after it lower intact. The prior attribute pass reported an ill-typed payload as the checker's type error; here the lowering types a payload against its schema where it reads it, and refuses a mismatch as `IllTypedPayload`, in the malformed-source class every type error takes.
+
 ## Tests: the floor, the deferred rows, the defects
 
 The prior implementation's session, incremental, edit, diagnostics and goals suites, with the tests beside their source, are the floor: 162 tests. A row over a former the fragment does not have is deferred by name with that former.
@@ -134,10 +149,19 @@ The prior implementation's session, incremental, edit, diagnostics and goals sui
 | edit, beside the source | 3 | 3 | 0 |
 | edit | 52 | 14 | 38 |
 | edit, extra | 3 | 0 | 3 |
+| diagnostics | 14 | 5 | 9 |
+| diagnostics, attributes | 5 | 5 | 0 |
+| diagnostics, frames | 2 | 0 | 2 |
+| diagnostics, obligations | 15 | 8 | 7 |
+| goals, extra | 3 | 0 | 3 |
+| goals, beside the source | 1 | 1 | 0 |
+| total | 162 | 57 | 105 |
 
 The ported rows keep their names. A row whose prior form also evaluated its item keeps its typing half here; evaluation is deferred with the machine. `scalar_literals_carry_their_types` covers integer and string literals; the suffixed numeric literal is outside the fragment. The incremental property `incremental_equals_from_scratch` runs a chain of one to four edits per case, 200 cases, over revisions of one to six statements from a pool of six names with integer, string, reference, thunk, function-applying thunk, function-tail and signature-only bodies and `Integer`, `String` and `U (F Integer)` signatures, under replace, insert, delete, coordinated rename, swap, ascribe and value-only edits; each step's report must equal the dispatcher's and its typings the checker's module entry.
 
 The edit rows take the fragment's formers. `literal_edit_is_one_set_int` and the localization rows run over the incremental fixture pair, `item_insertion_leaves_neighbours_untouched` over the stale-relocation pair rewritten without operators; the changed former of `constructor_change_is_one_replace` is a literal becoming a thunk, of `comp_constructor_change_is_one_replace` a return becoming an application; `hole_fill_and_erase` fills and erases an owed declaration's body; `multi_point_edit_localizes_to_the_common_ancestor` changes a callee and its argument. `step_comp_child_order_matches_diff_and_rebuild` pins the child order over a hand-built arena holding the core's multi-child formers — `case`, bind, application, pair — since the effect formers it was written over are absent. The properties `apply_of_diff_reproduces_new` and `self_diff_is_identity` run 200 cases each over the incremental generator's revisions.
+
+The diagnostics rows submit each source to a fresh session and read the reports its step renders. The error corpus holds one row per refusal a declaration of the fragment reaches, the checker's shape mismatch once per former its rules require, and the lowering's refusal of a source as a whole; `error_corpus_reports_match_goldens` and `goal_corpus_reports_match_goldens` pin the rendered text under `tests/golden/`, where the prior goldens were JSON reports. `repeated_equal_subterms_point_to_the_failing_occurrence` writes its equal literals in two declarations, since tuples and ascription are outside the fragment. The attribute rows take the registry's `owes` and `refuses` where the prior rows took `doc`. `goal_flags_match_checkpoint_footprints_for_recovery_fixtures` runs over the `parser-recovery` and `incomplete-input` fixtures rewritten into the fragment: the prior sources, a shell block and a top-level expression, are refused whole here and would offer no item to compare.
 
 Deferred, with the former each needs:
 
@@ -161,8 +185,12 @@ Deferred, with the former each needs:
 - Lists and records together: `same_shape_containers_descend_and_apply_rebuilds_them`, `shape_changes_replace_wholesale_and_apply_installs_the_subtree`.
 - Computation ascription in expression position: `computation_ascription_types_and_evaluates_check_only_forms`.
 - Foreign declarations: `extern_declaration_carries_across_lines_and_a_foreign_call_blames_without_a_handler`.
-- Module declarations: `a_hidden_or_absent_user_module_component_is_declined_as_a_hole`.
+- Module declarations: `a_hidden_or_absent_user_module_component_is_declined_as_a_hole`, `a_whole_file_submission_reports_the_missing_module_component_goal`.
 - Typed holes in `case` patterns: `filling_a_pattern_hole_resumes_to_the_written_source`, `opening_a_pattern_hole_resumes_to_the_unfinished_source`, `filling_a_hole_invalidates_only_the_item_holding_it`, `a_type_stable_fill_adopts_its_dependent`.
+- A published obligation vocabulary, render-bus cards and capabilities, and a versioned JSON report, which arrive with the face that consumes them: `every_parser_class_maps_to_its_own_name_and_rank`, `cards_preserve_the_report_rows`, `a_clean_source_produces_no_cards`, `advertised_capabilities_match_the_live_path`, `report_json_carries_the_rows_and_round_trips`, `an_empty_row_set_serializes_as_an_empty_array`, `a_render_frame_round_trips_the_produced_cards`, `spans_are_in_source_and_schema_is_versioned`, `reports_round_trip_through_json`.
+- Semantic marks, the checker's pass marking each typed node: `corpus_covers_each_reachable_mark_kind`, `oracle_error_marks_iff_ill_typed`, `is_error_classifies_empty_hole_only`, `mark_spans_lie_in_source`, `no_surface_source_yields_effect_or_other_mark`, `surface_marks_are_never_dropped`, `catch_all_and_effect_row_mark_shapes_round_trip` (with effect rows and the JSON codec).
+- Checker failure frames, the structural context a nested refusal is reported within: `each_checker_frame_localizes_its_nested_failure`, `binder_naming_frames_carry_their_binder`.
+- A declaration of computation type, which the lowering refuses as out of fragment: `a_computation_signature_folds_into_its_def_and_yields_one_hole_goal` (with a hole term), `a_computation_signature_on_a_hole_free_body_types_through_the_check_entry`.
 
 Two defects of the prior implementation are absent. A submission panicked on a corpus source the walk passed: absent at L2, since `tests::corpus::every_source_submits_as_the_walk_composes_it` submits every source of both roots whole and compares each with the walk's step. Total lowering accepted wrong programs through the unknown type: absent by construction, since no unknown former exists.
 

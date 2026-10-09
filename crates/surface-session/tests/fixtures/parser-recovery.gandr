@@ -1,0 +1,3 @@
+def owed : Integer ;
+def answer = 42 ;
+def broken = 1 ~ 2 ;

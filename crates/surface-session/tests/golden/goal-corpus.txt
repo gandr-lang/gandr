@@ -1,0 +1,28 @@
+=== goal-value ===
+goal: `owed` states checks owing 0; produced checks owing 1
+  ╭▸ goal-value.gandr:1:1
+  │
+1 │ def owed : Integer ;
+  ╰╴━━━━━━━━━━━━━━━━━━━━ surviving obligations: 1 undeclared, 0 unproduced
+
+=== goal-thunk ===
+goal: `later` states checks owing 0; produced checks owing 1
+  ╭▸ goal-thunk.gandr:1:1
+  │
+1 │ def later : U (Integer -> F Integer) ;
+  ╰╴━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ surviving obligations: 1 undeclared, 0 unproduced
+
+=== goal-beside-a-refusal ===
+goal: `owed` states checks owing 0; produced checks owing 1
+  ╭▸ goal-beside-a-refusal.gandr:1:1
+  │
+1 │ def owed : Integer ;
+  ╰╴━━━━━━━━━━━━━━━━━━━━ surviving obligations: 1 undeclared, 0 unproduced
+
+error[MalformedForm]: `def_value` holds grout for a missing term at 54..55
+  ╭▸ goal-beside-a-refusal.gandr:3:16
+  │
+3 │ def broken = 1 ~ 2 ;
+  │                ━ malformed source
+  │
+  ╰ note: unsettled `broken` states checks owing 0

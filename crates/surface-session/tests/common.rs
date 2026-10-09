@@ -8,9 +8,12 @@ use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::check_module;
 use gandr_core_incremental::BackendArtifact;
+use gandr_core_incremental::HoleMark;
+use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::ItemOrdinal;
 use gandr_core_incremental::MemoryCheckpointStore;
 use gandr_core_incremental::Program;
+use gandr_core_incremental::Reference;
 use gandr_core_incremental::Typing;
 use gandr_core_incremental::project;
 use gandr_surface_corpus::CorpusRoot;
@@ -121,6 +124,33 @@ pub fn resumed<Store>(session: &Session<Store>) -> Vec<Typing>
         | Maybe::Present(resume) => resume.typings().cloned().collect(),
         | Maybe::Absent(reason) => panic!("the session holds no resume: {reason:?}"),
     }
+}
+
+/// Each item of the session's latest resume, in source order: its key and
+/// whether its checkpoint's footprint marks the body a hole.
+///
+/// # Specification
+/// trivial.
+pub fn footprints<Store>(session: &Session<Store>) -> Vec<(ItemKey, HoleMark)>
+{
+    let Maybe::Present(resume) = session.last()
+    else {
+        panic!("the session holds no resume");
+    };
+    resume
+        .handles()
+        .iter()
+        .zip(resume.checkpoints().items())
+        .map(|(&handle, checkpoint)| match resume.reference(handle) {
+            | Maybe::Present(&Reference::Item { ref key, .. }) => {
+                (key.clone(), checkpoint.footprint().hole())
+            },
+            | Maybe::Present(&Reference::Unoccupied) => {
+                panic!("a resume's handle names an occupied position")
+            },
+            | Maybe::Absent(reason) => panic!("the resume's own handle is live: {reason:?}"),
+        })
+        .collect()
 }
 
 /// The typings the checker's own module entry gives `program` in a fresh

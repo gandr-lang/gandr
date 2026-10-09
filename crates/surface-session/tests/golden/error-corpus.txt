@@ -1,0 +1,133 @@
+=== type-mismatch ===
+error[TypeMismatch]: the type this term synthesises does not convert to the type it is checked against
+  ╭▸ type-mismatch.gandr:2:9
+  │
+1 │ def x : String ;
+  │         ────── the type it is checked against
+2 │ def x = 1 ;
+  │         ━ malformed source
+  │
+  ╰ note: unsettled `x` states checks owing 0
+
+=== shape-arrow ===
+error[ShapeMismatch]: the rule here requires an arrow `A → C`
+  ╭▸ shape-arrow.gandr:4:18
+  │
+1 │ def h : U (F Integer) ;
+  │            ───────── the type met, where an arrow `A → C` is required
+  ‡
+4 │ def g = thunk { (force h)(1) } ;
+  │                  ━━━━━━━ malformed source
+  │
+  ╰ note: unsettled `g` states checks owing 0
+
+=== shape-thunk ===
+error[ShapeMismatch]: the rule here requires a thunk type `U C`
+  ╭▸ shape-thunk.gandr:2:23
+  │
+2 │ def y = thunk { force 1 } ;
+  │                       ━ malformed source
+  │
+  ╰ note: unsettled `y` states checks owing 0
+
+=== shape-returner ===
+error[ShapeMismatch]: the rule here requires a returner `F A`
+  ╭▸ shape-returner.gandr:2:17
+  │
+1 │ def f : U (Integer -> F Integer) ;
+  │            ──────────────────── the type met, where a returner `F A` is required
+2 │ def f = thunk { ret 1 } ;
+  │                 ━━━━━ malformed source
+  │
+  ╰ note: unsettled `f` states checks owing 0
+
+=== not-synthesisable ===
+error[NotSynthesisable]: a thunk stands where a type must be synthesised
+  ╭▸ not-synthesisable.gandr:1:9
+  │
+1 │ def a = thunk { ret 1 } ;
+  │         ━━━━━━━━━━━━━━━ malformed source
+  │
+  ╰ note: unsettled `a` states checks owing 0
+
+=== unknown-constant ===
+error[NotSynthesisable]: a thunk stands where a type must be synthesised
+  ╭▸ unknown-constant.gandr:1:9
+  │
+1 │ def a = thunk { ret 1 } ;
+  │         ━━━━━━━━━━━━━━━ malformed source
+  │
+  ╰ note: unsettled `a` states checks owing 0
+
+error[UnknownConstant]: the constant names admission position 0, which holds no declaration the context has a type for
+  ╭▸ unknown-constant.gandr:2:9
+  │
+2 │ def b = a ;
+  │         ━ malformed source
+  │
+  ╰ note: unsettled `b` states checks owing 0
+
+=== unresolved-name ===
+error[UnresolvedName]: no declaration or binder answers `nonesuch` at 8..16
+  ╭▸ unresolved-name.gandr:1:9
+  │
+1 │ def x = nonesuch ;
+  │         ━━━━━━━━ malformed source
+  │
+  ╰ note: unsettled `x` states checks owing 0
+
+=== unresolved-type-head ===
+error[UnresolvedTypeHead]: no type head answers `Intgr` bare at 8..13
+  ╭▸ unresolved-type-head.gandr:1:9
+  │
+1 │ def a : Intgr ;
+  │         ━━━━━ malformed source
+  │
+  ╰ note: unsettled `a` states checks owing 0
+
+=== duplicate-signature ===
+error[DuplicateSignature]: `a` already has a signature at 0..17; a second at 18..35
+  ╭▸ duplicate-signature.gandr:2:1
+  │
+1 │ def a : Integer ;
+  │ ───────────────── first written here
+2 │ def a : Integer ;
+  │ ━━━━━━━━━━━━━━━━━ malformed source
+  │
+  ╰ note: unsettled `a` states checks owing 0
+
+=== duplicate-definition ===
+error[DuplicateDefinition]: `a` already has a definition at 0..11; a second at 12..23
+  ╭▸ duplicate-definition.gandr:2:1
+  │
+1 │ def a = 3 ;
+  │ ─────────── first written here
+2 │ def a = 4 ;
+  │ ━━━━━━━━━━━ malformed source
+  │
+  ╰ note: unsettled `a` states checks owing 0
+
+=== out-of-fragment ===
+error[OutOfFragment]: `product_type` at 8..25, read as a value type, is reserved and declined
+  ╭▸ out-of-fragment.gandr:1:9
+  │
+1 │ def a : Integer * Integer ;
+  │         ━━━━━━━━━━━━━━━━━ unrepresentable
+  │
+  ╰ note: unsettled `a` states checks owing 0
+
+=== malformed-form ===
+error[MalformedForm]: `def_value` holds grout for a missing term at 12..13
+  ╭▸ malformed-form.gandr:1:13
+  │
+1 │ def bad = 1 ~ 2 ;
+  │             ━ malformed source
+  │
+  ╰ note: unsettled `bad` states checks owing 0
+
+=== refused-whole ===
+error[OutOfFragment]: the lowering refused the source as a whole: `shell_block` at 18..33, read as a declaration, is not a former of this sort
+  ╭▸ refused-whole.gandr:2:1
+  │
+2 │ #!{echo hello |
+  ╰╴━━━━━━━━━━━━━━━ unrepresentable

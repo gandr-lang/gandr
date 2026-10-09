@@ -236,6 +236,7 @@ path = "crates/surface-corpus"
 # consumers:
 # - surface-driver
 # - surface-lsp
+# - surface-session (dev)
 [workspace.dependencies.gandr-surface-diagnostics]
 path = "crates/surface-diagnostics"
 
@@ -287,6 +288,7 @@ path = "crates/surface-lsp"
 # - surface-grammar (dev)
 # - surface-lowering (dev)
 # - surface-lsp
+# - surface-session
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
 
