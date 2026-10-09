@@ -343,17 +343,15 @@ impl TokenCount
     /// - provides: the pending-token accumulation the typed cap fires on.
     /// - fails: never.
     /// - panics: none.
-    /// - executable: none — the pinned runtime instrument cannot expand in
-    ///   const functions; preserving const callers requires an instrument
-    ///   change.
     ///
     /// # Adequacy
     /// - hypothesis: L3 on zero, an ordinary sum, `u64::MAX` and overflow;
     ///   exact counts distinguish wrapping, premature saturation and lost
     ///   input.
     /// - witness: `units::tests::token_addition_saturates_only_past_the_width`
+    #[anodized::spec(ensures: |ret| ret.0 == self.0.saturating_add(other.0))]
     #[must_use]
-    pub(crate) const fn saturating_plus(
+    pub(crate) fn saturating_plus(
         self,
         other: Self,
     ) -> Self
