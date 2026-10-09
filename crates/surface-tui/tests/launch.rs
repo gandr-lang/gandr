@@ -131,7 +131,9 @@ mod tests
     /// trivial.
     fn base(base: BaseType) -> String
     {
-        spell(&[ContentNode::Base(base)], NodeIndex::from(0)).to_string()
+        spell(&[ContentNode::Base(base)], NodeIndex::from(0))
+            .expect("a base type lays out")
+            .to_string()
     }
 
     /// The frame `app` paints onto a headless backend over `area`.

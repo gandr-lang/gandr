@@ -23,6 +23,7 @@ members = [
   "crates/surface-lowering",
   "crates/surface-lsp",
   "crates/surface-parser",
+  "crates/surface-pretty",
   "crates/surface-render-remote",
   "crates/surface-repl",
   "crates/surface-session",
@@ -111,11 +112,12 @@ version = "4.6.6"
 default-features = false
 features = ["derive", "error-context", "help", "std", "usage"]
 
-# Snapshot comparison for the highlighter's role golden: a file compared
-# whole, a diff on mismatch, and a rewrite under `UPDATE_EXPECT=1`. It has no
-# features to leave off.
+# Snapshot comparison for the highlighter's role goldens and the printer's
+# layout goldens: a file compared whole, a diff on mismatch, and a rewrite
+# under `UPDATE_EXPECT=1`. It has no features to leave off.
 # consumers:
 # - surface-grammar (dev)
+# - surface-pretty (dev)
 [workspace.dependencies.expect-test]
 version = "1.5.1"
 default-features = false
@@ -146,6 +148,7 @@ path = "crates/core-incremental"
 # consumers:
 # - core-checker
 # - core-sequent (dev)
+# - surface-pretty (dev)
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
 
@@ -167,6 +170,7 @@ path = "crates/core-sequent"
 # - surface-diagnostics
 # - surface-dispatcher
 # - surface-lowering
+# - surface-pretty
 # - surface-session
 [workspace.dependencies.gandr-core-term]
 path = "crates/core-term"
@@ -205,6 +209,7 @@ path = "crates/kernel-core"
 # - kernel-core
 # - kernel-term
 # - surface-lowering
+# - surface-pretty
 [workspace.dependencies.gandr-kernel-strata]
 path = "crates/kernel-strata"
 
@@ -220,7 +225,8 @@ path = "crates/kernel-strata"
 # - surface-corpus
 # - surface-dispatcher
 # - surface-lowering
-# - surface-repl
+# - surface-pretty
+# - surface-repl (dev)
 # - surface-session
 # - surface-tui (dev)
 [workspace.dependencies.gandr-kernel-term]
@@ -288,6 +294,13 @@ path = "crates/surface-dispatcher"
 [workspace.dependencies.gandr-surface-grammar]
 path = "crates/surface-grammar"
 
+# The document-layout engine: the sealed document arena, Pareto resolution
+# under width taint, the plan arena and the first-order render machine.
+# consumers:
+# - surface-pretty
+[workspace.dependencies.gandr-surface-layout]
+path = "crates/surface-layout"
+
 # Lowering the surface into the core: resolution, module collection, the
 # attribute side table, the origin table and the refusal classifier.
 # consumers:
@@ -317,6 +330,13 @@ path = "crates/surface-lsp"
 # - surface-session
 [workspace.dependencies.gandr-surface-parser]
 path = "crates/surface-parser"
+
+# The presentation printer: checked core types and normal-form values laid
+# out at a page width through the layout engine.
+# consumers:
+# - surface-repl
+[workspace.dependencies.gandr-surface-pretty]
+path = "crates/surface-pretty"
 
 # The renderer seam: presentation spans, cards and transcript blocks, the
 # byte-to-position projections and the versioned render-bus frame.
@@ -498,6 +518,7 @@ default-features = false
 # - surface-layout
 # - surface-lowering
 # - surface-lsp
+# - surface-pretty
 # - surface-repl
 # - surface-session
 # - theory-cell-complexes

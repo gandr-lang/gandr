@@ -1,0 +1,31 @@
+[package]
+name = "gandr-surface-pretty"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "The presentation printer: checked core types and normal-form values laid out at a page width through the layout engine, one spelling per former"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["call-by-push-value", "gandr", "layout", "pretty-printing"]
+categories = ["text-processing"]
+publish.workspace = true
+
+# The printer reads core types and values, the leaf vocabularies and levels
+# they carry, and lays its documents out through the layout engine; a name the
+# printer cannot spell says why through the shape crate's named absence.
+[dependencies]
+gandr-core-term.workspace = true
+gandr-kernel-strata.workspace = true
+gandr-kernel-term.workspace = true
+gandr-surface-layout.workspace = true
+quenchant-shape.workspace = true
+
+# The goldens compare whole files, and the value goldens print normal forms
+# evaluation and readback produce.
+[dev-dependencies]
+expect-test.workspace = true
+gandr-core-nbe.workspace = true
+
+[lints]
+workspace = true
