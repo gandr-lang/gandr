@@ -230,6 +230,22 @@ impl Environment
             | Zone::Linear => self.linear.get(offset.0).copied(),
         }
     }
+
+    /// Every binding one zone holds, outermost first.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn bindings(
+        &self,
+        zone: Zone,
+    ) -> &[DomainValueId]
+    {
+        match zone {
+            | Zone::Intuitionistic => &self.intuitionistic,
+            | Zone::Linear => &self.linear,
+        }
+    }
 }
 
 /// Resolve a de Bruijn index against a zone of `depth` bindings.

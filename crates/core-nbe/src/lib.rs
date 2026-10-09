@@ -13,6 +13,9 @@
 //! - [`eval_value`] and [`eval_computation`] evaluate to weak head;
 //!   [`readback_value`] and [`readback_computation`] read back under a
 //!   [`ReadbackMode`].
+//! - [`convert_values`] and [`convert_computations`] run the conversion steps
+//!   that need no search — identity, the [`Guard`] every node is minted with,
+//!   and structural comparison — answering a [`Settlement`].
 //!
 //! The design, and what a caller must guarantee, is stated in this crate's
 //! `README.md`, § Synopsis and § Expected features, and in the sections they
@@ -24,8 +27,10 @@ extern crate alloc;
 
 mod arena;
 mod closure;
+mod conv;
 mod domain;
 mod eval;
+mod guard;
 mod policy;
 mod readback;
 
@@ -41,6 +46,12 @@ pub use crate::closure::CompClosure;
 pub use crate::closure::Environment;
 pub use crate::closure::EnvironmentDepth;
 pub use crate::closure::ValueClosure;
+pub use crate::conv::ConversionFault;
+pub use crate::conv::Convertibility;
+pub use crate::conv::Deferral;
+pub use crate::conv::Settlement;
+pub use crate::conv::convert_computations;
+pub use crate::conv::convert_values;
 pub use crate::domain::BinderLevel;
 pub use crate::domain::CompTermFace;
 pub use crate::domain::DomainComp;
@@ -60,6 +71,9 @@ pub use crate::eval::Fuel;
 pub use crate::eval::LoweredChain;
 pub use crate::eval::eval_computation;
 pub use crate::eval::eval_value;
+pub use crate::guard::ContentHash;
+pub use crate::guard::Guard;
+pub use crate::guard::GuardAnswer;
 pub use crate::policy::Copied;
 pub use crate::policy::DuplicationPolicy;
 pub use crate::policy::DuplicationStance;

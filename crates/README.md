@@ -31,7 +31,7 @@ crates/
 ├── kernel-conversion-trace/   gandr-kernel-conversion-trace   the conversion-decision vocabulary and its sink
 ├── kernel-core/               gandr-kernel-core               the checking machine, conversion, admission, the check memo
 ├── core-term/                 gandr-core-term                 the core syntax and the one unified context
-├── core-nbe/                  gandr-core-nbe                  the glued value domain, evaluation and readback
+├── core-nbe/                  gandr-core-nbe                  the glued value domain, evaluation, readback and search-free conversion
 ├── storage-chunker/           gandr-storage-chunker           content-defined chunk boundaries and their committed parameters
 ├── storage-records/           gandr-storage-records           the authenticated ordered-record plane
 ├── storage-values/            gandr-storage-values            the content-addressed value plane: typed chunk DAG and content pointers

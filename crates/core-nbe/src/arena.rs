@@ -4,8 +4,9 @@
 //! # Per-run, and torn down wholesale
 //!
 //! A domain arena belongs to one run and dies with it. Nothing here is
-//! persisted, nothing is shared between runs, and teardown is six flat vector
-//! drops in any order. The teardown suite releases a deep chain in both orders
+//! persisted, nothing is shared between runs, and teardown is nine flat vector
+//! drops — six families and three guard vectors — in any order. The teardown
+//! suite releases a deep chain in both orders
 //! inside a small stack and observes the release through a handle that does
 //! not keep the chain alive.
 //!
@@ -54,6 +55,15 @@
 //! domain value a heap-owning node, so lifts name a level in the run's level
 //! table and the domain node stays `Copy`.
 //!
+//! # Every value, computation and neutral carries its guard
+//!
+//! The cached word step 2 of conversion reads is minted with the node, from
+//! the node's kind, payload and children's words, so reading it is one vector
+//! access. It lives beside its family in a vector of equal length, and
+//! truncation cuts both at one mark. A child that does not resolve at mint
+//! makes its parent's word [`Guard::Flexible`], the direction that decides
+//! nothing: the dangling child surfaces where it is read.
+//!
 //! [term face]: crate::domain::TermFace
 //! [`CoreArena`]: gandr_core_term::CoreArena
 
@@ -63,6 +73,7 @@ use anodized::spec;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
 use gandr_kernel_strata::Level;
+use gandr_kernel_term::Literal;
 use gandr_kernel_term::Side;
 
 use crate::closure::CompClosure;
@@ -80,6 +91,8 @@ use crate::domain::Neutral;
 use crate::domain::NeutralHead;
 use crate::domain::TermFace;
 use crate::domain::Unfolding;
+use crate::guard::Guard;
+use crate::guard::GuardTag;
 
 /// The id of a [`DomainValue`] in a [`DomainArena`].
 #[repr(transparent)]
@@ -223,10 +236,16 @@ pub struct DomainArena
 {
     /// The domain values, in allocation order.
     values: Vec<DomainValue>,
+    /// Each value's guard, at the value's own offset.
+    value_guards: Vec<Guard>,
     /// The weak-head domain computations.
     computations: Vec<DomainComp>,
+    /// Each computation's guard, at the computation's own offset.
+    comp_guards: Vec<Guard>,
     /// The neutrals.
     neutrals: Vec<Neutral>,
+    /// Each neutral's guard, at the neutral's own offset.
+    neutral_guards: Vec<Guard>,
     /// The value closures.
     value_closures: Vec<ValueClosure>,
     /// The computation closures.
@@ -287,11 +306,11 @@ impl DomainArena
     ///   resolving to a later node.
     /// - provides: the wholesale truncation a speculative evaluation is
     ///   discarded by, and — at the default watermark — the whole run's
-    ///   teardown as six flat vector drops in any order. The clause states each
-    ///   family's resulting length against the mark and the entry mark, which
-    ///   is the documented no-op rather than a panic on a stale mark; that no
-    ///   id minted after the mark resolves is a per-id statement over the
-    ///   dropped range and stays prose.
+    ///   teardown as nine flat vector drops in any order. The clause states
+    ///   each family's resulting length against the mark and the entry mark,
+    ///   which is the documented no-op rather than a panic on a stale mark;
+    ///   that no id minted after the mark resolves is a per-id statement over
+    ///   the dropped range and stays prose.
     /// - fails: never — a truncation past the end is a no-op.
     /// - panics: none.
     ///
@@ -318,8 +337,11 @@ impl DomainArena
     )
     {
         self.values.truncate(watermark.values);
+        self.value_guards.truncate(watermark.values);
         self.computations.truncate(watermark.computations);
+        self.comp_guards.truncate(watermark.computations);
         self.neutrals.truncate(watermark.neutrals);
+        self.neutral_guards.truncate(watermark.neutrals);
         self.value_closures.truncate(watermark.value_closures);
         self.comp_closures.truncate(watermark.comp_closures);
         self.levels.truncate(watermark.levels);
@@ -458,6 +480,156 @@ impl DomainArena
         self.levels.get(id_offset(ArenaIndex(u32::from(target))).0)
     }
 
+    /// The guard minted with a domain value.
+    ///
+    /// # Specification
+    /// - requires: nothing — an id from another arena, and one minted after a
+    ///   truncation, are both admissible input.
+    /// - ensures: the word minted with the value `id` names, for every id below
+    ///   the family length.
+    /// - provides: the constant-time read step 2 of conversion makes.
+    /// - fails: [`DomainFault::Dangling`] at or above the family length.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`DomainFault::Dangling`] — the id names no value.
+    #[inline]
+    #[spec(ensures: |ret| ret.is_ok() == self.value(id).is_some())]
+    pub fn value_guard(
+        &self,
+        id: DomainValueId,
+    ) -> Result<Guard, DomainFault>
+    {
+        self.value_guards
+            .get(id_offset(ArenaIndex(id.0)).0)
+            .copied()
+            .ok_or(DomainFault::Dangling)
+    }
+
+    /// The guard minted with a domain computation.
+    ///
+    /// # Specification
+    /// - requires: nothing — a foreign or truncated id is admissible input.
+    /// - ensures: the word minted with the computation `id` names, for every id
+    ///   below the family length.
+    /// - provides: the constant-time read step 2 of conversion makes.
+    /// - fails: [`DomainFault::Dangling`] at or above the family length.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`DomainFault::Dangling`] — the id names no computation.
+    #[inline]
+    #[spec(ensures: |ret| ret.is_ok() == self.computation(id).is_some())]
+    pub fn comp_guard(
+        &self,
+        id: DomainCompId,
+    ) -> Result<Guard, DomainFault>
+    {
+        self.comp_guards
+            .get(id_offset(ArenaIndex(id.0)).0)
+            .copied()
+            .ok_or(DomainFault::Dangling)
+    }
+
+    /// The guard minted with a neutral.
+    ///
+    /// # Specification
+    /// - requires: nothing — a foreign or truncated id is admissible input.
+    /// - ensures: the word minted with the neutral `id` names, for every id
+    ///   below the family length; forcing the neutral leaves it unchanged,
+    ///   because an unforced and a forced face are both flexible.
+    /// - provides: the constant-time read step 2 of conversion makes.
+    /// - fails: [`DomainFault::Dangling`] at or above the family length.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// - [`DomainFault::Dangling`] — the id names no neutral.
+    #[inline]
+    #[spec(ensures: |ret| ret.is_ok() == self.neutral(id).is_some())]
+    pub fn neutral_guard(
+        &self,
+        id: NeutralId,
+    ) -> Result<Guard, DomainFault>
+    {
+        self.neutral_guards
+            .get(id_offset(ArenaIndex(id.0)).0)
+            .copied()
+            .ok_or(DomainFault::Dangling)
+    }
+
+    /// A child value's guard as its parent folds it: flexible when the child
+    /// does not resolve.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`DomainArena::value_guard`] for a resolving id, and
+    ///   [`Guard::Flexible`] for a dangling one.
+    /// - provides: the fail-closed direction the infallible constructors fold a
+    ///   child through: a word over a dangling child decides nothing.
+    /// - fails: never.
+    /// - panics: none.
+    #[inline]
+    fn folded_value_guard(
+        &self,
+        id: DomainValueId,
+    ) -> Guard
+    {
+        self.value_guard(id).unwrap_or(Guard::Flexible)
+    }
+
+    /// The guard a neutral is minted with.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: [`Guard::Flexible`] when the unfolding face is loaded, or
+    ///   when the spine stacks a bind, a case, or an argument whose word is
+    ///   flexible; otherwise the fold of the head and each elimination in spine
+    ///   order.
+    /// - provides: the rigidity rule for a stuck node: a head with a body to
+    ///   unfold, or an elimination holding a closure, can change the answer.
+    ///   Its cost is the spine's length, which the spine copy every extension
+    ///   makes already pays.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the decision surfaces are the loaded face, the
+    ///   closure-holding eliminations and the argument's word, separated by a
+    ///   rigid variable applied to a rigid argument, the same head carrying an
+    ///   unforced body, and a spine stacking a bind.
+    /// - witness: `arena::tests::a_neutral_is_rigid_only_without_a_body_or_a_closure`
+    fn neutral_word(
+        &self,
+        head: NeutralHead,
+        spine: &[Elimination],
+        unfolding: Unfolding,
+    ) -> Guard
+    {
+        let mut word = match (head, unfolding) {
+            | (_, Unfolding::Unforced(_) | Unfolding::Forced(_)) => return Guard::Flexible,
+            | (NeutralHead::Variable { zone, level }, Unfolding::Rigid) => {
+                Guard::compose(GuardTag::Variable, &(zone, level), &[])
+            },
+            | (NeutralHead::Constant(constant), Unfolding::Rigid) => {
+                Guard::compose(GuardTag::Constant, &constant, &[])
+            },
+            | (NeutralHead::Module(module), Unfolding::Rigid) => {
+                Guard::compose(GuardTag::Module, &module, &[])
+            },
+        };
+        for &elimination in spine {
+            word = match elimination {
+                | Elimination::Apply(argument) => Guard::compose(GuardTag::Apply, &(), &[
+                    word,
+                    self.folded_value_guard(argument),
+                ]),
+                | Elimination::Force => Guard::compose(GuardTag::Force, &(), &[word]),
+                | Elimination::Bind(_) | Elimination::Case { .. } => return Guard::Flexible,
+            };
+        }
+        word
+    }
+
     /// Append a domain value and return its fresh id.
     ///
     /// # Specification
@@ -475,10 +647,12 @@ impl DomainArena
     fn alloc_value(
         &mut self,
         value: DomainValue,
+        guard: Guard,
     ) -> DomainValueId
     {
         let id = DomainValueId(id_index(ArenaLength(self.values.len())).0);
         self.values.push(value);
+        self.value_guards.push(guard);
         id
     }
 
@@ -497,10 +671,12 @@ impl DomainArena
     fn alloc_computation(
         &mut self,
         computation: DomainComp,
+        guard: Guard,
     ) -> DomainCompId
     {
         let id = DomainCompId(id_index(ArenaLength(self.computations.len())).0);
         self.computations.push(computation);
+        self.comp_guards.push(guard);
         id
     }
 
@@ -580,8 +756,10 @@ impl DomainArena
         if loaded && !unfoldable {
             return Err(DomainFault::RigidHeadCarriesBody);
         }
+        let guard = self.neutral_word(head, &spine, unfolding);
         let id = NeutralId(id_index(ArenaLength(self.neutrals.len())).0);
         self.neutrals.push(Neutral::new(head, spine, unfolding));
+        self.neutral_guards.push(guard);
         Ok(id)
     }
 
@@ -652,16 +830,18 @@ impl DomainArena
         face: TermFace,
     ) -> DomainValueId
     {
-        self.alloc_value(DomainValue::Unit { face })
+        let guard = Guard::compose(GuardTag::Unit, &(), &[]);
+        self.alloc_value(DomainValue::Unit { face }, guard)
     }
 
     /// Mint a literal value, whose payload stays in the core arena.
     ///
     /// # Specification
     /// - requires: `literal` names a live literal node of the core arena the
-    ///   run evaluates against.
+    ///   run evaluates against, and `payload` is the literal that node holds.
     /// - ensures: a fresh value node carrying that payload id and `face`; the
-    ///   payload itself is referenced rather than copied.
+    ///   payload itself is referenced rather than copied, and only its hash
+    ///   enters the node's guard.
     /// - provides: the domain form a literal evaluates to, with the payload's
     ///   representation left to the core arena that owns it.
     /// - fails: never — a payload that dangles surfaces at readback, not here.
@@ -670,10 +850,12 @@ impl DomainArena
     pub fn value_literal(
         &mut self,
         literal: ValueId,
+        payload: &Literal,
         face: TermFace,
     ) -> DomainValueId
     {
-        self.alloc_value(DomainValue::Literal { literal, face })
+        let guard = Guard::compose(GuardTag::Literal, payload, &[]);
+        self.alloc_value(DomainValue::Literal { literal, face }, guard)
     }
 
     /// Mint a pair over two already-allocated components.
@@ -695,11 +877,18 @@ impl DomainArena
         face: TermFace,
     ) -> DomainValueId
     {
-        self.alloc_value(DomainValue::Pair {
-            first,
-            second,
-            face,
-        })
+        let guard = Guard::compose(GuardTag::Pair, &(), &[
+            self.folded_value_guard(first),
+            self.folded_value_guard(second),
+        ]);
+        self.alloc_value(
+            DomainValue::Pair {
+                first,
+                second,
+                face,
+            },
+            guard,
+        )
     }
 
     /// Mint a sum injection over an already-allocated body.
@@ -720,7 +909,8 @@ impl DomainArena
         face: TermFace,
     ) -> DomainValueId
     {
-        self.alloc_value(DomainValue::Injection { side, body, face })
+        let guard = Guard::compose(GuardTag::Injection, &side, &[self.folded_value_guard(body)]);
+        self.alloc_value(DomainValue::Injection { side, body, face }, guard)
     }
 
     /// Mint a thunk over an already-allocated computation closure.
@@ -740,7 +930,7 @@ impl DomainArena
         face: TermFace,
     ) -> DomainValueId
     {
-        self.alloc_value(DomainValue::Thunk { body, face })
+        self.alloc_value(DomainValue::Thunk { body, face }, Guard::Flexible)
     }
 
     /// Mint a universe lift over an already-allocated body and a held level.
@@ -761,7 +951,13 @@ impl DomainArena
         face: TermFace,
     ) -> DomainValueId
     {
-        self.alloc_value(DomainValue::Lift { target, body, face })
+        let guard = match self.level(target) {
+            | Some(entry) => Guard::compose(GuardTag::Lift, entry.level(), &[
+                self.folded_value_guard(body)
+            ]),
+            | None => Guard::Flexible,
+        };
+        self.alloc_value(DomainValue::Lift { target, body, face }, guard)
     }
 
     /// Mint a stuck **value** over an already-allocated neutral.
@@ -814,7 +1010,9 @@ impl DomainArena
         if !node.spine().is_empty() {
             return Err(DomainFault::ValueNeutralHasSpine);
         }
-        Ok(self.alloc_value(DomainValue::Neutral { neutral, face }))
+        let word = self.neutral_guard(neutral).unwrap_or(Guard::Flexible);
+        let guard = Guard::compose(GuardTag::ValueNeutral, &(), &[word]);
+        Ok(self.alloc_value(DomainValue::Neutral { neutral, face }, guard))
     }
 
     /// Mint a lambda over an already-allocated computation closure.
@@ -834,7 +1032,7 @@ impl DomainArena
         face: CompTermFace,
     ) -> DomainCompId
     {
-        self.alloc_computation(DomainComp::Lambda { body, face })
+        self.alloc_computation(DomainComp::Lambda { body, face }, Guard::Flexible)
     }
 
     /// Mint a returner over an already-allocated value.
@@ -853,7 +1051,8 @@ impl DomainArena
         face: CompTermFace,
     ) -> DomainCompId
     {
-        self.alloc_computation(DomainComp::Return { value, face })
+        let guard = Guard::compose(GuardTag::Return, &(), &[self.folded_value_guard(value)]);
+        self.alloc_computation(DomainComp::Return { value, face }, guard)
     }
 
     /// Mint a stuck computation over an already-allocated neutral.
@@ -886,7 +1085,9 @@ impl DomainArena
         face: CompTermFace,
     ) -> DomainCompId
     {
-        self.alloc_computation(DomainComp::Neutral { neutral, face })
+        let word = self.neutral_guard(neutral).unwrap_or(Guard::Flexible);
+        let guard = Guard::compose(GuardTag::CompNeutral, &(), &[word]);
+        self.alloc_computation(DomainComp::Neutral { neutral, face }, guard)
     }
 
     /// Record that a neutral's body has been forced to `glued`.
@@ -972,6 +1173,7 @@ mod tests
     use crate::domain::NeutralHead;
     use crate::domain::TermFace;
     use crate::domain::Unfolding;
+    use crate::guard::Guard;
 
     #[test]
     fn a_child_id_is_strictly_below_its_parent()
@@ -1158,6 +1360,66 @@ mod tests
             Err(DomainFault::NeutralAlreadyForced),
             arena.force_neutral(unforced, Glued::Value(unit)),
             "as does the second-force refusal"
+        );
+    }
+
+    #[test]
+    fn a_neutral_is_rigid_only_without_a_body_or_a_closure()
+    {
+        let mut core = CoreArena::new();
+        let mut arena = DomainArena::new();
+        let argument = arena.value_unit(TermFace::Reduced);
+        let head = NeutralHead::Variable {
+            zone: Zone::Intuitionistic,
+            level: BinderLevel::from(0_u32),
+        };
+        let applied = arena
+            .neutral_node(
+                head,
+                Vec::from([Elimination::Apply(argument)]),
+                Unfolding::Rigid,
+            )
+            .expect("a variable head stands rigid");
+        assert!(
+            matches!(arena.neutral_guard(applied), Ok(Guard::Rigid(_))),
+            "a rigid head applied to a rigid argument is rigid"
+        );
+
+        let defined = arena
+            .neutral_node(
+                NeutralHead::Constant(ConstantIndex::from(0_usize)),
+                Vec::from([Elimination::Apply(argument)]),
+                Unfolding::Unforced(GlobalIndex::from(0_u32)),
+            )
+            .expect("a declaration head may carry a body");
+        assert_eq!(
+            Ok(Guard::Flexible),
+            arena.neutral_guard(defined),
+            "a head with a body to unfold is flexible"
+        );
+        let unit = core.value_unit();
+        let body = core.computation_return(unit);
+        let continuation = arena.comp_closure_node(body, Environment::new());
+        let bound = arena
+            .neutral_node(
+                head,
+                Vec::from([
+                    Elimination::Apply(argument),
+                    Elimination::Bind(continuation),
+                ]),
+                Unfolding::Rigid,
+            )
+            .expect("a variable head stands rigid");
+        assert_eq!(
+            Ok(Guard::Flexible),
+            arena.neutral_guard(bound),
+            "and so is a spine stacking a closure"
+        );
+        let stuck = arena.comp_neutral(bound, CompTermFace::Reduced);
+        assert_eq!(
+            Ok(Guard::Flexible),
+            arena.comp_guard(stuck),
+            "and the computation standing for it inherits the word"
         );
     }
 }

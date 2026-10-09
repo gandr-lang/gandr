@@ -5,7 +5,7 @@
 //! once by truncating the arena to its floor and once by dropping it outright —
 //! and both releases run inside a thread with a deliberately small stack. A
 //! recursive destructor over a chain this deep would need megabytes of frames
-//! and cannot fit; six flat vector drops need none.
+//! and cannot fit; nine flat vector drops need none.
 //!
 //! The depth is observed **through a weak handle**: an id retained across the
 //! release, which is not an owning reference and keeps nothing alive. Before

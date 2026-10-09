@@ -1340,10 +1340,10 @@ fn step_value(
                 .push(domain.value_unit(TermFace::Source(term)));
             Ok(())
         },
-        | Value::Literal(_) => {
+        | Value::Literal(ref payload) => {
             machine
                 .values
-                .push(domain.value_literal(term, TermFace::Source(term)));
+                .push(domain.value_literal(term, payload, TermFace::Source(term)));
             Ok(())
         },
         | Value::Pair(first, second) => {
