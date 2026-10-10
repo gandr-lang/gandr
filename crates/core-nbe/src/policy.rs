@@ -67,7 +67,16 @@ impl From<Share> for u32
     ///   nonzero guarantee carried out of the newtype.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — shares obtained at zero, ordinary and maximal
+    ///   definition heights under both scheduling stances are observed as
+    ///   positive weights; a zero result, a changed payload or a wrapped
+    ///   ceiling changes the scheduler weights.
+    /// - witness: `policy::tests::every_stance_gives_every_height_a_positive_share`
+    /// - witness: `policy::tests::the_weighted_stance_rises_with_the_height`
     #[inline]
+    #[spec(ensures: |ret| ret == share.0 && ret > 0_u32)]
     fn from(share: Share) -> Self
     {
         share.0
@@ -113,8 +122,17 @@ impl SchedulingPolicy
     ///   stances.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both installed scheduling stances are observed
+    ///   through their shares at zero, ordinary and maximal heights; selecting
+    ///   the other stance changes constancy or strict growth.
+    /// - witness: `policy::tests::every_stance_gives_every_height_a_positive_share`
+    /// - witness: `policy::tests::the_uniform_stance_ignores_the_height`
+    /// - witness: `policy::tests::the_weighted_stance_rises_with_the_height`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.stance == stance)]
     pub fn new(stance: SchedulingStance) -> Self
     {
         Self { stance }
@@ -161,7 +179,9 @@ impl SchedulingPolicy
     ///   height arithmetic, separated by the floor height, an ordinary height
     ///   and the height ceiling under both stances, with positivity asserted at
     ///   every point, constancy asserted for the uniform stance and strict
-    ///   growth asserted for the weighted one.
+    ///   growth asserted for the weighted one. Removing saturation, returning
+    ///   zero or flattening the weighted stance changes one of those
+    ///   observations.
     /// - witness: `policy::tests::every_stance_gives_every_height_a_positive_share`
     /// - witness: `policy::tests::the_uniform_stance_ignores_the_height`
     /// - witness: `policy::tests::the_weighted_stance_rises_with_the_height`
@@ -281,6 +301,8 @@ impl DuplicationPolicy
     /// - hypothesis: L3 — the decision surface is the gate, separated by
     ///   installing the baseline stance and the gated one, each asserted by
     ///   variant, with the refusal asserted to name the stance it refused.
+    ///   Admitting the spinal branch, refusing the baseline or changing the
+    ///   refusal payload changes an observation.
     /// - witness: `policy::tests::the_finer_duplication_stance_is_gated`
     #[inline]
     #[spec(ensures: |ret| match stance {
@@ -310,8 +332,16 @@ impl DuplicationPolicy
     ///   from outside the crate.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both stances cross the trace-bound installation,
+    ///   while a discarding sink refuses only the spinal stance; substituting a
+    ///   stance or applying the sinkless gate changes the installed observer or
+    ///   refusal.
+    /// - witness: `traced::tests::the_spinal_stance_installs_only_bound_to_a_recording_sink`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| matches!((stance, ret.stance), (DuplicationStance::EraseAndClone, DuplicationStance::EraseAndClone) | (DuplicationStance::Spinal, DuplicationStance::Spinal)))]
     pub(crate) const fn bound_to_trace(stance: DuplicationStance) -> Self
     {
         Self { stance }
@@ -328,8 +358,16 @@ impl DuplicationPolicy
     ///   consults, so the overlay itself decides nothing.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sinkless baseline installation and both trace-bound
+    ///   stances are observed after installation; confusing the baseline with
+    ///   the certified spinal stance changes the result.
+    /// - witness: `policy::tests::the_finer_duplication_stance_is_gated`
+    /// - witness: `traced::tests::the_spinal_stance_installs_only_bound_to_a_recording_sink`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret == self.stance)]
     pub fn stance(&self) -> DuplicationStance
     {
         self.stance
@@ -355,7 +393,8 @@ impl DuplicationPolicy
     /// # Adequacy
     /// - hypothesis: L3 — the decision surface is the stance-by-part table,
     ///   separated by both parts under both stances, all four asserted exactly,
-    ///   which is the whole table.
+    ///   which is the whole table. Swapping either part or stance, copying the
+    ///   spinal rib or sharing a required spine changes at least one entry.
     /// - witness: `policy::tests::the_stances_differ_only_on_the_ribs`
     #[inline]
     #[must_use]
@@ -427,6 +466,8 @@ impl GranularityPolicy
     /// - hypothesis: L3 — the decision surface is the gate, separated by
     ///   installing the skeleton stance and the gated one, each asserted by
     ///   variant, with the refusal asserted to name the stance it refused.
+    ///   Admitting the spinal branch, refusing the skeleton or losing the
+    ///   refused stance changes an observation.
     /// - witness: `policy::tests::the_finer_granularity_stance_is_gated`
     #[inline]
     #[spec(ensures: |ret| match stance {
@@ -455,8 +496,15 @@ impl GranularityPolicy
     /// - provides: the stance the machine's channel minting consults.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the accepted skeleton stance is read back and the
+    ///   spinal installation is refused by its exact reason; substituting a
+    ///   stance or admitting the gated branch changes the observations.
+    /// - witness: `policy::tests::the_finer_granularity_stance_is_gated`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret == self.stance && ret == GranularityStance::Skeleton)]
     pub fn stance(&self) -> GranularityStance
     {
         self.stance

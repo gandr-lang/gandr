@@ -110,8 +110,19 @@ impl Environment
     ///   level a readback counts a fresh variable from.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty zones and unequal one- and two-binding zones
+    ///   are observed by their exact depths; selecting the other zone, biasing
+    ///   the count or treating an empty zone as bound changes a result.
+    /// - witness: `closure::tests::the_zones_resolve_one_index_to_two_bindings`
+    /// - witness: `closure::tests::an_index_past_the_depth_resolves_to_nothing`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.0 == match zone {
+        | Zone::Intuitionistic => self.intuitionistic.len(),
+        | Zone::Linear => self.linear.len(),
+    })]
     pub fn depth(
         &self,
         zone: Zone,
@@ -145,7 +156,8 @@ impl Environment
     /// - hypothesis: L3 — the decision surface is which zone is pushed,
     ///   separated by extending each zone with the other's depth asserted
     ///   unmoved, and by the shift of an already-bound index in the extended
-    ///   zone.
+    ///   zone. Appending to the wrong zone, clearing its peer or dropping the
+    ///   shifted outer binding changes a lookup or depth.
     /// - witness: `closure::tests::the_zones_resolve_one_index_to_two_bindings`
     /// - witness: `closure::tests::an_index_past_the_depth_resolves_to_nothing`
     #[inline]
@@ -204,7 +216,9 @@ impl Environment
     ///   index arithmetic, separated by the innermost and an outer binding of a
     ///   two-deep zone, the first index past the depth, and one index resolved
     ///   in each zone with the other zone holding a different id at the same
-    ///   index.
+    ///   index. Empty zones and the maximal index cover refusal boundaries;
+    ///   wrong-zone reads, reversed indexing and wrapped subtraction change an
+    ///   answer.
     /// - witness: `closure::tests::the_zones_resolve_one_index_to_two_bindings`
     /// - witness: `closure::tests::an_index_past_the_depth_resolves_to_nothing`
     #[inline]
@@ -261,12 +275,15 @@ impl Environment
 /// - hypothesis: L3 — the two decision surfaces are the two checked
 ///   subtractions, separated by the innermost binding of a two-deep zone, an
 ///   outer binding, the first index past the depth, and an index read against
-///   an empty zone, each observed through the lookup that reports on it.
+///   an empty zone, each observed through the lookup that reports on it. The
+///   maximal index is refused in both zones; accepting an out-of-range offset,
+///   reversing the stack or losing a subtraction changes the result.
 /// - witness: `closure::tests::the_zones_resolve_one_index_to_two_bindings`
 /// - witness: `closure::tests::an_index_past_the_depth_resolves_to_nothing`
 #[inline]
 #[spec(ensures: |ret| match (usize::try_from(u32::from(index)), ret) {
-    | (Ok(counted), Some(offset)) => offset.0.checked_add(counted) == depth.0.checked_sub(1_usize),
+    | (Ok(counted), Some(offset)) => counted < depth.0
+        && offset.0.checked_add(counted) == depth.0.checked_sub(1_usize),
     | (Ok(counted), None) => counted >= depth.0,
     | (Err(_), offset) => offset.is_none(),
 })]
@@ -283,9 +300,8 @@ fn entry_offset(
 
 /// A suspended **value** body with the environment its free variables stand in.
 ///
-/// No former in the core vocabulary produces one; it is named beside
-/// [`CompClosure`] so that entering a closure is one operation over both term
-/// families.
+/// Quotes and static lambdas suspend a value body in this environment.
+/// [`CompClosure`] carries the corresponding suspended computation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValueClosure
 {
@@ -311,8 +327,17 @@ impl ValueClosure
     /// - fails: never — an environment too shallow for the body surfaces where
     ///   the body is entered, not here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — closed quotes and quotes over one- and two-binding
+    ///   environments are observed by the suspended body, captured lookup and
+    ///   code comparisons; changing the body, dropping a binding or reading the
+    ///   wrong index changes an observation.
+    /// - witness: `eval::tests::a_quote_is_suspended_over_its_environment`
+    /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.body == body)]
     pub(crate) fn new(
         body: ValueId,
         environment: Environment,
@@ -390,13 +415,17 @@ impl CompClosure
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — source and native bodies retain the captured zones;
-    ///   entering a binder must not substitute an empty environment.
+    /// - hypothesis: L3 — closed and captured lambdas, a forced thunk and two
+    ///   successive applications with distinct arguments are observed by their
+    ///   source faces and returned value; losing the captured outer binding,
+    ///   selecting the inner argument or changing the suspended body changes
+    ///   the result.
+    /// - witness: `eval::tests::a_closed_lambda_keeps_its_source_face`
     /// - witness: `eval::tests::a_redex_fires_and_the_body_sees_the_argument`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
-    #[spec(captures: [intuitionistic = environment.depth(Zone::Intuitionistic), linear = environment.depth(Zone::Linear)], ensures: |ret| ret.body == body && ret.environment.depth(Zone::Intuitionistic) == intuitionistic && ret.environment.depth(Zone::Linear) == linear)]
     #[inline]
     #[must_use]
+    #[spec(captures: [intuitionistic = environment.depth(Zone::Intuitionistic), linear = environment.depth(Zone::Linear)], ensures: |ret| ret.body == body && ret.environment.depth(Zone::Intuitionistic) == intuitionistic && ret.environment.depth(Zone::Linear) == linear)]
     pub(crate) fn new(
         body: CompBody,
         environment: Environment,
@@ -483,6 +512,14 @@ mod tests
         let mut arena = DomainArena::new();
         let bound = arena.value_unit(TermFace::Reduced);
         let mut environment = Environment::new();
+        assert_eq!(
+            EnvironmentDepth::from(0_usize),
+            environment.depth(Zone::Intuitionistic)
+        );
+        assert_eq!(
+            EnvironmentDepth::from(0_usize),
+            environment.depth(Zone::Linear)
+        );
         assert!(
             environment
                 .lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32))
@@ -502,5 +539,11 @@ mod tests
                 .is_none(),
             "and extending one zone did not populate the other"
         );
+        for zone in [Zone::Intuitionistic, Zone::Linear] {
+            assert_eq!(
+                None,
+                environment.lookup(zone, DeBruijnIndex::from(u32::MAX))
+            );
+        }
     }
 }

@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! The teardown witness for the per-run domain arena and the sharing overlay.
 //!
 //! The claim under test is that the domain arena is **flat**, not that some
@@ -77,9 +66,11 @@ mod unfolding;
 #[cfg(test)]
 mod teardown
 {
+    use anodized::spec;
     use gandr_core_nbe::Bound;
     use gandr_core_nbe::Definitions;
     use gandr_core_nbe::DomainArena;
+    use gandr_core_nbe::DomainValue;
     use gandr_core_nbe::DomainValueId;
     use gandr_core_nbe::DuplicationFault;
     use gandr_core_nbe::DuplicationPolicy;
@@ -118,7 +109,9 @@ mod teardown
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
     use gandr_core_term::DefinitionalEnvironment;
+    use gandr_core_term::Value;
     use gandr_core_term::ValueId;
+    use gandr_core_term::ValueType;
     use gandr_core_term::ValueTypeId;
     use gandr_kernel_conversion_trace::TraceLog;
     use gandr_kernel_strata::Level;
@@ -168,6 +161,27 @@ mod teardown
     /// - panics: when a link's neutral mint is refused, which the assertion
     ///   names; a declaration head with a rigid face is admitted by the arena's
     ///   own rule, so the panic is unreachable while that rule holds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the caller keeps the core nodes live. A bounded
+    ///   descent through the returned value DAG distinguishes wrong depth,
+    ///   non-diagonal pairs and a wrong terminal form. The small-stack witness
+    ///   observes the live handle becoming dangling after truncation and the
+    ///   core outliving both release orders; neutral and closure allocation
+    ///   coverage also uses their mint contracts.
+    /// - witness: `teardown::teardown::a_deep_chain_is_released_in_both_orders_inside_a_small_stack`
+    #[spec(
+        ensures: |ret| {
+            let mut top = ret.1;
+            for _ in 0..CHAIN_LINKS {
+                match ret.0.value(top) {
+                    Some(&DomainValue::Pair { first, second, face: TermFace::Reduced }) if first == second => top = first,
+                    _ => return false,
+                }
+            }
+            matches!(ret.0.value(top), Some(DomainValue::Unit { face: TermFace::Reduced }))
+        }
+    )]
     fn deep_chain(
         body: ComputationId,
         produced: ValueId,
@@ -259,6 +273,36 @@ mod teardown
     ///   value-type lifts, with a handle on the deepest of each.
     /// - provides: the deep overlay the validation and release witness walks.
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed chain size fits overlay ids. Independent
+    ///   descents require one binary share per value link, occurrences at
+    ///   positions zero and one, and one lift per type link, ending at units.
+    ///   Exact erasure and expansion measurements distinguish skipped links,
+    ///   swapped occurrences and incorrect sharing; the 256 KiB stack bounds
+    ///   traversal and teardown.
+    /// - witness: `teardown::teardown::a_deep_overlay_validates_and_is_released_in_both_orders_inside_a_small_stack`
+    /// - witness: `teardown::teardown::an_erased_deep_overlay_equals_the_unshared_chain_inside_a_small_stack`
+    /// - witness: `teardown::teardown::the_teardown_overlays_are_measured_inside_a_small_stack`
+    #[spec(
+        ensures: |ret| {
+            let mut top = ret.1;
+            let mut lifted = ret.2;
+            for _ in 0..CHAIN_LINKS {
+                let Some(&ValueNode::Shared(sharing)) = ret.0.value(top) else { return false; };
+                let OverlayId::Value(leg) = sharing.leg else { return false; };
+                let Some(&ValueNode::Grafted(ValueGraft::Pair(left, right))) = ret.0.value(sharing.body) else { return false; };
+                if sharing.arity != ShareArity::from(2_u32)
+                    || ret.0.value(left) != Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position: SharePosition::from(0_u32) }))
+                    || ret.0.value(right) != Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position: SharePosition::from(1_u32) })) { return false; }
+                top = leg;
+                let Some(&ValueTypeNode::Grafted(ValueTypeGraft::Lift { inner, .. })) = ret.0.value_type(lifted) else { return false; };
+                lifted = inner;
+            }
+            matches!(ret.0.value(top), Some(ValueNode::Grafted(ValueGraft::Unit)))
+                && matches!(ret.0.value_type(lifted), Some(ValueTypeNode::Grafted(ValueTypeGraft::Unit)))
+        }
+    )]
     fn deep_overlay() -> (Overlay, OverlayValueId, OverlayValueTypeId)
     {
         let mut overlay = Overlay::new();
@@ -351,6 +395,32 @@ mod teardown
     ///   each.
     /// - provides: the reference the deep overlay erases to.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed depth fits core ids. Bounded independent
+    ///   descents require diagonal pairs and lifts at every link, with unit
+    ///   leaves at exactly that depth. The erased overlay must equal this arena
+    ///   node for node, excluding a builder that changes child order, depth or
+    ///   family.
+    /// - witness: `teardown::teardown::an_erased_deep_overlay_equals_the_unshared_chain_inside_a_small_stack`
+    #[spec(
+        ensures: |ret| {
+            let mut top = ret.1;
+            let mut lifted = ret.2;
+            for _ in 0..CHAIN_LINKS {
+                match ret.0.value(top) {
+                    Some(&Value::Pair(first, second)) if first == second => top = first,
+                    _ => return false,
+                }
+                match ret.0.value_type(lifted) {
+                    Some(&ValueType::Lift { inner, .. }) => lifted = inner,
+                    _ => return false,
+                }
+            }
+            matches!(ret.0.value(top), Some(Value::Unit))
+                && matches!(ret.0.value_type(lifted), Some(ValueType::Unit))
+        }
+    )]
     fn unshared_chain() -> (CoreArena, ValueId, ValueTypeId)
     {
         let mut core = CoreArena::new();

@@ -100,16 +100,24 @@ pub enum OverlayEvalFault
 ///   machine run by the test, sharing no code path with this entry beyond the
 ///   two functions it composes; the core arena, the domain arena, the result
 ///   and the remainder are compared exactly over the deep value chain, run
-///   through evaluation and through readback.
+///   through evaluation and through readback. Erasure refusals preserve both
+///   arenas, while exhausted evaluation keeps its completed erasure; dropping
+///   rollback or erasing after evaluation changes those boundaries.
 /// - witness:
 ///   `deep_evaluation::deep_evaluation::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
 /// - witness:
 ///   `deep_readback::deep_readback::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
+/// - witness: `overlay_eval::tests::refusals_preserve_the_erasure_and_evaluation_boundaries`
 #[inline]
-#[spec(ensures: |ret| ret.is_err()
-    || ret.as_ref().is_ok_and(|pair| {
-        domain.value(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)
-    }))]
+#[spec(
+    captures: [core_entry = core.watermark(), domain_entry = domain.watermark()],
+    ensures: |ret| match ret {
+        Ok((result, remaining)) => domain.value(result).is_some() && u32::from(remaining) <= u32::from(fuel),
+        Err(OverlayEvalFault::Erasure(_)) => core.watermark() == core_entry && domain.watermark() == domain_entry,
+        Err(OverlayEvalFault::Evaluation(_)) => true,
+        Err(OverlayEvalFault::Duplication(_)) => false,
+    },
+)]
 pub fn eval_overlay_value(
     overlay: &Overlay,
     core: &mut CoreArena,
@@ -144,16 +152,23 @@ pub fn eval_overlay_value(
 /// # Adequacy
 /// - hypothesis: L2 — as for [`eval_overlay_value`], over the deep curried
 ///   application, the deep chain of binds over an opaque base, and the chain of
-///   suspensions run through readback.
+///   suspensions run through readback. The refusal witness separates erasure
+///   rollback from evaluation failure after the erased computation is retained.
 /// - witness:
 ///   `deep_evaluation::deep_evaluation::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
 /// - witness:
 ///   `deep_readback::deep_readback::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
+/// - witness: `overlay_eval::tests::refusals_preserve_the_erasure_and_evaluation_boundaries`
 #[inline]
-#[spec(ensures: |ret| ret.is_err()
-    || ret.as_ref().is_ok_and(|pair| {
-        domain.computation(pair.0).is_some() && u32::from(pair.1) <= u32::from(fuel)
-    }))]
+#[spec(
+    captures: [core_entry = core.watermark(), domain_entry = domain.watermark()],
+    ensures: |ret| match ret {
+        Ok((result, remaining)) => domain.computation(result).is_some() && u32::from(remaining) <= u32::from(fuel),
+        Err(OverlayEvalFault::Erasure(_)) => core.watermark() == core_entry && domain.watermark() == domain_entry,
+        Err(OverlayEvalFault::Evaluation(_)) => true,
+        Err(OverlayEvalFault::Duplication(_)) => false,
+    },
+)]
 pub fn eval_overlay_computation(
     overlay: &Overlay,
     core: &mut CoreArena,
@@ -204,16 +219,24 @@ pub fn eval_overlay_computation(
 ///   machine's configuration key, separated by a rib shared across two
 ///   applications, a subterm under an inner binder applied to one value at both
 ///   copies, and a leg read under two different binders, each read off the step
-///   count against the reference run with the results read back equal.
+///   count against the reference run with the results read back equal. Removing
+///   scratch restoration changes the overlay after either a refused duplication
+///   or an exhausted evaluation.
 /// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
 /// - witness:
 ///   `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
 /// - witness:
 ///   `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+/// - witness: `overlay_eval::tests::refusals_preserve_the_erasure_and_evaluation_boundaries`
+/// - witness: `overlay_eval::tests::type_roots_are_refused_before_evaluation`
 #[spec(
     captures: [entry = overlay.watermark()],
-    ensures: |ret| overlay.watermark() == entry
-        && (ret.is_err() || ret.as_ref().is_ok_and(|pair| u32::from(pair.1) <= u32::from(fuel))),
+    ensures: |ret| overlay.watermark() == entry && ret.as_ref().map_or(true, |&(glued, remaining)|
+        u32::from(remaining) <= u32::from(fuel) && match (root, glued) {
+            (OverlayId::Value(_), Glued::Value(value)) => domain.value(value).is_some(),
+            (OverlayId::Computation(_), Glued::Computation(comp)) => domain.computation(comp).is_some(),
+            _ => false,
+        }),
 )]
 pub fn eval_overlay_shared(
     overlay: &mut Overlay,
@@ -243,10 +266,29 @@ pub fn eval_overlay_shared(
 /// - fails: as [`eval_overlay_shared`] fails, short of evaluation.
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L2 — configuration-sensitive legs are evaluated once per
+///   matching environment and read back as the unshared result; assigning a leg
+///   another leg’s free indices changes sharing across binders. The predicate
+///   checks each retained leg against the free-index analysis, while the
+///   end-to-end witnesses separate their environments.
+/// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_every_rib`
+/// - witness: `full_laziness::full_laziness::a_spinal_duplicate_shares_what_full_laziness_copies`
+/// - witness: `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+///
 /// # Errors
 /// - [`OverlayEvalFault::Duplication`] — the root does not duplicate.
 /// - [`OverlayEvalFault::Erasure`] — the duplicate does not erase.
 /// - [`OverlayEvalFault::Evaluation`] — an erased leg does not resolve.
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |&(term, ref legs)| {
+    let matches_root = match (root, term) {
+        (OverlayId::Value(_), CoreTerm::Value(value)) => core.value(value).is_some(),
+        (OverlayId::Computation(_), CoreTerm::Computation(comp)) => core.computation(comp).is_some(),
+        _ => false,
+    };
+    let mut free = FreeIndices::default();
+    matches_root && legs.iter().all(|(&leg, held)| free.of(core, leg).is_ok_and(|answer| answer == held))
+}))]
 fn duplicate_and_erase(
     overlay: &mut Overlay,
     core: &mut CoreArena,
@@ -283,8 +325,21 @@ fn duplicate_and_erase(
 ///   erases to.
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L3 — evaluation retains value and computation polarity, but
+///   both type families refuse before evaluation. Accepting either type changes
+///   the refusal, while exchanging the two evaluation families changes the
+///   independently evaluated result.
+/// - witness: `overlay_eval::tests::type_roots_are_refused_before_evaluation`
+/// - witness: `deep_evaluation::deep_evaluation::erase_and_clone_overlay_evaluation_is_the_erased_pipeline`
+///
 /// # Errors
 /// - [`OverlayEvalFault::Evaluation`] — `erased` is a type.
+#[spec(ensures: |ret| match erased {
+    CoreId::Value(value) => ret == Ok(CoreTerm::Value(value)),
+    CoreId::Computation(comp) => ret == Ok(CoreTerm::Computation(comp)),
+    CoreId::ValueType(_) | CoreId::CompType(_) => ret == Err(OverlayEvalFault::Evaluation(EvalFault::MachineInvariant)),
+})]
 fn core_term(erased: CoreId) -> Result<CoreTerm, OverlayEvalFault>
 {
     match erased {
@@ -293,5 +348,219 @@ fn core_term(erased: CoreId) -> Result<CoreTerm, OverlayEvalFault>
         | CoreId::ValueType(_) | CoreId::CompType(_) => {
             Err(OverlayEvalFault::Evaluation(EvalFault::MachineInvariant))
         },
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::DefinitionalEnvironment;
+
+    use super::Definitions;
+    use super::DomainArena;
+    use super::DuplicationPolicy;
+    use super::EvalFault;
+    use super::Fuel;
+    use super::Overlay;
+    use super::OverlayEvalFault;
+    use super::OverlayId;
+    use super::eval_overlay_computation;
+    use super::eval_overlay_shared;
+    use super::eval_overlay_value;
+    use crate::CompGraft;
+    use crate::CompNode;
+    use crate::CompTypeGraft;
+    use crate::CompTypeNode;
+    use crate::LoweredChain;
+    use crate::ValueGraft;
+    use crate::ValueNode;
+    use crate::ValueTypeGraft;
+    use crate::ValueTypeNode;
+
+    #[test]
+    fn refusals_preserve_the_erasure_and_evaluation_boundaries()
+    {
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut overlay = Overlay::new();
+        let floor = overlay.watermark();
+        let value = overlay
+            .mint_value(ValueNode::Grafted(ValueGraft::Unit))
+            .expect("the unit is closed");
+        let comp = overlay
+            .mint_computation(CompNode::Grafted(CompGraft::Return(value)))
+            .expect("the child lives");
+        let preserved = overlay.clone();
+        let mut value_core = CoreArena::new();
+        let unit = value_core.value_unit();
+        let mut comp_core = value_core.clone();
+        let _returned = comp_core.computation_return(unit);
+        let mut domain = DomainArena::new();
+        let _existing = domain.value_unit(crate::TermFace::Reduced);
+        let domain_before = domain.clone();
+        let mut core = CoreArena::new();
+        assert_eq!(
+            Err(OverlayEvalFault::Evaluation(EvalFault::OutOfFuel)),
+            eval_overlay_value(
+                &overlay,
+                &mut core,
+                &mut domain,
+                definitions,
+                Fuel::from(0_u32),
+                value
+            )
+        );
+        assert_eq!(
+            value_core, core,
+            "evaluation refusal keeps the erased value"
+        );
+        assert_eq!(domain_before, domain);
+        let mut core = CoreArena::new();
+        assert_eq!(
+            Err(OverlayEvalFault::Evaluation(EvalFault::OutOfFuel)),
+            eval_overlay_computation(
+                &overlay,
+                &mut core,
+                &mut domain,
+                definitions,
+                Fuel::from(0_u32),
+                comp
+            )
+        );
+        assert_eq!(
+            comp_core, core,
+            "evaluation refusal keeps the erased computation"
+        );
+        assert_eq!(domain_before, domain);
+        for (root, expected) in [
+            (OverlayId::Value(value), &value_core),
+            (OverlayId::Computation(comp), &comp_core),
+        ] {
+            let mut core = CoreArena::new();
+            assert_eq!(
+                Err(OverlayEvalFault::Evaluation(EvalFault::OutOfFuel)),
+                eval_overlay_shared(
+                    &mut overlay,
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    Fuel::from(0_u32),
+                    DuplicationPolicy::default(),
+                    root
+                )
+            );
+            assert_eq!(*expected, core);
+            assert_eq!(domain_before, domain);
+            assert_eq!(
+                preserved, overlay,
+                "the duplicate is scratch even when evaluation fails"
+            );
+        }
+        overlay.truncate_to(floor);
+        let missing = overlay.clone();
+        let mut core = comp_core.clone();
+        assert!(matches!(
+            eval_overlay_value(
+                &overlay,
+                &mut core,
+                &mut domain,
+                definitions,
+                Fuel::from(20_u32),
+                value
+            ),
+            Err(OverlayEvalFault::Erasure(_))
+        ));
+        assert_eq!(comp_core, core);
+        assert_eq!(domain_before, domain);
+        assert!(matches!(
+            eval_overlay_computation(
+                &overlay,
+                &mut core,
+                &mut domain,
+                definitions,
+                Fuel::from(20_u32),
+                comp
+            ),
+            Err(OverlayEvalFault::Erasure(_))
+        ));
+        assert_eq!(comp_core, core);
+        assert_eq!(domain_before, domain);
+        for root in [OverlayId::Value(value), OverlayId::Computation(comp)] {
+            assert!(matches!(
+                eval_overlay_shared(
+                    &mut overlay,
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    Fuel::from(20_u32),
+                    DuplicationPolicy::default(),
+                    root
+                ),
+                Err(OverlayEvalFault::Duplication(_))
+            ));
+            assert_eq!(comp_core, core);
+            assert_eq!(domain_before, domain);
+            assert_eq!(missing, overlay);
+        }
+    }
+
+    #[test]
+    fn type_roots_are_refused_before_evaluation()
+    {
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut overlay = Overlay::new();
+        let value_type = overlay
+            .mint_value_type(ValueTypeNode::Grafted(ValueTypeGraft::Unit))
+            .expect("the unit type is closed");
+        let comp_type = overlay
+            .mint_comp_type(CompTypeNode::Grafted(CompTypeGraft::Returner(value_type)))
+            .expect("the unit child lives");
+        let original = overlay.clone();
+        let mut value_core = CoreArena::new();
+        let unit = value_core.value_type_unit();
+        let mut comp_core = value_core.clone();
+        let returner = comp_core.comp_type_returner(unit);
+        for erased in [
+            super::CoreId::ValueType(unit),
+            super::CoreId::CompType(returner),
+        ] {
+            assert_eq!(
+                Err(OverlayEvalFault::Evaluation(EvalFault::MachineInvariant)),
+                super::core_term(erased)
+            );
+        }
+        for root in [
+            OverlayId::ValueType(value_type),
+            OverlayId::CompType(comp_type),
+        ] {
+            let mut core = CoreArena::new();
+            let mut domain = DomainArena::new();
+            let empty = domain.clone();
+            assert_eq!(
+                Err(OverlayEvalFault::Duplication(
+                    super::DuplicationFault::MachineInvariant
+                )),
+                eval_overlay_shared(
+                    &mut overlay,
+                    &mut core,
+                    &mut domain,
+                    definitions,
+                    Fuel::from(20_u32),
+                    DuplicationPolicy::default(),
+                    root
+                )
+            );
+            assert_eq!(
+                CoreArena::new(),
+                core,
+                "a type is refused before erasure or evaluation"
+            );
+            assert_eq!(empty, domain);
+            assert_eq!(original, overlay, "the refused root leaves no duplicate");
+        }
     }
 }

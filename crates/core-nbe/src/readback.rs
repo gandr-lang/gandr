@@ -257,6 +257,16 @@ impl OpenBinders
     ///   both computed against.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal zone depths are observed before and after
+    ///   opening either zone. Reading the peer counter changes a fresh level or
+    ///   converted index.
+    /// - witness: `readback::tests::opening_a_binder_counts_one_zone_and_leaves_the_other`
+    /// - witness: `readback::tests::a_level_becomes_the_index_counting_the_other_way`
+    #[spec(
+        ensures: |ret| ret.0 == match zone { Zone::Intuitionistic => self.intuitionistic.0, Zone::Linear => self.linear.0 },
+    )]
     #[inline]
     fn depth(
         self,
@@ -284,6 +294,16 @@ impl OpenBinders
     ///   can be entered under a fresh binder without shifting the environment.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested binders retain distinct levels while their
+    ///   indices change under another binder. Reusing level zero or counting
+    ///   from the innermost end captures the wrong variable.
+    /// - witness: `readback::tests::nested_binders_read_back_as_the_indices_that_name_them`
+    /// - witness: `readback::tests::a_quoted_dependent_arrow_reads_its_binder_as_an_index`
+    #[spec(
+        ensures: |ret| u32::from(ret) == self.depth(zone).0,
+    )]
     #[inline]
     fn fresh(
         self,
@@ -314,11 +334,11 @@ impl OpenBinders
     #[inline]
     #[spec(ensures: |ret| match (zone, ret) {
         | (Zone::Intuitionistic, Some(deeper)) => {
-            deeper.intuitionistic.0 == self.intuitionistic.0.saturating_add(1_u32)
+            Some(deeper.intuitionistic.0) == self.intuitionistic.0.checked_add(1_u32)
                 && deeper.linear.0 == self.linear.0
         },
         | (Zone::Linear, Some(deeper)) => {
-            deeper.linear.0 == self.linear.0.saturating_add(1_u32)
+            Some(deeper.linear.0) == self.linear.0.checked_add(1_u32)
                 && deeper.intuitionistic.0 == self.intuitionistic.0
         },
         | (Zone::Intuitionistic | Zone::Linear, None) => self.depth(zone).0 == u32::MAX,
@@ -436,6 +456,17 @@ impl SpineOffset
     ///   than misreading a spine.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered force and application frames distinguish
+    ///   advancing once from repeating or skipping a frame. The ceiling cannot
+    ///   index a realizable elimination vector; saturation is nevertheless
+    ///   stated exactly.
+    /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
+    /// - witness: `readback::tests::an_unfolded_operator_reads_back_reduced`
+    #[spec(
+        ensures: |ret| ret.0 == self.0.saturating_add(1_usize),
+    )]
     #[inline]
     fn next(self) -> Self
     {
@@ -491,7 +522,8 @@ impl SpineStep
     #[spec(ensures: |ret| ret.polarity == polarity
         && ret.neutral == self.neutral
         && ret.wanted == self.wanted
-        && ret.binders == self.binders)]
+        && ret.binders == self.binders
+        && ret.at.0 == self.at.0.saturating_add(1_usize))]
     fn onward(
         self,
         polarity: Polarity,
@@ -705,6 +737,21 @@ impl<'run> Machine<'run>
     ///   per evaluation.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero and sufficient budgets separate fuel
+    ///   preservation; retained and rebuilt faces separate modes; unfolding a
+    ///   lowered body requires the offered definitions. A nonempty initial
+    ///   stack changes the assembled term.
+    /// - witness: `readback::tests::a_readback_declines_on_fuel_rather_than_running_on`
+    /// - witness: `readback::tests::the_unfolding_mode_rebuilds_a_kept_face`
+    /// - witness: `readback::tests::a_lowered_definition_body_unfolds_through_readback`
+    #[spec(
+        ensures: |ret| ret.tasks.is_empty() && ret.values.is_empty() && ret.comps.is_empty()
+            && ret.value_types.is_empty() && ret.comp_types.is_empty() && ret.frames.is_empty()
+            && ret.mode == mode && ret.fuel == fuel
+            && core::ptr::eq(core::ptr::from_ref(ret.definitions.bodies()), core::ptr::from_ref(definitions.bodies())),
+    )]
     fn new(
         definitions: Definitions<'run>,
         mode: ReadbackMode,
@@ -727,7 +774,31 @@ impl<'run> Machine<'run>
     /// Hold an environment a quoted type is read in, and name it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the environment belongs to this readback's domain.
+    /// - ensures: a fresh frame names the offered environment; older slots stay
+    ///   valid.
+    /// - provides: ownership of the capture while its quoted type is traversed.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an ambient lambda capture and an additional
+    ///   dependent-arrow binder are read at different indices. Reusing the
+    ///   ambient frame or losing its outer binding changes the reconstructed
+    ///   codomain.
+    /// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
+    /// - witness: `readback::tests::a_quoted_dependent_arrow_reads_its_binder_as_an_index`
+    #[spec(
+        captures: [entry_len = self.frames.len(),
+            intuitionistic = environment.depth(Zone::Intuitionistic), linear = environment.depth(Zone::Linear),
+            intuitionistic_top = environment.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
+            linear_top = environment.lookup(Zone::Linear, DeBruijnIndex::from(0_u32))],
+        ensures: |ret| ret.0 == entry_len && self.frames.len() == entry_len.saturating_add(1_usize)
+            && self.frames.get(ret.0).is_some_and(|held| held.depth(Zone::Intuitionistic) == intuitionistic
+                && held.depth(Zone::Linear) == linear
+                && held.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)) == intuitionistic_top
+                && held.lookup(Zone::Linear, DeBruijnIndex::from(0_u32)) == linear_top),
+    )]
     fn hold_frame(
         &mut self,
         environment: Environment,
@@ -749,6 +820,20 @@ impl<'run> Machine<'run>
     ///
     /// # Errors
     /// - [`ReadbackFault::MachineInvariant`] — the frame does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a quote reads its captured lambda variable, and a
+    ///   dependent codomain additionally reads its newly opened binder.
+    ///   Selecting another held frame changes an index. A nonexistent slot is
+    ///   excluded by the append-only frame producer; its checked refusal
+    ///   remains explicit.
+    /// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
+    /// - witness: `readback::tests::a_quoted_dependent_arrow_reads_its_binder_as_an_index`
+    #[spec(
+        ensures: |ret| self.frames.get(frame.0).map_or_else(
+            || ret == Err(ReadbackFault::MachineInvariant),
+            |held| ret.as_ref().is_ok_and(|returned| core::ptr::eq(core::ptr::from_ref(*returned), core::ptr::from_ref(held)))),
+    )]
     fn frame(
         &self,
         frame: Frame,
@@ -770,6 +855,18 @@ impl<'run> Machine<'run>
     ///
     /// # Errors
     /// - [`ReadbackFault::MachineInvariant`] — the stack was empty.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — differently shaped operands appear in their declared
+    ///   domain and codomain positions. Popping an older result or failing to
+    ///   remove the newest one changes the reconstructed type. Empty stacks are
+    ///   excluded by the frame producer, not assumed infallible.
+    /// - witness: `readback::tests::a_quoted_static_pi_reads_back_former_by_former`
+    #[spec(
+        captures: [entry_len = self.value_types.len(), entry_last = self.value_types.last().copied()],
+        ensures: |ret| ret == entry_last.ok_or(ReadbackFault::MachineInvariant)
+            && self.value_types.len() == entry_len.saturating_sub(1_usize),
+    )]
     fn pop_value_type(&mut self) -> Result<ValueTypeId, ReadbackFault>
     {
         self.value_types
@@ -789,6 +886,18 @@ impl<'run> Machine<'run>
     ///
     /// # Errors
     /// - [`ReadbackFault::MachineInvariant`] — the stack was empty.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — differently shaped operands appear in their declared
+    ///   domain and codomain positions. Popping an older result or failing to
+    ///   remove the newest one changes the reconstructed type. Empty stacks are
+    ///   excluded by the frame producer, not assumed infallible.
+    /// - witness: `readback::tests::a_quoted_dependent_arrow_reads_its_binder_as_an_index`
+    #[spec(
+        captures: [entry_len = self.comp_types.len(), entry_last = self.comp_types.last().copied()],
+        ensures: |ret| ret == entry_last.ok_or(ReadbackFault::MachineInvariant)
+            && self.comp_types.len() == entry_len.saturating_sub(1_usize),
+    )]
     fn pop_comp_type(&mut self) -> Result<CompTypeId, ReadbackFault>
     {
         self.comp_types.pop().ok_or(ReadbackFault::MachineInvariant)
@@ -826,7 +935,7 @@ impl<'run> Machine<'run>
     /// - witness: `readback::tests::a_stuck_bind_and_case_read_back_their_branches`
     #[spec(
         captures: [entry_len = self.values.len(), entry_last = self.values.last().copied()],
-        ensures: |ret| ret.as_ref().ok().copied() == entry_last
+        ensures: |ret| ret == entry_last.ok_or(ReadbackFault::MachineInvariant)
             && self.values.len() == entry_len.saturating_sub(1_usize),
     )]
     fn pop_value(&mut self) -> Result<ValueId, ReadbackFault>
@@ -861,7 +970,7 @@ impl<'run> Machine<'run>
     /// - witness: `readback::tests::a_thunk_reads_back_through_the_body_it_suspends`
     #[spec(
         captures: [entry_len = self.comps.len(), entry_last = self.comps.last().copied()],
-        ensures: |ret| ret.as_ref().ok().copied() == entry_last
+        ensures: |ret| ret == entry_last.ok_or(ReadbackFault::MachineInvariant)
             && self.comps.len() == entry_len.saturating_sub(1_usize),
     )]
     fn pop_comp(&mut self) -> Result<ComputationId, ReadbackFault>
@@ -1573,10 +1682,12 @@ fn run(
 /// - requires: `task` was popped from `machine`'s own stack, so its operands
 ///   are on the result stacks.
 /// - ensures: the task's result is pushed on the stack of its own polarity, or
-///   further tasks are pushed that will produce it. Nested evaluation can spend
-///   fuel but never replenishes the shared allowance.
-/// - provides: the machine's transition relation, one arm per domain former and
-///   assembly frame; the driver owns the charge for this task.
+///   further tasks are pushed that will produce it.
+/// - provides: the machine's whole transition relation, one arm per domain
+///   former plus one per assembly frame. Copy-sized entry counts express each
+///   frame's typed operand consumption and result production; the resulting id
+///   must resolve in its core family. Structural witnesses separate former
+///   choice and operand order. Nested evaluation shares the remaining fuel.
 /// - fails: every variant of [`ReadbackFault`] except
 ///   [`ReadbackFault::OutOfFuel`], which belongs to the driver rather than to a
 ///   step.
@@ -1590,7 +1701,122 @@ fn run(
 /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
 /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
 /// - witness: `readback::tests::a_stuck_bind_and_case_read_back_their_branches`
-#[spec(captures: before = machine.fuel, ensures: |ret| u32::from(machine.fuel) <= u32::from(before) && !matches!(ret, Err(ReadbackFault::OutOfFuel)))]
+/// - witness: `readback::tests::quoted_formers_preserve_distinct_children_and_targets`
+#[spec(
+    captures: [entry_fuel = u32::from(machine.fuel), entry_tasks = machine.tasks.len(),
+        entry_values = machine.values.len(), entry_comps = machine.comps.len(), entry_value_types = machine.value_types.len(), entry_comp_types = machine.comp_types.len()],
+    ensures: |ret| u32::from(machine.fuel) <= entry_fuel && ret != Err(ReadbackFault::OutOfFuel) && (ret.is_err() || match task {
+        | Task::PathProduct | Task::Pair | Task::StaticApply => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(2_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
+            && machine.values.last().is_some_and(|id| core.value(*id).is_some())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Inject { .. } | Task::Lift { .. } | Task::StaticLambda => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
+            && machine.values.last().is_some_and(|id| core.value(*id).is_some())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Thunk => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
+            && machine.values.last().is_some_and(|id| core.value(*id).is_some())
+            && entry_comps.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Lambda => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comps.len())
+            && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Transport | Task::ProductTransport => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(2) == Some(machine.values.len())
+            && machine.comps.len() == entry_comps.saturating_add(1)
+            && machine.comps.last().is_some_and(|&id| core.computation(id).is_some())
+            && machine.value_types.len() == entry_value_types && machine.comp_types.len() == entry_comp_types,
+        | Task::Return | Task::Force => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comps.len())
+            && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Apply => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comps.len())
+            && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Bind => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(2_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comps.len())
+            && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Case => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(2_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comps.len())
+            && machine.comps.last().is_some_and(|id| core.computation(*id).is_some())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Quote => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
+            && machine.values.last().is_some_and(|id| core.value(*id).is_some())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::QuoteComputation => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.values.len())
+            && machine.values.last().is_some_and(|id| core.value(*id).is_some())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Product | Task::Sum | Task::StaticPi => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(2_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len())
+            && machine.value_types.last().is_some_and(|id| core.value_type(*id).is_some())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::ThunkType => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len())
+            && machine.value_types.last().is_some_and(|id| core.value_type(*id).is_some())
+            && entry_comp_types.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::LiftType { .. } => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len())
+            && machine.value_types.last().is_some_and(|id| core.value_type(*id).is_some())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::Element { .. } => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.value_types.len())
+            && machine.value_types.last().is_some_and(|id| core.value_type(*id).is_some())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comp_types.len()),
+        | Task::CompElement { .. } => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comp_types.len())
+            && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
+        | Task::Returner => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(0_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comp_types.len())
+            && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
+        | Task::Arrow | Task::Pi => machine.tasks.len() == entry_tasks
+            && entry_values.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.values.len())
+            && entry_comps.checked_sub(0_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.comps.len())
+            && entry_value_types.checked_sub(1_usize).and_then(|left| left.checked_add(0_usize)) == Some(machine.value_types.len())
+            && entry_comp_types.checked_sub(1_usize).and_then(|left| left.checked_add(1_usize)) == Some(machine.comp_types.len())
+            && machine.comp_types.last().is_some_and(|id| core.comp_type(*id).is_some()),
+        | Task::Value { .. } | Task::Comp { .. } | Task::Spine(_) | Task::QuotedValueType { .. }
+        | Task::QuotedCompType { .. } | Task::QuotedCode { .. } => true,
+    }),
+)]
 fn step(
     core: &mut CoreArena,
     domain: &mut DomainArena,
@@ -1818,6 +2044,20 @@ fn step(
 ///
 /// # Errors
 /// - [`ReadbackFault::Domain`] — the target dangles.
+///
+/// # Adequacy
+/// - hypothesis: L3 — decoded types retain their target level while the code
+///   beneath them changes through a captured environment. Replacing the held
+///   level with another target changes the type. A missing target is a checked
+///   dangling refusal, excluded by the type task producer.
+/// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
+/// - witness: `readback::tests::a_quoted_decode_unfolds_to_the_quoted_type`
+/// - witness: `readback::tests::quoted_formers_preserve_distinct_children_and_targets`
+#[spec(
+    ensures: |ret| domain.level(target).map_or_else(
+        || ret == Err(ReadbackFault::Domain(DomainFault::Dangling)),
+        |held| ret.as_ref().is_ok_and(|level| level == held.level())),
+)]
 fn held_level(
     domain: &DomainArena,
     target: LiftTarget,
@@ -1855,14 +2095,21 @@ fn held_level(
 /// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
 /// - witness: `readback::tests::a_quoted_decode_unfolds_to_the_quoted_type`
 /// - witness: `readback::tests::a_quoted_static_pi_reads_back_former_by_former`
+/// - witness: `readback::tests::quoted_formers_preserve_distinct_children_and_targets`
 #[spec(
-    captures: [types = machine.value_types.len(), tasks = machine.tasks.len()],
-    ensures: |ret| match core.value_type(quoted) {
-        None => matches!(ret, Err(ReadbackFault::MachineInvariant)),
-        Some(&ValueType::PathUniverse(..) | &ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_)) => ret.is_ok() && machine.value_types.len() == types.saturating_add(1) && machine.value_types.last() == Some(&quoted) && machine.tasks.len() == tasks,
-        Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. }) => ret.is_ok() && machine.value_types.len() == types && machine.tasks.len() == tasks.saturating_add(3),
-        Some(_) => ret.is_ok() && machine.value_types.len() == types && machine.tasks.len() == tasks.saturating_add(2),
-    },
+    captures: [entry_tasks = machine.tasks.len(), entry_results = machine.value_types.len(), entry_fuel = machine.fuel],
+    ensures: |ret| machine.fuel == entry_fuel && if core.value_type(quoted).is_none() {
+        ret == Err(ReadbackFault::MachineInvariant) && machine.tasks.len() == entry_tasks && machine.value_types.len() == entry_results
+    } else { ret.is_ok() && machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.value_type(quoted) {
+        | Some(&ValueType::PathUniverse(..) | &ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_)) => new_tasks.is_empty() && machine.value_types.len() == entry_results.saturating_add(1_usize) && machine.value_types.last() == Some(&quoted),
+        | Some(&ValueType::Product(first, second)) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Product, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
+        | Some(&ValueType::Sum(first, second)) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Sum, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
+        | Some(&ValueType::StaticPi { domain: first, codomain: second }) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::StaticPi, Task::QuotedValueType { quoted: second_task, frame: second_task_frame, binders: second_task_binders }, Task::QuotedValueType { quoted: first_task, frame: first_task_frame, binders: first_task_binders }] if *first_task == first && *first_task_frame == frame && *first_task_binders == binders && *second_task == second && *second_task_frame == frame && *second_task_binders == binders),
+        | Some(&ValueType::Thunk(body)) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::ThunkType, Task::QuotedCompType { quoted: child, frame: child_frame, binders: child_binders }] if *child == body && *child_frame == frame && *child_binders == binders),
+        | Some(&ValueType::Lift { inner, ref target }) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::LiftType { target: held }, Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == inner && *child_frame == frame && *child_binders == binders),
+        | Some(&ValueType::Element { code, ref target }) => machine.value_types.len() == entry_results && matches!(new_tasks, [Task::Element { target: held }, Task::QuotedCode { code: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == code && *child_frame == frame && *child_binders == binders),
+        | None => false,
+    }) },
 )]
 fn step_quoted_value_type(
     core: &CoreArena,
@@ -1961,6 +2208,22 @@ fn step_quoted_value_type(
 /// - hypothesis: L3 — the dependent arrow is the one arm that opens a binder,
 ///   separated by a quote whose codomain reads it.
 /// - witness: `readback::tests::a_quoted_dependent_arrow_reads_its_binder_as_an_index`
+#[spec(
+    captures: [entry_tasks = machine.tasks.len(), entry_frames = machine.frames.len(), entry_fuel = machine.fuel],
+    ensures: |ret| machine.fuel == entry_fuel && (ret.is_err() || machine.tasks.get(entry_tasks ..).is_some_and(|new_tasks| match core.comp_type(quoted) {
+        | Some(&CompType::Returner(result)) => matches!(new_tasks, [Task::Returner, Task::QuotedValueType { quoted: child, frame: child_frame, binders: child_binders }] if *child == result && *child_frame == frame && *child_binders == binders),
+        | Some(&CompType::Arrow { domain: from, codomain }) => matches!(new_tasks, [Task::Arrow, Task::QuotedCompType { quoted: second, frame: second_frame, binders: second_binders }, Task::QuotedValueType { quoted: first, frame: first_frame, binders: first_binders }] if *first == from && *first_frame == frame && *first_binders == binders && *second == codomain && *second_frame == frame && *second_binders == binders),
+        | Some(&CompType::Element { code, ref target }) => matches!(new_tasks, [Task::CompElement { target: held }, Task::QuotedCode { code: child, frame: child_frame, binders: child_binders }] if domain.level(*held).is_some_and(|level| level.level() == target) && *child == code && *child_frame == frame && *child_binders == binders),
+        | Some(&CompType::Pi { domain: from, codomain }) => matches!(new_tasks, [Task::Pi, Task::QuotedCompType { quoted: second, frame: inside, binders: deeper }, Task::QuotedValueType { quoted: first, frame: first_frame, binders: first_binders }] if *first == from && *first_frame == frame && *first_binders == binders && *second == codomain && Some(*deeper) == binders.opened(Zone::Intuitionistic) && inside.0 == entry_frames && machine.frames.len() == entry_frames.saturating_add(1_usize)
+        && machine.frames.get(inside.0).zip(machine.frames.get(frame.0)).is_some_and(|(extended, ambient)|
+            extended.bindings(Zone::Linear) == ambient.bindings(Zone::Linear)
+            && usize::from(extended.depth(Zone::Intuitionistic)) == usize::from(ambient.depth(Zone::Intuitionistic)).saturating_add(1_usize)
+            && extended.bindings(Zone::Intuitionistic).get(.. usize::from(ambient.depth(Zone::Intuitionistic))) == Some(ambient.bindings(Zone::Intuitionistic))
+            && extended.lookup(Zone::Intuitionistic, DeBruijnIndex::from(0_u32)).and_then(|value| domain.value(value)).is_some_and(|node|
+                matches!(node, DomainValue::Neutral { neutral, .. } if domain.neutral(*neutral).is_some_and(|held| held.head() == NeutralHead::Variable { zone: Zone::Intuitionistic, level: binders.fresh(Zone::Intuitionistic) })))) ),
+        | None => false,
+    })),
+)]
 fn step_quoted_comp_type(
     core: &CoreArena,
     domain: &mut DomainArena,
@@ -2677,6 +2940,7 @@ mod tests
     use alloc::vec::Vec;
     use core::convert::Infallible;
 
+    use anodized::spec;
     use gandr_core_term::CompType;
     use gandr_core_term::Computation;
     use gandr_core_term::ComputationId;
@@ -2735,6 +2999,17 @@ mod tests
     /// - provides: the budget every finishing case is run with; the
     ///   budget-sensitive cases name their own.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finishing fixtures must fit while the independent
+    ///   budget search finds strictly smaller successful boundaries; an
+    ///   exhausted default would turn their structural observations into
+    ///   refusals.
+    /// - witness: `readback::tests::one_budget_bounds_the_readback_and_the_evaluations_it_drives`
+    /// - witness: `readback::tests::a_readback_declines_on_fuel_rather_than_running_on`
+    #[spec(
+        ensures: |ret| u32::from(ret) >= BUDGET_CEILING,
+    )]
     fn ample() -> Fuel
     {
         Fuel::from(4_096_u32)
@@ -2758,6 +3033,16 @@ mod tests
     /// - provides: the definition side of every fixture that is about
     ///   rebuilding rather than unfolding.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the empty lowering refuses a named unforced body,
+    ///   whereas a populated lowering unfolds it. Supplying a body from another
+    ///   fixture changes that boundary.
+    /// - witness: `readback::tests::the_unfolding_mode_refuses_a_body_no_chain_entry_names`
+    /// - witness: `readback::tests::a_lowered_definition_body_unfolds_through_readback`
+    #[spec(
+        ensures: |ret| ret.0.chain().entries().is_empty() && ret.0.bodies().is_empty(),
+    )]
     fn nothing_unfolds() -> (LoweredChain, DefinitionalEnvironment)
     {
         (LoweredChain::new(), DefinitionalEnvironment::new())
@@ -2791,6 +3076,18 @@ mod tests
     /// - provides: the body the shared-budget witness measures a suspension's
     ///   cost against.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a second suspension increases the least sufficient
+    ///   budget by at least the declared bind-chain depth. Omitting links,
+    ///   returning a weak head without evaluating them, or failing to pass each
+    ///   bound value onward breaks that observation.
+    /// - witness: `readback::tests::one_budget_bounds_the_readback_and_the_evaluations_it_drives`
+    #[spec(
+        ensures: |ret| matches!(core.computation(ret), Some(&Computation::Bind(_, pass_on))
+            if matches!(core.computation(pass_on), Some(&Computation::Return(occurrence))
+                if core.value(occurrence) == Some(&Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) }))),
+    )]
     fn suspended_body(core: &mut CoreArena) -> ComputationId
     {
         let produced = core.value_unit();
@@ -2805,22 +3102,20 @@ mod tests
         sequenced
     }
 
-    /// Read `evaluated` back at `fuel`, discarding every core node the readback
-    /// minted.
+    /// Read `evaluated` back at `fuel` in an independent domain copy,
+    /// discarding every core node the readback minted.
     ///
-    /// The discard is [`CoreArena::truncate_to`] at a mark taken before the
-    /// call, which is exactly the recovery [`readback_computation`] documents
-    /// for a refusal — so the search below can run one weak head at many
-    /// budgets without each attempt's leavings paying for the next.
+    /// Core truncation alone does not undo a neutral's forced unfolding face.
+    /// Each attempt therefore owns its domain, so a failed attempt cannot pay
+    /// for a later one by leaving a forced definition behind.
     ///
     /// # Specification
     /// - requires: `core` and `domain` are the arenas `evaluated` was produced
     ///   against, and no core id minted after the entry mark is retained by the
     ///   caller.
     /// - ensures: on success the readback ran to completion at `fuel`; either
-    ///   way `core` is truncated back to the mark taken before the call, so one
-    ///   weak head can be read at many budgets without an attempt's leavings
-    ///   paying for the next.
+    ///   way `core` returns to its entry mark and `domain` is untouched,
+    ///   including its unfolding faces. Attempts start from the same state.
     /// - provides: the repeatable single attempt the budget search below is
     ///   built from.
     /// - fails: propagates the readback's own refusal unchanged, the exhaustion
@@ -2828,18 +3123,32 @@ mod tests
     /// - panics: none.
     ///
     /// [`CoreArena::truncate_to`]: gandr_core_term::CoreArena::truncate_to
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — direct and nested fuel refusals retain their exact
+    ///   variants. A partially forced definition must not subsidize the next
+    ///   attempt: the reported minimum succeeds from the original domain and
+    ///   its predecessor refuses. Each attempt owns a domain clone; its forcing
+    ///   cache cannot escape.
+    /// - witness: `readback::tests::one_budget_bounds_the_readback_and_the_evaluations_it_drives`
+    /// - witness: `readback::tests::budget_search_does_not_reuse_forcing_from_failed_attempts`
+    #[spec(
+        captures: [entry_mark = core.watermark()],
+        ensures: core.watermark() == entry_mark,
+    )]
     fn read_at(
         core: &mut CoreArena,
-        domain: &mut DomainArena,
+        domain: &DomainArena,
         definitions: Definitions<'_>,
         evaluated: DomainCompId,
         fuel: Fuel,
     ) -> Result<(), ReadbackFault>
     {
         let mark = core.watermark();
+        let mut attempt = domain.clone();
         let read = readback_computation(
             core,
-            domain,
+            &mut attempt,
             definitions,
             ReadbackMode::Unfolding,
             fuel,
@@ -2852,8 +3161,8 @@ mod tests
     /// The least budget at which reading `evaluated` back succeeds, or `None`
     /// when [`BUDGET_CEILING`] does not suffice.
     ///
-    /// Success is monotone in the budget — fuel only gates, and the machine is
-    /// deterministic — so the first success the scan meets is the least one.
+    /// Each attempt starts with the same domain, including its forcing cache.
+    /// Fuel only gates this deterministic run, so its first success is minimal.
     ///
     /// # Specification
     /// - requires: `core` and `domain` are the arenas `evaluated` was produced
@@ -2865,9 +3174,22 @@ mod tests
     /// - fails: yields nothing at the ceiling, so a machine that never finishes
     ///   fails the search rather than running forever.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the first successful budget is checked in an
+    ///   independent domain, and one less is refused. Warming a definition
+    ///   during an earlier failed attempt or returning a later success changes
+    ///   that boundary. The fixed ceiling bounds a permanently refusing search.
+    /// - witness: `readback::tests::budget_search_does_not_reuse_forcing_from_failed_attempts`
+    /// - witness: `readback::tests::one_budget_bounds_the_readback_and_the_evaluations_it_drives`
+    #[spec(
+        captures: [entry_mark = core.watermark()],
+        ensures: |ret| core.watermark() == entry_mark
+            && ret.is_none_or(|fuel| u32::from(fuel) > 0_u32 && u32::from(fuel) <= BUDGET_CEILING),
+    )]
     fn least_sufficient(
         core: &mut CoreArena,
-        domain: &mut DomainArena,
+        domain: &DomainArena,
         definitions: Definitions<'_>,
         evaluated: DomainCompId,
     ) -> Option<Fuel>
@@ -2893,6 +3215,16 @@ mod tests
     ///   below are read at.
     /// - panics: never in practice — the first binder of a zone is far below
     ///   the depth ceiling, and the expectation names that reason.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the first intuitionistic level resolves here and does
+    ///   not resolve with no binder open. Opening the linear zone or starting
+    ///   at the wrong depth changes its index.
+    /// - witness: `readback::tests::a_level_becomes_the_index_counting_the_other_way`
+    /// - witness: `readback::tests::a_level_outside_the_open_binders_is_refused`
+    #[spec(
+        ensures: |ret| ret.intuitionistic.0 == 1_u32 && ret.linear.0 == 0_u32,
+    )]
     fn under_one() -> OpenBinders
     {
         OpenBinders::none()
@@ -3171,10 +3503,6 @@ mod tests
             value,
         )
         .expect("a substituted pair reads back");
-        assert_ne!(
-            pair, read,
-            "the source no longer denotes the value, so the pair was rebuilt"
-        );
         assert_eq!(
             Some(&Value::Pair(argument, held)),
             core.value(read),
@@ -3187,18 +3515,29 @@ mod tests
     fn the_unfolding_mode_rebuilds_a_kept_face()
     {
         let mut core = CoreArena::new();
-        let first = core.value_unit();
-        let second = core.value_unit();
-        let pair = core.value_pair(first, second);
-        let returner = core.computation_return(pair);
-
+        let unit = core.value_unit();
+        let produced = core.computation_return(unit);
+        let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
+        let continued = core.computation_return(occurrence);
+        let redex = core.computation_bind(produced, continued);
+        let suspended = core.value_thunk(redex);
+        let returner = core.computation_return(suspended);
         let (chain, environment) = nothing_unfolds();
-        let scope = environment.root();
-        let definitions = Definitions::new(&chain, &environment, scope);
+        let definitions = Definitions::new(&chain, &environment, environment.root());
         let mut domain = DomainArena::new();
         let evaluated = eval_computation(&core, &mut domain, definitions, ample(), returner)
-            .expect("a closed returner evaluates");
-
+            .expect("the suspended redex is not evaluated yet");
+        assert_eq!(
+            Ok(returner),
+            readback_computation(
+                &mut core,
+                &mut domain,
+                definitions,
+                ReadbackMode::ZeroUnfold,
+                ample(),
+                evaluated
+            )
+        );
         let read = readback_computation(
             &mut core,
             &mut domain,
@@ -3207,29 +3546,20 @@ mod tests
             ample(),
             evaluated,
         )
-        .expect("the rebuilding mode reads it back");
-        assert_ne!(
-            returner, read,
-            "the rebuilding mode ignores the face it was handed, on the negative side"
-        );
+        .expect("the rebuilding mode enters the suspension");
         let Some(&Computation::Return(rebuilt)) = core.computation(read)
         else {
-            panic!("the rebuilt weak head is a returner");
+            panic!("the outer returner remains");
         };
-        assert_ne!(
-            pair, rebuilt,
-            "and on the positive side, so a kept face buys nothing in this mode"
-        );
-        let Some(&Value::Pair(left, right)) = core.value(rebuilt)
+        let Some(&Value::Thunk(body)) = core.value(rebuilt)
         else {
-            panic!("the rebuilt value is a pair");
+            panic!("its result remains suspended");
         };
-        assert_eq!(Some(&Value::Unit), core.value(left));
-        assert_eq!(
-            Some(&Value::Unit),
-            core.value(right),
-            "and both children came back as fresh nodes of the right shape"
-        );
+        let Some(&Computation::Return(value)) = core.computation(body)
+        else {
+            panic!("the redex beneath both kept faces must normalize");
+        };
+        assert_eq!(Some(&Value::Unit), core.value(value));
     }
 
     #[test]
@@ -3387,10 +3717,6 @@ mod tests
         else {
             panic!("the rebuilt value is a thunk");
         };
-        assert_ne!(
-            returner, body,
-            "the rebuilding mode entered the closure rather than answering with the source"
-        );
         let Some(&Computation::Return(rebuilt)) = core.computation(body)
         else {
             panic!("the suspended body is a returner");
@@ -3576,11 +3902,6 @@ mod tests
             Some(&Value::Constant(position)),
             core.value(thunked),
             "over the head the spine was stacked on"
-        );
-        assert_ne!(
-            opaque, thunked,
-            "which was rebuilt from the neutral rather than spliced, because a stuck \
-             computation carries no source face"
         );
     }
 
@@ -3952,11 +4273,6 @@ mod tests
             else {
                 panic!("the {attempt} reading is the outer body's pair");
             };
-            assert_ne!(
-                outer_body, unfolded,
-                "the {attempt} reading is rebuilt from the domain rather than spliced from \
-                 the lowering's id"
-            );
             assert_eq!(
                 (Some(&Value::Unit), Some(&Value::Unit)),
                 (core.value(first), core.value(second)),
@@ -3971,10 +4287,6 @@ mod tests
             *mark = domain.watermark();
         }
         let [first_mark, second_mark] = marks;
-        assert_ne!(
-            before, first_mark,
-            "the first reading evaluated the lowered bodies"
-        );
         assert_eq!(
             first_mark, second_mark,
             "and the second reading evaluates neither body again"
@@ -3987,7 +4299,8 @@ mod tests
         // `λ. return ⌜El(#0)⌝`: the quote reads the lambda's binder.
         let mut core = CoreArena::new();
         let occurrence = core.value_variable(Zone::Intuitionistic, innermost());
-        let decoded = core.value_type_element(occurrence, Level::zero());
+        let level = Level::zero().succ().expect("level one exists");
+        let decoded = core.value_type_element(occurrence, level.clone());
         let quote = core.value_quote(decoded);
         let returned = core.computation_return(quote);
         let lambda = core.computation_lambda(returned);
@@ -4016,7 +4329,6 @@ mod tests
         else {
             panic!("its body is a returner");
         };
-        assert_ne!(quote, value, "the quote was rebuilt, not spliced");
         let Some(&Value::Quote(quoted)) = core.value(value)
         else {
             panic!("the returned value is a quote");
@@ -4025,7 +4337,10 @@ mod tests
         else {
             panic!("the quoted type is a decode");
         };
-        assert_eq!(&Level::zero(), target, "at the level it was written at");
+        assert_eq!(
+            &level, target,
+            "the captured decode retains its nonzero target"
+        );
         assert_eq!(
             Some(&Value::Variable {
                 zone: Zone::Intuitionistic,
@@ -4138,7 +4453,6 @@ mod tests
             evaluated,
         )
         .expect("the unfolding mode rebuilds the operator");
-        assert_ne!(lambda, read, "the operator was rebuilt, not spliced");
         let Some(&Value::StaticLambda(body)) = core.value(read)
         else {
             panic!("the rebuilt value is a static lambda");
@@ -4174,14 +4488,14 @@ mod tests
     #[test]
     fn a_quoted_static_pi_reads_back_former_by_former()
     {
-        // `⌜Type → Type⌝`: the spending mode rebuilds the quote, rebuilds the
-        // static Pi from its two halves, and splices each leaf as it stands.
+        // Distinct leaves separate domain and codomain order.
         let mut core = CoreArena::new();
         let universe = core.value_type_universe(
             gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
             Level::zero(),
         );
-        let pi = core.value_type_static_pi(universe, universe);
+        let unit = core.value_type_unit();
+        let pi = core.value_type_static_pi(unit, universe);
         let quote = core.value_quote(pi);
 
         let (chain, environment) = nothing_unfolds();
@@ -4199,19 +4513,17 @@ mod tests
             evaluated,
         )
         .expect("the unfolding mode reads the quote");
-        assert_ne!(quote, read, "the quote was rebuilt, not spliced");
         let Some(&Value::Quote(quoted)) = core.value(read)
         else {
             panic!("the read value is a quote");
         };
-        assert_ne!(pi, quoted, "the static Pi was rebuilt from its halves");
         assert_eq!(
             Some(&ValueType::StaticPi {
-                domain: universe,
+                domain: unit,
                 codomain: universe,
             }),
             core.value_type(quoted),
-            "both halves are the universe leaf, spliced in order"
+            "the unit domain precedes the universe codomain"
         );
     }
 
@@ -4503,9 +4815,9 @@ mod tests
             eval_computation(&core, &mut domain, definitions, ample(), two_suspensions)
                 .expect("a returner over a pair of suspensions has a weak head");
 
-        let one = least_sufficient(&mut core, &mut domain, definitions, evaluated_one)
+        let one = least_sufficient(&mut core, &domain, definitions, evaluated_one)
             .expect("one suspension fits below the search ceiling");
-        let two = least_sufficient(&mut core, &mut domain, definitions, evaluated_two)
+        let two = least_sufficient(&mut core, &domain, definitions, evaluated_two)
             .expect("two suspensions fit below the search ceiling");
         let gap = u32::from(two)
             .checked_sub(u32::from(one))
@@ -4521,7 +4833,7 @@ mod tests
             Err(ReadbackFault::OutOfFuel),
             read_at(
                 &mut core,
-                &mut domain,
+                &domain,
                 definitions,
                 evaluated_two,
                 Fuel::from(u32::from(two).saturating_sub(1_u32)),
@@ -4534,7 +4846,7 @@ mod tests
             Err(ReadbackFault::Eval(EvalFault::OutOfFuel)),
             read_at(
                 &mut core,
-                &mut domain,
+                &domain,
                 definitions,
                 evaluated_two,
                 Fuel::from(u32::from(one).saturating_add(1_u32)),
@@ -4651,5 +4963,175 @@ mod tests
              the reference rather than rebuilding one"
         );
         assert_eq!(mark, core.watermark(), "and mints nothing to do it");
+    }
+
+    #[test]
+    fn budget_search_does_not_reuse_forcing_from_failed_attempts()
+    {
+        let mut core = CoreArena::new();
+        let mut body = core.value_unit();
+        let links = 16_u32;
+        for _link in 0_u32 .. links {
+            body = core.value_injection(Side::Left, body);
+        }
+        let constant = ConstantIndex::from(0_usize);
+        let mut chain = DefinitionChain::new();
+        chain
+            .define(
+                constant,
+                GlobalIndex::from(0_u32),
+                Transparency::Manifest,
+                &[],
+            )
+            .expect("the closed body has no dependencies");
+        let Ok(chain) = LoweredChain::lower(chain, |_| Ok::<_, Infallible>(body));
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let reference = core.value_constant(constant);
+        let returned = core.computation_return(reference);
+        let mut domain = DomainArena::new();
+        let evaluated = eval_computation(&core, &mut domain, definitions, ample(), returned)
+            .expect("the definition remains unforced during evaluation");
+        let pristine = domain.clone();
+        let minimum = least_sufficient(&mut core, &domain, definitions, evaluated)
+            .expect("the finite readback has a sufficient budget");
+        let boundary = core.watermark();
+        let mut fresh = pristine.clone();
+        let read = readback_computation(
+            &mut core,
+            &mut fresh,
+            definitions,
+            ReadbackMode::Unfolding,
+            minimum,
+            evaluated,
+        )
+        .expect("the reported minimum must suffice without an earlier attempt's cached forcing");
+        let Some(&Computation::Return(mut value)) = core.computation(read)
+        else {
+            panic!("the complete readback returns the definition's body");
+        };
+        for _link in 0_u32 .. links {
+            let Some(&Value::Injection(Side::Left, next)) = core.value(value)
+            else {
+                panic!("every layer of the forced body is rebuilt");
+            };
+            value = next;
+        }
+        assert_eq!(Some(&Value::Unit), core.value(value));
+        core.truncate_to(boundary);
+        let mut below = pristine;
+        let smaller = Fuel::from(
+            u32::from(minimum)
+                .checked_sub(1_u32)
+                .expect("every readback performs a task"),
+        );
+        assert!(matches!(
+            readback_computation(
+                &mut core,
+                &mut below,
+                definitions,
+                ReadbackMode::Unfolding,
+                smaller,
+                evaluated
+            ),
+            Err(ReadbackFault::OutOfFuel | ReadbackFault::Eval(EvalFault::OutOfFuel))
+        ));
+    }
+
+    #[test]
+    fn quoted_formers_preserve_distinct_children_and_targets()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let universe = core.value_type_universe(
+            gandr_core_term::Sort::Ground(gandr_kernel_term::GroundSort::Value),
+            Level::zero(),
+        );
+        let target = Level::zero()
+            .succ()
+            .and_then(|one| one.succ())
+            .expect("level two exists");
+        let (chain, environment) = nothing_unfolds();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let rebuild = |core: &mut CoreArena, source| {
+            let mut domain = DomainArena::new();
+            let evaluated = eval_value(core, &mut domain, definitions, ample(), source)
+                .expect("the closed quote evaluates");
+            readback_value(
+                core,
+                &mut domain,
+                definitions,
+                ReadbackMode::Unfolding,
+                ample(),
+                evaluated,
+            )
+            .expect("its formers normalize")
+        };
+        let types = [
+            (
+                core.value_type_product(unit, universe),
+                ValueType::Product(unit, universe),
+            ),
+            (
+                core.value_type_sum(universe, unit),
+                ValueType::Sum(universe, unit),
+            ),
+            (
+                core.value_type_lift(unit, target.clone()),
+                ValueType::Lift {
+                    inner: unit,
+                    target: target.clone(),
+                },
+            ),
+        ];
+        for (ty, expected) in types {
+            let source = core.value_quote(ty);
+            let read = rebuild(&mut core, source);
+            let Some(&Value::Quote(quoted)) = core.value(read)
+            else {
+                panic!("a value-type quote stays positive");
+            };
+            assert_eq!(Some(&expected), core.value_type(quoted));
+        }
+        let result = core.comp_type_returner(unit);
+        let suspended = core.value_type_thunk(result);
+        let source = core.value_quote(suspended);
+        let read = rebuild(&mut core, source);
+        let Some(&Value::Quote(quoted)) = core.value(read)
+        else {
+            panic!("a thunk type is quoted positively");
+        };
+        let Some(&ValueType::Thunk(body)) = core.value_type(quoted)
+        else {
+            panic!("the thunk former is retained");
+        };
+        assert_eq!(Some(&CompType::Returner(unit)), core.comp_type(body));
+
+        let source = core.value_quote_computation(result);
+        let read = rebuild(&mut core, source);
+        let Some(&Value::QuoteComputation(quoted)) = core.value(read)
+        else {
+            panic!("the quoted computation type retains its polarity");
+        };
+        assert_eq!(Some(&CompType::Returner(unit)), core.comp_type(quoted));
+
+        let constant = ConstantIndex::from(0_usize);
+        let reference = core.value_constant(constant);
+        let decoded = core.comp_type_element(reference, target.clone());
+        let source = core.value_quote_computation(decoded);
+        let read = rebuild(&mut core, source);
+        let Some(&Value::QuoteComputation(quoted)) = core.value(read)
+        else {
+            panic!("the decoded computation type retains its polarity");
+        };
+        let Some(&CompType::Element {
+            code,
+            target: ref held,
+        }) = core.comp_type(quoted)
+        else {
+            panic!("the opaque code remains a decode");
+        };
+        assert_eq!(&target, held);
+        assert_eq!(Some(&Value::Constant(constant)), core.value(code));
     }
 }

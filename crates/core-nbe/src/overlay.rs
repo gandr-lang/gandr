@@ -672,6 +672,16 @@ impl Overlay
     /// - panics: none.
     #[inline]
     #[must_use]
+    /// # Adequacy
+    /// - hypothesis: L3 — all four independently growing families are observed
+    ///   before and after truncation. Retained and discarded lookups plus an
+    ///   exact rollback mark distinguish a swapped family length, a stale
+    ///   snapshot and a mark taken after mutation.
+    /// - witness: `overlay::tests::truncating_to_a_watermark_drops_later_nodes`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        ensures: |ret| ret.values == self.values.len() && ret.computations == self.computations.len() && ret.value_types == self.value_types.len() && ret.comp_types == self.comp_types.len()
+    )]
     pub fn watermark(&self) -> OverlayWatermark
     {
         OverlayWatermark {
@@ -697,12 +707,13 @@ impl Overlay
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one decision surface per family, separated by a mark
-    ///   below the current length and the floor, with a dropped id asserted
-    ///   unresolved and a retained one asserted resolved.
+    /// - hypothesis: L3 — each family may retain a prefix or drop to zero. The
+    ///   exact mark, retained payloads and missing dropped ids distinguish
+    ///   swapped family lengths, retaining speculative nodes and removing the
+    ///   prefix; the deep four-family fixture separates heap teardown from
+    ///   host-stack depth.
     /// - witness: `overlay::tests::truncating_to_a_watermark_drops_later_nodes`
-    /// - witness:
-    ///   `teardown::teardown::a_deep_overlay_validates_and_is_released_in_both_orders_inside_a_small_stack`
+    /// - witness: `teardown::teardown::a_deep_overlay_validates_and_is_released_in_both_orders_inside_a_small_stack`
     #[inline]
     #[spec(
         captures: entry_mark = self.watermark(),
@@ -734,6 +745,18 @@ impl Overlay
     /// - panics: none.
     #[inline]
     #[must_use]
+    /// # Adequacy
+    /// - hypothesis: L3 — ids are family-local offsets, including a retained
+    ///   id, a truncated id and an in-range foreign id. Exact node payloads and
+    ///   refused downstream walks distinguish off-by-one bounds, stale reads
+    ///   and invented overlay provenance.
+    /// - witness: `overlay::tests::truncating_to_a_watermark_drops_later_nodes`
+    /// - witness: `overlay::tests::lookup_offsets_are_local_and_out_of_range_ids_fail_closed`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        ensures: |ret| ret == self.values.get(offset(Index(id.0)).0)
+    )]
     pub fn value(
         &self,
         id: OverlayValueId,
@@ -755,6 +778,18 @@ impl Overlay
     /// - panics: none.
     #[inline]
     #[must_use]
+    /// # Adequacy
+    /// - hypothesis: L3 — ids are family-local offsets, including a retained
+    ///   id, a truncated id and an in-range foreign id. Exact node payloads and
+    ///   refused downstream walks distinguish off-by-one bounds, stale reads
+    ///   and invented overlay provenance.
+    /// - witness: `overlay::tests::truncating_to_a_watermark_drops_later_nodes`
+    /// - witness: `overlay::tests::lookup_offsets_are_local_and_out_of_range_ids_fail_closed`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        ensures: |ret| ret == self.computations.get(offset(Index(id.0)).0)
+    )]
     pub fn computation(
         &self,
         id: OverlayCompId,
@@ -776,6 +811,18 @@ impl Overlay
     /// - panics: none.
     #[inline]
     #[must_use]
+    /// # Adequacy
+    /// - hypothesis: L3 — ids are family-local offsets, including a retained
+    ///   id, a truncated id and an in-range foreign id. Exact node payloads and
+    ///   refused downstream walks distinguish off-by-one bounds, stale reads
+    ///   and invented overlay provenance.
+    /// - witness: `overlay::tests::truncating_to_a_watermark_drops_later_nodes`
+    /// - witness: `overlay::tests::lookup_offsets_are_local_and_out_of_range_ids_fail_closed`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        ensures: |ret| ret == self.value_types.get(offset(Index(id.0)).0)
+    )]
     pub fn value_type(
         &self,
         id: OverlayValueTypeId,
@@ -797,6 +844,18 @@ impl Overlay
     /// - panics: none.
     #[inline]
     #[must_use]
+    /// # Adequacy
+    /// - hypothesis: L3 — ids are family-local offsets, including a retained
+    ///   id, a truncated id and an in-range foreign id. Exact node payloads and
+    ///   refused downstream walks distinguish off-by-one bounds, stale reads
+    ///   and invented overlay provenance.
+    /// - witness: `overlay::tests::truncating_to_a_watermark_drops_later_nodes`
+    /// - witness: `overlay::tests::lookup_offsets_are_local_and_out_of_range_ids_fail_closed`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        ensures: |ret| ret == self.comp_types.get(offset(Index(id.0)).0)
+    )]
     pub fn comp_type(
         &self,
         id: OverlayCompTypeId,
@@ -824,13 +883,28 @@ impl Overlay
     /// - [`OverlayFault::FamilyFull`] — no id is left to mint.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decision surfaces are the child check and the
-    ///   family ceiling, separated by a node whose children resolve, a graft
-    ///   and a share each naming a child from another overlay, and the family
-    ///   length asserted unchanged after a refusal; the ceiling needs four
-    ///   billion nodes and stays prose.
+    /// - hypothesis: L3 — the Value family appends only after every ordered
+    ///   child resolves. Refusal leaves its prefix and watermark intact; a
+    ///   graft or share with a dangling child and the allocation-free
+    ///   index-ceiling probe distinguish premature mutation, wrong error
+    ///   precedence, wrong family and id aliasing.
     /// - witness: `overlay::tests::minting_refuses_a_child_the_overlay_does_not_hold`
+    /// - witness: `overlay::tests::mint_refusals_preserve_prefixes_and_name_the_first_missing_child`
+    /// - witness: `overlay::tests::index_ceiling_is_checked_without_allocating_nodes`
     #[inline]
+    #[spec(
+        captures: [mark = self.watermark(), shape = node.shape()],
+        ensures: |ret| {
+         let missing = (match shape.children() { Children::Leaf => [None,None,None], Children::One(a) => [Some(a),None,None], Children::Two(a,b) => [Some(a),Some(b),None], Children::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten().find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
+         match (missing,ret) {
+         (Some(child),Err(OverlayFault::DanglingChild{child:found})) => child == found && self.watermark() == mark,
+         (None,Ok(id)) => usize::try_from(id.0).ok() == Some(mark.values) && mark.values.checked_add(1) == Some(self.values.len())
+           && self.computations.len() == mark.computations && self.value_types.len() == mark.value_types && self.comp_types.len() == mark.comp_types && self.value(id).is_some_and(|node| node.shape() == shape),
+         (None,Err(OverlayFault::FamilyFull{family})) => family == OverlayFamily::Value && u32::try_from(mark.values).is_err() && self.watermark() == mark,
+         _ => false,
+         }
+        }
+    )]
     pub fn mint_value(
         &mut self,
         node: ValueNode,
@@ -858,11 +932,28 @@ impl Overlay
     /// - [`OverlayFault::FamilyFull`] — no id is left to mint.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decision surfaces are the child check and the
-    ///   family ceiling, separated by a share whose leg is from another overlay
-    ///   and its successful mint once the leg resolves.
+    /// - hypothesis: L3 — the Computation family appends only after every
+    ///   ordered child resolves. Refusal leaves its prefix and watermark
+    ///   intact; a graft or share with a dangling child and the allocation-free
+    ///   index-ceiling probe distinguish premature mutation, wrong error
+    ///   precedence, wrong family and id aliasing.
     /// - witness: `overlay::tests::minting_refuses_a_child_the_overlay_does_not_hold`
+    /// - witness: `overlay::tests::mint_refusals_preserve_prefixes_and_name_the_first_missing_child`
+    /// - witness: `overlay::tests::index_ceiling_is_checked_without_allocating_nodes`
     #[inline]
+    #[spec(
+        captures: [mark = self.watermark(), shape = node.shape()],
+        ensures: |ret| {
+         let missing = (match shape.children() { Children::Leaf => [None,None,None], Children::One(a) => [Some(a),None,None], Children::Two(a,b) => [Some(a),Some(b),None], Children::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten().find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
+         match (missing,ret) {
+         (Some(child),Err(OverlayFault::DanglingChild{child:found})) => child == found && self.watermark() == mark,
+         (None,Ok(id)) => usize::try_from(id.0).ok() == Some(mark.computations) && mark.computations.checked_add(1) == Some(self.computations.len())
+           && self.values.len() == mark.values && self.value_types.len() == mark.value_types && self.comp_types.len() == mark.comp_types && self.computation(id).is_some_and(|node| node.shape() == shape),
+         (None,Err(OverlayFault::FamilyFull{family})) => family == OverlayFamily::Computation && u32::try_from(mark.computations).is_err() && self.watermark() == mark,
+         _ => false,
+         }
+        }
+    )]
     pub fn mint_computation(
         &mut self,
         node: CompNode,
@@ -890,13 +981,28 @@ impl Overlay
     /// - [`OverlayFault::FamilyFull`] — no id is left to mint.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decision surfaces are the child check and the
-    ///   family ceiling, separated by a code from another overlay refused and a
-    ///   lift chain minted.
+    /// - hypothesis: L3 — the `ValueType` family appends only after every
+    ///   ordered child resolves. Refusal leaves its prefix and watermark
+    ///   intact; a graft or share with a dangling child and the allocation-free
+    ///   index-ceiling probe distinguish premature mutation, wrong error
+    ///   precedence, wrong family and id aliasing.
     /// - witness: `overlay::tests::minting_refuses_a_child_the_overlay_does_not_hold`
-    /// - witness:
-    ///   `teardown::teardown::a_deep_overlay_validates_and_is_released_in_both_orders_inside_a_small_stack`
+    /// - witness: `overlay::tests::mint_refusals_preserve_prefixes_and_name_the_first_missing_child`
+    /// - witness: `overlay::tests::index_ceiling_is_checked_without_allocating_nodes`
     #[inline]
+    #[spec(
+        captures: [mark = self.watermark(), shape = node.shape()],
+        ensures: |ret| {
+         let missing = (match shape.children() { Children::Leaf => [None,None,None], Children::One(a) => [Some(a),None,None], Children::Two(a,b) => [Some(a),Some(b),None], Children::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten().find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
+         match (missing,ret) {
+         (Some(child),Err(OverlayFault::DanglingChild{child:found})) => child == found && self.watermark() == mark,
+         (None,Ok(id)) => usize::try_from(id.0).ok() == Some(mark.value_types) && mark.value_types.checked_add(1) == Some(self.value_types.len())
+           && self.values.len() == mark.values && self.computations.len() == mark.computations && self.comp_types.len() == mark.comp_types && self.value_type(id).is_some_and(|node| node.shape() == shape),
+         (None,Err(OverlayFault::FamilyFull{family})) => family == OverlayFamily::ValueType && u32::try_from(mark.value_types).is_err() && self.watermark() == mark,
+         _ => false,
+         }
+        }
+    )]
     pub fn mint_value_type(
         &mut self,
         node: ValueTypeNode,
@@ -924,11 +1030,28 @@ impl Overlay
     /// - [`OverlayFault::FamilyFull`] — no id is left to mint.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decision surfaces are the child check and the
-    ///   family ceiling, separated by an arrow whose codomain is from another
-    ///   overlay refused and the same arrow minted over its own codomain.
+    /// - hypothesis: L3 — the `CompType` family appends only after every
+    ///   ordered child resolves. Refusal leaves its prefix and watermark
+    ///   intact; a graft or share with a dangling child and the allocation-free
+    ///   index-ceiling probe distinguish premature mutation, wrong error
+    ///   precedence, wrong family and id aliasing.
     /// - witness: `overlay::tests::minting_refuses_a_child_the_overlay_does_not_hold`
+    /// - witness: `overlay::tests::mint_refusals_preserve_prefixes_and_name_the_first_missing_child`
+    /// - witness: `overlay::tests::index_ceiling_is_checked_without_allocating_nodes`
     #[inline]
+    #[spec(
+        captures: [mark = self.watermark(), shape = node.shape()],
+        ensures: |ret| {
+         let missing = (match shape.children() { Children::Leaf => [None,None,None], Children::One(a) => [Some(a),None,None], Children::Two(a,b) => [Some(a),Some(b),None], Children::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten().find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < mark.values, OverlayId::Computation(id) => offset(Index(id.0)).0 < mark.computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < mark.value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < mark.comp_types }));
+         match (missing,ret) {
+         (Some(child),Err(OverlayFault::DanglingChild{child:found})) => child == found && self.watermark() == mark,
+         (None,Ok(id)) => usize::try_from(id.0).ok() == Some(mark.comp_types) && mark.comp_types.checked_add(1) == Some(self.comp_types.len())
+           && self.values.len() == mark.values && self.computations.len() == mark.computations && self.value_types.len() == mark.value_types && self.comp_type(id).is_some_and(|node| node.shape() == shape),
+         (None,Err(OverlayFault::FamilyFull{family})) => family == OverlayFamily::CompType && u32::try_from(mark.comp_types).is_err() && self.watermark() == mark,
+         _ => false,
+         }
+        }
+    )]
     pub fn mint_comp_type(
         &mut self,
         node: CompTypeNode,
@@ -974,26 +1097,108 @@ impl Overlay
     /// - [`OverlayRefusal::MachineInvariant`] — the walk's own pairing broke.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decision surfaces are the resolution and reuse
-    ///   checks, the occurrence rules and the share rules, separated by one
-    ///   refusal per reachable variant asserted with the node it names, by the
-    ///   explicit share that accepts what implicit reuse refuses, and by nested
-    ///   shares whose leg and body count distance from different frames; the
-    ///   walk's depth is separated from the host stack by a chain validated
-    ///   inside a small stack.
+    /// - hypothesis: L3 — arbitrary overlay roots include missing nodes,
+    ///   implicit reuse, open occurrences and ill-sized shares. Exact refusal
+    ///   variants and named nodes, successful nested scopes and small-stack
+    ///   validation distinguish traversal-order errors, leaked scopes and arity
+    ///   errors; task pairing makes `MachineInvariant` unreachable from an
+    ///   input overlay.
     /// - witness: `overlay::tests::validation_refuses_an_open_node_set_by_name`
     /// - witness: `overlay::tests::validation_refuses_an_occurrence_of_another_family`
     /// - witness: `overlay::tests::validation_holds_each_share_to_its_arity_in_preorder`
     /// - witness: `overlay::tests::validation_refuses_a_node_reached_twice`
     /// - witness: `overlay::tests::validation_refuses_a_root_the_overlay_does_not_hold`
     /// - witness: `overlay::tests::a_leg_counts_from_outside_its_share`
-    /// - witness:
-    ///   `teardown::teardown::a_deep_overlay_validates_and_is_released_in_both_orders_inside_a_small_stack`
     #[inline]
+    #[spec(
+        ensures: |ret| {
+         let root_boundary = match self.shape(root) {
+         Err(fault) => ret == Err(fault),
+         Ok(Shape::Opaque(_) | Shape::Grafted(Children::Leaf)) => ret == Ok(()),
+         Ok(Shape::Bound(_)) => ret == Err(OverlayRefusal::OpenReference{node:root}),
+         Ok(Shape::Shared(sharing)) if sharing.arity.0 == 0 => ret == Err(OverlayRefusal::ZeroArity{share:root}),
+         Ok(_) => true,
+         };
+         root_boundary && match ret {
+         Ok(()) => self.shape(root).is_ok(),
+         Err(OverlayRefusal::Unresolved{node}) => self.shape(node).is_err(),
+         Err(OverlayRefusal::ReachedTwice{node}) => self.shape(node).is_ok(),
+         Err(OverlayRefusal::OpenReference{node}) => matches!(self.shape(node),Ok(Shape::Bound(_))),
+         Err(OverlayRefusal::FamilyMismatch{node,occurrence,leg}) => node.family() == occurrence && occurrence != leg && matches!(self.shape(node),Ok(Shape::Bound(_))),
+         Err(OverlayRefusal::SurplusOccurrence{node,arity}) => arity.0 > 0 && matches!(self.shape(node),Ok(Shape::Bound(_))),
+         Err(OverlayRefusal::PositionOutOfOrder{node,expected,found}) => expected != found && matches!(self.shape(node),Ok(Shape::Bound(bound)) if bound.position == found),
+         Err(OverlayRefusal::MissingOccurrences{share,arity,next}) => next.0 < arity.0 && matches!(self.shape(share),Ok(Shape::Shared(sharing)) if sharing.arity == arity),
+         Err(OverlayRefusal::ZeroArity{share}) => matches!(self.shape(share),Ok(Shape::Shared(sharing)) if sharing.arity.0 == 0),
+         Err(OverlayRefusal::MachineInvariant) => false,
+         }
+        }
+    )]
     pub fn validate(
         &self,
         root: OverlayId,
     ) -> Result<(), OverlayRefusal>
+    {
+        self.validate_with(root, |_node, _held| {})
+    }
+
+    /// Validate in preorder, observing each opaque leaf before any erasure.
+    ///
+    /// # Specification
+    /// - requires: nothing; the observer does not mutate this overlay.
+    /// - ensures: the same structural verdict as validation; each reached
+    ///   opaque leaf is observed once in preorder, until a structural refusal.
+    /// - provides: entry-arena opaque checks without a second graph walk.
+    /// - fails: the first structural refusal in preorder, as validation does.
+    /// - panics: if the observer panics.
+    ///
+    /// # Errors
+    /// - Every structural refusal documented by `Overlay::validate`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — roots include every structural refusal and opaque
+    ///   leaves whose ids could otherwise be created by preceding grafts.
+    ///   Structural refusal keeps precedence over a recorded opaque failure;
+    ///   exact error nodes, unchanged arenas and nested-scope acceptance
+    ///   distinguish a reordered observer, a missed opaque leaf or a second
+    ///   validity interpretation.
+    /// - witness: `overlay::tests::validation_refuses_an_open_node_set_by_name`
+    /// - witness: `overlay::tests::validation_refuses_an_occurrence_of_another_family`
+    /// - witness: `overlay::tests::validation_holds_each_share_to_its_arity_in_preorder`
+    /// - witness: `overlay::tests::validation_refuses_a_node_reached_twice`
+    /// - witness: `overlay::tests::validation_refuses_a_root_the_overlay_does_not_hold`
+    /// - witness: `overlay::tests::a_leg_counts_from_outside_its_share`
+    /// - witness: `overlay::tests::opaque_erasure_does_not_resurrect_a_missing_core_id`
+    /// - witness: `overlay::tests::structural_refusals_precede_opaque_preflight_failures`
+    #[spec(
+        ensures: |ret| {
+         let root_boundary = match self.shape(root) {
+         Err(fault) => ret == Err(fault),
+         Ok(Shape::Opaque(_) | Shape::Grafted(Children::Leaf)) => ret == Ok(()),
+         Ok(Shape::Bound(_)) => ret == Err(OverlayRefusal::OpenReference{node:root}),
+         Ok(Shape::Shared(sharing)) if sharing.arity.0 == 0 => ret == Err(OverlayRefusal::ZeroArity{share:root}),
+         Ok(_) => true,
+         };
+         root_boundary && match ret {
+         Ok(()) => self.shape(root).is_ok(),
+         Err(OverlayRefusal::Unresolved{node}) => self.shape(node).is_err(),
+         Err(OverlayRefusal::ReachedTwice{node}) => self.shape(node).is_ok(),
+         Err(OverlayRefusal::OpenReference{node}) => matches!(self.shape(node),Ok(Shape::Bound(_))),
+         Err(OverlayRefusal::FamilyMismatch{node,occurrence,leg}) => node.family() == occurrence && occurrence != leg && matches!(self.shape(node),Ok(Shape::Bound(_))),
+         Err(OverlayRefusal::SurplusOccurrence{node,arity}) => arity.0 > 0 && matches!(self.shape(node),Ok(Shape::Bound(_))),
+         Err(OverlayRefusal::PositionOutOfOrder{node,expected,found}) => expected != found && matches!(self.shape(node),Ok(Shape::Bound(bound)) if bound.position == found),
+         Err(OverlayRefusal::MissingOccurrences{share,arity,next}) => next.0 < arity.0 && matches!(self.shape(share),Ok(Shape::Shared(sharing)) if sharing.arity == arity),
+         Err(OverlayRefusal::ZeroArity{share}) => matches!(self.shape(share),Ok(Shape::Shared(sharing)) if sharing.arity.0 == 0),
+         Err(OverlayRefusal::MachineInvariant) => false,
+         }
+        }
+    )]
+    fn validate_with<Observe>(
+        &self,
+        root: OverlayId,
+        mut observe: Observe,
+    ) -> Result<(), OverlayRefusal>
+    where
+        Observe: FnMut(OverlayId, CoreId),
     {
         // economy: the reached set grows with the walk rather than with the
         // overlay, so validating one small root of a large overlay costs that
@@ -1010,7 +1215,7 @@ impl Overlay
                         return Err(OverlayRefusal::ReachedTwice { node });
                     }
                     match shape {
-                        | Shape::Opaque(_) => {},
+                        | Shape::Opaque(held) => observe(node, held),
                         | Shape::Bound(bound) => {
                             occur(&mut frames, node, bound)?;
                         },
@@ -1063,6 +1268,23 @@ impl Overlay
     ///
     /// # Errors
     /// - [`OverlayRefusal::Unresolved`] — `node` names no node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each family may hold a node or refuse an out-of-range
+    ///   id. Family-specific erasure and exact unresolved-root errors
+    ///   distinguish wrong-family projection, a fabricated shape and a refusal
+    ///   naming another node.
+    /// - witness: `overlay::tests::lookup_offsets_are_local_and_out_of_range_ids_fail_closed`
+    /// - witness: `overlay::tests::validation_refuses_a_root_the_overlay_does_not_hold`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        ensures: |ret| ret == match node {
+         OverlayId::Value(id) => self.value(id).map(ValueNode::shape),
+         OverlayId::Computation(id) => self.computation(id).map(CompNode::shape),
+         OverlayId::ValueType(id) => self.value_type(id).map(ValueTypeNode::shape),
+         OverlayId::CompType(id) => self.comp_type(id).map(CompTypeNode::shape),
+        }.ok_or(OverlayRefusal::Unresolved{node})
+    )]
     pub(crate) fn shape(
         &self,
         node: OverlayId,
@@ -1088,6 +1310,17 @@ impl Overlay
     ///
     /// # Errors
     /// - [`OverlayFault::DanglingChild`] — `child` names no node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — children range over all four families at live and
+    ///   missing offsets. Exact first-child refusals and unchanged arena marks
+    ///   distinguish accepting a missing id, rejecting a live id or naming the
+    ///   wrong family.
+    /// - witness: `overlay::tests::minting_refuses_a_child_the_overlay_does_not_hold`
+    /// - witness: `overlay::tests::mint_refusals_preserve_prefixes_and_name_the_first_missing_child`
+    #[spec(
+        ensures: |ret| if match child { OverlayId::Value(id) => offset(Index(id.0)).0 < self.watermark().values, OverlayId::Computation(id) => offset(Index(id.0)).0 < self.watermark().computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < self.watermark().value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < self.watermark().comp_types } { ret == Ok(()) } else { ret == Err(OverlayFault::DanglingChild{child}) }
+    )]
     fn held(
         &self,
         child: OverlayId,
@@ -1130,6 +1363,13 @@ struct Index(u32);
 /// - panics: none.
 #[spec(ensures: |ret| u32::try_from(ret.0).is_ok_and(|narrowed| narrowed == index.0)
     || ret.0 == usize::MAX)]
+/// # Adequacy
+/// - hypothesis: L3 — zero and the largest stored index are read without
+///   truncating their bits; the offset is checked by family lookups. The
+///   numeric ceiling and missing-id probes distinguish wrapping, off-by-one
+///   offsets and saturation below the actual platform ceiling.
+/// - witness: `overlay::tests::index_ceiling_is_checked_without_allocating_nodes`
+/// - witness: `overlay::tests::lookup_offsets_are_local_and_out_of_range_ids_fail_closed`
 fn offset(index: Index) -> Offset
 {
     Offset(usize::try_from(index.0).unwrap_or(usize::MAX))
@@ -1147,6 +1387,16 @@ fn offset(index: Index) -> Offset
 ///
 /// # Errors
 /// - [`OverlayFault::FamilyFull`] — no id is left in `family`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — lengths at the largest representable id and one beyond
+///   are tested directly, without allocating their node tables. Exact index and
+///   family-labelled refusal distinguish wrapping, rejecting the last usable id
+///   and admitting an alias.
+/// - witness: `overlay::tests::index_ceiling_is_checked_without_allocating_nodes`
+#[spec(
+    ensures: |ret| match ret { Ok(index) => usize::try_from(index.0).ok() == Some(length.0), Err(OverlayFault::FamilyFull{family:found}) => found == family && u32::try_from(length.0).is_err(), Err(OverlayFault::DanglingChild{..}) => false }
+)]
 fn next_index(
     length: Offset,
     family: OverlayFamily,
@@ -1185,6 +1435,20 @@ impl Children
     ///
     /// # Errors
     /// - [`OverlayFault::DanglingChild`] — a child does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero through three ordered children may include
+    ///   multiple dangling ids. The first reported id and unchanged overlay
+    ///   distinguish reverse traversal, skipping a mixed-family child and
+    ///   checking only the first member.
+    /// - witness: `overlay::tests::minting_refuses_a_child_the_overlay_does_not_hold`
+    /// - witness: `overlay::tests::mint_refusals_preserve_prefixes_and_name_the_first_missing_child`
+    #[spec(
+        ensures: |ret| {
+         let first = (match self { Self::Leaf => [None,None,None], Self::One(a) => [Some(a),None,None], Self::Two(a,b) => [Some(a),Some(b),None], Self::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten().find(|&child| !(match child { OverlayId::Value(id) => offset(Index(id.0)).0 < overlay.watermark().values, OverlayId::Computation(id) => offset(Index(id.0)).0 < overlay.watermark().computations, OverlayId::ValueType(id) => offset(Index(id.0)).0 < overlay.watermark().value_types, OverlayId::CompType(id) => offset(Index(id.0)).0 < overlay.watermark().comp_types }));
+         ret == first.map_or(Ok(()), |child| Err(OverlayFault::DanglingChild{child}))
+        }
+    )]
     fn held_in(
         self,
         overlay: &Overlay,
@@ -1218,6 +1482,18 @@ impl Children
     ///   is the preorder an occurrence's position counts in.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero through three children append tasks without
+    ///   assuming equality or purity of the caller’s task constructor. Preorder
+    ///   position refusals and exact erased constructor order distinguish
+    ///   omitted tasks, reversed scheduling and a lost existing stack prefix.
+    /// - witness: `overlay::tests::validation_holds_each_share_to_its_arity_in_preorder`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        captures: [length = tasks.len()],
+        ensures: |ret| length.checked_add(match self { Self::Leaf => 0, Self::One(_) => 1, Self::Two(..) => 2, Self::Three(..) => 3 }) == Some(tasks.len())
+    )]
     pub(crate) fn push_reversed<Task>(
         self,
         tasks: &mut Vec<Task>,
@@ -1260,7 +1536,22 @@ impl Shape
     /// for a graft, nothing for a leaf.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: no overlay children for opaque nodes or occurrences; leg then
+    ///   body for a share; the stored ordered children for a graft.
+    /// - provides: the common child order of validation and erasure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — opaque nodes and occurrences are leaves, shares put
+    ///   their leg before their body, and grafts preserve constructor order.
+    ///   Nested scopes and exact erasure distinguish descending into opaque
+    ///   core ids, swapping a share’s children and dropping a graft edge.
+    /// - witness: `overlay::tests::a_leg_counts_from_outside_its_share`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        ensures: |ret| ret == match self { Self::Opaque(_) | Self::Bound(_) => Children::Leaf, Self::Shared(sharing) => Children::Two(sharing.leg,sharing.body), Self::Grafted(children) => children }
+    )]
     fn children(self) -> Children
     {
         match self {
@@ -1276,7 +1567,23 @@ impl ValueNode
     /// This node's shape.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the same node kind, opaque family, occurrence metadata, share
+    ///   metadata and ordered graft children, without retaining a payload copy.
+    /// - provides: the family-neutral shape read by validation and erasure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every Value node kind preserves its family and scope
+    ///   metadata. Mixed-family occurrence refusals, shared-leg scoping and
+    ///   exact erasure observe mistagged opaque ids, lost arity or distance,
+    ///   and a changed child order.
+    /// - witness: `overlay::tests::validation_refuses_an_occurrence_of_another_family`
+    /// - witness: `overlay::tests::a_leg_counts_from_outside_its_share`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        ensures: |ret| match *self { Self::Opaque(id) => ret == Shape::Opaque(CoreId::Value(id)), Self::Bound(bound) => ret == Shape::Bound(bound), Self::Shared(sharing) => ret == Shape::Shared(Sharing{arity:sharing.arity,leg:sharing.leg,body:OverlayId::Value(sharing.body)}), Self::Grafted(ref graft) => ret == Shape::Grafted(graft.children()) }
+    )]
     fn shape(&self) -> Shape
     {
         match *self {
@@ -1293,7 +1600,23 @@ impl CompNode
     /// This node's shape.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the same node kind, opaque family, occurrence metadata, share
+    ///   metadata and ordered graft children, without retaining a payload copy.
+    /// - provides: the family-neutral shape read by validation and erasure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every Computation node kind preserves its family and
+    ///   scope metadata. Mixed-family occurrence refusals, shared-leg scoping
+    ///   and exact erasure observe mistagged opaque ids, lost arity or
+    ///   distance, and a changed child order.
+    /// - witness: `overlay::tests::validation_refuses_an_occurrence_of_another_family`
+    /// - witness: `overlay::tests::a_leg_counts_from_outside_its_share`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        ensures: |ret| match *self { Self::Opaque(id) => ret == Shape::Opaque(CoreId::Computation(id)), Self::Bound(bound) => ret == Shape::Bound(bound), Self::Shared(sharing) => ret == Shape::Shared(Sharing{arity:sharing.arity,leg:sharing.leg,body:OverlayId::Computation(sharing.body)}), Self::Grafted(graft) => ret == Shape::Grafted(graft.children()) }
+    )]
     fn shape(&self) -> Shape
     {
         match *self {
@@ -1310,7 +1633,23 @@ impl ValueTypeNode
     /// This node's shape.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the same node kind, opaque family, occurrence metadata, share
+    ///   metadata and ordered graft children, without retaining a payload copy.
+    /// - provides: the family-neutral shape read by validation and erasure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every `ValueType` node kind preserves its family and
+    ///   scope metadata. Mixed-family occurrence refusals, shared-leg scoping
+    ///   and exact erasure observe mistagged opaque ids, lost arity or
+    ///   distance, and a changed child order.
+    /// - witness: `overlay::tests::validation_refuses_an_occurrence_of_another_family`
+    /// - witness: `overlay::tests::a_leg_counts_from_outside_its_share`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        ensures: |ret| match *self { Self::Opaque(id) => ret == Shape::Opaque(CoreId::ValueType(id)), Self::Bound(bound) => ret == Shape::Bound(bound), Self::Shared(sharing) => ret == Shape::Shared(Sharing{arity:sharing.arity,leg:sharing.leg,body:OverlayId::ValueType(sharing.body)}), Self::Grafted(ref graft) => ret == Shape::Grafted(graft.children()) }
+    )]
     fn shape(&self) -> Shape
     {
         match *self {
@@ -1327,7 +1666,23 @@ impl CompTypeNode
     /// This node's shape.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the same node kind, opaque family, occurrence metadata, share
+    ///   metadata and ordered graft children, without retaining a payload copy.
+    /// - provides: the family-neutral shape read by validation and erasure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every `CompType` node kind preserves its family and
+    ///   scope metadata. Mixed-family occurrence refusals, shared-leg scoping
+    ///   and exact erasure observe mistagged opaque ids, lost arity or
+    ///   distance, and a changed child order.
+    /// - witness: `overlay::tests::validation_refuses_an_occurrence_of_another_family`
+    /// - witness: `overlay::tests::a_leg_counts_from_outside_its_share`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        ensures: |ret| match *self { Self::Opaque(id) => ret == Shape::Opaque(CoreId::CompType(id)), Self::Bound(bound) => ret == Shape::Bound(bound), Self::Shared(sharing) => ret == Shape::Shared(Sharing{arity:sharing.arity,leg:sharing.leg,body:OverlayId::CompType(sharing.body)}), Self::Grafted(ref graft) => ret == Shape::Grafted(graft.children()) }
+    )]
     fn shape(&self) -> Shape
     {
         match *self {
@@ -1344,7 +1699,28 @@ impl ValueGraft
     /// The graft's children, left to right as the core former orders them.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; child ids are not resolved by this projection.
+    /// - ensures: precisely the constructor's child ids, with their families
+    ///   and left-to-right order; a nullary constructor has no children.
+    /// - provides: the child order shared by minting, validation and erasure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every constructor in this graft family is erased
+    ///   against a hand-built core arena in mint order. The observer includes
+    ///   payload, family and child order; a missing child, swapped operand or
+    ///   misclassified type/code edge changes the resulting arena.
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        ensures: |ret| ret == match *self {
+         Self::Variable{..}|Self::Constant(_)|Self::Unit|Self::Literal(_) => Children::Leaf,
+         Self::Pair(a,b) => Children::Two(OverlayId::Value(a),OverlayId::Value(b)),
+         Self::Injection(_,body)|Self::Lift{body,..} => Children::One(OverlayId::Value(body)),
+         Self::Thunk(body) => Children::One(OverlayId::Computation(body)),
+         Self::Quote(quoted) => Children::One(OverlayId::ValueType(quoted)),
+         Self::QuoteComputation(quoted) => Children::One(OverlayId::CompType(quoted)),
+        }
+    )]
     fn children(&self) -> Children
     {
         match *self {
@@ -1369,7 +1745,27 @@ impl CompGraft
     /// The graft's children, left to right as the core former orders them.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; child ids are not resolved by this projection.
+    /// - ensures: precisely the constructor's child ids, with their families
+    ///   and left-to-right order; a nullary constructor has no children.
+    /// - provides: the child order shared by minting, validation and erasure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every constructor in this graft family is erased
+    ///   against a hand-built core arena in mint order. The observer includes
+    ///   payload, family and child order; a missing child, swapped operand or
+    ///   misclassified type/code edge changes the resulting arena.
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        ensures: |ret| ret == match self {
+         Self::Lambda(body) => Children::One(OverlayId::Computation(body)),
+         Self::Application(head,argument) => Children::Two(OverlayId::Computation(head),OverlayId::Value(argument)),
+         Self::Return(value)|Self::Force(value) => Children::One(OverlayId::Value(value)),
+         Self::Bind(bound,body) => Children::Two(OverlayId::Computation(bound),OverlayId::Computation(body)),
+         Self::Case{scrutinee,on_left,on_right} => Children::Three(OverlayId::Value(scrutinee),OverlayId::Computation(on_left),OverlayId::Computation(on_right)),
+        }
+    )]
     fn children(self) -> Children
     {
         match self {
@@ -1399,7 +1795,27 @@ impl ValueTypeGraft
     /// The graft's children, left to right as the core former orders them.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; child ids are not resolved by this projection.
+    /// - ensures: precisely the constructor's child ids, with their families
+    ///   and left-to-right order; a nullary constructor has no children.
+    /// - provides: the child order shared by minting, validation and erasure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every constructor in this graft family is erased
+    ///   against a hand-built core arena in mint order. The observer includes
+    ///   payload, family and child order; a missing child, swapped operand or
+    ///   misclassified type/code edge changes the resulting arena.
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        ensures: |ret| ret == match *self {
+         Self::Base(_)|Self::Unit|Self::Universe{..}|Self::Abstract(_) => Children::Leaf,
+         Self::Product(a,b)|Self::Sum(a,b) => Children::Two(OverlayId::ValueType(a),OverlayId::ValueType(b)),
+         Self::Thunk(body) => Children::One(OverlayId::CompType(body)),
+         Self::Lift{inner,..} => Children::One(OverlayId::ValueType(inner)),
+         Self::Element{code,..} => Children::One(OverlayId::Value(code)),
+        }
+    )]
     fn children(&self) -> Children
     {
         match *self {
@@ -1421,7 +1837,25 @@ impl CompTypeGraft
     /// The graft's children, left to right as the core former orders them.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; child ids are not resolved by this projection.
+    /// - ensures: precisely the constructor's child ids, with their families
+    ///   and left-to-right order; a nullary constructor has no children.
+    /// - provides: the child order shared by minting, validation and erasure.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every constructor in this graft family is erased
+    ///   against a hand-built core arena in mint order. The observer includes
+    ///   payload, family and child order; a missing child, swapped operand or
+    ///   misclassified type/code edge changes the resulting arena.
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        ensures: |ret| ret == match *self {
+         Self::Returner(result) => Children::One(OverlayId::ValueType(result)),
+         Self::Arrow{domain,codomain}|Self::Pi{domain,codomain} => Children::Two(OverlayId::ValueType(domain),OverlayId::CompType(codomain)),
+         Self::Element{code,..} => Children::One(OverlayId::Value(code)),
+        }
+    )]
     fn children(&self) -> Children
     {
         match *self {
@@ -1482,6 +1916,35 @@ enum Check
 /// - [`OverlayRefusal::FamilyMismatch`] — the leg is of another family.
 /// - [`OverlayRefusal::SurplusOccurrence`] — the share already holds its arity.
 /// - [`OverlayRefusal::PositionOutOfOrder`] — the position is not the next.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the named frame may be absent, from another family, full,
+///   at a different next position or ready to advance. Exact ordered refusals
+///   and nested-share acceptance distinguish wrong distance, changed error
+///   precedence and an advance on refusal; the last representable position is
+///   checked without overflow.
+/// - witness: `overlay::tests::validation_refuses_an_open_node_set_by_name`
+/// - witness: `overlay::tests::validation_refuses_an_occurrence_of_another_family`
+/// - witness: `overlay::tests::validation_holds_each_share_to_its_arity_in_preorder`
+/// - witness: `overlay::tests::a_leg_counts_from_outside_its_share`
+/// - witness: `overlay::tests::occurrence_ceiling_and_refusal_precedence_preserve_the_frame`
+#[spec(
+    captures: [before = {
+    let at = frames.len().checked_sub(1).and_then(|last| last.checked_sub(usize::try_from(bound.distance.0).unwrap_or(usize::MAX)))?;
+    frames.get(at).copied().map(|frame| (at,frame))
+}],
+    ensures: |ret| match before {
+     None => ret == Err(OverlayRefusal::OpenReference{node}),
+     Some((at,frame)) => {
+     let expected = if frame.leg != node.family() { Err(OverlayRefusal::FamilyMismatch{node,occurrence:node.family(),leg:frame.leg}) }
+     else if frame.next.0 >= frame.arity.0 { Err(OverlayRefusal::SurplusOccurrence{node,arity:frame.arity}) }
+     else if bound.position != frame.next { Err(OverlayRefusal::PositionOutOfOrder{node,expected:frame.next,found:bound.position}) }
+     else { Ok(()) };
+     ret == expected && if ret.is_ok() { frames.get(at).is_some_and(|after| after.arity == frame.arity && after.leg == frame.leg && frame.next.0.checked_add(1) == Some(after.next.0)) }
+     else { frames.get(at) == Some(&frame) }
+     }
+    }
+)]
 fn occur(
     frames: &mut [Frame],
     node: OverlayId,
@@ -1569,10 +2032,11 @@ pub enum EraseFault
 /// - provides: the total, policy-free erasure every duplication stance is
 ///   measured against. It takes no policy, and its output is node for node the
 ///   arena a hand-built unshared term mints when built in the same order.
-/// - fails: [`EraseFault::Refused`] with the validation refusal before anything
-///   is minted, [`EraseFault::UnresolvedOpaque`] for an opaque node the core
-///   arena does not hold, and [`EraseFault::MachineInvariant`] when the walk's
-///   own stacks break.
+/// - fails: [`EraseFault::Refused`] with the structural validation refusal
+///   before anything is minted; otherwise [`EraseFault::UnresolvedOpaque`] for
+///   the first reachable opaque id absent from the entry core arena. Earlier
+///   grafts cannot make that id valid. [`EraseFault::MachineInvariant`] names a
+///   broken erasure stack.
 /// - panics: none.
 /// - intension: one core node per graft and none per occurrence, so the erased
 ///   term is a core DAG of the overlay's size even where its expansion is
@@ -1586,20 +2050,19 @@ pub enum EraseFault
 /// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surfaces are the validation gate, the four
-///   node kinds and the graft arms, separated by every former of every family
-///   erased against a hand-built arena, a refusal of each kind leaving the core
-///   arena unchanged, and the deep cases erased and run through the unshared
-///   pipeline beside their hand-built references inside a small stack.
+/// - hypothesis: L3 — a Value root may validate, refuse structurally, or fail
+///   late on an opaque core id. Exact hand-built erased arenas and unchanged
+///   entry marks distinguish wrong child order, a wrong family and partial
+///   output escaping a failed transaction.
 /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
 /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
-/// - witness:
-///   `deep_evaluation::deep_evaluation::an_erased_value_chain_evaluates_byte_for_byte_as_the_unshared_one`
-/// - witness:
-///   `deep_readback::deep_readback::an_erased_value_chain_reads_back_byte_for_byte_as_the_unshared_one`
-/// - witness:
-///   `teardown::teardown::an_erased_deep_overlay_equals_the_unshared_chain_inside_a_small_stack`
+/// - witness: `overlay::tests::opaque_erasure_does_not_resurrect_a_missing_core_id`
+/// - witness: `overlay::tests::structural_refusals_precede_opaque_preflight_failures`
 #[inline]
+#[spec(
+    captures: [mark = core.watermark()],
+    ensures: |ret| ret.map_or_else(|_| core.watermark() == mark, |id| core.value(id).is_some())
+)]
 pub fn erase_value(
     overlay: &Overlay,
     root: OverlayValueId,
@@ -1631,18 +2094,17 @@ pub fn erase_value(
 /// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is the computation root, separated
-///   by a shared case over every computation former, a deep bind chain whose
-///   base is opaque and whose shared leg sits under every binder, and a deep
-///   curried application sharing its argument.
+/// - hypothesis: L3 — a Computation root may validate, refuse structurally, or
+///   fail late on an opaque core id. Exact hand-built erased arenas and
+///   unchanged entry marks distinguish wrong child order, a wrong family and
+///   partial output escaping a failed transaction.
 /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
-/// - witness:
-///   `deep_evaluation::deep_evaluation::an_erased_bind_chain_evaluates_byte_for_byte_as_the_unshared_one`
-/// - witness:
-///   `deep_evaluation::deep_evaluation::an_erased_curried_application_evaluates_byte_for_byte_as_the_unshared_one`
-/// - witness:
-///   `deep_readback::deep_readback::an_erased_suspension_chain_reads_back_byte_for_byte_as_the_unshared_one`
+/// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
 #[inline]
+#[spec(
+    captures: [mark = core.watermark()],
+    ensures: |ret| ret.map_or_else(|_| core.watermark() == mark, |id| core.computation(id).is_some())
+)]
 pub fn erase_computation(
     overlay: &Overlay,
     root: OverlayCompId,
@@ -1674,12 +2136,17 @@ pub fn erase_computation(
 /// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is the value-type root, separated by
-///   every value-type former and a deep chain of lifts.
+/// - hypothesis: L3 — a `ValueType` root may validate, refuse structurally, or
+///   fail late on an opaque core id. Exact hand-built erased arenas and
+///   unchanged entry marks distinguish wrong child order, a wrong family and
+///   partial output escaping a failed transaction.
 /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
-/// - witness:
-///   `teardown::teardown::an_erased_deep_overlay_equals_the_unshared_chain_inside_a_small_stack`
+/// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
 #[inline]
+#[spec(
+    captures: [mark = core.watermark()],
+    ensures: |ret| ret.map_or_else(|_| core.watermark() == mark, |id| core.value_type(id).is_some())
+)]
 pub fn erase_value_type(
     overlay: &Overlay,
     root: OverlayValueTypeId,
@@ -1711,11 +2178,17 @@ pub fn erase_value_type(
 /// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surface is the computation-type root,
-///   separated by a share of a value type among the domains of a dependent and
-///   a non-dependent function type.
+/// - hypothesis: L3 — a `CompType` root may validate, refuse structurally, or
+///   fail late on an opaque core id. Exact hand-built erased arenas and
+///   unchanged entry marks distinguish wrong child order, a wrong family and
+///   partial output escaping a failed transaction.
 /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+/// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
 #[inline]
+#[spec(
+    captures: [mark = core.watermark()],
+    ensures: |ret| ret.map_or_else(|_| core.watermark() == mark, |id| core.comp_type(id).is_some())
+)]
 pub fn erase_comp_type(
     overlay: &Overlay,
     root: OverlayCompTypeId,
@@ -1744,6 +2217,18 @@ pub fn erase_comp_type(
 /// - [`EraseFault::Refused`] — the overlay does not validate from `root`.
 /// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
 /// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all four validated root families erase into the supplied
+///   arena, while malformed overlays and missing opaque nodes refuse
+///   atomically. Hand-built outputs and late-failure rollback distinguish
+///   family confusion, duplicated legs and leaked speculative nodes.
+/// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+/// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+#[spec(
+    captures: [mark = core.watermark()],
+    ensures: |ret| ret.map_or_else(|_| core.watermark() == mark, |id| matches!((id,root),(CoreId::Value(_),OverlayId::Value(_))|(CoreId::Computation(_),OverlayId::Computation(_))|(CoreId::ValueType(_),OverlayId::ValueType(_))|(CoreId::CompType(_),OverlayId::CompType(_))) && (match id { CoreId::Value(id) => core.value(id).is_some(), CoreId::Computation(id) => core.computation(id).is_some(), CoreId::ValueType(id) => core.value_type(id).is_some(), CoreId::CompType(id) => core.comp_type(id).is_some() }))
+)]
 fn erase(
     overlay: &Overlay,
     root: OverlayId,
@@ -1812,6 +2297,21 @@ impl Erased
 /// - [`EraseFault::Refused`] — the overlay does not validate from `root`.
 /// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
 /// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
+///
+/// # Adequacy
+/// - hypothesis: L3 — erasure may retain share legs in postorder or discard
+///   that side table. Nested mixed-family shares are compared with exact core
+///   ids and constructors; a missing, reordered or duplicated retained leg and
+///   a late opaque failure alter the retained table or rollback mark.
+/// - witness: `overlay::tests::erasure_keeps_nested_legs_in_postorder_and_rolls_back_late_failures`
+/// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+/// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+#[spec(
+    captures: [mark = core.watermark()],
+    ensures: |ret| ret.as_ref().map_or_else(|_| core.watermark() == mark, |erased|
+        matches!((erased.root,root),(CoreId::Value(_),OverlayId::Value(_))|(CoreId::Computation(_),OverlayId::Computation(_))|(CoreId::ValueType(_),OverlayId::ValueType(_))|(CoreId::CompType(_),OverlayId::CompType(_))) && (match erased.root { CoreId::Value(id) => core.value(id).is_some(), CoreId::Computation(id) => core.computation(id).is_some(), CoreId::ValueType(id) => core.value_type(id).is_some(), CoreId::CompType(id) => core.comp_type(id).is_some() })
+        && erased.legs.iter().all(|&id| match id { CoreId::Value(id) => core.value(id).is_some(), CoreId::Computation(id) => core.computation(id).is_some(), CoreId::ValueType(id) => core.value_type(id).is_some(), CoreId::CompType(id) => core.comp_type(id).is_some() }))
+)]
 pub fn erase_with_legs(
     overlay: &Overlay,
     root: OverlayId,
@@ -1836,6 +2336,21 @@ pub fn erase_with_legs(
 /// - [`EraseFault::Refused`] — the overlay does not validate from `root`.
 /// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
 /// - [`EraseFault::MachineInvariant`] — the walk's own stacks broke.
+///
+/// # Adequacy
+/// - hypothesis: L3 — erasure may retain share legs in postorder or discard
+///   that side table. Nested mixed-family shares are compared with exact core
+///   ids and constructors; a missing, reordered or duplicated retained leg and
+///   a late opaque failure alter the retained table or rollback mark.
+/// - witness: `overlay::tests::erasure_keeps_nested_legs_in_postorder_and_rolls_back_late_failures`
+/// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+/// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+#[spec(
+    captures: [mark = core.watermark()],
+    ensures: |ret| ret.as_ref().map_or_else(|_| core.watermark() == mark, |erased|
+        matches!((erased.root,root),(CoreId::Value(_),OverlayId::Value(_))|(CoreId::Computation(_),OverlayId::Computation(_))|(CoreId::ValueType(_),OverlayId::ValueType(_))|(CoreId::CompType(_),OverlayId::CompType(_))) && (match erased.root { CoreId::Value(id) => core.value(id).is_some(), CoreId::Computation(id) => core.computation(id).is_some(), CoreId::ValueType(id) => core.value_type(id).is_some(), CoreId::CompType(id) => core.comp_type(id).is_some() })
+        && erased.legs.iter().all(|&id| match id { CoreId::Value(id) => core.value(id).is_some(), CoreId::Computation(id) => core.computation(id).is_some(), CoreId::ValueType(id) => core.value_type(id).is_some(), CoreId::CompType(id) => core.comp_type(id).is_some() }) && (keeping == Keeping::Legs || erased.legs.is_empty()))
+)]
 fn erase_keeping(
     overlay: &Overlay,
     root: OverlayId,
@@ -1843,7 +2358,23 @@ fn erase_keeping(
     keeping: Keeping,
 ) -> Result<Erased, EraseFault>
 {
-    overlay.validate(root).map_err(EraseFault::Refused)?;
+    let mut opaque = Ok(());
+    overlay
+        .validate_with(root, |node, held| {
+            if opaque.is_ok() {
+                let present = match held {
+                    | CoreId::Value(id) => core.value(id).is_some(),
+                    | CoreId::Computation(id) => core.computation(id).is_some(),
+                    | CoreId::ValueType(id) => core.value_type(id).is_some(),
+                    | CoreId::CompType(id) => core.comp_type(id).is_some(),
+                };
+                if !present {
+                    opaque = Err(EraseFault::UnresolvedOpaque { node });
+                }
+            }
+        })
+        .map_err(EraseFault::Refused)?;
+    opaque?;
     let mark = core.watermark();
     let mut erasure = Erasure {
         overlay,
@@ -1906,17 +2437,31 @@ impl Erasure<'_>
     /// Drive the walk until its steps run out.
     ///
     /// # Specification
-    /// - requires: the overlay validates from the root the steps hold.
+    /// - requires: the overlay validates from the root the steps hold, and
+    ///   every reachable opaque id resolved before this walk began.
     /// - ensures: the one erased root, with no leg left bound.
     /// - provides: the heap-only drive; depth costs steps, never host frames.
-    /// - fails: [`EraseFault::UnresolvedOpaque`] for an opaque node the core
-    ///   arena does not hold, and [`EraseFault::MachineInvariant`] when a stack
-    ///   breaks.
+    /// - fails: [`EraseFault::MachineInvariant`] when a stack breaks.
     /// - panics: none.
     ///
     /// # Errors
-    /// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
     /// - [`EraseFault::MachineInvariant`] — a stack broke.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the task stack starts at a validated, opaque-checked
+    ///   root; broken stack states refuse rather than manufacture a root. Exact
+    ///   erased arenas, retained-leg order and explicit incomplete-stack probes
+    ///   distinguish lost binds, leftover results, wrong mint order and
+    ///   acceptance without a result.
+    /// - witness: `overlay::tests::erasure_rejects_incomplete_or_mistyped_stacks`
+    /// - witness: `overlay::tests::erasure_keeps_nested_legs_in_postorder_and_rolls_back_late_failures`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        ensures: |ret| ret.is_err() || (self.steps.is_empty() && self.results.is_empty() && self.legs.is_empty()
+         && ret.is_ok_and(|id| match id { CoreId::Value(id) => self.core.value(id).is_some(), CoreId::Computation(id) => self.core.computation(id).is_some(), CoreId::ValueType(id) => self.core.value_type(id).is_some(), CoreId::CompType(id) => self.core.comp_type(id).is_some() })
+         && (self.keeping == Keeping::Legs || self.kept.is_empty()))
+    )]
     fn run(&mut self) -> Result<CoreId, EraseFault>
     {
         while let Some(step) = self.steps.pop() {
@@ -1960,21 +2505,48 @@ impl Erasure<'_>
     /// Erase one node, or queue what erasing it takes.
     ///
     /// # Specification
-    /// - requires: `node` is reachable from a validated root.
+    /// - requires: `node` is reachable from a validated root whose opaque ids
+    ///   all resolved in the core arena before erasure began.
     /// - ensures: an opaque node or an occurrence pushes its core id; a share
     ///   queues its leg, the bind, its body and the unbind, in that order; a
     ///   graft queues its children left to right and then its own assembly.
     /// - provides: the post-order the minting order follows.
-    /// - fails: [`EraseFault::UnresolvedOpaque`] for an opaque node the core
-    ///   arena does not hold, [`EraseFault::Refused`] for a node that does not
-    ///   resolve, and [`EraseFault::MachineInvariant`] for an occurrence no
-    ///   bound leg answers.
+    /// - fails: [`EraseFault::Refused`] for a node that does not resolve, and
+    ///   [`EraseFault::MachineInvariant`] for an occurrence no bound leg
+    ///   answers.
     /// - panics: none.
     ///
     /// # Errors
-    /// - [`EraseFault::UnresolvedOpaque`] — an opaque node does not resolve.
     /// - [`EraseFault::Refused`] — `node` does not resolve.
     /// - [`EraseFault::MachineInvariant`] — no bound leg answers.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the next node can be opaque, bound, shared or
+    ///   grafted, with unresolved overlay and missing-leg failures. Exact
+    ///   minted arenas and nested retained-leg order distinguish premature
+    ///   minting, wrong binder scope, wrong task reversal and a fabricated
+    ///   result.
+    /// - witness: `overlay::tests::erasure_rejects_incomplete_or_mistyped_stacks`
+    /// - witness: `overlay::tests::erasure_keeps_nested_legs_in_postorder_and_rolls_back_late_failures`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        captures: [mark = self.core.watermark(), results = self.results.len(), steps = self.steps.len()],
+        ensures: |ret| self.core.watermark() == mark && match self.overlay.shape(node) {
+         Err(fault) => ret == Err(EraseFault::Refused(fault)) && self.results.len() == results && self.steps.len() == steps,
+         Ok(Shape::Opaque(held)) => ret == Ok(()) && results.checked_add(1) == Some(self.results.len()) && self.results.last() == Some(&held) && self.steps.len() == steps,
+         Ok(Shape::Bound(bound)) => {
+         let leg = self.legs.len().checked_sub(1).and_then(|last| last.checked_sub(usize::try_from(bound.distance.0).unwrap_or(usize::MAX))).and_then(|at| self.legs.get(at));
+         match leg { Some(leg) => ret == Ok(()) && results.checked_add(1) == Some(self.results.len()) && self.results.last() == Some(leg) && self.steps.len() == steps,
+         None => ret == Err(EraseFault::MachineInvariant) && self.results.len() == results && self.steps.len() == steps }
+         },
+         Ok(Shape::Shared(sharing)) => ret == Ok(()) && self.results.len() == results && self.steps.get(steps..) == Some(&[Step::Unbind,Step::Enter(sharing.body),Step::Bind,Step::Enter(sharing.leg)]),
+         Ok(Shape::Grafted(children)) => ret == Ok(()) && self.results.len() == results
+         && steps.checked_add(1).and_then(|length| length.checked_add(match children { Children::Leaf => 0, Children::One(_) => 1, Children::Two(..) => 2, Children::Three(..) => 3 })) == Some(self.steps.len())
+         && self.steps.get(steps) == Some(&Step::Assemble(node))
+         && self.steps.iter().skip(steps.saturating_add(1)).rev().zip((match children { Children::Leaf => [None,None,None], Children::One(a) => [Some(a),None,None], Children::Two(a,b) => [Some(a),Some(b),None], Children::Three(a,b,c) => [Some(a),Some(b),Some(c)] }).into_iter().flatten()).all(|(&task,child)| task == Step::Enter(child)),
+        }
+    )]
     fn enter(
         &mut self,
         node: OverlayId,
@@ -1983,15 +2555,6 @@ impl Erasure<'_>
         let shape = self.overlay.shape(node).map_err(EraseFault::Refused)?;
         match shape {
             | Shape::Opaque(held) => {
-                let present = match held {
-                    | CoreId::Value(id) => self.core.value(id).is_some(),
-                    | CoreId::Computation(id) => self.core.computation(id).is_some(),
-                    | CoreId::ValueType(id) => self.core.value_type(id).is_some(),
-                    | CoreId::CompType(id) => self.core.comp_type(id).is_some(),
-                };
-                if !present {
-                    return Err(EraseFault::UnresolvedOpaque { node });
-                }
                 self.results.push(held);
             },
             | Shape::Bound(bound) => {
@@ -2035,6 +2598,26 @@ impl Erasure<'_>
     ///
     /// # Errors
     /// - [`EraseFault::MachineInvariant`] — the graft or a child is missing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a graft consumes already erased children in
+    ///   constructor order; a missing graft or mistyped stack refuses before
+    ///   minting its parent. Exact whole-arena erasure and malformed-stack
+    ///   errors distinguish selecting another family, wrong arity and a
+    ///   partially minted parent.
+    /// - witness: `overlay::tests::erasure_rejects_incomplete_or_mistyped_stacks`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        captures: [mark = self.core.watermark(), results = self.results.len()],
+        ensures: |ret| match ret {
+         Ok(id) => (matches!((id,node),(CoreId::Value(_),OverlayId::Value(_))|(CoreId::Computation(_),OverlayId::Computation(_))|(CoreId::ValueType(_),OverlayId::ValueType(_))|(CoreId::CompType(_),OverlayId::CompType(_)))) && (match id { CoreId::Value(id) => self.core.value(id).is_some(), CoreId::Computation(id) => self.core.computation(id).is_some(), CoreId::ValueType(id) => self.core.value_type(id).is_some(), CoreId::CompType(id) => self.core.comp_type(id).is_some() })
+          && self.overlay.shape(node).is_ok_and(|shape| match shape {
+           Shape::Grafted(children) => results.checked_sub(match children { Children::Leaf => 0, Children::One(_) => 1, Children::Two(..) => 2, Children::Three(..) => 3 }) == Some(self.results.len()), _ => false,
+          }),
+         Err(fault) => fault == EraseFault::MachineInvariant && self.core.watermark() == mark && self.results.len() <= results,
+        }
+    )]
     fn assemble(
         &mut self,
         node: OverlayId,
@@ -2101,6 +2684,35 @@ impl Erasure<'_>
     ///
     /// # Errors
     /// - [`EraseFault::MachineInvariant`] — a child is missing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each value graft reads its topmost erased children,
+    ///   rightmost first. A hand-built arena checks every constructor, payload
+    ///   and order; empty and wrong-family stacks refuse without minting a
+    ///   parent, distinguishing operand swaps, lost payloads and partial
+    ///   assembly.
+    /// - witness: `overlay::tests::erasure_rejects_incomplete_or_mistyped_stacks`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        captures: [mark = self.core.watermark(), results = self.results.len(), children = [self.results.last().copied(),self.results.len().checked_sub(2).and_then(|at|self.results.get(at)).copied(),self.results.len().checked_sub(3).and_then(|at|self.results.get(at)).copied()]],
+        ensures: |ret| match ret {
+         Ok(id) => results.checked_sub(match graft.children() { Children::Leaf => 0, Children::One(_) => 1, Children::Two(..) => 2, Children::Three(..) => 3 }) == Some(self.results.len())
+         && self.core.value(id).is_some_and(|actual| match *graft {
+            ValueGraft::Variable{zone,index} => matches!(*actual, gandr_core_term::Value::Variable{zone:actual_zone,index:actual_index} if zone == actual_zone && index == actual_index),
+            ValueGraft::Constant(index) => matches!(*actual, gandr_core_term::Value::Constant(actual) if index == actual),
+            ValueGraft::Unit => matches!(*actual, gandr_core_term::Value::Unit),
+            ValueGraft::Literal(ref expected) => matches!(*actual, gandr_core_term::Value::Literal(ref actual) if expected == actual),
+            ValueGraft::Pair(..) => matches!(*actual, gandr_core_term::Value::Pair(first,second) if children[1] == Some(CoreId::Value(first)) && children[0] == Some(CoreId::Value(second))),
+            ValueGraft::Injection(side,_) => matches!(*actual, gandr_core_term::Value::Injection(actual,body) if side == actual && children[0] == Some(CoreId::Value(body))),
+            ValueGraft::Thunk(_) => matches!(*actual, gandr_core_term::Value::Thunk(body) if children[0] == Some(CoreId::Computation(body))),
+            ValueGraft::Lift{ref target,..} => matches!(*actual, gandr_core_term::Value::Lift{target:ref actual,body} if target == actual && children[0] == Some(CoreId::Value(body))),
+            ValueGraft::Quote(_) => matches!(*actual, gandr_core_term::Value::Quote(quoted) if children[0] == Some(CoreId::ValueType(quoted))),
+            ValueGraft::QuoteComputation(_) => matches!(*actual, gandr_core_term::Value::QuoteComputation(quoted) if children[0] == Some(CoreId::CompType(quoted))),
+         }),
+         Err(fault) => fault == EraseFault::MachineInvariant && self.core.watermark() == mark && self.results.len() <= results,
+        }
+    )]
     fn assemble_value(
         &mut self,
         graft: &ValueGraft,
@@ -2152,6 +2764,31 @@ impl Erasure<'_>
     ///
     /// # Errors
     /// - [`EraseFault::MachineInvariant`] — a child is missing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each computation graft reads its topmost erased
+    ///   children, rightmost first. A hand-built arena checks every
+    ///   constructor, payload and order; empty and wrong-family stacks refuse
+    ///   without minting a parent, distinguishing operand swaps, lost payloads
+    ///   and partial assembly.
+    /// - witness: `overlay::tests::erasure_rejects_incomplete_or_mistyped_stacks`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        captures: [mark = self.core.watermark(), results = self.results.len(), children = [self.results.last().copied(),self.results.len().checked_sub(2).and_then(|at|self.results.get(at)).copied(),self.results.len().checked_sub(3).and_then(|at|self.results.get(at)).copied()]],
+        ensures: |ret| match ret {
+         Ok(id) => results.checked_sub(match graft.children() { Children::Leaf => 0, Children::One(_) => 1, Children::Two(..) => 2, Children::Three(..) => 3 }) == Some(self.results.len())
+         && self.core.computation(id).is_some_and(|actual| match (graft,actual) {
+         (CompGraft::Lambda(_),&gandr_core_term::Computation::Lambda(body)) => children[0] == Some(CoreId::Computation(body)),
+        (CompGraft::Application(..),&gandr_core_term::Computation::Application(head,argument)) => children[1] == Some(CoreId::Computation(head)) && children[0] == Some(CoreId::Value(argument)),
+        (CompGraft::Return(_),&gandr_core_term::Computation::Return(value)) | (CompGraft::Force(_),&gandr_core_term::Computation::Force(value)) => children[0] == Some(CoreId::Value(value)),
+        (CompGraft::Bind(..),&gandr_core_term::Computation::Bind(bound,body)) => children[1] == Some(CoreId::Computation(bound)) && children[0] == Some(CoreId::Computation(body)),
+        (CompGraft::Case{..},&gandr_core_term::Computation::Case{scrutinee,on_left,on_right}) => children[2] == Some(CoreId::Value(scrutinee)) && children[1] == Some(CoreId::Computation(on_left)) && children[0] == Some(CoreId::Computation(on_right)),
+         _ => false,
+         }),
+         Err(fault) => fault == EraseFault::MachineInvariant && self.core.watermark() == mark && self.results.len() <= results,
+        }
+    )]
     fn assemble_computation(
         &mut self,
         graft: CompGraft,
@@ -2202,6 +2839,34 @@ impl Erasure<'_>
     ///
     /// # Errors
     /// - [`EraseFault::MachineInvariant`] — a child is missing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each value-type graft reads its topmost erased
+    ///   children, rightmost first. A hand-built arena checks every
+    ///   constructor, payload and order; empty and wrong-family stacks refuse
+    ///   without minting a parent, distinguishing operand swaps, lost payloads
+    ///   and partial assembly.
+    /// - witness: `overlay::tests::erasure_rejects_incomplete_or_mistyped_stacks`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        captures: [mark = self.core.watermark(), results = self.results.len(), children = [self.results.last().copied(),self.results.len().checked_sub(2).and_then(|at|self.results.get(at)).copied(),self.results.len().checked_sub(3).and_then(|at|self.results.get(at)).copied()]],
+        ensures: |ret| match ret {
+         Ok(id) => results.checked_sub(match graft.children() { Children::Leaf => 0, Children::One(_) => 1, Children::Two(..) => 2, Children::Three(..) => 3 }) == Some(self.results.len())
+         && self.core.value_type(id).is_some_and(|actual| match *graft {
+            ValueTypeGraft::Base(base) => matches!(*actual, gandr_core_term::ValueType::Base(actual) if base == actual),
+            ValueTypeGraft::Unit => matches!(*actual, gandr_core_term::ValueType::Unit),
+            ValueTypeGraft::Product(..) => matches!(*actual, gandr_core_term::ValueType::Product(first,second) if children[1] == Some(CoreId::ValueType(first)) && children[0] == Some(CoreId::ValueType(second))),
+            ValueTypeGraft::Sum(..) => matches!(*actual, gandr_core_term::ValueType::Sum(first,second) if children[1] == Some(CoreId::ValueType(first)) && children[0] == Some(CoreId::ValueType(second))),
+            ValueTypeGraft::Thunk(_) => matches!(*actual, gandr_core_term::ValueType::Thunk(body) if children[0] == Some(CoreId::CompType(body))),
+            ValueTypeGraft::Universe{sort,ref level} => matches!(*actual, gandr_core_term::ValueType::Universe{sort:actual_sort,level:ref actual_level} if sort == actual_sort && level == actual_level),
+            ValueTypeGraft::Lift{ref target,..} => matches!(*actual, gandr_core_term::ValueType::Lift{inner,target:ref actual} if target == actual && children[0] == Some(CoreId::ValueType(inner))),
+            ValueTypeGraft::Element{ref target,..} => matches!(*actual, gandr_core_term::ValueType::Element{code,target:ref actual} if target == actual && children[0] == Some(CoreId::Value(code))),
+            ValueTypeGraft::Abstract(atom) => matches!(*actual, gandr_core_term::ValueType::Abstract(actual) if atom == actual),
+         }),
+         Err(fault) => fault == EraseFault::MachineInvariant && self.core.watermark() == mark && self.results.len() <= results,
+        }
+    )]
     fn assemble_value_type(
         &mut self,
         graft: &ValueTypeGraft,
@@ -2252,6 +2917,29 @@ impl Erasure<'_>
     ///
     /// # Errors
     /// - [`EraseFault::MachineInvariant`] — a child is missing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each comp-type graft reads its topmost erased
+    ///   children, rightmost first. A hand-built arena checks every
+    ///   constructor, payload and order; empty and wrong-family stacks refuse
+    ///   without minting a parent, distinguishing operand swaps, lost payloads
+    ///   and partial assembly.
+    /// - witness: `overlay::tests::erasure_rejects_incomplete_or_mistyped_stacks`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        captures: [mark = self.core.watermark(), results = self.results.len(), children = [self.results.last().copied(),self.results.len().checked_sub(2).and_then(|at|self.results.get(at)).copied(),self.results.len().checked_sub(3).and_then(|at|self.results.get(at)).copied()]],
+        ensures: |ret| match ret {
+         Ok(id) => results.checked_sub(match graft.children() { Children::Leaf => 0, Children::One(_) => 1, Children::Two(..) => 2, Children::Three(..) => 3 }) == Some(self.results.len())
+         && self.core.comp_type(id).is_some_and(|actual| match *graft {
+            CompTypeGraft::Returner(_) => matches!(*actual, gandr_core_term::CompType::Returner(result) if children[0] == Some(CoreId::ValueType(result))),
+            CompTypeGraft::Arrow{..} => matches!(*actual, gandr_core_term::CompType::Arrow{domain,codomain} if children[1] == Some(CoreId::ValueType(domain)) && children[0] == Some(CoreId::CompType(codomain))),
+            CompTypeGraft::Pi{..} => matches!(*actual, gandr_core_term::CompType::Pi{domain,codomain} if children[1] == Some(CoreId::ValueType(domain)) && children[0] == Some(CoreId::CompType(codomain))),
+            CompTypeGraft::Element{ref target,..} => matches!(*actual, gandr_core_term::CompType::Element{code,target:ref actual} if target == actual && children[0] == Some(CoreId::Value(code))),
+         }),
+         Err(fault) => fault == EraseFault::MachineInvariant && self.core.watermark() == mark && self.results.len() <= results,
+        }
+    )]
     fn assemble_comp_type(
         &mut self,
         graft: &CompTypeGraft,
@@ -2291,6 +2979,18 @@ impl Erasure<'_>
     ///
     /// # Errors
     /// - [`EraseFault::MachineInvariant`] — no value is on top.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a Value pop may see its own family, another family or
+    ///   an empty stack. Exact erasure exercises successful ordering; malformed
+    ///   stacks witness refusal and consumption, distinguishing accepting the
+    ///   wrong family, peeking instead of popping and dropping two results.
+    /// - witness: `overlay::tests::erasure_rejects_incomplete_or_mistyped_stacks`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        captures: [before = self.results.last().copied(), length = self.results.len()],
+        ensures: |ret| self.results.len() == length.saturating_sub(1) && ret == match before { Some(CoreId::Value(id)) => Ok(id), _ => Err(EraseFault::MachineInvariant) }
+    )]
     fn value(&mut self) -> Result<ValueId, EraseFault>
     {
         let Some(CoreId::Value(id)) = self.results.pop()
@@ -2312,6 +3012,19 @@ impl Erasure<'_>
     ///
     /// # Errors
     /// - [`EraseFault::MachineInvariant`] — no computation is on top.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a Computation pop may see its own family, another
+    ///   family or an empty stack. Exact erasure exercises successful ordering;
+    ///   malformed stacks witness refusal and consumption, distinguishing
+    ///   accepting the wrong family, peeking instead of popping and dropping
+    ///   two results.
+    /// - witness: `overlay::tests::erasure_rejects_incomplete_or_mistyped_stacks`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        captures: [before = self.results.last().copied(), length = self.results.len()],
+        ensures: |ret| self.results.len() == length.saturating_sub(1) && ret == match before { Some(CoreId::Computation(id)) => Ok(id), _ => Err(EraseFault::MachineInvariant) }
+    )]
     fn computation(&mut self) -> Result<ComputationId, EraseFault>
     {
         let Some(CoreId::Computation(id)) = self.results.pop()
@@ -2333,6 +3046,19 @@ impl Erasure<'_>
     ///
     /// # Errors
     /// - [`EraseFault::MachineInvariant`] — no value type is on top.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `ValueType` pop may see its own family, another
+    ///   family or an empty stack. Exact erasure exercises successful ordering;
+    ///   malformed stacks witness refusal and consumption, distinguishing
+    ///   accepting the wrong family, peeking instead of popping and dropping
+    ///   two results.
+    /// - witness: `overlay::tests::erasure_rejects_incomplete_or_mistyped_stacks`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        captures: [before = self.results.last().copied(), length = self.results.len()],
+        ensures: |ret| self.results.len() == length.saturating_sub(1) && ret == match before { Some(CoreId::ValueType(id)) => Ok(id), _ => Err(EraseFault::MachineInvariant) }
+    )]
     fn value_type(&mut self) -> Result<ValueTypeId, EraseFault>
     {
         let Some(CoreId::ValueType(id)) = self.results.pop()
@@ -2354,6 +3080,19 @@ impl Erasure<'_>
     ///
     /// # Errors
     /// - [`EraseFault::MachineInvariant`] — no computation type is on top.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a `CompType` pop may see its own family, another
+    ///   family or an empty stack. Exact erasure exercises successful ordering;
+    ///   malformed stacks witness refusal and consumption, distinguishing
+    ///   accepting the wrong family, peeking instead of popping and dropping
+    ///   two results.
+    /// - witness: `overlay::tests::erasure_rejects_incomplete_or_mistyped_stacks`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        captures: [before = self.results.last().copied(), length = self.results.len()],
+        ensures: |ret| self.results.len() == length.saturating_sub(1) && ret == match before { Some(CoreId::CompType(id)) => Ok(id), _ => Err(EraseFault::MachineInvariant) }
+    )]
     fn comp_type(&mut self) -> Result<CompTypeId, EraseFault>
     {
         let Some(CoreId::CompType(id)) = self.results.pop()
@@ -2369,6 +3108,7 @@ mod tests
 {
     use alloc::string::String;
 
+    use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Sort;
     use gandr_core_term::Zone;
@@ -2419,6 +3159,18 @@ mod tests
     /// - ensures: a fresh value leaf.
     /// - provides: the legs and leaves the validation witnesses share.
     /// - panics: when a leaf mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixture mints a fresh node with exactly the
+    ///   supplied scope or child metadata. Validation distinguishes open and
+    ///   closed scopes, ordered positions and implicit reuse; erasure observes
+    ///   the resulting constructors rather than merely successful allocation.
+    /// - witness: `overlay::tests::validation_refuses_a_node_reached_twice`
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    #[spec(
+        captures: [length = overlay.values.len()],
+        ensures: |ret| usize::try_from(ret.0).ok() == Some(length) && length.checked_add(1) == Some(overlay.values.len()) && overlay.value(ret) == Some(&ValueNode::Grafted(ValueGraft::Unit))
+    )]
     fn unit(overlay: &mut Overlay) -> OverlayValueId
     {
         overlay
@@ -2433,6 +3185,18 @@ mod tests
     /// - ensures: a fresh value occurrence.
     /// - provides: the occurrences the validation witnesses place.
     /// - panics: when a leaf mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixture mints a fresh node with exactly the
+    ///   supplied scope or child metadata. Validation distinguishes open and
+    ///   closed scopes, ordered positions and implicit reuse; erasure observes
+    ///   the resulting constructors rather than merely successful allocation.
+    /// - witness: `overlay::tests::validation_refuses_an_open_node_set_by_name`
+    /// - witness: `overlay::tests::validation_holds_each_share_to_its_arity_in_preorder`
+    #[spec(
+        captures: [length = overlay.values.len()],
+        ensures: |ret| usize::try_from(ret.0).ok() == Some(length) && length.checked_add(1) == Some(overlay.values.len()) && overlay.value(ret) == Some(&ValueNode::Bound(Bound{distance,position}))
+    )]
     fn occurrence(
         overlay: &mut Overlay,
         distance: ShareDistance,
@@ -2451,6 +3215,18 @@ mod tests
     /// - ensures: a fresh value share.
     /// - provides: the shares the validation witnesses build.
     /// - panics: when the mint is refused, which the requirement excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixture mints a fresh node with exactly the
+    ///   supplied scope or child metadata. Validation distinguishes open and
+    ///   closed scopes, ordered positions and implicit reuse; erasure observes
+    ///   the resulting constructors rather than merely successful allocation.
+    /// - witness: `overlay::tests::validation_holds_each_share_to_its_arity_in_preorder`
+    /// - witness: `overlay::tests::a_leg_counts_from_outside_its_share`
+    #[spec(
+        captures: [length = overlay.values.len()],
+        ensures: |ret| usize::try_from(ret.0).ok() == Some(length) && length.checked_add(1) == Some(overlay.values.len()) && overlay.value(ret) == Some(&ValueNode::Shared(Sharing{arity,leg,body}))
+    )]
     fn share(
         overlay: &mut Overlay,
         arity: ShareArity,
@@ -2470,6 +3246,18 @@ mod tests
     /// - ensures: a fresh grafted pair.
     /// - provides: the two-child body the occurrence witnesses order.
     /// - panics: when the mint is refused, which the requirement excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixture mints a fresh node with exactly the
+    ///   supplied scope or child metadata. Validation distinguishes open and
+    ///   closed scopes, ordered positions and implicit reuse; erasure observes
+    ///   the resulting constructors rather than merely successful allocation.
+    /// - witness: `overlay::tests::validation_refuses_a_node_reached_twice`
+    /// - witness: `overlay::tests::validation_holds_each_share_to_its_arity_in_preorder`
+    #[spec(
+        captures: [length = overlay.values.len()],
+        ensures: |ret| usize::try_from(ret.0).ok() == Some(length) && length.checked_add(1) == Some(overlay.values.len()) && overlay.value(ret) == Some(&ValueNode::Grafted(ValueGraft::Pair(first,second)))
+    )]
     fn pair(
         overlay: &mut Overlay,
         first: OverlayValueId,
@@ -2680,6 +3468,22 @@ mod tests
     /// - ensures: a fresh returner over a fresh value occurrence.
     /// - provides: the computation body whose occurrence is a value.
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixture returns an innermost value occurrence
+    ///   from a computation body. The exact family-mismatch refusal
+    ///   distinguishes a computation occurrence from the intended value
+    ///   occurrence, a wrong distance and a missing return constructor.
+    /// - witness: `overlay::tests::validation_refuses_an_occurrence_of_another_family`
+    #[spec(
+        captures: [mark = overlay.watermark()],
+        ensures: |ret| usize::try_from(ret.0).ok() == Some(mark.computations)
+         && mark.computations.checked_add(1) == Some(overlay.computations.len()) && mark.values.checked_add(1) == Some(overlay.values.len())
+         && overlay.computation(ret).is_some_and(|node| match *node {
+         CompNode::Grafted(CompGraft::Return(value)) => usize::try_from(value.0).ok() == Some(mark.values)
+          && overlay.value(value) == Some(&ValueNode::Bound(Bound{distance:ShareDistance(0),position:SharePosition(0)})), _ => false,
+        })
+    )]
     fn occurrence_in_return(overlay: &mut Overlay) -> OverlayCompId
     {
         let carried = occurrence(
@@ -2956,6 +3760,19 @@ mod tests
     /// - ensures: a fresh computation id.
     /// - provides: the terse mint the erasure witnesses build with.
     /// - panics: when the mint is refused, which the requirement excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the supplied computation node has live children and
+    ///   the family has room. Exact whole-arena erasure checks every former and
+    ///   payload, while refused opaque erasure checks the boundary; wrong
+    ///   metadata, wrong children or reusing a previous id changes those
+    ///   observations.
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        captures: [length = overlay.computations.len(), shape = node.shape()],
+        ensures: |ret| usize::try_from(ret.0).ok() == Some(length) && length.checked_add(1) == Some(overlay.computations.len()) && overlay.computation(ret).is_some_and(|node| node.shape() == shape)
+    )]
     fn computation(
         overlay: &mut Overlay,
         node: CompNode,
@@ -2973,6 +3790,19 @@ mod tests
     /// - ensures: a fresh value-type id.
     /// - provides: the terse mint the erasure witnesses build with.
     /// - panics: when the mint is refused, which the requirement excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the supplied value-type node has live children and
+    ///   the family has room. Exact whole-arena erasure checks every former and
+    ///   payload, while refused opaque erasure checks the boundary; wrong
+    ///   metadata, wrong children or reusing a previous id changes those
+    ///   observations.
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        captures: [length = overlay.value_types.len(), shape = node.shape()],
+        ensures: |ret| usize::try_from(ret.0).ok() == Some(length) && length.checked_add(1) == Some(overlay.value_types.len()) && overlay.value_type(ret).is_some_and(|node| node.shape() == shape)
+    )]
     fn value_type(
         overlay: &mut Overlay,
         node: ValueTypeNode,
@@ -2988,6 +3818,19 @@ mod tests
     /// - ensures: a fresh computation-type id.
     /// - provides: the terse mint the erasure witnesses build with.
     /// - panics: when the mint is refused, which the requirement excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the supplied comp-type node has live children and the
+    ///   family has room. Exact whole-arena erasure checks every former and
+    ///   payload, while refused opaque erasure checks the boundary; wrong
+    ///   metadata, wrong children or reusing a previous id changes those
+    ///   observations.
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        captures: [length = overlay.comp_types.len(), shape = node.shape()],
+        ensures: |ret| usize::try_from(ret.0).ok() == Some(length) && length.checked_add(1) == Some(overlay.comp_types.len()) && overlay.comp_type(ret).is_some_and(|node| node.shape() == shape)
+    )]
     fn comp_type(
         overlay: &mut Overlay,
         node: CompTypeNode,
@@ -3003,6 +3846,19 @@ mod tests
     /// - ensures: a fresh value id.
     /// - provides: the terse mint the erasure witnesses build with.
     /// - panics: when the mint is refused, which the requirement excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the supplied value node has live children and the
+    ///   family has room. Exact whole-arena erasure checks every former and
+    ///   payload, while refused opaque erasure checks the boundary; wrong
+    ///   metadata, wrong children or reusing a previous id changes those
+    ///   observations.
+    /// - witness: `overlay::tests::erasure_mints_every_former_of_every_family_in_order`
+    /// - witness: `overlay::tests::a_refused_erasure_leaves_the_core_arena_unchanged`
+    #[spec(
+        captures: [length = overlay.values.len(), shape = node.shape()],
+        ensures: |ret| usize::try_from(ret.0).ok() == Some(length) && length.checked_add(1) == Some(overlay.values.len()) && overlay.value(ret).is_some_and(|node| node.shape() == shape)
+    )]
     fn value(
         overlay: &mut Overlay,
         node: ValueNode,
@@ -3339,7 +4195,7 @@ mod tests
     fn a_refused_erasure_leaves_the_core_arena_unchanged()
     {
         let mut core = CoreArena::new();
-        let kept = core.value_unit();
+        let _ = core.value_unit();
         let entry = core.clone();
         let mut overlay = Overlay::new();
 
@@ -3377,15 +4233,428 @@ mod tests
         );
         assert_eq!(
             entry, core,
-            "and the leaf minted before it is truncated away"
+            "opaque preflight leaves the entry arena unchanged"
         );
+    }
 
-        let leaf = unit(&mut overlay);
-        let held = value(&mut overlay, ValueNode::Opaque(kept));
-        let both = pair(&mut overlay, leaf, held);
-        assert!(
-            erase_value(&overlay, both, &mut core).is_ok(),
-            "the same shape over an id the arena holds erases"
+    #[test]
+    fn opaque_erasure_does_not_resurrect_a_missing_core_id()
+    {
+        let mut core = CoreArena::new();
+        let retained = core.value_unit();
+        let mark = core.watermark();
+        let missing = core.value_constant(ConstantIndex::from(11_usize));
+        core.truncate_to(mark);
+        let mut overlay = Overlay::new();
+        let fresh = unit(&mut overlay);
+        let opaque = value(&mut overlay, ValueNode::Opaque(missing));
+        let root = pair(&mut overlay, fresh, opaque);
+        assert_eq!(
+            Err(EraseFault::UnresolvedOpaque {
+                node: OverlayId::Value(opaque)
+            }),
+            erase_value(&overlay, root, &mut core)
         );
+        assert_eq!(
+            mark,
+            core.watermark(),
+            "earlier grafts cannot make an initially missing opaque id live"
+        );
+        assert_eq!(Some(&gandr_core_term::Value::Unit), core.value(retained));
+    }
+
+    #[test]
+    fn lookup_offsets_are_local_and_out_of_range_ids_fail_closed()
+    {
+        let mut overlay = Overlay::new();
+        let leaf = unit(&mut overlay);
+        let returned = computation(&mut overlay, CompNode::Grafted(CompGraft::Return(leaf)));
+        let ty = value_type(&mut overlay, ValueTypeNode::Grafted(ValueTypeGraft::Unit));
+        let cty = comp_type(
+            &mut overlay,
+            CompTypeNode::Grafted(CompTypeGraft::Returner(ty)),
+        );
+        let mut core = CoreArena::new();
+        let core_ty = core.value_type_unit();
+        let core_cty = core.comp_type_returner(core_ty);
+        let mut foreign = Overlay::new();
+        let fv = value(
+            &mut foreign,
+            ValueNode::Grafted(ValueGraft::Constant(ConstantIndex::from(11_usize))),
+        );
+        let fc = computation(&mut foreign, CompNode::Grafted(CompGraft::Force(fv)));
+        let ft = value_type(&mut foreign, ValueTypeNode::Opaque(core_ty));
+        let fct = comp_type(&mut foreign, CompTypeNode::Opaque(core_cty));
+        assert_eq!(
+            Some(&ValueNode::Grafted(ValueGraft::Unit)),
+            overlay.value(fv)
+        );
+        assert_eq!(
+            Some(&CompNode::Grafted(CompGraft::Return(leaf))),
+            overlay.computation(fc)
+        );
+        assert_eq!(
+            Some(&ValueTypeNode::Grafted(ValueTypeGraft::Unit)),
+            overlay.value_type(ft)
+        );
+        assert_eq!(
+            Some(&CompTypeNode::Grafted(CompTypeGraft::Returner(ty))),
+            overlay.comp_type(fct)
+        );
+        for missing in [
+            OverlayId::Value(OverlayValueId(1)),
+            OverlayId::Computation(OverlayCompId(1)),
+            OverlayId::ValueType(OverlayValueTypeId(1)),
+            OverlayId::CompType(OverlayCompTypeId(1)),
+        ] {
+            assert_eq!(
+                Err(OverlayRefusal::Unresolved { node: missing }),
+                overlay.shape(missing)
+            );
+            assert_eq!(
+                Err(OverlayRefusal::Unresolved { node: missing }),
+                overlay.validate(missing)
+            );
+        }
+        overlay.truncate_to(OverlayWatermark::default());
+        assert_eq!(None, overlay.value(leaf));
+        assert_eq!(None, overlay.computation(returned));
+        assert_eq!(None, overlay.value_type(ty));
+        assert_eq!(None, overlay.comp_type(cty));
+    }
+
+    #[test]
+    fn index_ceiling_is_checked_without_allocating_nodes()
+    {
+        let ceiling = usize::try_from(u32::MAX).expect("the target supports 32-bit indices");
+        assert_eq!(super::Offset(0), super::offset(super::Index(0)));
+        assert_eq!(
+            super::Offset(ceiling),
+            super::offset(super::Index(u32::MAX))
+        );
+        assert_eq!(
+            Ok(super::Index(u32::MAX)),
+            super::next_index(super::Offset(ceiling), OverlayFamily::Value)
+        );
+        if let Some(past) = ceiling.checked_add(1) {
+            assert_eq!(
+                Err(OverlayFault::FamilyFull {
+                    family: OverlayFamily::CompType
+                }),
+                super::next_index(super::Offset(past), OverlayFamily::CompType)
+            );
+        }
+    }
+
+    #[test]
+    fn mint_refusals_preserve_prefixes_and_name_the_first_missing_child()
+    {
+        let mut overlay = Overlay::new();
+        let leaf = unit(&mut overlay);
+        let _returned = computation(&mut overlay, CompNode::Grafted(CompGraft::Return(leaf)));
+        let ty = value_type(&mut overlay, ValueTypeNode::Grafted(ValueTypeGraft::Unit));
+        let _cty = comp_type(
+            &mut overlay,
+            CompTypeNode::Grafted(CompTypeGraft::Returner(ty)),
+        );
+        let entry = overlay.clone();
+        let missing_value = OverlayValueId(7);
+        let missing_comp = OverlayCompId(7);
+        let missing_type = OverlayValueTypeId(7);
+        let missing_comp_type = OverlayCompTypeId(9);
+        assert_eq!(
+            Err(OverlayFault::DanglingChild {
+                child: OverlayId::Value(missing_value)
+            }),
+            overlay.mint_value(ValueNode::Grafted(ValueGraft::Pair(
+                missing_value,
+                OverlayValueId(9)
+            )))
+        );
+        assert_eq!(entry, overlay);
+        assert_eq!(
+            Err(OverlayFault::DanglingChild {
+                child: OverlayId::Computation(missing_comp)
+            }),
+            overlay.mint_computation(CompNode::Grafted(CompGraft::Case {
+                scrutinee: leaf,
+                on_left: missing_comp,
+                on_right: OverlayCompId(9)
+            }))
+        );
+        assert_eq!(entry, overlay);
+        assert_eq!(
+            Err(OverlayFault::DanglingChild {
+                child: OverlayId::ValueType(missing_type)
+            }),
+            overlay.mint_value_type(ValueTypeNode::Grafted(ValueTypeGraft::Product(
+                missing_type,
+                OverlayValueTypeId(9)
+            )))
+        );
+        assert_eq!(entry, overlay);
+        assert_eq!(
+            Err(OverlayFault::DanglingChild {
+                child: OverlayId::CompType(missing_comp_type)
+            }),
+            overlay.mint_comp_type(CompTypeNode::Grafted(CompTypeGraft::Arrow {
+                domain: ty,
+                codomain: missing_comp_type
+            }))
+        );
+        assert_eq!(entry, overlay);
+        assert_eq!(
+            Err(OverlayFault::DanglingChild {
+                child: OverlayId::Computation(missing_comp)
+            }),
+            overlay.mint_value(ValueNode::Shared(Sharing {
+                arity: ShareArity(1),
+                leg: OverlayId::Computation(missing_comp),
+                body: missing_value
+            }))
+        );
+        assert_eq!(
+            entry, overlay,
+            "a share checks its leg before its body without mutating the prefix"
+        );
+    }
+
+    #[test]
+    fn occurrence_ceiling_and_refusal_precedence_preserve_the_frame()
+    {
+        let node = OverlayId::Value(OverlayValueId(0));
+        let mut frames = [super::Frame {
+            arity: ShareArity(u32::MAX),
+            leg: OverlayFamily::Value,
+            next: SharePosition(u32::MAX.saturating_sub(1)),
+        }];
+        assert_eq!(
+            Ok(()),
+            super::occur(&mut frames, node, Bound {
+                distance: ShareDistance(0),
+                position: SharePosition(u32::MAX.saturating_sub(1))
+            })
+        );
+        assert_eq!(SharePosition(u32::MAX), frames[0].next);
+        let full = frames;
+        assert_eq!(
+            Err(OverlayRefusal::SurplusOccurrence {
+                node,
+                arity: ShareArity(u32::MAX)
+            }),
+            super::occur(&mut frames, node, Bound {
+                distance: ShareDistance(0),
+                position: SharePosition(0)
+            })
+        );
+        assert_eq!(
+            full, frames,
+            "surplus takes precedence over a wrong position"
+        );
+        let other = OverlayId::Computation(OverlayCompId(0));
+        assert_eq!(
+            Err(OverlayRefusal::FamilyMismatch {
+                node: other,
+                occurrence: OverlayFamily::Computation,
+                leg: OverlayFamily::Value
+            }),
+            super::occur(&mut frames, other, Bound {
+                distance: ShareDistance(0),
+                position: SharePosition(0)
+            })
+        );
+        assert_eq!(full, frames, "family takes precedence over surplus");
+        assert_eq!(
+            Err(OverlayRefusal::OpenReference { node: other }),
+            super::occur(&mut frames, other, Bound {
+                distance: ShareDistance(1),
+                position: SharePosition(0)
+            })
+        );
+        assert_eq!(full, frames, "scope takes precedence over family");
+        frames[0].next = SharePosition(3);
+        let ready = frames;
+        assert_eq!(
+            Err(OverlayRefusal::PositionOutOfOrder {
+                node,
+                expected: SharePosition(3),
+                found: SharePosition(5)
+            }),
+            super::occur(&mut frames, node, Bound {
+                distance: ShareDistance(0),
+                position: SharePosition(5)
+            })
+        );
+        assert_eq!(ready, frames);
+    }
+
+    #[test]
+    fn erasure_keeps_nested_legs_in_postorder_and_rolls_back_late_failures()
+    {
+        let mut overlay = Overlay::new();
+        let leaf = unit(&mut overlay);
+        let outer_use = occurrence(&mut overlay, ShareDistance(0), SharePosition(0));
+        let inner_leg = computation(
+            &mut overlay,
+            CompNode::Grafted(CompGraft::Return(outer_use)),
+        );
+        let inner_use = computation(
+            &mut overlay,
+            CompNode::Bound(Bound {
+                distance: ShareDistance(0),
+                position: SharePosition(0),
+            }),
+        );
+        let inner = computation(
+            &mut overlay,
+            CompNode::Shared(Sharing {
+                arity: ShareArity(1),
+                leg: OverlayId::Computation(inner_leg),
+                body: inner_use,
+            }),
+        );
+        let root = computation(
+            &mut overlay,
+            CompNode::Shared(Sharing {
+                arity: ShareArity(1),
+                leg: OverlayId::Value(leaf),
+                body: inner,
+            }),
+        );
+        let mut core = CoreArena::new();
+        let _prefix = core.value_unit();
+        let mut expected = core.clone();
+        let erased_leaf = expected.value_unit();
+        let erased_return = expected.computation_return(erased_leaf);
+        let erased = super::erase_with_legs(&overlay, OverlayId::Computation(root), &mut core)
+            .expect("both share scopes close");
+        assert_eq!(super::CoreId::Computation(erased_return), erased.root());
+        assert_eq!(
+            &[
+                super::CoreId::Value(erased_leaf),
+                super::CoreId::Computation(erased_return)
+            ],
+            erased.legs()
+        );
+        assert_eq!(expected, core);
+        let mut elsewhere = CoreArena::new();
+        let foreign_value = elsewhere.value_unit();
+        let mut missing = elsewhere.computation_return(foreign_value);
+        for _ in 0_u32 .. 8_u32 {
+            missing = elsewhere.computation_lambda(missing);
+        }
+        let opaque = computation(&mut overlay, CompNode::Opaque(missing));
+        let bad = computation(
+            &mut overlay,
+            CompNode::Grafted(CompGraft::Bind(root, opaque)),
+        );
+        assert_eq!(
+            Err(EraseFault::UnresolvedOpaque {
+                node: OverlayId::Computation(opaque)
+            }),
+            super::erase_with_legs(&overlay, OverlayId::Computation(bad), &mut core)
+        );
+        assert_eq!(
+            expected, core,
+            "a late-in-traversal opaque failure keeps neither new nodes nor legs"
+        );
+    }
+
+    #[test]
+    fn erasure_rejects_incomplete_or_mistyped_stacks()
+    {
+        let mut overlay = Overlay::new();
+        let leaf = unit(&mut overlay);
+        let mut core = CoreArena::new();
+        let value = core.value_unit();
+        let comp = core.computation_return(value);
+        let value_type = core.value_type_unit();
+        let comp_type = core.comp_type_returner(value_type);
+        let entry = core.clone();
+        let mut erasure = super::Erasure {
+            overlay: &overlay,
+            core: &mut core,
+            steps: alloc::vec::Vec::new(),
+            legs: alloc::vec::Vec::new(),
+            results: alloc::vec::Vec::new(),
+            keeping: super::Keeping::Nothing,
+            kept: alloc::vec::Vec::new(),
+        };
+        assert_eq!(Err(EraseFault::MachineInvariant), erasure.run());
+        for step in [super::Step::Bind, super::Step::Unbind] {
+            erasure.steps.push(step);
+            assert_eq!(Err(EraseFault::MachineInvariant), erasure.run());
+        }
+        erasure.results.extend([
+            super::CoreId::Value(value),
+            super::CoreId::Computation(comp),
+        ]);
+        assert_eq!(Err(EraseFault::MachineInvariant), erasure.value());
+        assert_eq!(&[super::CoreId::Value(value)], erasure.results.as_slice());
+        assert_eq!(Ok(value), erasure.value());
+        assert_eq!(Err(EraseFault::MachineInvariant), erasure.computation());
+        erasure.results.push(super::CoreId::CompType(comp_type));
+        assert_eq!(Err(EraseFault::MachineInvariant), erasure.value_type());
+        erasure.results.push(super::CoreId::ValueType(value_type));
+        assert_eq!(Err(EraseFault::MachineInvariant), erasure.comp_type());
+        erasure.results.push(super::CoreId::Value(value));
+        assert_eq!(
+            Err(EraseFault::MachineInvariant),
+            erasure.assemble_value(&ValueGraft::Thunk(OverlayCompId(0)))
+        );
+        erasure.results.push(super::CoreId::CompType(comp_type));
+        assert_eq!(
+            Err(EraseFault::MachineInvariant),
+            erasure.assemble_computation(CompGraft::Return(leaf))
+        );
+        erasure.results.push(super::CoreId::Computation(comp));
+        assert_eq!(
+            Err(EraseFault::MachineInvariant),
+            erasure.assemble_value_type(&ValueTypeGraft::Thunk(OverlayCompTypeId(0)))
+        );
+        erasure.results.push(super::CoreId::Value(value));
+        assert_eq!(
+            Err(EraseFault::MachineInvariant),
+            erasure.assemble_comp_type(&CompTypeGraft::Returner(OverlayValueTypeId(0)))
+        );
+        assert_eq!(entry, *erasure.core, "mistyped stacks mint no parent");
+        erasure.results.extend([
+            super::CoreId::Value(value),
+            super::CoreId::Computation(comp),
+        ]);
+        assert_eq!(
+            Err(EraseFault::MachineInvariant),
+            erasure.run(),
+            "two remaining roots cannot be accepted as one"
+        );
+        erasure.legs.push(super::CoreId::Value(value));
+        assert_eq!(
+            Err(EraseFault::MachineInvariant),
+            erasure.run(),
+            "a bound leg cannot escape the walk"
+        );
+    }
+
+    #[test]
+    fn structural_refusals_precede_opaque_preflight_failures()
+    {
+        let mut core = CoreArena::new();
+        let mut elsewhere = CoreArena::new();
+        let missing = elsewhere.value_unit();
+        let mut overlay = Overlay::new();
+        let opaque = value(&mut overlay, ValueNode::Opaque(missing));
+        let stray = occurrence(&mut overlay, ShareDistance(0), SharePosition(0));
+        let root = pair(&mut overlay, opaque, stray);
+        assert_eq!(
+            Err(EraseFault::Refused(OverlayRefusal::OpenReference {
+                node: OverlayId::Value(stray)
+            })),
+            erase_value(&overlay, root, &mut core)
+        );
+        assert_eq!(CoreArena::new(), core);
+        let valid = unit(&mut overlay);
+        let erased = erase_value(&overlay, valid, &mut core)
+            .expect("unreachable invalid nodes do not taint another root");
+        assert_eq!(Some(&gandr_core_term::Value::Unit), core.value(erased));
     }
 }

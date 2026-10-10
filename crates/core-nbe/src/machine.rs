@@ -386,6 +386,9 @@ pub enum MachineVerdict
 }
 
 /// How many rule instances and evaluation steps a run spent.
+///
+/// Reports saturate at the representable ceiling; overflow still exhausts a
+/// pending run's budget.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StepCount(u64);
@@ -506,9 +509,9 @@ impl MachineReport
 /// through a fresh memo of type `M`.
 ///
 /// # Specification
-/// - requires: both sides live in `domain`, were evaluated under `definitions`,
-///   and mention no intuitionistic binder level at or past `problem`'s depth;
-///   `core` is the arena their literal payloads and every lowered body live in.
+/// - requires: both sides were evaluated in this run under `definitions` and
+///   mention no intuitionistic binder level at or past `problem`'s depth;
+///   `core` holds their literal payloads and every lowered body.
 /// - ensures: the search-free steps answer first — an identical or structurally
 ///   equal pair is convertible and a guard-separated pair is not, with no
 ///   process started; otherwise the machine runs its goals and channels fairly
@@ -534,7 +537,7 @@ impl MachineReport
 ///   [`ConversionFault::LiteralPayload`] for nodes that do not resolve,
 ///   [`ConversionFault::Memo`] when the memo refuses to record, and
 ///   [`ConversionFault::MachineInvariant`] if the machine's bookkeeping
-///   disagrees with itself.
+///   disagrees with itself or another binder exceeds the representable level.
 /// - panics: none.
 /// - intension: one rule per goal turn and one evaluation slice per channel
 ///   turn, round-robin over the run queue under the default scheduling stance.
@@ -544,13 +547,14 @@ impl MachineReport
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the decision surfaces are the root fast path, the
-///   machine's rule arms, its two declines and the memo's hit; each rule arm is
-///   separated by a conversion answered through it, both verdicts and both
-///   declines are exercised, recording is pinned against the null sink and the
-///   live memo against the null memo verdict for verdict, and re-sharing is
-///   pinned by exact process and edge counts. Every recorded derivation is
-///   replayed by the kernel to the same verdict, a tampered one is refused, and
-///   a decline under a starving schedule stays a decline through the kernel.
+///   machine's rule arms, its three declines and the memo's hit; each rule arm
+///   is separated by a conversion answered through it, both verdicts and all
+///   three declines are exercised, recording is pinned against the null sink
+///   and the live memo against the null memo verdict for verdict, and
+///   re-sharing is pinned by exact process and edge counts. Every recorded
+///   derivation is replayed by the kernel to the same verdict, a tampered one
+///   is refused, and a decline under a starving schedule stays a decline
+///   through the kernel.
 /// - witness: `machine::tests::the_search_free_steps_answer_before_any_process`
 /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
@@ -564,7 +568,29 @@ impl MachineReport
 /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
 /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
 /// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
+/// - witness: `machine::tests::codes_that_could_unfold_inside_are_declined`
+/// - witness: `machine::tests::invalid_roots_refuse_before_identity_or_search`
+/// - witness: `machine::tests::binder_ceiling_is_refused_before_opening_or_eta_allocation`
+/// - witness: `machine::tests::step_counter_overflow_cannot_disable_the_budget_backstop`
+/// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
 #[inline]
+#[spec(
+    ensures: |ret| (ret.as_ref().is_ok_and(|report| {
+        usize::from(report.derivations) == if matches!(S::ACTIVITY, SinkActivity::Active) {
+            report.processes.0
+        } else { 0 }
+            && (matches!(M::ACTIVITY, MemoActivity::Active)
+                || report.edges == SupportEdges::default())
+            && (report.processes.0 != 0
+                || (report.steps.0 == 0
+                    && !matches!(report.verdict, MachineVerdict::Declined(_))))
+    }) || ret.is_err())
+        && (match (problem.left, problem.right) {
+        (Glued::Value(_), Glued::Computation(_))
+        | (Glued::Computation(_), Glued::Value(_)) => ret == Err(ConversionFault::Polarity),
+        _ => true,
+    })
+)]
 pub fn decide<S, M>(
     core: &CoreArena,
     domain: &mut DomainArena,
@@ -654,6 +680,31 @@ enum RootFastPath
 /// # Errors
 /// - [`ConversionFault::Polarity`] — a value met a computation.
 /// - [`ConversionFault`] — as the steps refuse.
+///
+/// # Adequacy
+/// - hypothesis: L3 — over evaluated root pairs, the observer is the verdict
+///   and zero-process fast path; shared identity, equal distinct units and
+///   guard-separated shapes distinguish wrong identity, polarity dispatch and
+///   an unnecessary search. Missing domain roots remain checked refusals rather
+///   than identity successes.
+/// - witness: `machine::tests::the_search_free_steps_answer_before_any_process`
+/// - witness: `machine::tests::identity_closes_a_goal_on_shared_nodes`
+/// - witness: `machine::tests::invalid_roots_refuse_before_identity_or_search`
+#[spec(
+    ensures: |ret| match (problem.left, problem.right) {
+        (Glued::Value(left), Glued::Value(right)) => {
+            if domain.value(left).is_none() || domain.value(right).is_none() {
+                ret == Err(ConversionFault::Domain(DomainFault::Dangling))
+            } else { left != right || ret.is_err() || ret == Ok(Settlement::Identical) }
+        }
+        (Glued::Computation(left), Glued::Computation(right)) => {
+            if domain.computation(left).is_none() || domain.computation(right).is_none() {
+                ret == Err(ConversionFault::Domain(DomainFault::Dangling))
+            } else { left != right || ret.is_err() || ret == Ok(Settlement::Identical) }
+        }
+        _ => ret == Err(ConversionFault::Polarity),
+    }
+)]
 fn settle_root(
     core: &CoreArena,
     domain: &DomainArena,
@@ -809,6 +860,33 @@ impl Chain
     ///   arguments is no cycle, while a definition that unfolds back to itself
     ///   over the same arguments is.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the boundary is an unfolding repeated on one side
+    ///   versus the same function under different argument spines. The verdict
+    ///   and emitted unfoldings separate omitted cycle detection, a
+    ///   constant-only key and a chain shared between sides; the predicate also
+    ///   checks append direction and retained spine endpoints.
+    /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
+    /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
+    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    #[spec(
+        captures: [left = self.left.len(), right = self.right.len(), constant = unfolded.constant, length = unfolded.spine.len(), first = unfolded.spine.first().copied(), last = unfolded.spine.last().copied()],
+        ensures: |ret| {
+            let (selected, old, untouched, other) = match side {
+                ConversionSide::Left => (&self.left, left, self.right.len(), right),
+                ConversionSide::Right => (&self.right, right, self.left.len(), left),
+            };
+            untouched == other && match ret {
+                Repeat::Repeated => selected.len() == old,
+                Repeat::Fresh => selected.len() == old.saturating_add(1)
+                    && selected.last().is_some_and(|entry| entry.constant == constant
+                        && entry.spine.len() == length
+                        && entry.spine.first().copied() == first
+                        && entry.spine.last().copied() == last),
+            }
+        }
+    )]
     fn enter(
         &mut self,
         side: ConversionSide,
@@ -974,6 +1052,8 @@ struct Scheduler<'run, M>
     supports: Supports,
     /// The rule instances and evaluation steps spent so far.
     spent: StepCount,
+    /// Whether the charged count exceeded its representable ceiling.
+    spent_overflowed: bool,
 }
 
 impl<'run, M> Scheduler<'run, M>
@@ -983,7 +1063,36 @@ where
     /// An empty run over an empty `memo`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `memo` is empty and belongs to this run.
+    /// - ensures: every process, queue, channel cache and variable cache starts
+    ///   empty; no steps, derivations or support edges have been recorded, and
+    ///   the run retains its supplied arenas, definitions, settings, recording
+    ///   activity and memo.
+    /// - provides: one run-local owner for all scheduling and sharing state.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — for a fresh empty memo, the observer is each
+    ///   independent run’s verdict, process accounting and optional
+    ///   derivation/support accounting. Recorded versus unrecorded and memoized
+    ///   versus memoless runs distinguish stale state, unwanted recording and
+    ///   use of a different run’s arena or settings.
+    /// - witness: `machine::tests::recording_does_not_move_the_verdict`
+    /// - witness: `machine::tests::the_sink_off_run_keeps_no_derivation`
+    /// - witness: `machine::tests::the_memo_never_moves_a_verdict`
+    /// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
+    #[spec(
+        captures: [domain_address = &raw const *domain],
+        ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret.core), core::ptr::from_ref(core))
+            && core::ptr::eq(&raw const *ret.domain, domain_address)
+            && ret.settings == settings
+            && ret.processes.is_empty() && ret.queue.is_empty() && ret.queued.is_empty()
+            && ret.bodies.is_empty() && ret.unfoldings.is_empty() && ret.openings.is_empty()
+            && ret.entries.is_empty() && ret.variables.is_empty()
+            && usize::from(ret.derivations.count()) == 0
+            && ret.supports.totals() == SupportEdges::default()
+            && ret.spent.0 == 0 && !ret.spent_overflowed
+    )]
     fn new(
         core: &'run CoreArena,
         domain: &'run mut DomainArena,
@@ -1010,6 +1119,7 @@ where
             memo,
             supports: Supports::new(M::ACTIVITY),
             spent: StepCount::default(),
+            spent_overflowed: false,
         }
     }
 
@@ -1025,6 +1135,23 @@ where
     ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no process at `id`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — within a run, distinct process ids must select
+    ///   distinct channels and goals, while a missing slot refuses. Exact
+    ///   shared-body process counts and the delayed-premise comparison
+    ///   distinguish wrong-slot reads and stale outcomes; malformed waiting ids
+    ///   witness the refusal boundary.
+    /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    /// - witness: `machine::tests::missing_processes_refuse_without_creating_waits`
+    #[spec(
+        ensures: |ret| match (self.processes.get(id.0), ret) {
+            (Some(expected), Ok(actual)) => core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(actual)),
+            (None, Err(ConversionFault::MachineInvariant)) => true,
+            _ => false,
+        }
+    )]
     fn process(
         &self,
         id: ProcessId,
@@ -1047,6 +1174,24 @@ where
     ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no process at `id`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the domain is mutable slots in one process arena,
+    ///   including an absent id. The observer is refusal without a queued wait,
+    ///   plus independent body completion and a later recalled result;
+    ///   selecting a different slot or manufacturing a missing one changes
+    ///   those observations.
+    /// - witness: `machine::tests::missing_processes_refuse_without_creating_waits`
+    /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    #[spec(
+        captures: [address = self.processes.get(id.0).map(core::ptr::from_ref)],
+        ensures: |ret| match (address, ret.as_ref()) {
+            (Some(expected), Ok(actual)) => core::ptr::eq(expected, &raw const **actual),
+            (None, Err(&ConversionFault::MachineInvariant)) => true,
+            _ => false,
+        }
+    )]
     fn process_mut(
         &mut self,
         id: ProcessId,
@@ -1069,6 +1214,19 @@ where
     ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no process at `id`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pending, settled, declined and missing processes are
+    ///   observed through combinator answers and slot resolution. Wrong
+    ///   outcomes, lost decline reasons and a fabricated answer for an absent
+    ///   process are distinguished by the finite precedence cases and the
+    ///   missing-wait refusal.
+    /// - witness: `machine::tests::combinators_preserve_answer_and_decline_precedence`
+    /// - witness: `machine::tests::missing_processes_refuse_without_creating_waits`
+    #[spec(
+        ensures: |ret| ret == self.processes.get(id.0).map(|process| process.outcome)
+            .ok_or(ConversionFault::MachineInvariant)
+    )]
     fn outcome(
         &self,
         id: ProcessId,
@@ -1094,6 +1252,28 @@ where
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — a store and the arena
     ///   disagree.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over newly admitted goals and channels, the observer
+    ///   is the exact number of independent bodies and shared goals and the
+    ///   verdict they reach. Reused ids, pre-existing demand or a wrong work
+    ///   kind alter sharing counts or the finite combinator outcomes; the
+    ///   predicate pins the initial process state.
+    /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
+    /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+    /// - witness: `machine::tests::combinators_preserve_answer_and_decline_precedence`
+    #[spec(
+        captures: [count = self.processes.len(), work_kind = core::mem::discriminant(&work)],
+        ensures: |ret| ret.as_ref().is_ok_and(|id| id.0 == count
+            && self.processes.len() == count.saturating_add(1)
+            && self.queued.get(id.0) == Some(&Queued::Absent)
+            && self.processes.get(id.0).is_some_and(|process| {
+                process.outcome == outcome && process.share == share
+                    && core::mem::discriminant(&process.work) == work_kind
+                    && process.demand.0 == 0 && process.credit.0 == 0
+                    && process.deps.is_empty() && process.waiters.is_empty()
+            })) || ret.is_err()
+    )]
     fn start(
         &mut self,
         work: Work<'run>,
@@ -1141,6 +1321,22 @@ where
     /// - [`ConversionFault::Memo`] — the memo refused the entry.
     /// - [`ConversionFault::MachineInvariant`] — the binder levels ran out.
     /// - [`ConversionFault`] — as a channel raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the domain is fresh or previously recorded weak-head
+    ///   pairs and opened closure pairs at a fixed binder level. Verdict,
+    ///   process counts and unchanged domain state at the level ceiling
+    ///   distinguish missed sharing, reused foreign processes and allocation
+    ///   before an impossible binder entry; a completed hit must remain usable
+    ///   without another wakeup.
+    /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    /// - witness: `machine::tests::binder_ceiling_is_refused_before_opening_or_eta_allocation`
+    #[spec(
+        ensures: |ret| (ret.as_ref().is_ok_and(|id| self.processes.get(id.0).is_some()) || ret.is_err())
+            && (!matches!(sides, SupportSides::Opened(_, _))
+            || u32::from(level) != u32::MAX || ret.is_err())
+    )]
     fn start_fresh(
         &mut self,
         sides: SupportSides,
@@ -1167,9 +1363,9 @@ where
                 next: Next::Classify,
             },
             | SupportSides::Opened(left, right) => {
+                let deeper = deeper(level)?;
                 let left = self.open_channel(left, level)?;
                 let right = self.open_channel(right, level)?;
-                let deeper = deeper(level)?;
                 Goal {
                     left: Slot::Waiting(left),
                     right: Slot::Waiting(right),
@@ -1206,6 +1402,21 @@ where
     ///
     /// # Errors
     /// As [`Supports::settle`] and [`Scheduler::finish`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pending goal may settle positively or negatively,
+    ///   resting on different support bases. Verdicts and exact
+    ///   acceptance/refusal edge counts distinguish a reversed answer, retained
+    ///   dependencies and a refusal recorded with only a winning branch’s
+    ///   support.
+    /// - witness: `machine::tests::an_acceptance_is_keyed_on_its_winning_derivation`
+    /// - witness: `machine::tests::a_refusal_is_keyed_on_the_union_over_its_branches`
+    /// - witness: `machine::tests::a_refutation_outranks_a_decline`
+    #[spec(
+        ensures: |ret| ret.is_err() || self.processes.get(id.0).is_some_and(|process|
+            process.outcome == Outcome::Settled(settled) && matches!(process.work, Work::Spent)
+                && process.deps.is_empty() && process.waiters.is_empty())
+    )]
     fn answer(
         &mut self,
         id: ProcessId,
@@ -1229,6 +1440,29 @@ where
     ///
     /// # Errors
     /// As [`Scheduler::start`] and [`Scheduler::depend`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a new goal’s slots are either ready heads or channels
+    ///   that are pending or already answered. Forced thunks, opened binders
+    ///   and reused bodies observe whether the right dependencies and depth
+    ///   survive admission; missing a wait edge prevents completion, while
+    ///   waiting again on a completed premise causes a false cycle.
+    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+    /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    #[spec(
+        captures: [slots = [goal.left, goal.right], depth = goal.depth],
+        ensures: |ret| ret.as_ref().is_ok_and(|id| self.processes.get(id.0).is_some_and(|process| {
+            process.outcome == Outcome::Pending
+                && matches!(&process.work, Work::Goal(goal) if goal.left == slots[0] && goal.right == slots[1] && goal.depth == depth)
+                && slots.iter().all(|slot| match *slot {
+                    Slot::Ready(_) => true,
+                    Slot::Waiting(channel) => self.processes.get(channel.0).is_some_and(|dependency|
+                        dependency.outcome != Outcome::Pending || process.deps.contains(&channel)),
+                })
+        })) || ret.is_err()
+    )]
     fn start_goal(
         &mut self,
         goal: Goal,
@@ -1269,6 +1503,27 @@ where
     ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no membership entry for `id`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the queue boundary is absent membership, an unqueued
+    ///   live process and an already queued process. Named refusals, eventual
+    ///   comparison outcomes and exact process sharing distinguish invented
+    ///   membership, duplicate scheduling and a lost wakeup; the predicate
+    ///   observes membership and queue multiplicity.
+    /// - witness: `machine::tests::missing_processes_refuse_without_creating_waits`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+    #[spec(
+        captures: [member = self.queued.get(id.0).copied(), count = self.queue.len()],
+        ensures: |ret| (match member {
+            None => ret == Err(ConversionFault::MachineInvariant) && self.queue.len() == count,
+            Some(Queued::Present) => ret.is_ok() && self.queue.len() == count,
+            Some(Queued::Absent) => ret.is_ok() && self.queue.len() == count.saturating_add(1)
+                && self.queue.back() == Some(&id),
+        })
+            && (ret.is_err() || (self.queued.get(id.0) == Some(&Queued::Present)
+            && self.queue.iter().filter(|&&queued| queued == id).count() == 1))
+    )]
     fn enqueue(
         &mut self,
         id: ProcessId,
@@ -1292,23 +1547,43 @@ where
     /// - ensures: when `dependency` is pending, it lists `waiter` among its
     ///   waiters, `waiter` lists it among its dependencies, and it gains one
     ///   need when `waiter` is itself needed; a dependency that has answered is
-    ///   left alone.
+    ///   left alone. Its observed outcome is returned in either case.
     /// - provides: the one place an edge of the wait map is drawn.
-    /// - fails: [`ConversionFault::MachineInvariant`] for an id the arena does
-    ///   not hold.
+    /// - fails: [`ConversionFault::MachineInvariant`] for a missing dependency,
+    ///   or for a missing waiter while that dependency is pending.
     /// - panics: none.
     ///
     /// # Errors
-    /// - [`ConversionFault::MachineInvariant`] — an id the arena does not hold.
+    /// - [`ConversionFault::MachineInvariant`] — a required process is missing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — dependencies that are pending acquire reciprocal wait
+    ///   edges; completed ones return their outcome without needing a waiter.
+    ///   The observer is the checked refusal for an absent dependency, no new
+    ///   edge for an answered one, and successful delayed decomposition;
+    ///   dropping the observed readiness or waiting on an answer produces a
+    ///   false cycle.
+    /// - witness: `machine::tests::missing_processes_refuse_without_creating_waits`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    #[spec(
+        captures: [observed = self.processes.get(dependency.0).map(|process| process.outcome)],
+        ensures: |ret| match observed {
+            None => ret == Err(ConversionFault::MachineInvariant),
+            Some(outcome) if outcome != Outcome::Pending => ret == Ok(outcome),
+            Some(_) => ret.is_err() || (ret == Ok(Outcome::Pending)
+                && self.processes.get(waiter.0).is_some_and(|process| process.deps.last() == Some(&dependency))
+                && self.processes.get(dependency.0).is_some_and(|process| process.waiters.last() == Some(&waiter))),
+        }
+    )]
     fn depend(
         &mut self,
         waiter: ProcessId,
         dependency: ProcessId,
-    ) -> Result<(), ConversionFault>
+    ) -> Result<Outcome, ConversionFault>
     {
         let outcome = self.outcome(dependency)?;
         if outcome != Outcome::Pending {
-            return Ok(());
+            return Ok(outcome);
         }
         let needed = {
             let process = self.process_mut(waiter)?;
@@ -1320,7 +1595,7 @@ where
         if needed > Demand::default() {
             self.need(dependency)?;
         }
-        Ok(())
+        Ok(outcome)
     }
 
     /// Give `id` one more need, waking it and what it waits on if it had
@@ -1348,6 +1623,26 @@ where
     /// - boundedness: the arena is finite, so the set is; each pop either
     ///   shrinks it or pushes nothing.
     /// - input recursion: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — on finite wait graphs, a first demand activates
+    ///   pending dependencies, an additional demand does not activate them
+    ///   again, and missing ids refuse. Shared ladders observe duplicated
+    ///   activation through process counts; a goal depending on itself
+    ///   distinguishes terminating demand propagation from recursion or
+    ///   repeated activation.
+    /// - witness: `machine::tests::missing_processes_refuse_without_creating_waits`
+    /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+    /// - witness: `machine::tests::a_goal_resting_on_itself_declines_on_the_cycle`
+    #[spec(
+        captures: [before = self.processes.get(id.0).map(|process| process.demand.0)],
+        ensures: |ret| match before {
+            None => ret == Err(ConversionFault::MachineInvariant),
+            Some(before) => ret.is_err() || self.processes.get(id.0).is_some_and(|process|
+                if before == 0 { process.demand.0 >= 1 }
+                else { process.demand.0 == before.saturating_add(1) }),
+        }
+    )]
     fn need(
         &mut self,
         id: ProcessId,
@@ -1389,6 +1684,24 @@ where
     ///   pushed onward only when its demand falls to zero.
     /// - boundedness: the arena is finite, so the set is.
     /// - input recursion: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the cancellation boundary is zero demand, multiple
+    ///   demand and the final need of a pending process. A refuting sibling
+    ///   must cancel irrelevant work without changing the authoritative
+    ///   verdict; cycles and shared subgoals distinguish repeated propagation
+    ///   or demand underflow from releasing only the last need.
+    /// - witness: `machine::tests::a_refutation_outranks_a_decline`
+    /// - witness: `machine::tests::a_goal_resting_on_itself_declines_on_the_cycle`
+    /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+    #[spec(
+        captures: [before = self.processes.get(id.0).map(|process| process.demand.0)],
+        ensures: |ret| match before {
+            None => ret == Err(ConversionFault::MachineInvariant),
+            Some(before) => ret.is_err() || self.processes.get(id.0).is_some_and(|process|
+                process.demand.0 == before.saturating_sub(1)),
+        }
+    )]
     fn unneed(
         &mut self,
         id: ProcessId,
@@ -1420,6 +1733,22 @@ where
     ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — an id the arena does not hold.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — completion may report either verdict, a decline or an
+    ///   evaluated channel. The observers are combinator precedence, comparison
+    ///   completion and emitted winning derivations; failing to store the
+    ///   outcome, release dependencies or wake needed waiters loses a result or
+    ///   keeps cancelled work alive.
+    /// - witness: `machine::tests::combinators_preserve_answer_and_decline_precedence`
+    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::a_refutation_outranks_a_decline`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    #[spec(
+        ensures: |ret| ret.is_err() || self.processes.get(id.0).is_some_and(|process|
+            process.outcome == outcome && matches!(process.work, Work::Spent)
+                && process.deps.is_empty() && process.waiters.is_empty())
+    )]
     fn finish(
         &mut self,
         id: ProcessId,
@@ -1453,13 +1782,32 @@ where
     /// Charge `steps` to the run.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the reported count increases by `steps`, saturating at its
+    ///   ceiling; exceeding the representable count sets a sticky overflow bit.
+    /// - provides: budget accounting that cannot be disabled by saturation.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary charging and the counter ceiling are
+    ///   observed through a bounded decline, a still-pending run crossing the
+    ///   ceiling and an answer obtained on that same turn. Wrapping, forgetting
+    ///   overflow and checking the budget before a completed answer change
+    ///   these results; the const predicates compare the counter’s inner field.
+    /// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
+    /// - witness: `machine::tests::step_counter_overflow_cannot_disable_the_budget_backstop`
+    #[spec(
+        ensures: |ret| self.spent.0 >= steps.0
+            && (!self.spent_overflowed || self.spent.0 == u64::MAX)
+    )]
     const fn charge(
         &mut self,
         steps: StepCount,
     )
     {
-        self.spent = StepCount(self.spent.0.saturating_add(steps.0));
+        let (spent, overflowed) = self.spent.0.overflowing_add(steps.0);
+        self.spent = StepCount(if overflowed { u64::MAX } else { spent });
+        self.spent_overflowed |= overflowed;
     }
 
     /// Run until the root answers, the needed goals deadlock, or the budget is
@@ -1470,11 +1818,11 @@ where
     /// - ensures: the root's answer, reached by turns taken round-robin over
     ///   the run queue, each process passed over until its credit reaches its
     ///   share; [`DeclineReason::Budget`] once the steps charged pass the
-    ///   settings' budget with the root unanswered; [`DeclineReason::Cycle`]
-    ///   when the queue empties with the root unanswered under an active memo,
-    ///   because every needed process then waits on a pending one and, the
-    ///   arena being finite, the waits close into a cycle through a re-shared
-    ///   goal.
+    ///   settings' budget or overflow their counter with the root unanswered;
+    ///   [`DeclineReason::Cycle`] when the queue empties with an unanswered
+    ///   root under an active memo: every needed process waits on a pending
+    ///   one, and the finite wait graph therefore closes into a cycle through a
+    ///   re-shared goal.
     /// - provides: the machine's one loop, and the backstop every comparison
     ///   the cycle key does not catch reaches.
     /// - fails: every fault a turn raises, and
@@ -1494,8 +1842,9 @@ where
     ///   slice but never this loop.
     /// - measure: the budget left, `budget - spent`. Every table read and every
     ///   move charges one step plus one per alternative a choice starts, and
-    ///   every evaluation slice charges the steps it ran, at least one; the
-    ///   loop returns once the charged steps pass the budget.
+    ///   every unfinished evaluation slice charges at least one step. An
+    ///   already completed evaluation may answer without charging; the loop
+    ///   returns once the charged steps pass the budget, including overflow.
     /// - boundedness: the turns that charge nothing are bounded by the ones
     ///   that do. A goal that waits or combines was queued by a dependency
     ///   finishing, at most once per wait edge, and every edge was drawn when a
@@ -1504,6 +1853,34 @@ where
     ///   its share less one times per turn it takes; a process popped answered
     ///   or unneeded is dropped, once per queuing.
     /// - input recursion: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pending root goals either settle, decline in a rule,
+    ///   exhaust their budget or deadlock through a shared cycle. The verdict
+    ///   and charged count distinguish fabricated answers, a lost
+    ///   completed-premise wakeup, counter saturation bypass and budget
+    ///   precedence over a same-turn answer; fair and weighted schedules
+    ///   separate scheduling from soundness.
+    /// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
+    /// - witness: `machine::tests::a_goal_resting_on_itself_declines_on_the_cycle`
+    /// - witness: `machine::tests::codes_that_could_unfold_inside_are_declined`
+    /// - witness: `machine::tests::step_counter_overflow_cannot_disable_the_budget_backstop`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    /// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
+    #[spec(
+        ensures: |ret| match ret {
+            Ok(MachineVerdict::Convertible) => self.processes.get(root.0).is_some_and(|process| process.outcome == Outcome::Settled(Settled::Convertible)),
+            Ok(MachineVerdict::NotConvertible) => self.processes.get(root.0).is_some_and(|process| process.outcome == Outcome::Settled(Settled::NotConvertible)),
+            Ok(MachineVerdict::Declined(reason)) => self.processes.get(root.0).is_some_and(|process|
+                process.outcome == Outcome::Declined(reason)
+                    || (process.outcome == Outcome::Pending && match reason {
+                        DeclineReason::Budget => self.spent_overflowed || self.spent.0 > self.settings.budget.0,
+                        DeclineReason::Cycle => self.queue.is_empty() && matches!(M::ACTIVITY, MemoActivity::Active),
+                        DeclineReason::UndecidedCodes => false,
+                    })),
+            Err(_) => true,
+        }
+    )]
     fn run(
         &mut self,
         root: ProcessId,
@@ -1543,7 +1920,7 @@ where
                 | Outcome::Evaluated(_) => return Err(ConversionFault::MachineInvariant),
                 | Outcome::Pending => {},
             }
-            if self.spent.0 > budget {
+            if self.spent_overflowed || self.spent.0 > budget {
                 return Ok(MachineVerdict::Declined(DeclineReason::Budget));
             }
         }
@@ -1564,6 +1941,25 @@ where
     ///
     /// # Errors
     /// Every fault the turn raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pending work is a goal or an evaluation channel; a
+    ///   successful turn either finishes it or preserves resumable work of the
+    ///   same kind. Forced comparisons and divergence under a finite budget
+    ///   distinguish dropping paused work, retaining completed work and
+    ///   dispatching a channel as a goal.
+    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    #[spec(
+        captures: [kind = self.processes.get(id.0).map(|process| core::mem::discriminant(&process.work))],
+        ensures: |ret| ret.is_err() || self.processes.get(id.0).is_some_and(|process| match ret {
+            Ok(Turn::Done) => process.outcome != Outcome::Pending && matches!(process.work, Work::Spent),
+            Ok(Turn::Again | Turn::Wait) => process.outcome == Outcome::Pending
+                && Some(core::mem::discriminant(&process.work)) == kind,
+            Err(_) => false,
+        })
+    )]
     fn turn(
         &mut self,
         id: ProcessId,
@@ -1608,6 +2004,29 @@ where
     /// # Errors
     /// - [`ConversionFault::Evaluation`] — the evaluation was refused.
     /// - [`ConversionFault::MachineInvariant`] — a body is not a value.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a reapplication waits for a value body, whereas a
+    ///   running evaluation pauses or finishes within one slice. The verdict
+    ///   and charged budget distinguish running before a body exists, charging
+    ///   a wait, losing paused work and failing to publish the channel’s
+    ///   evaluated answer.
+    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
+    /// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
+    /// - witness: `machine::tests::step_counter_overflow_cannot_disable_the_budget_backstop`
+    #[spec(
+        captures: [before = self.spent.0],
+        ensures: |ret| self.spent.0 >= before && self.spent.0.saturating_sub(before) <= u64::from(SLICE)
+            && match ret {
+                Ok(Turn::Wait) => self.spent.0 == before && matches!(*channel,
+                    Channel::Reapply { body, .. } if self.processes.get(body.0).is_some_and(|process| process.outcome == Outcome::Pending)),
+                Ok(Turn::Again) => matches!(*channel, Channel::Running(_)),
+                Ok(Turn::Done) => self.processes.get(id.0).is_some_and(|process|
+                    matches!(process.outcome, Outcome::Evaluated(_)) && matches!(process.work, Work::Spent)),
+                Err(_) => true,
+            }
+    )]
     fn channel_turn(
         &mut self,
         id: ProcessId,
@@ -1662,6 +2081,27 @@ where
     ///
     /// # Errors
     /// Every fault a rule raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a goal has two ready slots or at least one pending
+    ///   channel, then classifies, moves or combines. The observers are
+    ///   successful forced and eta comparisons, the finite precedence outcomes
+    ///   and reuse of completed premises; advancing a blocked goal or losing
+    ///   its next action changes those answers.
+    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+    /// - witness: `machine::tests::combinators_preserve_answer_and_decline_precedence`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    #[spec(
+        captures: [left = goal.left, right = goal.right],
+        ensures: |ret| ret.is_err() || self.processes.get(id.0).is_some_and(|process|
+            match ret { Ok(Turn::Done) => process.outcome != Outcome::Pending,
+                Ok(Turn::Again | Turn::Wait) => process.outcome == Outcome::Pending,
+                Err(_) => false })
+            && (![left, right].iter().any(|slot| matches!(*slot, Slot::Waiting(channel)
+                if self.processes.get(channel.0).is_some_and(|process| process.outcome == Outcome::Pending)))
+                || (ret == Ok(Turn::Wait) && goal.left == left && goal.right == right))
+    )]
     fn goal_turn(
         &mut self,
         id: ProcessId,
@@ -1698,6 +2138,26 @@ where
     ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — the slot names a goal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ready heads pass through, a pending channel remains
+    ///   waiting, an evaluated channel supplies its head and an absent or
+    ///   verdict-bearing process refuses. Forced and eta comparisons observe
+    ///   the supplied head; malformed waits distinguish a checked refusal from
+    ///   treating a goal verdict as an evaluated term.
+    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
+    /// - witness: `machine::tests::missing_processes_refuse_without_creating_waits`
+    #[spec(
+        ensures: |ret| ret == match slot {
+            Slot::Ready(_) => Ok(slot),
+            Slot::Waiting(channel) => match self.processes.get(channel.0).map(|process| process.outcome) {
+                Some(Outcome::Pending) => Ok(slot),
+                Some(Outcome::Evaluated(glued)) => Ok(Slot::Ready(glued)),
+                None | Some(Outcome::Settled(_) | Outcome::Declined(_)) => Err(ConversionFault::MachineInvariant),
+            },
+        }
+    )]
     fn resolve(
         &self,
         slot: Slot,
@@ -1731,6 +2191,30 @@ where
     ///
     /// # Errors
     /// Every fault the table or the rule raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — for well-formed weak heads, the rule table selects
+    ///   shared comparison, a leaf, decomposition, unfolding, force, eta, a
+    ///   choice or an undecided-code decline. Verdicts, named trace decisions
+    ///   and kernel replay distinguish a wrong arm or side; the budget witness
+    ///   observes missing classification charges.
+    /// - witness: `machine::tests::identity_closes_a_goal_on_shared_nodes`
+    /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
+    /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::codes_that_could_unfold_inside_are_declined`
+    /// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
+    #[spec(
+        captures: [before = self.spent.0],
+        ensures: |ret| self.spent.0 >= before.saturating_add(1)
+            && (ret.is_err() || self.processes.get(id.0).is_some_and(|process| match ret {
+                Ok(Turn::Done) => process.outcome != Outcome::Pending,
+                Ok(Turn::Again | Turn::Wait) => process.outcome == Outcome::Pending,
+                Err(_) => false,
+            }))
+    )]
     fn classify(
         &mut self,
         id: ProcessId,
@@ -1800,6 +2284,22 @@ where
     ///
     /// # Errors
     /// As [`Scheduler::finish`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the boundary is a fresh unfolding versus repetition
+    ///   of the same side’s complete cycle key. The observer is a continuing
+    ///   conversion or a cycle decline without a derivation; treating every
+    ///   unfolding as a cycle, or a repeated one as progress, changes the
+    ///   finite witnesses.
+    /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
+    /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
+    #[spec(
+        ensures: |ret| match advance {
+            Advance::Unfolding => ret == Ok(Turn::Again),
+            Advance::Cycle => ret.is_err() || (ret == Ok(Turn::Done)
+                && self.processes.get(id.0).is_some_and(|process| process.outcome == Outcome::Declined(DeclineReason::Cycle))),
+        }
+    )]
     fn advanced(
         &mut self,
         id: ProcessId,
@@ -1827,6 +2327,43 @@ where
     ///
     /// # Errors
     /// - [`ConversionFault::Domain`] — a node does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over value and computation heads, only defined
+    ///   neutral heads contribute height, and the taller side controls
+    ///   scheduling. Fair versus height-weighted outcomes and the two-sided
+    ///   ladder comparisons distinguish ignoring one head, taking the minimum
+    ///   or assigning a former a definitional height.
+    /// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
+    /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    /// - witness: `machine::tests::head_height_is_symmetric_and_nonconstants_stay_at_the_floor`
+    #[spec(
+        ensures: |ret| {
+            let height = |glued| -> Result<DefinitionHeight, ConversionFault> {
+                let neutral = match glued {
+                    Glued::Value(value) => match self.domain.value(value) {
+                        Some(&DomainValue::Neutral { neutral, .. }) => Some(neutral),
+                        Some(_) => None,
+                        None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
+                    },
+                    Glued::Computation(comp) => match self.domain.computation(comp) {
+                        Some(&DomainComp::Neutral { neutral, .. }) => Some(neutral),
+                        Some(_) => None,
+                        None => return Err(ConversionFault::Domain(DomainFault::Dangling)),
+                    },
+                };
+                neutral.map_or_else(|| Ok(DefinitionHeight::default()), |neutral|
+                    self.domain.neutral(neutral)
+                        .ok_or(ConversionFault::Domain(DomainFault::Dangling))
+                        .map(|node| match node.head() {
+                            NeutralHead::Constant(constant) => self.definitions.height(constant),
+                            NeutralHead::Variable { .. } | NeutralHead::Module(_) => DefinitionHeight::default(),
+                        }))
+            };
+            ret == height(pair.0).and_then(|left| height(pair.1).map(|right| left.max(right)))
+        }
+    )]
     fn pair_height(
         &self,
         pair: (Glued, Glued),
@@ -1857,7 +2394,7 @@ where
         Ok(tallest)
     }
 
-    /// Start a decomposition's children and wait on all of them.
+    /// Start a decomposition's children and wait or poll their answers.
     ///
     /// # Specification
     /// - requires: `subgoals` are the decomposition's premises in subgoal
@@ -1865,14 +2402,44 @@ where
     /// - ensures: an empty decomposition answers convertible at once; otherwise
     ///   one child per subgoal, started fresh or re-shared by
     ///   [`Scheduler::start_fresh`] — a value pair as it stands, an opened pair
-    ///   at this depth — and the goal waits on all of them, one premise per
-    ///   position even where two positions name one process.
+    ///   at this depth — with one premise per position even where two positions
+    ///   name one process. A known refutation or no pending premise schedules
+    ///   another turn; otherwise completion of a pending child wakes the goal.
     /// - provides: every rule with premises compared child by child.
     /// - fails: as [`Scheduler::start_fresh`] and [`Scheduler::depend`].
     /// - panics: none.
     ///
     /// # Errors
     /// As [`Scheduler::start_fresh`] and [`Scheduler::depend`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a decomposition has no premises, pending premises or
+    ///   already answered memo hits. The observer is its conjunction’s verdict,
+    ///   with refutation dominant and child order retained in the trace; an
+    ///   empty conjunction agrees, while completed premises must schedule a
+    ///   poll rather than wait for a wakeup that cannot arrive.
+    /// - witness: `machine::tests::empty_choices_refuse_instead_of_producing_a_refutation`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    /// - witness: `machine::tests::a_refutation_outranks_a_decline`
+    /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
+    #[spec(
+        captures: [count = subgoals.len()],
+        ensures: |ret| match ret {
+            Err(_) => true,
+            Ok(Turn::Done) => count == 0 && self.processes.get(id.0).is_some_and(|process| process.outcome == Outcome::Settled(Settled::Convertible)),
+            Ok(turn @ (Turn::Again | Turn::Wait)) => count != 0 && match goal.next {
+                Next::Combine(Combine::All { pair: actual, ref children, collapse: held }) => {
+                    actual == pair && held == collapse && children.len() == count
+                        && children.iter().all(|child| self.processes.get(child.0).is_some())
+                        && (turn == Turn::Again) == (
+                            children.iter().all(|child| self.processes.get(child.0).is_some_and(|process| process.outcome != Outcome::Pending))
+                            || children.iter().any(|child| self.processes.get(child.0).is_some_and(|process|
+                                matches!(process.outcome, Outcome::Settled(Settled::NotConvertible) | Outcome::Evaluated(_)))))
+                }
+                _ => false,
+            },
+        }
+    )]
     fn decompose(
         &mut self,
         id: ProcessId,
@@ -1886,6 +2453,8 @@ where
             self.answer(id, Settled::Convertible, &[])?;
             return Ok(Turn::Done);
         }
+        let mut waiting = false;
+        let mut ready = false;
         let mut children = Vec::with_capacity(subgoals.len());
         for subgoal in subgoals {
             let sides = match subgoal {
@@ -1895,7 +2464,12 @@ where
                 | Subgoal::Opened(left, right) => SupportSides::Opened(left, right),
             };
             let child = self.start_fresh(sides, goal.depth)?;
-            self.depend(id, child)?;
+            let outcome = self.depend(id, child)?;
+            waiting |= outcome == Outcome::Pending;
+            ready |= matches!(
+                outcome,
+                Outcome::Settled(Settled::NotConvertible) | Outcome::Evaluated(_)
+            );
             children.push(child);
         }
         goal.next = Next::Combine(Combine::All {
@@ -1903,7 +2477,14 @@ where
             children,
             collapse,
         });
-        Ok(Turn::Wait)
+        // A recalled answer will not send another wakeup.
+        // Poll a known refutation now, or combine when no child is pending.
+        Ok(if ready || !waiting {
+            Turn::Again
+        }
+        else {
+            Turn::Wait
+        })
     }
 
     /// The neutral a weak head is.
@@ -1920,6 +2501,30 @@ where
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — the side is not a neutral.
     /// - [`ConversionFault::Domain`] — the side does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a live neutral wrapper must expose the neutral of its
+    ///   own polarity; a former or missing wrapper refuses. Value unfolding and
+    ///   computation-spine refutation observe which head was extracted, while
+    ///   the malformed-head probe distinguishes shape refusal from
+    ///   dangling-domain refusal.
+    /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+    /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
+    /// - witness: `machine::tests::malformed_heads_and_channel_entries_are_refused`
+    #[spec(
+        ensures: |ret| ret == match glued {
+            Glued::Value(value) => match self.domain.value(value) {
+                Some(&DomainValue::Neutral { neutral, .. }) => Ok(neutral),
+                Some(_) => Err(ConversionFault::MachineInvariant),
+                None => Err(ConversionFault::Domain(DomainFault::Dangling)),
+            },
+            Glued::Computation(comp) => match self.domain.computation(comp) {
+                Some(&DomainComp::Neutral { neutral, .. }) => Ok(neutral),
+                Some(_) => Err(ConversionFault::MachineInvariant),
+                None => Err(ConversionFault::Domain(DomainFault::Dangling)),
+            },
+        }
+    )]
     fn neutral_of(
         &self,
         glued: Glued,
@@ -1952,6 +2557,24 @@ where
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — the head is not a constant.
     /// - [`ConversionFault::Domain`] — the neutral does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — constant, variable, module and missing neutral heads
+    ///   lie on the extraction boundary. Exact named unfoldings separate wrong
+    ///   constants; the malformed-head probe observes the different shape and
+    ///   missing-domain refusals instead of letting a nonconstant head become a
+    ///   definition.
+    /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::malformed_heads_and_channel_entries_are_refused`
+    #[spec(
+        ensures: |ret| ret == self.domain.neutral(neutral)
+            .ok_or(ConversionFault::Domain(DomainFault::Dangling))
+            .and_then(|held| match held.head() {
+                NeutralHead::Constant(constant) => Ok(constant),
+                NeutralHead::Variable { .. } | NeutralHead::Module(_) => Err(ConversionFault::MachineInvariant),
+            })
+    )]
     fn head_constant(
         &self,
         neutral: NeutralId,
@@ -2019,6 +2642,28 @@ where
     ///
     /// # Errors
     /// Every fault the channel raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unfolding either side selects that side’s constant
+    ///   and full spine; a repeated key declines without replacing either slot.
+    ///   The observer is the ordered unfolding/reduction trace and resulting
+    ///   verdict, separating wrong-side replacement, lost spine arguments and a
+    ///   constant-only cycle key.
+    /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
+    /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
+    #[spec(
+        captures: [left = goal.left, right = goal.right],
+        ensures: |ret| match ret {
+            Err(_) => true,
+            Ok(Advance::Cycle) => goal.left == left && goal.right == right,
+            Ok(Advance::Unfolding) => match side {
+                ConversionSide::Left => goal.right == right && matches!(goal.left, Slot::Waiting(channel) if self.processes.get(channel.0).is_some()),
+                ConversionSide::Right => goal.left == left && matches!(goal.right, Slot::Waiting(channel) if self.processes.get(channel.0).is_some()),
+            },
+        }
+    )]
     fn unfold(
         &mut self,
         id: ProcessId,
@@ -2071,11 +2716,22 @@ where
     /// Every fault the channel or the domain raises.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — forcing preserves computation polarity on both sides;
-    ///   a native path value cannot enter the thunk rule.
+    /// - hypothesis: L3 — a force step crosses from two value heads to
+    ///   computation slots, entering thunks or extending a neutral spine. The
+    ///   trace must name both forces and the resulting computations must agree
+    ///   or refute as their returned values do; leaving a value slot behind or
+    ///   forcing only one side changes that observation.
     /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
-    #[spec(ensures: |ret| ret.is_err() || (matches!(goal.left, Slot::Waiting(_) | Slot::Ready(Glued::Computation(_))) && matches!(goal.right, Slot::Waiting(_) | Slot::Ready(Glued::Computation(_)))))]
+    #[spec(
+        ensures: |ret| ret.is_err() || [goal.left, goal.right].iter().all(|slot| match *slot {
+            Slot::Ready(Glued::Computation(comp)) => self.domain.computation(comp).is_some(),
+            Slot::Waiting(channel) => self.processes.get(channel.0).is_some(),
+            Slot::Ready(Glued::Value(_)) => false,
+        })
+    )]
     fn force(
         &mut self,
         id: ProcessId,
@@ -2142,6 +2798,29 @@ where
     ///
     /// # Errors
     /// Every fault the channel or the domain raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a neutral computation is expanded against a lambda on
+    ///   either side at a representable fresh level. The eta trace observes one
+    ///   shared fresh variable, and the ceiling refusal observes that no
+    ///   variable is allocated before an impossible increment; swapping sides,
+    ///   reusing a level or allocating before the check changes these
+    ///   witnesses.
+    /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+    /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
+    /// - witness: `machine::tests::binder_ceiling_is_refused_before_opening_or_eta_allocation`
+    #[spec(
+        captures: [depth = goal.depth, left = goal.left, right = goal.right],
+        ensures: |ret| match u32::from(depth).checked_add(1) {
+            None => ret == Err(ConversionFault::MachineInvariant)
+                && goal.depth == depth && goal.left == left && goal.right == right,
+            Some(opened) => ret.is_err() || (u32::from(goal.depth) == opened
+                && match side {
+                    ConversionSide::Left => matches!(goal.left, Slot::Ready(Glued::Computation(_))) && matches!(goal.right, Slot::Waiting(_)),
+                    ConversionSide::Right => matches!(goal.right, Slot::Ready(Glued::Computation(_))) && matches!(goal.left, Slot::Waiting(_)),
+                }),
+        }
+    )]
     fn eta(
         &mut self,
         id: ProcessId,
@@ -2150,6 +2829,7 @@ where
         side: ConversionSide,
     ) -> Result<(), ConversionFault>
     {
+        let opened_depth = deeper(goal.depth)?;
         let variable = self.variable(goal.depth)?;
         self.derivations.decide(id, ConversionDecision::EtaExpand {
             side,
@@ -2173,7 +2853,7 @@ where
         let channel = self.open_channel(body, goal.depth)?;
         Self::set_side(goal, lambda_side, Slot::Waiting(channel));
         self.depend(id, channel)?;
-        goal.depth = deeper(goal.depth)?;
+        goal.depth = opened_depth;
         Ok(())
     }
 
@@ -2191,6 +2871,40 @@ where
     ///
     /// # Errors
     /// As [`Scheduler::start_goal`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the four choice constructors have two or three
+    ///   ordered alternatives, with frozen inputs and the authoritative move
+    ///   preserved. The observer is the selected conversion trace and its
+    ///   independent replay; missing a branch, charging the wrong arity, moving
+    ///   authority or dropping inherited freezes changes those results.
+    /// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
+    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+    /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+    #[spec(
+        captures: [before = self.spent.0],
+        ensures: |ret| ret.is_err() || (ret == Ok(Turn::Wait) && {
+            let expected: &[Move] = match choice {
+                Choice::Same => &[Move::Shortcut, Move::FreezeUnfold(ConversionSide::Left), Move::PostponeUnfold(ConversionSide::Left)],
+                Choice::Different => &[Move::FreezeUnfold(ConversionSide::Left), Move::PostponeUnfold(ConversionSide::Left)],
+                Choice::Frozen { defined } => &[Move::Shortcut, Move::Unfold(defined)],
+                Choice::Lambda { defined } => &[Move::FreezeEta(defined), Move::Unfold(defined)],
+            };
+            let children = match goal.next {
+                Next::Combine(Combine::Biased(ref children)) if !matches!(choice, Choice::Frozen { .. }) => Some(children),
+                Next::Combine(Combine::Either(ref children)) if matches!(choice, Choice::Frozen { .. }) => Some(children),
+                _ => None,
+            };
+            self.spent.0 == before.saturating_add(u64::try_from(expected.len()).unwrap_or(u64::MAX))
+                && children.is_some_and(|children| children.len() == expected.len()
+                    && children.iter().zip(expected).all(|(child, expected)| self.processes.get(child.0).is_some_and(|process|
+                        process.outcome == Outcome::Pending && matches!(process.work, Work::Goal(ref branch)
+                            if branch.left == goal.left && branch.right == goal.right
+                                && branch.depth == goal.depth && branch.frozen == goal.frozen && branch.chain == goal.chain
+                                && branch.next == Next::Move(*expected)))))
+        })
+    )]
     fn choose(
         &mut self,
         id: ProcessId,
@@ -2239,6 +2953,27 @@ where
     ///
     /// # Errors
     /// Every fault the move raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the five moves are shortcut, unfolding, frozen
+    ///   unfolding, postponed unfolding and frozen eta. Ordered decisions, the
+    ///   kernel’s replay and cycle behavior distinguish the wrong side, an
+    ///   omitted freeze/postponement, a shortcut that unfolds unnecessarily and
+    ///   an uncharged move.
+    /// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
+    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+    /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+    /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
+    #[spec(
+        captures: [before = self.spent.0],
+        ensures: |ret| self.spent.0 == before.saturating_add(1)
+            && (ret.is_err() || self.processes.get(id.0).is_some_and(|process| match ret {
+                Ok(Turn::Done) => process.outcome != Outcome::Pending,
+                Ok(Turn::Again | Turn::Wait) => process.outcome == Outcome::Pending,
+                Err(_) => false,
+            }))
+    )]
     fn take(
         &mut self,
         id: ProcessId,
@@ -2314,6 +3049,25 @@ where
     ///
     /// # Errors
     /// As [`Scheduler::neutral_of`] and [`Scheduler::head_constant`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a side selects a constant-headed neutral rather than
+    ///   its peer. The observer is the exact constant named by Freeze, Postpone
+    ///   and the following reduction; two distinct definitions and a defined
+    ///   function against eta separate swapped-side extraction from a correct
+    ///   identifier.
+    /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+    /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+    #[spec(
+        ensures: |ret| ret.is_err() || ret.is_ok_and(|constant| {
+                let selected = match side { ConversionSide::Left => pair.0, ConversionSide::Right => pair.1 };
+                let neutral = match selected {
+                    Glued::Value(value) => match self.domain.value(value) { Some(&DomainValue::Neutral { neutral, .. }) => Some(neutral), _ => None },
+                    Glued::Computation(comp) => match self.domain.computation(comp) { Some(&DomainComp::Neutral { neutral, .. }) => Some(neutral), _ => None },
+                };
+                neutral.and_then(|id| self.domain.neutral(id)).is_some_and(|node| node.head() == NeutralHead::Constant(constant))
+        })
+    )]
     fn side_constant(
         &self,
         pair: (Glued, Glued),
@@ -2337,9 +3091,10 @@ where
     ///   refutation declines once every child answered and one declined; a
     ///   biased choice whose last child declined declines once no other child
     ///   can still agree; an either declines once every child answered, none
-    ///   agreed and one declined. Each takes the first decline's reason in
-    ///   child order. Otherwise the goal waits. The children an answer rests on
-    ///   are recorded as its derivation's continuation, and the others lose
+    ///   agreed and one declined. Decomposition and either take the first
+    ///   decline's reason in child order; biased choice takes its authoritative
+    ///   child's reason. Otherwise the goal waits. The children an answer rests
+    ///   on are recorded as its derivation's continuation, and the others lose
     ///   this goal's need. The support an answer is read from is its winning
     ///   children for an acceptance, the refuted premise for a refuted
     ///   decomposition, and every alternative for a refuted choice.
@@ -2350,6 +3105,53 @@ where
     ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — the children are malformed.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — conjunction, biased choice and either combine
+    ///   pending, accepted, refuted and differently declined children,
+    ///   including a decisive middle child and empty inputs. The root outcome
+    ///   and resumed work distinguish wrong dominance, premature decline,
+    ///   first-versus-authoritative decline reasons and a vacuous empty-choice
+    ///   refutation; conjunction traces also expose the selected negative
+    ///   premise.
+    /// - witness: `machine::tests::combinators_preserve_answer_and_decline_precedence`
+    /// - witness: `machine::tests::empty_choices_refuse_instead_of_producing_a_refutation`
+    /// - witness: `machine::tests::a_refutation_outranks_a_decline`
+    /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
+    #[spec(
+        captures: [boundary = match combine {
+            Combine::All { ref children, .. } => (true, false, children.len(), children.first().copied(), children.last().copied()),
+            Combine::Biased(ref children) => (false, true, children.len(), children.first().copied(), children.last().copied()),
+            Combine::Either(ref children) => (false, false, children.len(), children.first().copied(), children.last().copied()),
+        }],
+        ensures: |ret| {
+            let (all, biased, count, first, last) = boundary;
+            let outcome = self.processes.get(id.0).map(|process| process.outcome);
+            let first = first.and_then(|child| self.processes.get(child.0)).map(|process| process.outcome);
+            let last = last.and_then(|child| self.processes.get(child.0)).map(|process| process.outcome);
+            if !all && count == 0 { ret == Err(ConversionFault::MachineInvariant) }
+            else {
+                (ret.is_err() || match ret {
+                    Ok(Turn::Done) => outcome.is_some_and(|outcome| matches!(outcome, Outcome::Settled(_) | Outcome::Declined(_))),
+                    Ok(Turn::Wait) => outcome == Some(Outcome::Pending) && match goal.next {
+                        Next::Combine(Combine::All { .. }) => all,
+                        Next::Combine(Combine::Biased(_)) => biased,
+                        Next::Combine(Combine::Either(_)) => !all && !biased,
+                        _ => false,
+                    },
+                    Ok(Turn::Again) | Err(_) => false,
+                })
+                    && (ret.is_err() || !all || count != 0 || outcome == Some(Outcome::Settled(Settled::Convertible)))
+                    && (ret.is_err() || !matches!(outcome, Some(Outcome::Declined(_)))
+                        || if biased { outcome == last }
+                        else { !matches!(first, Some(Outcome::Declined(_))) || outcome == first })
+                    && (ret.is_err() || !matches!((all, first),
+                        (true, Some(Outcome::Settled(Settled::NotConvertible)))
+                        | (false, Some(Outcome::Settled(Settled::Convertible))))
+                        || (ret == Ok(Turn::Done) && outcome == first))
+            }
+        }
+    )]
     fn combine(
         &mut self,
         id: ProcessId,
@@ -2451,6 +3253,9 @@ where
                 }
             },
             | Combine::Either(children) => {
+                if children.is_empty() {
+                    return Err(ConversionFault::MachineInvariant);
+                }
                 let mut refuted = 0_usize;
                 let mut waiting = 0_usize;
                 let mut declined = None;
@@ -2514,6 +3319,27 @@ where
     ///   plus the binders the run has opened, so the loop mints at most that
     ///   many variables over the whole run.
     /// - input recursion: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fresh variable is cached by intuitionistic level,
+    ///   with a rigid empty spine, and different opened levels must remain
+    ///   different binders. The eta trace and two-level channel evaluation
+    ///   observe the actual variable returned; using the wrong zone, adjacent
+    ///   level or a shared variable for distinct levels changes them.
+    /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+    /// - witness: `machine::tests::opened_channels_preserve_distinct_binder_levels`
+    #[spec(
+        captures: [before = self.variables.len()],
+        ensures: |ret| ret.as_ref().map_or(true, |value| {
+            usize::try_from(u32::from(level)).is_ok_and(|index|
+                self.variables.get(index) == Some(value)
+                    && self.variables.len() == before.max(index.saturating_add(1)))
+                && matches!(self.domain.value(*value), Some(&DomainValue::Neutral { neutral, face: TermFace::Reduced })
+                    if self.domain.neutral(neutral).is_some_and(|node|
+                        node.head() == (NeutralHead::Variable { zone: Zone::Intuitionistic, level })
+                            && node.spine().is_empty() && node.unfolding() == Unfolding::Rigid))
+        })
+    )]
     fn variable(
         &mut self,
         level: BinderLevel,
@@ -2562,6 +3388,24 @@ where
     /// # Errors
     /// - [`ConversionFault::Evaluation`] — no lowered body for `entry`.
     /// - [`ConversionFault::MachineInvariant`] — an uninstallable stance.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one lowered body may belong to one definition or be
+    ///   named by two definitions, while an entry with no lowering refuses.
+    ///   Exact process counts and the missing-entry refusal distinguish
+    ///   per-definition rather than per-body caching, repeated evaluation and
+    ///   inventing a body for an absent entry.
+    /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
+    /// - witness: `machine::tests::malformed_heads_and_channel_entries_are_refused`
+    #[spec(
+        captures: [cached = usize::try_from(u32::from(entry)).ok().and_then(|index| self.bodies.get(index)).copied(), processes = self.processes.len()],
+        ensures: |ret| ret.as_ref().map_or(true, |channel| {
+            usize::try_from(u32::from(entry)).ok().and_then(|index| self.bodies.get(index)) == Some(&BodyChannel::Minted(*channel))
+                && self.processes.get(channel.0).is_some()
+                && match cached { Some(BodyChannel::Minted(before)) => *channel == before && self.processes.len() == processes,
+                    None | Some(BodyChannel::Unminted) => self.processes.len() == processes.saturating_add(1) }
+        })
+    )]
     fn body_channel(
         &mut self,
         entry: GlobalIndex,
@@ -2625,6 +3469,24 @@ where
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — nothing to unfold.
     /// - [`ConversionFault`] — as [`Scheduler::body_channel`] raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constant neutral may have a bare or reapplied spine
+    ///   and a forced or unforced value body; rigid, wrong-polarity and missing
+    ///   heads refuse. Trace replay, shared-body counts and repeated
+    ///   applications distinguish a lost spine, repeated evaluation and a body
+    ///   channel mistaken for a reapplied one.
+    /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
+    /// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
+    /// - witness: `machine::tests::unfolding_one_function_twice_is_not_a_cycle`
+    /// - witness: `machine::tests::malformed_heads_and_channel_entries_are_refused`
+    #[spec(
+        captures: [entries = self.unfoldings.len(), processes = self.processes.len()],
+        ensures: |ret| ret.as_ref().map_or(true, |channel| self.unfoldings.get(&neutral) == Some(channel)
+            && self.processes.get(channel.0).is_some()
+            && (self.unfoldings.len() != entries || self.processes.len() == processes)
+            && self.unfoldings.len() <= entries.saturating_add(1))
+    )]
     fn unfold_channel(
         &mut self,
         neutral: NeutralId,
@@ -2691,6 +3553,22 @@ where
     /// # Errors
     /// - [`ConversionFault::Evaluation`] — the closure does not resolve.
     /// - [`ConversionFault`] — as [`Scheduler::variable`] raises.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the opening key is the closure together with its
+    ///   fresh level, not either component alone. Evaluated return values at
+    ///   two levels and a repeated request observe capture preservation and
+    ///   cache reuse; wrong-level sharing changes the neutral variable that eta
+    ///   and binder comparison receive.
+    /// - witness: `machine::tests::opened_channels_preserve_distinct_binder_levels`
+    /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+    #[spec(
+        captures: [entries = self.openings.len(), processes = self.processes.len()],
+        ensures: |ret| ret.as_ref().map_or(true, |channel| self.openings.get(&(closure, level)) == Some(channel)
+            && self.processes.get(channel.0).is_some()
+            && if self.openings.len() == entries { self.processes.len() == processes }
+                else { self.openings.len() == entries.saturating_add(1) && self.processes.len() == processes.saturating_add(1) })
+    )]
     fn open_channel(
         &mut self,
         closure: CompClosureId,
@@ -2730,6 +3608,22 @@ where
     ///
     /// # Errors
     /// - [`ConversionFault::Evaluation`] — the closure does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — entering a thunk supplies no binder and shares its
+    ///   body channel by closure identity. Forced comparisons and a delayed
+    ///   reuse of the same closures observe the returned computations and
+    ///   completed-channel reuse; allocating a new channel for every force or
+    ///   reusing a different closure changes those results.
+    /// - witness: `machine::tests::thunks_meet_by_forcing`
+    /// - witness: `machine::tests::completed_premises_wake_a_later_decomposition`
+    #[spec(
+        captures: [entries = self.entries.len(), processes = self.processes.len()],
+        ensures: |ret| ret.as_ref().map_or(true, |channel| self.entries.get(&closure) == Some(channel)
+            && self.processes.get(channel.0).is_some()
+            && if self.entries.len() == entries { self.processes.len() == processes }
+                else { self.entries.len() == entries.saturating_add(1) && self.processes.len() == processes.saturating_add(1) })
+    )]
     fn enter_channel(
         &mut self,
         closure: CompClosureId,
@@ -2762,6 +3656,18 @@ where
 ///
 /// # Errors
 /// - [`ConversionFault::MachineInvariant`] — the level ceiling.
+///
+/// # Adequacy
+/// - hypothesis: L3 — opening a representable level increments it once, while
+///   the maximum refuses before any binder allocation. Fresh-variable equality
+///   in eta and the ceiling probe distinguish a reused level, wrapping
+///   arithmetic and a late refusal after constructing a huge variable prefix.
+/// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+/// - witness: `machine::tests::binder_ceiling_is_refused_before_opening_or_eta_allocation`
+#[spec(
+    ensures: |ret| ret == u32::from(level).checked_add(1).map(BinderLevel::from)
+        .ok_or(ConversionFault::MachineInvariant)
+)]
 fn deeper(level: BinderLevel) -> Result<BinderLevel, ConversionFault>
 {
     let next = u32::from(level)
@@ -2903,6 +3809,24 @@ mod tests
         /// - provides: the fixture every machine test over named constants runs
         ///   in.
         /// - panics: as [`World::admit`].
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — for coherent named entry/body fixtures, admission
+        ///   order assigns constants while names choose shared table entries.
+        ///   Observable unfolding traces and the one-body/two-definition
+        ///   process count distinguish confusing a name with an admission
+        ///   position, losing a body or duplicating a shared lowering.
+        /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+        /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+        /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
+        #[spec(
+            captures: [mark = core.watermark()],
+            ensures: |ret| ret.core.watermark() == mark && ret.bodies.len() == bodies.len()
+                && bodies.iter().enumerate().all(|(position, &(name, body))|
+                    ret.bodies.get(position) == Some(&body)
+                        && ret.chain.chain().entry(ConstantIndex::from(position)).is_some_and(|entry| entry.body() == name.entry())
+                        && Definitions::new(&ret.chain, &ret.environment, ret.environment.root()).bodies().get(&name.entry()) == Some(&body))
+        )]
         fn new(
             core: CoreArena,
             bodies: &[(Name, ValueId)],
@@ -2925,6 +3849,25 @@ mod tests
         /// - provides: the fixture every machine test runs in.
         /// - panics: when the chain refuses a definition, which no fixture
         ///   provokes.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — coherent table entries are admitted without
+        ///   mentions, including repeated entries and recursive bodies. The
+        ///   observer is the resulting comparison trace and exact shared-body
+        ///   count; wrong ordinal assignment, accidental dependency heights or
+        ///   per-definition lowering change those observations.
+        /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
+        /// - witness: `machine::tests::a_definition_cycle_declines_rather_than_unfolding_forever`
+        /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+        #[spec(
+            captures: [mark = core.watermark()],
+            ensures: |ret| ret.core.watermark() == mark && ret.bodies.len() == bodies.len()
+                && bodies.iter().enumerate().all(|(position, &(entry, body))|
+                    ret.bodies.get(position) == Some(&body)
+                        && ret.chain.chain().entry(ConstantIndex::from(position)).is_some_and(|definition| definition.body() == entry)
+                        && Definitions::new(&ret.chain, &ret.environment, ret.environment.root()).bodies().get(&entry) == Some(&body)
+                        && u32::from(Definitions::new(&ret.chain, &ret.environment, ret.environment.root()).height(ConstantIndex::from(position))) == 1)
+        )]
         fn admit(
             core: CoreArena,
             bodies: &[(GlobalIndex, ValueId)],
@@ -2944,6 +3887,23 @@ mod tests
         ///   position.
         /// - provides: the fixture whose heights a weighted schedule reads.
         /// - panics: as [`World::admit`].
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a positional chain mentions its immediate
+        ///   predecessor, so unequal heights remain observable on either side
+        ///   of a comparison. The height probe and fair/weighted divergence
+        ///   fixture distinguish flat heights, wrong predecessor references and
+        ///   a shifted admission order.
+        /// - witness: `machine::tests::head_height_is_symmetric_and_nonconstants_stay_at_the_floor`
+        /// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
+        #[spec(
+            captures: [mark = core.watermark()],
+            ensures: |ret| ret.core.watermark() == mark && ret.bodies.len() == bodies.len()
+                && bodies.iter().enumerate().all(|(position, &(entry, body))|
+                    ret.bodies.get(position) == Some(&body)
+                        && Definitions::new(&ret.chain, &ret.environment, ret.environment.root()).bodies().get(&entry) == Some(&body)
+                        && usize::try_from(u32::from(Definitions::new(&ret.chain, &ret.environment, ret.environment.root()).height(ConstantIndex::from(position)))).ok() == position.checked_add(1))
+        )]
         fn stacked(
             core: CoreArena,
             bodies: &[(GlobalIndex, ValueId)],
@@ -2960,6 +3920,28 @@ mod tests
         /// - ensures: as [`World::admit`], at the heights the mentions give.
         /// - provides: the one admission both fixtures share.
         /// - panics: as [`World::admit`].
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — the input is a coherent ordered list of table
+        ///   entries, with either no mentions or only the immediate
+        ///   predecessor. The observer is exact body sharing and unequal head
+        ///   heights; swapped bodies, ordinal/entry confusion and the wrong
+        ///   mention policy alter counts, traces or weighted scheduling.
+        /// - witness: `machine::tests::one_body_is_evaluated_once_for_two_definitions`
+        /// - witness: `machine::tests::head_height_is_symmetric_and_nonconstants_stay_at_the_floor`
+        /// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
+        #[spec(
+            captures: [mark = core.watermark()],
+            ensures: |ret| ret.core.watermark() == mark && ret.bodies.len() == bodies.len()
+                && ret.chain.chain().entries().len() == bodies.len()
+                && bodies.iter().enumerate().all(|(position, &(entry, body))| {
+                    let definitions = Definitions::new(&ret.chain, &ret.environment, ret.environment.root());
+                    ret.bodies.get(position) == Some(&body) && definitions.bodies().get(&entry) == Some(&body)
+                        && ret.chain.chain().entry(ConstantIndex::from(position)).is_some_and(|definition| definition.body() == entry)
+                        && usize::try_from(u32::from(definitions.height(ConstantIndex::from(position)))).ok()
+                            == match mentions { Mentions::Nothing => Some(1), Mentions::Previous => position.checked_add(1) }
+                })
+        )]
         fn chained(
             core: CoreArena,
             bodies: &[(GlobalIndex, ValueId)],
@@ -3008,6 +3990,23 @@ mod tests
         /// - provides: the entry every machine test with no settings of its own
         ///   goes through.
         /// - panics: as [`World::run_under`].
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — closed catalogue and ladder sides that evaluate
+        ///   within the fixture fuel are run from fresh domains. Verdict,
+        ///   process and derivation counts separate stale run state, a lost
+        ///   definitive answer and recording that changes the comparison; the
+        ///   same inputs are checked with recording off and on.
+        /// - witness: `machine::tests::recording_does_not_move_the_verdict`
+        /// - witness: `machine::tests::the_sink_off_run_keeps_no_derivation`
+        /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+        #[spec(
+            ensures: |ret| usize::from(ret.derivations()) == if matches!(S::ACTIVITY, super::SinkActivity::Active) {
+                usize::from(ret.processes())
+            } else { 0 }
+                && (usize::from(ret.processes()) != 0
+                    || (u64::from(ret.steps()) == 0 && !matches!(ret.verdict(), MachineVerdict::Declined(_))))
+        )]
         fn run<S>(
             &self,
             sides: Sides,
@@ -3028,6 +4027,22 @@ mod tests
         /// - provides: the entry every machine test with settings of its own
         ///   goes through.
         /// - panics: as [`World::run_with`].
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — closed sides with bounded weak-head evaluation
+        ///   are compared under caller-supplied scheduling and step budgets.
+        ///   The observed verdict and trace distinguish ignoring the budget,
+        ///   ignoring the stance and mistaking a decline for a refutation.
+        /// - witness: `machine::tests::a_diverging_evaluation_declines_on_the_budget`
+        /// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
+        /// - witness: `machine::tests::recording_does_not_move_the_verdict`
+        #[spec(
+            ensures: |ret| usize::from(ret.derivations()) == if matches!(S::ACTIVITY, super::SinkActivity::Active) {
+                usize::from(ret.processes())
+            } else { 0 }
+                && (usize::from(ret.processes()) != 0
+                    || (u64::from(ret.steps()) == 0 && !matches!(ret.verdict(), MachineVerdict::Declined(_))))
+        )]
         fn run_under<S>(
             &self,
             settings: MachineSettings,
@@ -3050,6 +4065,26 @@ mod tests
         ///   one the memo differential instantiates twice.
         /// - panics: when evaluation or the machine refuses, which no fixture
         ///   provokes.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — the domain is closed fixture sides with weak
+        ///   heads obtainable within the fixed fuel, under either a run-local
+        ///   sharing memo or the null memo. Verdict, process and support-edge
+        ///   counts distinguish stale domains, lost sharing and accounting
+        ///   retained in a memoless run; a genuine shared wait cycle may
+        ///   decline differently from its unrolled reference.
+        /// - witness: `machine::tests::the_memo_never_moves_a_verdict`
+        /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+        /// - witness: `machine::tests::a_goal_resting_on_itself_declines_on_the_cycle`
+        /// - witness: `machine::tests::edges_per_revision_grow_with_the_distinct_goals`
+        #[spec(
+            ensures: |ret| (usize::from(ret.derivations()) == if matches!(S::ACTIVITY, super::SinkActivity::Active) {
+                usize::from(ret.processes())
+            } else { 0 }
+                && (usize::from(ret.processes()) != 0
+                    || (u64::from(ret.steps()) == 0 && !matches!(ret.verdict(), MachineVerdict::Declined(_)))))
+                && (matches!(M::ACTIVITY, super::MemoActivity::Active) || ret.edges() == super::SupportEdges::default())
+        )]
         fn run_with<S, M>(
             &self,
             settings: MachineSettings,
@@ -3098,6 +4133,21 @@ mod tests
         /// - ensures: the verdict and the decisions recorded, in order.
         /// - provides: the trace every decision-level assertion reads.
         /// - panics: as [`World::run`].
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — closed fixtures may produce either verdict or
+        ///   decline on a cycle or unresolved code. The observer is the exact
+        ///   ordered trace and the empty conversion derivation on decline;
+        ///   eager emission of speculative branches, wrong-side decisions and a
+        ///   decline emitted as evidence change these witnesses.
+        /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+        /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+        /// - witness: `machine::tests::a_refutation_outranks_a_decline`
+        /// - witness: `machine::tests::codes_that_could_unfold_inside_are_declined`
+        /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+        #[spec(
+            ensures: |ret| !matches!(ret.0, MachineVerdict::Declined(_)) || ret.1.is_empty()
+        )]
         fn traced(
             &self,
             sides: Sides,
@@ -3118,6 +4168,23 @@ mod tests
         ///   other one opaque.
         /// - provides: the end-to-end check every replay test runs.
         /// - panics: as [`Kernel::translate`].
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — supported intuitionistic fixtures are translated
+        ///   independently, and the supplied trace may be genuine or have a
+        ///   changed branch decision. The observer is kernel agreement, a named
+        ///   refusal for the tampering, or an engine-decline result; trusting
+        ///   the claim or treating a decline/refusal as the opposite verdict
+        ///   changes these outcomes.
+        /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+        /// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
+        #[spec(
+            ensures: |ret| (!matches!(verdict, MachineVerdict::Declined(_))
+                || ret == KernelVerdict::Declined(ReplayDecline::EngineDeclined))
+                && (ret != KernelVerdict::Convertible || verdict == MachineVerdict::Convertible)
+                && (ret != KernelVerdict::NotConvertible || verdict == MachineVerdict::NotConvertible)
+        )]
         fn replayed(
             &self,
             sides: Sides,
@@ -3167,6 +4234,21 @@ mod tests
         /// - provides: the spinal run every certification test replays.
         /// - panics: when installation, evaluation or the machine refuses,
         ///   which no fixture provokes.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — supported closed value and computation fixtures
+        ///   are lifted and evaluated with recorded spinal duplication before
+        ///   conversion. Kernel agreement on both verdicts and on a
+        ///   schedule-induced decline distinguishes changed denotation,
+        ///   misplaced shares and partial duplication evidence mistaken for a
+        ///   conversion verdict.
+        /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::an_unlucky_spinal_schedule_declines_and_the_kernel_with_it`
+        #[spec(
+            ensures: |ret| usize::from(ret.0.derivations()) == usize::from(ret.0.processes())
+                && (usize::from(ret.0.processes()) != 0
+                    || (u64::from(ret.0.steps()) == 0 && !matches!(ret.0.verdict(), MachineVerdict::Declined(_))))
+        )]
         fn spinal(
             &self,
             settings: MachineSettings,
@@ -3243,6 +4325,22 @@ mod tests
         /// - provides: the check that a certification test exercised sharing.
         /// - panics: when a lifted overlay does not measure, which a fixture
         ///   this small never provokes.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — supported acyclic term fixtures include a leaf
+        ///   and distinct arena nodes for equal nested pairs. Exact counts of
+        ///   zero and two shared legs, plus erasure to the original tree,
+        ///   distinguish pointer-only sharing, missing inner shares and a
+        ///   non-share node counted as a share.
+        /// - witness: `machine::tests::lifting_shares_equal_trees_without_reusing_occurrence_nodes`
+        /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+        #[spec(
+            ensures: |ret| {
+             let roots = match sides { Sides::Values(a,b) => [CoreTerm::Value(a),CoreTerm::Value(b)], Sides::Computations(a,b) => [CoreTerm::Computation(a),CoreTerm::Computation(b)] };
+             (roots[0] != roots[1] || ret[0] == ret[1]) && roots.into_iter().zip(ret).all(|(root,count)|
+                !matches!(root, CoreTerm::Value(id) if matches!(self.core.value(id), Some(Value::Unit | Value::Variable{..} | Value::Constant(_) | Value::Literal(_)))) || u64::from(count) == 0)
+            }
+        )]
         fn shares(
             &self,
             sides: Sides,
@@ -3288,18 +4386,35 @@ mod tests
     /// - panics: when `node` does not resolve, which the requirement excludes.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — native term children retain left-to-right order while
-    ///   quoted types remain opaque to the term-only sharing lifter.
+    /// - hypothesis: L3 — resolved term formers are observed through lifted
+    ///   erasure and independent kernel replay. Ordered mixed-family
+    ///   application, bind and case children distinguish omitted, swapped or
+    ///   wrong-family edges; the leaf and nested-pair witness also exercises
+    ///   zero, one and repeated children.
+    /// - witness: `machine::tests::lifting_shares_equal_trees_without_reusing_occurrence_nodes`
+    /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
-    #[spec(requires: match node { CoreTerm::Value(id) => core.value(id).is_some(), CoreTerm::Computation(id) => core.computation(id).is_some() }, ensures: |ret| match node {
-        CoreTerm::Value(id) => match core.value(id) {
-            Some(&Value::PathRefl(code)) => ret.as_slice() == [CoreTerm::Value(code)],
-            Some(&Value::PathEquiv { forward, backward, .. }) => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
-            Some(&Value::PathProduct(a, b)) => ret.as_slice() == [CoreTerm::Value(a), CoreTerm::Value(b)],
-            _ => true,
-        },
-        CoreTerm::Computation(id) => match core.computation(id) { Some(&Computation::Transport(path, value)) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)], _ => true },
-    })]
+    #[spec(
+        ensures: |ret| match node {
+         CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
+          Value::PathRefl(code) => ret.as_slice() == [CoreTerm::Value(code)],
+          Value::PathProduct(first, second) => ret.as_slice() == [CoreTerm::Value(first), CoreTerm::Value(second)],
+          Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [CoreTerm::Value(forward), CoreTerm::Value(backward)],
+          Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [CoreTerm::Value(a),CoreTerm::Value(b)],
+          Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} => ret.as_slice() == [CoreTerm::Value(body)],
+          Value::Thunk(body) => ret.as_slice() == [CoreTerm::Computation(body)],
+          Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) => ret.is_empty(),
+         }),
+         CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
+          Computation::Transport(path, value) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)],
+          Computation::Lambda(body) => ret.as_slice() == [CoreTerm::Computation(body)],
+          Computation::Application(head,arg) => ret.as_slice() == [CoreTerm::Computation(head),CoreTerm::Value(arg)],
+          Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [CoreTerm::Value(value)],
+          Computation::Bind(bound,body) => ret.as_slice() == [CoreTerm::Computation(bound),CoreTerm::Computation(body)],
+          Computation::Case{scrutinee,on_left,on_right} => ret.as_slice() == [CoreTerm::Value(scrutinee),CoreTerm::Computation(on_left),CoreTerm::Computation(on_right)],
+         }),
+        }
+    )]
     fn core_children(
         core: &CoreArena,
         node: CoreTerm,
@@ -3365,17 +4480,29 @@ mod tests
     ///
     /// # Specification
     /// - requires: `root` resolves in `core`.
-    /// - ensures: a representative per reached node, equal to it as a tree,
-    ///   with two nodes of equal tree sharing one.
+    /// - ensures: a representative per reached term node, equal as a tree with
+    ///   quoted type ids opaque; equal trees share a representative.
     /// - provides: the hash-consing the lifter shares repeated subterms by.
     /// - panics: when a reached node does not resolve.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — canonicalization retains the root and is idempotent
-    ///   on representatives without changing term polarity; replay compares
-    ///   lifted and source trees.
+    /// - hypothesis: L3 — finite resolved term DAGs are compared structurally,
+    ///   with quoted type ids kept opaque. The observer is exact shared-leg
+    ///   count and the erased tree; retaining nominally distinct equal pairs,
+    ///   merging unlike formers or returning non-idempotent representatives
+    ///   changes these observations.
+    /// - witness: `machine::tests::lifting_shares_equal_trees_without_reusing_occurrence_nodes`
+    /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
-    #[spec(ensures: |ret| ret.contains_key(&root) && ret.iter().all(|(node, representative)| core::mem::discriminant(node) == core::mem::discriminant(representative) && ret.get(representative) == Some(representative)))]
+    #[spec(
+        ensures: |ret| ret.contains_key(&root) && ret.iter().all(|(node,representative)| {
+         ret.get(representative) == Some(representative) && match (*node,*representative) {
+         (CoreTerm::Value(node),CoreTerm::Value(representative)) => core.value(node).is_some() && core.value(representative).is_some(),
+         (CoreTerm::Computation(node),CoreTerm::Computation(representative)) => core.computation(node).is_some() && core.computation(representative).is_some(),
+         _ => false,
+         }
+        })
+    )]
     fn canonical(
         core: &CoreArena,
         root: CoreTerm,
@@ -3513,6 +4640,36 @@ mod tests
     /// - ensures: the representatives of `node`'s children, left to right.
     /// - provides: the children the lifting walks descend into.
     /// - panics: when a child is unmapped, which the requirement excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every child has a canonical representative. The
+    ///   lifted output is checked for two nested shared legs and exact erased
+    ///   shape, then replayed independently; ignoring canonical
+    ///   representatives, reordering operands or collapsing duplicate edges
+    ///   alters those observations.
+    /// - witness: `machine::tests::lifting_shares_equal_trees_without_reusing_occurrence_nodes`
+    /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+    #[spec(
+        ensures: |ret| match node {
+         CoreTerm::Value(id) => core.value(id).is_some_and(|value| match *value {
+          Value::PathRefl(code) => ret.as_slice() == [canon[&CoreTerm::Value(code)]],
+          Value::PathProduct(first, second) => ret.as_slice() == [canon[&CoreTerm::Value(first)], canon[&CoreTerm::Value(second)]],
+          Value::PathEquiv { forward, backward, .. } => ret.as_slice() == [canon[&CoreTerm::Value(forward)], canon[&CoreTerm::Value(backward)]],
+          Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [canon[&CoreTerm::Value(a)],canon[&CoreTerm::Value(b)]],
+          Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} => ret.as_slice() == [canon[&CoreTerm::Value(body)]],
+          Value::Thunk(body) => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
+          Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) => ret.is_empty(),
+         }),
+         CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
+          Computation::Transport(path, value) => ret.as_slice() == [canon[&CoreTerm::Value(path)], canon[&CoreTerm::Value(value)]],
+          Computation::Lambda(body) => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
+          Computation::Application(head,arg) => ret.as_slice() == [canon[&CoreTerm::Computation(head)],canon[&CoreTerm::Value(arg)]],
+          Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [canon[&CoreTerm::Value(value)]],
+          Computation::Bind(bound,body) => ret.as_slice() == [canon[&CoreTerm::Computation(bound)],canon[&CoreTerm::Computation(body)]],
+          Computation::Case{scrutinee,on_left,on_right} => ret.as_slice() == [canon[&CoreTerm::Value(scrutinee)],canon[&CoreTerm::Computation(on_left)],canon[&CoreTerm::Computation(on_right)]],
+         }),
+        }
+    )]
     fn canonical_children(
         core: &CoreArena,
         canon: &BTreeMap<CoreTerm, CoreTerm>,
@@ -3531,12 +4688,26 @@ mod tests
     /// in the order their nodes complete, the first outermost.
     ///
     /// # Specification
-    /// - requires: `root` resolves in `core`.
+    /// - requires: all nodes beneath `root` resolve in `core`; the fixture
+    ///   contains no quoted types or static operators.
     /// - ensures: an overlay that validates from the returned root and erases
     ///   to a term equal to `root` as a tree; a node reached once is grafted
     ///   where it stands.
     /// - provides: the spinal side of every certification test.
     /// - panics: when a mint is refused, which no fixture provokes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — resolved quote-free, static-operator-free term DAGs
+    ///   are lifted. Validation, exact sharing counts, erased constructors and
+    ///   kernel replay distinguish reused occurrence nodes, wrong share
+    ///   distance or position, missed structural sharing and a changed term
+    ///   family.
+    /// - witness: `machine::tests::lifting_shares_equal_trees_without_reusing_occurrence_nodes`
+    /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+    #[spec(
+        ensures: |ret| ret.0.validate(ret.1).is_ok() && matches!((root,ret.1),
+         (CoreTerm::Value(_),OverlayId::Value(_)) | (CoreTerm::Computation(_),OverlayId::Computation(_)))
+    )]
     fn lifted(
         core: &CoreArena,
         root: CoreTerm,
@@ -3622,7 +4793,7 @@ mod tests
     ///
     /// # Specification
     /// - requires: every shared node `top` reaches has a share index below
-    ///   `depth`.
+    ///   `depth`; the resolved fixture contains no quotes or static operators.
     /// - ensures: the grafted node; `taken` counts each share's occurrences
     ///   minted so far, left to right, which is preorder.
     /// - provides: the one minting walk [`lifted`] runs per leg and for the
@@ -3630,10 +4801,22 @@ mod tests
     /// - panics: when a mint is refused, which no fixture provokes.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — grafting preserves term polarity while shared
-    ///   occurrences replay to the same conversion verdict as the source tree.
+    /// - hypothesis: L3 — a canonical quote-free, static-operator-free term is
+    ///   grafted beneath already indexed shares. The complete overlay must
+    ///   validate and erase to the fixture tree; wrong distance, occurrence
+    ///   numbering, child order or family changes validation, exact sharing or
+    ///   kernel certification.
+    /// - witness: `machine::tests::lifting_shares_equal_trees_without_reusing_occurrence_nodes`
+    /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
     /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
-    #[spec(ensures: |ret| matches!((top, ret), (CoreTerm::Value(_), OverlayId::Value(_)) | (CoreTerm::Computation(_), OverlayId::Computation(_))))]
+    #[spec(
+        captures: [taken_len = taken.len()],
+        ensures: |ret| taken.len() == taken_len && match (top,ret) {
+         (CoreTerm::Value(_),OverlayId::Value(id)) => overlay.value(id).is_some(),
+         (CoreTerm::Computation(_),OverlayId::Computation(id)) => overlay.computation(id).is_some(),
+         _ => false,
+        }
+    )]
     fn lifted_under(
         overlay: &mut Overlay,
         core: &CoreArena,
@@ -3791,7 +4974,7 @@ mod tests
     }
 
     /// A core node awaiting translation.
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum Node
     {
         /// A value.
@@ -3823,6 +5006,20 @@ mod tests
         /// - ensures: the kernel node `value` translates to.
         /// - provides: a side's or a body's translation.
         /// - panics: as [`Kernel::translate`].
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a resolved supported value belongs to the run’s
+        ///   source arena. Independent replay of positive and negative
+        ///   comparisons, including quoted codes, observes preserved
+        ///   constructors and constants; a wrong cache entry, wrong node family
+        ///   or swapped operand changes certification.
+        /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+        /// - witness: `machine::tests::closed_codes_are_certified_in_both_type_families`
+        #[spec(
+            ensures: |ret| self.values.get(&value) == Some(&ret) && self.arena.value(ret).is_some()
+        )]
         fn value(
             &mut self,
             core: &CoreArena,
@@ -3840,6 +5037,19 @@ mod tests
         /// - ensures: the kernel node `computation` translates to.
         /// - provides: a side's translation.
         /// - panics: as [`Kernel::translate`].
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a resolved supported computation belongs to the
+        ///   run’s source arena. Kernel replay of lambdas, applications and
+        ///   forcing distinguishes a wrong copy, changed binder structure or
+        ///   misplaced value/computation child.
+        /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+        /// - witness: `machine::tests::closed_codes_are_certified_in_both_type_families`
+        #[spec(
+            ensures: |ret| self.computations.get(&computation) == Some(&ret) && self.arena.computation(ret).is_some()
+        )]
         fn computation(
             &mut self,
             core: &CoreArena,
@@ -3856,13 +5066,14 @@ mod tests
         /// Translate `root` and everything beneath it, children first.
         ///
         /// # Specification
-        /// - requires: every node beneath `root` resolves, and every variable
-        ///   is intuitionistic.
+        /// - requires: `core` is this translator's source arena; every reached
+        ///   node resolves, variables are intuitionistic, and no static lambda
+        ///   or parameterized universe sort occurs.
         /// - ensures: `root` and every node beneath it have a kernel copy of
         ///   the same shape, constants at the same positions.
         /// - provides: the one translation the replay tests share.
-        /// - panics: on a dangling node or a linear variable, which no fixture
-        ///   builds.
+        /// - panics: on a dangling or unsupported node or a linear variable,
+        ///   excluded by the requirements.
         ///
         /// # Termination
         /// - reason: the `while let Some(&node) = stack.last()` loop over an
@@ -3870,6 +5081,27 @@ mod tests
         /// - measure: the reachable nodes without a copy, then the stack's
         ///   length: a node is pushed only while it has no copy, beneath a
         ///   parent minted after it, and popped once it has one.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — one source arena supplies finite intuitionistic
+        ///   term/type DAGs without static lambdas or parameterized universe
+        ///   sorts. Kernel agreement on ordinary terms and quoted codes
+        ///   observes children-first translation, retained sharing and constant
+        ///   positions; wrong-family caches or dropped descendants alter
+        ///   replay.
+        /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+        /// - witness: `machine::tests::closed_codes_are_certified_in_both_type_families`
+        #[spec(
+            captures: [counts = [self.values.len(),self.computations.len(),self.value_types.len(),self.comp_types.len()]],
+            ensures: |ret| self.translated(root) == Translated::Made
+             && [self.values.len(),self.computations.len(),self.value_types.len(),self.comp_types.len()].into_iter().zip(counts).all(|(after,before)| after >= before)
+             && self.values.values().all(|&id| self.arena.value(id).is_some())
+             && self.computations.values().all(|&id| self.arena.computation(id).is_some())
+             && self.value_types.values().all(|&id| self.arena.value_type(id).is_some())
+             && self.comp_types.values().all(|&id| self.arena.comp_type(id).is_some())
+        )]
         fn translate(
             &mut self,
             core: &CoreArena,
@@ -3896,7 +5128,29 @@ mod tests
         /// Whether `node` has a kernel copy.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing; a node need not have a copy yet.
+        /// - ensures: Made exactly when the node's own family map contains its
+        ///   id.
+        /// - provides: the completed-node boundary of the postorder
+        ///   translation.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — translation may encounter a new node, a completed
+        ///   node or an already translated shared child in each supported
+        ///   family. Kernel certification and shared-ladder comparisons observe
+        ///   premature completion, wrong-family membership and discarded cached
+        ///   copies.
+        /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+        /// - witness: `machine::tests::closed_codes_are_certified_in_both_type_families`
+        #[spec(
+            ensures: |ret| (ret == Translated::Made) == match node {
+             Node::Value(id) => self.values.contains_key(&id), Node::Computation(id) => self.computations.contains_key(&id),
+             Node::ValueType(id) => self.value_types.contains_key(&id), Node::CompType(id) => self.comp_types.contains_key(&id),
+            }
+        )]
         fn translated(
             &self,
             node: Node,
@@ -3919,7 +5173,59 @@ mod tests
         /// The nodes `node` is built from.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: an untranslated node resolves in the run's source arena.
+        /// - ensures: no children for a completed copy; otherwise the source
+        ///   node's immediate children in constructor order, including quoted
+        ///   types.
+        /// - provides: the edges followed by the postorder translator.
+        /// - panics: when an untranslated source node does not resolve.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — an untranslated resolved node contributes its
+        ///   ordered children, while a cached node contributes none. Kernel
+        ///   replay spans value, computation and quoted-type edges; wrong
+        ///   arity, operand order or family changes certification, and repeated
+        ///   ladder subterms exercise the completed-node boundary.
+        /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+        /// - witness: `machine::tests::closed_codes_are_certified_in_both_type_families`
+        #[spec(
+            ensures: |ret| if self.translated(node) == Translated::Made { ret.is_empty() } else { match node {
+             Node::Value(id) => core.value(id).is_some_and(|value| match *value {
+              Value::PathRefl(code) => ret.as_slice() == [Node::Value(code)],
+              Value::PathProduct(first, second) => ret.as_slice() == [Node::Value(first), Node::Value(second)],
+              Value::PathEquiv { path_type, forward, backward, .. } => ret.as_slice() == [Node::ValueType(path_type), Node::Value(forward), Node::Value(backward)],
+              Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [Node::Value(a),Node::Value(b)],
+              Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} => ret.as_slice() == [Node::Value(body)],
+              Value::Thunk(body) => ret.as_slice() == [Node::Computation(body)],
+             Value::Quote(id) => ret.as_slice() == [Node::ValueType(id)],
+             Value::QuoteComputation(id) => ret.as_slice() == [Node::CompType(id)],
+              Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) => ret.is_empty(),
+             }),
+             Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
+              Computation::Transport(path, value) => ret.as_slice() == [Node::Value(path), Node::Value(value)],
+              Computation::Lambda(body) => ret.as_slice() == [Node::Computation(body)],
+              Computation::Application(head,arg) => ret.as_slice() == [Node::Computation(head),Node::Value(arg)],
+              Computation::Return(value) | Computation::Force(value) => ret.as_slice() == [Node::Value(value)],
+              Computation::Bind(bound,body) => ret.as_slice() == [Node::Computation(bound),Node::Computation(body)],
+              Computation::Case{scrutinee,on_left,on_right} => ret.as_slice() == [Node::Value(scrutinee),Node::Computation(on_left),Node::Computation(on_right)],
+             }),
+             Node::ValueType(id) => core.value_type(id).is_some_and(|value_type| match *value_type {
+              ValueType::PathUniverse(source, target) => ret.as_slice() == [Node::Value(source), Node::Value(target)],
+              ValueType::Product(a,b) | ValueType::Sum(a,b) | ValueType::StaticPi{domain:a,codomain:b} => ret.as_slice() == [Node::ValueType(a),Node::ValueType(b)],
+              ValueType::Thunk(body) => ret.as_slice() == [Node::CompType(body)],
+              ValueType::Lift{inner,..} => ret.as_slice() == [Node::ValueType(inner)],
+              ValueType::Element{code,..} => ret.as_slice() == [Node::Value(code)],
+              ValueType::Base(_) | ValueType::Unit | ValueType::Universe{..} | ValueType::Abstract(_) => ret.is_empty(),
+             }),
+             Node::CompType(id) => core.comp_type(id).is_some_and(|comp_type| match *comp_type {
+              CompType::Returner(result) => ret.as_slice() == [Node::ValueType(result)],
+              CompType::Arrow{domain,codomain} | CompType::Pi{domain,codomain} => ret.as_slice() == [Node::ValueType(domain),Node::CompType(codomain)],
+              CompType::Element{code,..} => ret.as_slice() == [Node::Value(code)],
+             }),
+            } }
+        )]
         fn children(
             &self,
             core: &CoreArena,
@@ -4029,7 +5335,34 @@ mod tests
         /// Mint the kernel copy of `node`, whose children have theirs.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: the source and all descendants satisfy
+        ///   `Kernel::translate`'s requirements; every immediate child already
+        ///   has its kernel copy.
+        /// - ensures: the node has a same-shape kernel copy; an existing copy
+        ///   remains unchanged, otherwise only this node's family gains an
+        ///   entry.
+        /// - provides: the constructor-preserving step of the translation.
+        /// - panics: on an unresolved or unsupported node, or an untranslated
+        ///   child.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — supported source nodes have translated children,
+        ///   or already have their own copy. Independent kernel certification
+        ///   checks preserved constructor, constants, binders and quoted types;
+        ///   overwriting another family, changing a child or rebuilding shared
+        ///   copies changes the checked translation.
+        /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+        /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+        /// - witness: `machine::tests::closed_codes_are_certified_in_both_type_families`
+        #[spec(
+            captures: [counts = [self.values.len(),self.computations.len(),self.value_types.len(),self.comp_types.len()]],
+            ensures: |ret| self.translated(node) == Translated::Made && {
+             let after = [self.values.len(),self.computations.len(),self.value_types.len(),self.comp_types.len()];
+             let family = match node { Node::Value(_) => 0, Node::Computation(_) => 1, Node::ValueType(_) => 2, Node::CompType(_) => 3 };
+             after.into_iter().zip(counts).enumerate().all(|(at,(after,before))| if at == family { after == before || before.checked_add(1) == Some(after) } else { after == before })
+            }
+        )]
         fn build(
             &mut self,
             core: &CoreArena,
@@ -4252,7 +5585,41 @@ mod tests
     /// keeps its position, and every other node is opaque to the replay.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; every machine decision is representable in replay.
+    /// - ensures: the decision kind, side and subgoal position remain
+    ///   unchanged; constant nodes retain their index and run-local nodes
+    ///   become Other.
+    /// - provides: the trust-boundary projection into kernel replay decisions.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — machine decisions carry constant identities or
+    ///   run-local value/computation ids. Exact constructor and side
+    ///   preservation is observed by independent certification and the
+    ///   wrong-branch refusal; erasing a constant identity, retaining a
+    ///   run-local id or swapping a side changes replay.
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+    /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+    /// - witness: `machine::tests::closed_codes_are_certified_in_both_type_families`
+    #[spec(
+        ensures: |ret| {
+         let node = |node| match node { TraceNode::Constant(constant) => ReplayNode::Constant(constant), TraceNode::Value(_) | TraceNode::Computation(_) => ReplayNode::Other };
+         ret == match decision {
+         ConversionDecision::Decompose => ConversionDecision::Decompose,
+         ConversionDecision::ReduceLeft{redex} => ConversionDecision::ReduceLeft{redex:node(redex)},
+         ConversionDecision::ReduceRight{redex} => ConversionDecision::ReduceRight{redex:node(redex)},
+         ConversionDecision::ConstShortcut{constant} => ConversionDecision::ConstShortcut{constant:node(constant)},
+         ConversionDecision::Unfold{constant} => ConversionDecision::Unfold{constant:node(constant)},
+         ConversionDecision::Postpone{constant} => ConversionDecision::Postpone{constant:node(constant)},
+         ConversionDecision::Freeze{constant,side} => ConversionDecision::Freeze{constant:node(constant),side},
+         ConversionDecision::EtaExpand{side,variable} => ConversionDecision::EtaExpand{side,variable:node(variable)},
+         ConversionDecision::Force{thunk} => ConversionDecision::Force{thunk:node(thunk)},
+         ConversionDecision::ComparedShared{left,right} => ConversionDecision::ComparedShared{left:node(left),right:node(right)},
+         ConversionDecision::NegativeSubgoal{position} => ConversionDecision::NegativeSubgoal{position},
+         }
+        }
+    )]
     fn kernel_decision(decision: ConversionDecision<TraceNode>) -> ConversionDecision<ReplayNode>
     {
         let node = |node: TraceNode| match node {
@@ -4302,7 +5669,27 @@ mod tests
     /// The certified kernel verdict a machine verdict corresponds to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: definitive verdicts keep their truth value; every machine
+    ///   decline maps to the kernel's `EngineDeclined` result.
+    /// - provides: the expected independent replay verdict, not a
+    ///   certification.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the domain is both definitive verdicts and every
+    ///   engine decline. Kernel comparisons check positive, negative and
+    ///   schedule-induced declined results, distinguishing negation, treating
+    ///   decline as refutation and inventing a kernel failure.
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    /// - witness: `machine::tests::an_unlucky_schedule_declines_and_the_kernel_with_it`
+    #[spec(
+        ensures: |ret| match verdict {
+         MachineVerdict::Convertible => ret == KernelVerdict::Convertible,
+         MachineVerdict::NotConvertible => ret == KernelVerdict::NotConvertible,
+         MachineVerdict::Declined(_) => ret == KernelVerdict::Declined(ReplayDecline::EngineDeclined),
+        }
+    )]
     fn certified(verdict: MachineVerdict) -> KernelVerdict
     {
         match verdict {
@@ -4383,7 +5770,30 @@ mod tests
     /// `thunk (λx. return x)`: the identity function as a value.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a thunk of a lambda returning its innermost intuitionistic
+    ///   variable.
+    /// - provides: a closed identity function for forcing and eta comparisons.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fresh intuitionistic identity fixture is observed
+    ///   through application, eta comparison and independent replay. Wrong
+    ///   binder zone or index, missing suspension or missing return changes its
+    ///   reduction and certification.
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    /// - witness: `machine::tests::the_kernel_certifies_every_spinal_catalogue_and_ladder_trace`
+    /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
+    /// - witness: `machine::tests::closed_codes_are_certified_in_both_type_families`
+    #[spec(
+        ensures: |ret| core.value(ret).is_some_and(|value| match *value {
+         Value::Thunk(body) => core.computation(body).is_some_and(|comp| match *comp {
+         Computation::Lambda(body) => core.computation(body).is_some_and(|comp| match *comp {
+         Computation::Return(value) => matches!(core.value(value), Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), _ => false,
+         }), _ => false,
+         }), _ => false,
+        })
+    )]
     fn identity(core: &mut CoreArena) -> ValueId
     {
         let occurrence = innermost(core);
@@ -4395,7 +5805,33 @@ mod tests
     /// `force head` applied to each argument in turn.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the head and arguments resolve in core.
+    /// - ensures: force head applied left-associatively to every argument in
+    ///   order; an empty argument list is just force head.
+    /// - provides: the fixture constructor for rigid and reducible application
+    ///   spines.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a live value head and ordered live arguments form a
+    ///   left-associated application spine. Rigid-spine comparisons and
+    ///   independent replay distinguish reversing arguments, dropping an
+    ///   application or failing to force the head.
+    /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    #[spec(
+        ensures: |ret| {
+         let mut cursor = ret;
+         let mut valid = true;
+         for &expected in arguments.iter().rev() {
+          match core.computation(cursor) {
+           Some(&Computation::Application(head,argument)) if argument == expected => cursor = head,
+           _ => { valid = false; break; },
+          }
+         }
+         valid && matches!(core.computation(cursor),Some(&Computation::Force(value)) if value == head)
+        }
+    )]
     fn call(
         core: &mut CoreArena,
         head: ValueId,
@@ -4423,6 +5859,23 @@ mod tests
     ///   lambdas, with both verdicts represented.
     /// - provides: the catalogue the sink comparisons run over.
     /// - panics: as [`World::new`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed catalogue contains both verdicts over live
+    ///   value and computation roots. Each expected verdict is compared with
+    ///   the actual machine and independently certified, distinguishing
+    ///   mislabeled examples, dangling fixture roots and rule cases lost from
+    ///   the sink differential.
+    /// - witness: `machine::tests::recording_does_not_move_the_verdict`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    #[spec(
+        ensures: |ret| ret.1.iter().any(|&(_,verdict)| verdict == MachineVerdict::Convertible)
+         && ret.1.iter().any(|&(_,verdict)| verdict == MachineVerdict::NotConvertible)
+         && ret.1.iter().all(|&(sides,verdict)| !matches!(verdict,MachineVerdict::Declined(_)) && match sides {
+         Sides::Values(left,right) => ret.0.core.value(left).is_some() && ret.0.core.value(right).is_some(),
+         Sides::Computations(left,right) => ret.0.core.computation(left).is_some() && ret.0.core.computation(right).is_some(),
+         })
+    )]
     fn catalogue() -> (World, Vec<(Sides, MachineVerdict)>)
     {
         let mut core = CoreArena::new();
@@ -5057,10 +6510,6 @@ mod tests
                 (recorded.verdict(), recorded.processes()),
                 "recording changes what is kept, never what is run: {sides:?}"
             );
-            assert!(
-                log.decisions().next().is_some(),
-                "every answer rests on at least one decision: {sides:?}"
-            );
         }
     }
 
@@ -5088,7 +6537,32 @@ mod tests
     /// constant `below`, paired with itself.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; below may denote a body or stand rigid.
+    /// - ensures: a thunk binding return below once, then returning a pair of
+    ///   the same innermost intuitionistic variable.
+    /// - provides: one doubling rung whose repeated premise can be shared.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constant reference is evaluated once beneath a bind
+    ///   and its result is paired with itself. Exact memoized versus unrolled
+    ///   process counts across successive ladder rungs, plus kernel replay,
+    ///   distinguish duplicating evaluation, a wrong binder and naming the
+    ///   wrong predecessor.
+    /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    #[spec(
+        ensures: |ret| core.value(ret).is_some_and(|value| match *value {
+         Value::Thunk(body) => core.computation(body).is_some_and(|comp| match *comp {
+         Computation::Bind(bound,body) => matches!(core.computation(bound),Some(&Computation::Return(value)) if core.value(value) == Some(&Value::Constant(below)))
+          && core.computation(body).is_some_and(|comp| match *comp {
+           Computation::Return(value) => core.value(value).is_some_and(|value| match *value {
+            Value::Pair(left,right) => left == right && matches!(core.value(left),Some(Value::Variable{zone:Zone::Intuitionistic,index}) if u32::from(*index) == 0), _ => false,
+           }), _ => false,
+          }), _ => false,
+         }), _ => false,
+        })
+    )]
     fn doubled(
         core: &mut CoreArena,
         below: ConstantIndex,
@@ -5110,6 +6584,19 @@ mod tests
     /// - ensures: the constant `body` is admitted as, at the next position.
     /// - provides: the admission order the ladder fixture builds in.
     /// - panics: past `u32::MAX` entries, which no fixture reaches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a finite body table below the index ceiling gains a
+    ///   distinct entry at its next ordinal. Successive ladder comparisons
+    ///   observe correct predecessor bodies and sharing growth, distinguishing
+    ///   an off-by-one constant, reused table entry or wrong admitted body.
+    /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    #[spec(
+        captures: [position = bodies.len()],
+        ensures: |ret| usize::from(ret) == position && position.checked_add(1) == Some(bodies.len())
+         && bodies.last().is_some_and(|&(entry,stored)| usize::try_from(u32::from(entry)).ok() == Some(position) && stored == body)
+    )]
     fn next_constant(
         bodies: &mut Vec<(GlobalIndex, ValueId)>,
         body: ValueId,
@@ -5132,6 +6619,26 @@ mod tests
     /// - provides: the family whose memoless run starts goals exponentially in
     ///   the rung and whose re-shared run starts them linearly.
     /// - panics: as [`World::admit`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two five-rung ladders share only their structural
+    ///   pattern, not admission identities. Exact linear memoized counts,
+    ///   exponential null-memo counts and kernel certification distinguish a
+    ///   skipped predecessor, same-side comparison, missing repeated premise or
+    ///   wrong rung order.
+    /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
+    /// - witness: `machine::tests::edges_per_revision_grow_with_the_distinct_goals`
+    /// - witness: `machine::tests::the_kernel_certifies_every_catalogue_and_ladder_trace`
+    #[spec(
+        ensures: |ret| ret.0.bodies.len() == 10 && ret.1.len() == 4
+         && ret.0.bodies.iter().take(2).all(|&body| ret.0.core.value(body) == Some(&Value::Unit))
+         && ret.1.iter().enumerate().all(|(rung,&sides)| match sides {
+         Sides::Values(left,right) => rung.checked_add(1).and_then(|rung| rung.checked_mul(2)).is_some_and(|position|
+             ret.0.core.value(left) == Some(&Value::Constant(ConstantIndex::from(position)))
+                 && position.checked_add(1).is_some_and(|position| ret.0.core.value(right) == Some(&Value::Constant(ConstantIndex::from(position))))),
+         Sides::Computations(_,_) => false,
+         })
+    )]
     fn ladders() -> (World, Vec<Sides>)
     {
         let mut core = CoreArena::new();
@@ -5360,7 +6867,6 @@ mod tests
     fn the_kernel_certifies_every_spinal_catalogue_and_ladder_trace()
     {
         let (world, cases) = catalogue();
-        let mut sharing = 0_usize;
         for (sides, expected) in cases {
             let (report, decisions) = world.spinal(MachineSettings::default(), sides);
             assert_eq!(expected, report.verdict(), "{sides:?}");
@@ -5369,13 +6875,6 @@ mod tests
                 world.replayed(sides, report.verdict(), &decisions),
                 "{sides:?}: {decisions:?}"
             );
-            if world
-                .shares(sides)
-                .iter()
-                .any(|&count| u64::from(count) > 0)
-            {
-                sharing = sharing.saturating_add(1);
-            }
         }
         let (world, rungs) = ladders();
         for sides in rungs {
@@ -5386,18 +6885,7 @@ mod tests
                 world.replayed(sides, report.verdict(), &decisions),
                 "{sides:?}: {decisions:?}"
             );
-            if world
-                .shares(sides)
-                .iter()
-                .any(|&count| u64::from(count) > 0)
-            {
-                sharing = sharing.saturating_add(1);
-            }
         }
-        assert!(
-            sharing > 0,
-            "some fixture reaches a node twice, so the spinal runs evaluate a shared leg"
-        );
     }
 
     #[test]
@@ -5608,5 +7096,1189 @@ mod tests
             world.replayed(sides, starved.verdict(), &decisions),
             "and the kernel declines with it, never reading the decline as a refutation"
         );
+    }
+
+    #[test]
+    fn support_store_refusals_preserve_state_and_inactive_operations_do_nothing()
+    {
+        let missing = ProcessId(usize::MAX);
+        let mut inactive =
+            crate::resharing::Supports::new(gandr_kernel_check_memo::MemoActivity::Inactive);
+        let untouched = inactive.clone();
+        inactive
+            .open(missing)
+            .expect("inactive support stores no process");
+        inactive
+            .enter(missing)
+            .expect("inactive support records no entry");
+        inactive
+            .unfolded(missing, ConstantIndex::from(0_usize))
+            .expect("inactive support records no unfolding");
+        inactive
+            .settle(missing, crate::rules::Settled::Convertible, &[missing])
+            .expect("inactive support records no basis");
+        assert_eq!(untouched, inactive);
+        assert_eq!(0, usize::from(inactive.totals().acceptance()));
+        assert_eq!(0, usize::from(inactive.totals().refusal()));
+
+        let mut active =
+            crate::resharing::Supports::new(gandr_kernel_check_memo::MemoActivity::Active);
+        let fault = Err(crate::ConversionFault::MachineInvariant);
+        let empty = active.clone();
+        assert_eq!(fault, active.open(ProcessId(1)));
+        assert_eq!(empty, active);
+        active.open(ProcessId(0)).expect("zero is the next id");
+        let opened = active.clone();
+        assert_eq!(fault, active.open(ProcessId(0)));
+        assert_eq!(fault, active.open(ProcessId(2)));
+        assert_eq!(fault, active.enter(ProcessId(1)));
+        assert_eq!(
+            fault,
+            active.unfolded(ProcessId(1), ConstantIndex::from(0_usize))
+        );
+        assert_eq!(
+            fault,
+            active.settle(ProcessId(0), crate::rules::Settled::Convertible, &[
+                ProcessId(1)
+            ])
+        );
+        assert_eq!(
+            fault,
+            active.settle(ProcessId(1), crate::rules::Settled::Convertible, &[])
+        );
+        assert_eq!(opened, active, "every refusal preserves existing support");
+        active.enter(ProcessId(0)).expect("the process is open");
+        active
+            .unfolded(ProcessId(0), ConstantIndex::from(0_usize))
+            .expect("the process is open");
+        active
+            .unfolded(ProcessId(0), ConstantIndex::from(0_usize))
+            .expect("an edge can be consulted again");
+        active
+            .settle(ProcessId(0), crate::rules::Settled::Convertible, &[])
+            .expect("the process is open");
+        assert_eq!(1, usize::from(active.totals().acceptance()));
+        assert_eq!(0, usize::from(active.totals().refusal()));
+    }
+
+    #[test]
+    fn support_entries_reference_entries_and_inherit_inner_edges()
+    {
+        let mut supports =
+            crate::resharing::Supports::new(gandr_kernel_check_memo::MemoActivity::Active);
+        let [root, inner, child, next] = [ProcessId(0), ProcessId(1), ProcessId(2), ProcessId(3)];
+        for process in [root, inner, child, next] {
+            supports.open(process).expect("process ids are consecutive");
+        }
+        for process in [root, child, next] {
+            supports.enter(process).expect("each process is open");
+        }
+        supports
+            .unfolded(root, ConstantIndex::from(0_usize))
+            .expect("the root lives");
+        for _ in 0_u32 .. 2_u32 {
+            supports
+                .unfolded(inner, ConstantIndex::from(0_usize))
+                .expect("the inner process lives");
+        }
+        supports
+            .unfolded(child, ConstantIndex::from(1_usize))
+            .expect("the child lives");
+        supports
+            .settle(inner, crate::rules::Settled::Convertible, &[])
+            .expect("the inner process lives");
+        assert_eq!(
+            0,
+            usize::from(supports.totals().acceptance()),
+            "inner support is not an entry total"
+        );
+        supports
+            .settle(child, crate::rules::Settled::Convertible, &[])
+            .expect("the child lives");
+        assert_eq!(1, usize::from(supports.totals().acceptance()));
+        supports
+            .settle(root, crate::rules::Settled::NotConvertible, &[
+                inner, child, inner, child,
+            ])
+            .expect("every basis process lives");
+        assert_eq!(1, usize::from(supports.totals().acceptance()));
+        assert_eq!(
+            2,
+            usize::from(supports.totals().refusal()),
+            "one inherited unfolding and one referenced entry, without duplicates"
+        );
+        supports
+            .settle(next, crate::rules::Settled::Convertible, &[root])
+            .expect("the root entry lives");
+        assert_eq!(
+            2,
+            usize::from(supports.totals().acceptance()),
+            "the root contributes one reference, not its two edges"
+        );
+        assert_eq!(2, usize::from(supports.totals().refusal()));
+    }
+
+    #[test]
+    fn derivation_refusals_preserve_state_and_inactive_recording_is_empty()
+    {
+        let core = CoreArena::new();
+        let mut domain = DomainArena::new();
+        let value = domain.value_unit(crate::TermFace::Reduced);
+        let pair = (crate::Glued::Value(value), crate::Glued::Value(value));
+        let marker = ConversionDecision::ComparedShared {
+            left: TraceNode::Value(value),
+            right: TraceNode::Value(value),
+        };
+        let missing = ProcessId(usize::MAX);
+        let mut inactive = crate::derivation::Derivations::new(
+            gandr_kernel_conversion_trace::SinkActivity::Inactive,
+        );
+        let original = inactive.clone();
+        inactive
+            .open(missing)
+            .expect("inactive recording stores no process");
+        inactive
+            .decide(missing, marker)
+            .expect("inactive recording stores no decision");
+        inactive
+            .rest_on(missing, Vec::from([missing]))
+            .expect("inactive recording stores no children");
+        inactive
+            .agree_on(missing, pair, Vec::from([missing]))
+            .expect("inactive recording stores no pair");
+        let mut log = TraceLog::new();
+        log.record(marker);
+        inactive
+            .emit(&core, &domain, missing, &mut log)
+            .expect("inactive recording traverses nothing");
+        assert_eq!(original, inactive);
+        assert_eq!(0, usize::from(inactive.count()));
+        assert_eq!(
+            Vec::from([marker]),
+            log.decisions().copied().collect::<Vec<_>>()
+        );
+
+        let mut active = crate::derivation::Derivations::new(
+            gandr_kernel_conversion_trace::SinkActivity::Active,
+        );
+        let empty = active.clone();
+        let fault = Err(crate::ConversionFault::MachineInvariant);
+        assert_eq!(fault, active.open(ProcessId(1)));
+        assert_eq!(empty, active);
+        active.open(ProcessId(0)).expect("zero is the next id");
+        let opened = active.clone();
+        assert_eq!(fault, active.open(ProcessId(0)));
+        assert_eq!(fault, active.open(ProcessId(2)));
+        assert_eq!(fault, active.decide(ProcessId(1), marker));
+        assert_eq!(fault, active.rest_on(ProcessId(1), Vec::new()));
+        assert_eq!(fault, active.agree_on(ProcessId(1), pair, Vec::new()));
+        assert_eq!(fault, active.emit(&core, &domain, ProcessId(1), &mut log));
+        assert_eq!(opened, active);
+        assert_eq!(1, usize::from(active.count()));
+        assert_eq!(
+            Vec::from([marker]),
+            log.decisions().copied().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn derivations_emit_preorder_and_repeat_shared_children()
+    {
+        let core = CoreArena::new();
+        let mut domain = DomainArena::new();
+        let [zero, one, two, three, four] =
+            [0_u32, 1, 2, 3, 4].map(|_| domain.value_unit(crate::TermFace::Reduced));
+        let [start, later, first, second, shared] =
+            [zero, one, two, three, four].map(|value| ConversionDecision::ComparedShared {
+                left: TraceNode::Value(value),
+                right: TraceNode::Value(value),
+            });
+        let [root, left, right, leaf] = [ProcessId(0), ProcessId(1), ProcessId(2), ProcessId(3)];
+        let mut derivations = crate::derivation::Derivations::new(
+            gandr_kernel_conversion_trace::SinkActivity::Active,
+        );
+        for process in [root, left, right, leaf] {
+            derivations.open(process).expect("ids are consecutive");
+        }
+        for (process, decision) in [
+            (root, start),
+            (root, later),
+            (left, first),
+            (right, second),
+            (leaf, shared),
+        ] {
+            derivations
+                .decide(process, decision)
+                .expect("the process is open");
+        }
+        derivations
+            .rest_on(left, Vec::from([leaf]))
+            .expect("the left process is open");
+        derivations
+            .rest_on(right, Vec::from([leaf]))
+            .expect("the right process is open");
+        derivations
+            .rest_on(root, Vec::from([left, right]))
+            .expect("the root is open");
+        let mut log = TraceLog::new();
+        derivations
+            .emit(&core, &domain, root, &mut log)
+            .expect("the derivation graph is closed");
+        assert_eq!(
+            Vec::from([start, later, first, shared, second, shared]),
+            log.decisions().copied().collect::<Vec<_>>()
+        );
+        assert_eq!(4, usize::from(derivations.count()));
+        derivations
+            .rest_on(right, Vec::from([ProcessId(4)]))
+            .expect("the parent process is open");
+        let mut broken = TraceLog::new();
+        assert_eq!(
+            Err(crate::ConversionFault::MachineInvariant),
+            derivations.emit(&core, &domain, root, &mut broken)
+        );
+        assert_eq!(
+            Vec::from([start, later, first, shared, second]),
+            broken.decisions().copied().collect::<Vec<_>>(),
+            "a missing child refuses after the preceding preorder prefix"
+        );
+    }
+
+    #[test]
+    fn derivation_collapse_keeps_parent_decisions_and_refuses_missing_nodes()
+    {
+        let mut core = CoreArena::new();
+        let unit_body = core.value_unit();
+        let pair_body = core.value_pair(unit_body, unit_body);
+        let first_body = core.computation_return(unit_body);
+        let second_body = core.computation_return(pair_body);
+        let mut domain = DomainArena::new();
+        let unit = domain.value_unit(crate::TermFace::Reduced);
+        let other = domain.value_unit(crate::TermFace::Reduced);
+        let first_comp = domain.comp_return(unit, crate::CompTermFace::Reduced);
+        let second_comp = domain.comp_return(other, crate::CompTermFace::Reduced);
+        let first_closure = domain.comp_closure_node(first_body, crate::Environment::new());
+        let second_closure = domain.comp_closure_node(second_body, crate::Environment::new());
+        let first_thunk = domain.value_thunk(first_closure, crate::TermFace::Reduced);
+        let second_thunk = domain.value_thunk(second_closure, crate::TermFace::Reduced);
+        let root = ProcessId(0);
+        let child = ProcessId(1);
+        let start = ConversionDecision::ComparedShared {
+            left: TraceNode::Value(unit),
+            right: TraceNode::Value(unit),
+        };
+        let child_decision = ConversionDecision::ComparedShared {
+            left: TraceNode::Value(other),
+            right: TraceNode::Value(other),
+        };
+        let mut derivations = crate::derivation::Derivations::new(
+            gandr_kernel_conversion_trace::SinkActivity::Active,
+        );
+        derivations.open(root).expect("the root is first");
+        derivations.open(child).expect("the child is next");
+        derivations.decide(root, start).expect("the root is open");
+        derivations
+            .decide(child, child_decision)
+            .expect("the child is open");
+        for pair in [
+            (crate::Glued::Value(unit), crate::Glued::Value(other)),
+            (
+                crate::Glued::Computation(first_comp),
+                crate::Glued::Computation(second_comp),
+            ),
+        ] {
+            derivations
+                .agree_on(root, pair, Vec::from([child]))
+                .expect("the root is open");
+            let mut log = TraceLog::new();
+            derivations
+                .emit(&core, &domain, root, &mut log)
+                .expect("the equal pair closes without its children");
+            assert_eq!(
+                Vec::from([start, ConversionDecision::ComparedShared {
+                    left: TraceNode::of(pair.0),
+                    right: TraceNode::of(pair.1)
+                }]),
+                log.decisions().copied().collect::<Vec<_>>()
+            );
+        }
+        derivations
+            .agree_on(
+                root,
+                (
+                    crate::Glued::Value(first_thunk),
+                    crate::Glued::Value(second_thunk),
+                ),
+                Vec::from([child]),
+            )
+            .expect("the root is open");
+        let mut deferred = TraceLog::new();
+        derivations
+            .emit(&core, &domain, root, &mut deferred)
+            .expect("a deferred pair retains its children");
+        assert_eq!(
+            Vec::from([start, child_decision]),
+            deferred.decisions().copied().collect::<Vec<_>>()
+        );
+        let floor = domain.watermark();
+        let absent = domain.value_unit(crate::TermFace::Reduced);
+        domain.truncate_to(floor);
+        for (pair, fault) in [
+            (
+                (
+                    crate::Glued::Value(unit),
+                    crate::Glued::Computation(first_comp),
+                ),
+                crate::ConversionFault::Polarity,
+            ),
+            (
+                (crate::Glued::Value(absent), crate::Glued::Value(absent)),
+                crate::ConversionFault::Domain(crate::DomainFault::Dangling),
+            ),
+        ] {
+            derivations
+                .agree_on(root, pair, Vec::from([child]))
+                .expect("the root is open");
+            let mut refused = TraceLog::new();
+            assert_eq!(
+                Err(fault),
+                derivations.emit(&core, &domain, root, &mut refused)
+            );
+            assert_eq!(
+                Vec::from([start]),
+                refused.decisions().copied().collect::<Vec<_>>(),
+                "a refused collapse keeps only the already emitted parent decision"
+            );
+        }
+    }
+
+    #[test]
+    fn empty_choices_refuse_instead_of_producing_a_refutation()
+    {
+        let core = CoreArena::new();
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let unit = domain.value_unit(crate::TermFace::Reduced);
+        let mut scheduler = super::Scheduler::<NullMemo>::new(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            gandr_kernel_conversion_trace::SinkActivity::Inactive,
+            NullMemo,
+        );
+        for combination in [
+            super::Combine::Biased(Vec::new()),
+            super::Combine::Either(Vec::new()),
+        ] {
+            let mut goal = super::Goal {
+                left: super::Slot::Ready(crate::Glued::Value(unit)),
+                right: super::Slot::Ready(crate::Glued::Value(unit)),
+                depth: crate::BinderLevel::from(0_u32),
+                frozen: super::Frozen::default(),
+                chain: super::Chain::default(),
+                next: super::Next::Classify,
+            };
+            let root = scheduler
+                .start_goal(goal.clone())
+                .expect("the pending goal is admitted");
+            assert_eq!(
+                Err(crate::ConversionFault::MachineInvariant),
+                scheduler.combine(root, &mut goal, combination)
+            );
+            assert_eq!(Ok(super::Outcome::Pending), scheduler.outcome(root));
+        }
+        let mut goal = super::Goal {
+            left: super::Slot::Ready(crate::Glued::Value(unit)),
+            right: super::Slot::Ready(crate::Glued::Value(unit)),
+            depth: crate::BinderLevel::from(0_u32),
+            frozen: super::Frozen::default(),
+            chain: super::Chain::default(),
+            next: super::Next::Classify,
+        };
+        let root = scheduler
+            .start_goal(goal.clone())
+            .expect("the zero-premise goal is admitted");
+        assert_eq!(
+            Ok(super::Turn::Done),
+            scheduler.combine(root, &mut goal, super::Combine::All {
+                pair: (crate::Glued::Value(unit), crate::Glued::Value(unit)),
+                children: Vec::new(),
+                collapse: super::Collapse::Allowed,
+            })
+        );
+        assert_eq!(
+            Ok(super::Outcome::Settled(super::Settled::Convertible)),
+            scheduler.outcome(root)
+        );
+    }
+
+    #[test]
+    fn step_counter_overflow_cannot_disable_the_budget_backstop()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let first_body = core.computation_return(unit);
+        let second_body = core.computation_return(unit);
+        let first = core.value_thunk(first_body);
+        let second = core.value_thunk(second_body);
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let left = eval_value(&core, &mut domain, definitions, Fuel::from(8_u32), first)
+            .expect("the first thunk evaluates");
+        let right = eval_value(&core, &mut domain, definitions, Fuel::from(8_u32), second)
+            .expect("the second thunk evaluates");
+        let settings = MachineSettings::new(
+            SchedulingPolicy::default(),
+            GranularityPolicy::default(),
+            StepBudget::from(u64::MAX),
+        );
+        for (other, expected) in [
+            (right, MachineVerdict::Declined(DeclineReason::Budget)),
+            (left, MachineVerdict::Convertible),
+        ] {
+            let mut scheduler = super::Scheduler::<NullMemo>::new(
+                &core,
+                &mut domain,
+                definitions,
+                settings,
+                gandr_kernel_conversion_trace::SinkActivity::Inactive,
+                NullMemo,
+            );
+            let root = scheduler
+                .start_fresh(
+                    crate::resharing::SupportSides::Heads(
+                        crate::Glued::Value(left),
+                        crate::Glued::Value(other),
+                    ),
+                    crate::BinderLevel::from(0_u32),
+                )
+                .expect("the root goal is admitted");
+            scheduler.spent = super::StepCount(u64::MAX);
+            assert_eq!(
+                Ok(expected),
+                scheduler.run(root),
+                "a pending root must not run past an overflow; an answer on the same turn still wins"
+            );
+        }
+    }
+
+    #[test]
+    fn binder_ceiling_is_refused_before_opening_or_eta_allocation()
+    {
+        for eta in [false, true] {
+            for memo in [false, true] {
+                let mut core = CoreArena::new();
+                let unit = core.value_unit();
+                let returned = core.computation_return(unit);
+                let left = core.computation_lambda(returned);
+                let right = if eta {
+                    let rigid = core.value_constant(Name::Rigid.constant());
+                    core.computation_force(rigid)
+                }
+                else {
+                    let pair = core.value_pair(unit, unit);
+                    let returned = core.computation_return(pair);
+                    core.computation_lambda(returned)
+                };
+                let chain = LoweredChain::new();
+                let environment = DefinitionalEnvironment::new();
+                let definitions = Definitions::new(&chain, &environment, environment.root());
+                let mut domain = DomainArena::new();
+                let left =
+                    eval_computation(&core, &mut domain, definitions, Fuel::from(32_u32), left)
+                        .expect("the lambda evaluates without entering its binder");
+                let right =
+                    eval_computation(&core, &mut domain, definitions, Fuel::from(32_u32), right)
+                        .expect("the other head evaluates without entering its binder");
+                let problem =
+                    Problem::computations(left, right).under(crate::BinderLevel::from(u32::MAX));
+                let mark = domain.watermark();
+                let result = if memo {
+                    decide::<_, ResharingMemo>(
+                        &core,
+                        &mut domain,
+                        definitions,
+                        MachineSettings::default(),
+                        problem,
+                        &mut NullSink,
+                    )
+                }
+                else {
+                    decide::<_, NullMemo>(
+                        &core,
+                        &mut domain,
+                        definitions,
+                        MachineSettings::default(),
+                        problem,
+                        &mut NullSink,
+                    )
+                };
+                assert_eq!(
+                    Err(crate::ConversionFault::MachineInvariant),
+                    result,
+                    "eta={eta}, memo={memo}"
+                );
+                assert_eq!(
+                    mark,
+                    domain.watermark(),
+                    "an impossible deeper level mints no fresh variable"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn completed_premises_wake_a_later_decomposition()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let body = core.computation_return(unit);
+        let first = core.value_thunk(body);
+        let other_unit = core.value_unit();
+        let other_body = core.computation_return(other_unit);
+        let second = core.value_thunk(other_body);
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let left = eval_value(&core, &mut domain, definitions, Fuel::from(32_u32), first)
+            .expect("the first thunk evaluates");
+        let right = eval_value(&core, &mut domain, definitions, Fuel::from(32_u32), second)
+            .expect("the second thunk evaluates");
+        let mut left_tail = domain.value_pair(left, left, crate::TermFace::Reduced);
+        let mut right_tail = domain.value_pair(right, right, crate::TermFace::Reduced);
+        let padding = domain.value_unit(crate::TermFace::Reduced);
+        for _depth in 0_u32 .. 8_u32 {
+            left_tail = domain.value_pair(padding, left_tail, crate::TermFace::Reduced);
+            right_tail = domain.value_pair(padding, right_tail, crate::TermFace::Reduced);
+        }
+        let left_root = domain.value_pair(left, left_tail, crate::TermFace::Reduced);
+        let right_root = domain.value_pair(right, right_tail, crate::TermFace::Reduced);
+        let problem = Problem::values(left_root, right_root);
+        let mut independent = domain.clone();
+        let reshared = decide::<_, ResharingMemo>(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            problem,
+            &mut NullSink,
+        )
+        .expect("the shared run remains well formed");
+        let memoless = decide::<_, NullMemo>(
+            &core,
+            &mut independent,
+            definitions,
+            MachineSettings::default(),
+            problem,
+            &mut NullSink,
+        )
+        .expect("the independent run remains well formed");
+        assert_eq!(MachineVerdict::Convertible, memoless.verdict());
+        assert_eq!(
+            MachineVerdict::Convertible,
+            reshared.verdict(),
+            "completed premises cannot send another wakeup and must not become a cycle"
+        );
+    }
+
+    #[test]
+    fn invalid_roots_refuse_before_identity_or_search()
+    {
+        let mut core = CoreArena::new();
+        let source = core.value_unit();
+        let returned = core.computation_return(source);
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let mark = domain.watermark();
+        let value = eval_value(&core, &mut domain, definitions, Fuel::from(8_u32), source)
+            .expect("the value evaluates before truncation");
+        let computation =
+            eval_computation(&core, &mut domain, definitions, Fuel::from(8_u32), returned)
+                .expect("the computation evaluates before truncation");
+        domain.truncate_to(mark);
+        for (problem, expected) in [
+            (
+                Problem::values(value, value),
+                crate::ConversionFault::Domain(crate::DomainFault::Dangling),
+            ),
+            (
+                Problem::computations(computation, computation),
+                crate::ConversionFault::Domain(crate::DomainFault::Dangling),
+            ),
+            (
+                Problem {
+                    left: crate::Glued::Value(value),
+                    right: crate::Glued::Computation(computation),
+                    depth: crate::BinderLevel::FLOOR,
+                },
+                crate::ConversionFault::Polarity,
+            ),
+        ] {
+            assert_eq!(
+                Err(expected),
+                decide::<_, ResharingMemo>(
+                    &core,
+                    &mut domain,
+                    definitions,
+                    MachineSettings::default(),
+                    problem,
+                    &mut NullSink
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn missing_processes_refuse_without_creating_waits()
+    {
+        let core = CoreArena::new();
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let unit = domain.value_unit(crate::TermFace::Reduced);
+        let mut scheduler = super::Scheduler::<NullMemo>::new(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            gandr_kernel_conversion_trace::SinkActivity::Inactive,
+            NullMemo,
+        );
+        let missing = ProcessId(0);
+        assert_eq!(
+            Err(crate::ConversionFault::MachineInvariant),
+            scheduler.resolve(super::Slot::Waiting(missing))
+        );
+        assert_eq!(
+            Err(crate::ConversionFault::MachineInvariant),
+            scheduler.need(missing)
+        );
+        assert_eq!(
+            Err(crate::ConversionFault::MachineInvariant),
+            scheduler.enqueue(missing)
+        );
+        assert!(
+            scheduler.queue.is_empty(),
+            "refused processes cannot acquire a queued wakeup"
+        );
+        let share = scheduler.share_at(super::DefinitionHeight::default());
+        let answered = scheduler
+            .start(
+                super::Work::Spent,
+                super::Outcome::Settled(super::Settled::Convertible),
+                share,
+            )
+            .expect("a completed process is admitted");
+        let missing = ProcessId(usize::MAX);
+        assert_eq!(
+            Ok(super::Outcome::Settled(super::Settled::Convertible)),
+            scheduler.depend(missing, answered),
+            "an answered dependency needs no waiter lookup or edge"
+        );
+        assert_eq!(
+            Err(crate::ConversionFault::MachineInvariant),
+            scheduler.resolve(super::Slot::Waiting(answered)),
+            "a goal verdict cannot be received as an evaluated head"
+        );
+        let pending = scheduler
+            .start_goal(super::Goal {
+                left: super::Slot::Ready(crate::Glued::Value(unit)),
+                right: super::Slot::Ready(crate::Glued::Value(unit)),
+                depth: crate::BinderLevel::FLOOR,
+                frozen: super::Frozen::default(),
+                chain: super::Chain::default(),
+                next: super::Next::Classify,
+            })
+            .expect("a pending goal is admitted");
+        assert_eq!(
+            Err(crate::ConversionFault::MachineInvariant),
+            scheduler.depend(missing, pending)
+        );
+        assert!(
+            scheduler
+                .process(pending)
+                .expect("the dependency remains live")
+                .waiters
+                .is_empty(),
+            "a missing waiter cannot leave a reciprocal edge"
+        );
+        scheduler
+            .enqueue(pending)
+            .expect("the first wakeup is queued");
+        scheduler
+            .enqueue(pending)
+            .expect("a repeated wakeup coalesces");
+        assert_eq!(
+            alloc::collections::VecDeque::from([pending]),
+            scheduler.queue
+        );
+    }
+
+    #[test]
+    fn combinators_preserve_answer_and_decline_precedence()
+    {
+        #[derive(Clone, Copy, Debug)]
+        enum Combinator
+        {
+            All,
+            Biased,
+            Either,
+        }
+        let accepted = super::Outcome::Settled(super::Settled::Convertible);
+        let refuted = super::Outcome::Settled(super::Settled::NotConvertible);
+        let pending = super::Outcome::Pending;
+        let cycle = super::Outcome::Declined(DeclineReason::Cycle);
+        let budget = super::Outcome::Declined(DeclineReason::Budget);
+        let cases: &[(Combinator, &[super::Outcome], super::Outcome)] = &[
+            (Combinator::All, &[pending, refuted], refuted),
+            (Combinator::All, &[cycle, refuted], refuted),
+            (Combinator::All, &[accepted, pending], pending),
+            (Combinator::All, &[cycle, pending], pending),
+            (Combinator::All, &[accepted, accepted], accepted),
+            (Combinator::All, &[cycle, budget], cycle),
+            (Combinator::All, &[pending, refuted, pending], refuted),
+            (Combinator::All, &[accepted, cycle, budget], cycle),
+            (Combinator::Biased, &[accepted, pending], accepted),
+            (Combinator::Biased, &[refuted, pending], pending),
+            (Combinator::Biased, &[pending, refuted], refuted),
+            (Combinator::Biased, &[pending, cycle], pending),
+            (Combinator::Biased, &[cycle, budget], budget),
+            (Combinator::Biased, &[pending, accepted, pending], accepted),
+            (Combinator::Either, &[pending, accepted], accepted),
+            (Combinator::Either, &[refuted, pending], pending),
+            (Combinator::Either, &[cycle, pending], pending),
+            (Combinator::Either, &[refuted, refuted], refuted),
+            (Combinator::Either, &[cycle, budget], cycle),
+            (Combinator::Either, &[pending, accepted, pending], accepted),
+            (Combinator::Either, &[refuted, cycle, budget], cycle),
+        ];
+        for &(kind, inputs, expected) in cases {
+            let core = CoreArena::new();
+            let chain = LoweredChain::new();
+            let environment = DefinitionalEnvironment::new();
+            let definitions = Definitions::new(&chain, &environment, environment.root());
+            let mut domain = DomainArena::new();
+            let unit = domain.value_unit(crate::TermFace::Reduced);
+            let pair = (crate::Glued::Value(unit), crate::Glued::Value(unit));
+            let mut goal = super::Goal {
+                left: super::Slot::Ready(pair.0),
+                right: super::Slot::Ready(pair.1),
+                depth: crate::BinderLevel::FLOOR,
+                frozen: super::Frozen::default(),
+                chain: super::Chain::default(),
+                next: super::Next::Classify,
+            };
+            let mut scheduler = super::Scheduler::<NullMemo>::new(
+                &core,
+                &mut domain,
+                definitions,
+                MachineSettings::default(),
+                gandr_kernel_conversion_trace::SinkActivity::Inactive,
+                NullMemo,
+            );
+            let root = scheduler
+                .start_goal(goal.clone())
+                .expect("the parent is admitted");
+            let mut children = Vec::new();
+            for &outcome in inputs {
+                let work = if outcome == pending {
+                    super::Work::Goal(goal.clone())
+                }
+                else {
+                    super::Work::Spent
+                };
+                let share = scheduler.share_at(super::DefinitionHeight::default());
+                children.push(
+                    scheduler
+                        .start(work, outcome, share)
+                        .expect("the child state is admitted"),
+                );
+            }
+            let combine = match kind {
+                | Combinator::All => super::Combine::All {
+                    pair,
+                    children,
+                    collapse: super::Collapse::Never,
+                },
+                | Combinator::Biased => super::Combine::Biased(children),
+                | Combinator::Either => super::Combine::Either(children),
+            };
+            let expected_turn = if expected == pending {
+                super::Turn::Wait
+            }
+            else {
+                super::Turn::Done
+            };
+            assert_eq!(
+                Ok(expected_turn),
+                scheduler.combine(root, &mut goal, combine),
+                "{kind:?}: {inputs:?}"
+            );
+            assert_eq!(
+                Ok(expected),
+                scheduler.outcome(root),
+                "{kind:?}: {inputs:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_heads_and_channel_entries_are_refused()
+    {
+        let core = CoreArena::new();
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let unit = domain.value_unit(crate::TermFace::Reduced);
+        let returned = domain.comp_return(unit, crate::CompTermFace::Reduced);
+        let variable = domain
+            .neutral_node(
+                crate::NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: crate::BinderLevel::FLOOR,
+                },
+                Vec::new(),
+                crate::Unfolding::Rigid,
+            )
+            .expect("a variable is rigid");
+        let module = domain
+            .neutral_node(
+                crate::NeutralHead::Module(Name::Zero.constant()),
+                Vec::new(),
+                crate::Unfolding::Rigid,
+            )
+            .expect("a module is rigid");
+        let rigid = domain
+            .neutral_node(
+                crate::NeutralHead::Constant(Name::Rigid.constant()),
+                Vec::new(),
+                crate::Unfolding::Rigid,
+            )
+            .expect("an opaque constant is rigid");
+        let wrong_body = domain
+            .neutral_node(
+                crate::NeutralHead::Constant(Name::Zero.constant()),
+                Vec::new(),
+                crate::Unfolding::Forced(crate::Glued::Computation(returned)),
+            )
+            .expect("the domain can hold a computation unfolding");
+        let mark = domain.watermark();
+        let stale_value = domain.value_unit(crate::TermFace::Reduced);
+        let stale_computation = domain.comp_return(unit, crate::CompTermFace::Reduced);
+        let stale_neutral = domain
+            .neutral_node(
+                crate::NeutralHead::Constant(Name::One.constant()),
+                Vec::new(),
+                crate::Unfolding::Rigid,
+            )
+            .expect("the later neutral initially resolves");
+        domain.truncate_to(mark);
+        let mut scheduler = super::Scheduler::<NullMemo>::new(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            gandr_kernel_conversion_trace::SinkActivity::Inactive,
+            NullMemo,
+        );
+        for head in [
+            crate::Glued::Value(unit),
+            crate::Glued::Computation(returned),
+        ] {
+            assert_eq!(
+                Err(crate::ConversionFault::MachineInvariant),
+                scheduler.neutral_of(head)
+            );
+        }
+        for head in [
+            crate::Glued::Value(stale_value),
+            crate::Glued::Computation(stale_computation),
+        ] {
+            assert_eq!(
+                Err(crate::ConversionFault::Domain(crate::DomainFault::Dangling)),
+                scheduler.neutral_of(head)
+            );
+        }
+        for head in [variable, module] {
+            assert_eq!(
+                Err(crate::ConversionFault::MachineInvariant),
+                scheduler.head_constant(head)
+            );
+            assert_eq!(
+                Err(crate::ConversionFault::MachineInvariant),
+                scheduler.unfold_channel(head)
+            );
+        }
+        assert_eq!(
+            Err(crate::ConversionFault::Domain(crate::DomainFault::Dangling)),
+            scheduler.head_constant(stale_neutral)
+        );
+        assert_eq!(
+            Err(crate::ConversionFault::Domain(crate::DomainFault::Dangling)),
+            scheduler.unfold_channel(stale_neutral)
+        );
+        for head in [rigid, wrong_body] {
+            assert_eq!(
+                Err(crate::ConversionFault::MachineInvariant),
+                scheduler.unfold_channel(head)
+            );
+        }
+        assert_eq!(
+            Err(crate::ConversionFault::Evaluation(
+                crate::EvalFault::DanglingTerm
+            )),
+            scheduler.body_channel(GlobalIndex::from(0_u32), super::DefinitionHeight::default())
+        );
+    }
+
+    #[test]
+    fn opened_channels_preserve_distinct_binder_levels()
+    {
+        let mut core = CoreArena::new();
+        let variable = innermost(&mut core);
+        let returned = core.computation_return(variable);
+        let lambda = core.computation_lambda(returned);
+        let chain = LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = Definitions::new(&chain, &environment, environment.root());
+        let mut domain = DomainArena::new();
+        let lambda = eval_computation(&core, &mut domain, definitions, Fuel::from(16_u32), lambda)
+            .expect("the lambda suspends its binder body");
+        let Some(&crate::DomainComp::Lambda { body, .. }) = domain.computation(lambda)
+        else {
+            panic!("the evaluated head is a lambda");
+        };
+        let mut scheduler = super::Scheduler::<NullMemo>::new(
+            &core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            gandr_kernel_conversion_trace::SinkActivity::Inactive,
+            NullMemo,
+        );
+        for level in [0_u32, 1_u32, 0_u32] {
+            let level = crate::BinderLevel::from(level);
+            let channel = scheduler
+                .open_channel(body, level)
+                .expect("the closure opens at this level");
+            if scheduler.outcome(channel) == Ok(super::Outcome::Pending) {
+                assert_eq!(Ok(super::Turn::Done), scheduler.turn(channel));
+            }
+            let Ok(super::Outcome::Evaluated(crate::Glued::Computation(result))) =
+                scheduler.outcome(channel)
+            else {
+                panic!("the opening channel returns a computation");
+            };
+            let Some(&crate::DomainComp::Return { value, .. }) =
+                scheduler.domain.computation(result)
+            else {
+                panic!("the body returns its fresh variable");
+            };
+            let Some(&crate::DomainValue::Neutral { neutral, .. }) = scheduler.domain.value(value)
+            else {
+                panic!("the returned variable remains neutral");
+            };
+            assert_eq!(
+                crate::NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level
+                },
+                scheduler
+                    .domain
+                    .neutral(neutral)
+                    .expect("the fresh neutral resolves")
+                    .head()
+            );
+        }
+        assert_eq!(
+            2_usize,
+            scheduler.processes.len(),
+            "a completed opening at the same level is reused"
+        );
+    }
+
+    #[test]
+    fn head_height_is_symmetric_and_nonconstants_stay_at_the_floor()
+    {
+        let mut core = CoreArena::new();
+        let body = core.value_unit();
+        let first = core.value_constant(Name::Zero.constant());
+        let second = core.value_constant(Name::One.constant());
+        let first_force = core.computation_force(first);
+        let second_force = core.computation_force(second);
+        let world = World::stacked(core, &[
+            (GlobalIndex::from(0_u32), body),
+            (GlobalIndex::from(1_u32), body),
+        ]);
+        let definitions =
+            Definitions::new(&world.chain, &world.environment, world.environment.root());
+        let mut domain = DomainArena::new();
+        let first = eval_value(
+            &world.core,
+            &mut domain,
+            definitions,
+            Fuel::from(16_u32),
+            first,
+        )
+        .expect("the first head evaluates");
+        let second = eval_value(
+            &world.core,
+            &mut domain,
+            definitions,
+            Fuel::from(16_u32),
+            second,
+        )
+        .expect("the second head evaluates");
+        let first_force = eval_computation(
+            &world.core,
+            &mut domain,
+            definitions,
+            Fuel::from(16_u32),
+            first_force,
+        )
+        .expect("the first force is neutral");
+        let second_force = eval_computation(
+            &world.core,
+            &mut domain,
+            definitions,
+            Fuel::from(16_u32),
+            second_force,
+        )
+        .expect("the second force is neutral");
+        let unit = domain.value_unit(crate::TermFace::Reduced);
+        let scheduler = super::Scheduler::<NullMemo>::new(
+            &world.core,
+            &mut domain,
+            definitions,
+            MachineSettings::default(),
+            gandr_kernel_conversion_trace::SinkActivity::Inactive,
+            NullMemo,
+        );
+        for (left, right) in [
+            (crate::Glued::Value(first), crate::Glued::Value(second)),
+            (
+                crate::Glued::Computation(first_force),
+                crate::Glued::Computation(second_force),
+            ),
+        ] {
+            for pair in [(left, right), (right, left)] {
+                assert_eq!(
+                    2_u32,
+                    u32::from(scheduler.pair_height(pair).expect("both heads resolve"))
+                );
+            }
+        }
+        assert_eq!(
+            0_u32,
+            u32::from(
+                scheduler
+                    .pair_height((crate::Glued::Value(unit), crate::Glued::Value(unit)))
+                    .expect("formers have floor height")
+            )
+        );
+    }
+
+    #[test]
+    fn lifting_shares_equal_trees_without_reusing_occurrence_nodes()
+    {
+        let mut core = CoreArena::new();
+        let first = core.value_unit();
+        let second = core.value_unit();
+        let left = core.value_pair(first, second);
+        let third = core.value_unit();
+        let fourth = core.value_unit();
+        let right = core.value_pair(third, fourth);
+        let root = core.value_pair(left, right);
+        let mut world = World::new(core, &[]);
+        assert_eq!(
+            [0_u64, 0_u64],
+            world.shares(Sides::Values(first, second)).map(u64::from)
+        );
+        assert_eq!(
+            [2_u64, 2_u64],
+            world.shares(Sides::Values(root, root)).map(u64::from),
+            "the repeated unit and repeated pair each have one shared leg"
+        );
+        let (overlay, lifted_root) = lifted(&world.core, CoreTerm::Value(root));
+        assert_eq!(
+            Ok(()),
+            overlay.validate(lifted_root),
+            "each occurrence is a distinct overlay node"
+        );
+        let OverlayId::Value(lifted_root) = lifted_root
+        else {
+            panic!("a value lifts to a value");
+        };
+        let erased = crate::overlay::erase_value(&overlay, lifted_root, &mut world.core)
+            .expect("the lifted tree erases");
+        let Some(&Value::Pair(first, second)) = world.core.value(erased)
+        else {
+            panic!("the root is still a pair");
+        };
+        assert_eq!(first, second, "erasure reuses the shared pair leg");
+        let Some(&Value::Pair(first, second)) = world.core.value(first)
+        else {
+            panic!("each component is still a pair");
+        };
+        assert_eq!(first, second, "erasure reuses the shared unit leg");
+        assert_eq!(Some(&Value::Unit), world.core.value(first));
+    }
+
+    #[test]
+    fn closed_codes_are_certified_in_both_type_families()
+    {
+        let mut core = CoreArena::new();
+        let first_unit = core.value_type_unit();
+        let second_unit = core.value_type_unit();
+        let first_returner = core.comp_type_returner(first_unit);
+        let second_returner = core.comp_type_returner(second_unit);
+        let first_arrow = core.comp_type_arrow(first_unit, first_returner);
+        let second_arrow = core.comp_type_arrow(second_unit, second_returner);
+        let first_thunk = core.value_type_thunk(first_returner);
+        let second_thunk = core.value_type_thunk(second_returner);
+        let first_value_code = core.value_quote(first_thunk);
+        let second_value_code = core.value_quote(second_thunk);
+        let first_comp_code = core.value_quote_computation(first_arrow);
+        let second_comp_code = core.value_quote_computation(second_arrow);
+        let different_comp_code = core.value_quote_computation(first_returner);
+        let first = core.computation_return(first_comp_code);
+        let second = core.computation_return(second_comp_code);
+        let world = World::new(core, &[]);
+        for (sides, expected) in [
+            (
+                Sides::Values(first_value_code, second_value_code),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Values(first_comp_code, second_comp_code),
+                MachineVerdict::Convertible,
+            ),
+            (
+                Sides::Values(first_comp_code, different_comp_code),
+                MachineVerdict::NotConvertible,
+            ),
+            (
+                Sides::Computations(first, second),
+                MachineVerdict::Convertible,
+            ),
+        ] {
+            let (verdict, decisions) = world.traced(sides);
+            assert_eq!(expected, verdict, "{sides:?}");
+            assert_eq!(
+                certified(expected),
+                world.replayed(sides, verdict, &decisions),
+                "{sides:?}: {decisions:?}"
+            );
+        }
     }
 }

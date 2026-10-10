@@ -118,10 +118,24 @@ impl Frozen
     /// - provides: the freezing half of the §6.1 branch.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — repeating a freeze leaves the goal state unchanged,
+    ///   distinct constants can be frozen on different sides, and head
+    ///   classification reads only its own side; duplicating a member or
+    ///   freezing both sides changes the state or permitted unfolding.
+    /// - witness: `rules::tests::freezing_is_idempotent_and_local_to_one_side`
     // economy: membership is a linear scan, and a goal's frozen set grows by
     // one per freezing branch on its chain — a handful in practice. Upgrade
     // path: a sorted vector with a binary search when a chain freezes enough
     // constants to show in a profile.
+    #[spec(
+        captures: other_length = match side { ConversionSide::Left => self.right.len(), ConversionSide::Right => self.left.len() },
+        ensures: match side {
+            ConversionSide::Left => self.left.iter().filter(|&&held| held == constant).count() == 1 && self.right.len() == other_length,
+            ConversionSide::Right => self.right.iter().filter(|&&held| held == constant).count() == 1 && self.left.len() == other_length,
+        },
+    )]
     pub(crate) fn freeze(
         &mut self,
         side: ConversionSide,
@@ -247,10 +261,23 @@ impl Choice
     ///
     /// # Adequacy
     /// - hypothesis: L3 — four arms, each separated by a conversion whose
-    ///   winning branch is the alternative that arm alone offers.
+    ///   winning branch is the alternative that arm alone offers. Reordering
+    ///   the authoritative alternative or freezing the wrong side changes the
+    ///   selected trace or makes replay refuse it.
+    /// - witness: `machine::tests::a_trace_naming_the_wrong_branch_is_refused`
     /// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
     /// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
     /// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+    #[spec(ensures: |ret| match self {
+        Self::Same => ret.0 == Combination::Biased && ret.1.as_slice() == [Move::Shortcut,
+            Move::FreezeUnfold(ConversionSide::Left), Move::PostponeUnfold(ConversionSide::Left)],
+        Self::Different => ret.0 == Combination::Biased && ret.1.as_slice() == [
+            Move::FreezeUnfold(ConversionSide::Left), Move::PostponeUnfold(ConversionSide::Left)],
+        Self::Frozen { defined } => ret.0 == Combination::Either
+            && ret.1.as_slice() == [Move::Shortcut, Move::Unfold(defined)],
+        Self::Lambda { defined } => ret.0 == Combination::Biased
+            && ret.1.as_slice() == [Move::FreezeEta(defined), Move::Unfold(defined)],
+    })]
     pub(crate) fn alternatives(self) -> (Combination, Vec<Move>)
     {
         match self {
@@ -324,6 +351,23 @@ pub const fn other(side: ConversionSide) -> ConversionSide
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — the neutral does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a loaded constant is defined on one side and frozen on
+///   the other; an opaque occurrence of the same constant remains rigid, and
+///   truncation refuses the head. Confusing side-local freezing with the
+///   unfolding face changes classification.
+/// - witness: `rules::tests::freezing_is_idempotent_and_local_to_one_side`
+#[spec(ensures: |ret| domain.neutral(neutral).map_or_else(
+    || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+    |node| match (node.head(), node.unfolding()) {
+        (NeutralHead::Constant(constant), Unfolding::Unforced(_) | Unfolding::Forced(_)) =>
+            ret == Ok(if frozen.holds(side, constant) == Membership::Held {
+                Head::Frozen(constant)
+            } else { Head::Defined(constant) }),
+        _ => ret == Ok(Head::Rigid),
+    },
+))]
 pub fn head(
     domain: &DomainArena,
     frozen: &Frozen,
@@ -375,18 +419,30 @@ pub enum Spines
 /// - [`ConversionFault::Domain`] — a neutral does not resolve.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — neutral spine lengths and elimination kinds determine
-///   decomposition; application and transport operands contribute one premise,
-///   case branches two, and force none.
+/// - hypothesis: L2 — a mixed spine distinguishes application, static
+///   application, force, bind and both case branches, preserving operand and
+///   branch order even when heads differ; equal-length kind mismatches, unequal
+///   lengths and dangling ids give different outcomes.
+/// - witness: `rules::tests::spine_rules_preserve_branch_order_and_refuse_incompatible_shapes`
 /// - witness: `conv::tests::family_spines_are_separated_by_head_index_and_arity`
 /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
 #[spec(ensures: |ret| match (domain.neutral(left), domain.neutral(right)) {
-    (Some(a), Some(b)) => match ret {
-        Ok(Spines::Agree(ref goals)) => a.spine().len() == b.spine().len() && a.spine().iter().zip(b.spine()).all(|(x, y)| core::mem::discriminant(x) == core::mem::discriminant(y)) && goals.len() == a.spine().iter().map(|step| match *step { Elimination::Force => 0_usize, Elimination::Case { .. } => 2, _ => 1 }).sum::<usize>(),
-        Ok(Spines::Disagree) => a.spine().len() != b.spine().len() || a.spine().iter().zip(b.spine()).any(|(x, y)| core::mem::discriminant(x) != core::mem::discriminant(y)),
-        Err(_) => false,
+    (Some(one), Some(other)) => {
+        let same_shape = one.spine().len() == other.spine().len()
+            && one.spine().iter().zip(other.spine()).all(|(first, second)|
+                core::mem::discriminant(first) == core::mem::discriminant(second));
+        match ret {
+            Ok(Spines::Agree(ref subgoals)) => same_shape && subgoals.len() == one.spine().iter()
+                .map(|elimination| match *elimination {
+                    Elimination::Force => 0,
+                    Elimination::Case { .. } => 2,
+                    _ => 1,
+                }).sum::<usize>(),
+            Ok(Spines::Disagree) => !same_shape,
+            Err(_) => false,
+        }
     },
-    _ => matches!(ret, Err(ConversionFault::Domain(DomainFault::Dangling))),
+    _ => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
 })]
 pub fn spine_subgoals(
     domain: &DomainArena,
@@ -460,6 +516,18 @@ pub fn spine_subgoals(
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — a neutral does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L2 — equal lengths agree even when elimination kinds differ,
+///   shortening a spine changes arity, and a dropped neutral refuses; comparing
+///   kinds instead of length or accepting a dangling id changes the answer.
+/// - witness: `rules::tests::spine_rules_preserve_branch_order_and_refuse_incompatible_shapes`
+#[spec(ensures: |ret| match (domain.neutral(left), domain.neutral(right)) {
+    (Some(one), Some(other)) => ret == Ok(if one.spine().len() == other.spine().len() {
+        Arity::Same
+    } else { Arity::Different }),
+    _ => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+})]
 fn same_arity(
     domain: &DomainArena,
     left: NeutralId,
@@ -514,7 +582,10 @@ enum Arity
 /// # Adequacy
 /// - hypothesis: L3 — the decision surfaces are the early steps, the constant
 ///   arms and the structural arms; each is separated by a conversion the
-///   machine answers through that arm alone.
+///   machine answers through that arm alone. Opposite polarities refuse in both
+///   orders; changing precedence, the selected side or the subgoal order
+///   changes a verdict or replay result.
+/// - witness: `rules::tests::opposite_polarities_are_refused_in_both_orders`
 /// - witness: `machine::tests::identity_closes_a_goal_on_shared_nodes`
 /// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
 /// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
@@ -522,6 +593,8 @@ enum Arity
 /// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
 /// - witness: `machine::tests::a_code_constant_unfolds_to_its_quote`
 /// - witness: `machine::tests::codes_that_could_unfold_inside_are_declined`
+#[spec(ensures: |ret| matches!(ret, Err(ConversionFault::Polarity)) == matches!((left, right),
+    (Glued::Value(_), Glued::Computation(_)) | (Glued::Computation(_), Glued::Value(_))))]
 pub fn plan(
     core: &CoreArena,
     domain: &DomainArena,
@@ -569,6 +642,19 @@ enum Constants
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — a neutral does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L2 — equal and different defined heads select different
+///   unfolding choices, a defined head meets a lambda through frozen eta, and a
+///   defined head against a former must unfold; ignoring a defined side or
+///   choosing the wrong side changes the winning trace.
+/// - witness: `machine::tests::the_const_shortcut_wins_without_unfolding`
+/// - witness: `machine::tests::two_defined_heads_meet_by_unfolding`
+/// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+/// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |planned|
+    matches!(planned, Constants::NoneDefined) != matches!(heads,
+        (Neutrality::Neutral(_, Head::Defined(_)), _) | (_, Neutrality::Neutral(_, Head::Defined(_))))))]
 fn plan_constants(
     domain: &DomainArena,
     heads: (Neutrality, Neutrality),
@@ -662,6 +748,24 @@ enum Lambda
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — a neutral does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L2 — identical rigid heads with compatible spines decompose
+///   into ordered premises, different heads refute despite the same spine
+///   shape, and a kind mismatch refutes; conflating head equality with spine
+///   compatibility changes the rule.
+/// - witness: `rules::tests::spine_rules_preserve_branch_order_and_refuse_incompatible_shapes`
+/// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
+#[spec(ensures: |ret| match (domain.neutral(left), domain.neutral(right)) {
+    (Some(one), Some(other)) => {
+        let same = one.head() == other.head() && one.spine().len() == other.spine().len()
+            && one.spine().iter().zip(other.spine()).all(|(first, second)|
+                core::mem::discriminant(first) == core::mem::discriminant(second));
+        if same { matches!(ret, Ok(Plan::Decompose(_))) }
+        else { ret == Ok(Plan::Leaf(Settled::NotConvertible)) }
+    },
+    _ => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+})]
 fn plan_rigid(
     domain: &DomainArena,
     left: NeutralId,
@@ -697,11 +801,20 @@ fn plan_rigid(
 /// - [`ConversionFault::Domain`] — the neutral does not resolve.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — native path introductions stay formers rather than
-///   unfoldable neutral heads; stuck values retain their own neutral identity.
+/// - hypothesis: L2 — a defined neutral against a former unfolds, while a
+///   lambda against a defined computation offers frozen eta and a rigid stuck
+///   function offers ordinary eta; projecting a former as a neutral or dropping
+///   its frozen side changes the rule and trace.
+/// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+/// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+/// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
 /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
 /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
-#[spec(ensures: |ret| match value { DomainValue::Neutral { neutral, .. } => match ret { Ok(Neutrality::Neutral(found, _)) => found == neutral, Err(_) => true, Ok(Neutrality::Former) => false }, _ => matches!(ret, Ok(Neutrality::Former)) })]
+#[spec(ensures: |ret| match value {
+    DomainValue::Neutral { neutral, .. } => ret == head(domain, frozen, side, neutral)
+        .map(|read| Neutrality::Neutral(neutral, read)),
+    _ => ret == Ok(Neutrality::Former),
+})]
 fn value_neutrality(
     domain: &DomainArena,
     frozen: &Frozen,
@@ -739,6 +852,20 @@ fn value_neutrality(
 ///
 /// # Errors
 /// - [`ConversionFault::Domain`] — the neutral does not resolve.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a defined neutral against a former unfolds, while a
+///   lambda against a defined computation offers frozen eta and a rigid stuck
+///   function offers ordinary eta; projecting a former as a neutral or dropping
+///   its frozen side changes the rule and trace.
+/// - witness: `machine::tests::a_forced_unfolding_meets_a_former`
+/// - witness: `machine::tests::a_lambda_meets_a_defined_function_by_eta`
+/// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
+#[spec(ensures: |ret| match comp {
+    DomainComp::Neutral { neutral, .. } => ret == head(domain, frozen, side, neutral)
+        .map(|read| Neutrality::Neutral(neutral, read)),
+    _ => ret == Ok(Neutrality::Former),
+})]
 fn comp_neutrality(
     domain: &DomainArena,
     frozen: &Frozen,
@@ -767,6 +894,14 @@ fn comp_neutrality(
 ///
 /// # Errors
 /// - [`ConversionFault::LiteralPayload`] — no core literal at `literal`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — literal nodes resolve as payloads, but a unit and an id
+///   removed by truncation report the offending id; treating a live nonliteral
+///   as a valid payload or dropping the id changes the named refusal.
+/// - witness: `rules::tests::payloads_refuse_nonliteral_and_missing_nodes`
+#[spec(ensures: |ret| ret.is_ok() == matches!(core.value(literal), Some(Value::Literal(_)))
+    && ret.as_ref().err().is_none_or(|fault| *fault == ConversionFault::LiteralPayload { literal }))]
 fn payload(
     core: &CoreArena,
     literal: ValueId,
@@ -791,13 +926,24 @@ fn payload(
 /// As [`plan`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 — native path comparison produces a structural verdict,
-///   never a map-evaluation channel; mismatched native formers are distinct.
+/// - hypothesis: L2 — shared identities close without a process, rigid spines
+///   identify the differing argument, and closures meet through forcing or eta
+///   rather than immediate refutation; overriding an early answer or selecting
+///   the wrong structural rule changes the verdict or its trace.
+/// - witness: `machine::tests::identity_closes_a_goal_on_shared_nodes`
+/// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
+/// - witness: `machine::tests::thunks_meet_by_forcing`
+/// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
 /// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
 /// - witness: `machine::tests::trace_pairing::every_pair_of_generated_ladder_traces_replays`
-#[spec(ensures: |ret| match (domain.value(left), domain.value(right)) {
-    (Some(&DomainValue::PathCertificate { .. }), Some(&DomainValue::PathProduct { .. })) | (Some(&DomainValue::PathProduct { .. }), Some(&DomainValue::PathCertificate { .. })) => matches!(ret, Ok(Plan::Shared(Settled::NotConvertible))),
-    (Some(&DomainValue::PathCertificate { certificate: a, .. }), Some(&DomainValue::PathCertificate { certificate: b, .. })) if a == b => matches!(ret, Ok(Plan::Shared(Settled::Convertible))),
+#[spec(ensures: |ret| (match early_values(domain, left, right) {
+    Ok(Early::Identical) => ret == Ok(Plan::Shared(Settled::Convertible)),
+    Ok(Early::Apart) => ret == Ok(Plan::Shared(Settled::NotConvertible)),
+    Ok(Early::Open) => true,
+    Err(fault) => ret == Err(fault),
+}) && match (domain.value(left), domain.value(right)) {
+    (Some(&DomainValue::PathCertificate { .. }), Some(&DomainValue::PathProduct { .. })) | (Some(&DomainValue::PathProduct { .. }), Some(&DomainValue::PathCertificate { .. })) => ret == Ok(Plan::Shared(Settled::NotConvertible)),
+    (Some(&DomainValue::PathCertificate { certificate: a, .. }), Some(&DomainValue::PathCertificate { certificate: b, .. })) if a == b => ret == Ok(Plan::Shared(Settled::Convertible)),
     _ => true,
 })]
 fn plan_values(
@@ -1009,6 +1155,22 @@ fn plan_values(
 ///
 /// # Errors
 /// As [`plan`].
+///
+/// # Adequacy
+/// - hypothesis: L2 — shared identities close without a process, rigid spines
+///   identify the differing argument, and closures meet through forcing or eta
+///   rather than immediate refutation; overriding an early answer or selecting
+///   the wrong structural rule changes the verdict or its trace.
+/// - witness: `machine::tests::identity_closes_a_goal_on_shared_nodes`
+/// - witness: `machine::tests::a_rigid_spine_refutes_at_its_differing_argument`
+/// - witness: `machine::tests::thunks_meet_by_forcing`
+/// - witness: `machine::tests::a_lambda_meets_a_stuck_function_by_eta`
+#[spec(ensures: |ret| match early_comps(domain, left, right) {
+    Ok(Early::Identical) => ret == Ok(Plan::Shared(Settled::Convertible)),
+    Ok(Early::Apart) => ret == Ok(Plan::Shared(Settled::NotConvertible)),
+    Ok(Early::Open) => true,
+    Err(fault) => ret == Err(fault),
+})]
 fn plan_comps(
     domain: &DomainArena,
     frozen: &Frozen,
@@ -1079,4 +1241,234 @@ fn plan_comps(
         ) => Plan::Leaf(Settled::NotConvertible),
     };
     Ok(planned)
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::DefinitionalEnvironment;
+    use gandr_kernel_conversion_trace::ConversionSide;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::GlobalIndex;
+    use gandr_kernel_term::IntegerLiteral;
+    use gandr_kernel_term::Literal;
+    use gandr_kernel_term::Magnitude;
+    use gandr_kernel_term::Sign;
+
+    use super::DomainArena;
+    use super::Elimination;
+    use super::Frozen;
+    use super::Glued;
+    use super::Head;
+    use super::NeutralHead;
+    use super::Subgoal;
+    use super::Unfolding;
+    use crate::Environment;
+    use crate::TermFace;
+
+    #[test]
+    fn freezing_is_idempotent_and_local_to_one_side()
+    {
+        let mut domain = DomainArena::new();
+        let floor = domain.watermark();
+        let first = ConstantIndex::from(0_usize);
+        let second = ConstantIndex::from(1_usize);
+        let loaded = domain
+            .neutral_node(
+                NeutralHead::Constant(first),
+                Vec::new(),
+                Unfolding::Unforced(GlobalIndex::from(0_u32)),
+            )
+            .expect("a declaration can unfold");
+        let opaque = domain
+            .neutral_node(NeutralHead::Constant(first), Vec::new(), Unfolding::Rigid)
+            .expect("the same name can stand opaque");
+        let mut frozen = Frozen::default();
+        frozen.freeze(ConversionSide::Left, first);
+        let once = frozen.clone();
+        frozen.freeze(ConversionSide::Left, first);
+        assert_eq!(once, frozen, "freezing is idempotent in the goal key");
+        frozen.freeze(ConversionSide::Right, second);
+        assert_eq!(
+            super::Membership::Absent,
+            frozen.holds(ConversionSide::Left, second)
+        );
+        assert_eq!(
+            super::Membership::Held,
+            frozen.holds(ConversionSide::Right, second)
+        );
+        assert_eq!(
+            Ok(Head::Frozen(first)),
+            super::head(&domain, &frozen, ConversionSide::Left, loaded)
+        );
+        assert_eq!(
+            Ok(Head::Defined(first)),
+            super::head(&domain, &frozen, ConversionSide::Right, loaded)
+        );
+        assert_eq!(
+            Ok(Head::Rigid),
+            super::head(&domain, &frozen, ConversionSide::Left, opaque)
+        );
+        let value = domain.value_unit(TermFace::Reduced);
+        domain
+            .force_neutral(loaded, Glued::Value(value))
+            .expect("the face is initially unforced");
+        assert_eq!(
+            Ok(Head::Defined(first)),
+            super::head(&domain, &frozen, ConversionSide::Right, loaded)
+        );
+        domain.truncate_to(floor);
+        assert_eq!(
+            Err(super::ConversionFault::Domain(super::DomainFault::Dangling)),
+            super::head(&domain, &frozen, ConversionSide::Left, loaded)
+        );
+    }
+
+    #[test]
+    fn spine_rules_preserve_branch_order_and_refuse_incompatible_shapes()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_unit();
+        let body = core.computation_return(unit);
+        let mut domain = DomainArena::new();
+        let floor = domain.watermark();
+        let closures: [super::CompClosureId; 6] =
+            core::array::from_fn(|_| domain.comp_closure_node(body, Environment::new()));
+        let first = domain.value_unit(TermFace::Reduced);
+        let second = domain.value_pair(first, first, TermFace::Reduced);
+        let left_spine = Vec::from([
+            Elimination::Apply(first),
+            Elimination::StaticApply(second),
+            Elimination::Force,
+            Elimination::Bind(closures[0]),
+            Elimination::Case {
+                on_left: closures[2],
+                on_right: closures[4],
+            },
+        ]);
+        let right_spine = Vec::from([
+            Elimination::Apply(second),
+            Elimination::StaticApply(first),
+            Elimination::Force,
+            Elimination::Bind(closures[1]),
+            Elimination::Case {
+                on_left: closures[3],
+                on_right: closures[5],
+            },
+        ]);
+        let left_head = NeutralHead::Constant(ConstantIndex::from(0_usize));
+        let right_head = NeutralHead::Constant(ConstantIndex::from(1_usize));
+        let left = domain
+            .neutral_node(left_head, left_spine, Unfolding::Rigid)
+            .expect("rigid spine");
+        let right = domain
+            .neutral_node(right_head, right_spine.clone(), Unfolding::Rigid)
+            .expect("rigid spine");
+        let same_head = domain
+            .neutral_node(left_head, right_spine.clone(), Unfolding::Rigid)
+            .expect("rigid spine");
+        let expected = Vec::from([
+            Subgoal::Values(first, second),
+            Subgoal::Values(second, first),
+            Subgoal::Opened(closures[0], closures[1]),
+            Subgoal::Opened(closures[2], closures[3]),
+            Subgoal::Opened(closures[4], closures[5]),
+        ]);
+        assert_eq!(
+            Ok(super::Spines::Agree(expected.clone())),
+            super::spine_subgoals(&domain, left, right)
+        );
+        assert_eq!(
+            Ok(super::Plan::Leaf(super::Settled::NotConvertible)),
+            super::plan_rigid(&domain, left, right)
+        );
+        assert_eq!(
+            Ok(super::Plan::Decompose(expected)),
+            super::plan_rigid(&domain, left, same_head)
+        );
+        let mut changed_kind = right_spine;
+        *changed_kind
+            .first_mut()
+            .expect("the mixed spine starts with an application") = Elimination::Force;
+        let changed = domain
+            .neutral_node(left_head, changed_kind, Unfolding::Rigid)
+            .expect("rigid spine");
+        assert_eq!(
+            Ok(super::Arity::Same),
+            super::same_arity(&domain, left, changed)
+        );
+        assert_eq!(
+            Ok(super::Spines::Disagree),
+            super::spine_subgoals(&domain, left, changed)
+        );
+        assert_eq!(
+            Ok(super::Plan::Leaf(super::Settled::NotConvertible)),
+            super::plan_rigid(&domain, left, changed)
+        );
+        let shorter = domain
+            .neutral_node(left_head, Vec::from([Elimination::Force]), Unfolding::Rigid)
+            .expect("rigid spine");
+        assert_eq!(
+            Ok(super::Arity::Different),
+            super::same_arity(&domain, left, shorter)
+        );
+        assert_eq!(
+            Ok(super::Spines::Disagree),
+            super::spine_subgoals(&domain, left, shorter)
+        );
+        domain.truncate_to(floor);
+        let fault = super::ConversionFault::Domain(super::DomainFault::Dangling);
+        assert_eq!(Err(fault), super::same_arity(&domain, left, left));
+        assert_eq!(Err(fault), super::spine_subgoals(&domain, left, left));
+        assert_eq!(Err(fault), super::plan_rigid(&domain, left, left));
+    }
+
+    #[test]
+    fn payloads_refuse_nonliteral_and_missing_nodes()
+    {
+        let mut core = CoreArena::new();
+        let floor = core.watermark();
+        let unit = core.value_unit();
+        let literal = core.value_literal(Literal::Integer(IntegerLiteral::new(
+            Sign::NonNegative,
+            Magnitude::zero(),
+        )));
+        assert!(matches!(
+            super::payload(&core, literal),
+            Ok(Literal::Integer(_))
+        ));
+        assert_eq!(
+            Err(super::ConversionFault::LiteralPayload { literal: unit }),
+            super::payload(&core, unit)
+        );
+        core.truncate_to(floor);
+        assert_eq!(
+            Err(super::ConversionFault::LiteralPayload { literal }),
+            super::payload(&core, literal)
+        );
+    }
+
+    #[test]
+    fn opposite_polarities_are_refused_in_both_orders()
+    {
+        let core = CoreArena::new();
+        let mut domain = DomainArena::new();
+        let value = domain.value_unit(TermFace::Reduced);
+        let computation = domain.comp_return(value, crate::CompTermFace::Reduced);
+        let chain = crate::LoweredChain::new();
+        let environment = DefinitionalEnvironment::new();
+        let definitions = crate::Definitions::new(&chain, &environment, environment.root());
+        for (left, right) in [
+            (Glued::Value(value), Glued::Computation(computation)),
+            (Glued::Computation(computation), Glued::Value(value)),
+        ] {
+            assert_eq!(
+                Err(super::ConversionFault::Polarity),
+                super::plan(&core, &domain, definitions, &Frozen::default(), left, right)
+            );
+        }
+    }
 }

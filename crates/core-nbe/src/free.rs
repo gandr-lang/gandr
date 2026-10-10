@@ -126,6 +126,13 @@ where
     ///   set through.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite set model probes present counts and holes
+    ///   at zero, interior positions and the ceiling; reversing membership or
+    ///   searching a malformed order changes an answer.
+    /// - witness: `free::tests::lowered_union_agrees_with_a_set_model`
+    #[spec(ensures: |ret| matches!(ret, Membership::Held) == self.counts.contains(&count))]
     pub(crate) fn holds(
         &self,
         count: Count,
@@ -169,6 +176,20 @@ where
     /// - panics: none.
     /// - intension: one merge of two ascending sequences, so the cost is the
     ///   two sizes summed.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every pair of subsets of four boundary counts is
+    ///   joined at zero, one, two and maximal lowering against an independent
+    ///   ordered-set union; dropping an old count, retaining a bound count,
+    ///   duplicating an overlap or wrapping subtraction changes the set.
+    /// - witness: `free::tests::lowered_union_agrees_with_a_set_model`
+    #[spec(
+        captures: entry_length = self.counts.len(),
+        ensures: self.counts.len() >= entry_length
+            && self.counts.windows(2).all(|pair| matches!(pair, [left, right] if left < right))
+            && other.counts.iter().all(|&count| u32::from(count).checked_sub(lowering.0)
+                .is_none_or(|lowered| self.counts.binary_search(&Count::from(lowered)).is_ok())),
+    )]
     pub(crate) fn join_lowered(
         &mut self,
         other: &Self,
@@ -292,6 +313,17 @@ impl Free
     ///   children's.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a lambda binds the nearest intuitionistic occurrence
+    ///   and lowers a farther one while leaving a linear occurrence unchanged;
+    ///   a dependent quoted arrow lowers only its codomain. Binding both zones
+    ///   or lowering the domain changes the exact free sets.
+    /// - witness: `free::tests::binders_lower_only_their_own_intuitionistic_occurrences`
+    /// - witness: `free::tests::a_quoted_dependent_arrow_binds_only_its_codomain`
+    #[spec(ensures: child.linear.counts.iter().all(|count| self.linear.counts.contains(count))
+        && child.intuitionistic.counts.iter().all(|&index| u32::from(index).checked_sub(binders.0)
+            .is_none_or(|lowered| self.intuitionistic.counts.contains(&DeBruijnIndex::from(lowered)))))]
     fn join_under(
         &mut self,
         child: &Self,
@@ -366,6 +398,27 @@ impl FreeIndices
     ///   is answered, and never past it, so the walk is bounded by the term's
     ///   DAG.
     /// - input recursion: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — open terms distinguish bound and outward indices in
+    ///   both zones, including a quote crossing into types; a missing root is
+    ///   refused. Erasing a zone, binding the wrong child or accepting an
+    ///   absent root changes the free set or refusal.
+    /// - witness: `free::tests::binders_lower_only_their_own_intuitionistic_occurrences`
+    /// - witness: `free::tests::a_quoted_dependent_arrow_binds_only_its_codomain`
+    /// - witness: `free::tests::missing_nodes_and_unanswered_children_have_distinct_refusals`
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |free| match term {
+        CoreTerm::Value(id) => core.value(id).is_some_and(|held| match *held {
+            Value::Variable { zone: Zone::Intuitionistic, index } =>
+                free.intuitionistic.counts.as_slice() == [index] && free.linear.counts.is_empty(),
+            Value::Variable { zone: Zone::Linear, index } =>
+                free.linear.counts.as_slice() == [index] && free.intuitionistic.counts.is_empty(),
+            Value::Unit | Value::Constant(_) | Value::Literal(_) =>
+                free.intuitionistic.counts.is_empty() && free.linear.counts.is_empty(),
+            _ => true,
+        }),
+        CoreTerm::Computation(id) => core.computation(id).is_some(),
+    }))]
     pub(crate) fn of(
         &mut self,
         core: &CoreArena,
@@ -392,6 +445,20 @@ impl FreeIndices
     ///
     /// # Errors
     /// As [`FreeIndices::of`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a shared open subtree is reached through a binder and
+    ///   a quote and its variables survive at the correct depth; absent roots
+    ///   fail without inventing an answer. Omitting an assembly or clearing
+    ///   earlier answers changes the retained result.
+    /// - witness: `free::tests::binders_lower_only_their_own_intuitionistic_occurrences`
+    /// - witness: `free::tests::a_quoted_dependent_arrow_binds_only_its_codomain`
+    /// - witness: `free::tests::missing_nodes_and_unanswered_children_have_distinct_refusals`
+    #[spec(
+        captures: entry_answers = self.answered.len(),
+        ensures: |ret| self.answered.len() >= entry_answers
+            && (ret.is_err() || self.answered.contains_key(&term)),
+    )]
     fn answer(
         &mut self,
         core: &CoreArena,
@@ -438,6 +505,21 @@ impl FreeIndices
     /// # Errors
     /// - [`FreeFault::Dangling`] — `node` does not resolve.
     /// - [`FreeFault::MachineInvariant`] — a child is not answered.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — assembling before its child is answered reports the
+    ///   machine invariant, while walking the same live term produces its exact
+    ///   free set; a dangling root has a different refusal. Reversing the
+    ///   traversal order or conflating the refusals changes an observation.
+    /// - witness: `free::tests::missing_nodes_and_unanswered_children_have_distinct_refusals`
+    /// - witness: `free::tests::binders_lower_only_their_own_intuitionistic_occurrences`
+    #[spec(ensures: |ret| match ret {
+        Ok(_) => Children::of(core, node).is_ok_and(|children|
+            children.listed.iter().flatten().all(|&(child, _)| self.answered.contains_key(&child))),
+        Err(FreeFault::Dangling) => Children::of(core, node).is_err(),
+        Err(FreeFault::MachineInvariant) => Children::of(core, node).is_ok_and(|children|
+            children.listed.iter().flatten().any(|&(child, _)| !self.answered.contains_key(&child))),
+    })]
     fn assemble(
         &self,
         core: &CoreArena,
@@ -471,6 +553,14 @@ impl FreeIndices
     ///
     /// # Errors
     /// - [`FreeFault::MachineInvariant`] — `child` is not answered.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — an unanswered child is refused before traversal and
+    ///   becomes readable with its precise outward index afterward; a
+    ///   fabricated answer or a wrong refusal changes the result.
+    /// - witness: `free::tests::missing_nodes_and_unanswered_children_have_distinct_refusals`
+    #[spec(ensures: |ret| ret.is_ok() == self.answered.contains_key(&child)
+        && ret.as_ref().err().is_none_or(|fault| *fault == FreeFault::MachineInvariant))]
     fn read(
         &self,
         child: Reached,
@@ -523,11 +613,21 @@ impl Children
     /// - [`FreeFault::Dangling`] — `node` does not resolve.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — crossing binder and code boundaries preserves free
-    ///   dependencies; native path children are unbound and retain wire order.
+    /// - hypothesis: L2 — value and computation binders, quoted types and a
+    ///   dependent codomain produce different free-index projections; absent
+    ///   roots are refused. Dropping a quote edge or marking the wrong child as
+    ///   bound changes the resulting set.
+    /// - witness: `free::tests::binders_lower_only_their_own_intuitionistic_occurrences`
+    /// - witness: `free::tests::a_quoted_dependent_arrow_binds_only_its_codomain`
+    /// - witness: `free::tests::missing_nodes_and_unanswered_children_have_distinct_refusals`
     /// - witness: `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
     /// - witness: `eval::tests::native_transport_sequences_product_components`
-    #[spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| (ret.is_ok() == match node {
+        Reached::Term(CoreTerm::Value(id)) => core.value(id).is_some(),
+        Reached::Term(CoreTerm::Computation(id)) => core.computation(id).is_some(),
+        Reached::ValueType(id) => core.value_type(id).is_some(),
+        Reached::CompType(id) => core.comp_type(id).is_some(),
+    } && ret.as_ref().err().is_none_or(|fault| *fault == FreeFault::Dangling)) && (match ret {
         Ok(children) => children.listed.iter().skip_while(|item| item.is_some()).all(Option::is_none) && match node {
             Reached::Term(CoreTerm::Value(id)) => match core.value(id) {
                 Some(&Value::PathRefl(code)) => children.listed == [Some((Reached::Term(CoreTerm::Value(code)), Lowering::NONE)), None, None],
@@ -540,7 +640,7 @@ impl Children
         },
         Err(FreeFault::Dangling) => match node { Reached::Term(CoreTerm::Value(id)) => core.value(id).is_none(), Reached::Term(CoreTerm::Computation(id)) => core.computation(id).is_none(), Reached::ValueType(id) => core.value_type(id).is_none(), Reached::CompType(id) => core.comp_type(id).is_none() },
         Err(_) => false,
-    })]
+    }))]
     fn of(
         core: &CoreArena,
         node: Reached,
@@ -660,5 +760,171 @@ impl Children
             },
         };
         Ok(Self { listed })
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeSet;
+    use alloc::vec::Vec;
+
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::Zone;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_term::DeBruijnIndex;
+
+    use super::Children;
+    use super::CoreTerm;
+    use super::FreeFault;
+    use super::FreeIndices;
+    use super::Lowering;
+    use super::Membership;
+    use super::Outward;
+    use super::Reached;
+
+    #[test]
+    fn lowered_union_agrees_with_a_set_model()
+    {
+        let universe = [0_u32, 1, 3, u32::MAX];
+        for held_mask in 0_u8 .. 16 {
+            for other_mask in 0_u8 .. 16 {
+                for lowering in [0_u32, 1, 2, u32::MAX] {
+                    let held: Vec<_> = universe
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .filter_map(|(bit, count)| (held_mask & (1 << bit) != 0).then_some(count))
+                        .collect();
+                    let other: Vec<_> = universe
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .filter_map(|(bit, count)| (other_mask & (1 << bit) != 0).then_some(count))
+                        .collect();
+                    let expected: BTreeSet<_> = held
+                        .iter()
+                        .copied()
+                        .chain(other.iter().filter_map(|count| count.checked_sub(lowering)))
+                        .collect();
+                    let mut actual = Outward { counts: held };
+                    actual.join_lowered(&Outward { counts: other }, Lowering(lowering));
+                    assert_eq!(expected.iter().copied().collect::<Vec<_>>(), actual.counts);
+                    for count in [0_u32, 1, 2, 3, u32::MAX - 1, u32::MAX] {
+                        let membership = if expected.contains(&count) {
+                            Membership::Held
+                        }
+                        else {
+                            Membership::Absent
+                        };
+                        assert_eq!(membership, actual.holds(count));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn binders_lower_only_their_own_intuitionistic_occurrences()
+    {
+        let mut core = CoreArena::new();
+        let near = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let far = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let linear = core.value_variable(Zone::Linear, DeBruijnIndex::from(2_u32));
+        let decoded = core.value_type_element(far, Level::zero());
+        let quote = core.value_quote(decoded);
+        let shared = core.value_pair(quote, linear);
+        let body = core.value_pair(near, shared);
+        let returned = core.computation_return(body);
+        let lambda = core.computation_lambda(returned);
+        let static_lambda = core.value_static_lambda(body);
+        let mut analysis = FreeIndices::default();
+        for term in [
+            CoreTerm::Computation(lambda),
+            CoreTerm::Value(static_lambda),
+        ] {
+            let free = analysis
+                .of(&core, term)
+                .expect("a live open term has free indices");
+            assert_eq!([DeBruijnIndex::from(1_u32)], free.intuitionistic.counts());
+            assert_eq!([DeBruijnIndex::from(2_u32)], free.linear.counts());
+        }
+        let free = analysis
+            .of(&core, CoreTerm::Value(far))
+            .expect("the shared answer remains");
+        assert_eq!([DeBruijnIndex::from(2_u32)], free.intuitionistic.counts());
+        assert!(free.linear.counts().is_empty());
+        let free = analysis
+            .of(&core, CoreTerm::Value(linear))
+            .expect("the linear leaf remains");
+        assert_eq!([DeBruijnIndex::from(2_u32)], free.linear.counts());
+        assert!(free.intuitionistic.counts().is_empty());
+        let unit = core.value_unit();
+        let free = analysis
+            .of(&core, CoreTerm::Value(unit))
+            .expect("unit is closed");
+        assert!(free.intuitionistic.counts().is_empty());
+        assert!(free.linear.counts().is_empty());
+    }
+
+    #[test]
+    fn a_quoted_dependent_arrow_binds_only_its_codomain()
+    {
+        let mut core = CoreArena::new();
+        let near = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let far = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let domain = core.value_type_element(far, Level::zero());
+        let bound = core.value_type_element(near, Level::zero());
+        let product = core.value_type_product(bound, domain);
+        let result = core.comp_type_returner(product);
+        let arrow = core.comp_type_pi(domain, result);
+        let quote = core.value_quote_computation(arrow);
+        let mut analysis = FreeIndices::default();
+        let free = analysis
+            .of(&core, CoreTerm::Value(quote))
+            .expect("quoted types are traversed");
+        assert_eq!(
+            [DeBruijnIndex::from(1_u32), DeBruijnIndex::from(2_u32)],
+            free.intuitionistic.counts()
+        );
+        assert!(free.linear.counts().is_empty());
+    }
+
+    #[test]
+    fn missing_nodes_and_unanswered_children_have_distinct_refusals()
+    {
+        let mut core = CoreArena::new();
+        let child = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(3_u32));
+        let parent = core.computation_return(child);
+        let reached = Reached::Term(CoreTerm::Value(child));
+        let mut analysis = FreeIndices::default();
+        assert_eq!(Err(FreeFault::MachineInvariant), analysis.read(reached));
+        assert_eq!(
+            Err(FreeFault::MachineInvariant),
+            analysis.assemble(&core, Reached::Term(CoreTerm::Computation(parent)))
+        );
+        let free = analysis
+            .of(&core, CoreTerm::Computation(parent))
+            .expect("postorder answers children");
+        assert_eq!([DeBruijnIndex::from(3_u32)], free.intuitionistic.counts());
+        assert_eq!(
+            [DeBruijnIndex::from(3_u32)],
+            analysis
+                .read(reached)
+                .expect("the child was answered")
+                .intuitionistic
+                .counts()
+        );
+        let empty = CoreArena::new();
+        let mut missing = FreeIndices::default();
+        assert_eq!(
+            Err(FreeFault::Dangling),
+            missing.of(&empty, CoreTerm::Value(child))
+        );
+        assert_eq!(Err(FreeFault::Dangling), missing.assemble(&empty, reached));
+        assert_eq!(
+            Err(FreeFault::Dangling),
+            Children::of(&empty, Reached::Term(CoreTerm::Computation(parent)))
+        );
     }
 }

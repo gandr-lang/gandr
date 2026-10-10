@@ -124,17 +124,30 @@ impl Alike
 /// A binder a walk crossed inside quoted types, by a number both sides share.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct Binder(u32);
+struct Binder(usize);
 
 impl Binder
 {
     /// The binder numbered after this one.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the next arena-width number, saturating only at that width's
+    ///   ceiling. A live walk appends at least one link per increment, so its
+    ///   vector's size bound is reached before that ceiling.
+    /// - provides: distinct binder identities beyond the 32-bit index range.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — successive crossings at the 32-bit ceiling still name
+    ///   distinct binders, while the outer binder remains reachable at index
+    ///   one; narrowing or saturating the counter at that ceiling aliases them.
+    /// - witness: `code::tests::binder_numbers_stay_distinct_across_the_u32_boundary`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1_usize))]
     const fn after(self) -> Self
     {
-        Self(self.0.saturating_add(1_u32))
+        Self(self.0.saturating_add(1_usize))
     }
 }
 
@@ -271,6 +284,26 @@ impl<'run> Walk<'run>
     /// - provides: the step past a dependent arrow's binder in lockstep.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — paired crossings resolve index zero to one shared
+    ///   binder, the next crossing is distinct, and index one still reads the
+    ///   outer chain. Reusing a number or linking either side to the wrong
+    ///   parent changes alpha comparison.
+    /// - witness: `code::tests::binder_numbers_stay_distinct_across_the_u32_boundary`
+    /// - witness: `code::tests::local_binders_shadow_only_their_own_chain`
+    /// - witness: `code::tests::two_quotes_of_one_type_are_equal`
+    /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
+    #[spec(
+        captures: [entry_length = self.links.len(), entry_next = self.next],
+        ensures: |ret| self.links.len().checked_sub(2) == Some(entry_length)
+            && self.next == entry_next.after()
+            && ret.0.closure == left.closure && ret.1.closure == right.closure
+            && ret.0.chain.0.checked_sub(1) == Some(entry_length)
+            && ret.1.chain.0 == self.links.len()
+            && self.links.get(entry_length).is_some_and(|link| link.binder == entry_next && link.outer == left.chain)
+            && self.links.last().is_some_and(|link| link.binder == entry_next && link.outer == right.chain),
+    )]
     fn crossed(
         &mut self,
         left: Place,
@@ -297,7 +330,27 @@ impl<'run> Walk<'run>
     /// The place one binder further in on one side.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: one new link carrying the next binder number, with the
+    ///   previous chain as its outer link and the same closure at its place.
+    /// - provides: the binder extension used by the rigidity walk.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the one-sided crossing preserves the old binder at
+    ///   index one while index zero names the new binder, including past the
+    ///   32-bit ceiling; losing the outer link or reusing a number changes
+    ///   lookup.
+    /// - witness: `code::tests::binder_numbers_stay_distinct_across_the_u32_boundary`
+    /// - witness: `code::tests::local_binders_shadow_only_their_own_chain`
+    #[spec(
+        captures: [entry_length = self.links.len(), entry_next = self.next],
+        ensures: |ret| self.links.len().checked_sub(1) == Some(entry_length)
+            && self.next == entry_next.after() && ret.closure == place.closure
+            && ret.chain.0 == self.links.len()
+            && self.links.last().is_some_and(|link| link.binder == entry_next && link.outer == place.chain),
+    )]
     fn crossed_alone(
         &mut self,
         place: Place,
@@ -326,6 +379,23 @@ impl<'run> Walk<'run>
     ///   reads from its environment.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — unequal-length paired chains share their newest
+    ///   binder without conflating either older binder, and an index past the
+    ///   chain is lowered by exactly its length; a flat-vector offset or
+    ///   one-too-many lowering changes the resolved binder or residual index.
+    /// - witness: `code::tests::local_binders_shadow_only_their_own_chain`
+    /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
+    #[spec(ensures: |ret| {
+        let links = core::iter::successors(
+            chain.0.checked_sub(1).and_then(|position| self.links.get(position)),
+            |link| self.links.get(link.outer.0.checked_sub(1)?));
+        match links.clone().enumerate().find(|&(depth, _)| u32::try_from(depth).ok() == Some(u32::from(index))) {
+            Some((_, link)) => ret == Ok(link.binder),
+            None => ret == Err(DeBruijnIndex::from(u32::from(index).saturating_sub(u32::try_from(links.count()).unwrap_or(u32::MAX)))),
+        }
+    })]
     fn local(
         &self,
         chain: Chain,
@@ -363,20 +433,74 @@ impl<'run> Walk<'run>
     ///   reaches past its closure's environment.
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an intuitionistic local shadows only its own chain, a
+    ///   linear occurrence still reads its environment, and missing core,
+    ///   closure and environment entries have distinct refusals. Written and
+    ///   held applications compare alike; resolving through the wrong zone,
+    ///   chain or spine changes the atom or comparison.
+    /// - witness: `code::tests::local_binders_shadow_only_their_own_chain`
+    /// - witness: `code::tests::atom_resolution_refuses_missing_sources_and_preserves_zone`
+    /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
+    /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
+    ///
     /// # Errors
     /// As above.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — codes resolve through captured binders, while raw
-    ///   native certificate syntax stays an opaque atom rather than a computed
-    ///   map.
-    /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
-    /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
-    #[spec(ensures: |ret| match node {
-        Node::Code(id, _) if matches!(self.core.value(id), Some(&Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. } | &Value::Unit | &Value::Literal(_) | &Value::Pair(..) | &Value::Injection(..) | &Value::Thunk(_))) => matches!(ret, Ok(Atom::Other(found)) if found == node),
-        Node::Held(id) if matches!(self.domain.value(id), Some(&DomainValue::PathCertificate { .. } | &DomainValue::PathProduct { .. })) => matches!(ret, Ok(Atom::Other(found)) if found == node),
-        _ => true,
-    })]
+    #[spec(ensures: |ret| {
+        let node = match node {
+            Node::Code(code, place) => match self.core.value(code) {
+                Some(&Value::Variable { zone, index }) => {
+                    let free = match zone {
+                        Zone::Intuitionistic => match self.local(place.chain, index) {
+                            Ok(binder) => return ret == Ok(Atom::Local(binder)),
+                            Err(free) => free,
+                        },
+                        Zone::Linear => index,
+                    };
+                    let Some(closure) = self.domain.value_closure(place.closure) else {
+                        return ret == Err(ConversionFault::Domain(DomainFault::Dangling));
+                    };
+                    let Some(held) = closure.environment().lookup(zone, free) else {
+                        return ret == Err(ConversionFault::MachineInvariant);
+                    };
+                    Node::Held(held)
+                },
+                _ => node,
+            },
+            _ => node,
+        };
+        match node {
+        Node::Code(code, place) => match self.core.value(code) {
+            None => ret == Err(ConversionFault::MachineInvariant),
+            Some(&Value::Constant(constant)) => ret == Ok(Atom::Constant(constant, self.constant(constant))),
+            Some(&Value::Quote(quoted)) => ret == Ok(Atom::Quote(quoted, place)),
+            Some(&Value::QuoteComputation(quoted)) => ret == Ok(Atom::QuoteComputation(quoted, place)),
+            Some(&Value::Lift { .. }) => ret == Ok(Atom::Lift(code, place)),
+            Some(&Value::StaticLambda(_)) => ret == Ok(Atom::Operator(code, place)),
+            Some(&Value::StaticApplication(head, argument)) => ret == Ok(Atom::Applied(Node::Code(head, place), Node::Code(argument, place))),
+            Some(_) => ret == Ok(Atom::Other(node)),
+        },
+        Node::Held(value) => match self.domain.value(value) {
+            None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+            Some(&DomainValue::Neutral { neutral, .. }) => self.domain.neutral(neutral).map_or_else(
+                || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+                |held| ret == self.stuck(neutral, SpinePrefix(held.spine().len()))),
+            Some(&DomainValue::Code { code, .. }) => self.domain.value_closure(code).map_or_else(
+                || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+                |closure| match self.core.value(closure.body()) {
+                    None => ret == Err(ConversionFault::MachineInvariant),
+                    Some(&Value::Quote(quoted)) => ret == Ok(Atom::Quote(quoted, Self::opened(code))),
+                    Some(&Value::QuoteComputation(quoted)) => ret == Ok(Atom::QuoteComputation(quoted, Self::opened(code))),
+                    Some(_) => ret == Ok(Atom::Other(node)),
+                }),
+            Some(&DomainValue::StaticLambda { lambda, .. }) => self.domain.value_closure(lambda).map_or_else(
+                || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+                |closure| ret == Ok(Atom::Operator(closure.body(), Self::opened(lambda)))),
+            Some(_) => ret == Ok(Atom::Other(node)),
+        },
+        Node::Stuck(neutral, prefix) => ret == self.stuck(neutral, prefix),
+        Node::ValueType(..) | Node::CompType(..) => ret == Ok(Atom::Other(node)),
+    } })]
     fn atom(
         &self,
         node: Node,
@@ -501,15 +625,27 @@ impl<'run> Walk<'run>
     /// # Adequacy
     /// - hypothesis: L3 — separated by an operator spine compared against a
     ///   written application, a head alone, and spines differing by head and by
-    ///   arity.
+    ///   arity. A prefix past the spine and a removed neutral refuse
+    ///   distinctly; shortening by more than one or forgetting the prefix
+    ///   changes those observations.
     /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
-    #[spec(ensures: |ret| match ret {
-        | Ok(Atom::Applied(Node::Stuck(cut, SpinePrefix(shorter)), _)) => {
-            cut == neutral && shorter < prefix.0
-        },
-        | Err(ConversionFault::Domain(_)) => self.domain.neutral(neutral).is_none(),
-        | Ok(_) | Err(_) => true,
-    })]
+    /// - witness: `code::tests::stuck_prefixes_distinguish_heads_eliminations_and_refusals`
+    #[spec(ensures: |ret| self.domain.neutral(neutral).map_or_else(
+        || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+        |held| if prefix.0 == 0 {
+            match held.head() {
+                NeutralHead::Variable { zone, level } => ret == Ok(Atom::Variable(zone, level)),
+                NeutralHead::Constant(constant) => ret == Ok(Atom::Constant(constant,
+                    if matches!(held.unfolding(), Unfolding::Rigid) { Rigidity::Rigid } else { Rigidity::Flexible })),
+                NeutralHead::Module(_) => ret == Ok(Atom::Other(Node::Stuck(neutral, prefix))),
+            }
+        } else {
+            match held.spine().get(prefix.0.saturating_sub(1)) {
+                Some(&Elimination::StaticApply(argument)) => ret == Ok(Atom::Applied(Node::Stuck(neutral, SpinePrefix(prefix.0.saturating_sub(1))), Node::Held(argument))),
+                Some(_) => ret == Ok(Atom::Other(Node::Stuck(neutral, prefix))),
+                None => ret == Err(ConversionFault::MachineInvariant),
+            }
+        }))]
     fn stuck(
         &self,
         neutral: NeutralId,
@@ -554,7 +690,24 @@ impl<'run> Walk<'run>
     /// Whether a constant the core names can unfold here.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: flexible without definitions; with definitions, rigid exactly
+    ///   when the constant has no unfolding body.
+    /// - provides: the conservative constant reading shared by both passes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unread constants leave a mismatch undecided, known
+    ///   opaque constants permit a rigid refutation, and a constant with a body
+    ///   remains flexible. Treating absence of definitions as opacity or a body
+    ///   as rigid changes the verdict.
+    /// - witness: `code::tests::a_quote_over_a_defined_constant_is_undecided`
+    /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
+    #[spec(ensures: |ret| match self.constants {
+        ConstantReading::Unread => ret == Rigidity::Flexible,
+        ConstantReading::Read(definitions) => (ret == Rigidity::Rigid) == matches!(definitions.unfolding(constant), Unfolding::Rigid),
+    })]
     fn constant(
         &self,
         constant: ConstantIndex,
@@ -580,8 +733,38 @@ impl<'run> Walk<'run>
     /// - fails: as [`Walk::atom`].
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L3 — separate quotes of one dependent type agree, changing
+    ///   a rigid former or lift level separates them, and the same written
+    ///   variable can agree or differ according to its captured environment.
+    ///   The predicate pins root atom decisions and reflexivity; the witnesses
+    ///   separate nested binders, decoding and static application.
+    /// - witness: `code::tests::two_quotes_of_one_type_are_equal`
+    /// - witness: `code::tests::rigid_quotes_of_different_types_are_apart`
+    /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
+    /// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
+    /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
+    ///
     /// # Errors
     /// As [`Walk::atom`].
+    #[spec(ensures: |ret| {
+        let roots = self.closure_atom(left).and_then(|one| self.closure_atom(right).map(|other| (one, other)));
+        match roots {
+            Err(fault) => ret == Err(fault),
+            Ok((one, other)) => match (one, other) {
+                (Atom::Quote(..), Atom::Quote(..)) | (Atom::QuoteComputation(..), Atom::QuoteComputation(..))
+                | (Atom::Lift(..), Atom::Lift(..)) | (Atom::Applied(..), Atom::Applied(..))
+                | (Atom::Operator(..), Atom::Operator(..)) =>
+                    matches!(ret, Ok(_) | Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant))
+                        && (left != right || ret.is_err() || ret == Ok(Alike::Same)),
+                (Atom::Local(a), Atom::Local(b)) => ret == Ok(Alike::between(&a, &b)),
+                (Atom::Variable(zone, a), Atom::Variable(other_zone, b)) => ret == Ok(Alike::between(&(zone, a), &(other_zone, b))),
+                (Atom::Constant(a, _), Atom::Constant(b, _)) => ret == Ok(Alike::between(&a, &b)),
+                (Atom::Other(a), Atom::Other(b)) => ret == Ok(Alike::between(&a, &b)),
+                _ => ret == Ok(Alike::Different),
+            },
+        }
+    })]
     fn equal(
         &mut self,
         left: ValueClosureId,
@@ -681,7 +864,23 @@ impl<'run> Walk<'run>
     /// The atom a closure's own body reads as.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the closure belongs to this run's domain and core arenas.
+    /// - ensures: the atom of its body at its own environment and an empty
+    ///   local binder chain.
+    /// - provides: the root reading shared by equality and rigidity.
+    /// - fails: dangling for an absent closure, otherwise as [`Walk::atom`].
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a live closure resolves its own quoted body and
+    ///   environment, while a removed closure refuses before its core body can
+    ///   be read; using another closure or bypassing resolution changes
+    ///   comparison or refusal.
+    /// - witness: `code::tests::atom_resolution_refuses_missing_sources_and_preserves_zone`
+    /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
+    #[spec(ensures: |ret| self.domain.value_closure(closure).map_or_else(
+        || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+        |held| ret == self.atom(Node::Code(held.body(), Self::opened(closure))))) ]
     fn closure_atom(
         &self,
         closure: ValueClosureId,
@@ -722,22 +921,23 @@ impl<'run> Walk<'run>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — separated by a value decode and a computation decode
-    ///   of a held quote, and a decode beside a type it is not.
+    ///   of a held quote, and a decode beside a type it is not. Stopping before
+    ///   a held quote is decoded, or crossing into the wrong type family,
+    ///   changes which independently written types agree.
     /// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
     #[spec(ensures: |ret| match ret {
-        | Ok(Node::ValueType(at, place)) => match self.core.value_type(at) {
-            | Some(&ValueType::Element { code, .. }) => {
-                !matches!(self.atom(Node::Code(code, place)), Ok(Atom::Quote(..)))
-            },
-            | _ => true,
+        Ok(Node::ValueType(at, place)) => matches!(node, Node::ValueType(..)) && match self.core.value_type(at) {
+            Some(&ValueType::Element { code, .. }) => !matches!(self.atom(Node::Code(code, place)), Ok(Atom::Quote(..))),
+            Some(_) => true,
+            None => false,
         },
-        | Ok(Node::CompType(at, place)) => match self.core.comp_type(at) {
-            | Some(&CompType::Element { code, .. }) => {
-                !matches!(self.atom(Node::Code(code, place)), Ok(Atom::QuoteComputation(..)))
-            },
-            | _ => true,
+        Ok(Node::CompType(at, place)) => matches!(node, Node::CompType(..)) && match self.core.comp_type(at) {
+            Some(&CompType::Element { code, .. }) => !matches!(self.atom(Node::Code(code, place)), Ok(Atom::QuoteComputation(..))),
+            Some(_) => true,
+            None => false,
         },
-        | Ok(_) | Err(_) => true,
+        Ok(other) => other == node,
+        Err(fault) => matches!(fault, ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant),
     })]
     fn decoded(
         &self,
@@ -799,20 +999,87 @@ impl<'run> Walk<'run>
     ///   codomain one shared binder further in.
     /// - provides: the per-former step of the first pass.
     /// - fails: [`ConversionFault::MachineInvariant`] when a node does not
-    ///   resolve.
+    ///   resolve, without appending partial child obligations.
     /// - panics: none.
     ///
-    /// # Errors
-    /// As above, and as [`Walk::atom`].
-    ///
     /// # Adequacy
-    /// - hypothesis: L3 — universe path classifiers compare both endpoint
-    ///   atoms; constructor mismatches do not enqueue positive child
-    ///   obligations.
+    /// - hypothesis: L3 — a dependent arrow is equal only when its domain and
+    ///   bound codomain agree, unequal rigid formers and lift levels separate,
+    ///   and decoded held quotes compare as their types. The predicate pins
+    ///   payload decisions and the number of queued premises; omitting a child
+    ///   or crossing the codomain under the wrong binder changes the witnesses.
     /// - witness: `code::tests::two_quotes_of_one_type_are_equal`
     /// - witness: `code::tests::rigid_quotes_of_different_types_are_apart`
     /// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
-    #[spec(captures: [nodes = pending.len(), leaves = atoms.len()], ensures: |ret| pending.len() >= nodes && pending.len() <= nodes.saturating_add(2) && atoms.len() >= leaves && atoms.len() <= leaves.saturating_add(2) && (!matches!(ret, Ok(Alike::Different)) || (pending.len() == nodes && atoms.len() == leaves)))]
+    /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
+    /// - witness: `code::tests::native_classifier_endpoints_compare_in_order_and_refuse_a_missing_target`
+    ///
+    /// # Errors
+    /// As above, and as [`Walk::atom`].
+    #[spec(
+        captures: [entry_nodes = pending.len(), entry_atoms = atoms.len()],
+        ensures: |ret| {
+            let roots = self.decoded(one).and_then(|left| self.decoded(other).map(|right| (left, right)));
+            let mut children_correct = true;
+            let expected = match roots {
+                Err(fault) => Err(fault),
+                Ok((Node::ValueType(first, here), Node::ValueType(second, there))) => match (self.core.value_type(first), self.core.value_type(second)) {
+                    (Some(left), Some(right)) => match (left, right) {
+                        (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) =>
+                            self.atom(Node::Code(a, here)).and_then(|first_left| {
+                                let first_right = self.atom(Node::Code(c, there))?;
+                                let second_left = self.atom(Node::Code(b, here))?;
+                                let second_right = self.atom(Node::Code(d, there))?;
+                                Ok([(first_left, first_right), (second_left, second_right)])
+                            }).map(|expected| { children_correct = atoms.get(entry_atoms..) == Some(expected.as_slice()); (Alike::Same, 0, 2) }),
+                        (&ValueType::Base(a), &ValueType::Base(b)) => Ok((Alike::between(&a, &b), 0, 0)),
+                        (&ValueType::Unit, &ValueType::Unit) => Ok((Alike::Same, 0, 0)),
+                        (&ValueType::Abstract(a), &ValueType::Abstract(b)) => Ok((Alike::between(&a, &b), 0, 0)),
+                        (&ValueType::Universe { .. }, &ValueType::Universe { .. }) => Ok((Alike::between(left, right), 0, 0)),
+                        (&ValueType::Product(..), &ValueType::Product(..)) | (&ValueType::Sum(..), &ValueType::Sum(..))
+                        | (&ValueType::StaticPi { .. }, &ValueType::StaticPi { .. }) => Ok((Alike::Same, 2, 0)),
+                        (&ValueType::Thunk(_), &ValueType::Thunk(_)) => Ok((Alike::Same, 1, 0)),
+                        (&ValueType::Lift { inner, ref target }, &ValueType::Lift { inner: other_inner, target: ref other_target }) => {
+                            if target == other_target {
+                                children_correct = pending.last().is_some_and(|&(left, right)| matches!((left, right),
+                                    (Node::ValueType(a, _), Node::ValueType(b, _)) if a == inner && b == other_inner));
+                                Ok((Alike::Same, 1, 0))
+                            } else { Ok((Alike::Different, 0, 0)) }
+                        },
+                        (&ValueType::Element { code, ref target }, &ValueType::Element { code: other_code, target: ref other_target }) => {
+                            if target != other_target { Ok((Alike::Different, 0, 0)) }
+                            else if let Ok((Node::ValueType(_, here), Node::ValueType(_, there))) = roots {
+                                self.atom(Node::Code(code, here)).and_then(|_| self.atom(Node::Code(other_code, there))).map(|_| (Alike::Same, 0, 1))
+                            } else { Err(ConversionFault::MachineInvariant) }
+                        },
+                        _ => Ok((Alike::Different, 0, 0)),
+                    },
+                    _ => Err(ConversionFault::MachineInvariant),
+                },
+                Ok((Node::CompType(first, _), Node::CompType(second, _))) => match (self.core.comp_type(first), self.core.comp_type(second)) {
+                    (Some(left), Some(right)) => match (left, right) {
+                        (&CompType::Returner(_), &CompType::Returner(_)) => Ok((Alike::Same, 1, 0)),
+                        (&CompType::Arrow { .. }, &CompType::Arrow { .. }) | (&CompType::Pi { .. }, &CompType::Pi { .. }) => Ok((Alike::Same, 2, 0)),
+                        (&CompType::Element { code, ref target }, &CompType::Element { code: other_code, target: ref other_target }) => {
+                            if target != other_target { Ok((Alike::Different, 0, 0)) }
+                            else if let Ok((Node::CompType(_, here), Node::CompType(_, there))) = roots {
+                                self.atom(Node::Code(code, here)).and_then(|_| self.atom(Node::Code(other_code, there))).map(|_| (Alike::Same, 0, 1))
+                            } else { Err(ConversionFault::MachineInvariant) }
+                        },
+                        _ => Ok((Alike::Different, 0, 0)),
+                    },
+                    _ => Err(ConversionFault::MachineInvariant),
+                },
+                Ok(_) => Ok((Alike::Different, 0, 0)),
+            };
+            children_correct && match expected {
+                Ok((answer, added_nodes, added_atoms)) => ret == Ok(answer)
+                    && pending.len().checked_sub(entry_nodes) == Some(added_nodes)
+                    && atoms.len().checked_sub(entry_atoms) == Some(added_atoms),
+                Err(fault) => ret == Err(fault) && pending.len() == entry_nodes && atoms.len() == entry_atoms,
+            }
+        },
+    )]
     fn formers(
         &mut self,
         one: Node,
@@ -832,14 +1099,15 @@ impl<'run> Walk<'run>
                 };
                 match (left, right) {
                     | (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) => {
-                        atoms.push((
+                        let first = (
                             self.atom(Node::Code(a, here))?,
                             self.atom(Node::Code(c, there))?,
-                        ));
-                        atoms.push((
+                        );
+                        let second = (
                             self.atom(Node::Code(b, here))?,
                             self.atom(Node::Code(d, there))?,
-                        ));
+                        );
+                        atoms.extend([first, second]);
                         Ok(Alike::Same)
                     },
                     | (&ValueType::Base(a), &ValueType::Base(b)) => Ok(Alike::between(&a, &b)),
@@ -1019,19 +1287,27 @@ impl<'run> Walk<'run>
     /// - fails: as [`Walk::atom`].
     /// - panics: none.
     ///
-    /// # Errors
-    /// As [`Walk::atom`].
-    ///
     /// # Adequacy
-    /// - hypothesis: L3 — closed quoted leaves are rigid, but static operators
-    ///   and definitions that can unfold cannot justify rigid separation.
+    /// - hypothesis: L3 — mismatched rigid types are apart, a body-bearing or
+    ///   unread constant leaves a mismatch undecided, and a static operator
+    ///   stays flexible even when its body is rigid. Declaring a flexible atom
+    ///   rigid would turn an undecided conversion into a refutation.
     /// - witness: `code::tests::rigid_quotes_of_different_types_are_apart`
     /// - witness: `code::tests::a_quote_over_a_defined_constant_is_undecided`
     /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
-    #[spec(ensures: |ret| match self.domain.value_closure(closure).and_then(|held| self.core.value(held.body())) {
-        Some(&Value::StaticLambda(_)) => matches!(ret, Ok(Rigidity::Flexible)),
-        Some(&Value::Quote(ty)) if matches!(self.core.value_type(ty), Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_))) => matches!(ret, Ok(Rigidity::Rigid)),
-        _ => true,
+    ///
+    /// # Errors
+    /// As [`Walk::atom`].
+    #[spec(ensures: |ret| match self.closure_atom(closure) {
+        Err(fault) => ret == Err(fault),
+        Ok(Atom::Local(_) | Atom::Variable(..) | Atom::Constant(_, Rigidity::Rigid)) => ret == Ok(Rigidity::Rigid),
+        Ok(Atom::Constant(_, Rigidity::Flexible) | Atom::Operator(..) | Atom::Other(_)) => ret == Ok(Rigidity::Flexible),
+        Ok(Atom::Quote(id, _)) => match self.core.value_type(id) {
+            None => ret == Err(ConversionFault::MachineInvariant),
+            Some(&(ValueType::Base(_) | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_))) => ret == Ok(Rigidity::Rigid),
+            Some(_) => matches!(ret, Ok(_) | Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant)),
+        },
+        Ok(_) => matches!(ret, Ok(_) | Err(ConversionFault::Domain(DomainFault::Dangling) | ConversionFault::MachineInvariant)),
     })]
     fn rigidity(
         &mut self,
@@ -1162,13 +1438,28 @@ impl<'run> Walk<'run>
 ///   quotes over one variable, and a decode of a held quote read as the quoted
 ///   type in both families; and the static formers by a written application
 ///   against a held static spine, two heads and two arguments apart, and two
-///   operators alike and unlike.
+///   operators alike and unlike. Treating every unequal pair as apart would
+///   refute a flexible constant or operator, while comparing ids alone would
+///   miss separately written equal types; both mutations change the observed
+///   answer.
 /// - witness: `code::tests::two_quotes_of_one_type_are_equal`
 /// - witness: `code::tests::rigid_quotes_of_different_types_are_apart`
 /// - witness: `code::tests::a_quote_over_a_defined_constant_is_undecided`
 /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
 /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
 /// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
+#[spec(ensures: |ret| {
+    let mut comparison = Walk::new(core, domain, constants);
+    match comparison.equal(left, right) {
+        Ok(Alike::Same) => ret == Ok(CodeComparison::Equal),
+        Ok(Alike::Different) => match comparison.rigidity(left).and_then(|one| comparison.rigidity(right).map(|other| (one, other))) {
+            Ok((Rigidity::Rigid, Rigidity::Rigid)) => ret == Ok(CodeComparison::Apart),
+            Ok(_) => ret == Ok(CodeComparison::Undecided),
+            Err(fault) => ret == Err(fault),
+        },
+        Err(fault) => ret == Err(fault),
+    }
+})]
 pub fn compare_codes(
     core: &CoreArena,
     domain: &DomainArena,
@@ -1192,6 +1483,7 @@ mod tests
 {
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_core_term::DefinitionalEnvironment;
     use gandr_core_term::ValueId;
@@ -1226,6 +1518,16 @@ mod tests
     /// - requires: `quote` is a quote whose free variables `bound` binds.
     /// - ensures: the closure the evaluated code suspends.
     /// - panics: when the evaluation refuses or produces no code.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — one written variable closes over different domain
+    ///   values, while different written indices close over the same value
+    ///   through different environment depths; reversing the supplied binding
+    ///   order or losing a binding changes which codes agree.
+    /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
+    #[spec(ensures: |ret| domain.value_closure(ret).is_some_and(|closure| closure.body() == quote
+        && bound.iter().rev().enumerate().all(|(index, value)| u32::try_from(index).is_ok_and(|index|
+            closure.environment().lookup(Zone::Intuitionistic, DeBruijnIndex::from(index)) == Some(*value))))) ]
     fn code_of(
         core: &CoreArena,
         domain: &mut DomainArena,
@@ -1586,6 +1888,272 @@ mod tests
             CodeComparison::Undecided,
             compare_rigidly(&core, &domain, first, constant_operator),
             "two operators that differ are undecided: an operator is never declared apart"
+        );
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn binder_numbers_stay_distinct_across_the_u32_boundary()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let quote = core.value_quote(unit);
+        let mut domain = DomainArena::new();
+        let closure = domain.value_closure_node(quote, Environment::new());
+        let place = super::Walk::opened(closure);
+        let mut walk = super::Walk::new(&core, &domain, ConstantReading::Unread);
+        walk.next = super::Binder(
+            usize::try_from(u32::MAX).expect("a 64-bit index holds the 32-bit ceiling"),
+        );
+        let (first, paired) = walk.crossed(place, place);
+        let second = walk.crossed_alone(first);
+        let at_zero = DeBruijnIndex::from(0_u32);
+        assert_eq!(
+            walk.local(first.chain, at_zero),
+            walk.local(paired.chain, at_zero)
+        );
+        assert_ne!(
+            walk.local(first.chain, at_zero),
+            walk.local(second.chain, at_zero),
+            "a fresh binder must not alias the preceding one at the 32-bit ceiling"
+        );
+        assert_eq!(
+            walk.local(first.chain, at_zero),
+            walk.local(second.chain, DeBruijnIndex::from(1_u32))
+        );
+    }
+
+    #[test]
+    fn local_binders_shadow_only_their_own_chain()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let quote = core.value_quote(unit);
+        let mut domain = DomainArena::new();
+        let closure = domain.value_closure_node(quote, Environment::new());
+        let place = super::Walk::opened(closure);
+        let mut walk = super::Walk::new(&core, &domain, ConstantReading::Unread);
+        let old = walk.crossed_alone(place);
+        let (left, right) = walk.crossed(old, place);
+        let zero = DeBruijnIndex::from(0_u32);
+        let one = DeBruijnIndex::from(1_u32);
+        assert_eq!(walk.local(left.chain, zero), walk.local(right.chain, zero));
+        assert_ne!(walk.local(left.chain, zero), walk.local(left.chain, one));
+        assert_eq!(walk.local(old.chain, zero), walk.local(left.chain, one));
+        assert_eq!(Err(zero), walk.local(right.chain, one));
+        assert_eq!(
+            Err(zero),
+            walk.local(left.chain, DeBruijnIndex::from(2_u32))
+        );
+        assert_eq!(
+            Err(one),
+            walk.local(right.chain, DeBruijnIndex::from(2_u32))
+        );
+        assert_eq!(
+            Err(DeBruijnIndex::from(u32::MAX - 2)),
+            walk.local(left.chain, DeBruijnIndex::from(u32::MAX))
+        );
+        assert_eq!(
+            Err(DeBruijnIndex::from(u32::MAX)),
+            walk.local(place.chain, DeBruijnIndex::from(u32::MAX))
+        );
+        assert_eq!(Err(one), walk.local(super::Chain(usize::MAX), one));
+    }
+
+    #[test]
+    fn atom_resolution_refuses_missing_sources_and_preserves_zone()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let quote = core.value_quote(unit);
+        let int_zero = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let int_one = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(1_u32));
+        let int_two = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(2_u32));
+        let linear_zero = core.value_variable(Zone::Linear, DeBruijnIndex::from(0_u32));
+        let core_floor = core.watermark();
+        let absent_core = core.value_unit();
+        core.truncate_to(core_floor);
+        let mut domain = DomainArena::new();
+        let int_head = domain
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Intuitionistic,
+                    level: BinderLevel::from(9_u32),
+                },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .expect("a variable is rigid");
+        let int_value = domain
+            .value_neutral(int_head, TermFace::Reduced)
+            .expect("an empty spine is a value");
+        let linear_head = domain
+            .neutral_node(
+                NeutralHead::Variable {
+                    zone: Zone::Linear,
+                    level: BinderLevel::from(4_u32),
+                },
+                Vec::new(),
+                Unfolding::Rigid,
+            )
+            .expect("a variable is rigid");
+        let linear_value = domain
+            .value_neutral(linear_head, TermFace::Reduced)
+            .expect("an empty spine is a value");
+        let before_closures = domain.watermark();
+        let mut environment = Environment::new();
+        environment.extend(Zone::Intuitionistic, int_value);
+        environment.extend(Zone::Linear, linear_value);
+        let closure = domain.value_closure_node(quote, environment);
+        let empty = domain.value_closure_node(quote, Environment::new());
+        let before_absent = domain.watermark();
+        let absent_held = domain.value_unit(TermFace::Reduced);
+        domain.truncate_to(before_absent);
+        let place = super::Walk::opened(closure);
+        {
+            let mut walk = super::Walk::new(&core, &domain, ConstantReading::Unread);
+            let inside = walk.crossed_alone(place);
+            let local = walk
+                .local(inside.chain, DeBruijnIndex::from(0_u32))
+                .expect("the local binder exists");
+            assert_eq!(
+                Ok(super::Atom::Local(local)),
+                walk.atom(super::Node::Code(int_zero, inside))
+            );
+            assert_eq!(
+                Ok(super::Atom::Variable(
+                    Zone::Intuitionistic,
+                    BinderLevel::from(9_u32)
+                )),
+                walk.atom(super::Node::Code(int_one, inside))
+            );
+            assert_eq!(
+                Ok(super::Atom::Variable(
+                    Zone::Linear,
+                    BinderLevel::from(4_u32)
+                )),
+                walk.atom(super::Node::Code(linear_zero, inside))
+            );
+            assert_eq!(
+                Err(crate::ConversionFault::MachineInvariant),
+                walk.atom(super::Node::Code(int_two, inside))
+            );
+            assert_eq!(
+                Err(crate::ConversionFault::MachineInvariant),
+                walk.atom(super::Node::Code(int_zero, super::Walk::opened(empty)))
+            );
+            assert_eq!(
+                Err(crate::ConversionFault::MachineInvariant),
+                walk.atom(super::Node::Code(absent_core, place))
+            );
+            assert_eq!(
+                Err(crate::ConversionFault::Domain(crate::DomainFault::Dangling)),
+                walk.atom(super::Node::Held(absent_held))
+            );
+        }
+        domain.truncate_to(before_closures);
+        let walk = super::Walk::new(&core, &domain, ConstantReading::Unread);
+        assert_eq!(
+            Err(crate::ConversionFault::Domain(crate::DomainFault::Dangling)),
+            walk.closure_atom(closure)
+        );
+        assert_eq!(
+            Err(crate::ConversionFault::Domain(crate::DomainFault::Dangling)),
+            walk.atom(super::Node::Code(int_zero, place))
+        );
+        assert_eq!(
+            Err(crate::ConversionFault::Domain(crate::DomainFault::Dangling)),
+            compare_codes(&core, &domain, ConstantReading::Unread, closure, closure)
+        );
+    }
+
+    #[test]
+    fn stuck_prefixes_distinguish_heads_eliminations_and_refusals()
+    {
+        let core = CoreArena::new();
+        let mut domain = DomainArena::new();
+        let floor = domain.watermark();
+        let value = domain.value_unit(TermFace::Reduced);
+        let neutral = domain
+            .neutral_node(
+                NeutralHead::Constant(ConstantIndex::from(0_usize)),
+                Vec::from([Elimination::StaticApply(value), Elimination::Force]),
+                Unfolding::Unforced(gandr_kernel_term::GlobalIndex::from(0_u32)),
+            )
+            .expect("a constant can unfold");
+        let walk = super::Walk::new(&core, &domain, ConstantReading::Unread);
+        assert_eq!(
+            Ok(super::Atom::Constant(
+                ConstantIndex::from(0_usize),
+                super::Rigidity::Flexible
+            )),
+            walk.stuck(neutral, super::SpinePrefix(0))
+        );
+        assert_eq!(
+            Ok(super::Atom::Applied(
+                super::Node::Stuck(neutral, super::SpinePrefix(0)),
+                super::Node::Held(value)
+            )),
+            walk.stuck(neutral, super::SpinePrefix(1))
+        );
+        assert_eq!(
+            Ok(super::Atom::Other(super::Node::Stuck(
+                neutral,
+                super::SpinePrefix(2)
+            ))),
+            walk.stuck(neutral, super::SpinePrefix(2))
+        );
+        assert_eq!(
+            Err(crate::ConversionFault::MachineInvariant),
+            walk.stuck(neutral, super::SpinePrefix(3))
+        );
+        assert_eq!(
+            Err(crate::ConversionFault::MachineInvariant),
+            walk.stuck(neutral, super::SpinePrefix(usize::MAX))
+        );
+        domain.truncate_to(floor);
+        let walk = super::Walk::new(&core, &domain, ConstantReading::Unread);
+        assert_eq!(
+            Err(crate::ConversionFault::Domain(crate::DomainFault::Dangling)),
+            walk.stuck(neutral, super::SpinePrefix(0))
+        );
+    }
+    #[test]
+    fn native_classifier_endpoints_compare_in_order_and_refuse_a_missing_target()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let integer = core.value_type_base(BaseType::Integer);
+        let source = core.value_quote(unit);
+        let target = core.value_quote(integer);
+        let path = core.value_type_path_universe(source, target);
+        let path = core.value_quote(path);
+        let reverse = core.value_type_path_universe(target, source);
+        let reverse = core.value_quote(reverse);
+        let mut foreign = core.clone();
+        for _ in 0 .. 4_u8 {
+            foreign.value_unit();
+        }
+        let missing = foreign.value_unit();
+        let broken = core.value_type_path_universe(source, missing);
+        let broken = core.value_quote(broken);
+        assert!(core.value(missing).is_none());
+        let mut domain = DomainArena::new();
+        let left = code_of(&core, &mut domain, path, &[]);
+        let right = code_of(&core, &mut domain, path, &[]);
+        let reverse = code_of(&core, &mut domain, reverse, &[]);
+        let broken = code_of(&core, &mut domain, broken, &[]);
+        assert_eq!(
+            Ok(CodeComparison::Equal),
+            compare_codes(&core, &domain, ConstantReading::Unread, left, right)
+        );
+        assert_eq!(
+            Ok(CodeComparison::Apart),
+            compare_codes(&core, &domain, ConstantReading::Unread, left, reverse)
+        );
+        assert_eq!(
+            Err(crate::ConversionFault::MachineInvariant),
+            compare_codes(&core, &domain, ConstantReading::Unread, left, broken)
         );
     }
 }

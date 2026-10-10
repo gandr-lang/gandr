@@ -42,6 +42,7 @@
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
 use gandr_kernel_check_memo::DigestWord;
@@ -141,9 +142,25 @@ impl GoalSupport
     /// - fails: [`ConversionFault::Domain`] for a node that does not resolve.
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L2 — repeated live supports agree, equal content at
+    ///   different ids does not, and changing the level or polarity changes the
+    ///   input; truncation refuses opened closures. Ignoring a key component or
+    ///   accepting an absent closure changes agreement or construction.
+    /// - witness: `resharing::tests::support_identity_and_digest_survive_forcing_without_conflating_inputs`
+    /// - witness: `resharing::tests::opened_support_refuses_truncated_closures`
+    ///
     /// # Errors
     /// - [`ConversionFault::Domain`] — a node does not resolve.
     #[inline]
+    #[spec(ensures: |ret| {
+        let resolving = match sides {
+            SupportSides::Heads(left, right) => side_content(domain, left).is_ok() && side_content(domain, right).is_ok(),
+            SupportSides::Opened(left, right) => domain.comp_closure(left).is_some() && domain.comp_closure(right).is_some(),
+        };
+        if resolving { ret.as_ref().is_ok_and(|support| support.sides == sides && support.level == level) }
+        else { ret == Err(ConversionFault::Domain(DomainFault::Dangling)) }
+    })]
     pub(crate) fn new(
         domain: &DomainArena,
         sides: SupportSides,
@@ -156,7 +173,17 @@ impl GoalSupport
                 let right = side_content(domain, right)?;
                 (left, right)
             },
-            | SupportSides::Opened(..) => (SideContent::Opened, SideContent::Opened),
+            | SupportSides::Opened(left, right) => {
+                domain
+                    .comp_closure(left)
+                    .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+                if left != right {
+                    domain
+                        .comp_closure(right)
+                        .ok_or(ConversionFault::Domain(DomainFault::Dangling))?;
+                }
+                (SideContent::Opened, SideContent::Opened)
+            },
         };
         let high = DigestWord::from(u64::from(ContentHash::of(&left)));
         let low = DigestWord::from(u64::from(ContentHash::of(&(right, level))));
@@ -214,7 +241,16 @@ impl MemoKey for GoalSupport
     /// - provides: the bucket a recall scans.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — repeated supports and a support rebuilt after forcing
+    ///   the same neutral retain one digest, while identity agreement still
+    ///   distinguishes equal-content nodes and levels; changing a stable key
+    ///   word loses the shared bucket.
+    /// - witness: `resharing::tests::support_identity_and_digest_survive_forcing_without_conflating_inputs`
+    /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
     #[inline]
+    #[spec(ensures: |ret| ret == self.digest)]
     fn digest(&self) -> ContentDigest
     {
         self.digest
@@ -242,6 +278,7 @@ impl MemoKey for GoalSupport
     /// - witness: `machine::tests::re_sharing_runs_one_goal_per_distinct_pair`
     /// - witness: `machine::tests::the_memo_never_moves_a_verdict`
     #[inline]
+    #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree) == (self.sides == other.sides && self.level == other.level))]
     fn agreement(
         &self,
         other: &Self,
@@ -266,8 +303,40 @@ impl MemoKey for GoalSupport
 /// - fails: [`ConversionFault::Domain`] for a node that does not resolve.
 /// - panics: none.
 ///
+/// # Adequacy
+/// - hypothesis: L2 — rigid equal-content values may share a digest without
+///   agreeing by identity, while forcing a flexible neutral preserves its key
+///   and value/computation polarity remains distinct; including the changing
+///   unfolding face or discarding polarity changes those observations.
+/// - witness: `resharing::tests::support_identity_and_digest_survive_forcing_without_conflating_inputs`
+/// - witness: `machine::tests::the_memo_never_moves_a_verdict`
+///
 /// # Errors
 /// - [`ConversionFault::Domain`] — a node does not resolve.
+#[spec(ensures: |ret| match glued {
+    Glued::Value(id) => match domain.value_guard(id) {
+        Ok(Guard::Rigid(hash)) => ret == Ok(SideContent::Rigid(hash)),
+        Ok(Guard::Flexible) => match domain.value(id) {
+            Some(&DomainValue::Neutral { neutral, .. }) => domain.neutral(neutral).map_or_else(
+                || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+                |node| ret == Ok(SideContent::Neutral(Polarity::Value, node.head()))),
+            Some(_) => ret == Ok(SideContent::Former(Polarity::Value)),
+            None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+        },
+        Err(fault) => ret == Err(ConversionFault::Domain(fault)),
+    },
+    Glued::Computation(id) => match domain.comp_guard(id) {
+        Ok(Guard::Rigid(hash)) => ret == Ok(SideContent::Rigid(hash)),
+        Ok(Guard::Flexible) => match domain.computation(id) {
+            Some(&DomainComp::Neutral { neutral, .. }) => domain.neutral(neutral).map_or_else(
+                || ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+                |node| ret == Ok(SideContent::Neutral(Polarity::Computation, node.head()))),
+            Some(_) => ret == Ok(SideContent::Former(Polarity::Computation)),
+            None => ret == Err(ConversionFault::Domain(DomainFault::Dangling)),
+        },
+        Err(fault) => ret == Err(ConversionFault::Domain(fault)),
+    },
+})]
 fn side_content(
     domain: &DomainArena,
     glued: Glued,
@@ -434,6 +503,18 @@ impl Supports
     /// - provides: the edges-per-revision measurement a run reports.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — inactive operations keep both counts zero; active
+    ///   entries count inherited inner edges and referenced entry edges in the
+    ///   verdict that settled them. Counting inactive work, inheriting an entry
+    ///   transitively or mixing verdicts changes the totals.
+    /// - witness: `machine::tests::support_store_refusals_preserve_state_and_inactive_operations_do_nothing`
+    /// - witness: `machine::tests::support_entries_reference_entries_and_inherit_inner_edges`
+    #[spec(ensures: |ret| ret.acceptance.0 == self.totals.acceptance.0
+        && ret.refusal.0 == self.totals.refusal.0
+        && (!matches!(self.activity, MemoActivity::Inactive)
+            || ret.acceptance.0 == 0 && ret.refusal.0 == 0))]
     pub(crate) const fn totals(&self) -> SupportEdges
     {
         self.totals
@@ -451,9 +532,25 @@ impl Supports
     ///   is not the next id the store expects.
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the next process opens once; a duplicate or skipped
+    ///   id refuses without changing the store, while inactive operation stores
+    ///   nothing. Accepting an out-of-order id or mutating on refusal changes
+    ///   the state.
+    /// - witness: `machine::tests::support_store_refusals_preserve_state_and_inactive_operations_do_nothing`
+    ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — the ids and the store
     ///   disagree.
+    #[spec(
+        captures: entry_length = self.store.len(),
+        ensures: |ret| if matches!(self.activity, MemoActivity::Inactive) {
+            ret == Ok(()) && self.store.len() == entry_length
+        } else if usize::from(process) == entry_length {
+            ret == Ok(()) && self.store.len().checked_sub(1) == Some(entry_length)
+                && self.store.last().is_some_and(|slot| slot.standing == Standing::Inner && slot.edges.is_empty())
+        } else { ret == Err(ConversionFault::MachineInvariant) && self.store.len() == entry_length },
+    )]
     pub(crate) fn open(
         &mut self,
         process: ProcessId,
@@ -482,8 +579,20 @@ impl Supports
     ///   opened.
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L2 — entering or recording an unfolding for an unopened
+    ///   process refuses without modifying existing support; an opened process
+    ///   records its edge. Resolving the wrong slot or accepting a missing one
+    ///   changes state or totals.
+    /// - witness: `machine::tests::support_store_refusals_preserve_state_and_inactive_operations_do_nothing`
+    ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no support for `process`.
+    #[spec(
+        captures: entry_present = usize::from(process) < self.store.len(),
+        ensures: |ret| ret.is_ok() == entry_present
+            && ret.as_ref().err().is_none_or(|fault| *fault == ConversionFault::MachineInvariant),
+    )]
     fn consulted_mut(
         &mut self,
         process: ProcessId,
@@ -506,8 +615,20 @@ impl Supports
     ///   process was never opened.
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L2 — an entered process contributes its own edge count
+    ///   when it settles and is represented by one edge in its parent; an inner
+    ///   process is instead inherited. Losing the standing transition changes
+    ///   both totals.
+    /// - witness: `machine::tests::support_entries_reference_entries_and_inherit_inner_edges`
+    /// - witness: `machine::tests::support_store_refusals_preserve_state_and_inactive_operations_do_nothing`
+    ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no support for `process`.
+    #[spec(ensures: |ret| if matches!(self.activity, MemoActivity::Inactive) { ret == Ok(()) }
+        else { self.store.get(usize::from(process)).map_or_else(
+            || ret == Err(ConversionFault::MachineInvariant),
+            |slot| ret == Ok(()) && slot.standing == Standing::Entry) })]
     pub(crate) fn enter(
         &mut self,
         process: ProcessId,
@@ -532,8 +653,20 @@ impl Supports
     ///   process was never opened.
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L2 — repeating one unfolding contributes one edge, an
+    ///   inner child passes that edge to its parent, and an unopened process
+    ///   refuses; duplicating, dropping or attributing the edge to another
+    ///   process changes the counted support.
+    /// - witness: `machine::tests::support_entries_reference_entries_and_inherit_inner_edges`
+    /// - witness: `machine::tests::support_store_refusals_preserve_state_and_inactive_operations_do_nothing`
+    ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no support for `process`.
+    #[spec(ensures: |ret| if matches!(self.activity, MemoActivity::Inactive) { ret == Ok(()) }
+        else { self.store.get(usize::from(process)).map_or_else(
+            || ret == Err(ConversionFault::MachineInvariant),
+            |slot| ret == Ok(()) && slot.edges.contains(&Edge::Unfolding(constant))) })]
     pub(crate) fn unfolded(
         &mut self,
         process: ProcessId,
@@ -563,8 +696,42 @@ impl Supports
     ///   was never opened.
     /// - panics: none.
     ///
+    /// # Adequacy
+    /// - hypothesis: L2 — a parent inherits an inner process once even when
+    ///   repeated in its basis, references an entry by one edge rather than its
+    ///   unfolded definitions, and charges only its own verdict. Missing basis
+    ///   or process ids refuse without changing totals; transitive entry
+    ///   inheritance or duplicate edges changes the measured counts.
+    /// - witness: `machine::tests::support_entries_reference_entries_and_inherit_inner_edges`
+    /// - witness: `machine::tests::support_store_refusals_preserve_state_and_inactive_operations_do_nothing`
+    /// - witness: `machine::tests::an_acceptance_is_keyed_on_its_winning_derivation`
+    /// - witness: `machine::tests::a_refusal_is_keyed_on_the_union_over_its_branches`
+    ///
     /// # Errors
     /// - [`ConversionFault::MachineInvariant`] — no support for a process.
+    #[spec(
+        captures: entry_totals = self.totals,
+        ensures: |ret| if matches!(self.activity, MemoActivity::Inactive) {
+            ret == Ok(()) && self.totals == entry_totals
+        } else if let Some(slot) = self.store.get(usize::from(process)) {
+            let complete_basis = basis.iter().all(|&child| self.store.get(usize::from(child)).is_some());
+            if complete_basis {
+                ret == Ok(()) && basis.iter().all(|&child| self.store.get(usize::from(child)).is_some_and(|source|
+                    match source.standing {
+                        Standing::Entry => slot.edges.contains(&Edge::Entry(child)),
+                        Standing::Inner => source.edges.is_subset(&slot.edges),
+                    })) && match (slot.standing, settled) {
+                        (Standing::Entry, Settled::Convertible) =>
+                            self.totals.acceptance.0 == entry_totals.acceptance.0.saturating_add(slot.edges.len())
+                                && self.totals.refusal == entry_totals.refusal,
+                        (Standing::Entry, Settled::NotConvertible) =>
+                            self.totals.refusal.0 == entry_totals.refusal.0.saturating_add(slot.edges.len())
+                                && self.totals.acceptance == entry_totals.acceptance,
+                        (Standing::Inner, _) => self.totals == entry_totals,
+                    }
+            } else { ret == Err(ConversionFault::MachineInvariant) && self.totals == entry_totals }
+        } else { ret == Err(ConversionFault::MachineInvariant) && self.totals == entry_totals },
+    )]
     pub(crate) fn settle(
         &mut self,
         process: ProcessId,
@@ -601,5 +768,148 @@ impl Supports
             total.0 = total.0.saturating_add(consulted.edges.len());
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+
+    use gandr_core_term::CoreArena;
+    use gandr_kernel_check_memo::ContentAgreement;
+    use gandr_kernel_check_memo::MemoKey as _;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::GlobalIndex;
+
+    use super::BinderLevel;
+    use super::ConversionFault;
+    use super::DomainArena;
+    use super::DomainFault;
+    use super::GoalSupport;
+    use super::SupportSides;
+    use crate::Environment;
+
+    #[test]
+    fn opened_support_refuses_truncated_closures()
+    {
+        let mut core = CoreArena::new();
+        let value = core.value_unit();
+        let body = core.computation_return(value);
+        let mut domain = DomainArena::new();
+        let floor = domain.watermark();
+        let closure = domain.comp_closure_node(body, Environment::new());
+        let sides = SupportSides::Opened(closure, closure);
+        assert!(GoalSupport::new(&domain, sides, BinderLevel::FLOOR).is_ok());
+        let first_only = domain.watermark();
+        let second = domain.comp_closure_node(body, Environment::new());
+        assert!(
+            GoalSupport::new(
+                &domain,
+                SupportSides::Opened(closure, second),
+                BinderLevel::FLOOR
+            )
+            .is_ok()
+        );
+        domain.truncate_to(first_only);
+        for pair in [
+            SupportSides::Opened(closure, second),
+            SupportSides::Opened(second, closure),
+        ] {
+            assert_eq!(
+                Err(ConversionFault::Domain(DomainFault::Dangling)),
+                GoalSupport::new(&domain, pair, BinderLevel::FLOOR)
+            );
+        }
+        domain.truncate_to(floor);
+        assert_eq!(
+            Err(ConversionFault::Domain(DomainFault::Dangling)),
+            GoalSupport::new(&domain, sides, BinderLevel::FLOOR)
+        );
+    }
+
+    #[test]
+    fn support_identity_and_digest_survive_forcing_without_conflating_inputs()
+    {
+        let mut domain = DomainArena::new();
+        let floor = domain.watermark();
+        let first = domain.value_unit(crate::TermFace::Reduced);
+        let second = domain.value_unit(crate::TermFace::Reduced);
+        let level = BinderLevel::FLOOR;
+        let forward = GoalSupport::new(
+            &domain,
+            SupportSides::Heads(crate::Glued::Value(first), crate::Glued::Value(second)),
+            level,
+        )
+        .expect("both values live");
+        let reverse = GoalSupport::new(
+            &domain,
+            SupportSides::Heads(crate::Glued::Value(second), crate::Glued::Value(first)),
+            level,
+        )
+        .expect("both values live");
+        assert_eq!(
+            forward.digest(),
+            reverse.digest(),
+            "equal rigid contents share a bucket"
+        );
+        assert_eq!(
+            ContentAgreement::Differ,
+            forward.agreement(&reverse),
+            "a bucket does not equate distinct inputs"
+        );
+        let raised = GoalSupport::new(&domain, forward.sides(), BinderLevel::from(1_u32))
+            .expect("the values also live at the higher level");
+        assert_eq!(ContentAgreement::Differ, forward.agreement(&raised));
+        let repeated =
+            GoalSupport::new(&domain, forward.sides(), level).expect("the same input remains live");
+        assert_eq!(ContentAgreement::Agree, forward.agreement(&repeated));
+        assert_eq!(forward.digest(), repeated.digest());
+
+        let neutral = domain
+            .neutral_node(
+                crate::NeutralHead::Constant(ConstantIndex::from(0_usize)),
+                Vec::new(),
+                crate::Unfolding::Unforced(GlobalIndex::from(0_u32)),
+            )
+            .expect("a constant may unfold");
+        let value = domain
+            .value_neutral(neutral, crate::TermFace::Reduced)
+            .expect("an empty spine is a value");
+        let computation = domain.comp_neutral(neutral, crate::CompTermFace::Reduced);
+        let value_sides =
+            SupportSides::Heads(crate::Glued::Value(value), crate::Glued::Value(value));
+        let comp_sides = SupportSides::Heads(
+            crate::Glued::Computation(computation),
+            crate::Glued::Computation(computation),
+        );
+        let before =
+            GoalSupport::new(&domain, value_sides, level).expect("the value neutral lives");
+        let before_comp =
+            GoalSupport::new(&domain, comp_sides, level).expect("the computation neutral lives");
+        assert_eq!(
+            ContentAgreement::Differ,
+            before.agreement(&before_comp),
+            "polarity is part of the input"
+        );
+        domain
+            .force_neutral(neutral, crate::Glued::Value(first))
+            .expect("the body was not forced before");
+        let after = GoalSupport::new(&domain, value_sides, level)
+            .expect("forcing preserves the value node");
+        let after_comp = GoalSupport::new(&domain, comp_sides, level)
+            .expect("forcing preserves the computation node");
+        assert_eq!(ContentAgreement::Agree, before.agreement(&after));
+        assert_eq!(before.digest(), after.digest());
+        assert_eq!(ContentAgreement::Agree, before_comp.agreement(&after_comp));
+        assert_eq!(before_comp.digest(), after_comp.digest());
+
+        domain.truncate_to(floor);
+        for sides in [forward.sides(), value_sides, comp_sides] {
+            assert_eq!(
+                Err(ConversionFault::Domain(DomainFault::Dangling)),
+                GoalSupport::new(&domain, sides, level)
+            );
+        }
     }
 }
