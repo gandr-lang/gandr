@@ -5,6 +5,7 @@ use std::io;
 use std::io::BufRead;
 use std::io::Write;
 
+use anodized::spec;
 use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_render_remote::TranscriptBlock;
@@ -82,6 +83,10 @@ pub enum Ended
 /// # Adequacy
 /// - hypothesis: L3 — a piped session's transcript is asserted line by line.
 /// - witness: `loop::tests::piped_value_prints_a_transcript`
+/// - witness: `loop::tests::empty_transcripts_do_not_touch_the_writer`
+/// - witness: `loop::tests::write_and_flush_failures_keep_their_kind`
+#[spec(ensures: |ret| !block.source.is_empty()
+    || block.lines.iter().any(|row| !row.1.is_empty()) || ret.is_ok())]
 #[inline]
 pub fn write_block<Output>(
     output: &mut Output,
@@ -103,7 +108,8 @@ where
 /// - ensures: each line is offered in order and each block written as it is
 ///   answered; at the end of input, or at `:quit`, a buffer still waiting is
 ///   submitted and written; then the writer is flushed, whether the run
-///   completed or faulted. The transcript is a function of the input alone. A
+///   completed or faulted, but not after a write error. A successful transcript
+///   is determined by the input, render style and loaded file contents. A
 ///   grammar that does not build, an input line that cannot be read, and a
 ///   session fault each stop the run, which then ends faulted; a refusal is a
 ///   transcript line, not a fault.
@@ -115,12 +121,15 @@ where
 /// The writer's error.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a piped session over a corpus source's declarations is
-///   asserted line by line; an open buffer at the end of a pipe is reported;
-///   unreadable input ends faulted.
+/// - hypothesis: L3 — a piped corpus transcript, end-of-input continuation and
+///   an input fault are observed. The predicate rules out editor faults; the
+///   stream transcript and flush order need external observers, including
+///   partial-write refusal and flush failure after both kinds of ending.
 /// - witness: `loop::tests::piped_value_prints_a_transcript`
 /// - witness: `loop::tests::an_unparseable_pipe_reports_rather_than_going_quiet`
 /// - witness: `loop::tests::unreadable_input_ends_the_batch_faulted`
+/// - witness: `loop::tests::write_and_flush_failures_keep_their_kind`
+#[spec(ensures: |ret| !matches!(ret, Ok(Ended::Faulted(Fault::Editor(_)))))]
 #[inline]
 pub fn run_batch<Input, Output>(
     input: Input,
@@ -153,6 +162,8 @@ where
 /// - hypothesis: L3 — through [`run_batch`]'s witnesses, each asserting a piped
 ///   transcript line by line.
 /// - witness: `loop::tests::piped_value_prints_a_transcript`
+/// - witness: `loop::tests::write_and_flush_failures_keep_their_kind`
+#[spec(ensures: |ret| !matches!(ret, Ok(Ended::Faulted(Fault::Editor(_)))))]
 fn transcribe<Input, Output>(
     input: Input,
     output: &mut Output,

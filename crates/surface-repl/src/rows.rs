@@ -1,5 +1,6 @@
 //! The rows of a transcript block: the one layout every face draws.
 
+use anodized::spec;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::OutKind;
 use gandr_surface_render_remote::SourceText;
@@ -79,6 +80,20 @@ pub struct Row<'block>
 ///   and a block's rows are asserted mark by mark.
 /// - witness: `loop::tests::piped_value_prints_a_transcript`
 /// - witness: `loop::tests::a_block_lays_out_as_rows`
+/// - witness: `loop::tests::row_kinds_and_unicode_boundaries_keep_their_meaning`
+#[spec(ensures: |ret| match kind {
+    OutKind::Source => matches!(ret.text.as_bytes(), &[0xe2, 0x96, 0xb8, b' '])
+        && matches!(ret.indent.as_bytes(), &[b' ', b' ']),
+    OutKind::Value => matches!(ret.text.as_bytes(), &[b'=', b' '])
+        && matches!(ret.indent.as_bytes(), &[b' ', b' ']),
+    OutKind::Goal => matches!(ret.text.as_bytes(), &[b'?', b' '])
+        && matches!(ret.indent.as_bytes(), &[b' ', b' ']),
+    OutKind::Stuck | OutKind::Info => matches!(ret.text.as_bytes(), &[0xc2, 0xb7, b' '])
+        && matches!(ret.indent.as_bytes(), &[b' ', b' ']),
+    OutKind::Blame => matches!(ret.text.as_bytes(), &[b'!', b' '])
+        && matches!(ret.indent.as_bytes(), &[b' ', b' ']),
+    OutKind::Type | OutKind::Diag => ret.text.is_empty() && ret.indent.is_empty(),
+})]
 const fn mark(kind: OutKind) -> Mark
 {
     match kind {
@@ -120,11 +135,15 @@ const fn mark(kind: OutKind) -> Mark
 /// - provides: the layout of one line of a block.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — the opaque one-shot iterator exposes no row observer or
+///   clone; consuming it in a postcondition would change the caller's rows.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a two-row echo, a three-row diagnostic with an empty
-///   middle row and a `\r\n` terminator are asserted row by row.
+///   middle row, every output kind, Unicode byte offsets, CRLF and lone
+///   carriage returns are asserted row by row.
 /// - witness: `loop::tests::a_block_lays_out_as_rows`
+/// - witness: `loop::tests::row_kinds_and_unicode_boundaries_keep_their_meaning`
 fn line_rows(
     kind: OutKind,
     text: SourceText<'_>,
@@ -172,6 +191,8 @@ fn line_rows(
 ///   and the terminal face both read.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — the opaque one-shot iterator exposes no row observer or
+///   clone; consuming it in a postcondition would change the caller's rows.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a block with a two-row echo and a multi-row diagnostic is
@@ -179,6 +200,7 @@ fn line_rows(
 ///   transcript, written from these rows, is asserted line by line.
 /// - witness: `loop::tests::a_block_lays_out_as_rows`
 /// - witness: `loop::tests::piped_value_prints_a_transcript`
+/// - witness: `loop::tests::row_kinds_and_unicode_boundaries_keep_their_meaning`
 #[inline]
 pub fn rows(block: &TranscriptBlock) -> impl Iterator<Item = Row<'_>>
 {

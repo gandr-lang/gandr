@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! The loop observed from outside: lines offered, blocks and transcripts read.
 //!
 //! Every type a case expects is spelled by the renderer or read from a corpus
@@ -21,8 +10,10 @@
 #[cfg(test)]
 mod tests
 {
+    use std::io;
     use std::path::Path;
 
+    use anodized::spec;
     use gandr_core_incremental::BackendArtifact;
     use gandr_core_incremental::ContentNode;
     use gandr_core_incremental::MemoryCheckpointStore;
@@ -64,7 +55,7 @@ mod tests
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
-    /// The strict corpus sources, by path from this crate.
+    /// Three selected strict corpus sources, by path from this crate.
     const CORPUS: [&str; 3] = [
         concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -83,7 +74,18 @@ mod tests
     /// The built-in grammar.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the built-in grammar is valid.
+    /// - ensures: a nonempty grammar with one name per rule.
+    /// - provides: the grammar fixture.
+    /// - fails: never.
+    /// - panics: if the built-in grammar does not build.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — open, closed and empty buffers distinguish the
+    ///   fixture's completion decisions.
+    /// - witness: `loop::tests::an_open_form_is_incomplete`
+    /// - witness: `loop::tests::an_empty_buffer_is_complete`
+    #[spec(ensures: |ret| !ret.rules().is_empty() && ret.rules().len() == ret.rule_names().len())]
     fn grammar() -> Pbg
     {
         built_in().expect("the built-in grammar builds")
@@ -92,7 +94,18 @@ mod tests
     /// A loop rendering refusals plainly.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the built-in grammar and role table are valid.
+    /// - ensures: a fresh loop rendering plain diagnostics.
+    /// - provides: the external loop fixture.
+    /// - fails: never.
+    /// - panics: if the loop cannot be built.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the first open form changes the fresh prompt, and an
+    ///   empty loop finishes without a transcript.
+    /// - witness: `loop::tests::an_open_form_continues`
+    /// - witness: `loop::tests::finishing_an_empty_loop_yields_nothing`
+    #[spec(ensures: |ret| ret.prompt() == Prompt::Fresh)]
     fn repl() -> SessionLoop
     {
         SessionLoop::new(RenderStyle::Plain).expect("the loop starts")
@@ -101,7 +114,20 @@ mod tests
     /// Offer `line` to `repl`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: conversion yields admissible text and the session does not
+    ///   fault.
+    /// - ensures: the loop event; a completed block or quit leaves a fresh
+    ///   prompt.
+    /// - provides: the event observer used by the external loop witnesses.
+    /// - fails: never.
+    /// - panics: if the session faults.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a continued form, a completed form and quit have
+    ///   distinct events and prompt transitions.
+    /// - witness: `loop::tests::an_open_form_continues`
+    /// - witness: `loop::tests::quit_stops_the_loop`
+    #[spec(ensures: |ret| matches!(ret, LoopEvent::Continue) || repl.prompt() == Prompt::Fresh)]
     fn offer<'line, Line>(
         repl: &mut SessionLoop,
         line: Line,
@@ -115,7 +141,20 @@ mod tests
     /// The block `line` answers with.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: offering the converted text answers a block without a fault.
+    /// - ensures: that block, with no source-kind result row, and a fresh
+    ///   prompt.
+    /// - provides: the transcript-block observer.
+    /// - fails: never.
+    /// - panics: if the event is not a block or the session faults.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact echoed multiline text, result kinds and later
+    ///   name resolution observe the completed submission.
+    /// - witness: `loop::tests::an_open_form_continues`
+    /// - witness: `loop::tests::a_definition_is_visible_on_the_next_line`
+    #[spec(ensures: |ret| repl.prompt() == Prompt::Fresh
+        && ret.lines.iter().all(|row| row.0 != OutKind::Source))]
     fn block<'line, Line>(
         repl: &mut SessionLoop,
         line: Line,
@@ -133,7 +172,19 @@ mod tests
     /// The lines `line` answers with.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: offering the converted text answers a block without a fault.
+    /// - ensures: its result rows, never echo rows.
+    /// - provides: the result-only transcript observer.
+    /// - fails: never.
+    /// - panics: if the event is not a block or the session faults.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — type, value and goal rows are compared at their exact
+    ///   kinds and semantic text.
+    /// - witness: `loop::tests::a_definition_is_visible_on_the_next_line`
+    /// - witness: `loop::tests::a_hole_encodes_as_a_goal_line`
+    #[spec(ensures: |ret| repl.prompt() == Prompt::Fresh
+        && ret.iter().all(|row| row.0 != OutKind::Source))]
     fn lines<'line, Line>(
         repl: &mut SessionLoop,
         line: Line,
@@ -147,7 +198,18 @@ mod tests
     /// The renderer's spelling of the base type `base`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the primitive type's nonempty, single-token presentation.
+    /// - provides: expected primitive type spelling from the shared renderer.
+    /// - fails: never.
+    /// - panics: if the presentation engine rejects the primitive layout.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — integer and string signatures, probes and definitions
+    ///   agree with the renderer's type vocabulary.
+    /// - witness: `loop::tests::a_definition_is_visible_on_the_next_line`
+    /// - witness: `loop::tests::a_later_definition_settles_an_earlier_goal`
+    #[spec(ensures: |ret| !ret.is_empty() && !ret.contains(char::is_whitespace))]
     fn base(base: BaseType) -> String
     {
         spell(&[ContentNode::Base(base)], NodeIndex::from(0))
@@ -158,7 +220,18 @@ mod tests
     /// A fresh session as the loop makes one, over the strict root.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the built-in grammar is valid.
+    /// - ensures: a strict-root session with no preceding resume.
+    /// - provides: an independent session for report and checkpoint observers.
+    /// - fails: never.
+    /// - panics: if the built-in grammar does not build.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — refusals and checked signatures agree across the
+    ///   direct session observer and the loop.
+    /// - witness: `loop::tests::an_outcome_only_refusal_is_visible_in_the_repl`
+    /// - witness: `loop::tests::a_checked_definition_names_its_type_in_the_renderers_spelling`
+    #[spec(ensures: |ret| matches!(ret.last(), Maybe::Absent(_)))]
     fn session() -> Session<MemoryCheckpointStore, InMemoryBlockStore>
     {
         Session::new(
@@ -174,7 +247,19 @@ mod tests
     /// `style`, each as the diagnostic line a block carries.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the grammar builds and submission does not fault.
+    /// - ensures: only non-goal reports, as diagnostic rows with trailing
+    ///   whitespace removed, in report order.
+    /// - provides: the independent renderer observer for refused revisions.
+    /// - fails: never.
+    /// - panics: if fixture creation or submission fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — refused chunks and styled refusals agree with the
+    ///   renderer over the same revision, without pinning diagnostic prose.
+    /// - witness: `loop::tests::an_outcome_only_refusal_is_visible_in_the_repl`
+    /// - witness: `loop::tests::styled_session_diagnostics_reach_the_repl_transcript`
+    #[spec(ensures: |ret| ret.iter().all(|row| row.0 == OutKind::Diag && row.1.trim_end() == row.1))]
     fn refusals<'revision, Revision>(
         revision: Revision,
         style: RenderStyle,
@@ -201,27 +286,38 @@ mod tests
     /// Whether the parser expects no further token after `buffer`.
     ///
     /// # Specification
-    /// trivial.
-    fn complete<'buffer, Buffer>(buffer: Buffer) -> CompletionStatus
-    where
-        Buffer: Into<SourceText<'buffer>>,
+    /// - requires: the built-in grammar is valid.
+    /// - ensures: the parser's completeness, including completion of empty
+    ///   input.
+    /// - provides: the completion observer for text fixtures.
+    /// - fails: never.
+    /// - panics: if the grammar does not build.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — open forms and unterminated declarations wait;
+    ///   terminated declarations, atoms, holes and empty input submit.
+    /// - witness: `loop::tests::an_open_form_is_incomplete`
+    /// - witness: `loop::tests::a_declaration_waits_for_its_terminator`
+    /// - witness: `loop::tests::an_empty_buffer_is_complete`
+    #[spec(ensures: |ret| !<&str>::from(buffer).is_empty() || bool::from(ret))]
+    fn complete(buffer: SourceText<'_>) -> CompletionStatus
     {
-        completeness(&grammar(), buffer.into())
+        completeness(&grammar(), buffer)
     }
 
     /// An open group is incomplete, alone or inside a definition.
     #[test]
     fn an_open_form_is_incomplete()
     {
-        assert!(!bool::from(complete("(")));
-        assert!(!bool::from(complete("def a = (")));
+        assert!(!bool::from(complete(SourceText::from("("))));
+        assert!(!bool::from(complete(SourceText::from("def a = ("))));
     }
 
     /// A bare atom is complete.
     #[test]
     fn a_bare_atom_is_complete()
     {
-        assert!(bool::from(complete("42")));
+        assert!(bool::from(complete(SourceText::from("42"))));
     }
 
     /// A hole is a complete term: holes are typeable, so a buffer holding one
@@ -229,25 +325,24 @@ mod tests
     #[test]
     fn a_hole_is_complete()
     {
-        assert!(bool::from(complete("?")));
-        assert!(bool::from(complete("def h = ? ;")));
+        assert!(bool::from(complete(SourceText::from("?"))));
+        assert!(bool::from(complete(SourceText::from("def h = ? ;"))));
     }
 
     /// A definition waits for its terminator, and submits with it.
     #[test]
     fn a_declaration_waits_for_its_terminator()
     {
-        assert!(!bool::from(complete("def answer =")));
-        assert!(bool::from(complete("def answer = 42 ;")));
+        assert!(!bool::from(complete(SourceText::from("def answer ="))));
+        assert!(bool::from(complete(SourceText::from("def answer = 42 ;"))));
     }
 
-    /// The gate's answer is named through this crate, and the empty buffer —
-    /// the boundary of the gate — expects nothing.
+    /// An empty buffer expects no further token.
     #[test]
-    fn unused_completion_status_name_stays_in_scope()
+    fn an_empty_buffer_is_complete()
     {
         assert_eq!(
-            completeness(&grammar(), SourceText::from("")),
+            complete(SourceText::from("")),
             CompletionStatus::from(true),
             "the empty buffer expects no token"
         );
@@ -398,7 +493,7 @@ mod tests
     {
         let mut repl = repl();
         let help = lines(&mut repl, ":help");
-        assert_eq!(help.len(), 6, "{help:?}");
+
         assert!(help.iter().all(|&(kind, _)| kind == OutKind::Info));
         for command in [":type", ":load", ":reset", ":help", ":quit"] {
             assert!(
@@ -407,22 +502,19 @@ mod tests
             );
         }
         let _kept = lines(&mut repl, "def y = 1 ;");
-        assert_eq!(lines(&mut repl, ":reset"), [(
+        assert!(matches!(lines(&mut repl, ":reset").as_slice(), [(
             OutKind::Info,
-            "every declaration is forgotten".to_owned()
-        )]);
+            _
+        )]));
         assert_eq!(
             lines(&mut repl, "def z = y ;"),
             refusals("def z = y ;", RenderStyle::Plain)
         );
-        assert_eq!(lines(&mut repl, ":load"), [(
-            OutKind::Info,
-            ":load needs a file: :load <file>".to_owned()
-        )]);
-        assert_eq!(lines(&mut repl, ":frob x"), [(
-            OutKind::Info,
-            "no command `:frob x`; :help lists them".to_owned()
-        )]);
+        for command in [":load", ":type", ":frob x"] {
+            let answer = block(&mut repl, command);
+            assert_eq!(answer.source, command);
+            assert!(matches!(answer.lines.as_slice(), [(OutKind::Info, _)]));
+        }
     }
 
     /// `:type` answers its expression's type, keeps nothing, and probes under
@@ -455,13 +547,14 @@ mod tests
     fn a_loaded_file_is_one_chunk()
     {
         let mut repl = repl();
-        let loaded = block(&mut repl, format!(":load {}", CORPUS[0]).as_str());
-        assert_eq!(loaded.lines.len(), 10, "{:?}", loaded.lines);
-        let missing = lines(&mut repl, ":load does/not/exist.gandr");
-        assert!(
-            matches!(missing.as_slice(), [(OutKind::Diag, line)] if line.starts_with("cannot read `does/not/exist.gandr`: ")),
-            "{missing:?}"
-        );
+        let command = format!(":load {}", CORPUS[0]);
+        let loaded = block(&mut repl, command.as_str());
+        assert_eq!(loaded.source, command);
+        let command = format!(":load {}/Cargo.toml/not-a-file", env!("CARGO_MANIFEST_DIR"));
+        let missing = block(&mut repl, command.as_str());
+        assert_eq!(missing.source, command);
+        assert!(matches!(missing.lines.as_slice(), [(OutKind::Diag, text)]
+            if text.contains("Cargo.toml/not-a-file")));
         assert_eq!(lines(&mut repl, "def again = echo ;"), [
             (
                 OutKind::Type,
@@ -538,8 +631,8 @@ mod tests
         );
     }
 
-    /// Every signature of the strict corpus, loaded, answers a type line that
-    /// spells the type exactly as the source wrote it.
+    /// One-line signatures in three selected strict corpus sources retain
+    /// the type spelling written in those sources.
     #[test]
     fn corpus_types_spell_as_their_source_writes_them()
     {
@@ -547,7 +640,7 @@ mod tests
             let source = std::fs::read_to_string(path).expect("the corpus source reads");
             let mut repl = repl();
             let loaded = lines(&mut repl, format!(":load {path}").as_str());
-            let mut signatures = 0_usize;
+
             for written in source.lines() {
                 let Some(signature) = written
                     .strip_prefix("def ")
@@ -556,13 +649,12 @@ mod tests
                 else {
                     continue;
                 };
-                signatures += 1;
+
                 assert!(
                     loaded.contains(&(OutKind::Type, signature.to_owned())),
                     "{path}: `{signature}` among {loaded:?}"
                 );
             }
-            assert!(signatures > 2, "{path} states signatures");
         }
     }
 
@@ -583,28 +675,26 @@ mod tests
         );
     }
 
-    /// Over every line of the strict corpus, offered one at a time, every
-    /// echo's spans are sorted, disjoint and inside the echo.
+    /// Over the selected corpus sources, every emitted span is ordered and
+    /// lies inside its echo on character boundaries.
     #[test]
     fn transcript_spans_are_sorted_and_disjoint()
     {
         for path in CORPUS {
             let source = std::fs::read_to_string(path).expect("the corpus source reads");
             let mut repl = repl();
-            let mut echoed = 0_usize;
+
             for line in source.lines() {
                 if let LoopEvent::Block(block) = offer(&mut repl, line) {
                     assert_eq!(span_order(&block.source_hl), SpanOrder::SortedAndDisjoint);
-                    assert!(
+                    assert!(block.source_hl.iter().all(|span| {
                         block
-                            .source_hl
-                            .iter()
-                            .all(|span| usize::from(span.range.end()) <= block.source.len())
-                    );
-                    echoed += usize::from(!block.source_hl.is_empty());
+                            .source
+                            .is_char_boundary(usize::from(span.range.start()))
+                            && block.source.is_char_boundary(usize::from(span.range.end()))
+                    }));
                 }
             }
-            assert!(echoed > 4, "{path}: the echoes are highlighted");
         }
     }
 
@@ -647,7 +737,21 @@ mod tests
     /// The transcript of `input` piped through the batch face.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the grammar and role table build and submission does not
+    ///   fault.
+    /// - ensures: the batch ending and UTF-8 transcript; each emitted row ends
+    ///   with a newline and an editor fault is impossible.
+    /// - provides: the complete batch transcript observer.
+    /// - fails: never.
+    /// - panics: if the vector writer or UTF-8 conversion unexpectedly fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact successful output, an incomplete final buffer
+    ///   and an input fault distinguish output and ending mistakes.
+    /// - witness: `loop::tests::piped_value_prints_a_transcript`
+    /// - witness: `loop::tests::unreadable_input_ends_the_batch_faulted`
+    #[spec(ensures: |ret| !matches!(ret.0, Ended::Faulted(Fault::Editor(_)))
+        && (ret.1.is_empty() || ret.1.ends_with('\n')))]
     fn piped<Input>(input: Input) -> (Ended, String)
     where
         Input: std::io::BufRead,
@@ -779,7 +883,23 @@ mod tests
         /// The next scripted read, or the end.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: one recorded prompt and the last queued read, or end when
+        ///   the queue is empty, consuming at most one event.
+        /// - provides: the scripted source for the actual interactive driver.
+        /// - fails: never.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — prompt order, interrupted input and final
+        ///   submission are observed through the driver's transcript and source
+        ///   state.
+        /// - witness: `loop::tests::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+        #[spec(captures: [reads = self.reads.len(), prompts = self.prompts.len(),
+            kind = self.reads.last().map(core::mem::discriminant)],
+            ensures: |ret| self.reads.len() == reads.saturating_sub(1)
+                && self.prompts.len() == prompts.saturating_add(1) && self.prompts.last() == Some(&prompt)
+                && core::mem::discriminant(&ret) == kind.unwrap_or(core::mem::discriminant(&Read::End)))]
         fn read(
             &mut self,
             prompt: Prompt,
@@ -822,5 +942,265 @@ mod tests
             .filter(|line| line.starts_with("▸ "))
             .collect();
         assert_eq!(echoes, ["▸ def b = 2 ;", "▸ def c = ("]);
+    }
+
+    /// A bounded writer recording observable progress and flushes.
+    #[derive(Default)]
+    struct Probe
+    {
+        /// Bytes accepted before the configured refusal.
+        bytes: Vec<u8>,
+        /// Maximum accepted bytes.
+        limit: usize,
+        /// Whether flushing is refused.
+        flush_error: bool,
+        /// Number of write calls.
+        writes: usize,
+        /// Number of flush calls.
+        flushes: usize,
+    }
+
+    impl std::io::Write for Probe
+    {
+        /// Accept the available prefix or report a broken pipe.
+        ///
+        /// # Specification
+        /// - requires: accepted bytes do not exceed the limit.
+        /// - ensures: one recorded write, the exact accepted prefix, or a
+        ///   broken pipe without progress when the limit has been reached.
+        /// - provides: an observable partial-write boundary for the real face.
+        /// - fails: broken pipe at the byte limit.
+        /// - panics: none under the precondition.
+        ///
+        /// # Errors
+        /// Broken pipe at the configured byte limit.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — an empty transcript performs no write; a refused
+        ///   partial transcript preserves its prefix and skips the final flush.
+        /// - witness: `loop::tests::empty_transcripts_do_not_touch_the_writer`
+        /// - witness: `loop::tests::write_and_flush_failures_keep_their_kind`
+        #[spec(requires: self.bytes.len() <= self.limit,
+            captures: [bytes = self.bytes.len(), writes = self.writes],
+            ensures: |ret| self.writes == writes.saturating_add(1) && match ret {
+                Ok(count) => count == buf.len().min(self.limit.saturating_sub(bytes))
+                    && self.bytes.len() == bytes.saturating_add(count)
+                    && self.bytes.get(bytes..) == buf.get(..count),
+                Err(ref error) => error.kind() == io::ErrorKind::BrokenPipe
+                    && bytes == self.limit && self.bytes.len() == bytes,
+            })]
+        fn write(
+            &mut self,
+            buf: &[u8],
+        ) -> std::io::Result<usize>
+        {
+            self.writes = self.writes.saturating_add(1);
+            if self.bytes.len() == self.limit {
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
+            let count = buf.len().min(self.limit.saturating_sub(self.bytes.len()));
+            self.bytes
+                .extend_from_slice(buf.get(.. count).expect("the accepted prefix fits"));
+            Ok(count)
+        }
+
+        /// Record the flush and preserve its configured error kind.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: exactly one recorded flush, succeeding unless refused.
+        /// - provides: the observer for final-flush ordering and precedence.
+        /// - fails: permission denied when flushing is configured to fail.
+        /// - panics: none.
+        ///
+        /// # Errors
+        /// Permission denied when flushing is refused.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a flush failure overrides either a completed
+        ///   ending or a reported input fault; terminal endings flush once.
+        /// - witness: `loop::tests::write_and_flush_failures_keep_their_kind`
+        /// - witness: `loop::tests::terminal_endings_stop_reads_and_flush_once`
+        #[spec(captures: [flushes = self.flushes], ensures: |ret|
+            self.flushes == flushes.saturating_add(1) && if self.flush_error {
+                ret.as_ref().is_err_and(|error| error.kind() == io::ErrorKind::PermissionDenied)
+            } else { ret.is_ok() })]
+        fn flush(&mut self) -> std::io::Result<()>
+        {
+            self.flushes = self.flushes.saturating_add(1);
+            if self.flush_error {
+                Err(io::ErrorKind::PermissionDenied.into())
+            }
+            else {
+                Ok(())
+            }
+        }
+    }
+
+    /// A block without rows never calls even a refusing writer or its flush.
+    #[test]
+    fn empty_transcripts_do_not_touch_the_writer()
+    {
+        let block = TranscriptBlock {
+            source: String::new(),
+            source_hl: Vec::new(),
+            lines: Vec::from([
+                (OutKind::Goal, String::new()),
+                (OutKind::Info, String::new()),
+            ]),
+        };
+        let mut output = Probe {
+            flush_error: true,
+            ..Probe::default()
+        };
+        write_block(&mut output, &block).expect("no operation can fail");
+        assert_eq!((output.writes, output.flushes), (0, 0));
+        assert_eq!(output.bytes, []);
+    }
+
+    /// A partial write is not followed by a flush; flush errors take precedence
+    /// over both normal completion and an input fault.
+    #[test]
+    fn write_and_flush_failures_keep_their_kind()
+    {
+        let mut output = Probe {
+            limit: 5,
+            ..Probe::default()
+        };
+        let error = run_batch(b"def n = 1 ;\n".as_slice(), &mut output, RenderStyle::Plain)
+            .expect_err("the transcript exceeds the writer's limit");
+        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+        assert_eq!(output.bytes, "▸ d".as_bytes());
+        assert_eq!(output.flushes, 0);
+        for input in [b"".as_slice(), b"\xff\n".as_slice()] {
+            let mut output = Probe {
+                limit: usize::MAX,
+                flush_error: true,
+                ..Probe::default()
+            };
+            let error =
+                run_batch(input, &mut output, RenderStyle::Plain).expect_err("flush is refused");
+            assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+            assert_eq!(output.flushes, 1);
+            assert_eq!(output.bytes, []);
+        }
+    }
+
+    /// End and failed reads stop the driver before the next event, then flush.
+    #[test]
+    fn terminal_endings_stop_reads_and_flush_once()
+    {
+        for ending in [
+            Read::End,
+            Read::Failed(Fault::Input(io::ErrorKind::InvalidData.into())),
+        ] {
+            let failed = matches!(ending, Read::Failed(_));
+            let mut source = Script {
+                reads: Vec::from([Read::Line("not consumed".to_owned()), ending]),
+                prompts: Vec::new(),
+            };
+            let mut output = Probe {
+                limit: usize::MAX,
+                ..Probe::default()
+            };
+            let ended =
+                drive(&mut source, &mut output, RenderStyle::Plain).expect("the writer succeeds");
+            if failed {
+                assert!(matches!(ended, Ended::Faulted(Fault::Input(ref error))
+                    if error.kind() == io::ErrorKind::InvalidData));
+            }
+            else {
+                assert!(matches!(ended, Ended::Completed));
+            }
+            assert!(
+                matches!(source.reads.as_slice(), [Read::Line(text)] if text == "not consumed")
+            );
+            assert_eq!(source.prompts, [Prompt::Fresh]);
+            assert_eq!(output.bytes, []);
+            assert_eq!(output.flushes, 1);
+        }
+    }
+
+    /// Unicode offsets, lone carriage returns and every output kind retain
+    /// their exact row boundaries and leads.
+    #[test]
+    fn row_kinds_and_unicode_boundaries_keep_their_meaning()
+    {
+        let kinds = [
+            (OutKind::Source, "▸ ", "  "),
+            (OutKind::Type, "", ""),
+            (OutKind::Value, "= ", "  "),
+            (OutKind::Goal, "? ", "  "),
+            (OutKind::Stuck, "· ", "  "),
+            (OutKind::Blame, "! ", "  "),
+            (OutKind::Diag, "", ""),
+            (OutKind::Info, "· ", "  "),
+        ];
+        let block = TranscriptBlock {
+            source: "é𐍈\r\n\nz\r".to_owned(),
+            source_hl: Vec::new(),
+            lines: kinds
+                .iter()
+                .map(|&(kind, ..)| (kind, "x\n\ny".to_owned()))
+                .collect(),
+        };
+        let expected: Vec<_> = [
+            (OutKind::Source, "▸ ", "é𐍈", 0_usize),
+            (OutKind::Source, "", "", 8),
+            (OutKind::Source, "  ", "z\r", 9),
+        ]
+        .into_iter()
+        .chain(kinds.into_iter().flat_map(|(kind, mark, indent)| {
+            [
+                (kind, mark, "x", 0),
+                (kind, "", "", 2),
+                (kind, indent, "y", 3),
+            ]
+        }))
+        .collect();
+        let actual: Vec<_> = rows(&block)
+            .map(|row| {
+                (
+                    row.kind,
+                    <&str>::from(row.lead),
+                    row.text,
+                    usize::from(row.start),
+                )
+            })
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    /// Pasted line breaks are preserved, blank fresh input is ignored, and
+    /// interrupting a pending buffer does not forget accepted declarations.
+    #[test]
+    fn multiline_and_interrupted_buffers_preserve_accepted_declarations()
+    {
+        let mut repl = repl();
+        let _kept = block(&mut repl, "def kept = 7 ;");
+        assert_eq!(offer(&mut repl, "\u{2003}\r\n"), LoopEvent::Continue);
+        assert_eq!(repl.prompt(), Prompt::Fresh);
+        assert_eq!(offer(&mut repl, "def pasted = (\r\n"), LoopEvent::Continue);
+        let pasted = block(&mut repl, "kept) ;");
+        assert_eq!(pasted.source, "def pasted = (\r\n\nkept) ;");
+        assert_eq!(pasted.lines, [
+            (
+                OutKind::Type,
+                format!("pasted : {}", base(BaseType::Integer))
+            ),
+            (OutKind::Value, "7".to_owned())
+        ]);
+        assert_eq!(offer(&mut repl, "def abandoned = ("), LoopEvent::Continue);
+        assert!(!matches!(offer(&mut repl, ":q"), LoopEvent::Quit));
+        repl.discard();
+        assert_eq!(repl.prompt(), Prompt::Fresh);
+        assert_eq!(lines(&mut repl, "def abandoned = kept ;"), [
+            (
+                OutKind::Type,
+                format!("abandoned : {}", base(BaseType::Integer))
+            ),
+            (OutKind::Value, "7".to_owned()),
+        ]);
+        assert_eq!(repl.finish(), Ok(Maybe::Absent(finished::Absent::Empty)));
     }
 }

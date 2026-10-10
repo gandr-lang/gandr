@@ -4,6 +4,7 @@ use alloc::string::String;
 use std::io;
 use std::io::Write;
 
+use anodized::spec;
 use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
@@ -37,12 +38,19 @@ pub trait LineSource
     /// The next line, read under `prompt`.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: one answer per call; a source that has answered [`Read::End`]
-    ///   or [`Read::Failed`] is not read again.
+    /// - requires: the caller stops this session after an answer of
+    ///   [`Read::End`] or [`Read::Failed`].
+    /// - ensures: one next input event under the supplied prompt.
     /// - provides: the reads [`drive`] takes.
     /// - fails: never; a failure is [`Read::Failed`].
     /// - panics: none.
+    /// - executable: none — this abstract source has no history observer; a
+    ///   return-value predicate cannot establish that a caller stops reads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the scripted source records prompts and retains
+    ///   unread events when the driver sees an ending.
+    /// - witness: `loop::tests::terminal_endings_stop_reads_and_flush_once`
     fn read(
         &mut self,
         prompt: Prompt,
@@ -92,6 +100,8 @@ impl LineSource for Terminal
     ///   the editor's own reads, an interrupt and the end of input were
     ///   exercised by hand on a pseudo-terminal.
     /// - witness: `loop::tests::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+    #[spec(ensures: |ret| !matches!(ret,
+        Read::Failed(Fault::Grammar(_) | Fault::Input(_) | Fault::Session(_))))]
     fn read(
         &mut self,
         prompt: Prompt,
@@ -123,6 +133,8 @@ impl LineSource for Terminal
 /// - provides: the interactive half of the faces, over any source.
 /// - fails: the writer's error.
 /// - panics: none.
+/// - executable: none — the generic source and writer expose no transcript or
+///   flush observer, and the source may return any fault kind.
 ///
 /// # Errors
 /// The writer's error.
@@ -132,6 +144,7 @@ impl LineSource for Terminal
 ///   buffer's absence from the transcript, and the block of a buffer left open
 ///   at the end are asserted exactly.
 /// - witness: `loop::tests::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+/// - witness: `loop::tests::terminal_endings_stop_reads_and_flush_once`
 #[inline]
 pub fn drive<Source, Output>(
     source: &mut Source,
@@ -156,6 +169,8 @@ where
 /// - provides: the body [`drive`] flushes after, on every ending.
 /// - fails: the writer's error.
 /// - panics: none.
+/// - executable: none — the generic source and writer expose no transcript or
+///   flush observer, and the source may return any fault kind.
 ///
 /// # Errors
 /// The writer's error.
@@ -164,6 +179,7 @@ where
 /// - hypothesis: L3 — through [`drive`]'s witness, the prompts and the
 ///   transcript asserted exactly.
 /// - witness: `loop::tests::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+/// - witness: `loop::tests::terminal_endings_stop_reads_and_flush_once`
 fn converse<Source, Output>(
     source: &mut Source,
     output: &mut Output,
@@ -223,6 +239,7 @@ where
 ///   [`drive`]; the editor on a terminal, which the test runner lacks, was
 ///   exercised by hand on a pseudo-terminal.
 /// - witness: `loop::tests::the_terminal_face_discards_on_interrupt_and_submits_at_the_end`
+#[spec(ensures: |ret| !matches!(ret, Ok(Ended::Faulted(Fault::Input(_)))))]
 #[inline]
 pub fn run_interactive<Output>(
     output: &mut Output,
