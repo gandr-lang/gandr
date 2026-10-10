@@ -27,6 +27,15 @@ use crate::error::BuildLimitKind;
 /// - ensures: ordering agrees with the ordering of the underlying counts.
 /// - provides: the one width currency the measure, cost, and taint rules read.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, the u32 ceiling and the platform maximum are
+///   compared through the narrowing result; truncation, saturation and a
+///   shifted accepted boundary change the count or refusal.
+/// - witness: `units::tests::platform_counts_narrow_without_loss`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct ScalarWidth
@@ -42,6 +51,18 @@ pub struct ScalarWidth
 /// - ensures: addition against a current indentation is checked by the caller.
 /// - provides: the argument type of the builder's nesting constructor.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested indentation and the u32 overflow boundary are
+///   observed through emitted spaces and the typed indentation refusal;
+///   wrapping, lost nesting and confusion between indentation and incoming
+///   column change output or error.
+/// - witness: `algebra::tests::nest_raises_indentation_by_a_checked_amount`
+/// - witness: `algebra::tests::nest_reports_overflow_rather_than_wrapping_the_indentation`
+/// - witness: `algebra::tests::align_sets_indentation_to_the_current_column`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct NestAmount
@@ -57,6 +78,19 @@ pub struct NestAmount
 /// - ensures: the builder refuses to store a node once the count reaches it.
 /// - provides: one field of the build limit record.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, exact ceilings, the first excess and counter
+///   overflow are observed through exact usage and typed refusal payloads.
+///   Wrong increments, wrong limit kinds, off-by-one ceilings and
+///   arithmetic/limit precedence change these observations; shared identities
+///   must not be charged twice.
+/// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
+/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct MaxDocNodes
@@ -72,6 +106,19 @@ pub struct MaxDocNodes
 /// - ensures: the builder refuses to store text once the byte count reaches it.
 /// - provides: one field of the build limit record.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, exact ceilings, the first excess and counter
+///   overflow are observed through exact usage and typed refusal payloads.
+///   Wrong increments, wrong limit kinds, off-by-one ceilings and
+///   arithmetic/limit precedence change these observations; shared identities
+///   must not be charged twice.
+/// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
+/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct MaxTextBytes
@@ -87,6 +134,19 @@ pub struct MaxTextBytes
 /// - ensures: the builder refuses a verbatim node whose scan would cross it.
 /// - provides: one field of the build limit record.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, exact ceilings, the first excess and counter
+///   overflow are observed through exact usage and typed refusal payloads.
+///   Wrong increments, wrong limit kinds, off-by-one ceilings and
+///   arithmetic/limit precedence change these observations; shared identities
+///   must not be charged twice.
+/// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
+/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct MaxVerbatimLines
@@ -105,6 +165,19 @@ pub struct MaxVerbatimLines
 /// - ensures: construction and finalization refuse once the count reaches it.
 /// - provides: one field of the build limit record.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, exact ceilings, the first excess and counter
+///   overflow are observed through exact usage and typed refusal payloads.
+///   Wrong increments, wrong limit kinds, off-by-one ceilings and
+///   arithmetic/limit precedence change these observations; shared identities
+///   must not be charged twice.
+/// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
+/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct MaxBuildSteps
@@ -120,6 +193,19 @@ pub struct MaxBuildSteps
 /// - ensures: the count is monotone for the meter's whole lifetime.
 /// - provides: one field of the build usage record.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, exact ceilings, the first excess and counter
+///   overflow are observed through exact usage and typed refusal payloads.
+///   Wrong increments, wrong limit kinds, off-by-one ceilings and
+///   arithmetic/limit precedence change these observations; shared identities
+///   must not be charged twice.
+/// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
+/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct DocNodesUsed
@@ -135,6 +221,19 @@ pub struct DocNodesUsed
 /// - ensures: a second edge to an existing identity adds nothing to it.
 /// - provides: the byte count of stored text and verbatim content.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, exact ceilings, the first excess and counter
+///   overflow are observed through exact usage and typed refusal payloads.
+///   Wrong increments, wrong limit kinds, off-by-one ceilings and
+///   arithmetic/limit precedence change these observations; shared identities
+///   must not be charged twice.
+/// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
+/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct TextBytesUsed
@@ -150,6 +249,19 @@ pub struct TextBytesUsed
 /// - ensures: the count is monotone for the meter's whole lifetime.
 /// - provides: one field of the build usage record.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, exact ceilings, the first excess and counter
+///   overflow are observed through exact usage and typed refusal payloads.
+///   Wrong increments, wrong limit kinds, off-by-one ceilings and
+///   arithmetic/limit precedence change these observations; shared identities
+///   must not be charged twice.
+/// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
+/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct VerbatimLinesUsed
@@ -165,6 +277,19 @@ pub struct VerbatimLinesUsed
 /// - ensures: the count is monotone for the meter's whole lifetime.
 /// - provides: one field of the build usage record.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, exact ceilings, the first excess and counter
+///   overflow are observed through exact usage and typed refusal payloads.
+///   Wrong increments, wrong limit kinds, off-by-one ceilings and
+///   arithmetic/limit precedence change these observations; shared identities
+///   must not be charged twice.
+/// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
+/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct BuildStepsUsed
@@ -183,6 +308,19 @@ pub struct BuildStepsUsed
 /// - ensures: the widening is exact for every limit currency in the crate.
 /// - provides: the numeric payload of a limit-exceeded error.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, exact ceilings, the first excess and counter
+///   overflow are observed through exact usage and typed refusal payloads.
+///   Wrong increments, wrong limit kinds, off-by-one ceilings and
+///   arithmetic/limit precedence change these observations; shared identities
+///   must not be charged twice.
+/// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
+/// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+/// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct LimitBound
@@ -214,6 +352,15 @@ impl core::fmt::Display for LimitBound
 /// - ensures: the width remains distinct from computation and indentation.
 /// - provides: the public page-width currency.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — equal and reversed widths, zero and u32 maximum expose
+///   the option ordering through accepted fields or `InvalidWidth`; swapping
+///   the currencies or accepting the reversed boundary changes the result.
+/// - witness: `measure::tests::width_options_preserve_policy_and_reject_reversal`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct PageWidth(u32);
@@ -225,6 +372,15 @@ pub struct PageWidth(u32);
 /// - ensures: in-bound resolver contexts are representable.
 /// - provides: the public computation-width currency.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — equal and reversed widths, zero and u32 maximum expose
+///   the option ordering through accepted fields or `InvalidWidth`; swapping
+///   the currencies or accepting the reversed boundary changes the result.
+/// - witness: `measure::tests::width_options_preserve_policy_and_reject_reversal`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct ComputationWidth(u32);
@@ -236,6 +392,18 @@ pub struct ComputationWidth(u32);
 /// - ensures: column arithmetic remains nominal inside resolution.
 /// - provides: the resolver's column currency.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested indentation and the u32 overflow boundary are
+///   observed through emitted spaces and the typed indentation refusal;
+///   wrapping, lost nesting and confusion between indentation and incoming
+///   column change output or error.
+/// - witness: `algebra::tests::nest_raises_indentation_by_a_checked_amount`
+/// - witness: `algebra::tests::nest_reports_overflow_rather_than_wrapping_the_indentation`
+/// - witness: `algebra::tests::align_sets_indentation_to_the_current_column`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub(crate) struct Column(u32);
@@ -247,6 +415,18 @@ pub(crate) struct Column(u32);
 /// - ensures: indentation cannot be confused with a page width.
 /// - provides: the resolver's indentation currency.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested indentation and the u32 overflow boundary are
+///   observed through emitted spaces and the typed indentation refusal;
+///   wrapping, lost nesting and confusion between indentation and incoming
+///   column change output or error.
+/// - witness: `algebra::tests::nest_raises_indentation_by_a_checked_amount`
+/// - witness: `algebra::tests::nest_reports_overflow_rather_than_wrapping_the_indentation`
+/// - witness: `algebra::tests::align_sets_indentation_to_the_current_column`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub(crate) struct Indentation(u32);
@@ -258,6 +438,17 @@ pub(crate) struct Indentation(u32);
 /// - ensures: ordering is the lexicographic cost's first component.
 /// - provides: the public overflow currency.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero and overflowing sums expose exact cost components,
+///   output-byte counts and distinct arithmetic errors. Reversing cost
+///   priority, wrapping, or confusing breaks with bytes changes the selected
+///   cost or refusal.
+/// - witness: `measure::tests::cost_and_byte_addition_preserve_components_and_error_priority`
+/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct SquaredOverflow(u64);
@@ -269,6 +460,17 @@ pub struct SquaredOverflow(u64);
 /// - ensures: the count is cumulative and checked.
 /// - provides: the public line-break cost component.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero and overflowing sums expose exact cost components,
+///   output-byte counts and distinct arithmetic errors. Reversing cost
+///   priority, wrapping, or confusing breaks with bytes changes the selected
+///   cost or refusal.
+/// - witness: `measure::tests::cost_and_byte_addition_preserve_components_and_error_priority`
+/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct LineBreaks(u64);
@@ -280,6 +482,17 @@ pub struct LineBreaks(u64);
 /// - ensures: the count is checked before it is retained.
 /// - provides: the public output-size projection.
 /// - panics: none.
+/// - executable: none — this quantity is a data carrier; consuming arithmetic
+///   and meter operations, rather than the declaration, carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero and overflowing sums expose exact cost components,
+///   output-byte counts and distinct arithmetic errors. Reversing cost
+///   priority, wrapping, or confusing breaks with bytes changes the selected
+///   cost or refusal.
+/// - witness: `measure::tests::cost_and_byte_addition_preserve_components_and_error_priority`
+/// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct OutputBytes(u64);
@@ -543,9 +756,15 @@ impl TryFrom<usize> for ScalarWidth
     /// Returns `ArithmeticOverflow` for an unrepresentable scalar count.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — accepted text widths remain exact at the nominal
-    ///   conversion boundary.
-    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - hypothesis: L3 — zero, one, the u32 ceiling and the platform maximum
+    ///   are observed as exact counts or the owning arithmetic refusal.
+    ///   Truncation, saturation and a shifted narrowing boundary change the
+    ///   result. The u64 refusal is unreachable on supported platforms with at
+    ///   most 64-bit usize.
+    /// - witness: `units::tests::platform_counts_narrow_without_loss`
+    #[anodized::spec(
+        ensures: |ret| match (ret.as_ref(), u32::try_from(width)) { (Ok(value), Ok(expected)) => value.width == expected, (Err(error), Err(_)) => *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth }, _ => false }
+    )]
     #[inline]
     fn try_from(width: usize) -> Result<Self, Self::Error>
     {
@@ -864,10 +1083,15 @@ impl TryFrom<usize> for TextBytesUsed
     /// Returns `ArithmeticOverflow` for an unrepresentable byte count.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — exact byte boundaries accept the final byte and
-    ///   reject the next charge.
-    /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+    /// - hypothesis: L3 — zero, one, the u32 ceiling and the platform maximum
+    ///   are observed as exact counts or the owning arithmetic refusal.
+    ///   Truncation, saturation and a shifted narrowing boundary change the
+    ///   result. The u64 refusal is unreachable on supported platforms with at
+    ///   most 64-bit usize.
+    /// - witness: `units::tests::platform_counts_narrow_without_loss`
+    #[anodized::spec(
+        ensures: |ret| match (ret.as_ref(), u64::try_from(bytes)) { (Ok(value), Ok(expected)) => value.bytes == expected, (Err(error), Err(_)) => *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::TextBytes }, _ => false }
+    )]
     #[inline]
     fn try_from(bytes: usize) -> Result<Self, Self::Error>
     {
@@ -896,10 +1120,15 @@ impl TryFrom<usize> for VerbatimLinesUsed
     /// Returns `ArithmeticOverflow` for an unrepresentable fragment count.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the exact fragment boundary accepts the final record
-    ///   and rejects the next one.
-    /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    /// - witness: `algebra::tests::verbatim_with_a_trailing_ending_stores_an_empty_final_fragment`
+    /// - hypothesis: L3 — zero, one, the u32 ceiling and the platform maximum
+    ///   are observed as exact counts or the owning arithmetic refusal.
+    ///   Truncation, saturation and a shifted narrowing boundary change the
+    ///   result. The u64 refusal is unreachable on supported platforms with at
+    ///   most 64-bit usize.
+    /// - witness: `units::tests::platform_counts_narrow_without_loss`
+    #[anodized::spec(
+        ensures: |ret| match (ret.as_ref(), u64::try_from(lines)) { (Ok(value), Ok(expected)) => value.lines == expected, (Err(error), Err(_)) => *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::VerbatimLines }, _ => false }
+    )]
     #[inline]
     fn try_from(lines: usize) -> Result<Self, Self::Error>
     {
@@ -926,10 +1155,22 @@ impl DocNodesUsed
     /// the configured node ceiling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the exact node ceiling accepts its final node and
-    ///   refuses one additional charge.
+    /// - hypothesis: L3 — zero charges, the last admitted unit, the first
+    ///   refused unit and u64 overflow are observed as exact counts or typed
+    ///   errors. Changing addition, the inclusive ceiling, refusal kind or
+    ///   arithmetic-before-limit precedence changes these observations; public
+    ///   shared-document witnesses cover lifetime accounting.
+    /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
     /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_node`
+    #[anodized::spec(
+        ensures: |ret| { let next = u128::from(self.nodes).saturating_add(u128::from(1_u64));
+            let ceiling = Some(u64::from(limit.nodes));
+            ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::NodeCount } }
+            else { ceiling.is_some_and(|ceiling| next > u128::from(ceiling)
+                && *error == BuildError::LimitExceeded { kind: BuildLimitKind::DocNodes, limit: LimitBound::from(ceiling) }) } },
+            |charged| next == u128::from(charged.nodes)
+                && ceiling.is_some_and(|ceiling| charged.nodes <= ceiling)) }
+    )]
     #[inline]
     pub(crate) fn checked_charge(
         self,
@@ -969,10 +1210,22 @@ impl TextBytesUsed
     /// or `LimitExceeded` at the configured byte ceiling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — shared identities charge once and the exact byte
-    ///   boundary rejects only the next charge.
+    /// - hypothesis: L3 — zero charges, the last admitted unit, the first
+    ///   refused unit and u64 overflow are observed as exact counts or typed
+    ///   errors. Changing addition, the inclusive ceiling, refusal kind or
+    ///   arithmetic-before-limit precedence changes these observations; public
+    ///   shared-document witnesses cover lifetime accounting.
+    /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
     /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+    #[anodized::spec(
+        ensures: |ret| { let next = u128::from(self.bytes).saturating_add(u128::from(amount.bytes));
+            let ceiling = u64::try_from(limit.bytes).ok();
+            ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::TextBytes } }
+            else { ceiling.is_some_and(|ceiling| next > u128::from(ceiling)
+                && *error == BuildError::LimitExceeded { kind: BuildLimitKind::TextBytes, limit: LimitBound::from(ceiling) }) } },
+            |charged| next == u128::from(charged.bytes)
+                && ceiling.is_some_and(|ceiling| charged.bytes <= ceiling)) }
+    )]
     #[inline]
     pub(crate) fn checked_charge(
         self,
@@ -1017,10 +1270,22 @@ impl VerbatimLinesUsed
     /// the configured fragment ceiling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the trailing empty fragment is charged and the exact
-    ///   fragment boundary refuses only the next charge.
+    /// - hypothesis: L3 — zero charges, the last admitted unit, the first
+    ///   refused unit and u64 overflow are observed as exact counts or typed
+    ///   errors. Changing addition, the inclusive ceiling, refusal kind or
+    ///   arithmetic-before-limit precedence changes these observations; public
+    ///   shared-document witnesses cover lifetime accounting.
+    /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
     /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    /// - witness: `algebra::tests::verbatim_with_a_trailing_ending_stores_an_empty_final_fragment`
+    #[anodized::spec(
+        ensures: |ret| { let next = u128::from(self.lines).saturating_add(u128::from(amount.lines));
+            let ceiling = Some(u64::from(limit.lines));
+            ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::VerbatimLines } }
+            else { ceiling.is_some_and(|ceiling| next > u128::from(ceiling)
+                && *error == BuildError::LimitExceeded { kind: BuildLimitKind::VerbatimLines, limit: LimitBound::from(ceiling) }) } },
+            |charged| next == u128::from(charged.lines)
+                && ceiling.is_some_and(|ceiling| charged.lines <= ceiling)) }
+    )]
     #[inline]
     pub(crate) fn checked_charge(
         self,
@@ -1061,10 +1326,22 @@ impl BuildStepsUsed
     /// the configured step ceiling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — finalization steps are charged and the exact step
-    ///   boundary refuses only the next step.
+    /// - hypothesis: L3 — zero charges, the last admitted unit, the first
+    ///   refused unit and u64 overflow are observed as exact counts or typed
+    ///   errors. Changing addition, the inclusive ceiling, refusal kind or
+    ///   arithmetic-before-limit precedence changes these observations; public
+    ///   shared-document witnesses cover lifetime accounting.
+    /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
     /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
+    #[anodized::spec(
+        ensures: |ret| { let next = u128::from(self.steps).saturating_add(u128::from(1_u64));
+            let ceiling = Some(limit.steps);
+            ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::BuildSteps } }
+            else { ceiling.is_some_and(|ceiling| next > u128::from(ceiling)
+                && *error == BuildError::LimitExceeded { kind: BuildLimitKind::BuildSteps, limit: LimitBound::from(ceiling) }) } },
+            |charged| next == u128::from(charged.steps)
+                && ceiling.is_some_and(|ceiling| charged.steps <= ceiling)) }
+    )]
     #[inline]
     pub(crate) fn checked_charge(
         self,
@@ -1084,5 +1361,146 @@ impl BuildStepsUsed
             });
         }
         Ok(Self { steps: next })
+    }
+}
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    /// Platform counts preserve every represented value and reject only
+    /// narrowing loss.
+    #[test]
+    fn platform_counts_narrow_without_loss()
+    {
+        for count in [0_usize, 1, usize::MAX] {
+            assert_eq!(
+                ScalarWidth::try_from(count).map(u32::from),
+                u32::try_from(count).map_err(|_error| BuildError::ArithmeticOverflow {
+                    operation: BuildArithmetic::ScalarWidth,
+                })
+            );
+            assert_eq!(
+                TextBytesUsed::try_from(count).map(u64::from),
+                u64::try_from(count).map_err(|_error| BuildError::ArithmeticOverflow {
+                    operation: BuildArithmetic::TextBytes,
+                })
+            );
+            assert_eq!(
+                VerbatimLinesUsed::try_from(count).map(u64::from),
+                u64::try_from(count).map_err(|_error| BuildError::ArithmeticOverflow {
+                    operation: BuildArithmetic::VerbatimLines,
+                })
+            );
+        }
+        if let Ok(ceiling) = usize::try_from(u32::MAX)
+            && ceiling < usize::MAX
+        {
+            assert_eq!(
+                ScalarWidth::try_from(ceiling),
+                Ok(ScalarWidth::from(u32::MAX))
+            );
+            assert_eq!(
+                ScalarWidth::try_from(ceiling.saturating_add(1)),
+                Err(BuildError::ArithmeticOverflow {
+                    operation: BuildArithmetic::ScalarWidth
+                })
+            );
+        }
+    }
+
+    /// Wide arithmetic separates inclusive ceilings from counter overflow and
+    /// preserves refusal kinds.
+    #[test]
+    fn checked_charges_preserve_exact_boundaries_and_error_precedence()
+    {
+        let expected = |current: u64, amount: u64, limit: u64, operation, kind| {
+            let sum = u128::from(current).saturating_add(u128::from(amount));
+            if sum > u128::from(u64::MAX) {
+                Err(BuildError::ArithmeticOverflow { operation })
+            }
+            else if sum > u128::from(limit) {
+                Err(BuildError::LimitExceeded {
+                    kind,
+                    limit: LimitBound::from(limit),
+                })
+            }
+            else {
+                Ok(u64::try_from(sum).expect("bounded widened sum"))
+            }
+        };
+        for current in [
+            0_u64,
+            1,
+            2,
+            u64::from(u32::MAX),
+            u64::MAX.saturating_sub(1),
+            u64::MAX,
+        ] {
+            for ceiling in [0_u32, 1, 2, u32::MAX] {
+                assert_eq!(
+                    DocNodesUsed::from(current)
+                        .checked_charge(MaxDocNodes::from(ceiling))
+                        .map(u64::from),
+                    expected(
+                        current,
+                        1,
+                        u64::from(ceiling),
+                        BuildArithmetic::NodeCount,
+                        BuildLimitKind::DocNodes
+                    )
+                );
+                for amount in [0_u64, 1, 2, u64::MAX] {
+                    assert_eq!(
+                        VerbatimLinesUsed::from(current)
+                            .checked_charge(
+                                VerbatimLinesUsed::from(amount),
+                                MaxVerbatimLines::from(ceiling)
+                            )
+                            .map(u64::from),
+                        expected(
+                            current,
+                            amount,
+                            u64::from(ceiling),
+                            BuildArithmetic::VerbatimLines,
+                            BuildLimitKind::VerbatimLines
+                        )
+                    );
+                }
+            }
+            for ceiling in [0_u64, 1, 2, u64::MAX] {
+                assert_eq!(
+                    BuildStepsUsed::from(current)
+                        .checked_charge(MaxBuildSteps::from(ceiling))
+                        .map(u64::from),
+                    expected(
+                        current,
+                        1,
+                        ceiling,
+                        BuildArithmetic::BuildSteps,
+                        BuildLimitKind::BuildSteps
+                    )
+                );
+            }
+            for ceiling in [0_usize, 1, 2, usize::MAX] {
+                for amount in [0_u64, 1, 2, u64::MAX] {
+                    assert_eq!(
+                        TextBytesUsed::from(current)
+                            .checked_charge(
+                                TextBytesUsed::from(amount),
+                                MaxTextBytes::from(ceiling)
+                            )
+                            .map(u64::from),
+                        expected(
+                            current,
+                            amount,
+                            u64::try_from(ceiling).expect("supported platform width"),
+                            BuildArithmetic::TextBytes,
+                            BuildLimitKind::TextBytes
+                        )
+                    );
+                }
+            }
+        }
     }
 }
