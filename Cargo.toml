@@ -5,6 +5,7 @@ members = [
   "crates/core-incremental",
   "crates/core-nbe",
   "crates/core-sequent",
+  "crates/core-session",
   "crates/core-term",
   "crates/kernel-check-memo",
   "crates/kernel-conversion-trace",

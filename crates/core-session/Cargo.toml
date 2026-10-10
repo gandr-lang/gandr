@@ -1,0 +1,20 @@
+[package]
+name = "gandr-core-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Contractive binary session types, coinductive relations, and endpoint replay"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["gandr", "no-std", "session-types"]
+categories = ["compilers", "no-std"]
+publish.workspace = true
+autotests = false
+
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[lints]
+workspace = true

@@ -443,6 +443,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-core-session"
+version = "0.0.0"
+
+[[package]]
 name = "gandr-core-term"
 version = "0.0.0"
 dependencies = [
