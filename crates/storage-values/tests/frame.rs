@@ -123,8 +123,8 @@ fn each_frame_field_is_refused_by_name()
         (length, ChunkFrameField::BodyLength),
         (records, ChunkFrameField::Records),
     ];
-    for (image, field) in cases {
-        let claimed = ChunkDigest::from(*blake3::hash(&image).as_bytes());
+    for &(ref image, field) in &cases {
+        let claimed = ChunkDigest::from(*blake3::hash(image).as_bytes());
         assert_eq!(
             verify_chunk_image(StoredChunkRef::new(
                 claimed,
@@ -135,17 +135,17 @@ fn each_frame_field_is_refused_by_name()
     }
 
     let wrong = ChunkDigest::from([0_u8; 32]);
-    let actual = ChunkDigest::from(*blake3::hash(&good).as_bytes());
-    assert_eq!(
-        verify_chunk_image(StoredChunkRef::new(
-            wrong,
-            ChunkImage::from(good.as_slice())
-        )),
-        Err(ValueError::DigestMismatch {
-            expected: wrong,
-            actual
-        }),
-    );
+    for image in [good.as_slice(), cases[0_usize].0.as_slice()] {
+        let actual = ChunkDigest::from(*blake3::hash(image).as_bytes());
+        assert_eq!(
+            verify_chunk_image(StoredChunkRef::new(wrong, ChunkImage::from(image))),
+            Err(ValueError::DigestMismatch {
+                expected: wrong,
+                actual
+            }),
+            "a wrong digest takes precedence even over a malformed domain"
+        );
+    }
 }
 
 /// A body that is not well-formed records is never framed.

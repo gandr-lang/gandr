@@ -185,6 +185,38 @@ fn an_interior_pointer_derefs_to_its_own_subtree()
     assert!(addressed.leaves() < from_start.leaves());
 }
 
+/// The same interior offsets in different chunks name different exact leaves.
+#[test]
+fn known_interior_addresses_select_distinct_values()
+{
+    let mut store = InMemoryChunkStore::new();
+    let addresses = [[7_u64, 19], [31, 43]].map(|words| {
+        let mut body = vec![0x01, crate::common::PAIR];
+        for word in words {
+            body.extend_from_slice(&[0x01, LEAF, 0x02]);
+            body.extend_from_slice(&word.to_le_bytes());
+            body.push(0x05);
+        }
+        body.push(0x05);
+        let chunk = frame_chunk(TokenBody::from(body.as_slice())).expect("a known pair frames");
+        store.insert(chunk.as_verified()).expect("the pair stores");
+        [(1_u32, words[0]), (4, words[1])].map(|(offset, word)| {
+            (
+                ContentPtr::new(chunk.digest(), TokenOffset::from(offset)),
+                word,
+            )
+        })
+    });
+    for (pointer, word) in addresses.into_iter().flatten() {
+        assert_eq!(
+            cam_deref::<Fixture>(&store, pointer),
+            Ok(Fixture(vec![crate::common::Node::Leaf(
+                gandr_storage_values::CanonicalWord::from(word),
+            )])),
+        );
+    }
+}
+
 /// A value larger than one chunk is cut, and reading it back crosses seams.
 #[test]
 fn a_value_larger_than_one_chunk_is_read_across_seams()

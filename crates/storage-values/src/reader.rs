@@ -78,6 +78,23 @@ struct OpenCount(u64);
 
 /// One body being read: the unread records, the position of the first of
 /// them, and how deep inside the frame's own subtree the reader is.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: carries the unread suffix and the cursor's position and nesting
+///   bookkeeping; a refused read need not roll back the bookkeeping.
+/// - provides: one suspended or current body, without retaining its prefix.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the consumed prefix and the history of refused reads
+///   needed to relate the suffix, position and nesting are not retained.
+///
+/// # Adequacy
+/// - hypothesis: L3 on one interior child at offset two observes the child's
+///   exact tag and return to the parent's word and close, separating a restart,
+///   lost parent and wrong resume position. This finite path does not prove all
+///   possible seam histories.
+/// - witness: `reader::tests::seams_charge_images_and_restore_the_parent`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Frame<'stream>
 {
@@ -116,6 +133,23 @@ pub(crate) enum StreamEnd
 }
 
 /// A cursor over a value's token stream that splices child chunks in place.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: spent work never exceeds the ceiling, and a flat reader has no
+///   suspended chunk frames. Refused reads may change other bookkeeping.
+/// - provides: a bounded cursor over flat bytes or authenticated chunks.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on a three-record body at budgets two and three observes
+///   exact values, refusal and retained spent work. Forged over-budget and
+///   flat-with-parent states are rejected, separating both refinements from an
+///   unconditional predicate; this does not validate arbitrary codecs.
+/// - witness: `reader::tests::a_reader_stops_at_its_ceiling`
+#[spec(maintains: self.spent <= self.ceiling
+    && (!matches!(self.source, Source::Flat) || self.suspended.is_empty()))]
 pub struct TokenReader<'stream>
 {
     /// Where child chunks are fetched from, if anywhere.
@@ -141,6 +175,14 @@ impl fmt::Debug for TokenReader<'_>
     /// - provides: where the reader is, for a failing test's message.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a body containing a distinctive private byte checks
+    ///   that diagnostics omit its ordinary byte rendering, while a refused
+    ///   output sink stops formatting. This targets accidental body disclosure
+    ///   and swallowed write errors, not a fixed diagnostic spelling.
+    /// - witness: `reader::tests::reader_diagnostics_omit_payload_data`
     #[inline]
     fn fmt(
         &self,
@@ -171,10 +213,20 @@ impl<'stream> TokenReader<'stream>
     ///
     /// # Errors
     /// [`ValueError::DecodeBudgetExceeded`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on one root and one interior child observes the exact
+    ///   initial image-byte charge, position and later total work, separating
+    ///   an uncharged root, body-only charging and a nonzero initial cursor.
+    /// - witness: `reader::tests::seams_charge_images_and_restore_the_parent`
     #[spec(ensures: |ret| ret
         .as_ref()
         .ok()
-        .is_none_or(|reader| reader.current.position == TokenOffset::ZERO && reader.suspended.is_empty()))]
+        .is_none_or(|reader| reader.current.position == TokenOffset::ZERO
+            && reader.suspended.is_empty()
+            && reader.current.remaining == chunk.body()
+            && u64::from(reader.spent) == u64::try_from(chunk.image().as_ref().len()).unwrap_or(u64::MAX)
+            && anodized::types::Spec::predicate(reader)))]
     pub(crate) fn over_chunk(
         store: &'stream dyn ChunkStore,
         chunk: VerifiedChunk<'stream>,
@@ -310,6 +362,14 @@ impl<'stream> TokenReader<'stream>
     ///
     /// # Errors
     /// [`ValueError`] — as [`TokenReader::read_tag`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a literal four-record body observes the exact word,
+    ///   record position and work; a word outside any constructor is refused
+    ///   naming both kinds. These distinguish payload substitution, missed
+    ///   advancement and missing structural admission.
+    /// - witness: `reader::tests::typed_reads_charge_payloads_and_refuse_wrong_kinds`
+    /// - witness: `reader::tests::payloads_and_closes_require_an_open_constructor`
     #[inline]
     #[spec(captures: [entry_spent = self.spent],
         ensures: |ret| ret.is_err() || (self.spent > entry_spent && self.current.open > OpenCount(0_u64)))]
@@ -342,6 +402,14 @@ impl<'stream> TokenReader<'stream>
     ///
     /// # Errors
     /// [`ValueError`] — as [`TokenReader::read_tag`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a two-byte binary payload observes exact borrowed
+    ///   bytes and three units of charged work; a payload outside a constructor
+    ///   is refused. These separate copying, wrong slices, omitted byte work
+    ///   and missing structural admission.
+    /// - witness: `reader::tests::typed_reads_charge_payloads_and_refuse_wrong_kinds`
+    /// - witness: `reader::tests::payloads_and_closes_require_an_open_constructor`
     #[inline]
     #[spec(captures: [entry_spent = self.spent],
         ensures: |ret| ret.is_err() || (self.spent > entry_spent && self.current.open > OpenCount(0_u64)))]
@@ -379,6 +447,15 @@ impl<'stream> TokenReader<'stream>
     ///
     /// # Errors
     /// [`ValueError`] — as [`TokenReader::read_tag`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes the close at a literal root, a close with no
+    ///   open constructor, and a child close that restores its parent. These
+    ///   separate underflow, missed advancement and lost suspended state on
+    ///   those paths.
+    /// - witness: `reader::tests::typed_reads_charge_payloads_and_refuse_wrong_kinds`
+    /// - witness: `reader::tests::payloads_and_closes_require_an_open_constructor`
+    /// - witness: `reader::tests::seams_charge_images_and_restore_the_parent`
     #[inline]
     #[spec(captures: [entry_spent = self.spent], ensures: |ret| ret.is_err() || self.spent > entry_spent)]
     pub fn read_close(&mut self) -> Result<(), ValueError>
@@ -425,6 +502,14 @@ impl<'stream> TokenReader<'stream>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on an interior child at offset two observes its exact
+    ///   tag rather than the earlier constructor. A flat body with a child
+    ///   record is skipped without loading it. Exact-end and one-past-end skips
+    ///   distinguish truncation from accepted positions.
+    /// - witness: `reader::tests::seams_charge_images_and_restore_the_parent`
+    /// - witness: `reader::tests::skipping_does_not_interpret_child_records`
     #[spec(captures: [entry = self.current.position],
         ensures: |ret| ret.is_err()
             || u32::from(self.current.position) == u32::from(entry).saturating_add(u32::from(count)))]
@@ -456,6 +541,14 @@ impl<'stream> TokenReader<'stream>
     /// - provides: the trailing-bytes check a flat decode ends with.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes a literal body before and after its last
+    ///   close, and the child-to-parent transition in a chunk stream,
+    ///   separating remaining records and suspended parents from the actual
+    ///   stream end.
+    /// - witness: `reader::tests::typed_reads_charge_payloads_and_refuse_wrong_kinds`
+    /// - witness: `reader::tests::seams_charge_images_and_restore_the_parent`
     #[spec(ensures: |ret| (ret == StreamEnd::Ended)
         == (self.suspended.is_empty() && self.current.remaining.as_ref().is_empty()))]
     pub(crate) fn end(&self) -> StreamEnd
@@ -487,6 +580,15 @@ impl<'stream> TokenReader<'stream>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a literal flat body and one interior child observes
+    ///   returned kinds, exact child tag and parent restoration. A flat seam is
+    ///   refused at its position. These separate kind coercion, a seam exposed
+    ///   as data and a wrong child offset.
+    /// - witness: `reader::tests::typed_reads_charge_payloads_and_refuse_wrong_kinds`
+    /// - witness: `reader::tests::seams_charge_images_and_restore_the_parent`
+    /// - witness: `reader::tests::skipping_does_not_interpret_child_records`
     #[spec(ensures: |ret| ret
         .as_ref()
         .ok()
@@ -536,10 +638,19 @@ impl<'stream> TokenReader<'stream>
     ///
     /// # Errors
     /// [`ValueError`] — the budget or the position overflows.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes exact positions and work for word and binary
+    ///   payload records, plus a three-record body stopped at a ceiling of two.
+    ///   This separates omitted record work, omitted payload work, wrong suffix
+    ///   advancement and a budget overrun on these paths.
+    /// - witness: `reader::tests::typed_reads_charge_payloads_and_refuse_wrong_kinds`
+    /// - witness: `reader::tests::a_reader_stops_at_its_ceiling`
     #[spec(captures: [entry = self.spent],
         ensures: |ret| ret.is_err()
             || (u64::from(self.spent) == u64::from(entry).saturating_add(u64::from(work))
-                && self.current.remaining == rest))]
+                && self.current.remaining == rest
+                && anodized::types::Spec::predicate(self)))]
     fn advance(
         &mut self,
         rest: TokenBody<'stream>,
@@ -611,9 +722,10 @@ impl<'stream> TokenReader<'stream>
 ///   (refused), plus a charge that would wrap the width.
 /// - witness: `reader::tests::the_budget_admits_the_ceiling_and_refuses_one_past`
 #[spec(ensures: |ret| ret.is_ok()
-    == u64::from(spent)
-        .checked_add(u64::from(work))
-        .is_some_and(|total| total <= u64::from(ceiling)))]
+    == u64::from(spent).checked_add(u64::from(work))
+        .is_some_and(|total| total <= u64::from(ceiling))
+    && ret.as_ref().ok().is_none_or(|total|
+        u64::from(spent).checked_add(u64::from(work)) == Some(u64::from(*total))))]
 pub(crate) fn charge(
     spent: DecodeWork,
     work: DecodeWork,
@@ -634,10 +746,23 @@ pub(crate) fn charge(
 #[cfg(test)]
 mod tests
 {
+    use core::fmt::Write as _;
+
     use super::Source;
+    use super::StreamEnd;
     use super::TokenReader;
     use super::charge;
+    use crate::CanonicalWord;
+    use crate::ChunkStore as _;
+    use crate::ConstructorTag;
+    use crate::ContentPtr;
+    use crate::InMemoryChunkStore;
+    use crate::TokenKind;
+    use crate::TokenOffset;
     use crate::error::ValueError;
+    use crate::frame_chunk;
+    use crate::tokens::BodyWriter;
+    use crate::tokens::Record;
     use crate::units::DecodeWork;
     use crate::units::TokenBody;
 
@@ -682,9 +807,10 @@ mod tests
             TokenBody::from(body.as_slice()),
             DecodeWork::from(3_u64),
         );
-        assert!(enough.read_tag().is_ok());
-        assert!(enough.read_word().is_ok());
-        assert!(enough.read_close().is_ok());
+        assert_eq!(enough.read_tag(), Ok(ConstructorTag::from(0x2A_u8)));
+        assert_eq!(enough.read_word(), Ok(CanonicalWord::from(7_u64)));
+        assert_eq!(enough.read_close(), Ok(()));
+        assert!(anodized::types::Spec::predicate(&enough));
         assert_eq!(enough.spent(), DecodeWork::from(3_u64));
 
         let mut short = TokenReader::new(
@@ -692,8 +818,8 @@ mod tests
             TokenBody::from(body.as_slice()),
             DecodeWork::from(2_u64),
         );
-        assert!(short.read_tag().is_ok());
-        assert!(short.read_word().is_ok());
+        assert_eq!(short.read_tag(), Ok(ConstructorTag::from(0x2A_u8)));
+        assert_eq!(short.read_word(), Ok(CanonicalWord::from(7_u64)));
         assert_eq!(
             short.read_close(),
             Err(ValueError::DecodeBudgetExceeded {
@@ -701,5 +827,235 @@ mod tests
                 ceiling: DecodeWork::from(2_u64),
             })
         );
+        assert_eq!(short.spent(), DecodeWork::from(2_u64));
+        assert!(anodized::types::Spec::predicate(&short));
+        short.spent = DecodeWork::from(3_u64);
+        assert!(!anodized::types::Spec::predicate(&short));
+        short.spent = DecodeWork::from(2_u64);
+        short
+            .suspended
+            .push(super::Frame::at_start(TokenBody::from(&[][..])));
+        assert!(!anodized::types::Spec::predicate(&short));
+    }
+
+    #[test]
+    fn typed_reads_charge_payloads_and_refuse_wrong_kinds()
+    {
+        let body = [
+            1_u8, 42, 2, 7, 0, 0, 0, 0, 0, 0, 0, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 255, 5,
+        ];
+        let mut reader = TokenReader::over_flat(TokenBody::from(body.as_slice()));
+        assert_eq!(reader.end(), StreamEnd::Continues);
+        assert_eq!(
+            reader.read_word(),
+            Err(ValueError::UnexpectedToken {
+                expected: TokenKind::Word,
+                found: TokenKind::Open,
+                position: TokenOffset::ZERO,
+            })
+        );
+        assert_eq!(reader.spent(), DecodeWork::ZERO);
+        assert_eq!(reader.read_tag(), Ok(ConstructorTag::from(42_u8)));
+        assert_eq!(
+            reader.read_bytes(),
+            Err(ValueError::UnexpectedToken {
+                expected: TokenKind::Bytes,
+                found: TokenKind::Word,
+                position: TokenOffset::from(1_u32),
+            })
+        );
+        assert_eq!(
+            reader.read_close(),
+            Err(ValueError::UnexpectedToken {
+                expected: TokenKind::Close,
+                found: TokenKind::Word,
+                position: TokenOffset::from(1_u32),
+            })
+        );
+        assert_eq!(reader.spent(), DecodeWork::ONE);
+        assert_eq!(reader.read_word(), Ok(CanonicalWord::from(7_u64)));
+        let payload = reader
+            .read_bytes()
+            .expect("the literal binary payload reads");
+        assert_eq!(payload.as_ref(), &[0_u8, 255]);
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(payload.as_ref()),
+            core::ptr::from_ref(body.get(20 .. 22).expect("the literal payload range"))
+        ));
+        assert_eq!(reader.position(), TokenOffset::from(3_u32));
+        assert_eq!(reader.spent(), DecodeWork::from(5_u64));
+        assert_eq!(reader.read_close(), Ok(()));
+        assert_eq!(reader.position(), TokenOffset::from(4_u32));
+        assert_eq!(reader.spent(), DecodeWork::from(6_u64));
+        assert_eq!(reader.end(), StreamEnd::Ended);
+        assert_eq!(
+            reader.read_tag(),
+            Err(ValueError::TruncatedStream {
+                position: TokenOffset::from(4_u32),
+            })
+        );
+    }
+
+    #[test]
+    fn payloads_and_closes_require_an_open_constructor()
+    {
+        let word = [2_u8, 7, 0, 0, 0, 0, 0, 0, 0];
+        let bytes = [3_u8, 0, 0, 0, 0, 0, 0, 0, 0];
+        let close = [5_u8];
+        let mut reader = TokenReader::over_flat(TokenBody::from(word.as_slice()));
+        assert_eq!(
+            reader.read_word(),
+            Err(ValueError::UnexpectedToken {
+                expected: TokenKind::Open,
+                found: TokenKind::Word,
+                position: TokenOffset::ZERO,
+            })
+        );
+        let mut reader = TokenReader::over_flat(TokenBody::from(bytes.as_slice()));
+        assert_eq!(
+            reader.read_bytes(),
+            Err(ValueError::UnexpectedToken {
+                expected: TokenKind::Open,
+                found: TokenKind::Bytes,
+                position: TokenOffset::ZERO,
+            })
+        );
+        let mut reader = TokenReader::over_flat(TokenBody::from(close.as_slice()));
+        assert_eq!(
+            reader.read_close(),
+            Err(ValueError::UnexpectedToken {
+                expected: TokenKind::Open,
+                found: TokenKind::Close,
+                position: TokenOffset::ZERO,
+            })
+        );
+    }
+
+    #[test]
+    fn seams_charge_images_and_restore_the_parent()
+    {
+        let child_bytes = [1_u8, 1, 5, 1, 2, 5];
+        let child = frame_chunk(TokenBody::from(child_bytes.as_slice())).expect("the child frames");
+        let child_image_bytes =
+            u64::try_from(child.image().as_ref().len()).expect("a fixture image");
+        let mut parent = BodyWriter::default();
+        parent
+            .push(Record::Open(ConstructorTag::from(0_u8)))
+            .expect("the root opens");
+        parent
+            .push(Record::Child(ContentPtr::new(
+                child.digest(),
+                TokenOffset::from(2_u32),
+            )))
+            .expect("the interior child is addressed");
+        parent
+            .push(Record::Word(CanonicalWord::from(9_u64)))
+            .expect("the parent word emits");
+        parent.push(Record::Close).expect("the parent closes");
+        let parent = frame_chunk(parent.as_body()).expect("the parent frames");
+        let parent_image_bytes =
+            u64::try_from(parent.image().as_ref().len()).expect("a fixture image");
+        let mut store = InMemoryChunkStore::new();
+        store.insert(child.as_verified()).expect("the child stores");
+        let mut reader =
+            TokenReader::over_chunk(&store, parent.as_verified()).expect("the root opens");
+        assert_eq!(reader.spent(), DecodeWork::from(parent_image_bytes));
+        assert_eq!(reader.position(), TokenOffset::ZERO);
+        assert_eq!(reader.read_tag(), Ok(ConstructorTag::from(0_u8)));
+        assert_eq!(reader.read_tag(), Ok(ConstructorTag::from(2_u8)));
+        assert_eq!(usize::from(reader.seam_depth()), 1_usize);
+        assert_eq!(reader.position(), TokenOffset::from(3_u32));
+        assert_eq!(reader.read_close(), Ok(()));
+        assert_eq!(usize::from(reader.seam_depth()), 0_usize);
+        assert_eq!(reader.position(), TokenOffset::from(2_u32));
+        assert_eq!(reader.end(), StreamEnd::Continues);
+        assert_eq!(reader.read_word(), Ok(CanonicalWord::from(9_u64)));
+        assert_eq!(reader.read_close(), Ok(()));
+        assert_eq!(
+            reader.spent(),
+            DecodeWork::from(parent_image_bytes + child_image_bytes + 8_u64)
+        );
+        assert_eq!(reader.end(), StreamEnd::Ended);
+        assert!(anodized::types::Spec::predicate(&reader));
+    }
+
+    #[test]
+    fn skipping_does_not_interpret_child_records()
+    {
+        let mut body = BodyWriter::default();
+        body.push(Record::Child(ContentPtr::new(
+            crate::ChunkDigest::from([7_u8; 32]),
+            TokenOffset::ZERO,
+        )))
+        .expect("the child record emits");
+        body.push(Record::Open(ConstructorTag::from(42_u8)))
+            .expect("the constructor emits");
+        body.push(Record::Close).expect("the close emits");
+        let mut reader = TokenReader::over_flat(body.as_body());
+        assert_eq!(
+            reader.read_tag(),
+            Err(ValueError::SeamInFlatForm {
+                position: TokenOffset::ZERO
+            })
+        );
+        assert_eq!(reader.skip(TokenOffset::from(1_u32)), Ok(()));
+        assert_eq!(reader.read_tag(), Ok(ConstructorTag::from(42_u8)));
+        assert_eq!(reader.read_close(), Ok(()));
+        assert_eq!(reader.position(), TokenOffset::from(3_u32));
+        assert_eq!(reader.end(), StreamEnd::Ended);
+        let mut reader = TokenReader::over_flat(body.as_body());
+        assert_eq!(reader.skip(TokenOffset::from(3_u32)), Ok(()));
+        assert_eq!(reader.end(), StreamEnd::Ended);
+        assert_eq!(
+            reader.skip(TokenOffset::from(1_u32)),
+            Err(ValueError::TruncatedStream {
+                position: TokenOffset::from(3_u32),
+            })
+        );
+    }
+
+    /// An output boundary that admits no writes.
+    #[derive(Debug)]
+    struct RefusingSink;
+
+    impl core::fmt::Write for RefusingSink
+    {
+        /// Refuses the offered diagnostic output.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: returns the formatting error.
+        /// - provides: an unavailable diagnostic sink.
+        /// - fails: always returns the formatting error.
+        /// - panics: none.
+        ///
+        /// # Errors
+        /// Always returns the formatting error.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 on a reader diagnostic observes the exact refusal,
+        ///   distinguishing accidental acceptance of unavailable output.
+        /// - witness: `reader::tests::reader_diagnostics_omit_payload_data`
+        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        fn write_str(
+            &mut self,
+            _text: &str,
+        ) -> core::fmt::Result
+        {
+            Err(core::fmt::Error)
+        }
+    }
+
+    #[test]
+    fn reader_diagnostics_omit_payload_data()
+    {
+        let body = [253_u8; 32];
+        let reader = TokenReader::over_flat(TokenBody::from(body.as_slice()));
+        let rendered = alloc::format!("{reader:?}");
+        assert!(
+            !rendered.contains("253"),
+            "the token body's byte rendering is private"
+        );
+        assert_eq!(write!(RefusingSink, "{reader:?}"), Err(core::fmt::Error));
     }
 }

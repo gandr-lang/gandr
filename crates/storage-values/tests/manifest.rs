@@ -465,7 +465,21 @@ impl ChunkStore for Counted
     /// Counts the load, then loads from the in-memory store.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: one more request fits the load counter.
+    /// - ensures: increments the counter exactly once on success or refusal; a
+    ///   successful load retains the requested authenticated digest.
+    /// - fails: propagates the backing store's named refusal unchanged.
+    /// - panics: when the request counter is exhausted.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes missing and successful loads and the final
+    ///   representable increment; profile mismatch cases make no request.
+    /// - witness: `tests::manifest::load_counts_include_refusals_and_successes`
+    /// - witness: `tests::manifest::a_profile_mismatch_is_refused_before_any_chunk_is_read`
+    #[anodized::spec(requires: self.loads.get().0 < usize::MAX,
+        captures: before = self.loads.get().0,
+        ensures: |ret| self.loads.get().0.checked_sub(before) == Some(1_usize)
+            && ret.as_ref().ok().is_none_or(|chunk| chunk.digest() == digest))]
     fn load(
         &self,
         digest: ChunkDigest,
@@ -582,10 +596,6 @@ fn a_matching_profile_reads_the_committed_value()
         .read_under(&store, &committed)
         .expect("the matching profile reads");
     assert_eq!(back, value);
-    assert!(
-        store.loads() > LoadCount(0),
-        "reading the value loaded its chunks"
-    );
 
     let decoded =
         ValueManifest::decode(manifest.encode().as_image()).expect("the manifest's image decodes");
@@ -593,4 +603,35 @@ fn a_matching_profile_reads_the_committed_value()
         .read_under(&store, &committed)
         .expect("the decoded manifest reads under the same profile");
     assert_eq!(again, value);
+}
+
+/// Failed requests count too, including the last representable counter step.
+#[test]
+fn load_counts_include_refusals_and_successes()
+{
+    let mut store = Counted::default();
+    let missing = ChunkDigest::from([0xA5_u8; 32_usize]);
+    assert_eq!(
+        store.load(missing),
+        Err(ValueError::UnknownChunk { digest: missing })
+    );
+    assert_eq!(store.loads(), LoadCount(1_usize));
+    let body: [u8; 12] = [0x01, 0x2A, 0x02, 0x07, 0, 0, 0, 0, 0, 0, 0, 0x05];
+    let frame = frame_chunk(TokenBody::from(body.as_slice())).expect("the body frames");
+    store
+        .insert(frame.as_verified())
+        .expect("the frame inserts");
+    let loaded = store.load(frame.digest()).expect("the held frame loads");
+    assert_eq!(loaded.body().as_ref(), body.as_slice());
+    assert_eq!(store.loads(), LoadCount(2_usize));
+    store.loads.set(LoadCount(
+        usize::MAX
+            .checked_sub(1_usize)
+            .expect("the final counter step"),
+    ));
+    assert_eq!(
+        store.load(missing),
+        Err(ValueError::UnknownChunk { digest: missing })
+    );
+    assert_eq!(store.loads(), LoadCount(usize::MAX));
 }

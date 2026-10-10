@@ -87,6 +87,23 @@ struct PreimageMark(usize);
 
 /// One open constructor: where its subtree starts in the body, and where its
 /// residue preimage starts.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: identifies one open constructor in a sink's body and residue
+///   preimage buffers.
+/// - provides: the two starts a close and possible cut consume.
+/// - fails: never.
+/// - panics: none.
+/// - executable: none — the two buffers that give the marks meaning belong to
+///   the sink, not to this pair of positions.
+///
+/// # Adequacy
+/// - hypothesis: L3 on two nested constructors observes live marks before and
+///   after a close; the owning sink rejects a mark at either buffer's end and a
+///   damaged residue domain. This separates stale or unbound marks on that
+///   path, not all emission histories.
+/// - witness: `commit::tests::open_frames_bind_live_body_and_residue_marks`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct OpenFrame
 {
@@ -102,6 +119,27 @@ struct OpenFrame
 /// traversal did not place, which is a claim about the store nothing checked.
 /// A value embedding an already-committed value does so through
 /// [`TokenSink::child_pointer`], whose pointer the reader verifies on use.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each live frame addresses an open record in the body and a
+///   residue domain at the start of its preimage. Counter overflow or a store
+///   refusal need not roll back other state.
+/// - provides: the live positions needed to close and cut constructors.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on two nested constructors observes exact committed bytes
+///   and delivered count, and rejects displaced body/preimage marks and a
+///   damaged domain. These separate unbound cached positions and lost records;
+///   store correctness remains the store implementation's contract.
+/// - witness: `commit::tests::open_frames_bind_live_body_and_residue_marks`
+#[spec(maintains: self.open.iter().all(|frame|
+    matches!(split_record(self.body.since(frame.body_start)),
+        Ok(BodyFront::Record(Record::Open(_tag), _rest)))
+    && self.preimage.get(frame.preimage_start.0 ..)
+        .is_some_and(|suffix| suffix.starts_with(RESIDUE_DOMAIN))))]
 struct CommitSink<'store, Store>
 where
     Store: ChunkStore + ?Sized,
@@ -166,10 +204,23 @@ where
     ///
     /// # Errors
     /// [`ValueError::ArithmeticOverflow`] — a length or count passes its width.
-    #[spec(captures: [entry_mark = self.body.mark(), entry_delivered = u64::from(self.delivered)],
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a literal nested value observes exact open, word,
+    ///   binary payload and close records and a count of six. L2 compares the
+    ///   cuts with an independent scanner over generated trees of at most 4096
+    ///   records, separating changed residue preimages and record accounting on
+    ///   that finite domain.
+    /// - witness: `commit::tests::open_frames_bind_live_body_and_residue_marks`
+    /// - witness: `tests::laws::the_cuts_agree_with_a_reference_scanner`
+    #[spec(captures: [entry_mark = self.body.mark(), entry_delivered = u64::from(self.delivered),
+        entry_event = u64::from(self.since_event)],
         ensures: |ret| ret.is_err()
-            || (self.body.mark() > entry_mark
-                && u64::from(self.delivered) == entry_delivered.saturating_add(u64::from(delivers))))]
+            || (matches!(split_record(self.body.since(entry_mark)),
+                    Ok(BodyFront::Record(found, rest)) if found == record && rest.as_ref().is_empty())
+                && self.preimage.ends_with(self.body.since(entry_mark).as_ref())
+                && entry_event.checked_add(1_u64) == Some(u64::from(self.since_event))
+                && entry_delivered.checked_add(u64::from(delivers)) == Some(u64::from(self.delivered))))]
     fn emit(
         &mut self,
         record: Record<'_>,
@@ -201,6 +252,15 @@ where
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on generated trees of at most 4096 records compares
+    ///   spliced flat bytes and exact cut positions with an independent
+    ///   scanner. L3 at kappa one, for caps 1, 2, 3, 64 and `u64::MAX`,
+    ///   observes every inner constructor cut. This separates missing cuts,
+    ///   wrong subtrees and displaced replacement pointers.
+    /// - witness: `tests::laws::the_cuts_agree_with_a_reference_scanner`
+    /// - witness: `tests::laws::an_edit_under_every_cut_affects_exactly_its_path`
     #[spec(ensures: |ret| ret.is_err()
         || matches!(
             split_record(self.body.since(start)),
@@ -237,10 +297,18 @@ where
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
-    #[spec(ensures: |ret| ret
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a literal six-record nested value observes the exact
+    ///   stored root body and delivered count. Named malformed emissions
+    ///   exercise missing and unclosed roots. These distinguish changed root
+    ///   bytes, wrong counts and acceptance of unfinished emission.
+    /// - witness: `commit::tests::open_frames_bind_live_body_and_residue_marks`
+    /// - witness: `tests::values::a_malformed_emission_is_refused_by_name`
+    #[spec(captures: delivered = self.delivered, ensures: |ret| ret
         .as_ref()
         .ok()
-        .is_none_or(|&(root, _count)| root.offset() == TokenOffset::ZERO))]
+        .is_none_or(|&(root, count)| root.offset() == TokenOffset::ZERO && count == delivered))]
     fn finish(self) -> Result<(ContentPtr, TokenCount), ValueError>
     {
         self.shape.finish()?;
@@ -271,6 +339,14 @@ where
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on two nested constructors observes their live body and
+    ///   residue marks, exact final bytes and delivered count; malformed
+    ///   emissions distinguish a second root. This separates missed pushes,
+    ///   wrong domain starts and lost open records on these inputs.
+    /// - witness: `commit::tests::open_frames_bind_live_body_and_residue_marks`
+    /// - witness: `tests::values::a_malformed_emission_is_refused_by_name`
     #[inline]
     #[spec(captures: [entry_depth = self.open.len()],
         ensures: |ret| ret.is_err() || self.open.len() == entry_depth.saturating_add(1_usize))]
@@ -300,6 +376,14 @@ where
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a literal word seven inside two constructors
+    ///   observes exact stored bytes and the delivered count. A payload outside
+    ///   any constructor is refused by name, separating payload replacement,
+    ///   accounting errors and missing shape admission.
+    /// - witness: `commit::tests::open_frames_bind_live_body_and_residue_marks`
+    /// - witness: `tests::values::a_malformed_emission_is_refused_by_name`
     #[inline]
     #[spec(captures: [entry_delivered = u64::from(self.delivered)],
         ensures: |ret| ret.is_err() || u64::from(self.delivered) == entry_delivered.saturating_add(1_u64))]
@@ -325,6 +409,14 @@ where
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on binary bytes zero and 255 inside two constructors
+    ///   observes the exact length-prefixed stored image and delivered count.
+    ///   This separates text coercion, byte replacement, wrong lengths and
+    ///   counting payload bytes as records; oversized allocations are not
+    ///   exercised.
+    /// - witness: `commit::tests::open_frames_bind_live_body_and_residue_marks`
     #[inline]
     #[spec(captures: [entry_delivered = u64::from(self.delivered)],
         ensures: |ret| ret.is_err() || u64::from(self.delivered) == entry_delivered.saturating_add(1_u64))]
@@ -357,10 +449,12 @@ where
     /// [`ValueError`] — as listed above.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 agreement — a value embedding a committed value has a
-    ///   manifest whose closure, checked against its token count, is the
-    ///   store's whole digest set — plus L3 for an embedded value missing a
-    ///   chunk two seams down, refused naming it.
+    /// - hypothesis: L2 on generated trees of at most 4096 records observes
+    ///   that embedding adds exactly two delivered records and the closure is
+    ///   the store's whole digest set. L3 on a depth-four fixture with a chunk
+    ///   missing two seams down observes its exact refusal. These separate
+    ///   shallow accounting, omitted descendants and acceptance of missing
+    ///   data.
     /// - witness: `tests::closure::the_closure_is_every_chunk_the_commit_wrote`
     /// - witness: `tests::closure::a_missing_descendant_fails_the_closure_by_name`
     #[inline]
@@ -400,11 +494,11 @@ where
     /// # Adequacy
     /// - hypothesis: L2 agreement — the constructors cut, read off the stored
     ///   chunks, are the ones a reference scanner recomputes from the flat form
-    ///   alone, over generated values and profiles biased toward runs ending at
-    ///   the cap and one record past it; committing and dereferencing return
-    ///   the value across seams the scanner placed — plus L3 for the outermost
-    ///   close, separated by a value whose root would cut, and for kappa one,
-    ///   where every constructor below the root is cut whatever the cap.
+    ///   alone, over generated values of at most 4096 records and profiles
+    ///   biased toward runs ending at the cap and one record past it. The exact
+    ///   reconstructed values separate lost or changed payloads. L3 separates
+    ///   the uncut root and every inner constructor cut at kappa one for caps
+    ///   1, 2, 3, 64 and `u64::MAX`.
     /// - witness: `tests::laws::the_cuts_agree_with_a_reference_scanner`
     /// - witness: `tests::laws::an_edit_under_every_cut_affects_exactly_its_path`
     /// - witness: `tests::values::a_committed_value_derefs_back_equal`
@@ -467,7 +561,15 @@ where
 ///
 /// # Errors
 /// [`ValueError::ArithmeticOverflow`] — the count is already `u64::MAX`.
-#[spec(ensures: |ret| ret.is_ok() == (u64::from(count) < u64::MAX))]
+///
+/// # Adequacy
+/// - hypothesis: L3 at zero, `u64::MAX` minus one and `u64::MAX` observes the
+///   exact successor or token-count overflow, separating an off-by-one ceiling,
+///   wrapping and a substituted successor.
+/// - witness: `commit::tests::record_successors_refuse_width_overflow`
+#[spec(ensures: |ret| ret.is_ok() == (u64::from(count) < u64::MAX)
+    && ret.as_ref().ok().is_none_or(|next|
+        u64::from(count).checked_add(1_u64) == Some(u64::from(*next))))]
 fn one_more(count: TokenCount) -> Result<TokenCount, ValueError>
 {
     u64::from(count)
@@ -501,9 +603,9 @@ fn one_more(count: TokenCount) -> Result<TokenCount, ValueError>
 /// [`ValueError`] — as listed above.
 ///
 /// # Adequacy
-/// - hypothesis: L2 agreement — the same value commits to the same manifest in
-///   an empty store and in one already holding generated values, some sharing
-///   its subtrees and some under other profiles, the store ending with exactly
+/// - hypothesis: L2 on generated values of at most 4096 records observes the
+///   same manifest in an empty store and after at most six generated priors,
+///   some sharing subtrees and some under other profiles, ending with exactly
 ///   the union of the two; shared subtrees are stored once, an early edit adds
 ///   few chunks, and a value embedding a committed one has a token count its
 ///   closure delivers — plus L3 for the chunk-local refusal, each emission
@@ -543,4 +645,110 @@ where
     let (root, token_count) = sink.finish()?;
 
     Ok(ValueManifest::new(*profile, root, token_count))
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_storage_chunker::Kappa;
+    use gandr_storage_chunker::TokenCap;
+    use gandr_storage_chunker::TokenCount;
+    use gandr_storage_chunker::TypedChunkerParams;
+
+    use super::CommitSink;
+    use super::PreimageMark;
+    use super::one_more;
+    use crate::CanonicalWord;
+    use crate::ChildIndexBase;
+    use crate::ChunkStore as _;
+    use crate::CodecId;
+    use crate::CodecIdentity;
+    use crate::CodecVersion;
+    use crate::ConstructorTag;
+    use crate::InMemoryChunkStore;
+    use crate::TokenBytes;
+    use crate::TokenOffset;
+    use crate::TokenSink as _;
+    use crate::ValueError;
+    use crate::ValueProfile;
+    use crate::ValueQuantity;
+
+    #[test]
+    fn record_successors_refuse_width_overflow()
+    {
+        assert_eq!(one_more(TokenCount::ZERO), Ok(TokenCount::from(1_u64)));
+        assert_eq!(
+            one_more(TokenCount::from(u64::MAX - 1_u64)),
+            Ok(TokenCount::from(u64::MAX))
+        );
+        assert_eq!(
+            one_more(TokenCount::from(u64::MAX)),
+            Err(ValueError::ArithmeticOverflow {
+                quantity: ValueQuantity::TokenCount,
+            })
+        );
+    }
+
+    #[test]
+    fn open_frames_bind_live_body_and_residue_marks()
+    {
+        let params = TypedChunkerParams::new(
+            Kappa::try_from(u64::MAX).expect("nonzero kappa"),
+            TokenCap::try_from(u64::MAX).expect("nonzero cap"),
+        );
+        let profile = ValueProfile::new(
+            params,
+            CodecIdentity::new(CodecId::from(1_u16), CodecVersion::from(1_u16)),
+            ChildIndexBase::Absolute,
+        );
+        let mut store = InMemoryChunkStore::new();
+        let mut sink = CommitSink::new(&mut store, &profile);
+        assert!(anodized::types::Spec::predicate(&sink));
+        sink.open(ConstructorTag::from(0_u8))
+            .expect("the root opens");
+        sink.open(ConstructorTag::from(1_u8))
+            .expect("the child opens");
+        sink.word(CanonicalWord::from(7_u64))
+            .expect("the word emits");
+        sink.bytes(TokenBytes::from(&[0_u8, 255][..]))
+            .expect("the binary payload emits");
+        assert_eq!(sink.open.len(), 2_usize);
+        assert!(anodized::types::Spec::predicate(&sink));
+
+        let frame = *sink.open.last().expect("an open child");
+        let end = sink.body.mark();
+        sink.open.last_mut().expect("an open child").body_start = end;
+        assert!(!anodized::types::Spec::predicate(&sink));
+        *sink.open.last_mut().expect("an open child") = frame;
+        let end = PreimageMark(sink.preimage.len());
+        sink.open.last_mut().expect("an open child").preimage_start = end;
+        assert!(!anodized::types::Spec::predicate(&sink));
+        *sink.open.last_mut().expect("an open child") = frame;
+        let first = *sink
+            .preimage
+            .get(frame.preimage_start.0)
+            .expect("a residue domain");
+        *sink
+            .preimage
+            .get_mut(frame.preimage_start.0)
+            .expect("a residue domain") = 0_u8;
+        assert!(!anodized::types::Spec::predicate(&sink));
+        *sink
+            .preimage
+            .get_mut(frame.preimage_start.0)
+            .expect("a residue domain") = first;
+        sink.close().expect("the child closes");
+        assert_eq!(sink.open.len(), 1_usize);
+        assert!(anodized::types::Spec::predicate(&sink));
+        sink.close().expect("the root closes");
+        assert!(sink.open.is_empty());
+        assert!(anodized::types::Spec::predicate(&sink));
+        let (root, delivered) = sink.finish().expect("the complete value commits");
+        assert_eq!(root.offset(), TokenOffset::ZERO);
+        assert_eq!(delivered, TokenCount::from(6_u64));
+        let chunk = store.load(root.digest()).expect("the root was stored");
+        assert_eq!(chunk.body().as_ref(), &[
+            1_u8, 0, 1, 1, 2, 7, 0, 0, 0, 0, 0, 0, 0, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 255, 5, 5,
+        ]);
+    }
 }
