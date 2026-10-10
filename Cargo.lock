@@ -494,6 +494,7 @@ name = "gandr-kernel-term"
 version = "0.0.0"
 dependencies = [
  "anodized",
+ "gandr-kernel-conversion-trace",
  "gandr-kernel-strata",
  "proptest",
 ]

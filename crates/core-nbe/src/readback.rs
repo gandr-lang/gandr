@@ -120,7 +120,6 @@ use crate::eval::EvalFault;
 use crate::eval::Fuel;
 use crate::eval::apply_static_within;
 use crate::eval::eval_closed_value;
-use crate::eval::eval_comp_within;
 use crate::eval::eval_value_within;
 
 /// Which of the domain's two faces a readback spends.
@@ -552,7 +551,13 @@ enum Task
         /// The binders open where it stands.
         binders: OpenBinders,
     },
-    /// Assemble a pair from the two value terms its own tasks produced.
+    /// Assemble a native product path.
+    PathProduct,
+    /// Assemble transport beneath a neutral path.
+    Transport,
+    /// Assemble product transport beneath a neutral pair.
+    ProductTransport,
+    /// Assemble a pair from its two components.
     Pair,
     /// Assemble a sum injection.
     Inject
@@ -1033,7 +1038,7 @@ fn enter(
         | Entry::Bare => {},
         | Entry::Under { zone, bound } => environment.extend(zone, bound),
     }
-    let evaluated = eval_comp_within(
+    let evaluated = crate::eval::eval_body_within(
         core,
         domain,
         machine.definitions,
@@ -1598,6 +1603,24 @@ fn step(
     match task {
         | Task::Value { value, binders } => step_value(core, domain, machine, value, binders),
         | Task::Comp { comp, binders } => step_comp(core, domain, machine, comp, binders),
+        | Task::PathProduct => {
+            let second = machine.pop_value()?;
+            let first = machine.pop_value()?;
+            machine.values.push(core.value_path_product(first, second));
+            Ok(())
+        },
+        | Task::Transport => {
+            let value = machine.pop_value()?;
+            let path = machine.pop_value()?;
+            machine.comps.push(core.computation_transport(path, value));
+            Ok(())
+        },
+        | Task::ProductTransport => {
+            let path = machine.pop_value()?;
+            let value = machine.pop_value()?;
+            machine.comps.push(core.computation_transport(path, value));
+            Ok(())
+        },
         | Task::Pair => {
             let second = machine.pop_value()?;
             let first = machine.pop_value()?;
@@ -1853,6 +1876,7 @@ fn step_quoted_value_type(
         binders,
     };
     match node {
+        | ValueType::PathUniverse(..)
         | ValueType::Base(_)
         | ValueType::Unit
         | ValueType::Universe { .. }
@@ -2080,6 +2104,22 @@ fn step_value(
         return Ok(());
     }
     match node {
+        | DomainValue::PathCertificate { certificate, .. } => {
+            machine.values.push(certificate);
+            Ok(())
+        },
+        | DomainValue::PathProduct { first, second, .. } => {
+            machine.tasks.push(Task::PathProduct);
+            machine.tasks.push(Task::Value {
+                value: second,
+                binders,
+            });
+            machine.tasks.push(Task::Value {
+                value: first,
+                binders,
+            });
+            Ok(())
+        },
         | DomainValue::Unit { .. } => {
             machine.values.push(core.value_unit());
             Ok(())
@@ -2398,6 +2438,8 @@ fn step_neutral(
                     .iter()
                     .map_while(|elimination| match *elimination {
                         | Elimination::StaticApply(argument) => Some(argument),
+                        | Elimination::Transport(_)
+                        | Elimination::ProductTransport(_)
                         | Elimination::Apply(_)
                         | Elimination::Force
                         | Elimination::Bind(_)
@@ -2530,6 +2572,23 @@ fn step_spine(
     };
     let onward = Task::Spine(spine.onward(Polarity::Computation));
     match elimination {
+        | Elimination::Transport(value) => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::Transport);
+            machine.tasks.push(Task::Value { value, binders });
+            Ok(())
+        },
+        | Elimination::ProductTransport(path) => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::ProductTransport);
+            machine.tasks.push(Task::Value {
+                value: path,
+                binders,
+            });
+            Ok(())
+        },
         | Elimination::Force => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);

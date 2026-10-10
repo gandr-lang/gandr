@@ -970,6 +970,9 @@ fn carried_occurrence(
         | Value::Variable(index) if BinderDepth::from(u32::from(index)) == depth => {
             Maybe::Present(replacement)
         },
+        | Value::PathRefl(_)
+        | Value::PathProduct(..)
+        | Value::PathEquiv { .. }
         | Value::Variable(_)
         | Value::Constant(_)
         | Value::Unit
@@ -1039,7 +1042,28 @@ fn push_rewrite_children(
                 &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
             )
             | None => {},
-            | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
+            | Some(&Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ..
+            }) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(backward), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(forward), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(path_type),
+                    depth,
+                    rewrite,
+                ));
+            },
+            | Some(&Value::PathRefl(code)) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(code), depth, rewrite));
+            },
+            | Some(
+                &Value::PathProduct(first, second)
+                | &Value::Pair(first, second)
+                | &Value::StaticApplication(first, second),
+            ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(second), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(first), depth, rewrite));
             },
@@ -1068,6 +1092,10 @@ fn push_rewrite_children(
         },
         | AnyNode::Computation(id) => match arena.computation(id) {
             | None => {},
+            | Some(&Computation::Transport(path, value)) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(path), depth, rewrite));
+            },
             | Some(&Computation::Lambda(body)) => {
                 tasks.push(RewriteTask::Open(
                     AnyNode::Computation(body),
@@ -1139,6 +1167,10 @@ fn push_rewrite_children(
                     rewrite,
                 ));
                 tasks.push(RewriteTask::Open(AnyNode::ValueType(first), depth, rewrite));
+            },
+            | Some(&ValueType::PathUniverse(source, target)) => {
+                tasks.push(RewriteTask::Open(AnyNode::Value(target), depth, rewrite));
+                tasks.push(RewriteTask::Open(AnyNode::Value(source), depth, rewrite));
             },
             | Some(&ValueType::Thunk(body)) => {
                 tasks.push(RewriteTask::Open(AnyNode::CompType(body), depth, rewrite));
@@ -1280,6 +1312,50 @@ fn close_value(
         return id;
     };
     match node {
+        | Value::PathRefl(code) => {
+            let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
+            if rewritten == code {
+                id
+            }
+            else {
+                arena.value_path_refl(rewritten)
+            }
+        },
+        | Value::PathProduct(first, second) => {
+            let rewritten_second = popped(results, AnyNode::Value(second)).value_or(second);
+            let rewritten_first = popped(results, AnyNode::Value(first)).value_or(first);
+            if rewritten_first == first && rewritten_second == second {
+                id
+            }
+            else {
+                arena.value_path_product(rewritten_first, rewritten_second)
+            }
+        },
+        | Value::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            evidence,
+        } => {
+            let rewritten_backward = popped(results, AnyNode::Value(backward)).value_or(backward);
+            let rewritten_forward = popped(results, AnyNode::Value(forward)).value_or(forward);
+            let rewritten_type =
+                popped(results, AnyNode::ValueType(path_type)).value_type_or(path_type);
+            if rewritten_type == path_type
+                && rewritten_forward == forward
+                && rewritten_backward == backward
+            {
+                id
+            }
+            else {
+                arena.value_path_equiv(
+                    rewritten_type,
+                    rewritten_forward,
+                    rewritten_backward,
+                    evidence,
+                )
+            }
+        },
         | Value::Variable(index) => rewrite_variable(arena, rewrite, id, index, depth),
         | Value::Constant(_) | Value::Unit | Value::Literal(_) => id,
         | Value::Pair(first, second) => {
@@ -1439,6 +1515,16 @@ fn close_computation(
         return id;
     };
     match node {
+        | Computation::Transport(path, value) => {
+            let rewritten_value = popped(results, AnyNode::Value(value)).value_or(value);
+            let rewritten_path = popped(results, AnyNode::Value(path)).value_or(path);
+            if rewritten_value == value && rewritten_path == path {
+                id
+            }
+            else {
+                arena.computation_transport(rewritten_path, rewritten_value)
+            }
+        },
         | Computation::Lambda(body) => {
             let rewritten = popped(results, AnyNode::Computation(body)).computation_or(body);
             if rewritten == body {
@@ -1532,6 +1618,16 @@ fn close_value_type(
         return id;
     };
     match node {
+        | ValueType::PathUniverse(source, target) => {
+            let rewritten_target = popped(results, AnyNode::Value(target)).value_or(target);
+            let rewritten_source = popped(results, AnyNode::Value(source)).value_or(source);
+            if rewritten_source == source && rewritten_target == target {
+                id
+            }
+            else {
+                arena.value_type_path_universe(rewritten_source, rewritten_target)
+            }
+        },
         | ValueType::Base(_)
         | ValueType::Unit
         | ValueType::Universe { .. }

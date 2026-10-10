@@ -659,6 +659,19 @@ impl<'run> Walk<'run>
             return Err(ConversionFault::Domain(DomainFault::Dangling));
         };
         match (one, other) {
+            | (
+                DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
+                DomainValue::PathCertificate { .. } | DomainValue::PathProduct { .. },
+            ) => Ok(
+                if equal_paths(self.core, self.domain, left, right)?
+                    == gandr_core_term::CertificateEquality::Equal
+                {
+                    Local::Agree
+                }
+                else {
+                    Local::Disagree
+                },
+            ),
             | (DomainValue::Unit { .. }, DomainValue::Unit { .. }) => Ok(Local::Agree),
             | (
                 DomainValue::Literal { literal: first, .. },
@@ -819,7 +832,9 @@ impl<'run> Walk<'run>
             | (DomainValue::Neutral { neutral, .. }, _)
             | (_, DomainValue::Neutral { neutral, .. }) => self.neutral_against_former(neutral),
             | (
-                DomainValue::Unit { .. }
+                DomainValue::PathCertificate { .. }
+                | DomainValue::PathProduct { .. }
+                | DomainValue::Unit { .. }
                 | DomainValue::Literal { .. }
                 | DomainValue::Pair { .. }
                 | DomainValue::Injection { .. }
@@ -983,6 +998,14 @@ impl<'run> Walk<'run>
         let mut queued = Vec::new();
         for (&left_elimination, &right_elimination) in one.spine().iter().zip(other.spine()) {
             match (left_elimination, right_elimination) {
+                | (
+                    Elimination::Transport(left_argument),
+                    Elimination::Transport(right_argument),
+                )
+                | (
+                    Elimination::ProductTransport(left_argument),
+                    Elimination::ProductTransport(right_argument),
+                )
                 | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
                 | (
                     Elimination::StaticApply(left_argument),
@@ -1008,7 +1031,9 @@ impl<'run> Walk<'run>
                     queued.push(Goal::Closures(left_on_right, right_on_right));
                 },
                 | (
-                    Elimination::Apply(_)
+                    Elimination::Transport(_)
+                    | Elimination::ProductTransport(_)
+                    | Elimination::Apply(_)
                     | Elimination::Force
                     | Elimination::Bind(_)
                     | Elimination::Case { .. }
@@ -1075,6 +1100,82 @@ impl<'run> Walk<'run>
         }
         Ok(Local::Agree)
     }
+}
+
+/// Compare path constructors without reducing their certificate programs.
+///
+/// # Specification
+/// - ensures: evidence is erased but every translator constructor is retained;
+///   product components are compared after ambient value substitution only.
+/// - fails: a domain fault on a dangling value or neutral.
+/// - panics: none.
+///
+/// # Errors
+/// `ConversionFault::Domain`.
+///
+/// # Termination
+/// - reason: a visited-pair worklist over the finite domain graph.
+/// - measure: unvisited pairs.
+///
+/// # Adequacy
+/// - hypothesis: L3 — normalization never equates different translator syntax.
+/// - witness: `eval::tests::native_certificate_conversion_retains_map_syntax`
+pub fn equal_paths(
+    core: &CoreArena,
+    domain: &DomainArena,
+    left: DomainValueId,
+    right: DomainValueId,
+) -> Result<gandr_core_term::CertificateEquality, ConversionFault>
+{
+    let mut pending = Vec::from([(left, right)]);
+    let mut visited = alloc::collections::BTreeSet::new();
+    while let Some((left, right)) = pending.pop() {
+        if !visited.insert((left, right)) {
+            continue;
+        }
+        let (Some(one), Some(other)) = (domain.value(left), domain.value(right))
+        else {
+            return Err(ConversionFault::Domain(DomainFault::Dangling));
+        };
+        match (*one, *other) {
+            | (
+                DomainValue::PathCertificate { certificate: a, .. },
+                DomainValue::PathCertificate { certificate: b, .. },
+            ) => {
+                if gandr_core_term::equal_certificate_syntax(core, a, b)
+                    == gandr_core_term::CertificateEquality::Different
+                {
+                    return Ok(gandr_core_term::CertificateEquality::Different);
+                }
+            },
+            | (
+                DomainValue::PathProduct {
+                    first: a,
+                    second: b,
+                    ..
+                },
+                DomainValue::PathProduct {
+                    first: c,
+                    second: d,
+                    ..
+                },
+            ) => pending.extend([(a, c), (b, d)]),
+            | (
+                DomainValue::Neutral { neutral: a, .. },
+                DomainValue::Neutral { neutral: b, .. },
+            ) => {
+                let (Some(a), Some(b)) = (domain.neutral(a), domain.neutral(b))
+                else {
+                    return Err(ConversionFault::Domain(DomainFault::Dangling));
+                };
+                if a.head() != b.head() || !a.spine().is_empty() || !b.spine().is_empty() {
+                    return Ok(gandr_core_term::CertificateEquality::Different);
+                }
+            },
+            | _ => return Ok(gandr_core_term::CertificateEquality::Different),
+        }
+    }
+    Ok(gandr_core_term::CertificateEquality::Equal)
 }
 
 #[cfg(test)]

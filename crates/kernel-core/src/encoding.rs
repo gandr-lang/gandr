@@ -722,6 +722,29 @@ impl ContentTable
     )
     {
         match *value {
+            | Value::PathRefl(code) => {
+                record.put_tag(gandr_kernel_term::NODE_V_PATH_REFL);
+                record.put_content(self.content_of(AnyNode::Value(code)));
+            },
+            | Value::PathProduct(first, second) => {
+                record.put_tag(gandr_kernel_term::NODE_V_PATH_PRODUCT);
+                record.put_content(self.content_of(AnyNode::Value(first)));
+                record.put_content(self.content_of(AnyNode::Value(second)));
+            },
+            | Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ref evidence,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_V_PATH_EQUIV);
+                for word in evidence.words() {
+                    record.put_word(EncodedWord(word.0));
+                }
+                record.put_content(self.content_of(AnyNode::ValueType(path_type)));
+                record.put_content(self.content_of(AnyNode::Value(forward)));
+                record.put_content(self.content_of(AnyNode::Value(backward)));
+            },
             | Value::Variable(index) => {
                 record.put_tag(gandr_kernel_term::NODE_V_VARIABLE);
                 record.put_word(EncodedWord(u64::from(u32::from(index))));
@@ -786,6 +809,11 @@ impl ContentTable
     )
     {
         match *computation {
+            | Computation::Transport(path, value) => {
+                record.put_tag(gandr_kernel_term::NODE_C_TRANSPORT);
+                record.put_content(self.content_of(AnyNode::Value(path)));
+                record.put_content(self.content_of(AnyNode::Value(value)));
+            },
             | Computation::Lambda(body) => {
                 record.put_tag(gandr_kernel_term::NODE_C_LAMBDA);
                 record.put_content(self.content_of(AnyNode::Computation(body)));
@@ -838,6 +866,11 @@ impl ContentTable
     )
     {
         match *value_type {
+            | ValueType::PathUniverse(source, target) => {
+                record.put_tag(gandr_kernel_term::NODE_VT_PATH_UNIVERSE);
+                record.put_content(self.content_of(AnyNode::Value(source)));
+                record.put_content(self.content_of(AnyNode::Value(target)));
+            },
             | ValueType::Base(base) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_BASE);
                 record.put_tag(base_tag(base));
@@ -962,7 +995,22 @@ fn push_children(
             | Some(
                 &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
             ) => {},
-            | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
+            | Some(&Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ..
+            }) => {
+                tasks.push(EncodeTask::Open(AnyNode::ValueType(path_type)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(forward)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(backward)));
+            },
+            | Some(&Value::PathRefl(code)) => tasks.push(EncodeTask::Open(AnyNode::Value(code))),
+            | Some(
+                &Value::PathProduct(first, second)
+                | &Value::Pair(first, second)
+                | &Value::StaticApplication(first, second),
+            ) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(first)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(second)));
             },
@@ -979,6 +1027,10 @@ fn push_children(
         },
         | AnyNode::Computation(id) => match arena.computation(id) {
             | None => {},
+            | Some(&Computation::Transport(path, value)) => {
+                tasks.push(EncodeTask::Open(AnyNode::Value(path)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(value)));
+            },
             | Some(&Computation::Lambda(body)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Computation(body)));
             },
@@ -1021,6 +1073,10 @@ fn push_children(
             ) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(first)));
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(second)));
+            },
+            | Some(&ValueType::PathUniverse(source, target)) => {
+                tasks.push(EncodeTask::Open(AnyNode::Value(source)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(target)));
             },
             | Some(&ValueType::Thunk(body)) => {
                 tasks.push(EncodeTask::Open(AnyNode::CompType(body)));

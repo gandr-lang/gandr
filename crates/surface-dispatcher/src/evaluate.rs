@@ -743,7 +743,8 @@ impl<'source> Program<'source>
             | Some(&Computation::Return(value)) => Vec::from([Piece::Value(value)]),
             | Some(&Computation::Lambda(_)) => Vec::from([Piece::Text("<fun>")]),
             | Some(
-                &(Computation::Application(..)
+                &(Computation::Transport(..)
+                | Computation::Application(..)
                 | Computation::Bind(..)
                 | Computation::Force(_)
                 | Computation::Case { .. }),
@@ -759,6 +760,9 @@ impl<'source> Program<'source>
                 | Piece::Value(value) => value,
             };
             match core.value(value) {
+                | Some(
+                    &(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. }),
+                ) => spelled.push_str("<path>"),
                 | Some(&Value::Literal(Literal::Integer(ref integer))) => {
                     if integer.sign() == Sign::Negative {
                         spelled.push('-');
@@ -870,10 +874,22 @@ fn references(
         match node {
             | Node::Value(id) => match core.value(id) {
                 | Some(&Value::Constant(constant)) => referred.push(constant),
-                | Some(&Value::Pair(first, second)) => {
+                | Some(
+                    &(Value::PathProduct(first, second)
+                    | Value::PathEquiv {
+                        forward: first,
+                        backward: second,
+                        ..
+                    }
+                    | Value::Pair(first, second)),
+                ) => {
                     pending.extend([Node::Value(first), Node::Value(second)]);
                 },
-                | Some(&(Value::Injection(_, inner) | Value::Lift { body: inner, .. })) => {
+                | Some(
+                    &(Value::PathRefl(inner)
+                    | Value::Injection(_, inner)
+                    | Value::Lift { body: inner, .. }),
+                ) => {
                     pending.push(Node::Value(inner));
                 },
                 | Some(&Value::Thunk(computation)) => pending.push(Node::Computation(computation)),
@@ -889,6 +905,9 @@ fn references(
                 | None => {},
             },
             | Node::Computation(id) => match core.computation(id) {
+                | Some(&Computation::Transport(path, value)) => {
+                    pending.extend([Node::Value(path), Node::Value(value)]);
+                },
                 | Some(&Computation::Lambda(inner)) => pending.push(Node::Computation(inner)),
                 | Some(&Computation::Application(head, argument)) => {
                     pending.extend([Node::Computation(head), Node::Value(argument)]);

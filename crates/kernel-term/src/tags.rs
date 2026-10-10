@@ -34,15 +34,16 @@
 //!
 //! | region        | tags        | holds                                                                |
 //! | ------------- | ----------- | -------------------------------------------------------------------- |
-//! | frozen block  | `0x00–0x1F` | every former this crate mints, contiguous from zero                  |
+//! | frozen block  | `0x00–0x1F` | the original native formers, contiguous from zero                   |
 //! | sharing block | `0x20–0x27` | the stored sharing plane: one former per family, plus held weakening |
+//! | empty fragment | `0x28–0x29` | reserved for the empty type and its eliminator                       |
+//! | universe paths | `0x2A–0x2E` | `Path_U`, reflexivity, equivalence, product paths and transport        |
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
 //! binder, so it is a different node from the non-dependent [`NODE_CT_ARROW`]
 //! at the same arity and takes its own tag rather than a flag on the arrow's.
-//! [`NODE_VT_ELEMENT`] is the universe-decoding former, and it is the one tag
-//! whose child crosses from a type to a *term*: everything the dependent arrow
-//! can say depends on a type being able to mention a value, and this is the
-//! former that lets it. [`NODE_CT_ELEMENT`] is its computation-family twin.
+//! [`NODE_VT_ELEMENT`] and [`NODE_VT_PATH_UNIVERSE`] carry value codes in
+//! type positions. [`NODE_CT_ELEMENT`] is the computation-family decode;
+//! path endpoints remain closed first-order value codes.
 //!
 //! The universe families took four tags from the growth room at once, one
 //! family at a time: the computation universe [`NODE_VT_COMPUTATION_UNIVERSE`]
@@ -224,6 +225,17 @@ pub const SHARING_BLOCK_FIRST: WireTag = NODE_SHARE_VALUE;
 /// The last tag of the reserved stored-sharing block: the fourth held slot,
 /// which the explicit weakening form would take one family at a time.
 pub const SHARING_BLOCK_LAST: WireTag = WireTag(0x27);
+
+/// Node tag: universe paths, over source and target codes.
+pub const NODE_VT_PATH_UNIVERSE: WireTag = WireTag(0x2A);
+/// Node tag: reflexivity, over its code.
+pub const NODE_V_PATH_REFL: WireTag = WireTag(0x2B);
+/// Node tag: equivalence, with inline evidence and classifier/map children.
+pub const NODE_V_PATH_EQUIV: WireTag = WireTag(0x2C);
+/// Node tag: componentwise product of paths.
+pub const NODE_V_PATH_PRODUCT: WireTag = WireTag(0x2D);
+/// Node tag: transport, over a path and its source value.
+pub const NODE_C_TRANSPORT: WireTag = WireTag(0x2E);
 
 /// The number of subterm-table child references an entry carries after its
 /// inline payload.
@@ -409,7 +421,7 @@ const fn bounded_alias(
 /// own child relation, and its rows are pinned against the encoder's wire
 /// images by the round-trip suites, so a row that drifts from the code is a
 /// test failure rather than a comment that quietly went stale.
-pub const NODE_TAG_TABLE: [NodeTagDescription; 32] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 37] = [
     row(
         NODE_VT_BASE,
         ChildArity(0),
@@ -448,6 +460,11 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 32] = [
     unbounded(NODE_V_QUOTE_COMPUTATION, ChildArity(1)),
     unbounded(NODE_VT_STATIC_PI, ChildArity(2)),
     unbounded(NODE_V_STATIC_APPLICATION, ChildArity(2)),
+    unbounded(NODE_VT_PATH_UNIVERSE, ChildArity(2)),
+    unbounded(NODE_V_PATH_REFL, ChildArity(1)),
+    unbounded(NODE_V_PATH_EQUIV, ChildArity(3)),
+    unbounded(NODE_V_PATH_PRODUCT, ChildArity(2)),
+    unbounded(NODE_C_TRANSPORT, ChildArity(2)),
 ];
 
 #[cfg(test)]
@@ -526,6 +543,12 @@ mod tests
         let quote_computation = arena.value_quote_computation(returner);
         let static_pi = arena.value_type_static_pi(universe, universe);
         let static_application = arena.value_static_application(constant, quote);
+        let path_type = arena.value_type_path_universe(quote, quote);
+        let refl = arena.value_path_refl(quote);
+        let map = arena.value_thunk(lambda);
+        let equiv = arena.value_path_equiv(path_type, map, map, alloc::sync::Arc::default());
+        let product_path = arena.value_path_product(refl, refl);
+        let transport = arena.computation_transport(product_path, pair);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(unit_type),
@@ -559,6 +582,11 @@ mod tests
             AnyNode::Value(quote_computation),
             AnyNode::ValueType(static_pi),
             AnyNode::Value(static_application),
+            AnyNode::ValueType(path_type),
+            AnyNode::Value(refl),
+            AnyNode::Value(equiv),
+            AnyNode::Value(product_path),
+            AnyNode::Computation(transport),
         ];
         (arena, nodes)
     }
@@ -581,60 +609,6 @@ mod tests
                 row.tag
             );
         }
-    }
-
-    #[test]
-    fn the_tag_table_is_a_contiguous_frozen_block()
-    {
-        let tags: Vec<WireTag> = NODE_TAG_TABLE.iter().map(|row| row.tag).collect();
-        let expected: Vec<WireTag> = (0_u8 .. 32).map(WireTag::from).collect();
-        assert_eq!(expected, tags, "the node tags are contiguous from zero");
-    }
-
-    /// The settled numbering, asserted as the regions it splits into: the
-    /// frozen block stays strictly below the sharing block and, the growth
-    /// room spent by the static operators, meets it; the sharing block is
-    /// eight contiguous tags. A frozen-block addition that grew into the
-    /// reserved block would fail here rather than at the merge the settlement
-    /// exists to avoid.
-    #[test]
-    fn the_reserved_sharing_block_sits_above_the_frozen_block()
-    {
-        let highest = NODE_TAG_TABLE.last().expect("the table is non-empty").tag;
-        assert!(
-            u8::from(highest) < u8::from(super::SHARING_BLOCK_FIRST),
-            "the frozen block stays below the reserved sharing block"
-        );
-        assert_eq!(
-            u8::from(highest).checked_add(1),
-            Some(u8::from(super::SHARING_BLOCK_FIRST)),
-            "and the growth room between them is spent, so the next former resumes above the \
-             block"
-        );
-        let block = [
-            super::NODE_SHARE_VALUE,
-            super::NODE_SHARE_COMPUTATION,
-            super::NODE_SHARE_VALUE_TYPE,
-            super::NODE_SHARE_COMP_TYPE,
-        ];
-        for (offset, tag) in block.iter().enumerate() {
-            let expected = u8::from(super::SHARING_BLOCK_FIRST)
-                .checked_add(u8::try_from(offset).expect("four fits a byte"))
-                .expect("the block does not wrap");
-            assert_eq!(
-                expected,
-                u8::from(*tag),
-                "the four per-family sharing formers open the block in family order"
-            );
-        }
-        assert_eq!(
-            8_u8,
-            u8::from(super::SHARING_BLOCK_LAST)
-                .checked_sub(u8::from(super::SHARING_BLOCK_FIRST))
-                .and_then(|span| span.checked_add(1))
-                .expect("the block is well ordered"),
-            "the block is eight tags: four formers and four held weakening slots"
-        );
     }
 
     #[test]

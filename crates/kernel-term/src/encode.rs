@@ -477,6 +477,7 @@ fn intern(
 #[spec(ensures: |ret| ret.0.as_image().as_ref().first().copied()
     == Some(u8::from(match node {
         AnyNode::ValueType(id) => match arena.value_type(id) {
+            Some(&ValueType::PathUniverse(..)) => tags::NODE_VT_PATH_UNIVERSE,
             None | Some(&ValueType::Unit) => tags::NODE_VT_UNIT,
             Some(&ValueType::Base(_)) => tags::NODE_VT_BASE,
             Some(&ValueType::Universe { sort: GroundSort::Value, .. }) => tags::NODE_VT_UNIVERSE,
@@ -498,6 +499,9 @@ fn intern(
             Some(&CompType::Element { .. }) => tags::NODE_CT_ELEMENT,
         },
         AnyNode::Value(id) => match arena.value(id) {
+            Some(&Value::PathRefl(_)) => tags::NODE_V_PATH_REFL,
+            Some(&Value::PathProduct(..)) => tags::NODE_V_PATH_PRODUCT,
+            Some(&Value::PathEquiv { .. }) => tags::NODE_V_PATH_EQUIV,
             None | Some(&Value::Unit) => tags::NODE_V_UNIT,
             Some(&Value::Variable(_)) => tags::NODE_V_VARIABLE,
             Some(&Value::Constant(_)) => tags::NODE_V_CONSTANT,
@@ -511,6 +515,7 @@ fn intern(
             Some(&Value::StaticApplication(..)) => tags::NODE_V_STATIC_APPLICATION,
         },
         AnyNode::Computation(id) => match arena.computation(id) {
+            Some(&Computation::Transport(..)) => tags::NODE_C_TRANSPORT,
             None | Some(&Computation::Return(_)) => tags::NODE_C_RETURN,
             Some(&Computation::Lambda(_)) => tags::NODE_C_LAMBDA,
             Some(&Computation::Application(..)) => tags::NODE_C_APPLICATION,
@@ -534,6 +539,7 @@ fn encode_entry(
                     out.put_tag(tags::NODE_VT_BASE);
                     out.put_tag(base_type_tag(base));
                 },
+                | ValueType::PathUniverse(..) => out.put_tag(tags::NODE_VT_PATH_UNIVERSE),
                 | ValueType::Unit => out.put_tag(tags::NODE_VT_UNIT),
                 | ValueType::Universe {
                     sort: GroundSort::Value,
@@ -587,6 +593,14 @@ fn encode_entry(
                     out.put_tag(tags::NODE_V_CONSTANT);
                     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(index))));
                 },
+                | Value::PathRefl(_) => out.put_tag(tags::NODE_V_PATH_REFL),
+                | Value::PathProduct(..) => out.put_tag(tags::NODE_V_PATH_PRODUCT),
+                | Value::PathEquiv { ref evidence, .. } => {
+                    out.put_tag(tags::NODE_V_PATH_EQUIV);
+                    for word in evidence.words() {
+                        out.put_uvarint(WireU64::from(word.0));
+                    }
+                },
                 | Value::Unit => out.put_tag(tags::NODE_V_UNIT),
                 | Value::Literal(ref literal) => {
                     out.put_tag(tags::NODE_V_LITERAL);
@@ -608,6 +622,7 @@ fn encode_entry(
             },
         },
         | AnyNode::Computation(id) => match arena.computation(id) {
+            | Some(&Computation::Transport(..)) => out.put_tag(tags::NODE_C_TRANSPORT),
             | Some(&Computation::Lambda(_)) => out.put_tag(tags::NODE_C_LAMBDA),
             | Some(&Computation::Application(..)) => out.put_tag(tags::NODE_C_APPLICATION),
             | Some(&Computation::Return(_)) | None => out.put_tag(tags::NODE_C_RETURN),

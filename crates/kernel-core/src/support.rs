@@ -705,7 +705,20 @@ impl LooseDepths
                         | Value::Constant(_)
                         | Value::Unit
                         | Value::Literal(_) => {},
-                        | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
+                        | Value::PathEquiv {
+                            path_type,
+                            forward,
+                            backward,
+                            ..
+                        } => {
+                            tasks.push(ReachTask::OpenValueType(path_type));
+                            tasks.push(ReachTask::OpenValue(forward));
+                            tasks.push(ReachTask::OpenValue(backward));
+                        },
+                        | Value::PathRefl(code) => tasks.push(ReachTask::OpenValue(code)),
+                        | Value::PathProduct(first, second)
+                        | Value::Pair(first, second)
+                        | Value::StaticApplication(first, second) => {
                             tasks.push(ReachTask::OpenValue(first));
                             tasks.push(ReachTask::OpenValue(second));
                         },
@@ -734,6 +747,10 @@ impl LooseDepths
                     };
                     tasks.push(ReachTask::CloseComp(id));
                     match *node {
+                        | Computation::Transport(path, value) => {
+                            tasks.push(ReachTask::OpenValue(path));
+                            tasks.push(ReachTask::OpenValue(value));
+                        },
                         | Computation::Lambda(body) => tasks.push(ReachTask::OpenComp(body)),
                         | Computation::Application(head, argument) => {
                             tasks.push(ReachTask::OpenComp(head));
@@ -784,6 +801,10 @@ impl LooseDepths
                         } => {
                             tasks.push(ReachTask::OpenValueType(first));
                             tasks.push(ReachTask::OpenValueType(second));
+                        },
+                        | ValueType::PathUniverse(source, target) => {
+                            tasks.push(ReachTask::OpenValue(source));
+                            tasks.push(ReachTask::OpenValue(target));
                         },
                         | ValueType::Lift { inner, .. } => {
                             tasks.push(ReachTask::OpenValueType(inner));
@@ -936,6 +957,9 @@ impl LooseDepths
             return LooseDepth::WIDEST;
         };
         match *node {
+            | ValueType::PathUniverse(source, target) => {
+                self.cached_value(source).join(self.cached_value(target))
+            },
             | ValueType::Base(_)
             | ValueType::Unit
             | ValueType::Universe { .. }
@@ -1027,7 +1051,19 @@ impl LooseDepths
                 )))
             },
             | Value::Constant(_) | Value::Unit | Value::Literal(_) => LooseDepth(0),
-            | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
+            | Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ..
+            } => self
+                .cached_value_type(path_type)
+                .join(self.cached_value(forward))
+                .join(self.cached_value(backward)),
+            | Value::PathRefl(code) => self.cached_value(code),
+            | Value::PathProduct(first, second)
+            | Value::Pair(first, second)
+            | Value::StaticApplication(first, second) => {
                 self.cached_value(first).join(self.cached_value(second))
             },
             | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
@@ -1066,6 +1102,9 @@ impl LooseDepths
             return LooseDepth::WIDEST;
         };
         match *node {
+            | Computation::Transport(path, value) => {
+                self.cached_value(path).join(self.cached_value(value))
+            },
             | Computation::Lambda(body) => self.cached_comp(body).under_binder(),
             | Computation::Application(head, argument) => {
                 self.cached_comp(head).join(self.cached_value(argument))

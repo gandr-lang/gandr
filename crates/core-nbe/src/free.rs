@@ -539,7 +539,20 @@ impl Children
                     | Value::Constant(_)
                     | Value::Unit
                     | Value::Literal(_) => [None, None, None],
-                    | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
+                    | Value::PathEquiv {
+                        path_type,
+                        forward,
+                        backward,
+                        ..
+                    } => [
+                        Some((Reached::ValueType(path_type), Lowering::NONE)),
+                        Some((value(forward), Lowering::NONE)),
+                        Some((value(backward), Lowering::NONE)),
+                    ],
+                    | Value::PathRefl(code) => one(value(code), Lowering::NONE),
+                    | Value::PathProduct(first, second)
+                    | Value::Pair(first, second)
+                    | Value::StaticApplication(first, second) => {
                         two(value(first), value(second), Lowering::NONE)
                     },
                     | Value::StaticLambda(body) => one(value(body), Lowering::ONE),
@@ -556,6 +569,9 @@ impl Children
             | Reached::Term(CoreTerm::Computation(id)) => {
                 let held = core.computation(id).ok_or(FreeFault::Dangling)?;
                 match *held {
+                    | Computation::Transport(path, operand) => {
+                        two(value(path), value(operand), Lowering::NONE)
+                    },
                     | Computation::Lambda(body) => one(computation(body), Lowering::ONE),
                     | Computation::Application(head, argument) => {
                         two(computation(head), value(argument), Lowering::NONE)
@@ -580,6 +596,9 @@ impl Children
             | Reached::ValueType(id) => {
                 let held = core.value_type(id).ok_or(FreeFault::Dangling)?;
                 match *held {
+                    | ValueType::PathUniverse(source, target) => {
+                        two(value(source), value(target), Lowering::NONE)
+                    },
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Universe { .. }

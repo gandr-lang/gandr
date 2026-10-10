@@ -1225,6 +1225,47 @@ fn decode_entry(
     let tag = reader.next_tag()?;
     let mut children: Vec<GlobalIndex> = Vec::new();
     let (node, family) = match tag {
+        | tags::NODE_VT_PATH_UNIVERSE => {
+            let source = read_value(reader, table, this, &mut children)?;
+            let target = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.value_type_path_universe(source, target);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
+        | tags::NODE_V_PATH_REFL => {
+            let code = read_value(reader, table, this, &mut children)?;
+            (
+                DecodedNode::Value(table.arena.value_path_refl(code)),
+                Family::Value,
+            )
+        },
+        | tags::NODE_V_PATH_PRODUCT => {
+            let first = read_value(reader, table, this, &mut children)?;
+            let second = read_value(reader, table, this, &mut children)?;
+            (
+                DecodedNode::Value(table.arena.value_path_product(first, second)),
+                Family::Value,
+            )
+        },
+        | tags::NODE_V_PATH_EQUIV => {
+            let source = decode_dialogues(reader)?;
+            let target = decode_dialogues(reader)?;
+            let evidence = alloc::sync::Arc::new(crate::PathEvidence { source, target });
+            let path_type = read_value_type(reader, table, this, &mut children)?;
+            let forward = read_value(reader, table, this, &mut children)?;
+            let backward = read_value(reader, table, this, &mut children)?;
+            let id = table
+                .arena
+                .value_path_equiv(path_type, forward, backward, evidence);
+            (DecodedNode::Value(id), Family::Value)
+        },
+        | tags::NODE_C_TRANSPORT => {
+            let path = read_value(reader, table, this, &mut children)?;
+            let value = read_value(reader, table, this, &mut children)?;
+            (
+                DecodedNode::Computation(table.arena.computation_transport(path, value)),
+                Family::Computation,
+            )
+        },
         | tags::NODE_VT_BASE => {
             let base = decode_base_type(reader)?;
             let id = table.arena.value_type_base(base);
@@ -1418,6 +1459,42 @@ fn decode_entry(
     table.families.push(family);
     table.children.push(children);
     Ok(())
+}
+
+/// Decode ordered portable dialogues, allocating only as bytes are consumed.
+///
+/// # Specification
+/// - ensures: preserves every dialogue and decision in wire order.
+/// - provides: syntax only; no round-trip claim is trusted here.
+/// - fails: truncated, overlong or unknown decision words are refused.
+/// - panics: none.
+///
+/// # Errors
+/// The byte reader's error or malformed path evidence.
+///
+/// # Adequacy
+/// - hypothesis: L3 — native artifacts round-trip; truncated dialogue payloads
+///   and invalid words are rejected before admission.
+/// - witness: `sharing_format::sharing_format::native_path_evidence_preserves_framing_and_refuses_malformed_words`
+fn decode_dialogues(
+    reader: &mut ByteReader<'_>
+) -> Result<Vec<Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>>, DecodeError>
+{
+    let count = reader.read_uvarint()?;
+    let mut dialogues = Vec::new();
+    for _ in 0 .. u64::from(count) {
+        let count = reader.read_uvarint()?;
+        let mut dialogue = Vec::new();
+        for _ in 0 .. u64::from(count) {
+            let word = reader.read_uvarint()?;
+            let decision = crate::EvidenceWord(u64::from(word))
+                .try_into()
+                .map_err(|site| DecodeError::Malformed { site })?;
+            dialogue.push(decision);
+        }
+        dialogues.push(dialogue);
+    }
+    Ok(dialogues)
 }
 
 /// Read one child index, validating strictly-earlier order and the required

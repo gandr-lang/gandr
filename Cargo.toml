@@ -221,6 +221,7 @@ path = "crates/kernel-check-memo"
 # - core-checker
 # - core-nbe
 # - kernel-core
+# - kernel-term
 [workspace.dependencies.gandr-kernel-conversion-trace]
 path = "crates/kernel-conversion-trace"
 

@@ -150,14 +150,20 @@ The tag space is one disjoint enumeration over the four families:
 
 | region | tags | holds |
 | ------ | ---- | ----- |
-| frozen block | `0x00–0x1F` | every former this crate mints, contiguous from zero through the two static operators |
-| sharing block | `0x20–0x27` | a stored sharing plane: one former per family, plus four held slots for an explicit weakening form |
+| frozen block | `0x00–0x1F` | base vocabulary through the static operators |
+| sharing block | `0x20–0x27` | reserved stored sharing and explicit weakening forms |
+| empty fragment | `0x28–0x29` | reserved empty type and eliminator |
+| native paths | `0x2A–0x2E` | `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct`, `Transport`, respectively |
 
-The universe families took four tags from the former growth room, in family order: `NODE_VT_COMPUTATION_UNIVERSE` (`0x1A`), `NODE_CT_ELEMENT` (`0x1B`), `NODE_V_QUOTE` (`0x1C`) and `NODE_V_QUOTE_COMPUTATION` (`0x1D`). `NODE_VT_UNIVERSE` keeps its byte and now names the value universe alone. The sort is a tag rather than an inline byte on `NODE_VT_UNIVERSE` for the reason the dependent arrow is a tag rather than a flag on the arrow: a payload byte that changes what a node means is a field-shape change, which bumps `FORMAT_VERSION`, where a fresh tag holds it. The static operators took the last two, `NODE_VT_STATIC_PI` (`0x1E`) and `NODE_V_STATIC_APPLICATION` (`0x1F`); the growth room is spent, and the next core former resumes above `SHARING_BLOCK_LAST`.
+Universe sorts and dependent arrows have distinct tags rather than meaning-changing flags on existing nodes. Static operators occupy `0x1E–0x1F`. New formers use unassigned bytes above the reserved regions.
 
 The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
 
 Assigning an unassigned tag or kind byte, or filling a reserved slot that is framed from the start, holds `FORMAT_VERSION`: the reader is a closed-vocabulary parser, so an unknown byte is a named refusal rather than a mis-parse. Reassigning a byte or changing a field's shape, order or width bumps it, because an older reader would otherwise parse successfully and wrongly.
+
+`PathUniverse` has two value-code children; reflexivity has one code, product paths have two paths, and transport has a path and input value. `PathEquiv` carries inline portable evidence followed by its classifier, forward map and backward map children. Evidence is source then target: a dialogue count, then each dialogue's decision count and unsigned decision words. Unknown words and oversized negative-premise positions are malformed; decoding never certifies a round trip.
+
+The portable decision alphabet comes from `kernel-conversion-trace`; unit anchors carry no arena identity. Reusing that vocabulary avoids a second replay protocol. The sharing-format witness preserves all decisions, empty dialogues and direction boundaries against independent bytes, and rejects malformed words and truncated prefixes. **Reversal:** introduce a new framing version if the alphabet needs payloads that cannot be encoded without changing existing word meanings.
 
 ## Sharing and compression
 

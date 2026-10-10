@@ -1,11 +1,9 @@
 //! Closed-code coverage and the iterative shadow of transport's beta rules.
 
-use alloc::boxed::Box;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use gandr_kernel_check_memo::NullMemo;
-use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::TermArena;
@@ -15,14 +13,9 @@ use gandr_kernel_term::ValueType;
 use gandr_kernel_term::ValueTypeId;
 
 use super::Allowance;
-use super::Dialogue;
 use super::Direction;
 use super::PathError;
-use super::Paths;
 use super::PatternPosition;
-use super::Reduct;
-use super::Transport;
-use crate::check::check_closed_value;
 use crate::encoding::ContentTable;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
@@ -75,35 +68,6 @@ pub(super) fn code(
         }
     }
     Ok(root)
-}
-
-/// Check a closed CBPV translator at its exact source and target.
-///
-/// # Specification
-/// - requires: the endpoint types have passed `code`.
-/// - ensures: `function : U (source -> F target)` in the empty context.
-/// - provides: typing independently of any round-trip trace.
-/// - fails: `PathError::Typing` with the kernel's original diagnostic.
-/// - panics: none.
-///
-/// # Errors
-/// `PathError::Typing`.
-///
-/// # Adequacy
-/// - hypothesis: L3 — a unit value cannot masquerade as a translator.
-/// - witness: `path_universe::tests::a_non_equivalence_is_refused`
-pub(super) fn translator(
-    arena: &mut TermArena,
-    function: ValueId,
-    source: ValueTypeId,
-    target: ValueTypeId,
-) -> Result<(), PathError>
-{
-    let result = arena.comp_type_returner(target);
-    let arrow = arena.comp_type_arrow(source, result);
-    let expected = arena.value_type_thunk(arrow);
-    check_closed_value(arena, function, expected)
-        .map_err(|error| PathError::Typing(Box::new(error)))
 }
 
 /// A canonical constructor pattern with fresh rigid variables at base leaves.
@@ -246,12 +210,12 @@ fn patterns(
 /// - hypothesis: L3 — constant true fails on the false branch; missing,
 ///   additional and forged dialogues cannot make formation succeed.
 /// - witness: `path_universe::tests::a_non_equivalence_is_refused`
-pub(super) fn round_trip(
+pub fn round_trip(
     arena: &mut TermArena,
     source: ValueTypeId,
     forward: ValueId,
     backward: ValueId,
-    dialogues: &[Dialogue],
+    dialogues: &[Vec<gandr_kernel_conversion_trace::ConversionDecision<()>>],
     direction: Direction,
     budget: ReplayBudget,
 ) -> Result<(), PathError>
@@ -274,7 +238,7 @@ pub(super) fn round_trip(
             &unfoldings,
             ReplaySides::Computations(composite, identity),
             EngineClaim::Convertible,
-            dialogue.0.iter().copied(),
+            dialogue.iter().copied().map(super::anchor),
             budget,
         );
         if verdict != KernelVerdict::Convertible {
@@ -286,78 +250,4 @@ pub(super) fn round_trip(
         }
     }
     Ok(())
-}
-
-/// A transport-expansion continuation.
-#[derive(Clone, Copy)]
-enum Lower
-{
-    /// Fire a path's beta rule.
-    Transport(Transport),
-    /// Pair two component computations using ordinary CBPV sequencing.
-    Pair,
-}
-
-/// Expand canonical transport into ordinary CBPV computation syntax.
-///
-/// # Specification
-/// - requires: the path is formed and its input is a closed typed value.
-/// - ensures: equivalence uses `force f v`, reflexivity uses `return v`, and
-///   products sequence the left and right transports and return their pair.
-/// - provides: the kernel's reduction, with no producer-supplied reduct.
-/// - fails: beta's path/shape errors, `Arena`, or `Budget`.
-/// - panics: none.
-///
-/// # Errors
-/// `UnknownPath`, `ExpectedPair`, `Arena`, or `Budget`.
-///
-/// # Adequacy
-/// - hypothesis: L3 — negation and product negation distinguish both forward
-///   action and pair order; reflexivity preserves its input exactly.
-/// - witness: `path_universe::tests::transport_computes`
-/// - witness: `path_universe::tests::it_computes_through_a_former`
-/// - witness: `path_universe::tests::refl_collapses`
-pub(super) fn lower(
-    arena: &mut TermArena,
-    paths: &Paths,
-    term: Transport,
-    budget: ReplayBudget,
-) -> Result<ComputationId, PathError>
-{
-    let mut pending = Vec::from([Lower::Transport(term)]);
-    let mut results = Vec::new();
-    let mut allowance = Allowance(u64::from(budget));
-    while let Some(task) = pending.pop() {
-        allowance.charge()?;
-        match task {
-            | Lower::Transport(term) => {
-                let reduct = super::beta(arena, paths, term)?;
-                match reduct {
-                    | Reduct::Return(value) => results.push(arena.computation_return(value)),
-                    | Reduct::Apply(function, value) => {
-                        let force = arena.computation_force(function);
-                        results.push(arena.computation_application(force, value));
-                    },
-                    | Reduct::Pair(first, second) => {
-                        pending.push(Lower::Pair);
-                        pending.push(Lower::Transport(second));
-                        pending.push(Lower::Transport(first));
-                    },
-                }
-            },
-            | Lower::Pair => {
-                let second = results.pop().ok_or(PathError::Arena)?;
-                let first = results.pop().ok_or(PathError::Arena)?;
-                let left = arena.value_variable(DeBruijnIndex::from(1_u32));
-                let right = arena.value_variable(DeBruijnIndex::from(0_u32));
-                let pair = arena.value_pair(left, right);
-                let result = arena.computation_return(pair);
-                // Both component computations are closed: placing the second
-                // beneath the first result's binder needs no weakening.
-                let result = arena.computation_bind(second, result);
-                results.push(arena.computation_bind(first, result));
-            },
-        }
-    }
-    results.pop().ok_or(PathError::Arena)
 }

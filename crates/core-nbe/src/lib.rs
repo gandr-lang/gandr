@@ -79,6 +79,7 @@ pub use crate::arena::DomainValueId;
 pub use crate::arena::NeutralId;
 pub use crate::arena::RunWatermark;
 pub use crate::arena::ValueClosureId;
+pub use crate::closure::CompBody;
 pub use crate::closure::CompClosure;
 pub use crate::closure::Environment;
 pub use crate::closure::EnvironmentDepth;

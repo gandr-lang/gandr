@@ -1118,7 +1118,22 @@ fn collect_reachable(
                     let _fresh = found.insert(index);
                 },
                 | Some(&Value::Variable(_) | &Value::Unit | &Value::Literal(_)) | None => {},
-                | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
+                | Some(&Value::PathEquiv {
+                    path_type,
+                    forward,
+                    backward,
+                    ..
+                }) => {
+                    pending.push(AnyNode::ValueType(path_type));
+                    pending.push(AnyNode::Value(forward));
+                    pending.push(AnyNode::Value(backward));
+                },
+                | Some(&Value::PathRefl(code)) => pending.push(AnyNode::Value(code)),
+                | Some(
+                    &Value::PathProduct(first, second)
+                    | &Value::Pair(first, second)
+                    | &Value::StaticApplication(first, second),
+                ) => {
                     pending.push(AnyNode::Value(first));
                     pending.push(AnyNode::Value(second));
                 },
@@ -1130,6 +1145,10 @@ fn collect_reachable(
                 | Some(&Value::QuoteComputation(quoted)) => pending.push(AnyNode::CompType(quoted)),
             },
             | AnyNode::Computation(id) => match arena.computation(id) {
+                | Some(&Computation::Transport(path, value)) => {
+                    pending.push(AnyNode::Value(path));
+                    pending.push(AnyNode::Value(value));
+                },
                 | Some(&Computation::Lambda(body)) => pending.push(AnyNode::Computation(body)),
                 | Some(&Computation::Application(head, argument)) => {
                     pending.push(AnyNode::Computation(head));
@@ -1156,6 +1175,12 @@ fn collect_reachable(
             | AnyNode::ValueType(id) => match arena.value_type(id) {
                 | Some(&ValueType::Abstract(index)) => {
                     let _fresh = found.insert(index);
+                },
+                | Some(&ValueType::PathUniverse(source, target)) => {
+                    if follow {
+                        pending.push(AnyNode::Value(source));
+                        pending.push(AnyNode::Value(target));
+                    }
                 },
                 | Some(&ValueType::Element { code, .. }) => {
                     if follow {

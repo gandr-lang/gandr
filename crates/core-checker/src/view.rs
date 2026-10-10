@@ -81,6 +81,10 @@ impl From<FragmentRefusal> for CheckRefusal
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ValueTypeView<'arena>
 {
+    /// A native universe-path classifier over two codes.
+    PathUniverse(ValueId, ValueId),
+    /// A sum of two value types.
+    Sum(ValueTypeId, ValueTypeId),
     /// The integer atom.
     Integer,
     /// The string atom.
@@ -200,13 +204,16 @@ pub fn value_type_view(
     };
     let unadmitted = |former| FragmentRefusal::OutOfFragment { at, former };
     match *node {
+        | ValueType::PathUniverse(source, target) => {
+            Ok(ValueTypeView::PathUniverse(source, target))
+        },
         | ValueType::Base(BaseType::Integer) => Ok(ValueTypeView::Integer),
         | ValueType::Base(BaseType::String) => Ok(ValueTypeView::String),
         | ValueType::Base(BaseType::Numeric) => Err(unadmitted(UnadmittedFormer::NumericAtom)),
         | ValueType::Unit => Ok(ValueTypeView::Unit),
         | ValueType::Thunk(body) => Ok(ValueTypeView::Thunk(body)),
         | ValueType::Product(first, second) => Ok(ValueTypeView::Product(first, second)),
-        | ValueType::Sum(..) => Err(unadmitted(UnadmittedFormer::Sum)),
+        | ValueType::Sum(first, second) => Ok(ValueTypeView::Sum(first, second)),
         | ValueType::Universe {
             sort: Sort::Ground(sort),
             ref level,

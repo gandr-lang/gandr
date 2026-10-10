@@ -1218,6 +1218,82 @@ impl TermArena
         self.alloc_comp_type(CompType::Element { code, target })
     }
 
+    /// Mint the native universe-path classifier over quoted codes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_path_universe(
+        &mut self,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::PathUniverse(source, target))
+    }
+
+    /// Mint reflexivity without claiming that its code forms.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_refl(
+        &mut self,
+        code: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathRefl(code))
+    }
+
+    /// Mint a componentwise product of universe paths.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_product(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathProduct(first, second))
+    }
+
+    /// Mint an untrusted equivalence with portable round-trip evidence.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_equiv(
+        &mut self,
+        path_type: ValueTypeId,
+        forward: ValueId,
+        backward: ValueId,
+        evidence: alloc::sync::Arc<crate::PathEvidence>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            evidence,
+        })
+    }
+
+    /// Mint transport; admission derives its source and result types.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_transport(
+        &mut self,
+        path: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Transport(path, value))
+    }
+
     /// The immediate child references of `node`, in the order the format writes
     /// them.
     ///
@@ -1246,7 +1322,10 @@ impl TermArena
         AnyNode::Value(id) => match self.value(id) {
             Some(&Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_))
             | None => ret.is_empty(),
-            Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) =>
+            Some(&Value::PathEquiv { path_type, forward, backward, .. }) =>
+                ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
+            Some(&Value::PathRefl(code)) => ret.as_slice() == [AnyNode::Value(code)],
+            Some(&Value::PathProduct(first, second) | &Value::Pair(first, second) | &Value::StaticApplication(first, second)) =>
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
             Some(&Value::Injection(_, body) | &Value::Lift { body, .. }) =>
                 ret.as_slice() == [AnyNode::Value(body)],
@@ -1256,6 +1335,7 @@ impl TermArena
         },
         AnyNode::Computation(id) => match self.computation(id) {
             None => ret.is_empty(),
+            Some(&Computation::Transport(path, value)) => ret.as_slice() == [AnyNode::Value(path), AnyNode::Value(value)],
             Some(&Computation::Lambda(body)) => ret.as_slice() == [AnyNode::Computation(body)],
             Some(&Computation::Application(head, argument)) =>
                 ret.as_slice() == [AnyNode::Computation(head), AnyNode::Value(argument)],
@@ -1276,6 +1356,7 @@ impl TermArena
             Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)
                 | &ValueType::StaticPi { domain: first, codomain: second }) =>
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
+            Some(&ValueType::PathUniverse(source, target)) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
             Some(&ValueType::Thunk(body)) => ret.as_slice() == [AnyNode::CompType(body)],
             Some(&ValueType::Lift { inner, .. }) => ret.as_slice() == [AnyNode::ValueType(inner)],
             Some(&ValueType::Element { code, .. }) => ret.as_slice() == [AnyNode::Value(code)],
@@ -1300,7 +1381,22 @@ impl TermArena
                     &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
                 )
                 | None => {},
-                | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
+                | Some(&Value::PathEquiv {
+                    path_type,
+                    forward,
+                    backward,
+                    ..
+                }) => {
+                    children.push(AnyNode::ValueType(path_type));
+                    children.push(AnyNode::Value(forward));
+                    children.push(AnyNode::Value(backward));
+                },
+                | Some(&Value::PathRefl(code)) => children.push(AnyNode::Value(code)),
+                | Some(
+                    &Value::PathProduct(first, second)
+                    | &Value::Pair(first, second)
+                    | &Value::StaticApplication(first, second),
+                ) => {
                     children.push(AnyNode::Value(first));
                     children.push(AnyNode::Value(second));
                 },
@@ -1315,6 +1411,10 @@ impl TermArena
             },
             | AnyNode::Computation(id) => match self.computation(id) {
                 | None => {},
+                | Some(&Computation::Transport(path, value)) => {
+                    children.push(AnyNode::Value(path));
+                    children.push(AnyNode::Value(value));
+                },
                 | Some(&Computation::Lambda(body)) => children.push(AnyNode::Computation(body)),
                 | Some(&Computation::Application(head, argument)) => {
                     children.push(AnyNode::Computation(head));
@@ -1355,6 +1455,10 @@ impl TermArena
                 ) => {
                     children.push(AnyNode::ValueType(first));
                     children.push(AnyNode::ValueType(second));
+                },
+                | Some(&ValueType::PathUniverse(source, target)) => {
+                    children.push(AnyNode::Value(source));
+                    children.push(AnyNode::Value(target));
                 },
                 | Some(&ValueType::Thunk(body)) => children.push(AnyNode::CompType(body)),
                 | Some(&ValueType::Lift { inner, .. }) => children.push(AnyNode::ValueType(inner)),

@@ -159,6 +159,8 @@ impl fmt::Display for TagSite
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum MalformedSite
 {
+    /// A path dialogue word is outside the portable decision alphabet.
+    PathEvidence,
     /// The magic did not match a gandr kernel export.
     Header,
     /// A varint was overlong — that is, non-minimal — or exceeded the 64-bit
@@ -217,6 +219,7 @@ impl fmt::Display for MalformedSite
     ) -> fmt::Result
     {
         f.write_str(match *self {
+            | Self::PathEvidence => "a path dialogue word was invalid",
             | Self::Header => "the artifact magic did not match",
             | Self::Varint => "a varint was overlong or out of range",
             | Self::IndexRange => "a decoded index did not fit its width",

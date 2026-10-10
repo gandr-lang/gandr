@@ -693,6 +693,8 @@ impl<'arena> CheckingContext<'arena>
             | Value::Constant(constant) => match self.consult(constant) {
                 | Maybe::Present(declared) => match value_type_view(self.arena, declared.id())? {
                     | ValueTypeView::Universe { level, .. } => Ok(level.clone()),
+                    | ValueTypeView::PathUniverse(..)
+                    | ValueTypeView::Sum(..)
                     | ValueTypeView::Integer
                     | ValueTypeView::String
                     | ValueTypeView::Unit
@@ -704,6 +706,9 @@ impl<'arena> CheckingContext<'arena>
                 },
                 | Maybe::Absent(_) => Ok(otherwise.clone()),
             },
+            | Value::PathRefl(_)
+            | Value::PathProduct(..)
+            | Value::PathEquiv { .. }
             | Value::Variable { .. }
             | Value::Unit
             | Value::Literal(_)

@@ -201,6 +201,10 @@ pub enum NeutralHead
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Elimination
 {
+    /// Transport under a neutral path head.
+    Transport(DomainValueId),
+    /// Product transport waiting for a neutral pair operand.
+    ProductTransport(DomainValueId),
     /// `M v`: applied to a domain value argument.
     Apply(DomainValueId),
     /// `force v`: the forced thunk was itself stuck.
@@ -388,6 +392,25 @@ pub enum ForceRefusal
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DomainValue
 {
+    /// A closed reflexivity or equivalence certificate, kept as raw syntax.
+    /// Translator programs are not normalized by certificate conversion.
+    PathCertificate
+    {
+        /// The core certificate whose complete syntax remains available.
+        certificate: ValueId,
+        /// The term face.
+        face: TermFace,
+    },
+    /// A componentwise path product; components may arrive by substitution.
+    PathProduct
+    {
+        /// The first path component.
+        first: DomainValueId,
+        /// The second path component.
+        second: DomainValueId,
+        /// The term face.
+        face: TermFace,
+    },
     /// The unit value.
     Unit
     {
@@ -504,6 +527,8 @@ impl DomainValue
     pub fn face(&self) -> TermFace
     {
         match *self {
+            | Self::PathCertificate { face, .. }
+            | Self::PathProduct { face, .. }
             | Self::Unit { face }
             | Self::Literal { face, .. }
             | Self::Pair { face, .. }

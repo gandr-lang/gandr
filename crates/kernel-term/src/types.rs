@@ -88,6 +88,9 @@ impl fmt::Display for GroundSort
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ValueType
 {
+    /// Certified equivalences between two quoted closed first-order codes.
+    /// Both endpoints form at level zero; formation checks each code.
+    PathUniverse(ValueId, ValueId),
     /// A rigid base-type atom.
     Base(BaseType),
     /// The unit type, inhabited by [`crate::Value::Unit`] alone.

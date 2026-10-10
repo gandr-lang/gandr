@@ -348,6 +348,8 @@ pub fn decode_bridge(
                 Ok(())
             }
         },
+        | ValueTypeView::PathUniverse(..)
+        | ValueTypeView::Sum(..)
         | ValueTypeView::Integer
         | ValueTypeView::String
         | ValueTypeView::Unit
@@ -432,6 +434,11 @@ fn convert(
                     value_type_view(context.arena(), left)?,
                     value_type_view(context.arena(), right)?,
                 ) {
+                    | (ValueTypeView::PathUniverse(a, b), ValueTypeView::PathUniverse(c, d)) => {
+                        pending.push(Pairing::Codes(a, c));
+                        pending.push(Pairing::Codes(b, d));
+                        true
+                    },
                     | (ValueTypeView::Integer, ValueTypeView::Integer)
                     | (ValueTypeView::String, ValueTypeView::String)
                     | (ValueTypeView::Unit, ValueTypeView::Unit) => true,
@@ -476,6 +483,10 @@ fn convert(
                         left_target == right_target
                     },
                     | (
+                        ValueTypeView::Sum(left_first, left_second),
+                        ValueTypeView::Sum(right_first, right_second),
+                    )
+                    | (
                         ValueTypeView::Product(left_first, left_second),
                         ValueTypeView::Product(right_first, right_second),
                     )
@@ -494,7 +505,9 @@ fn convert(
                         true
                     },
                     | (
-                        ValueTypeView::Integer
+                        ValueTypeView::PathUniverse(..)
+                        | ValueTypeView::Sum(..)
+                        | ValueTypeView::Integer
                         | ValueTypeView::String
                         | ValueTypeView::Unit
                         | ValueTypeView::Thunk(_)
@@ -615,7 +628,10 @@ fn convert(
                             true
                         },
                         | (
-                            Value::Variable { .. }
+                            Value::PathRefl(_)
+                            | Value::PathProduct(..)
+                            | Value::PathEquiv { .. }
+                            | Value::Variable { .. }
                             | Value::Constant(_)
                             | Value::Unit
                             | Value::Literal(_)

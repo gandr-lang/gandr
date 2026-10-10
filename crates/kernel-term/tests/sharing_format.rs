@@ -1043,6 +1043,115 @@ mod sharing_format
         );
     }
 
+    /// Candidate dialogues are syntax, not receipts. Independent wire bytes
+    /// preserve empty dialogues, both sides and the largest premise; malformed
+    /// words and every truncated prefix are refused before admission.
+    #[test]
+    fn native_path_evidence_preserves_framing_and_refuses_malformed_words()
+    {
+        use gandr_kernel_conversion_trace::ConversionDecision as Decision;
+        use gandr_kernel_conversion_trace::ConversionSide;
+        use gandr_kernel_term::PathEvidence;
+
+        let expected = PathEvidence {
+            source: vec![
+                vec![
+                    Decision::ReduceLeft { redex: () },
+                    Decision::ReduceRight { redex: () },
+                    Decision::ConstShortcut { constant: () },
+                    Decision::Unfold { constant: () },
+                    Decision::Postpone { constant: () },
+                    Decision::Freeze {
+                        constant: (),
+                        side: ConversionSide::Left,
+                    },
+                    Decision::Freeze {
+                        constant: (),
+                        side: ConversionSide::Right,
+                    },
+                    Decision::EtaExpand {
+                        variable: (),
+                        side: ConversionSide::Left,
+                    },
+                    Decision::EtaExpand {
+                        variable: (),
+                        side: ConversionSide::Right,
+                    },
+                    Decision::Force { thunk: () },
+                    Decision::ComparedShared {
+                        left: (),
+                        right: (),
+                    },
+                    Decision::Decompose,
+                ],
+                vec![],
+            ],
+            target: vec![vec![Decision::NegativeSubgoal {
+                position: u32::MAX.into(),
+            }]],
+        };
+        // Inline evidence precedes classifier #2, forward #6 and backward #6.
+        // Two source dialogues (twelve decisions and empty), one target.
+        let mut certificate = Bytes(vec![0x2C, 2, 12]);
+        for word in 0_u8 .. 12_u8 {
+            certificate.byte(RawByte(word));
+        }
+        certificate.0.extend_from_slice(&[0, 1, 1]);
+        let premise_offset = certificate.0.len();
+        certificate.varint(WireValue(0x00FF_FFFF_FF0C));
+        certificate.0.extend_from_slice(&[2, 6, 6]);
+        let mut declaration = RawDeclaration::definition(
+            vec![
+                entry_unit_type(),
+                Bytes(vec![0x1C, 0]),    // quote Unit
+                Bytes(vec![0x2A, 1, 1]), // Path_U(Unit, Unit)
+                entry_variable(WireValue(0)),
+                Bytes(vec![0x13, 3]), // return variable
+                Bytes(vec![0x11, 4]), // lambda
+                Bytes(vec![0x0F, 5]), // thunk
+                certificate,
+            ],
+            TableIndex(2),
+            TableIndex(7),
+        );
+        let bytes = raw_artifact(current_version(), &[], core::slice::from_ref(&declaration));
+        let artifact =
+            decode(ArtifactImage::from(bytes.as_ref())).expect("candidate syntax decodes");
+        let body = decoded_body(&artifact, Position(0)).expect("the certificate definition");
+        let Value::PathEquiv { ref evidence, .. } =
+            *artifact.arena().value(body).expect("certificate root")
+        else {
+            panic!("native certificate body");
+        };
+        assert_eq!(&expected, evidence.as_ref());
+        assert_eq!(
+            bytes.as_ref(),
+            encode(artifact.arena(), artifact.declarations())
+                .as_image()
+                .as_ref()
+        );
+        for end in 0 .. bytes.0.len() {
+            assert_eq!(
+                Some(DecodeError::Truncated),
+                decode(ArtifactImage::from(&bytes.0[.. end])).err()
+            );
+        }
+        for invalid in [0x0D_u64, 0x0100_0000_000C_u64] {
+            let entry = declaration.entries.last_mut().expect("certificate entry");
+            entry.0.truncate(premise_offset);
+            entry.varint(WireValue(invalid));
+            entry.0.extend_from_slice(&[2, 6, 6]);
+            let malformed =
+                raw_artifact(current_version(), &[], core::slice::from_ref(&declaration));
+            assert_eq!(
+                Some(DecodeError::Malformed {
+                    site: MalformedSite::PathEvidence
+                }),
+                decode(ArtifactImage::from(malformed.as_ref())).err()
+            );
+        }
+    }
+
     /// The static formers read their two children back in wire order: a
     /// static Pi's domain before its codomain, a static application's head
     /// before its argument. Each pair is chosen distinct, so a decoder that

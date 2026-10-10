@@ -501,6 +501,15 @@ where
                 | TypeLevelGoal::Value(id) => {
                     let value_type = arena.value_type(id).ok_or(KernelError::ArenaFault)?;
                     match *value_type {
+                        | ValueType::PathUniverse(..) => {
+                            let _endpoints = crate::path_universe::endpoints(
+                                arena,
+                                id,
+                                crate::replay::ReplayBudget::DEFAULT,
+                            )
+                            .map_err(KernelError::Path)?;
+                            Level::zero()
+                        },
                         | ValueType::Base(_) | ValueType::Unit => Level::zero(),
                         // A universe of either sort forms one level above the
                         // level it carries, in the universe of value types:
@@ -712,6 +721,7 @@ fn abstract_atom_level(
             sort: GroundSort::Computation,
             ..
         }
+        | ValueType::PathUniverse(..)
         | ValueType::Base(_)
         | ValueType::Unit
         | ValueType::Product(..)
@@ -758,6 +768,7 @@ fn static_classifier(
         .ok_or(KernelError::ArenaFault)?
     {
         | ValueType::Universe { .. } | ValueType::StaticPi { .. } => Ok(()),
+        | ValueType::PathUniverse(..)
         | ValueType::Base(_)
         | ValueType::Unit
         | ValueType::Product(..)
@@ -944,6 +955,32 @@ impl Goal
 #[derive(Debug)]
 enum Frame
 {
+    /// Synthesize the second product-path component after the first.
+    PathProductFirst(ValueId),
+    /// Combine the two decoded component endpoints.
+    PathProductSecond(crate::path_universe::PathType),
+    /// Check the backward map after the closed forward map.
+    PathForward
+    {
+        /// The native equivalence carrying both maps and its evidence.
+        path: ValueId,
+        /// Validated endpoint types.
+        endpoints: crate::path_universe::PathType,
+        /// The enclosing context, restored after both map checks.
+        context: Vec<ValueTypeId>,
+    },
+    /// Replay both round trips after both translators checked.
+    PathBackward
+    {
+        /// The native equivalence.
+        path: ValueId,
+        /// Validated endpoint types.
+        endpoints: crate::path_universe::PathType,
+        /// The enclosing context.
+        context: Vec<ValueTypeId>,
+    },
+    /// Check a transport operand after synthesizing its path classifier.
+    Transport(ValueId),
     /// A pair synthesis: the first component is synthesizing; the second source
     /// is held.
     SynthPairFirst(ValueId),
@@ -1376,6 +1413,40 @@ where
             | Some(outcome) => outcome,
             | None => match goal {
                 | Goal::SynthValue(id) => match read_value(arena, id)? {
+                    | Value::PathRefl(code) => {
+                        let _endpoint = crate::path_universe::code(
+                            arena,
+                            code,
+                            crate::replay::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Path)?;
+                        Produced::ValueType(arena.value_type_path_universe(code, code))
+                    },
+                    | Value::PathProduct(first, second) => {
+                        frames.push(Frame::PathProductFirst(second));
+                        goal = Goal::SynthValue(first);
+                        continue 'expand;
+                    },
+                    | Value::PathEquiv {
+                        path_type, forward, ..
+                    } => {
+                        let endpoints = crate::path_universe::endpoints(
+                            arena,
+                            path_type,
+                            crate::replay::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Path)?;
+                        let result = arena.comp_type_returner(endpoints.target);
+                        let function = arena.comp_type_arrow(endpoints.source, result);
+                        let translator = arena.value_type_thunk(function);
+                        frames.push(Frame::PathForward {
+                            path: id,
+                            endpoints,
+                            context: core::mem::take(&mut context),
+                        });
+                        goal = Goal::CheckValue(forward, translator);
+                        continue 'expand;
+                    },
                     | Value::Variable(index) => {
                         let synthesized = match lookup(arena, session, context.as_slice(), index) {
                             | Maybe::Present(synthesized) => synthesized,
@@ -1511,6 +1582,9 @@ where
                             ));
                         },
                     },
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
                     | Value::Variable(_)
                     | Value::Constant(_)
                     | Value::Unit
@@ -1525,6 +1599,11 @@ where
                     },
                 },
                 | Goal::SynthComp(id) => match read_computation(arena, id)? {
+                    | Computation::Transport(path, value) => {
+                        frames.push(Frame::Transport(value));
+                        goal = Goal::SynthValue(path);
+                        continue 'expand;
+                    },
                     | Computation::Application(head, argument) => {
                         frames.push(Frame::SynthApply(argument));
                         goal = Goal::SynthComp(head);
@@ -1619,7 +1698,9 @@ where
                         goal = Goal::SynthValue(scrutinee);
                         continue 'expand;
                     },
-                    | Computation::Application(..) | Computation::Force(_) => {
+                    | Computation::Transport(..)
+                    | Computation::Application(..)
+                    | Computation::Force(_) => {
                         frames.push(Frame::ConvertComp(expected));
                         goal = Goal::SynthComp(id);
                         continue 'expand;
@@ -1637,6 +1718,106 @@ where
                     // A memo at its ceiling declines to record; see the same
                     // note in `type_level`.
                     let _recorded = memo.remember(support, produced.outcome());
+                },
+                | Frame::PathProductFirst(second) => {
+                    let first_type = produced.value_type()?;
+                    let endpoints = crate::path_universe::endpoints(
+                        arena,
+                        first_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Path)?;
+                    frames.push(Frame::PathProductSecond(endpoints));
+                    goal = Goal::SynthValue(second);
+                    continue 'expand;
+                },
+                | Frame::PathProductSecond(first) => {
+                    let second_type = produced.value_type()?;
+                    let second = crate::path_universe::endpoints(
+                        arena,
+                        second_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Path)?;
+                    let source = arena.value_type_product(first.source, second.source);
+                    let target = arena.value_type_product(first.target, second.target);
+                    let source = arena.value_quote(source);
+                    let target = arena.value_quote(target);
+                    produced = Produced::ValueType(arena.value_type_path_universe(source, target));
+                },
+                | Frame::PathForward {
+                    path,
+                    endpoints,
+                    context: outer,
+                } => {
+                    let Value::PathEquiv { backward, .. } = read_value(arena, path)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let result = arena.comp_type_returner(endpoints.source);
+                    let function = arena.comp_type_arrow(endpoints.target, result);
+                    let translator = arena.value_type_thunk(function);
+                    frames.push(Frame::PathBackward {
+                        path,
+                        endpoints,
+                        context: outer,
+                    });
+                    goal = Goal::CheckValue(backward, translator);
+                    continue 'expand;
+                },
+                | Frame::PathBackward {
+                    path,
+                    endpoints,
+                    context: outer,
+                } => {
+                    let Value::PathEquiv {
+                        path_type,
+                        forward,
+                        backward,
+                        evidence,
+                    } = read_value(arena, path)?
+                    else {
+                        return Err(KernelError::ArenaFault);
+                    };
+                    let watermark = arena.watermark();
+                    let source = crate::path_universe::coverage::round_trip(
+                        arena,
+                        endpoints.source,
+                        forward,
+                        backward,
+                        &evidence.source,
+                        crate::path_universe::Direction::Source,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    );
+                    let result = source.and_then(|()| {
+                        crate::path_universe::coverage::round_trip(
+                            arena,
+                            endpoints.target,
+                            backward,
+                            forward,
+                            &evidence.target,
+                            crate::path_universe::Direction::Target,
+                            crate::replay::ReplayBudget::DEFAULT,
+                        )
+                    });
+                    arena.truncate_to(watermark);
+                    result.map_err(KernelError::Path)?;
+                    context = outer;
+                    produced = Produced::ValueType(path_type);
+                },
+                | Frame::Transport(value) => {
+                    let path_type = produced.value_type()?;
+                    let endpoints = crate::path_universe::endpoints(
+                        arena,
+                        path_type,
+                        crate::replay::ReplayBudget::DEFAULT,
+                    )
+                    .map_err(KernelError::Path)?;
+                    frames.push(Frame::ProduceComp(
+                        arena.comp_type_returner(endpoints.target),
+                    ));
+                    goal = Goal::CheckValue(value, endpoints.source);
+                    continue 'expand;
                 },
                 | Frame::SynthPairFirst(second) => {
                     let first_type = produced.value_type()?;
@@ -2124,6 +2305,7 @@ where
                     sort: GroundSort::Computation,
                     ..
                 }
+                | ValueType::PathUniverse(..)
                 | ValueType::Base(_)
                 | ValueType::Unit
                 | ValueType::Product(..)
@@ -2291,6 +2473,50 @@ pub(crate) fn check_closed_value(
         },
     )?;
     drain_code_obligations(arena, judgement, &mut memo, &mut session, &mut census, owed)
+}
+
+/// Synthesize a closed native value and discharge every code obligation.
+///
+/// # Specification
+/// - requires: the value belongs to the arena.
+/// - ensures: the returned classifier is justified in empty contexts.
+/// - provides: the typed boundary for callable native transport replay.
+/// - fails: any native synthesis or code-formation error.
+/// - panics: none.
+///
+/// # Errors
+/// Any `KernelError`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — replay admits a certified path and refuses forged
+///   evidence.
+/// - witness: `path_universe::tests::a_non_equivalence_is_refused`
+pub(crate) fn synth_closed_value(
+    arena: &mut TermArena,
+    value: ValueId,
+) -> Result<ValueTypeId, KernelError>
+{
+    let levels = LevelContext::admit(gandr_kernel_term::LevelParamCount::from(0_u32), Vec::new())?;
+    let judgement = Judgement::new(&[], &levels);
+    let mut memo = DefaultMemo::new();
+    let mut session = SupportContext::new();
+    let mut census = ExpansionCensus::new();
+    let mut owed = Vec::new();
+    let result = run(
+        arena,
+        judgement,
+        Vec::new(),
+        Goal::SynthValue(value),
+        Recording {
+            memo: &mut memo,
+            session: &mut session,
+            census: &mut census,
+            owed: &mut owed,
+        },
+    )?
+    .value_type()?;
+    drain_code_obligations(arena, judgement, &mut memo, &mut session, &mut census, owed)?;
+    Ok(result)
 }
 
 #[cfg(test)]

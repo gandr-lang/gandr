@@ -407,6 +407,9 @@ impl<'run> Walk<'run>
                             Node::Code(argument, place),
                         ));
                     },
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
                     | Value::Unit
                     | Value::Literal(_)
                     | Value::Pair(..)
@@ -434,6 +437,9 @@ impl<'run> Walk<'run>
                 {
                     | Value::Quote(quoted) => Ok(Atom::Quote(quoted, place)),
                     | Value::QuoteComputation(quoted) => Ok(Atom::QuoteComputation(quoted, place)),
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
                     | Value::Variable { .. }
                     | Value::Constant(_)
                     | Value::Unit
@@ -450,6 +456,8 @@ impl<'run> Walk<'run>
                 let closure = self.domain.value_closure(lambda).ok_or(dangling)?;
                 Ok(Atom::Operator(closure.body(), Self::opened(lambda)))
             },
+            | DomainValue::PathCertificate { .. }
+            | DomainValue::PathProduct { .. }
             | DomainValue::Unit { .. }
             | DomainValue::Literal { .. }
             | DomainValue::Pair { .. }
@@ -520,7 +528,9 @@ impl<'run> Walk<'run>
                 Node::Held(argument),
             )),
             | Some(
-                &(Elimination::Apply(_)
+                &(Elimination::Transport(_)
+                | Elimination::ProductTransport(_)
+                | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
                 | Elimination::Case { .. }),
@@ -731,6 +741,7 @@ impl<'run> Walk<'run>
                     .ok_or(ConversionFault::MachineInvariant)?
                 {
                     | ValueType::Element { code, .. } => (code, place),
+                    | ValueType::PathUniverse(..)
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Product(..)
@@ -799,6 +810,17 @@ impl<'run> Walk<'run>
                     return Err(ConversionFault::MachineInvariant);
                 };
                 match (left, right) {
+                    | (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) => {
+                        atoms.push((
+                            self.atom(Node::Code(a, here))?,
+                            self.atom(Node::Code(c, there))?,
+                        ));
+                        atoms.push((
+                            self.atom(Node::Code(b, here))?,
+                            self.atom(Node::Code(d, there))?,
+                        ));
+                        Ok(Alike::Same)
+                    },
                     | (&ValueType::Base(a), &ValueType::Base(b)) => Ok(Alike::between(&a, &b)),
                     | (&ValueType::Unit, &ValueType::Unit) => Ok(Alike::Same),
                     | (&ValueType::Abstract(a), &ValueType::Abstract(b)) => {
@@ -866,7 +888,8 @@ impl<'run> Walk<'run>
                         Ok(Alike::Same)
                     },
                     | (
-                        &(ValueType::Base(_)
+                        &(ValueType::PathUniverse(..)
+                        | ValueType::Base(_)
                         | ValueType::Unit
                         | ValueType::Product(..)
                         | ValueType::Sum(..)
@@ -1022,6 +1045,10 @@ impl<'run> Walk<'run>
                         .value_type(id)
                         .ok_or(ConversionFault::MachineInvariant)?
                     {
+                        | ValueType::PathUniverse(source, target) => {
+                            atoms.push(self.atom(Node::Code(source, place))?);
+                            atoms.push(self.atom(Node::Code(target, place))?);
+                        },
                         | ValueType::Base(_)
                         | ValueType::Unit
                         | ValueType::Universe { .. }

@@ -705,6 +705,10 @@ enum Head
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Elimination
 {
+    /// Transport under a neutral path head, retaining its operand.
+    Transport(ValueId),
+    /// Product transport waiting for a neutral pair operand.
+    ProductTransport(ValueId),
     /// The head forced.
     Force,
     /// An application to this argument.
@@ -1218,7 +1222,10 @@ where
                 Ok(Term::Computation(self.arena.computation_force(value)))
             },
             | Some(
-                &(Value::Unit
+                &(Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Unit
                 | Value::Literal(_)
                 | Value::Pair(..)
                 | Value::Injection(..)
@@ -1417,6 +1424,16 @@ where
             return Err(unreadable());
         };
         let structure = match (one, other) {
+            | (&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. }), _) => {
+                Structure::Leaf(
+                    if equal_values(self.arena, left, right) == Convertibility::Convertible {
+                        Expect::Convertible
+                    }
+                    else {
+                        Expect::NotConvertible
+                    },
+                )
+            },
             | (&Value::Unit, &Value::Unit) => Structure::Leaf(Expect::Convertible),
             | (&Value::Literal(_), &Value::Literal(_)) if one == other => {
                 Structure::Leaf(Expect::Convertible)
@@ -1554,7 +1571,14 @@ where
         while let Some(next) = work.pop() {
             match next {
                 | AnyNode::Value(value) => match self.arena.value(value) {
-                    | Some(&(Value::Unit | Value::Literal(_) | Value::Variable(_))) => {},
+                    | Some(
+                        &(Value::Unit
+                        | Value::Literal(_)
+                        | Value::Variable(_)
+                        | Value::PathRefl(_)
+                        | Value::PathProduct(..)
+                        | Value::PathEquiv { .. }),
+                    ) => {},
                     | Some(
                         &(Value::Pair(first, second) | Value::StaticApplication(first, second)),
                     ) => {
@@ -1582,7 +1606,8 @@ where
                         work.extend([AnyNode::Computation(head), AnyNode::Value(argument)]);
                     },
                     | Some(
-                        &(Computation::Lambda(_)
+                        &(Computation::Transport(..)
+                        | Computation::Lambda(_)
                         | Computation::Bind(..)
                         | Computation::Case { .. }),
                     )
@@ -1597,6 +1622,9 @@ where
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_)),
                     ) => {},
+                    | Some(&ValueType::PathUniverse(source, target)) => {
+                        work.extend([AnyNode::Value(source), AnyNode::Value(target)]);
+                    },
                     | Some(
                         &(ValueType::Product(first, second)
                         | ValueType::Sum(first, second)
@@ -1681,7 +1709,10 @@ where
                         Ok(Shape::Neutral(head, spine))
                     },
                     | Some(
-                        &(Value::Unit
+                        &(Value::PathRefl(_)
+                        | Value::PathProduct(..)
+                        | Value::PathEquiv { .. }
+                        | Value::Unit
                         | Value::Literal(_)
                         | Value::Pair(..)
                         | Value::Injection(..)
@@ -1698,6 +1729,14 @@ where
         let mut focus = start;
         let head = loop {
             match self.arena.computation(focus) {
+                | Some(&Computation::Transport(path, value)) => {
+                    if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
+                        spine.push(Elimination::ProductTransport(path));
+                        break self.value_head(value, frozen, side)?;
+                    }
+                    spine.push(Elimination::Transport(value));
+                    break self.value_head(path, frozen, side)?;
+                },
                 | Some(&Computation::Lambda(body)) if spine.is_empty() => {
                     return Ok(Shape::Lambda(body));
                 },
@@ -1757,7 +1796,10 @@ where
             | Some(&Value::Variable(index)) => Ok(Head::Variable(index)),
             | Some(&Value::Constant(constant)) => Ok(self.head(constant, frozen, side)),
             | Some(
-                &(Value::Unit
+                &(Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::PathEquiv { .. }
+                | Value::Unit
                 | Value::Literal(_)
                 | Value::Pair(..)
                 | Value::Injection(..)
@@ -1846,6 +1888,14 @@ where
         let mut focus = start;
         let mut rebuilt = loop {
             match self.arena.computation(focus) {
+                | Some(&Computation::Transport(path, value)) => {
+                    break if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
+                        self.arena.computation_transport(path, body)
+                    }
+                    else {
+                        self.arena.computation_transport(body, value)
+                    };
+                },
                 | Some(&Computation::Application(head, argument)) => {
                     frames.push(Frame::Apply(argument));
                     focus = head;
@@ -1997,6 +2047,20 @@ where
         loop {
             self.charge()?;
             match self.arena.computation(focus) {
+                | Some(&Computation::Transport(path, value)) => {
+                    match crate::path_universe::beta(self.arena, crate::path_universe::Transport {
+                        path,
+                        value,
+                    })
+                    .map_err(|_unreadable_term| unreadable())?
+                    {
+                        | crate::path_universe::Reduction::Reduced(reduct) => {
+                            focus = reduct;
+                            progress = Progress::Reduced;
+                        },
+                        | crate::path_universe::Reduction::Stuck => break,
+                    }
+                },
                 | Some(&Computation::Application(head, argument)) => {
                     frames.push(Frame::Apply(argument));
                     focus = head;
@@ -2240,6 +2304,11 @@ fn spines(
     for (&one, &other) in left.iter().zip(right) {
         match (one, other) {
             | (Elimination::Force, Elimination::Force) => {},
+            | (Elimination::Transport(left_argument), Elimination::Transport(right_argument))
+            | (
+                Elimination::ProductTransport(left_argument),
+                Elimination::ProductTransport(right_argument),
+            )
             | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
             | (
                 Elimination::StaticApply(left_argument),
@@ -2258,7 +2327,9 @@ fn spines(
                 premises.push(Premise::computations(left_on_right, right_on_right));
             },
             | (
-                Elimination::Force
+                Elimination::Transport(_)
+                | Elimination::ProductTransport(_)
+                | Elimination::Force
                 | Elimination::Apply(_)
                 | Elimination::Bind(_)
                 | Elimination::Case(..)

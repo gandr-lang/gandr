@@ -1059,6 +1059,81 @@ impl CoreArena
         }
         self.alloc_comp_type(CompType::Element { code, target })
     }
+    /// Mint a native universe-path classifier; admission checks its codes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_path_universe(
+        &mut self,
+        source: ValueId,
+        target: ValueId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::PathUniverse(source, target))
+    }
+
+    /// Mint native reflexivity.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_refl(
+        &mut self,
+        code: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathRefl(code))
+    }
+
+    /// Mint the componentwise product of two paths.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_product(
+        &mut self,
+        first: ValueId,
+        second: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathProduct(first, second))
+    }
+
+    /// Mint an equivalence whose evidence remains untrusted until admission.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_path_equiv(
+        &mut self,
+        path_type: ValueTypeId,
+        forward: ValueId,
+        backward: ValueId,
+        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            evidence,
+        })
+    }
+
+    /// Mint a native transport computation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_transport(
+        &mut self,
+        path: ValueId,
+        value: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Transport(path, value))
+    }
 }
 
 #[cfg(test)]
