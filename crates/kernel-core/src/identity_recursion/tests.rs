@@ -227,11 +227,11 @@ fn reflexivity_and_transport_compute()
             .reflexivity(&mut arena, &[], value)
             .expect("derived diagonal");
         let actual = relation
-            .transport(&mut arena, &[], identity, scalars.ty, scalars.second)
+            .transport(&mut arena, &[], &identity, scalars.ty, scalars.second)
             .expect("transport");
         assert_eq!(actual, Transport::Return(scalars.second));
         assert!(matches!(
-            relation.transport(&mut arena, &[], identity, scalars.ty, unit),
+            relation.transport(&mut arena, &[], &identity, scalars.ty, unit),
             Err(RelationError::Typing(_))
         ));
     }
@@ -247,7 +247,7 @@ fn reflexivity_and_transport_compute()
             .expect("open diagonal");
         assert_eq!(
             relation
-                .transport(&mut arena, &[ty], identity, ty, x)
+                .transport(&mut arena, &[ty], &identity, ty, x)
                 .expect("open transport"),
             Transport::Return(x)
         );
@@ -258,7 +258,7 @@ fn reflexivity_and_transport_compute()
         .witness(&mut arena, &[unit_type, unit_type], x, y, unit)
         .expect("total Unit relation");
     assert!(
-        matches!(units.transport(&mut arena, &[unit_type, unit_type], proof, scalars.ty, scalars.first), Ok(Transport::Neutral { value, .. }) if value == scalars.first)
+        matches!(units.transport(&mut arena, &[unit_type, unit_type], &proof, scalars.ty, scalars.first), Ok(Transport::Neutral { value, .. }) if value == scalars.first)
     );
 }
 
@@ -280,14 +280,14 @@ fn product_transport_composes_componentwise()
         .reflexivity(&mut arena, &[scalars.ty, scalars.ty], pair)
         .expect("second identity");
     let composite = relation
-        .compose(&mut arena, &[scalars.ty, scalars.ty], first, second)
+        .compose(&mut arena, &[scalars.ty, scalars.ty], &first, &second)
         .expect("both coordinates compose");
     assert_eq!(
         relation
             .transport(
                 &mut arena,
                 &[scalars.ty, scalars.ty],
-                composite,
+                &composite,
                 pair_type,
                 pair
             )
@@ -299,7 +299,7 @@ fn product_transport_composes_componentwise()
         .reflexivity(&mut arena, &[scalars.ty, scalars.ty], changed)
         .expect("other diagonal");
     assert!(matches!(
-        relation.compose(&mut arena, &[scalars.ty, scalars.ty], first, other),
+        relation.compose(&mut arena, &[scalars.ty, scalars.ty], &first, &other),
         Err(RelationError::Boundary)
     ));
     let fiber = relation
@@ -335,22 +335,22 @@ fn product_transport_composes_componentwise()
         .witness(&mut arena, &context, middle, right, proof)
         .expect("second non-diagonal product identity");
     let composite = family
-        .compose(&mut arena, &context, first, second)
+        .compose(&mut arena, &context, &first, &second)
         .expect("componentwise non-diagonal composition");
     let back = family
         .witness(&mut arena, &context, right, left, proof)
         .expect("return identity");
     let loop_identity = family
-        .compose(&mut arena, &context, composite, back)
+        .compose(&mut arena, &context, &composite, &back)
         .expect("composite retains the right endpoint");
     assert_eq!(
         family
-            .transport(&mut arena, &context, loop_identity, unit_type, unit)
+            .transport(&mut arena, &context, &loop_identity, unit_type, unit)
             .expect("closed loop retains the left endpoint"),
         Transport::Return(unit)
     );
     assert!(matches!(
-        family.compose(&mut arena, &context, first, composite),
+        family.compose(&mut arena, &context, &first, &composite),
         Err(RelationError::Boundary)
     ));
 }
@@ -373,7 +373,7 @@ fn identity_evidence_refuses_false_fibres()
     let code = arena.value_quote(unit_type);
     let other = super::tests::relation(&arena, Mode::Identity, code);
     assert!(matches!(
-        other.transport(&mut arena, &[], identity, unit_type, unit),
+        other.transport(&mut arena, &[], &identity, unit_type, unit),
         Err(RelationError::Boundary)
     ));
     let pair_type = arena.value_type_product(scalars.ty, scalars.ty);

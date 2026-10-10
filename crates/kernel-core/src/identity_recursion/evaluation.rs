@@ -53,6 +53,18 @@ pub enum Fiber
     Discrete(IndexId, IndexId),
     /// A case-indexed relation awaiting an injection at an index.
     Suspended(IndexId, IndexId),
+    /// The suspended product over two arguments and their relation premise.
+    Function
+    {
+        /// Both argument indices range over this type.
+        argument: ValueTypeId,
+        /// Returned values are related at this type, in the enclosing mode.
+        result: ValueTypeId,
+        /// The first function, including neutral projections.
+        left: IndexId,
+        /// The second function, including neutral projections.
+        right: IndexId,
+    },
 }
 
 /// One evaluated fibre, retaining symbolic indices rather than deciding them.
@@ -119,7 +131,33 @@ impl Relation
         right: ValueId,
     ) -> Result<Fibers, RelationError>
     {
-        let root = self.node(self.root)?;
+        self.fiber_at(arena, self.root, context, left, right)
+    }
+
+    /// Interpret a child relation without copying its program.
+    ///
+    /// # Specification
+    /// - ensures: checks indices at this child and retains all residual fibres.
+    /// - fails: index typing errors or unreadable program addresses.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Typing or Arena.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — function applications use argument and result
+    ///   relations.
+    /// - witness: `identity_recursion::function::tests::funext_computes_and_refuses_wrong_components`
+    pub(super) fn fiber_at(
+        &self,
+        arena: &mut TermArena,
+        relation: RelationId,
+        context: &[ValueTypeId],
+        left: ValueId,
+        right: ValueId,
+    ) -> Result<Fibers, RelationError>
+    {
+        let root = self.node(relation)?;
         check_value(arena, context, left, root.source)?;
         check_value(arena, context, right, root.target)?;
         let mut result = Fibers {
@@ -130,7 +168,7 @@ impl Relation
         let mut shared = BTreeMap::new();
         let left = result.index(Index::Value(left), &mut shared);
         let right = result.index(Index::Value(right), &mut shared);
-        let mut tasks = Vec::from([Task::Visit(self.root, left, right)]);
+        let mut tasks = Vec::from([Task::Visit(relation, left, right)]);
         let mut values = Vec::new();
         let mut completed = BTreeMap::new();
         while let Some(task) = tasks.pop() {
@@ -156,6 +194,16 @@ impl Relation
                         | Clause::Unit => Fiber::Unit,
                         | Clause::Empty => Fiber::Empty,
                         | Clause::Discrete => result.discrete(arena, left, right)?,
+                        | Clause::Function(argument, result) => {
+                            let argument = self.node(argument)?;
+                            let result = self.node(result)?;
+                            Fiber::Function {
+                                argument: argument.source,
+                                result: result.source,
+                                left,
+                                right,
+                            }
+                        },
                         | Clause::Product(first, second) => {
                             let first_left =
                                 result.project(arena, left, Coordinate::First, &mut shared)?;
@@ -316,11 +364,12 @@ impl Fibers
         arena: &mut TermArena,
     ) -> Result<ValueTypeId, RelationError>
     {
-        if self
-            .nodes
-            .iter()
-            .any(|node| matches!(node, Fiber::Discrete(..) | Fiber::Suspended(..)))
-        {
+        if self.nodes.iter().any(|node| {
+            matches!(
+                node,
+                Fiber::Discrete(..) | Fiber::Suspended(..) | Fiber::Function { .. }
+            )
+        }) {
             return Err(RelationError::NeutralFiber);
         }
         let mut types = Vec::with_capacity(self.nodes.len());
@@ -333,7 +382,7 @@ impl Fibers
                     let right = *types.get(right.0).ok_or(RelationError::Arena)?;
                     arena.value_type_product(left, right)
                 },
-                | Fiber::Discrete(..) | Fiber::Suspended(..) => {
+                | Fiber::Discrete(..) | Fiber::Suspended(..) | Fiber::Function { .. } => {
                     return Err(RelationError::NeutralFiber);
                 },
             };

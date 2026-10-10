@@ -14,6 +14,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
+use gandr_kernel_term::CompType;
 use gandr_kernel_term::TermArena;
 use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
@@ -29,6 +30,7 @@ use crate::replay::ReplayBudget;
 
 mod evaluation;
 mod evidence;
+mod function;
 #[cfg(test)]
 mod tests;
 
@@ -37,8 +39,52 @@ pub use evaluation::FiberId;
 pub use evaluation::Fibers;
 pub use evaluation::Index;
 pub use evaluation::IndexId;
-pub use evidence::Identity;
 pub use evidence::Transport;
+pub use function::Application;
+pub use function::Component;
+pub use function::Evaluation;
+pub use function::EvaluationSide;
+pub use function::HigherEvaluation;
+pub use function::Pointwise;
+pub use function::RelatedArguments;
+pub use function::RelatedPattern;
+
+/// Element identity with raw evidence rechecked by every consumer.
+///
+/// # Specification
+/// - provides: native evidence, a suspended structural diagonal or raw higher
+///   evaluation, with arena-relative endpoints and no admission authority.
+/// - ensures: only checked introductions construct this value; consumption
+///   rechecks its evidence rather than trusting a stored verdict.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — native transport replays higher evidence and retains
+///   non-reflexive function identities as typed neutral operations.
+/// - witness: `identity_recursion::function::tests::funext_computes_and_refuses_wrong_components`
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Identity
+{
+    /// The element type.
+    domain: ValueTypeId,
+    /// Source element.
+    left: ValueId,
+    /// Target element.
+    right: ValueId,
+    /// The raw fibre inhabitant or evaluation rule.
+    proof: Proof,
+}
+
+/// Native, structural or higher-evaluation relation evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Proof
+{
+    /// An ordinary inhabitant of a computed native fibre.
+    Native(ValueId),
+    /// A structural diagonal awaiting a neutral sum index.
+    Diagonal,
+    /// An untrusted higher-evaluation introduction, replayed on consumption.
+    HigherEvaluation(HigherEvaluation),
+}
 
 /// The fibrant or non-fibrant reading of the same structural fold.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -79,6 +125,8 @@ enum Clause
     Product(RelationId, RelationId),
     /// Matching injections recurse; different injections have empty fibre.
     Sum(RelationId, RelationId),
+    /// Related arguments entail related values after force/application/return.
+    Function(RelationId, RelationId),
     /// Split the left endpoint; both branches share the right endpoint type.
     CaseLeft(RelationId, RelationId),
     /// Split the right endpoint; both branches share the left endpoint type.
@@ -161,6 +209,16 @@ pub enum RelationError
     Evidence,
     /// The requested operation uses the wrong universe interpretation.
     Classifier,
+    /// A universal function proof needs a higher-evaluation introduction.
+    HigherEvaluationRequired,
+    /// Symbolic coverage is incomplete or contains extra components.
+    Coverage,
+    /// A component supplied an invalid output-relation inhabitant.
+    Pointwise(Component, Box<KernelError>),
+    /// An application trace did not certify its claimed returned value.
+    Evaluation(Component, EvaluationSide, crate::replay::KernelVerdict),
+    /// Symbolic coverage exhausted its work allowance.
+    Budget,
 }
 
 impl fmt::Display for RelationError
@@ -191,6 +249,23 @@ impl fmt::Display for RelationError
             | Self::NeutralFiber => f.write_str("relation fibre is neutral"),
             | Self::Evidence => f.write_str("relation fibre has no constructed evidence"),
             | Self::Classifier => f.write_str("wrong relation classifier"),
+            | Self::HigherEvaluationRequired => f.write_str("higher-evaluation evidence required"),
+            | Self::Coverage => f.write_str("incomplete higher-evaluation coverage"),
+            | Self::Pointwise(component, ref error) => {
+                write!(f, "pointwise component {}: {error}", component.0)
+            },
+            | Self::Evaluation(component, side, _) => {
+                let side = match side {
+                    | EvaluationSide::Left => "left",
+                    | EvaluationSide::Right => "right",
+                };
+                write!(
+                    f,
+                    "application component {} ({side}) replay failed",
+                    component.0
+                )
+            },
+            | Self::Budget => f.write_str("relation work allowance exhausted"),
         }
     }
 }
@@ -203,9 +278,9 @@ impl core::error::Error for RelationError
 ///
 /// # Specification
 /// - requires: codes and their types belong to `arena`.
-/// - ensures: Unit, Base, Sum and Product each contribute one relation clause,
-///   in either mode; Abstract refuses before nominal comparison. The Codes
-///   clause selects certified paths or indexed relation families.
+/// - ensures: Unit, Base, Sum, Product and pure function thunks each contribute
+///   one clause in either mode; Abstract refuses before nominal comparison.
+///   Codes selects certified paths or indexed relation families.
 /// - provides: a flat iterative fold; it never compares endpoint elements.
 /// - fails: `UnsupportedCode`, `UnsupportedType`, `AbstractInterface`, `Arena`.
 /// - panics: none.
@@ -218,6 +293,7 @@ impl core::error::Error for RelationError
 ///   sealed types refuse even when both requested endpoints would be identical.
 /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
 /// - witness: `identity_recursion::tests::abstract_is_an_interface_obstruction`
+/// - witness: `identity_recursion::function::tests::function_clause_retains_related_inputs_and_neutrals`
 #[inline]
 pub fn interpret(
     arena: &TermArena,
@@ -260,6 +336,28 @@ pub fn interpret(
                     | ValueType::Sum(..) => Clause::Sum(left, right),
                     | _ => Clause::Product(left, right),
                 }
+            },
+            | ValueType::Thunk(computation) => {
+                let Some(&CompType::Arrow {
+                    domain: argument,
+                    codomain: result,
+                }) = arena.comp_type(computation)
+                else {
+                    return Err(RelationError::UnsupportedType(ty));
+                };
+                let Some(&CompType::Returner(result)) = arena.comp_type(result)
+                else {
+                    return Err(RelationError::UnsupportedType(ty));
+                };
+                if !expanded {
+                    pending.push((ty, true));
+                    pending.push((result, false));
+                    pending.push((argument, false));
+                    continue;
+                }
+                let argument = *formed.get(&argument).ok_or(RelationError::Arena)?;
+                let result = *formed.get(&result).ok_or(RelationError::Arena)?;
+                Clause::Function(argument, result)
             },
             | ValueType::Abstract(_) => return Err(RelationError::AbstractInterface(ty)),
             | _ => return Err(RelationError::UnsupportedType(ty)),
@@ -533,6 +631,9 @@ impl Relation
                     Clause::Product(relocate(a, offset), relocate(b, offset))
                 },
                 | Clause::Sum(a, b) => Clause::Sum(relocate(a, offset), relocate(b, offset)),
+                | Clause::Function(a, b) => {
+                    Clause::Function(relocate(a, offset), relocate(b, offset))
+                },
                 | Clause::CaseLeft(a, b) => {
                     Clause::CaseLeft(relocate(a, offset), relocate(b, offset))
                 },

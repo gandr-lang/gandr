@@ -12,7 +12,9 @@ use gandr_kernel_term::ValueTypeId;
 
 use super::Fiber;
 use super::Fibers;
+use super::Identity;
 use super::Mode;
+use super::Proof;
 use super::Relation;
 use super::RelationError;
 use super::check_value;
@@ -22,35 +24,8 @@ use crate::conv::equal_values;
 use crate::encoding::ContentTable;
 use crate::rewrite::substitute_comp_type;
 
-/// The evidence of an element identity, relative to a term arena and context.
-///
-/// Fields are private but do not confer admission authority. Every consuming
-/// operation checks the evidence again in its current context.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Identity
-{
-    /// The identity's element type.
-    domain: ValueTypeId,
-    /// Its source element.
-    left: ValueId,
-    /// Its target element.
-    right: ValueId,
-    /// A fibre inhabitant or a suspended structural diagonal program.
-    proof: Proof,
-}
-
-/// Two forms of checked evidence for a derived relation.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Proof
-{
-    /// An ordinary inhabitant of a fully computed native fibre.
-    Native(ValueId),
-    /// The diagonal program of the code fold, awaiting a neutral sum index.
-    Diagonal,
-}
-
 /// A dependent transport computation in the experimental rule language.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Transport
 {
     /// Transport reduced to this value at the instantiated target fibre.
@@ -82,18 +57,21 @@ impl Relation
     ///   diagonal program: case on the index, then the corresponding payload
     ///   diagonal. This operation never installs a relation at an abstract
     ///   type.
-    /// - fails: `NonFibrant` for a bridge, or an index-checking error.
+    /// - fails: `NonFibrant` for a bridge, `HigherEvaluationRequired` at a
+    ///   function fibre, or an index-checking error. Function reflexivity uses
+    ///   `function_reflexivity` with a producer-supplied higher introduction.
     /// - panics: none.
     ///
     /// # Errors
     /// `NonFibrant`, `Typing`, `Arena`, or `Evidence` for an impossible empty
-    /// diagonal.
+    /// diagonal; `HigherEvaluationRequired` at a function fibre.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — Unit, Base and Product diagonals compute; a neutral
     ///   sum retains a diagonal without treating its unknown tag as a
     ///   constructor.
     /// - witness: `identity_recursion::tests::reflexivity_and_transport_compute`
+    /// - witness: `identity_recursion::function::tests::lambda_reflexivity_replays_higher_evaluation`
     #[inline]
     pub fn reflexivity(
         &self,
@@ -184,8 +162,8 @@ impl Relation
         &self,
         arena: &mut TermArena,
         context: &[ValueTypeId],
-        first: Identity,
-        second: Identity,
+        first: &Identity,
+        second: &Identity,
     ) -> Result<Identity, RelationError>
     {
         self.validate(arena, context, first)?;
@@ -194,10 +172,10 @@ impl Relation
             return Err(RelationError::Boundary);
         }
         if matches!(first.proof, Proof::Diagonal) {
-            return Ok(second);
+            return Ok(second.clone());
         }
         if matches!(second.proof, Proof::Diagonal) {
-            return Ok(first);
+            return Ok(first.clone());
         }
         let fiber = self.fiber(arena, context, first.left, second.right)?;
         let proof = fiber.inhabitant(arena)?;
@@ -228,7 +206,7 @@ impl Relation
         &self,
         arena: &mut TermArena,
         context: &[ValueTypeId],
-        identity: Identity,
+        identity: &Identity,
         motive: ValueTypeId,
         value: ValueId,
     ) -> Result<Transport, RelationError>
@@ -256,7 +234,7 @@ impl Relation
                 source,
                 target,
                 value,
-                identity,
+                identity: identity.clone(),
                 motive,
             })
         }
@@ -275,7 +253,7 @@ impl Relation
     /// # Adequacy
     /// - hypothesis: L3 — arbitrary bridge families cannot acquire transport.
     /// - witness: `identity_recursion::tests::universe_bridge_is_an_indexed_relation`
-    fn fibrant(&self) -> Result<(), RelationError>
+    pub(super) fn fibrant(&self) -> Result<(), RelationError>
     {
         match self.mode {
             | Mode::Identity => Ok(()),
@@ -299,11 +277,11 @@ impl Relation
     /// - hypothesis: L3 — changing the context or relation cannot reuse
     ///   evidence as an unchecked judgement.
     /// - witness: `identity_recursion::tests::identity_evidence_refuses_false_fibres`
-    fn validate(
+    pub(super) fn validate(
         &self,
         arena: &mut TermArena,
         context: &[ValueTypeId],
-        identity: Identity,
+        identity: &Identity,
     ) -> Result<(), RelationError>
     {
         self.fibrant()?;
@@ -319,6 +297,14 @@ impl Relation
                     return Err(RelationError::Boundary);
                 }
                 self.reflexivity(arena, context, identity.left)?;
+            },
+            | Proof::HigherEvaluation(ref evidence) => {
+                self.check_higher(
+                    arena,
+                    (identity.left, identity.right),
+                    evidence,
+                    crate::replay::ReplayBudget::DEFAULT,
+                )?;
             },
         }
         Ok(())
@@ -342,7 +328,7 @@ impl Fibers
     /// - hypothesis: L3 — the composition witness has the computed product
     ///   fibre and cannot erase an empty coordinate.
     /// - witness: `identity_recursion::tests::product_transport_composes_componentwise`
-    fn inhabitant(
+    pub(super) fn inhabitant(
         &self,
         arena: &mut TermArena,
     ) -> Result<ValueId, RelationError>
@@ -388,6 +374,9 @@ impl Fibers
                             continue;
                         },
                         | Fiber::Empty => return Err(RelationError::Evidence),
+                        | Fiber::Function { .. } => {
+                            return Err(RelationError::HigherEvaluationRequired);
+                        },
                         | Fiber::Discrete(..) | Fiber::Suspended(..) => {
                             return Err(RelationError::NeutralFiber);
                         },
