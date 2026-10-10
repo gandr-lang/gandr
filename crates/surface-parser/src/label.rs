@@ -25,6 +25,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_syntax::SourceFragment;
 
 /// The lexical class of one maximal lexeme.
@@ -263,7 +264,7 @@ impl ByteOffset
     /// - witness: `label::tests::cursor_arithmetic_saturates_at_both_boundaries`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret.0 == self.0.saturating_add(width.0))]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(width.0))]
     fn advance(
         self,
         width: ByteWidth,
@@ -285,7 +286,7 @@ impl ByteOffset
     /// - witness: `label::tests::cursor_arithmetic_saturates_at_both_boundaries`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret.0 == self.0.saturating_sub(width.0))]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_sub(width.0))]
     fn retreat(
         self,
         width: ByteWidth,
@@ -396,7 +397,7 @@ impl SourceByte
     /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'_'))]
+    #[spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'_'))]
     fn is_var_name_start(self) -> BytePredicate
     {
         let byte = u8::from(self);
@@ -417,7 +418,7 @@ impl SourceByte
     /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'0' ..= b'9' | b'_'))]
+    #[spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'0' ..= b'9' | b'_'))]
     fn is_word_continue(self) -> BytePredicate
     {
         let byte = u8::from(self);
@@ -438,7 +439,7 @@ impl SourceByte
     /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| bool::from(ret) != b" \t\r\n\x0c\x0b;|&<>{}[]()`\"'$#".contains(&self.0))]
+    #[spec(ensures: |ret| bool::from(ret) != b" \t\r\n\x0c\x0b;|&<>{}[]()`\"'$#".contains(&self.0))]
     fn is_shell_word(self) -> BytePredicate
     {
         BytePredicate::from(!matches!(
@@ -481,7 +482,7 @@ impl SourceByte
     /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'0' ..= b'9' | b'_' | b'-'))]
+    #[spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'0' ..= b'9' | b'_' | b'-'))]
     fn is_dialect(self) -> BytePredicate
     {
         let byte = u8::from(self);
@@ -525,7 +526,7 @@ impl SourceByte
     /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| bool::from(ret) == b"!&()*+,-:;<=>?@[]{}|$".contains(&self.0))]
+    #[spec(ensures: |ret| bool::from(ret) == b"!&()*+,-:;<=>?@[]{}|$".contains(&self.0))]
     fn is_single_punct(self) -> BytePredicate
     {
         BytePredicate::from(matches!(
@@ -689,7 +690,7 @@ impl Token
     /// - witness: `label::tests::token_text_checks_ranges_and_character_boundaries`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret.as_ref() == src.as_ref().get(usize::try_from(self.start).unwrap_or(usize::MAX) .. usize::try_from(self.end).unwrap_or(usize::MAX)).unwrap_or(""))]
+    #[spec(ensures: |ret| ret.as_ref() == src.as_ref().get(usize::try_from(self.start).unwrap_or(usize::MAX) .. usize::try_from(self.end).unwrap_or(usize::MAX)).unwrap_or(""))]
     pub fn text<'src>(
         &self,
         src: &'src SourceFragment<'src>,
@@ -796,7 +797,7 @@ const PRIME_UTF8: [u8; 3] = [0xe2, 0x80, 0xb2];
 /// - witness: `parse::tests::arbitrary_source_parses_totally`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ret| ret.first().map_or_else(|| src.as_ref().is_empty(), |first| first.start == 0)
+#[spec(ensures: |ret| ret.first().map_or_else(|| src.as_ref().is_empty(), |first| first.start == 0)
     && ret.last().is_none_or(|last| usize::try_from(last.end).ok() == Some(src.as_ref().len()))
     && ret.iter().all(|token| token.start < token.end && usize::try_from(token.start).ok().zip(usize::try_from(token.end).ok()).is_some_and(|(start, end)| src.as_ref().get(start .. end).is_some()))
     && ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left.end == right.start))]
@@ -988,7 +989,7 @@ pub fn label(src: SourceFragment<'_>) -> Vec<Token>
 ///   mode-insensitive classifier or premature stop changes the token stream.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 /// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
-#[anodized::spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Quote | Lexeme::EscapeSequence | Lexeme::Punct | Lexeme::StringFragment | Lexeme::Unknown)))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Quote | Lexeme::EscapeSequence | Lexeme::Punct | Lexeme::StringFragment | Lexeme::Unknown)))]
 fn scan_string_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1035,7 +1036,7 @@ fn scan_string_interior(
 ///   Interpreting an escape or swallowing the closing quote changes shell text.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 /// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
-#[anodized::spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::SingleQuotedContent)))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::SingleQuotedContent)))]
 fn scan_single_quoted_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1069,7 +1070,7 @@ fn scan_single_quoted_interior(
 ///   stream.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 /// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
-#[anodized::spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::VariableName | Lexeme::Unknown)))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::VariableName | Lexeme::Unknown)))]
 fn scan_variable_name(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1111,7 +1112,7 @@ fn scan_variable_name(
 ///   content is outside this witness matrix.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 /// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
-#[anodized::spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::VariableName | Lexeme::ShellWord)))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::VariableName | Lexeme::ShellWord)))]
 fn scan_braced_shell_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1160,7 +1161,7 @@ fn scan_braced_shell_interior(
 ///   and failure to advance change a row; double-quoted shell mode preserves
 ///   spaces and recognizes escapes and dollar expansions.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::EscapeSequence | Lexeme::Unknown | Lexeme::StringFragment)))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::EscapeSequence | Lexeme::Unknown | Lexeme::StringFragment)))]
 fn scan_shell_double_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1199,7 +1200,7 @@ fn scan_shell_double_interior(
 ///   and failure to advance change a row; shell brackets are subshell
 ///   delimiters, not host punctuation.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'[') => ret.lexeme == Lexeme::SubshellOpen, Some(b']') => ret.lexeme == Lexeme::SubshellClose, _ => true }))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'[') => ret.lexeme == Lexeme::SubshellOpen, Some(b']') => ret.lexeme == Lexeme::SubshellClose, _ => true }))]
 fn scan_shell_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1260,7 +1261,7 @@ fn scan_shell_interior(
 ///   and failure to advance change a row; host word classification preserves
 ///   the case of its leading letter.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'a' ..= b'z') => ret.lexeme == Lexeme::LowerWord, Some(b'A' ..= b'Z') => ret.lexeme == Lexeme::UpperWord, _ => true }))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'a' ..= b'z') => ret.lexeme == Lexeme::LowerWord, Some(b'A' ..= b'Z') => ret.lexeme == Lexeme::UpperWord, _ => true }))]
 fn scan_one(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1308,7 +1309,7 @@ fn scan_one(
 ///   the decision; dropping either the prefix or final-brace condition accepts
 ///   a negative neighbor.
 /// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[anodized::spec(ensures: |ret| bool::from(ret) == ((text.0.starts_with(b"#!") || text.0.starts_with(b"$!")) && text.0.ends_with(b"{")))]
+#[spec(ensures: |ret| bool::from(ret) == ((text.0.starts_with(b"#!") || text.0.starts_with(b"$!")) && text.0.ends_with(b"{")))]
 fn is_shell_open(text: SourceBytes<'_>) -> BytePredicate
 {
     BytePredicate::from(
@@ -1334,7 +1335,7 @@ fn is_shell_open(text: SourceBytes<'_>) -> BytePredicate
 ///   Adding newlines, dropping a Unicode blank or splitting its bytes changes
 ///   it.
 /// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
-#[anodized::spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| core::str::from_utf8(run).is_ok_and(|text| text.chars().all(|ch| matches!(ch, ' ' | '\t' | '\u{c}' | '\u{b}' | '\u{a0}' | '\u{200b}' | '\u{2060}' | '\u{feff}')))))]
+#[spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| core::str::from_utf8(run).is_ok_and(|text| text.chars().all(|ch| matches!(ch, ' ' | '\t' | '\u{c}' | '\u{b}' | '\u{a0}' | '\u{200b}' | '\u{2060}' | '\u{feff}')))))]
 fn scan_horizontal_space(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1373,7 +1374,7 @@ fn scan_horizontal_space(
 ///   delimiter, accepting the neighboring class or consuming too little changes
 ///   the pinned end offset.
 /// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
-#[anodized::spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| matches!(byte, b'\r' | b'\n'))) && bytes.0.get(ret.0).copied().is_none_or(|byte| !(matches!(byte, b'\r' | b'\n'))))]
+#[spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| matches!(byte, b'\r' | b'\n'))) && bytes.0.get(ret.0).copied().is_none_or(|byte| !(matches!(byte, b'\r' | b'\n'))))]
 fn scan_newlines(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1403,7 +1404,7 @@ fn scan_newlines(
 ///   ordinary space and a neighboring nonblank scalar expose the optional
 ///   width. Prefix-only matching or a shifted Unicode code point changes it.
 /// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[anodized::spec(ensures: |ret| ret.map(usize::from) == bytes.0.get(pos.0 ..).and_then(|tail| ["\u{a0}", "\u{200b}", "\u{2060}", "\u{feff}"].into_iter().find(|blank| tail.starts_with(blank.as_bytes())).map(str::len)))]
+#[spec(ensures: |ret| ret.map(usize::from) == bytes.0.get(pos.0 ..).and_then(|tail| ["\u{a0}", "\u{200b}", "\u{2060}", "\u{feff}"].into_iter().find(|blank| tail.starts_with(blank.as_bytes())).map(str::len)))]
 fn unicode_blank_len(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1453,7 +1454,7 @@ fn unicode_blank_len(
 ///   and failure to advance change a row; line and nested block comments are
 ///   layout; intersection is punctuation and a lone slash is unknown.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0) == Some(&b'/'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'/'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
 fn scan_slash(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1484,7 +1485,7 @@ fn scan_slash(
 ///   and failure to advance change a row; shebangs are layout, record and valid
 ///   shell openers are punctuation, other hashes are unknown.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0) == Some(&b'#'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'#'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
 fn scan_hash(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1520,7 +1521,7 @@ fn scan_hash(
 ///   delimiter, accepting the neighboring class or consuming too little changes
 ///   the pinned end offset.
 /// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
-#[anodized::spec(requires: from <= bytes.len(), ensures: |ret| ret >= from && ret <= bytes.len() && bytes.0.get(from.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| !matches!(byte, b'\r' | b'\n'))) && bytes.0.get(ret.0).copied().is_none_or(|byte| matches!(byte, b'\r' | b'\n')))]
+#[spec(requires: from <= bytes.len(), ensures: |ret| ret >= from && ret <= bytes.len() && bytes.0.get(from.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| !matches!(byte, b'\r' | b'\n'))) && bytes.0.get(ret.0).copied().is_none_or(|byte| matches!(byte, b'\r' | b'\n')))]
 fn scan_line_comment_from(
     bytes: SourceBytes<'_>,
     from: ByteOffset,
@@ -1549,7 +1550,7 @@ fn scan_line_comment_from(
 ///   source expose the consumed endpoint. Ignoring depth, swallowing following
 ///   source or failing to consume the opener changes the boundary.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"/*")), ensures: |ret| ret.0 >= pos.0.saturating_add(2) && ret <= bytes.len() && (ret == bytes.len() || bytes.0.get(ret.0.saturating_sub(2) .. ret.0) == Some(b"*/")))]
+#[spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"/*")), ensures: |ret| ret.0 >= pos.0.saturating_add(2) && ret <= bytes.len() && (ret == bytes.len() || bytes.0.get(ret.0.saturating_sub(2) .. ret.0) == Some(b"*/")))]
 fn scan_block_comment(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1593,7 +1594,7 @@ fn scan_block_comment(
 ///   and failure to advance change a row; a complete character consumes both
 ///   quotes; empty and truncated literals leave a punctuation quote.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0) == Some(&b'\''), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Character | Lexeme::Punct)))]
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'\''), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Character | Lexeme::Punct)))]
 fn scan_character(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1641,7 +1642,7 @@ fn scan_character(
 ///   and failure to advance change a row; an escape consumes its following
 ///   scalar; a terminal backslash remains unknown.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0) == Some(&b'\\'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::EscapeSequence | Lexeme::Unknown)))]
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'\\'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::EscapeSequence | Lexeme::Unknown)))]
 fn scan_escape(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1671,7 +1672,7 @@ fn scan_escape(
 ///   and failure to advance change a row; a braced parameter or valid command
 ///   opener is punctuation; an incomplete command start is unknown.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0) == Some(&b'$'), ensures: |ret| ret.next > pos && matches!(ret.lexeme, Lexeme::Punct | Lexeme::Unknown))]
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'$'), ensures: |ret| ret.next > pos && matches!(ret.lexeme, Lexeme::Punct | Lexeme::Unknown))]
 fn scan_dollar(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1702,7 +1703,7 @@ fn scan_dollar(
 ///   and failure to advance change a row; shell logical and pipe pairs take
 ///   precedence over their single-byte prefixes.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0).is_some_and(|byte| b";&|".contains(byte)), ensures: |ret| ret.next > pos && (ret.lexeme == Lexeme::Punct && ret.next.0 == pos.0.saturating_add(if bytes.0.get(pos.0 ..).is_some_and(|tail| [b"&&", b"||", b"|&"].iter().any(|op| tail.starts_with(*op))) { 2 } else { 1 })))]
+#[spec(requires: bytes.0.get(pos.0).is_some_and(|byte| b";&|".contains(byte)), ensures: |ret| ret.next > pos && (ret.lexeme == Lexeme::Punct && ret.next.0 == pos.0.saturating_add(if bytes.0.get(pos.0 ..).is_some_and(|tail| [b"&&", b"||", b"|&"].iter().any(|op| tail.starts_with(*op))) { 2 } else { 1 })))]
 fn scan_shell_operator(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1734,7 +1735,7 @@ fn scan_shell_operator(
 ///   and failure to advance change a row; redirection pairs consume two bytes;
 ///   other redirection prefixes consume one.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0).is_some_and(|byte| b"<>".contains(byte)), ensures: |ret| ret.next > pos && (ret.lexeme == Lexeme::Punct && ret.next.0 == pos.0.saturating_add(if bytes.0.get(pos.0 ..).is_some_and(|tail| [b"<>", b"<&", b">&", b">>"].iter().any(|op| tail.starts_with(*op))) { 2 } else { 1 })))]
+#[spec(requires: bytes.0.get(pos.0).is_some_and(|byte| b"<>".contains(byte)), ensures: |ret| ret.next > pos && (ret.lexeme == Lexeme::Punct && ret.next.0 == pos.0.saturating_add(if bytes.0.get(pos.0 ..).is_some_and(|tail| [b"<>", b"<&", b">&", b">>"].iter().any(|op| tail.starts_with(*op))) { 2 } else { 1 })))]
 fn scan_shell_redirection(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1774,7 +1775,7 @@ fn scan_shell_redirection(
 ///   and failure to advance change a row; only a digit run immediately followed
 ///   by redirection is a file descriptor.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::FileDescriptor | Lexeme::ShellWord)))]
+#[spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::FileDescriptor | Lexeme::ShellWord)))]
 fn scan_shell_fd_or_word(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1809,7 +1810,7 @@ fn scan_shell_fd_or_word(
 ///   keeping the dialect after a rejected prefix changes the observation.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
 /// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[anodized::spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"#!") || tail.starts_with(b"$!")), ensures: |ret| match ret.lexeme { Lexeme::Punct => ret.next.0 >= pos.0.saturating_add(3) && ret.next <= bytes.len() && bytes.0.get(ret.next.0.saturating_sub(1)) == Some(&open.0), Lexeme::Unknown => ret.next.0 == pos.0.saturating_add(1), _ => false })]
+#[spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"#!") || tail.starts_with(b"$!")), ensures: |ret| match ret.lexeme { Lexeme::Punct => ret.next.0 >= pos.0.saturating_add(3) && ret.next <= bytes.len() && bytes.0.get(ret.next.0.saturating_sub(1)) == Some(&open.0), Lexeme::Unknown => ret.next.0 == pos.0.saturating_add(1), _ => false })]
 fn scan_shell_start(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1851,7 +1852,7 @@ fn scan_shell_start(
 ///   and failure to advance change a row; a number commits fractions and
 ///   exponents only with a digit and promotes only a bounded primitive suffix.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit) || (bytes.0.get(pos.0) == Some(&b'.') && bytes.0.get(pos.0.saturating_add(1)).is_some_and(u8::is_ascii_digit)), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Number | Lexeme::TypedNumber)))]
+#[spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit) || (bytes.0.get(pos.0) == Some(&b'.') && bytes.0.get(pos.0.saturating_add(1)).is_some_and(u8::is_ascii_digit)), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Number | Lexeme::TypedNumber)))]
 fn scan_number(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1903,7 +1904,7 @@ fn scan_number(
 ///   delimiter, accepting the neighboring class or consuming too little changes
 ///   the pinned end offset.
 /// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
-#[anodized::spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| byte.is_ascii_digit())) && bytes.0.get(ret.0).copied().is_none_or(|byte| !byte.is_ascii_digit()))]
+#[spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| byte.is_ascii_digit())) && bytes.0.get(ret.0).copied().is_none_or(|byte| !byte.is_ascii_digit()))]
 fn scan_digits(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1945,7 +1946,7 @@ fn scan_digits(
 ///   and failure to advance change a row; identifier-led assignment prefixes
 ///   stay whole, while flags containing equals remain ordinary words.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::ShellWord | Lexeme::EnvAssign | Lexeme::Unknown)))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::ShellWord | Lexeme::EnvAssign | Lexeme::Unknown)))]
 fn scan_shell_word(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1996,7 +1997,7 @@ fn scan_shell_word(
 ///   containing equals are compared with assignment classification. Moving the
 ///   name-start boundary or accepting a separator inside the name changes it.
 /// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[anodized::spec(requires: start <= end && end <= bytes.len(), ensures: |ret| bool::from(ret) == bytes.0.get(start.0 .. end.0).is_some_and(|run| run.iter().position(|byte| *byte == b'=').is_some_and(|equal| equal > 0 && run.first().is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_') && run.get(1 .. equal).is_some_and(|name| name.iter().all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')))))]
+#[spec(requires: start <= end && end <= bytes.len(), ensures: |ret| bool::from(ret) == bytes.0.get(start.0 .. end.0).is_some_and(|run| run.iter().position(|byte| *byte == b'=').is_some_and(|equal| equal > 0 && run.first().is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_') && run.get(1 .. equal).is_some_and(|name| name.iter().all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')))))]
 fn is_env_assign_run(
     bytes: SourceBytes<'_>,
     start: ByteOffset,
@@ -2037,7 +2038,7 @@ fn is_env_assign_run(
 ///   delimiter or an ordinary unclosed tail, expose the end offset. Stopping at
 ///   an escaped quote or consuming past a real closing quote changes it.
 /// - witness: `label::tests::quoted_values_stop_only_at_an_unescaped_quote`
-#[anodized::spec(requires: bytes.0.get(pos.0) == Some(&b'"'), ensures: |ret| ret > pos && ret <= bytes.len() && (ret == bytes.len() || bytes.0.get(ret.0.saturating_sub(1)) == Some(&b'"')))]
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'"'), ensures: |ret| ret > pos && ret <= bytes.len() && (ret == bytes.len() || bytes.0.get(ret.0.saturating_sub(1)) == Some(&b'"')))]
 fn scan_shell_quoted_value(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -2067,7 +2068,7 @@ fn scan_shell_quoted_value(
 ///   Omitting a suffix, accepting a partial suffix or ignoring the word
 ///   boundary changes that width.
 /// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[anodized::spec(ensures: |ret| ret.map(usize::from) == (bytes.0.get(pos.0 .. pos.0.saturating_add(3)).is_some_and(|word| [b"u32".as_slice(), b"u64".as_slice(), b"i32".as_slice(), b"i64".as_slice(), b"f32".as_slice(), b"f64".as_slice()].contains(&word)) && bytes.0.get(pos.0.saturating_add(3)).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')).then_some(3))]
+#[spec(ensures: |ret| ret.map(usize::from) == (bytes.0.get(pos.0 .. pos.0.saturating_add(3)).is_some_and(|word| [b"u32".as_slice(), b"u64".as_slice(), b"i32".as_slice(), b"i64".as_slice(), b"f32".as_slice(), b"f64".as_slice()].contains(&word)) && bytes.0.get(pos.0.saturating_add(3)).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')).then_some(3))]
 fn suffix_len(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -2113,7 +2114,7 @@ fn suffix_len(
 ///   and failure to advance change a row; a dot before a digit starts a
 ///   fraction; a pair is rest punctuation and other dots stand alone.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0) == Some(&b'.'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::Number | Lexeme::TypedNumber)))]
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'.'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::Number | Lexeme::TypedNumber)))]
 fn scan_dot(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -2149,7 +2150,7 @@ fn scan_dot(
 ///   and failure to advance change a row; a lone underscore is wildcard
 ///   punctuation; a continued underscore begins a lower word.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0) == Some(&b'_'), ensures: |ret| ret.next > pos && (ret.lexeme == if ret.next.0 == pos.0.saturating_add(1) { Lexeme::Punct } else { Lexeme::LowerWord }))]
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'_'), ensures: |ret| ret.next > pos && (ret.lexeme == if ret.next.0 == pos.0.saturating_add(1) { Lexeme::Punct } else { Lexeme::LowerWord }))]
 fn scan_word_or_underscore(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -2192,7 +2193,7 @@ fn scan_word_or_underscore(
 ///   as a separator or a valid word start changes the class/text stream.
 /// - witness: `label::tests::a_primed_word_is_one_word_and_a_lone_prime_is_not`
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: bytes.0.get(pos.0).is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_'), ensures: |ret| ret > pos && ret <= bytes.len() && bytes.0.get(ret.0).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_') && bytes.0.get(ret.0 ..).is_none_or(|tail| !tail.starts_with("′".as_bytes())))]
+#[spec(requires: bytes.0.get(pos.0).is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_'), ensures: |ret| ret > pos && ret <= bytes.len() && bytes.0.get(ret.0).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_') && bytes.0.get(ret.0 ..).is_none_or(|tail| !tail.starts_with("′".as_bytes())))]
 fn scan_word(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -2231,7 +2232,7 @@ fn scan_word(
 ///   and failure to advance change a row; maximal operators, grade omega and
 ///   bounded bridges are punctuation; a stray scalar is unknown.
 /// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
-#[anodized::spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::Unknown)))]
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::Unknown)))]
 fn scan_punct_or_unknown(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -2283,7 +2284,7 @@ const BRIDGES: [&[u8]; 2] = [b"+U", b"-F"];
 ///   prime, the sum and difference signs before a name, a spaced sign, and a
 ///   bridge before punctuation and at the end of input separate the decision.
 /// - witness: `label::tests::bridge_tiles_end_where_their_letter_does`
-#[anodized::spec(ensures: |ret| ret.map(usize::from) == (bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"+U") || tail.starts_with(b"-F")) && bytes.0.get(pos.0.saturating_add(2)).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_') && bytes.0.get(pos.0.saturating_add(2) ..).is_none_or(|tail| !tail.starts_with("′".as_bytes()))).then_some(pos.0.saturating_add(2)))]
+#[spec(ensures: |ret| ret.map(usize::from) == (bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"+U") || tail.starts_with(b"-F")) && bytes.0.get(pos.0.saturating_add(2)).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_') && bytes.0.get(pos.0.saturating_add(2) ..).is_none_or(|tail| !tail.starts_with("′".as_bytes()))).then_some(pos.0.saturating_add(2)))]
 fn bridge_end(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -2316,7 +2317,7 @@ fn bridge_end(
 ///   stray scalar and absent input, expose the maximal width. A shorter
 ///   operator shadowing a longer one or an overlong match changes the result.
 /// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
-#[anodized::spec(ensures: |ret| ret.map(usize::from) == bytes.0.get(pos.0 ..).and_then(|tail| MULTI_PUNCT.iter().filter(|operator| tail.starts_with(operator.as_bytes())).map(|operator| operator.len()).max().or_else(|| tail.first().filter(|byte| b"!&()*+,-:;<=>?@[]{}|$".contains(byte)).map(|_| 1))))]
+#[spec(ensures: |ret| ret.map(usize::from) == bytes.0.get(pos.0 ..).and_then(|tail| MULTI_PUNCT.iter().filter(|operator| tail.starts_with(operator.as_bytes())).map(|operator| operator.len()).max().or_else(|| tail.first().filter(|byte| b"!&()*+,-:;<=>?@[]{}|$".contains(byte)).map(|_| 1))))]
 fn punct_len(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -2345,7 +2346,7 @@ fn punct_len(
 ///   intervals; every boundary and its neighbor distinguishes shifted
 ///   thresholds, wrong widths and nonprogress on invalid leading bytes.
 /// - witness: `label::tests::utf8_step_widths_cover_every_leading_byte`
-#[anodized::spec(ensures: |ret| ret.0 == match lead.0 { 0xc0 ..= 0xdf => 2, 0xe0 ..= 0xef => 3, 0xf0 ..= 0xf7 => 4, _ => 1 })]
+#[spec(ensures: |ret| ret.0 == match lead.0 { 0xc0 ..= 0xdf => 2, 0xe0 ..= 0xef => 3, 0xf0 ..= 0xf7 => 4, _ => 1 })]
 fn utf8_width(lead: SourceByte) -> ByteWidth
 {
     match u8::from(lead) {
@@ -2366,6 +2367,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_surface_syntax::SourceFragment;
 
     use super::Lexeme;
@@ -3721,7 +3723,7 @@ mod tests
     ///   Sorting by source offset, dropping unknowns or retaining spaces
     ///   changes the sequence.
     /// - witness: `label::tests::token_observers_preserve_supplied_order`
-    #[anodized::spec(ensures: |ret| ret.len() == tokens.iter().filter(|token| token.lexeme != Lexeme::Space).count() && ret.iter().zip(tokens.iter().filter(|token| token.lexeme != Lexeme::Space)).all(|(observed, token)| observed.0 == token.lexeme && observed.1.as_str() == token.text(&src).as_ref()))]
+    #[spec(ensures: |ret| ret.len() == tokens.iter().filter(|token| token.lexeme != Lexeme::Space).count() && ret.iter().zip(tokens.iter().filter(|token| token.lexeme != Lexeme::Space)).all(|(observed, token)| observed.0 == token.lexeme && observed.1.as_str() == token.text(&src).as_ref()))]
     fn tiles(
         src: SourceFragment<'_>,
         tokens: &[Token],
@@ -3752,7 +3754,7 @@ mod tests
     ///   omitting space or copying the whole source instead changes the
     ///   reconstructed text.
     /// - witness: `label::tests::token_observers_preserve_supplied_order`
-    #[anodized::spec(ensures: |ret| tokens.iter().try_fold(ret.as_str(), |remaining, token| remaining.strip_prefix(token.text(&src).as_ref())) == Some(""))]
+    #[spec(ensures: |ret| tokens.iter().try_fold(ret.as_str(), |remaining, token| remaining.strip_prefix(token.text(&src).as_ref())) == Some(""))]
     fn reconstruct(
         src: SourceFragment<'_>,
         tokens: &[Token],

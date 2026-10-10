@@ -31,6 +31,8 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
+
 use crate::commitment::AlgorithmVersion;
 use crate::commitment::CommitmentField;
 use crate::commitment::CommitmentWriter;
@@ -102,7 +104,7 @@ const GEAR_TABLE_V1: GearTable = gear_table_v1();
 ///   first carried as, so a changed seed, increment or mixing constant moves at
 ///   least one.
 /// - witness: `gear::tests::the_v1_table_is_pinned`
-#[anodized::spec(ensures: |ref ret| {
+#[spec(ensures: |ref ret| {
     let mut entries = ret.0.as_slice();
     let mut ordinal = 1_u64;
     let mut equal = true;
@@ -180,7 +182,7 @@ impl TryFrom<u16> for GearTableVersion
     ///   field tags and raw payloads distinguish acceptance and error
     ///   mutations.
     /// - witness: `tests::commitment::raw_discriminators_round_trip_and_refuse_by_field`
-    #[anodized::spec(ensures: |ret| ret == if raw == 1 {
+    #[spec(ensures: |ret| ret == if raw == 1 {
         Ok(Self::V1)
     } else {
         Err(ChunkerError::UnsupportedProfileValue {
@@ -248,7 +250,7 @@ impl TryFrom<u8> for NormalizationPolicy
     ///   field tags and raw payloads distinguish acceptance and error
     ///   mutations.
     /// - witness: `tests::commitment::raw_discriminators_round_trip_and_refuse_by_field`
-    #[anodized::spec(ensures: |ret| ret == if raw == 0 {
+    #[spec(ensures: |ret| ret == if raw == 0 {
         Ok(Self::PreserveBytes)
     } else {
         Err(ChunkerError::UnsupportedProfileValue {
@@ -316,7 +318,7 @@ impl TryFrom<u8> for RecordBoundaryRule
     ///   field tags and raw payloads distinguish acceptance and error
     ///   mutations.
     /// - witness: `tests::commitment::raw_discriminators_round_trip_and_refuse_by_field`
-    #[anodized::spec(ensures: |ret| ret == if raw == 0 {
+    #[spec(ensures: |ret| ret == if raw == 0 {
         Ok(Self::BetweenRecords)
     } else {
         Err(ChunkerError::UnsupportedProfileValue {
@@ -473,7 +475,7 @@ impl ChunkLimits
     ///   exactly `u32::MAX` against one past it.
     /// - witness: `tests::gear::invalid_limits_are_refused_by_reason`
     /// - witness: `tests::gear::equal_limits_are_admitted`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Ok(limits) => {
             limits.min_bytes == min_bytes && limits.target_bytes == target_bytes
                 && limits.max_bytes == max_bytes && limits.min_records == min_records
@@ -707,7 +709,7 @@ impl ChunkerParams
     ///   on independent field changes distinguish omission and substitution.
     /// - witness: `tests::commitment::the_default_record_safe_commitment_is_pinned`
     /// - witness: `tests::commitment::each_record_safe_field_moves_the_commitment`
-    #[anodized::spec(ensures: |ret| {
+    #[spec(ensures: |ret| {
         let actual_salt = ret.seed_policy.salt();
         let expected_salt = seed_policy.salt();
         let mut actual = actual_salt.0.as_slice();
@@ -786,7 +788,7 @@ impl ChunkerParams
     ///   mutations over validated profiles.
     /// - witness: `tests::commitment::the_default_record_safe_commitment_is_pinned`
     /// - witness: `tests::commitment::each_record_safe_field_moves_the_commitment`
-    #[anodized::spec(ensures: |ret| ret.as_ref().strip_prefix(crate::PARAMETER_DOMAIN)
+    #[spec(ensures: |ret| ret.as_ref().strip_prefix(crate::PARAMETER_DOMAIN)
         .is_some_and(|fields| {
             fields.len() == 75
                 && fields.get(0..2) == Some([1, 0].as_slice())
@@ -898,7 +900,7 @@ impl ChunkerParams
     ///   exact independently calculated words distinguish seed-kind, order,
     ///   rotation and mixing mutations, not collisions over every salt.
     /// - witness: `gear::tests::seed_states_match_independent_goldens`
-    #[anodized::spec(ensures: |ret| ret.0 == self.seed_policy.salt().as_ref().iter().fold(
+    #[spec(ensures: |ret| ret.0 == self.seed_policy.salt().as_ref().iter().fold(
         GEAR_STATE_IV ^ u64::from(u16::from(self.seed_policy.discriminator())),
         |state, byte| (state.rotate_left(5) ^ u64::from(*byte)).wrapping_mul(SEED_MIX_MULTIPLIER),
     ))]
@@ -929,7 +931,7 @@ impl ChunkerParams
     /// - hypothesis: L3 at one, powers of two, adjacent values and the largest
     ///   admitted target; exact masks separate rounding and subtraction faults.
     /// - witness: `gear::tests::cut_masks_round_up_at_power_boundaries`
-    #[anodized::spec(ensures: |ret| ret.0.checked_add(1).is_some_and(|power| {
+    #[spec(ensures: |ret| ret.0.checked_add(1).is_some_and(|power| {
         let target = u64::from(self.limits.target_bytes);
         power.is_power_of_two() && power >= target
             && (power == 1 || power.checked_div(2).is_some_and(|half| half < target))
@@ -973,7 +975,7 @@ impl RawDiscriminator
     /// - hypothesis: L3 over the complete admitted eight-bit domain; the exact
     ///   byte payload distinguishes narrowing and field-width mutations.
     /// - witness: `gear::tests::byte_fields_preserve_every_admitted_discriminator`
-    #[anodized::spec(
+    #[spec(
         requires: u8::try_from(self.0).is_ok(),
         ensures: |ret| matches!(ret, CommitmentField::Byte(value) if u16::from(value) == self.0),
     )]
@@ -1094,7 +1096,7 @@ struct RecordBytes<'record>(&'record [u8]);
 /// - witness: `tests::gear::an_unreachable_minimum_is_refused_by_name`
 /// - witness: `tests::gear::low_entropy_streams_stay_within_the_caps`
 /// - witness: `tests::gear::empty_records_keep_their_record_positions`
-#[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |chunks| {
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |chunks| {
         let mut byte_end = BytePosition::ZERO;
         let mut record_end = RecordPosition::ZERO;
         let partition = chunks.iter().all(|chunk| {
@@ -1177,7 +1179,7 @@ pub fn chunk_record_slices(
 /// - witness: `tests::gear::the_two_entry_points_agree`
 /// - witness: `tests::gear::span_lists_that_are_not_a_partition_are_refused`
 /// - witness: `tests::gear::empty_records_keep_their_record_positions`
-#[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |chunks| {
+#[spec(ensures: |ret| ret.as_ref().map_or(true, |chunks| {
         let mut byte_end = BytePosition::ZERO;
         let mut record_end = RecordPosition::ZERO;
         let partition = chunks.iter().all(|chunk| {
@@ -1335,7 +1337,7 @@ impl ChunkScan
     /// - hypothesis: L3 at empty and below-minimum inputs; exact empty output
     ///   and final spans distinguish nonzero initialization and phantom chunks.
     /// - witness: `tests::gear::empty_input_and_final_remainder_partition_the_input`
-    #[anodized::spec(ensures: |ret| ret.chunks.is_empty()
+    #[spec(ensures: |ret| ret.chunks.is_empty()
         && ret.chunk_start_byte == BytePosition::ZERO && ret.chunk_start_record == RecordPosition::ZERO
         && ret.chunk_bytes == ByteCount::ZERO && ret.chunk_records == RecordCount::ZERO
         && ret.last_record_end == BytePosition::ZERO && ret.state == params.initial_state()
@@ -1385,7 +1387,7 @@ impl ChunkScan
     /// - witness: `tests::gear::the_caps_force_their_reasons`
     /// - witness: `tests::gear::an_oversized_record_is_refused_by_name`
     /// - witness: `tests::gear::an_unreachable_minimum_is_refused_by_name`
-    #[anodized::spec(
+    #[spec(
         requires: record_start == self.last_record_end,
         ensures: |ret| ret.is_err() || (self.last_record_end == record_end
             && self.chunk_bytes <= self.limits.max_bytes && self.chunk_records <= self.limits.max_records),
@@ -1491,7 +1493,7 @@ impl ChunkScan
     ///   omission, phantom emission, wrong reasons and arithmetic wrapping.
     /// - witness: `tests::gear::empty_input_and_final_remainder_partition_the_input`
     /// - witness: `gear::tests::record_position_overflow_refuses_without_emission`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.chunks.len(), self.chunk_records),
         ensures: |ret| ret.is_err() || (self.chunk_records == RecordCount::ZERO
             && self.chunk_bytes == ByteCount::ZERO
@@ -1519,7 +1521,7 @@ impl ChunkScan
     ///   equality and upper neighbor; the decision separates conjunction,
     ///   field-swap and strict-comparison mutations.
     /// - witness: `gear::tests::minimum_limits_require_both_thresholds`
-    #[anodized::spec(ensures: |ret| (ret == MinimumLimits::Met)
+    #[spec(ensures: |ret| (ret == MinimumLimits::Met)
         == (self.chunk_bytes >= self.limits.min_bytes && self.chunk_records >= self.limits.min_records))]
     fn minimum_limits(&self) -> MinimumLimits
     {
@@ -1557,7 +1559,7 @@ impl ChunkScan
     /// - witness: `tests::gear::empty_input_and_final_remainder_partition_the_input`
     /// - witness: `tests::gear::minimum_limits_suppress_an_early_hash_cut`
     /// - witness: `gear::tests::record_position_overflow_refuses_without_emission`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.chunks.len(), self.chunk_records, self.chunk_start_byte, self.last_record_end, self.chunk_start_record),
         ensures: |ret| {
             if before.1 == RecordCount::ZERO { ret.is_ok() && self.chunks.len() == before.0 }

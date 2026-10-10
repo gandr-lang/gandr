@@ -30,6 +30,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::Computation;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
@@ -115,7 +116,7 @@ impl Provenance
     /// - witness: `focus::tests::provenance_lookup_distinguishes_unrecorded_commands`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret == self.origins.iter()
+    #[spec(ensures: |ret| ret == self.origins.iter()
         .find(|&&(recorded, _)| recorded == command).map(|&(_, origin)| origin)
     )]
     pub fn origin(
@@ -166,7 +167,7 @@ impl Provenance
     ///   read independently; gap and truncation probes distinguish a skipped
     ///   append, wrong key or overwritten origin.
     /// - witness: `focus::tests::provenance_lookup_distinguishes_unrecorded_commands`
-    #[anodized::spec(
+    #[spec(
         requires: self.origins.last().is_none_or(|&(previous, _)| previous < command),
         ensures: self.origin(command) == Some(origin),
     )]
@@ -280,7 +281,7 @@ impl From<MintRefusal> for FocusRefusal
 /// - witness: `focus::tests::focusing_mints_no_name`
 /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
 #[inline]
-#[anodized::spec(
+#[spec(
     captures: [mark = arena.watermark(), recorded = provenance.len()],
     ensures: |ret| match ret {
         | Ok(id) => arena.command(id).is_some() && provenance.origin(id).is_some(),
@@ -325,7 +326,7 @@ pub fn focus_computation(
 /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
 /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
 #[inline]
-#[anodized::spec(
+#[spec(
     captures: [mark = arena.watermark(), recorded = provenance.len()],
     ensures: |ret| match ret {
         | Ok(id) => arena.producer(id).is_some_and(|node| !matches!(node, &ProducerNode::Mu { .. })),
@@ -366,7 +367,7 @@ pub fn focus_value(
 /// - witness: `tests::focus_properties::top_level_value_focuses_against_top`
 /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
 #[inline]
-#[anodized::spec(
+#[spec(
     captures: [mark = arena.watermark(), recorded = provenance.len()],
     ensures: |ret| match ret {
         | Ok(id) => provenance.origin(id) == Some(FocusOrigin::TopValue)
@@ -419,7 +420,7 @@ pub fn focus_top_value(
 ///   arena/provenance observations.
 /// - witness: `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`
 /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
-#[anodized::spec(
+#[spec(
     captures: [mark = arena.watermark(), recorded = provenance.len()],
     ensures: |ref ret| ret.is_ok() || (arena.watermark() == mark && provenance.len() == recorded),
 )]
@@ -571,7 +572,7 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
-    #[anodized::spec(ensures: |ret| ret.is_err() || self.tasks.is_empty())]
+    #[spec(ensures: |ret| ret.is_err() || self.tasks.is_empty())]
     fn drive(&mut self) -> Result<(), FocusRefusal>
     {
         while let Some(task) = self.tasks.pop() {
@@ -601,7 +602,7 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
-    #[anodized::spec(
+    #[spec(
         requires: match &task {
             | &Task::Pair => self.producers.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Cut { .. } | &Task::Apply { .. } => !self.producers.is_empty(),
@@ -742,7 +743,7 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     /// - witness: `focus::tests::a_code_is_refused_by_name`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
-    #[anodized::spec(
+    #[spec(
         captures: [work = self.tasks.len(), results = self.producers.len()],
         ensures: |ret| match self.core.value(id) {
             | None => ret == Err(FocusRefusal::DanglingValue(id)),
@@ -824,7 +825,7 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     /// - witness: `focus::tests::each_focus_entry_rolls_back_dangling_inputs`
-    #[anodized::spec(
+    #[spec(
         captures: [work = self.tasks.len()],
         ensures: |ret| if self.core.computation(id).is_none() {
             ret == Err(FocusRefusal::DanglingComputation(id))
@@ -928,7 +929,7 @@ impl<'run> Focusing<'run>
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `focus::tests::focusing_mints_no_name`
-    #[anodized::spec(
+    #[spec(
         captures: [work = self.tasks.len()],
         ensures: |ret| ret.is_err() || ret.is_ok_and(|id|
             if matches!(self.arena.consumer(continuation), Some(&ConsumerNode::Top | &ConsumerNode::Covariable(_))) {
@@ -981,7 +982,7 @@ impl<'run> Focusing<'run>
     ///   ceiling; no full-sized consumer arena is allocated.
     /// - witness: `focus::tests::focusing_mints_no_name`
     /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
-    #[anodized::spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|id|
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|id|
         self.arena.consumer(id) == Some(&ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
     ))]
     fn innermost_covariable(&mut self) -> Result<ConsumerId, FocusRefusal>
@@ -1009,7 +1010,7 @@ impl<'run> Focusing<'run>
     ///   children and reversed pairs change the recovered source.
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
-    #[anodized::spec(
+    #[spec(
         requires: fields.len() == usize::from(tag.producer_arity()),
         ensures: |ret| ret.is_err() || self.producers.last()
             .and_then(|id| self.arena.producer(*id)).is_some_and(|node| matches!(*node,
@@ -1050,7 +1051,7 @@ impl<'run> Focusing<'run>
     ///   terminal continuation and origin.
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::top_level_value_focuses_against_top`
-    #[anodized::spec(
+    #[spec(
         captures: [results = self.commands.len()],
         ensures: |ret| ret.is_err() || (results.checked_add(1) == Some(self.commands.len())
             && self.commands.last().is_some_and(|id| self.provenance.origin(*id) == Some(origin)
@@ -1088,7 +1089,7 @@ impl<'run> Focusing<'run>
     ///   then exact underflow is observed. Wrong-end removal, stale results and
     ///   silent underflow change the answer.
     /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
-    #[anodized::spec(
+    #[spec(
         captures: [last = self.producers.last().copied(), length = self.producers.len()],
         ensures: |ret| ret == last.ok_or(FocusRefusal::TranslationInvariant)
             && self.producers.len() == length.saturating_sub(1),
@@ -1118,7 +1119,7 @@ impl<'run> Focusing<'run>
     ///   then exact underflow is observed. Wrong-end removal, stale results and
     ///   silent underflow change the answer.
     /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
-    #[anodized::spec(
+    #[spec(
         captures: [last = self.commands.last().copied(), length = self.commands.len()],
         ensures: |ret| ret == last.ok_or(FocusRefusal::TranslationInvariant)
             && self.commands.len() == length.saturating_sub(1),
@@ -1147,7 +1148,7 @@ impl<'run> Focusing<'run>
     ///   each stack distinguishes missing, surplus and wrong-kind results. The
     ///   observer is the exact singleton or invariant refusal.
     /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
-    #[anodized::spec(
+    #[spec(
         requires: self.tasks.is_empty(),
         captures: [single = self.commands.len() == 1 && self.producers.is_empty(), last = self.commands.last().copied()],
         ensures: |ret| ret == if single { last.ok_or(FocusRefusal::TranslationInvariant) }
@@ -1181,7 +1182,7 @@ impl<'run> Focusing<'run>
     ///   each stack distinguishes missing, surplus and wrong-kind results. The
     ///   observer is the exact singleton or invariant refusal.
     /// - witness: `focus::tests::result_stacks_enforce_singletons_and_lifo`
-    #[anodized::spec(
+    #[spec(
         requires: self.tasks.is_empty(),
         captures: [single = self.producers.len() == 1 && self.commands.is_empty(), last = self.producers.last().copied()],
         ensures: |ret| ret == if single { last.ok_or(FocusRefusal::TranslationInvariant) }
@@ -1223,7 +1224,7 @@ mod tests
     ///   missing rollback and damage to the prefix; it covers this unsupported
     ///   form, not an invalid source arena.
     /// - witness: `focus::tests::a_refused_focusing_leaves_the_arena_at_its_mark`
-    #[anodized::spec(ensures: |ret| match core.computation(ret) {
+    #[spec(ensures: |ret| match core.computation(ret) {
         | Some(&Computation::Lambda(bind)) => match core.computation(bind) {
             | Some(&Computation::Bind(bound, body)) => matches!(core.computation(bound), Some(&Computation::Return(unit)) if core.value(unit) == Some(&Value::Unit))
                 && matches!(core.computation(body), Some(&Computation::Return(code)) if matches!(core.value(code), Some(&Value::Quote(quoted)) if core.value_type(quoted).is_some())),

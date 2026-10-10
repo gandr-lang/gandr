@@ -14,6 +14,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
@@ -45,7 +46,7 @@ pub struct Integer(pub i32);
 ///   explicit sign and digit expectations. These distinguish signed
 ///   absolute-value overflow, sign loss and incorrect zero handling.
 /// - witness: `tests::generate::integer_payloads_cover_both_signed_extremes`
-#[anodized::spec(ensures: |ret| match core.value(ret) {
+#[spec(ensures: |ret| match core.value(ret) {
     | Some(&gandr_core_term::Value::Literal(Literal::Integer(ref integer))) => {
         let digits: &str = integer.magnitude().as_ref();
         digits.parse::<u32>().ok() == Some(value.0.unsigned_abs())
@@ -115,7 +116,7 @@ impl Fuel
     ///   zero-fuel generation exercises the introduction-only frontier.
     /// - witness: `tests::generate::fuel_and_draws_respect_empty_and_full_bounds`
     /// - witness: `tests::generate::typed_builders_preserve_product_sum_and_function_roles`
-    #[anodized::spec(ensures: |ret| ret.0 == self.0.saturating_sub(1))]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_sub(1))]
     const fn child(self) -> Self
     {
         Self(self.0.saturating_sub(1))
@@ -157,7 +158,7 @@ impl Draws
     ///   remainders and overflow. No distribution, internal stream state or
     ///   particular seed-to-choice table is promised.
     /// - witness: `tests::generate::fuel_and_draws_respect_empty_and_full_bounds`
-    #[anodized::spec(ensures: |ret| if options.0 == 0 { ret.0 == 0 } else { ret.0 < options.0 })]
+    #[spec(ensures: |ret| if options.0 == 0 { ret.0 == 0 } else { ret.0 < options.0 })]
     fn pick(
         &mut self,
         options: Options,
@@ -295,7 +296,7 @@ impl Generator
     ///   own variables. This distinguishes duplicate interning, merged types
     ///   and changed ids.
     /// - witness: `tests::generate::interning_and_shadowed_scopes_preserve_distinct_types`
-    #[anodized::spec(
+    #[spec(
         captures: [found = self.types.iter().position(|&known| known == ty), count = self.types.len()],
         ensures: |ret| self.types.get(ret.0) == Some(&ty) && ret.0 == found.unwrap_or(count)
             && Some(self.types.len()) == count.checked_add(usize::from(found.is_none())),
@@ -326,7 +327,7 @@ impl Generator
     ///   the generated machine suite exercises the valid lookup domain.
     /// - witness: `tests::generate::interning_and_shadowed_scopes_preserve_distinct_types`
     /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
-    #[anodized::spec(requires: self.types.get(id.0).is_some(), ensures: |ret| self.types.get(id.0) == Some(&ret))]
+    #[spec(requires: self.types.get(id.0).is_some(), ensures: |ret| self.types.get(id.0) == Some(&ret))]
     fn ty(
         &self,
         id: TyId,
@@ -353,7 +354,7 @@ impl Generator
     /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
     /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
-    #[anodized::spec(ensures: |ret| match self.types.get(ret.0) {
+    #[spec(ensures: |ret| match self.types.get(ret.0) {
         | Some(&Ty::Unit | &Ty::Integer) => true,
         | Some(&Ty::Product(first, second) | &Ty::Sum(first, second)) => self.types.get(first.0).is_some() && self.types.get(second.0).is_some(),
         | Some(&Ty::Thunk(body)) => self.types.get(body.0).is_some_and(|known| matches!(*known, Ty::Returner(_) | Ty::Arrow(_, _))),
@@ -399,7 +400,7 @@ impl Generator
     /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
     /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
-    #[anodized::spec(ensures: |ret| match self.types.get(ret.0) {
+    #[spec(ensures: |ret| match self.types.get(ret.0) {
         | Some(&Ty::Returner(value)) => self.types.get(value.0).is_some(),
         | Some(&Ty::Arrow(domain, codomain)) => self.types.get(domain.0).is_some()
             && self.types.get(codomain.0).is_some_and(|known| matches!(*known, Ty::Returner(_) | Ty::Arrow(_, _))),
@@ -439,7 +440,7 @@ impl Generator
     ///   links, overwritten bindings and mistaken binder types.
     /// - witness: `tests::generate::interning_and_shadowed_scopes_preserve_distinct_types`
     /// - witness: `tests::generate::typed_builders_preserve_product_sum_and_function_roles`
-    #[anodized::spec(
+    #[spec(
         requires: self.types.get(ty.0).is_some() && match scope { Scope::Empty => true, Scope::At(BindingId(at)) => self.bindings.get(at).is_some() },
         captures: [count = self.bindings.len()],
         ensures: |ret| match ret {
@@ -479,7 +480,7 @@ impl Generator
     ///   stopping after the first match. Saturation at an unallocatable scope
     ///   depth is outside this finite witness.
     /// - witness: `tests::generate::interning_and_shadowed_scopes_preserve_distinct_types`
-    #[anodized::spec(
+    #[spec(
         requires: (match scope { Scope::Empty => true, Scope::At(BindingId(at)) => self.bindings.get(at).is_some() })
             && self.bindings.iter().enumerate().all(|(at, &(_, outer))| match outer { Scope::Empty => true, Scope::At(BindingId(parent)) => parent < at }),
         ensures: |ref ret| ret.windows(2).all(|pair| match pair {
@@ -531,7 +532,7 @@ impl Generator
     /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
     /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
-    #[anodized::spec(
+    #[spec(
         requires: self.types.get(ty.0).is_some_and(|known| matches!(*known, Ty::Unit | Ty::Integer | Ty::Product(_, _) | Ty::Sum(_, _) | Ty::Thunk(_)))
             && match scope { Scope::Empty => true, Scope::At(BindingId(at)) => self.bindings.get(at).is_some() },
         captures: [values = self.values.len(), computations = self.computations.len(), pending = self.tasks.len()],
@@ -622,7 +623,7 @@ impl Generator
     /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
     /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
-    #[anodized::spec(
+    #[spec(
         requires: self.types.get(ty.0).is_some_and(|known| matches!(*known, Ty::Returner(_) | Ty::Arrow(_, _)))
             && match scope { Scope::Empty => true, Scope::At(BindingId(at)) => self.bindings.get(at).is_some() },
         captures: [values = self.values.len(), computations = self.computations.len(), pending = self.tasks.len(), core = self.core.watermark()],
@@ -714,7 +715,7 @@ impl Generator
     /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
     /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
-    #[anodized::spec(
+    #[spec(
         captures: [shape = self.tasks.iter().rev().try_fold((self.values.len(), self.computations.len()), |(values, computations), task| match *task {
             | Task::Value(_, _, _) => values.checked_add(1).map(|count| (count, computations)),
             | Task::Computation(_, _, _) => computations.checked_add(1).map(|count| (values, count)),
@@ -810,7 +811,7 @@ impl Generator
 /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
 /// - witness: `tests::differential::l_machine_is_total_and_deterministic`
 /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
-#[anodized::spec(ensures: |ref ret| match ret.root {
+#[spec(ensures: |ref ret| match ret.root {
     | GeneratedRoot::Computation(root) => ret.core.computation(root).is_some(),
     | GeneratedRoot::Value(_) => false,
 })]
@@ -848,7 +849,7 @@ fn computation(
 ///   covers every seed and depth.
 /// - witness: `tests::generate::typed_builders_preserve_product_sum_and_function_roles`
 /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
-#[anodized::spec(ensures: |ref ret| match ret.root {
+#[spec(ensures: |ref ret| match ret.root {
     | GeneratedRoot::Value(root) => ret.core.value(root).is_some(),
     | GeneratedRoot::Computation(_) => false,
 })]

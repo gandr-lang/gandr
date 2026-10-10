@@ -23,6 +23,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::ArgumentPosition;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::ConversionCount;
@@ -281,7 +282,7 @@ impl Sink for CheckpointBytes
     ///   length-framed payload appends. The predicate observes length and
     ///   suffix; the byte golden also checks prefix preservation.
     /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.0.len()],
         ensures: self.0.len().checked_sub(before) == Some(bytes.0.len())
             && self.0.get(before ..) == Some(bytes.0),
@@ -310,7 +311,7 @@ impl Sink for blake3::Hasher
     ///   observer, not a cloned hash state; counter overflow and arbitrary
     ///   chunk histories are not witnessed.
     /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.count()],
         ensures: u64::try_from(bytes.0.len())
             .ok()
@@ -397,7 +398,7 @@ where
     ///   prefix. The predicate states the width refusal exactly; a count wider
     ///   than 64 bits is unwitnessed.
     /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| {
             ret == u64::try_from(count.0)
                 .map(|_| ())
@@ -425,7 +426,7 @@ where
     ///   follows its exact length prefix. Output bytes are witnessed because
     ///   the generic sink has no observer.
     /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| {
             ret == u64::try_from(bytes.0.len())
                 .map(|_| ())
@@ -476,7 +477,7 @@ impl<'data> Reader<'data>
     ///   reads coexist with truncation and cursor-addition overflow; failures
     ///   leave the initial cursor unchanged.
     /// - witness: `codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.cursor],
         ensures: |ret| match before
             .checked_add(count.0)
@@ -513,7 +514,7 @@ impl<'data> Reader<'data>
     /// - hypothesis: L3 — the byte following a known word is read exactly; a
     ///   read past the end is refused.
     /// - witness: `codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.cursor],
         ensures: |ret| match self.bytes.get(before) {
             | Some(&tag) => before.checked_add(1) == Some(self.cursor) && ret == Ok(Tag(tag)),
@@ -540,7 +541,7 @@ impl<'data> Reader<'data>
     ///   little-endian value; a seven-byte field and overflowing cursor are
     ///   rejected without advancing.
     /// - witness: `codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.cursor],
         ensures: |ret| match before
             .checked_add(8)
@@ -574,7 +575,7 @@ impl<'data> Reader<'data>
     ///   checks. Narrowing failure on targets with `usize` narrower than 64
     ///   bits is unwitnessed.
     /// - witness: `codec::tests::framed_failures_retain_consumed_prefixes`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.cursor],
         ensures: |ret| match before
             .checked_add(8)
@@ -610,7 +611,7 @@ impl<'data> Reader<'data>
     ///   its first byte remains readable. Zero-length frames and exact-end
     ///   payloads are exercised without a rollback assumption.
     /// - witness: `codec::tests::framed_failures_retain_consumed_prefixes`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.cursor],
         ensures: |ret| match before
             .checked_add(8)
@@ -647,7 +648,7 @@ impl<'data> Reader<'data>
     /// - hypothesis: L3 — multibyte UTF-8, an empty string and an invalid byte
     ///   followed by another tag distinguish framing failure from text failure.
     /// - witness: `codec::tests::framed_failures_retain_consumed_prefixes`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.cursor],
         ensures: |ret| match before
             .checked_add(8)
@@ -691,7 +692,7 @@ impl<'data> Reader<'data>
     ///   refused without being consumed.
     /// - witness: `codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
     /// - witness: `codec::tests::framed_failures_retain_consumed_prefixes`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| {
             ret == if self.cursor == self.bytes.len() {
                 Ok(())
@@ -722,7 +723,7 @@ impl<'data> Reader<'data>
 /// - hypothesis: L3 — persisted checkpoint budgets round-trip through the word
 ///   field. A count wider than 64 bits has no witness.
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret == u64::try_from(count.0)
             .map(Word)
@@ -746,7 +747,7 @@ fn word_of(count: Count) -> Result<Word, CodecError>
 ///   with binary key bytes and a nonzero occurrence. The predicate observes
 ///   representability, not the generic sink.
 /// - witness: `codec::tests::reference_frames_preserve_binary_keys_and_occurrences`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret == if match *reference {
             | Reference::Unoccupied => true,
@@ -798,7 +799,7 @@ where
 ///   one-byte frame.
 /// - witness: `codec::tests::reference_frames_preserve_binary_keys_and_occurrences`
 #[cfg(test)]
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         let bytes = ret.as_ref();
         match *reference {
@@ -845,7 +846,7 @@ pub fn reference_bytes(reference: &Reference) -> CheckpointBytes
 ///   while unknown tags are refused. The predicate checks successful payloads
 ///   without constructing a second owned key.
 /// - witness: `codec::tests::reference_frames_preserve_binary_keys_and_occurrences`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(ref reference) => reader
@@ -902,7 +903,7 @@ fn read_reference(reader: &mut Reader<'_>) -> Result<Reference, CodecError>
 ///   offset for decoder fixtures; validated checkpoint encoding refuses it.
 /// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret == u64::try_from(level.atoms().count())
             .map(|_| ())
@@ -944,7 +945,7 @@ where
 ///   independently prove normalization of every atom sequence.
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
 /// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(ref level) => level
             .atoms()
@@ -993,7 +994,7 @@ fn read_level(reader: &mut Reader<'_>) -> Result<Level, CodecError>
 ///   literal encodings. The const predicate compares the primitive tag field
 ///   directly.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret.0
             == match sign {
@@ -1022,7 +1023,7 @@ const fn sign_tag(sign: Sign) -> Tag
 ///   that payload is consumed; the finite corpus does not enumerate magnitudes.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match reader.bytes.get(before) {
         | Some(&tag) => {
@@ -1059,7 +1060,7 @@ fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
 ///   corpus, rather than a generic sink observer, witnesses payload
 ///   preservation.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret == if match *literal {
             | Literal::Integer(ref integer) => {
@@ -1118,7 +1119,7 @@ where
 ///   before consuming available payload bytes.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(ref literal) => {
@@ -1200,7 +1201,7 @@ fn read_index(reader: &mut Reader<'_>) -> Result<NodeIndex, CodecError>
 ///   fields.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match *node {
         | ContentNode::Unresolved(sort) => {
             ret == Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(
@@ -1418,7 +1419,7 @@ where
 /// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(ref node) => {
@@ -1680,7 +1681,7 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
 ///   discovery order.
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(()) => nodes
             .iter()
@@ -1724,7 +1725,7 @@ where
 ///   independently of root validation; the predicate also checks table length.
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(ref nodes) => {
@@ -1785,7 +1786,7 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
 ///   visited set.
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `codec::tests::discovery_accepts_cycles_repeated_roots_and_empty_tables`
-#[anodized::spec(
+#[spec(
     requires: nodes.iter().all(|node| {
         node.children()
             .iter()
@@ -1892,7 +1893,7 @@ where
 ///   table failures without duplicating serialization.
 /// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(()) => content
             .nodes()
@@ -1949,7 +1950,7 @@ where
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(ref content) => {
             let nodes = content.nodes();
@@ -2057,7 +2058,7 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
 /// - hypothesis: L3 — a value-type root succeeds only for its own sort, and a
 ///   missing root is refused.
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret == if nodes
             .get(usize::from(root))
@@ -2110,7 +2111,7 @@ where
 ///   allocating another traversal state.
 /// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
 /// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(ref content) => {
             let nodes = content.nodes();
@@ -2188,7 +2189,7 @@ fn read_type(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
 ///   predicate.
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-#[anodized::spec(
+#[spec(
     captures: [count = references.len()],
     ensures: |ret| {
         matches!(ret, Ok(()) | Err(CodecError::Unrepresentable))
@@ -2221,7 +2222,7 @@ where
 ///   rejected by the outer canonical-byte check. The predicate bounds
 ///   cardinality rather than allocating a second decoded set.
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(ref references) => match before
@@ -2264,7 +2265,7 @@ fn read_references(reader: &mut Reader<'_>) -> Result<BTreeSet<Reference>, Codec
 ///   not whether stored metadata describes the content.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         let fits = u64::try_from(footprint.reads().len()).is_ok()
             && u64::try_from(footprint.type_reads().len()).is_ok()
@@ -2331,7 +2332,7 @@ where
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(ref footprint) => {
             let flags = [
@@ -2384,7 +2385,7 @@ fn read_footprint(reader: &mut Reader<'_>) -> Result<Footprint, CodecError>
 ///   has no byte observer; the predicate states the width outcome.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret == match site {
             | Site::Unreached => Ok(()),
@@ -2423,7 +2424,7 @@ where
 ///   before available payload bytes.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(Site::Unreached) => {
@@ -2492,7 +2493,7 @@ const SHAPES: [ExpectedShape; 5] = [
 ///   current callers use stable equality on enums.
 /// - witness: `codec::tests::enumeration_tags_use_first_matches_and_enforce_byte_width`
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret == table
             .iter()
@@ -2533,7 +2534,7 @@ where
 ///   concrete witnesses check the selected value.
 /// - witness: `codec::tests::enumeration_tags_use_first_matches_and_enforce_byte_width`
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match reader.bytes.get(before) {
         | Some(&tag) => {
@@ -2574,7 +2575,7 @@ where
 ///   predicate does not re-serialize site or enum fields.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         let tables: [&[ContentNode]; 2] = match *refusal {
             | Refusal::TypeMismatch {
@@ -2794,7 +2795,7 @@ where
 ///   observer, so the predicate checks width, errors and cursor movement.
 /// - witness: `codec::tests::narrow_fields_refuse_out_of_range_words_after_consuming_them`
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match before
         .checked_add(8)
@@ -2836,7 +2837,7 @@ where
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::narrow_fields_refuse_out_of_range_words_after_consuming_them`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(ref refusal) => {
@@ -3031,7 +3032,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
 ///   reproducing the byte encoding.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match *typing {
         | Typing::Owed => ret == Ok(()),
         | Typing::Checked { conversions } => {
@@ -3134,7 +3135,7 @@ where
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(ref typing) => {
@@ -3191,7 +3192,7 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
 ///   malformed support type is refused before a later malformed verdict.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match *answer {
         | Answer::Untyped => ret == Ok(()),
         | Answer::Typed(ref ty) => match ret {
@@ -3240,7 +3241,7 @@ where
 ///   payload.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(Answer::Untyped) => reader.bytes.get(before) == Some(&0),
@@ -3284,7 +3285,7 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
 ///   borrowed tables; it neither clones payloads nor serializes them again.
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         let typing = checkpoint.typing();
         let tables: [&[ContentNode]; 2] = match *typing {
@@ -3376,7 +3377,7 @@ where
 ///   checker certificate or decode a second copy.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
-#[anodized::spec(
+#[spec(
     captures: [before = reader.cursor],
     ensures: |ret| match ret {
         | Ok(ref checkpoint) => {
@@ -3451,7 +3452,7 @@ fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError
 /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
 /// - witness: `codec::tests::encoding_bounds_levels_in_every_node_family_and_plane`
 /// - witness: `codec::tests::encoding_bounds_levels_in_every_auxiliary_type_table`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(()) => checkpoint.content().nodes().iter().all(|node| match *node {
             | ContentNode::ValueLift { ref target, .. }
@@ -3555,7 +3556,7 @@ fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
 /// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(ref bytes) => {
             let bytes = bytes.as_ref();
@@ -3601,7 +3602,7 @@ pub fn encode_checkpoints(checkpoints: &Checkpoints) -> Result<CheckpointBytes, 
 /// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(ref bytes) => {
             bytes.as_ref().get(.. 8) == Some(CHECKPOINTS_MAGIC.as_slice())
@@ -3650,7 +3651,7 @@ pub fn checkpoint_frame(checkpoints: &Checkpoints) -> Result<CheckpointBytes, Co
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(ref checkpoints) => {
             let bytes = bytes.0;
@@ -3714,7 +3715,7 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
 /// - witness: `codec::tests::empty_envelopes_preserve_budget_and_separate_formats`
 /// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
 /// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match ret {
         | Ok(()) => contents
             .iter()

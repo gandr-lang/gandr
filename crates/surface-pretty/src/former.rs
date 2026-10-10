@@ -9,6 +9,7 @@
 
 use core::borrow::Borrow;
 
+use anodized::spec;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
@@ -67,7 +68,7 @@ impl Borrow<str> for Name<'_>
     ///   through heterogeneous set lookup. Returning altered text changes that
     ///   spelling; arbitrary key sets and Unicode ordering are not enumerated.
     /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
-    #[anodized::spec(ensures: |ret| ret == self.0)]
+    #[spec(ensures: |ret| ret == self.0)]
     #[inline]
     fn borrow(&self) -> &str
     {

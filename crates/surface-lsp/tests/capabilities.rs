@@ -5,6 +5,7 @@
 #[cfg(test)]
 mod capabilities
 {
+    use anodized::spec;
     use gandr_surface_lsp::Capabilities;
     use gandr_surface_lsp::TOKEN_MODIFIERS;
     use gandr_surface_lsp::TOKEN_TYPES;
@@ -55,7 +56,7 @@ mod capabilities
         /// - hypothesis: L3 — rendering the capability object into a refusing
         ///   sink exposes swallowed errors through the exact failed result.
         /// - witness: `capabilities::capabilities::a_refused_capabilities_write_is_propagated`
-        #[anodized::spec(ensures: |ret| ret.is_err())]
+        #[spec(ensures: |ret| ret.is_err())]
         fn write_str(
             &mut self,
             _s: &str,

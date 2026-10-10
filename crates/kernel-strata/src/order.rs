@@ -943,6 +943,8 @@ mod tests
     use alloc::collections::BTreeMap;
     use alloc::vec;
 
+    use anodized::spec;
+
     use super::AtomBound;
     use super::ConstantBound;
     use super::EvidenceError;
@@ -1351,7 +1353,7 @@ mod tests
     /// - witness: `order::tests::witness_records_accurate_offsets`
     /// - witness: `order::tests::constant_dominated_by_atom_offset`
     /// - witness: `order::tests::var_is_strictly_below_its_successor`
-    #[anodized::spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
+    #[spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
         && ret.atoms().eq(core::iter::once((variable, offset))))]
     fn var_plus(
         variable: LevelVar,

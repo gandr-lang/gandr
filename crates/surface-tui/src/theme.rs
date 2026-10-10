@@ -1,5 +1,6 @@
 //! The face's styles: one per highlight role, one per transcript line kind.
 
+use anodized::spec;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::OutKind;
 use ratatui::style::Color;
@@ -32,7 +33,7 @@ use ratatui::style::Style;
 /// - witness: `theme::tests::every_role_and_kind_sets_a_foreground`
 /// - witness: `theme::tests::other_is_the_terminal_default`
 /// - witness: `theme::tests::role_groups_preserve_semantic_contrast`
-#[anodized::spec(ensures: |ret| ret.fg.is_some()
+#[spec(ensures: |ret| ret.fg.is_some()
     && (matches!(role, HlRole::Other | HlRole::VariableDef | HlRole::Variable)
         == matches!(ret.fg, Some(Color::Reset))))]
 #[inline]
@@ -74,7 +75,7 @@ pub const fn style_of(role: HlRole) -> Style
 ///   outside the witnesses.
 /// - witness: `theme::tests::every_role_and_kind_sets_a_foreground`
 /// - witness: `theme::tests::line_kinds_preserve_role_colours_and_emphasis`
-#[anodized::spec(ensures: |ret| matches!((kind, ret.fg),
+#[spec(ensures: |ret| matches!((kind, ret.fg),
     (OutKind::Source | OutKind::Value, Some(Color::Reset))
     | (OutKind::Type, Some(Color::Green))
     | (OutKind::Goal, Some(Color::Magenta))

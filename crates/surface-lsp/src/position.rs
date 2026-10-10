@@ -7,6 +7,7 @@
 //! clamps as it clamps any position past the text, and an index count past
 //! `u32` saturates on the way out.
 
+use anodized::spec;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::LineIndex;
 use gandr_surface_render_remote::PosOfByteError;
@@ -87,7 +88,7 @@ impl Position
     ///   exact position or refusal.
     /// - witness: `position::tests::utf16_counts_an_astral_character_as_two_units`
     /// - witness: `position::tests::a_line_past_the_end_clamps`
-    #[anodized::spec(ensures: |ret| match index.utf16_pos_of_byte(byte) {
+    #[spec(ensures: |ret| match index.utf16_pos_of_byte(byte) {
         Ok(expected) => ret.as_ref().is_ok_and(|actual|
             actual.line.0 == u32::try_from(usize::from(expected.row)).unwrap_or(u32::MAX)
                 && actual.character.0 == u32::try_from(usize::from(expected.col)).unwrap_or(u32::MAX)),
@@ -125,7 +126,7 @@ impl Position
     ///   exact offset.
     /// - witness: `position::tests::utf16_counts_an_astral_character_as_two_units`
     /// - witness: `position::tests::a_line_past_the_end_clamps`
-    #[anodized::spec(ensures: |ret| ret == index.byte_of_utf16_pos(Utf16Pos {
+    #[spec(ensures: |ret| ret == index.byte_of_utf16_pos(Utf16Pos {
         row: PositionRow::from(usize::try_from(self.line.0).unwrap_or(usize::MAX)),
         col: Utf16Column::from(usize::try_from(self.character.0).unwrap_or(usize::MAX)),
     }))]
@@ -175,7 +176,7 @@ impl Range
     ///   byte counts and lost or reordered projection errors.
     /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
     /// - witness: `position::tests::ranges_preserve_endpoint_order_and_projection_failures`
-    #[anodized::spec(ensures: |ret| ret.as_ref().map(|range| (range.start, range.end))
+    #[spec(ensures: |ret| ret.as_ref().map(|range| (range.start, range.end))
         == Position::of_byte(index, start)
             .and_then(|first| Position::of_byte(index, end).map(|last| (first, last)))
             .as_ref().copied())]

@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 
 use Adoption::Adopted;
 use Adoption::Judged;
+use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
@@ -65,7 +66,7 @@ use crate::generate::program_and_edits;
 ///   rejected by the differential; a real type change rechecks its dependent.
 /// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
 /// - witness: `tests::incremental::type_change_retypes_the_dependent`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret.nodes()
             == [gandr_core_incremental::ContentNode::Base(
@@ -101,7 +102,7 @@ fn string_type() -> TypeContent
 /// - witness: `tests::incremental::corruption_selects_every_matching_name`
 /// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
 /// - witness: `tests::incremental::a_suppressed_invalidation_signal_is_caught`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret.budget() == CheckBudget::DEFAULT
             && ret.items().len() == statements.len()

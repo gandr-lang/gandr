@@ -11,6 +11,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_nbe::DomainArena;
 use gandr_core_nbe::EvalFault;
 use gandr_core_nbe::Fuel;
@@ -164,7 +165,7 @@ fn case(
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
-#[anodized::spec(requires: core.computation(root).is_some(), ensures: |ref ret| match *ret {
+#[spec(requires: core.computation(root).is_some(), ensures: |ref ret| match *ret {
     | Answer::Term { ref core, term } => core.computation(term).is_some(),
     | Answer::Stopped(_) => true,
 })]
@@ -208,7 +209,7 @@ fn machine(
 ///   the supported focused fragment are not mapped.
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
-#[anodized::spec(ensures: |ret| match *stuck {
+#[spec(ensures: |ret| match *stuck {
     | Stuck::Unobservable { head: DestructorTag::Apply, .. } => ret == Stop::AppliedNonFunction,
     | Stuck::Unobservable { head: DestructorTag::Force, .. } => ret == Stop::ForcedNonThunk,
     | Stuck::Unmatched { .. } => ret == Stop::CasedNonInjection,
@@ -262,7 +263,7 @@ fn machine_stop(stuck: &Stuck) -> Stop
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
-#[anodized::spec(requires: core.computation(root).is_some(), ensures: |ref ret| match *ret {
+#[spec(requires: core.computation(root).is_some(), ensures: |ref ret| match *ret {
     | Answer::Term { ref core, term } => core.computation(term).is_some(),
     | Answer::Stopped(_) => true,
 })]
@@ -311,7 +312,7 @@ fn normalised(
 ///   are deliberately outside this mapping.
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
-#[anodized::spec(ensures: |ret| match fault {
+#[spec(ensures: |ret| match fault {
     | EvalFault::AppliedNonFunction => ret == Stop::AppliedNonFunction,
     | EvalFault::ForcedNonThunk => ret == Stop::ForcedNonThunk,
     | EvalFault::CasedNonInjection => ret == Stop::CasedNonInjection,
@@ -355,7 +356,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
 /// - witness: `tests::differential::thunks_compare_structurally_through_readback`
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::refusal_classes_do_not_collapse_into_success`
-#[anodized::spec(ensures: |ref ret| match *answer {
+#[spec(ensures: |ref ret| match *answer {
     | Answer::Stopped(stop) => matches!(*ret, Answer::Stopped(found) if found == stop),
     | Answer::Term { .. } => match *ret {
         | Answer::Term { ref core, term } => core.computation(term).is_some(),
@@ -392,7 +393,7 @@ fn settled(answer: &Answer) -> Answer
 /// - witness: `tests::compare::structural_equality_ignores_addresses_but_not_labels`
 /// - witness: `tests::compare::computation_comparison_preserves_every_child_role`
 /// - witness: `tests::differential::refusal_classes_do_not_collapse_into_success`
-#[anodized::spec(ensures: |ret| match (left, right) {
+#[spec(ensures: |ret| match (left, right) {
     | (&Answer::Stopped(first), &Answer::Stopped(second)) => (ret == Agreement::Same) == (first == second),
     | (&Answer::Term { core: ref first, term: first_root }, &Answer::Term { core: ref second, term: second_root }) =>
         ret != Agreement::Same || (first.computation(first_root).is_some() && second.computation(second_root).is_some()),
@@ -440,7 +441,7 @@ fn agreement(
 /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
 /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
 /// - witness: `tests::differential::an_unbound_forced_name_is_still_stuck`
-#[anodized::spec(requires: cases.iter().all(|case| case.core.computation(case.root).is_some()))]
+#[spec(requires: cases.iter().all(|case| case.core.computation(case.root).is_some()))]
 fn assert_cases(cases: Vec<Case>)
 {
     for case in cases {

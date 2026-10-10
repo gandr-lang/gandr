@@ -5,6 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
+use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::built_in;
 use gandr_surface_syntax::ByteSpan;
@@ -33,7 +34,7 @@ use gandr_surface_syntax::SyntaxTree;
 ///   by the corpus.
 /// - witness: `tests::acceptance::core_forms_are_clean`
 /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
-#[anodized::spec(ensures: |ret| ["def", "ret", "(", ")"].into_iter().all(|label| !ret.candidates(gandr_surface_grammar::TileLabel(label)).is_empty()))]
+#[spec(ensures: |ret| ["def", "ret", "(", ")"].into_iter().all(|label| !ret.candidates(gandr_surface_grammar::TileLabel(label)).is_empty()))]
 pub fn built() -> &'static Pbg
 {
     /// The process-wide cached grammar.
@@ -66,7 +67,7 @@ pub fn children(
 ///   despite layout; the observer is the child-label and source-text sequence,
 ///   not its length. Filtering a token or retaining layout changes the oracle.
 /// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
-#[anodized::spec(ensures: |ret| ret.iter().copied().eq(tree.children(at).filter(|&child| tree.node(child).map(Node::label) != Some(NodeLabel::Space))))]
+#[spec(ensures: |ret| ret.iter().copied().eq(tree.children(at).filter(|&child| tree.node(child).map(Node::label) != Some(NodeLabel::Space))))]
 pub fn significant_children(
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
@@ -113,7 +114,7 @@ pub fn span(
 /// - hypothesis: L3 — real UTF-8 token fragments, layout and an absent index
 ///   distinguish byte slicing, empty fallback and whitespace loss.
 /// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
-#[anodized::spec(ensures: |ret| ret.as_str() == tree.fragment(at).map_or("", <&str>::from))]
+#[spec(ensures: |ret| ret.as_str() == tree.fragment(at).map_or("", <&str>::from))]
 pub fn text(
     tree: &SyntaxTree<'_>,
     at: NodeIndex,
@@ -158,7 +159,7 @@ pub fn corpus_root() -> PathBuf
 ///   output and leaking read failures; filesystem permission races are outside
 ///   the deterministic witness.
 /// - witness: `tests::acceptance::source_inventory_and_reads_preserve_context`
-#[anodized::spec(ensures: |ret| ret.iter().all(|path| path.starts_with(dir) && path.extension().is_some_and(|ext| ext == "gandr")) && ret.windows(2).all(|pair| matches!(pair, [left, right] if left <= right)))]
+#[spec(ensures: |ret| ret.iter().all(|path| path.starts_with(dir) && path.extension().is_some_and(|ext| ext == "gandr")) && ret.windows(2).all(|pair| matches!(pair, [left, right] if left <= right)))]
 pub fn gandr_files(dir: &Path) -> Vec<PathBuf>
 {
     let mut out = Vec::new();

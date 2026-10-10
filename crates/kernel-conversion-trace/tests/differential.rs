@@ -25,6 +25,7 @@
 mod differential
 {
 
+    use anodized::spec;
     use gandr_kernel_conversion_trace::ConversionDecision;
     use gandr_kernel_conversion_trace::DecisionCount;
     use gandr_kernel_conversion_trace::NullSink;
@@ -153,7 +154,7 @@ mod differential
     /// - witness: `differential::differential::recording_does_not_move_the_verdict`
     /// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
     /// - witness: `differential::differential::conversion_appends_a_refutation_to_an_existing_log`
-    #[anodized::spec(ensures: |ret| (ret == Verdict::Convertible) == (left.atom == right.atom))]
+    #[spec(ensures: |ret| (ret == Verdict::Convertible) == (left.atom == right.atom))]
     fn convert<Sink>(
         left: &Side,
         right: &Side,
@@ -227,7 +228,7 @@ mod differential
     ///   entered.
     /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
     /// - witness: `differential::differential::conversion_appends_a_refutation_to_an_existing_log`
-    #[anodized::spec(captures: [before = sink.recorded_count()], ensures:
+    #[spec(captures: [before = sink.recorded_count()], ensures:
         !matches!(Sink::ACTIVITY, SinkActivity::Inactive) || sink.recorded_count() == before)]
     fn record<Sink>(
         sink: &mut Sink,
@@ -287,7 +288,7 @@ mod differential
     /// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
     /// - witness: `differential::differential::a_trace_that_names_the_wrong_branch_is_refused_rather_than_agreed_with`
     /// - witness: `differential::differential::replay_refuses_each_invalid_transition`
-    #[anodized::spec(ensures: |ret| ret.as_ref().ok().is_none_or(|verdict|
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|verdict|
         (*verdict == Verdict::Convertible) == (left.atom == right.atom)
         && matches!(decisions.last(), Some(ConversionDecision::ComparedShared { left: first, right: second })
             if *first == left.atom && *second == right.atom)))]
@@ -418,7 +419,7 @@ mod differential
     /// - witness: `differential::differential::recording_does_not_move_the_verdict`
     /// - witness: `differential::differential::the_exercised_recording_paths_are_asserted_rather_than_reported`
     /// - witness: `differential::differential::the_kernel_replays_the_trace_without_searching`
-    #[anodized::spec(ensures: |ret| ret.iter().all(|case|
+    #[spec(ensures: |ret| ret.iter().all(|case|
         (case.verdict == Verdict::Convertible) == (case.left.atom == case.right.atom)
         && usize::from(case.decisions) >= 1)
         && ret.iter().any(|case| case.verdict == Verdict::Convertible)

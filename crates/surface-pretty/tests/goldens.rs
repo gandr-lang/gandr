@@ -13,6 +13,7 @@ mod tests
 {
     use std::path::Path;
 
+    use anodized::spec;
     use expect_test::expect_file;
     use gandr_core_nbe::Definitions;
     use gandr_core_nbe::DomainArena;
@@ -114,7 +115,7 @@ mod tests
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
     /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `goldens::tests::string_controls_stay_in_one_escaped_literal`
-    #[anodized::spec(ensures: |ref ret| !ret.as_ref().contains(['\r', '\t']))]
+    #[spec(ensures: |ref ret| !ret.as_ref().contains(['\r', '\t']))]
     fn presented<S>(
         source: &S,
         root: Root,
@@ -153,7 +154,7 @@ mod tests
     /// - witness: `goldens::tests::arrow_chain_breaks_before_each_continuation`
     /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
     /// - witness: `goldens::tests::string_controls_stay_in_one_escaped_literal`
-    #[anodized::spec(requires: !pinned.name.is_empty()
+    #[spec(requires: !pinned.name.is_empty()
         && !pinned.name.contains(['/', '\\']) && !pinned.flat.contains(['\r', '\n', '\t'])
     )]
     fn pin(
@@ -203,7 +204,7 @@ mod tests
     /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
     /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-    #[anodized::spec(ensures: |ref ret| !ret.0.contains(['\r', '\t']))]
+    #[spec(ensures: |ref ret| !ret.0.contains(['\r', '\t']))]
     fn spelled<S>(
         source: &S,
         root: Root,
@@ -233,7 +234,7 @@ mod tests
     /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
     /// - witness: `goldens::tests::record_value_breaks_fields_at_the_narrow_page`
-    #[anodized::spec(
+    #[spec(
         requires: core.value(value).is_some(),
         ensures: |ret| matches!(ret, CoreNode::Value(id) if core.value(id).is_some()),
     )]
@@ -282,7 +283,7 @@ mod tests
     ///   zero and malformed decimal input are outside these fixtures.
     /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
-    #[anodized::spec(
+    #[spec(
         requires: !digits.0.is_empty() && digits.0.bytes().all(|byte| byte.is_ascii_digit()),
         ensures: |ret| match core.value(ret) {
             Some(&gandr_core_term::Value::Literal(Literal::Integer(ref integer))) => {
@@ -344,7 +345,7 @@ mod tests
     /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
     /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
-    #[anodized::spec(ensures: |ret| matches!(core.value_type(ret),
+    #[spec(ensures: |ret| matches!(core.value_type(ret),
         Some(&gandr_core_term::ValueType::Element { code, .. }) if matches!(core.value(code),
             Some(&gandr_core_term::Value::Variable { zone: Zone::Intuitionistic, index: actual }) if actual == index)
     ))]
@@ -387,7 +388,7 @@ mod tests
         ///   formers. Other hand-built graphs are outside the finite
         ///   malformed-source fixtures.
         /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-        #[anodized::spec(ensures: |ret| self.0.get(node.0).map_or(
+        #[spec(ensures: |ret| self.0.get(node.0).map_or(
             matches!(ret, Former::Unreadable),
             |held| core::mem::discriminant(held) == core::mem::discriminant(&ret),
         ))]
@@ -424,7 +425,7 @@ mod tests
     ///   observe position checking and approximation. Layout-meter exhaustion
     ///   is outside this helper's finite fixtures.
     /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
-    #[anodized::spec(ensures: |ref ret| !ret.0.contains(['\r', '\t']))]
+    #[spec(ensures: |ref ret| !ret.0.contains(['\r', '\t']))]
     fn table_spelling(
         rows: Vec<Former<'static, Row>>,
         reading: Reading,

@@ -1,5 +1,7 @@
 //! What a scan returns: half-open spans and the reason each one ended.
 
+use anodized::spec;
+
 use crate::units::BytePosition;
 use crate::units::RecordPosition;
 
@@ -48,7 +50,7 @@ impl ByteSpan
     ///   variants distinguish swapped endpoints and premature normalization.
     /// - witness: `tests::gear::span_lists_that_are_not_a_partition_are_refused`
     /// - witness: `tests::gear::empty_records_keep_their_record_positions`
-    #[anodized::spec(ensures: |ret| matches!(ret.start.const_eq(start), crate::units::ConstEquality::Equal) && matches!(ret.end.const_eq(end), crate::units::ConstEquality::Equal))]
+    #[spec(ensures: |ret| matches!(ret.start.const_eq(start), crate::units::ConstEquality::Equal) && matches!(ret.end.const_eq(end), crate::units::ConstEquality::Equal))]
     #[inline]
     #[must_use]
     pub const fn new(

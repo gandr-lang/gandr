@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_surface_layout::RenderError;
 use gandr_surface_layout::error::BuildError;
 
@@ -102,7 +103,7 @@ impl core::error::Error for PresentationError
     ///   changing its variant or replacing its bound changes this observer;
     ///   other layout failure payloads are outside these fixtures.
     /// - witness: `error::tests::error_details_preserve_their_limits_and_sources`
-    #[anodized::spec(ensures: |ret| match *self {
+    #[spec(ensures: |ret| match *self {
         | Self::Build(ref error) => ret.and_then(|cause| cause.downcast_ref::<BuildError>()) == Some(error),
         | Self::Render(ref error) => ret.and_then(|cause| cause.downcast_ref::<RenderError>()) == Some(error),
         | Self::Unbalanced => ret.is_none(),

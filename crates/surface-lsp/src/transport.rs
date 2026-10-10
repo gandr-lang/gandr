@@ -12,6 +12,7 @@ use std::io::BufRead;
 use std::io::Read as _;
 use std::io::Write;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 /// The most bytes one body may hold.
@@ -181,7 +182,7 @@ impl core::error::Error for TransportFault
 /// - witness: `transport::tests::a_header_block_the_framing_cannot_read_is_refused`
 /// - witness: `transport::tests::framing_limits_and_empty_bodies_have_exact_boundaries`
 /// - witness: `transport::tests::stream_failures_keep_their_kind_and_write_progress`
-#[anodized::spec(ensures: |ret| match ret {
+#[spec(ensures: |ret| match ret {
     Ok(Maybe::Present(ref body)) => body.as_ref().len() <= BODY_CEILING,
     Err(TransportFault::Encode(_)) => false,
     _ => true,
@@ -282,7 +283,7 @@ where
 ///   errors by exact wire bytes, flush counts and fault kinds.
 /// - witness: `transport::tests::a_round_trip_preserves_the_payload`
 /// - witness: `transport::tests::stream_failures_keep_their_kind_and_write_progress`
-#[anodized::spec(ensures: |ret| matches!(ret, Ok(()) | Err(TransportFault::Io(_))))]
+#[spec(ensures: |ret| matches!(ret, Ok(()) | Err(TransportFault::Io(_))))]
 #[inline]
 pub fn write_frame<Output>(
     output: &mut Output,
@@ -304,6 +305,7 @@ mod tests
     use std::io;
     use std::io::Read as _;
 
+    use anodized::spec;
     use quenchant_shape::shape::Maybe;
 
     use super::Body;
@@ -332,7 +334,7 @@ mod tests
         /// - hypothesis: L3 — header and body read failures retain their exact
         ///   connection-reset kind rather than becoming truncation or success.
         /// - witness: `transport::tests::stream_failures_keep_their_kind_and_write_progress`
-        #[anodized::spec(ensures: |ret| matches!(ret, Err(ref error)
+        #[spec(ensures: |ret| matches!(ret, Err(ref error)
             if error.kind() == io::ErrorKind::ConnectionReset))]
         fn read(
             &mut self,
@@ -376,7 +378,7 @@ mod tests
         ///   capacities distinguish dropped prefixes, over-acceptance and lost
         ///   write errors through exact bytes and error kinds.
         /// - witness: `transport::tests::stream_failures_keep_their_kind_and_write_progress`
-        #[anodized::spec(
+        #[spec(
             captures: before = self.bytes.len(),
             ensures: |ret| match ret {
                 Ok(count) => count == self.limit.saturating_sub(before).min(buf.len())
@@ -416,7 +418,7 @@ mod tests
         /// - hypothesis: L3 — successful and failed final flushes distinguish
         ///   missing flushes and ignored errors by count and exact error kind.
         /// - witness: `transport::tests::stream_failures_keep_their_kind_and_write_progress`
-        #[anodized::spec(
+        #[spec(
             captures: before = self.flushes,
             ensures: |ret| self.flushes == before.saturating_add(1_usize)
                 && match ret {

@@ -643,6 +643,8 @@ where
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
+
     use super::CheckMemo;
     use super::MemoRecord;
     use super::NullMemo;
@@ -751,7 +753,7 @@ mod tests
         ///   directions of each comparison reject digest-sensitive, asymmetric
         ///   and plane-blind relations.
         /// - witness: `memo::tests::support_relation_ignores_digest_but_not_plane`
-        #[anodized::spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
+        #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
             == (self.plane == other.plane && self.content == other.content))]
         fn agreement(
             &self,

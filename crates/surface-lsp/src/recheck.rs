@@ -10,6 +10,7 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
+use anodized::spec;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_diagnostics::Class;
 use gandr_surface_diagnostics::Entry;
@@ -73,7 +74,7 @@ static TOOLKIT: OnceLock<Result<Toolkit, PbgError>> = OnceLock::new();
 /// # Adequacy
 /// - hypothesis: L3 — two calls are asserted to answer one address.
 /// - witness: `recheck::tests::the_grammar_is_built_once_per_process`
-#[anodized::spec(ensures: |ret| TOOLKIT.get().is_some_and(|stored|
+#[spec(ensures: |ret| TOOLKIT.get().is_some_and(|stored|
     match (stored.as_ref(), ret) {
         (Ok(expected), Ok(actual)) => core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(actual)),
         (Err(expected), Err(actual)) => core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(actual)),
@@ -119,7 +120,7 @@ fn toolkit() -> Result<&'static Toolkit, &'static PbgError>
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
-#[anodized::spec(ensures: |ret| ret.iter().all(|diagnostic|
+#[spec(ensures: |ret| ret.iter().all(|diagnostic|
     diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
         && matches!(diagnostic.severity, Severity::ERROR | Severity::INFORMATION)
         && diagnostic.related_information.iter().all(|related|
@@ -182,7 +183,7 @@ pub fn recheck(
 ///   spans without reparsing the source.
 /// - witness: `recheck::tests::a_definition_produces_semantic_tokens`
 /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
-#[anodized::spec(ensures: |ret| ret.iter().all(|span|
+#[spec(ensures: |ret| ret.iter().all(|span|
     usize::from(span.range.end()) <= text.as_ref().len()
         && text.as_ref().is_char_boundary(usize::from(span.range.start()))
         && text.as_ref().is_char_boundary(usize::from(span.range.end())))
@@ -228,7 +229,7 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
 ///   diagnostics published agree with the walk's own reports.
 /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
-#[anodized::spec(ensures: |ret| match *composed {
+#[spec(ensures: |ret| match *composed {
     Composed::Refused(_) => matches!((root, ret),
         (SourceRoot::Pending, Standing::Pending) | (SourceRoot::Strict | SourceRoot::Fixture, Standing::Refused)),
     Composed::Settled { ref unstatable, ref report, .. } => match root {
@@ -282,7 +283,7 @@ fn standing(
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
-#[anodized::spec(ensures: |ret| ret.source == "gandr"
+#[spec(ensures: |ret| ret.source == "gandr"
     && ret.severity == match report.class() { Class::Goal => Severity::INFORMATION, _ => Severity::ERROR }
     && ret.code.is_some() == matches!(report.identifier(), Maybe::Present(_))
     && ret.related_information.len() == report.context().into_iter()

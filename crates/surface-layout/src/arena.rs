@@ -57,6 +57,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::num::NonZeroU32;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::error::BuildAllocationSite;
@@ -350,7 +351,7 @@ impl CheckedText
     ///   scalars and cloning the adopted buffer change these observations;
     ///   allocation failure is not deterministically injected.
     /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or_else(|error| u64::try_from(self.text.len()).is_err()
                 && *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::TextBytes },
             |used| u64::try_from(self.text.len()) == Ok(u64::from(*used)))
@@ -504,7 +505,7 @@ impl VerbatimLine
     ///   missing trailing fragments and acceptance of bare CR. Allocation
     ///   failure and widths beyond u32 are outside this bounded witness domain.
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| matches!((self.ending, ret), (Maybe::Present(StoredLineEnding::Lf), Maybe::Present(StoredLineEnding::Lf)) | (Maybe::Present(StoredLineEnding::CrLf), Maybe::Present(StoredLineEnding::CrLf)) | (Maybe::Absent(ending::Absent::Final), Maybe::Absent(ending::Absent::Final)))
     )]
     #[inline]
@@ -537,7 +538,7 @@ impl VerbatimText
     ///   missing trailing fragments and acceptance of bare CR. Allocation
     ///   failure and widths beyond u32 are outside this bounded witness domain.
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or_else(|error| u64::try_from(self.bytes.len()).is_err()
                 && *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::TextBytes },
             |used| u64::try_from(self.bytes.len()) == Ok(u64::from(*used)))
@@ -570,7 +571,7 @@ impl VerbatimText
     ///   missing trailing fragments and acceptance of bare CR. Allocation
     ///   failure and widths beyond u32 are outside this bounded witness domain.
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or_else(|error| u64::try_from(self.lines.len()).is_err()
                 && *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::VerbatimLines },
             |used| u64::try_from(self.lines.len()) == Ok(u64::from(*used)))
@@ -597,7 +598,7 @@ impl VerbatimText
     ///   missing trailing fragments and acceptance of bare CR. Allocation
     ///   failure and widths beyond u32 are outside this bounded witness domain.
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| core::ptr::eq(&raw const *ret, &raw const *self.lines.as_slice())
     )]
     #[inline]
@@ -698,7 +699,7 @@ impl<'source> TryFrom<TextSource<'source>> for CheckedText
     ///   scalars and cloning the adopted buffer change these observations;
     ///   allocation failure is not deterministically injected.
     /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidText => source.text.contains(['\r', '\n', '\t']), BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => !source.text.contains(['\r', '\n', '\t'])
                 && u32::try_from(source.text.chars().count()).is_err(), BuildError::AllocationFailed { site: BuildAllocationSite::TextArena } => !source.text.contains(['\r', '\n', '\t'])
                 && u32::try_from(source.text.chars().count()).is_ok(), _ => false },
@@ -746,7 +747,7 @@ impl TryFrom<TextOwned> for CheckedText
     ///   scalars and cloning the adopted buffer change these observations;
     ///   allocation failure is not deterministically injected.
     /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
-    #[anodized::spec(
+    #[spec(
         captures: before = (source.text.as_ptr(), source.text.len(), source.text.chars().count(), source.text.contains(['\r', '\n', '\t'])),
         ensures: |ret| ret.as_ref().map_or_else(|error| if before.3 { *error == BuildError::InvalidText }
             else { u32::try_from(before.2).is_err()
@@ -791,7 +792,7 @@ impl<'source> TryFrom<VerbatimSource<'source>> for VerbatimText
     ///   missing trailing fragments and acceptance of bare CR. Allocation
     ///   failure and widths beyond u32 are outside this bounded witness domain.
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')), BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => source.text.split('\n').any(|fragment| u32::try_from(fragment.strip_suffix('\r').unwrap_or(fragment).chars().count()).is_err()), BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena | BuildAllocationSite::TextArena } => true, _ => false },
             |verbatim| verbatim.bytes == source.text
                 && !(source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')))
@@ -847,7 +848,7 @@ impl TryFrom<VerbatimOwned> for VerbatimText
     ///   missing trailing fragments and acceptance of bare CR. Allocation
     ///   failure and widths beyond u32 are outside this bounded witness domain.
     /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
-    #[anodized::spec(
+    #[spec(
         captures: before = (source.text.as_ptr(), source.text.len(), source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')), source.text.split('\n').any(|fragment| u32::try_from(fragment.strip_suffix('\r').unwrap_or(fragment).chars().count()).is_err())),
         ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => before.2, BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => before.3, BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena } => true, _ => false },
             |verbatim| verbatim.bytes.as_ptr() == before.0
@@ -894,7 +895,7 @@ impl TryFrom<VerbatimOwned> for VerbatimText
 ///   the adopted buffer change these observations; allocation failure is not
 ///   deterministically injected.
 /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
-#[anodized::spec(
+#[spec(
     ensures: |ret| ret.as_ref().map_or_else(|error| if source.text.contains(['\r', '\n', '\t']) { *error == BuildError::InvalidText }
         else { u32::try_from(source.text.chars().count()).is_err()
             && *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } },
@@ -935,7 +936,7 @@ fn checked_text_width(source: TextSource<'_>) -> Result<ScalarWidth, BuildError>
 ///   and acceptance of bare CR. Allocation failure and widths beyond u32 are
 ///   outside this bounded witness domain.
 /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
-#[anodized::spec(
+#[spec(
     ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')), BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => source.text.split('\n').any(|fragment| u32::try_from(fragment.strip_suffix('\r').unwrap_or(fragment).chars().count()).is_err()), BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena } => true, _ => false },
         |lines| !(source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')))
             && lines.len() == source.text.bytes().filter(|byte| *byte == b'\n').count().saturating_add(1)
@@ -1119,7 +1120,7 @@ impl DocArena
     ///   order alter the count or stored identities.
     /// - witness: `algebra::tests::finalization_appends_at_most_one_image_per_node`
     /// - witness: `algebra::tests::identities_are_dense_insertion_ordinals_that_never_move`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| u64::try_from(self.nodes.len()).map_or_else(|_error| u64::from(ret) == u64::MAX,
             |count| u64::from(ret) == count)
     )]
@@ -1154,7 +1155,7 @@ impl DocArena
     ///   change these observations; borrowed private projections also expose
     ///   storage identity.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let expected = (self.arena == doc.arena
                 && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Text(identity) => self.texts.get(usize::try_from(identity.index).ok()?), _ => None });
             ret.as_ref().map_or_else(|error| expected.is_none()
@@ -1209,7 +1210,7 @@ impl DocArena
     ///   change these observations; borrowed private projections also expose
     ///   storage identity.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let expected = (self.arena == doc.arena
                 && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Text(identity) => self.texts.get(usize::try_from(identity.index).ok()?), _ => None });
             ret.as_ref().map_or_else(|error| expected.is_none()
@@ -1264,7 +1265,7 @@ impl DocArena
     ///   change these observations; borrowed private projections also expose
     ///   storage identity.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let expected = (self.arena == doc.arena
                 && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Verbatim(identity) => self.verbatim.get(usize::try_from(identity.index).ok()?), _ => None });
             ret.as_ref().map_or_else(|error| expected.is_none()
@@ -1320,7 +1321,7 @@ impl DocArena
     ///   change these observations; borrowed private projections also expose
     ///   storage identity.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let expected = (self.arena == doc.arena
                 && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Verbatim(identity) => self.verbatim.get(usize::try_from(identity.index).ok()?), _ => None });
             ret.as_ref().map_or_else(|error| expected.is_none()
@@ -1375,7 +1376,7 @@ impl DocArena
     ///   change these observations; borrowed private projections also expose
     ///   storage identity.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let expected = (self.arena == doc.arena
                 && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.flattened.get(index));
             ret.as_ref().map_or_else(|error| expected.is_none()
@@ -1422,7 +1423,7 @@ impl DocArena
     ///   change these observations; borrowed private projections also expose
     ///   storage identity.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret == if self.arena == doc.arena
                 && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count) { Ok(doc.node) }
             else { Err(BuildError::UnknownDoc) }
@@ -1457,7 +1458,7 @@ impl DocArena
     ///   change these observations; borrowed private projections also expose
     ///   storage identity.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| matches!(ret, DocHandleStatus::Present) == (self.arena == doc.arena
                 && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count))
     )]
@@ -1497,7 +1498,7 @@ impl DocArena
     ///   change these observations; borrowed private projections also expose
     ///   storage identity.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let expected = usize::try_from(node.index).ok().and_then(|index| self.nodes.get(index));
             match (ret, expected) { (Maybe::Present(actual), Some(expected)) => actual == *expected, (Maybe::Absent(stored::Absent::OutOfRange), None) => true, _ => false } }
     )]
@@ -1533,7 +1534,7 @@ impl DocArena
     ///   change these observations; borrowed private projections also expose
     ///   storage identity.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let expected = usize::try_from(node.index).ok().and_then(|index| self.flattened.get(index));
             match (ret, expected) { (Maybe::Present(actual), Some(expected)) => actual == *expected, (Maybe::Absent(stored::Absent::OutOfRange), None) => true, _ => false } }
     )]
@@ -1569,7 +1570,7 @@ impl DocArena
     ///   change these observations; borrowed private projections also expose
     ///   storage identity.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let expected = usize::try_from(text.index).ok().and_then(|index| self.texts.get(index));
             match (ret, expected) { (Maybe::Present(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (Maybe::Absent(stored::Absent::OutOfRange), None) => true, _ => false } }
     )]
@@ -1605,7 +1606,7 @@ impl DocArena
     ///   change these observations; borrowed private projections also expose
     ///   storage identity.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let expected = usize::try_from(verbatim.index).ok().and_then(|index| self.verbatim.get(index));
             match (ret, expected) { (Maybe::Present(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (Maybe::Absent(stored::Absent::OutOfRange), None) => true, _ => false } }
     )]
@@ -1732,7 +1733,7 @@ impl DocId
     ///   namespace or insertion identity changes those observations; assembling
     ///   a handle does not validate its store bounds.
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.arena == arena
                 && ret.node == node
     )]
@@ -1785,7 +1786,7 @@ impl DocArena
     /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
     /// - witness: `algebra::tests::flattening_is_idempotent`
     /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
-    #[anodized::spec(
+    #[spec(
         captures: before = (nodes.as_ptr(), nodes.len(), texts.as_ptr(), texts.len(), verbatim.as_ptr(), verbatim.len(), flattened.as_ptr(), flattened.len()),
         ensures: |ret| ret.arena == arena
                 && ret.nodes.as_ptr() == before.0

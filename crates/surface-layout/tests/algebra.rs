@@ -6,6 +6,7 @@
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_surface_layout::arena::DocArena;
     use gandr_surface_layout::arena::DocHandleStatus;
     use gandr_surface_layout::arena::DocId;
@@ -116,7 +117,7 @@ mod tests
     /// - witness: `algebra::tests::finalization_is_deterministic_across_runs`
     /// - witness: `algebra::tests::parenthesizations_preserve_unicode_output_and_cost`
     /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
-    #[anodized::spec(
+    #[spec(
         captures: successful = result.is_ok(),
         ensures: |ret| successful
     )]
@@ -144,7 +145,7 @@ mod tests
     /// - witness: `algebra::tests::resolver_returns_the_text_winner_summary`
     /// - witness: `algebra::tests::resolver_charges_line_break_and_indentation`
     /// - witness: `algebra::tests::resolver_choice_uses_squared_overflow_before_line_breaks`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| if arena.contains(root) == DocHandleStatus::Absent { matches!(ret, Err(RenderError::UnknownDoc)) }
             else if u32::from(options.computation_width) < u32::from(options.page_width) { matches!(ret, Err(RenderError::InvalidWidth)) }
             else { true }
@@ -212,7 +213,7 @@ mod tests
     /// - witness: `algebra::tests::finalization_is_deterministic_across_runs`
     /// - witness: `algebra::tests::parenthesizations_preserve_unicode_output_and_cost`
     /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or(true,
             |fixture| fixture.0.contains(fixture.1) == DocHandleStatus::Present
                 && fixture.0.node_count() == fixture.2.doc_nodes
@@ -252,7 +253,7 @@ mod tests
     /// - witness: `algebra::tests::finalization_is_deterministic_across_runs`
     /// - witness: `algebra::tests::parenthesizations_preserve_unicode_output_and_cost`
     /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or(true,
             |fixture| fixture.0.contains(fixture.1) == DocHandleStatus::Present
                 && fixture.0.node_count() == fixture.2.doc_nodes
@@ -302,7 +303,7 @@ mod tests
     ///   fixture payload total.
     /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_node`
     /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or(true,
             |usage| u64::from(usage.text_bytes) == if matches!(shape, ConcatShape::Shared) { 7 }
             else { 13 })
@@ -403,7 +404,7 @@ mod tests
     /// - witness: `algebra::tests::finalization_is_deterministic_across_runs`
     /// - witness: `algebra::tests::parenthesizations_preserve_unicode_output_and_cost`
     /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or(true,
             |fixture| [fixture.1, fixture.2, fixture.3, fixture.4, fixture.5].into_iter().all(|doc| fixture.0.contains(doc) == DocHandleStatus::Present)
                 && fixture.0.flattened_image(fixture.2).is_ok_and(|image| fixture.0.flattened_image(fixture.3) == Ok(image))
@@ -476,7 +477,7 @@ mod tests
     ///   component fails independently of the other counters; allocator failure
     ///   is outside this helper.
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| current.doc_nodes >= previous.doc_nodes
                 && current.text_bytes >= previous.text_bytes
                 && current.verbatim_lines >= previous.verbatim_lines
@@ -1333,7 +1334,7 @@ mod tests
     /// - witness: `algebra::tests::finalization_is_deterministic_across_runs`
     /// - witness: `algebra::tests::parenthesizations_preserve_unicode_output_and_cost`
     /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.as_ref().map_or(true,
             |fixture| fixture.0.contains(fixture.1) == DocHandleStatus::Present
                 && fixture.0.flattened_image(fixture.1) == Ok(fixture.1))

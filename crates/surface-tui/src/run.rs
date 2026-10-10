@@ -3,6 +3,7 @@
 use std::io;
 use std::io::Write;
 
+use anodized::spec;
 use gandr_surface_repl::Ended;
 use gandr_surface_repl::Fault;
 use ratatui::Terminal;
@@ -87,7 +88,7 @@ impl InputSource for Keyboard
     /// - witness: `run::tests::key_bindings_respect_modifier_precedence`
     /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
     /// - witness: `launch::tests::the_terminal_face_completes_and_restores_its_settings`
-    #[anodized::spec(ensures: |ref ret| matches!(*ret,
+    #[spec(ensures: |ref ret| matches!(*ret,
         Input::Key(_) | Input::Redraw | Input::Failed(Fault::Input(_))))]
     fn next(&mut self) -> Input
     {
@@ -116,7 +117,7 @@ impl InputSource for Keyboard
 ///   accidental control/alt insertion and wrong interrupt precedence. The
 ///   finite table does not enumerate every named key or modifier combination.
 /// - witness: `run::tests::key_bindings_respect_modifier_precedence`
-#[anodized::spec(ensures: |ref ret| {
+#[spec(ensures: |ref ret| {
     let control = event.modifiers.contains(KeyModifiers::CONTROL);
     let alt = event.modifiers.contains(KeyModifiers::ALT);
     match *ret {
@@ -241,7 +242,7 @@ where
 /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
 /// - witness: `launch::tests::a_failed_input_preserves_its_cause_and_stops_reading`
 /// - witness: `launch::tests::the_terminal_face_completes_and_restores_its_settings`
-#[anodized::spec(ensures: |ref ret| !matches!(*ret, Ok(Ended::Faulted(Fault::Editor(_)))))]
+#[spec(ensures: |ref ret| !matches!(*ret, Ok(Ended::Faulted(Fault::Editor(_)))))]
 #[inline]
 pub fn run() -> io::Result<Ended>
 {
@@ -279,7 +280,7 @@ pub fn run() -> io::Result<Ended>
 ///   execution is exercised by the smoke command; grammar and flush failure are
 ///   outside this witness.
 /// - witness: `launch::tests::the_smoke_face_propagates_a_partial_write_failure`
-#[anodized::spec(ensures: |ref ret| matches!(
+#[spec(ensures: |ref ret| matches!(
     *ret, Err(_) | Ok(Ended::Completed | Ended::Faulted(Fault::Grammar(_)))
 ))]
 #[inline]
