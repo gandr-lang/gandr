@@ -526,13 +526,15 @@ impl<'arena> Engine<'arena>
     #[spec(
         captures: [pending = self.tasks.len(), ready = self.results.len(), children = match node {
         | Node::Value(id) => match self.arena.value(id) {
-            | Some(&Value::Variable { .. } | &Value::Constant(_) | &Value::Unit | &Value::Literal(_)) | None => 0_usize,
+                Some(&Value::Primitive { .. } | &Value::Variable { .. } | &Value::Constant(_)
+| &Value::Unit | &Value::Literal(_)) | None => 0_usize,
             | Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..)) => 2,
             | Some(&Value::PathEquiv { .. }) => 3,
             | Some(&Value::Injection(..) | &Value::Thunk(_) | &Value::Lift { .. } | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::StaticLambda(_) | &Value::PathRefl(_)) => 1,
         },
         | Node::Computation(id) => match self.arena.computation(id) {
             | None => 0_usize,
+            | Some(&Computation::Primitive { ref arguments, .. }) => arguments.len(),
             | Some(&Computation::Lambda(_) | &Computation::Return(_) | &Computation::Force(_)) => 1,
             | Some(&Computation::Application(..) | &Computation::Bind(..) | &Computation::Transport(..)) => 2,
             | Some(&Computation::Case { .. }) => 3,
@@ -563,7 +565,8 @@ impl<'arena> Engine<'arena>
         match node {
             | Node::Value(id) => match self.arena.value(id) {
                 | Some(
-                    &Value::Variable { .. }
+                    &Value::Primitive { .. }
+                    | &Value::Variable { .. }
                     | &Value::Constant(_)
                     | &Value::Unit
                     | &Value::Literal(_),
@@ -602,6 +605,13 @@ impl<'arena> Engine<'arena>
             },
             | Node::Computation(id) => match self.arena.computation(id) {
                 | None => {},
+                | Some(&Computation::Primitive { ref arguments, .. }) => {
+                    children.extend(
+                        arguments
+                            .iter()
+                            .map(|argument| (Node::Value(*argument), depth)),
+                    );
+                },
                 | Some(&Computation::Transport(path, value)) => {
                     children.push((Node::Value(path), depth));
                     children.push((Node::Value(value), depth));
@@ -888,7 +898,8 @@ impl<'arena> Engine<'arena>
     /// - witness: `rewrite::tests::congruences_preserve_formers_and_child_order`
     #[spec(
         captures: [ready = self.results.len(), children = match self.arena.value(id) {
-            | Some(&Value::Variable { .. } | &Value::Constant(_) | &Value::Unit | &Value::Literal(_)) | None => 0_usize,
+            Some(&Value::Primitive { .. } | &Value::Variable { .. } | &Value::Constant(_)
+| &Value::Unit | &Value::Literal(_)) | None => 0_usize,
             | Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..)) => 2,
             | Some(&Value::PathEquiv { .. }) => 3,
             | Some(&Value::Injection(..) | &Value::Thunk(_) | &Value::Lift { .. } | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::StaticLambda(_) | &Value::PathRefl(_)) => 1,
@@ -950,7 +961,11 @@ impl<'arena> Engine<'arena>
                     )
                 }
             },
-            | Value::Variable { .. } | Value::Constant(_) | Value::Unit | Value::Literal(_) => id,
+            | Value::Primitive { .. }
+            | Value::Variable { .. }
+            | Value::Constant(_)
+            | Value::Unit
+            | Value::Literal(_) => id,
             | Value::Pair(first, second) => {
                 let rewritten_second = self.value(second);
                 let rewritten_first = self.value(first);
@@ -1047,6 +1062,7 @@ impl<'arena> Engine<'arena>
     #[spec(
         captures: [ready = self.results.len(), children = match self.arena.computation(id) {
             | None => 0_usize,
+            | Some(&Computation::Primitive { ref arguments, .. }) => arguments.len(),
             | Some(&Computation::Lambda(_) | &Computation::Return(_) | &Computation::Force(_)) => 1,
             | Some(&Computation::Application(..) | &Computation::Bind(..) | &Computation::Transport(..)) => 2,
             | Some(&Computation::Case { .. }) => 3,
@@ -1065,6 +1081,23 @@ impl<'arena> Engine<'arena>
             return id;
         };
         match node {
+            | Computation::Primitive {
+                primitive,
+                mut arguments,
+            } => {
+                let mut changed = false;
+                for argument in arguments.iter_mut().rev() {
+                    let rewritten = self.value(*argument);
+                    changed |= rewritten != *argument;
+                    *argument = rewritten;
+                }
+                if changed {
+                    self.arena.computation_primitive(primitive, arguments)
+                }
+                else {
+                    id
+                }
+            },
             | Computation::Transport(path, value) => {
                 let rewritten_value = self.value(value);
                 let rewritten_path = self.value(path);
@@ -1675,7 +1708,10 @@ mod tests
             | Some(&Value::QuoteComputation(_)) => Token::QuoteComputation,
             | Some(&Value::StaticLambda(_)) => Token::StaticLambda,
             | Some(&Value::StaticApplication(..)) => Token::StaticApplication,
-            | Some(&Value::Unit | &Value::Literal(_) | &Value::Injection(..) | &Value::Thunk(_) | &Value::Lift { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }) | None => Token::Other,
+            Some(&Value::Primitive { .. } | &Value::Unit | &Value::Literal(_) |
+&Value::Injection(..) | &Value::Thunk(_) | &Value::Lift { .. } |
+&Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }) |
+None => Token::Other,
         },
     }))]
     fn spelling_of(

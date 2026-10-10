@@ -73,6 +73,14 @@ pub enum Zone
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Value
 {
+    /// A table-typed prelude thunk, with its generated curried body.
+    Primitive
+    {
+        /// The row defining the thunk's signature.
+        primitive: crate::primitive::Primitive,
+        /// The generated lambda chain, ending in the saturated operation.
+        body: ComputationId,
+    },
     /// Reflexivity at a quoted closed code.
     PathRefl(ValueId),
     /// Componentwise product of two native path values.
@@ -144,6 +152,14 @@ pub enum Value
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Computation
 {
+    /// A saturated native operation; currying uses ordinary lambdas.
+    Primitive
+    {
+        /// The row defining names, signature and evaluation.
+        primitive: crate::primitive::Primitive,
+        /// Value arguments in source order.
+        arguments: crate::primitive::Arguments,
+    },
     /// Transport a value along a native universe path.
     Transport(ValueId, ValueId),
     /// A lambda `λ. M`, binding one intuitionistic value variable; introduces
@@ -383,6 +399,14 @@ pub fn equal_certificate_syntax(
                     },
                     | (&Value::Thunk(a), &Value::Thunk(b)) => pending.push(C(a, b)),
                     | (
+                        &Value::Primitive {
+                            primitive: left, ..
+                        },
+                        &Value::Primitive {
+                            primitive: right, ..
+                        },
+                    ) if left == right => {},
+                    | (
                         &Value::Lift { ref target, body },
                         &Value::Lift {
                             target: ref other,
@@ -409,6 +433,18 @@ pub fn equal_certificate_syntax(
                     return CertificateEquality::Different;
                 };
                 match (a, b) {
+                    | (
+                        &Computation::Primitive {
+                            primitive: left,
+                            arguments: ref first,
+                        },
+                        &Computation::Primitive {
+                            primitive: right,
+                            arguments: ref second,
+                        },
+                    ) if left == right && first.len() == second.len() => {
+                        pending.extend(first.iter().zip(second.iter()).map(|(a, b)| V(*a, *b)));
+                    },
                     | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),
                     | (&Computation::Return(a), &Computation::Return(b))
                     | (&Computation::Force(a), &Computation::Force(b)) => pending.push(V(a, b)),

@@ -2381,6 +2381,8 @@ impl Children
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 #[spec(
     ensures: |ret| match *node {
+    ContentNode::PrimitiveValue(_) => ret.count == 0,
+    ContentNode::Primitive(_, arguments) => ret.iter().eq(arguments.iter().copied()),
     ContentNode::PathEquiv { path_type, forward, backward, .. } => {
         ret.count == 3_usize
             && ret.slots.get(..ret.count) == Some(&[path_type, forward, backward])
@@ -2437,12 +2439,41 @@ fn children(node: &ContentNode) -> Children
 {
     let unused = NodeIndex::default();
     let (slots, count) = match *node {
+        | ContentNode::Primitive(_, gandr_core_term::primitive::Arguments::Unary(argument)) => {
+            ([argument, unused, unused], 1)
+        },
+        | ContentNode::Primitive(
+            _,
+            gandr_core_term::primitive::Arguments::Binary([first, second]),
+        )
+        | ContentNode::PathUniverse(first, second)
+        | ContentNode::PathProduct(first, second)
+        | ContentNode::Transport(first, second)
+        | ContentNode::Pair(first, second)
+        | ContentNode::Application(first, second)
+        | ContentNode::Bind(first, second)
+        | ContentNode::Product(first, second)
+        | ContentNode::StaticApplication(first, second)
+        | ContentNode::Sum(first, second)
+        | ContentNode::Arrow {
+            domain: first,
+            codomain: second,
+        }
+        | ContentNode::Pi {
+            domain: first,
+            codomain: second,
+        }
+        | ContentNode::StaticPi {
+            domain: first,
+            codomain: second,
+        } => ([first, second, unused], 2),
         | ContentNode::PathEquiv {
             path_type,
             forward,
             backward,
             ..
         } => ([path_type, forward, backward], 3_usize),
+        | ContentNode::PrimitiveValue(_)
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)
         | ContentNode::Unit
@@ -2467,27 +2498,6 @@ fn children(node: &ContentNode) -> Children
         | ContentNode::Element { code: only, .. }
         | ContentNode::ComputationElement { code: only, .. }
         | ContentNode::Returner(only) => ([only, unused, unused], 1_usize),
-        | ContentNode::PathUniverse(first, second)
-        | ContentNode::PathProduct(first, second)
-        | ContentNode::Transport(first, second)
-        | ContentNode::Pair(first, second)
-        | ContentNode::Application(first, second)
-        | ContentNode::Bind(first, second)
-        | ContentNode::Product(first, second)
-        | ContentNode::StaticApplication(first, second)
-        | ContentNode::Sum(first, second)
-        | ContentNode::Arrow {
-            domain: first,
-            codomain: second,
-        }
-        | ContentNode::Pi {
-            domain: first,
-            codomain: second,
-        }
-        | ContentNode::StaticPi {
-            domain: first,
-            codomain: second,
-        } => ([first, second, unused], 2_usize),
         | ContentNode::Case {
             scrutinee,
             on_left,
@@ -2665,6 +2675,7 @@ fn read(
         .map_or(
             matches!(ret, ContentNode::Unresolved(Sort::Value)),
             |node| match *node {
+                Value::Primitive { primitive, .. } => ret == ContentNode::PrimitiveValue(primitive),
                 Value::PathRefl(_) => matches!(ret, ContentNode::PathRefl(_)),
                 Value::PathProduct(..) => matches!(ret, ContentNode::PathProduct(..)),
                 Value::PathEquiv { ref evidence, .. } => {
@@ -2724,6 +2735,7 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().value(id) {
+        | Some(&Value::Primitive { primitive, .. }) => ContentNode::PrimitiveValue(primitive),
         | Some(&Value::PathRefl(code)) => ContentNode::PathRefl(child(Root::Value(code))),
         | Some(&Value::PathProduct(first, second)) => {
             let first = child(Root::Value(first));
@@ -2798,6 +2810,7 @@ where
         .map_or(
             matches!(ret, ContentNode::Unresolved(Sort::Computation)),
             |node| match *node {
+                Computation::Primitive { primitive, .. } => matches!(ret, ContentNode::Primitive(actual, _) if actual == primitive),
                 Computation::Transport(..) => matches!(ret, ContentNode::Transport(..)),
                 Computation::Lambda(..) => matches!(ret, ContentNode::Lambda(..)),
                 Computation::Application(..) => {
@@ -2820,6 +2833,19 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().computation(id) {
+        | Some(&Computation::Primitive {
+            primitive,
+            arguments,
+        }) => {
+            use gandr_core_term::primitive::Arguments;
+            let arguments = match arguments {
+                | Arguments::Unary(argument) => Arguments::Unary(child(Root::Value(argument))),
+                | Arguments::Binary([first, second]) => {
+                    Arguments::Binary([child(Root::Value(first)), child(Root::Value(second))])
+                },
+            };
+            ContentNode::Primitive(primitive, arguments)
+        },
         | Some(&Computation::Transport(path, value)) => {
             let path = child(Root::Value(path));
             ContentNode::Transport(path, child(Root::Value(value)))

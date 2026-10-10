@@ -16,6 +16,38 @@ use gandr_runtime_compile_host::check_and_lower;
 use gandr_runtime_compile_host::is_typed;
 
 #[test]
+fn native_operations_are_typed_but_outside_version_one()
+{
+    use gandr_core_term::primitive::Arguments;
+    use gandr_core_term::primitive::PRELUDE;
+    let mut core = CoreArena::new();
+    let add = PRELUDE
+        .iter()
+        .copied()
+        .find(|primitive| primitive.name().as_ref() == "add")
+        .expect("addition");
+    let one = crate::programs::integer(&mut core, 1_i64.into());
+    let call = core.computation_primitive(add, Arguments::Binary([one, one]));
+    let integer = core.value_type_base(BaseType::Integer);
+    let result = core.comp_type_returner(integer);
+    let native = add.thunk(&mut core);
+    let returned = core.computation_return(native);
+    let signature = add.declared_type(&mut core);
+    let thunk = core.value_type_thunk(signature);
+    let function_result = core.comp_type_returner(thunk);
+    for (root, expected) in [(call, result), (returned, function_result)] {
+        let mut context = CheckingContext::new(&mut core, CheckBudget::DEFAULT);
+        let expected = form_comp_type(&mut context, expected).expect("native classifier");
+        assert_eq!(
+            check_and_lower(&mut context, root, expected),
+            Err(BridgeError::NotLowered(LowerError::OutsideSlice(
+                Form::Primitive
+            )))
+        );
+    }
+}
+
+#[test]
 fn typed_refusals_preserve_stage_and_payload()
 {
     let mut core = CoreArena::new();

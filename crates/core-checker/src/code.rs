@@ -529,6 +529,7 @@ impl CodeDefinitions
                 (Unfolded::Definition(constant), body)
             },
             | Value::PathRefl(_)
+            | Value::Primitive { .. }
             | Value::PathProduct(..)
             | Value::PathEquiv { .. }
             | Value::Variable { .. }
@@ -741,6 +742,7 @@ pub fn loose_reach(
                             .ok_or(CheckRefusal::MachineInvariant)?;
                         reach = reach.max(outside.saturating_sub(depth));
                     },
+                    | Value::Primitive { .. }
                     | Value::Variable {
                         zone: Zone::Linear, ..
                     }
@@ -774,6 +776,13 @@ pub fn loose_reach(
             },
             | CoreNode::Term(TermNode::Computation(at)) => {
                 match *core.computation(at).ok_or_else(|| dangling(node))? {
+                    | Computation::Primitive { arguments, .. } => {
+                        work.extend(
+                            arguments.iter().map(|argument| {
+                                (CoreNode::Term(TermNode::Value(*argument)), depth)
+                            }),
+                        );
+                    },
                     | Computation::Transport(path, value) => {
                         work.push((CoreNode::Term(TermNode::Value(path)), depth));
                         work.push((CoreNode::Term(TermNode::Value(value)), depth));

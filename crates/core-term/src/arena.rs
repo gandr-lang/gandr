@@ -171,6 +171,28 @@ pub struct CoreArena
 
 impl CoreArena
 {
+    /// The native rows carried by this arena, in allocation order with repeats.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn native_primitives(&self) -> impl Iterator<Item = crate::primitive::Primitive> + '_
+    {
+        self.values
+            .iter()
+            .filter_map(|value| match *value {
+                | Value::Primitive { primitive, .. } => Some(primitive),
+                | _ => None,
+            })
+            .chain(
+                self.computations
+                    .iter()
+                    .filter_map(|computation| match *computation {
+                        | Computation::Primitive { primitive, .. } => Some(primitive),
+                        | _ => None,
+                    }),
+            )
+    }
     /// An empty arena.
     ///
     /// # Specification
@@ -435,6 +457,37 @@ impl CoreArena
         let id = ComputationId(id_index(ArenaLength(self.computations.len())).0);
         self.computations.push(computation);
         id
+    }
+
+    /// Mint a saturated native call; the checker validates its arguments.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_primitive(
+        &mut self,
+        primitive: crate::primitive::Primitive,
+        arguments: crate::primitive::Arguments,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Primitive {
+            primitive,
+            arguments,
+        })
+    }
+
+    /// Mint the table-typed thunk produced by the primitive constructor.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) fn value_primitive(
+        &mut self,
+        primitive: crate::primitive::Primitive,
+        body: ComputationId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::Primitive { primitive, body })
     }
 
     /// Append a value-type node and return its fresh id.

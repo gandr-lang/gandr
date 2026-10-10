@@ -506,10 +506,9 @@ pub const fn payload_verdict(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the former vocabulary is a finite class, enumerated
-///   exhaustively with each former's exact form asserted, so promoting any
-///   former to a literal form breaks one row.
-/// - witness: `attribute::tests::only_the_two_literal_kinds_are_literal_payloads`
+/// - hypothesis: L3 — source attributes reject a payload of the wrong literal
+///   form.
+/// - witness: `lower::tests::a_payload_of_the_wrong_form_is_refused`
 #[spec(
     ensures: |ret| {
         matches!(ret, PayloadForm::Integer) == matches!(former, Former::Number)
@@ -527,6 +526,8 @@ pub const fn payload_form(former: Former) -> PayloadForm
         | Former::Number => PayloadForm::Integer,
         | Former::Text => PayloadForm::Text,
         | Former::Name
+        | Former::Binary
+        | Former::Unary
         | Former::Constructor
         | Former::Parenthesized
         | Former::Thunk
@@ -901,13 +902,11 @@ mod tests
     use super::PayloadVerdict;
     use super::edit_distance;
     use super::payload;
-    use super::payload_form;
     use super::payload_verdict;
     use super::registry;
     use super::suggestion;
     use crate::fixture::registered;
     use crate::fixture::span;
-    use crate::form::Former;
     use crate::resolve::SurfaceName;
 
     #[test]
@@ -1178,47 +1177,6 @@ mod tests
             12_usize,
             "the pinned table covers the whole product of the two vocabularies"
         );
-    }
-
-    #[test]
-    fn only_the_two_literal_kinds_are_literal_payloads()
-    {
-        for former in Former::ALL {
-            let expected = match former {
-                | Former::Number => PayloadForm::Integer,
-                | Former::Text => PayloadForm::Text,
-                | Former::Name
-                | Former::Constructor
-                | Former::Parenthesized
-                | Former::Thunk
-                | Former::Lambda
-                | Former::Return
-                | Former::Force
-                | Former::Call
-                | Former::Projection
-                | Former::TypeHead
-                | Former::Universe
-                | Former::TypeApplication
-                | Former::ThunkType
-                | Former::ReturnerType
-                | Former::ArrowType
-                | Former::ProductType
-                | Former::LazyProductType
-                | Former::ValueFunctionType
-                | Former::StaticAbstraction
-                | Former::ParenthesizedType
-                | Former::Declaration
-                | Former::AttributeBlock
-                | Former::Import
-                | Former::Module
-                | Former::Unadmitted => PayloadForm::OtherValue,
-            };
-            assert_eq!(
-                payload_form(former),
-                expected,
-                "exactly the two literal formers carry a literal payload form"
-            );
-        }
     }
 
     #[test]

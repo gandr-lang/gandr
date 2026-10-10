@@ -89,14 +89,13 @@
 //! assumption in the artifact's audit that the ledger never owed. A later
 //! declaration reading it is [`Refusal::Withheld`], located at the reference.
 //!
-//! # The ledger and the kernel's audit agree entry for entry
+//! # The audit exposes source and runtime assumptions
 //!
-//! The kernel's audit of a declaration names every axiom it transitively rests
-//! on, an axiom's own position included. The [`ArtifactAudit`] is the union of
-//! those audits over the artifact, so its axioms are exactly the owed holes the
-//! kernel admitted: it is empty exactly when the module's ledger is, which is
-//! the kernel-side witness of sealedness. The bridge reports it and gates
-//! nothing on it.
+//! The kernel's audit names every axiom a declaration transitively rests on.
+//! The artifact unions those reports. Without native operations, these are
+//! exactly the owed source holes. Native rows additionally cross as named,
+//! typed opaque axioms; their dependents retain those assumptions in the audit.
+//! The kernel checks the native signatures but executes no host arithmetic.
 //!
 //! # The bridge owns its staging, so it owns the rollback
 //!
@@ -707,23 +706,29 @@ impl Readmission
         mut names: BTreeMap<ConstantIndex, StructuredName>,
     ) -> EncodedArtifact
     {
-        let mut marked = Vec::with_capacity(self.admitted.len());
+        let mut kernel_names = BTreeMap::new();
         for entry in &self.readmitted {
-            let (Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. }) =
+            if let Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } =
                 entry.outcome
-            else {
-                continue;
-            };
-            let Some(declaration) = self.admitted.get(usize::from(admitted.position()))
-            else {
-                continue;
-            };
-            let name = names.remove(&entry.constant).unwrap_or_default();
-            marked.push(MarkedDeclaration::new(
-                AdmissionMark::Checked,
-                declaration.clone().named(name),
-            ));
+            {
+                kernel_names.insert(
+                    admitted.position(),
+                    names.remove(&entry.constant).unwrap_or_default(),
+                );
+            }
         }
+        let marked: Vec<_> = self
+            .admitted
+            .iter()
+            .enumerate()
+            .map(|(position, declaration)| {
+                let mut declaration = declaration.clone();
+                if let Some(name) = kernel_names.remove(&ConstantIndex::from(position)) {
+                    declaration = declaration.named(name);
+                }
+                MarkedDeclaration::new(AdmissionMark::Checked, declaration)
+            })
+            .collect();
 
         encode(self.environment.arena(), &marked)
     }
@@ -753,10 +758,9 @@ impl Readmission
 ///   application at a saturated instance of a static definition or at a static
 ///   lambda is erased as its reduct, minted into `arena`, until none remains —
 ///   each step certified and replayed once per distinct instance.
-/// - provides: the environment holding exactly the declarations that crossed,
-///   and the [`ArtifactAudit`], whose axioms are the positions of the owed
-///   holes the kernel admitted — empty exactly when the report's ledger is,
-///   while every owed hole crosses.
+/// - provides: the declarations that crossed, the native signatures present in
+///   the arena, and an audit exposing every source-hole or native assumption on
+///   which an admitted source declaration depends.
 /// - fails: never; every declaration gets an outcome.
 /// - panics: none.
 ///
@@ -765,9 +769,9 @@ impl Readmission
 ///   the judgement accepts over the generated well-typed and free fixture sets
 ///   and over generated universe and static declarations crosses, every
 ///   certificate a generated code constant's readmission records replays, and
-///   the artifact's axioms agree with the ledger entry for entry in both
-///   directions. The L3 residues are the routing of each verdict, separated by
-///   one artifact holding a marked body and a marked signed hole the kernel
+///   the artifact's axioms agree with the ledger in the pure fragment. Native
+///   signatures additionally expose named runtime assumptions. The L3 residues
+///   are one artifact holding a marked body and a marked signed hole the kernel
 ///   alone admits, a hole in synthesis position and a reference to a marked
 ///   declaration, beside a checked and an owed positive control; the position
 ///   remapping, separated by a module whose later references would misresolve
@@ -783,6 +787,7 @@ impl Readmission
 /// - witness: `bridge::tests::every_readmission_certificate_replays`
 /// - witness: `bridge::tests::marks_and_holes_are_refused_beside_their_positive_controls`
 /// - witness: `bridge::tests::an_empty_ledger_readmits_an_artifact_resting_on_no_axiom`
+/// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
 /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
 /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
 /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
@@ -833,12 +838,22 @@ where
 {
     let mut environment = Environment::new();
     let mut positions = Positions::default();
+    let seeded = positions.seed_native(&mut environment, arena);
     let mut readmitted = Vec::with_capacity(report.judged().len());
     let source = Source {
         lifts: report.lifts(),
         definitions: report.definitions(),
     };
     for judged in report.judged() {
+        if let Err(ref error) = seeded {
+            readmitted.push(Readmitted {
+                constant: judged.constant(),
+                origin: judged.origin(),
+                outcome: Outcome::Rejected(error.clone()),
+                certificates: Vec::new(),
+            });
+            continue;
+        }
         let constant = judged.constant();
         let definition = match judged.verdict() {
             | Verdict::Checked { declared, body, .. } => Some((declared.id(), body)),
@@ -1064,6 +1079,8 @@ where
 #[derive(Clone, Debug, Default)]
 struct Positions
 {
+    /// Native rows cross as explicitly audited, typed opaque constants.
+    native: BTreeMap<gandr_core_term::primitive::Primitive, ConstantIndex>,
     /// Module position to kernel position.
     admitted: BTreeMap<ConstantIndex, ConstantIndex>,
     /// The crossed and the static definitions' core bodies, by module
@@ -1080,6 +1097,64 @@ struct Positions
 
 impl Positions
 {
+    /// Admit the used native signatures without adding an evaluator to the
+    /// kernel.
+    ///
+    /// # Specification
+    /// - ensures: each distinct row has one checked axiom of its table
+    ///   signature.
+    /// - fails: propagates a kernel rejection; no unchecked admission is used.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// A kernel rejection of a native signature.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — native operations cross and retain their named
+    ///   assumptions in a decoded artifact.
+    /// - witness: `bridge::tests::native_operations_cross_as_audited_assumptions`
+    #[spec(ensures: |ret| ret.is_err() || core.native_primitives().all(|primitive| self.native.contains_key(&primitive)))]
+    fn seed_native(
+        &mut self,
+        environment: &mut Environment,
+        core: &CoreArena,
+    ) -> Result<(), KernelError>
+    {
+        use gandr_core_term::primitive::PrimitiveType;
+        let primitives: BTreeSet<_> = core.native_primitives().collect();
+        for primitive in primitives {
+            let mut staging = environment.stage();
+            let arena = staging.arena();
+            let classifier = |arena: &mut TermArena, ty: PrimitiveType| match ty {
+                | PrimitiveType::Integer => arena.value_type_base(BaseType::Integer),
+                | PrimitiveType::Boolean => {
+                    let unit = arena.value_type_unit();
+                    arena.value_type_sum(unit, unit)
+                },
+            };
+            let result = classifier(arena, primitive.result());
+            let mut computation = arena.comp_type_returner(result);
+            for &argument in primitive.arguments().iter().rev() {
+                let domain = classifier(arena, argument);
+                computation = arena.comp_type_arrow(domain, computation);
+            }
+            let declared = arena.value_type_thunk(computation);
+            let staged = staging.axiom(LevelSignature::monomorphic(), declared);
+            let name = StructuredName::from(
+                primitive
+                    .name()
+                    .as_ref()
+                    .split('.')
+                    .filter_map(|segment| gandr_kernel_term::NameSegment::from_text(segment.into()))
+                    .collect::<Vec<_>>(),
+            );
+            let declaration = staged.declaration().clone().named(name);
+            let admitted = environment.add_decl(staged)?;
+            self.native.insert(primitive, admitted.position());
+            self.exports.push(declaration);
+        }
+        Ok(())
+    }
     /// Record that the module definition at `constant`, of core body `body`,
     /// crossed as `admitted` with kernel body `image`.
     ///
@@ -1306,6 +1381,16 @@ enum Image<Erased>
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Frame
 {
+    /// A binary native call, awaiting its first argument.
+    NativeFirst
+    {
+        /// The saturated source call.
+        at: ComputationId,
+        /// The forced native axiom.
+        head: gandr_kernel_term::ComputationId,
+        /// The second source operand.
+        second: ValueId,
+    },
     /// Await a reflexivity endpoint.
     PathRefl
     {
@@ -2432,7 +2517,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     {
         match node {
             | CoreNode::Term(TermNode::Value(at)) => self.descend_value(target, at),
-            | CoreNode::Term(TermNode::Computation(at)) => self.descend_computation(at),
+            | CoreNode::Term(TermNode::Computation(at)) => self.descend_computation(target, at),
             | CoreNode::Type(TypeNode::Value(at)) => self.descend_value_type(target, at),
             | CoreNode::Type(TypeNode::Computation(at)) => self.descend_comp_type(target, at),
         }
@@ -2495,6 +2580,15 @@ impl<'source, 'positions> Erasure<'source, 'positions>
         };
         let unadmitted = |former| Refusal::OutOfFragment { at: node, former };
         let (frame, child) = match value {
+            | Value::Primitive { primitive, .. } => {
+                let position = self
+                    .positions
+                    .native
+                    .get(&primitive)
+                    .copied()
+                    .ok_or(Refusal::MachineInvariant)?;
+                return Ok(self.erased_value(at, target.value_constant(position)));
+            },
             | Value::PathRefl(code) => (
                 Frame::PathRefl { at },
                 CoreNode::Term(TermNode::Value(code)),
@@ -2660,6 +2754,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     )]
     fn descend_computation(
         &mut self,
+        target: &mut TermArena,
         at: ComputationId,
     ) -> Result<Step, Refusal>
     {
@@ -2676,6 +2771,30 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             return Err(Refusal::DanglingNode { node });
         };
         let (frame, child) = match *computation {
+            | Computation::Primitive {
+                primitive,
+                arguments,
+            } => {
+                use gandr_core_term::primitive::Arguments;
+                let position = self
+                    .positions
+                    .native
+                    .get(&primitive)
+                    .copied()
+                    .ok_or(Refusal::MachineInvariant)?;
+                let value = target.value_constant(position);
+                let head = target.computation_force(value);
+                match arguments {
+                    | Arguments::Unary(argument) => (
+                        Frame::ApplicationArgument { at, head },
+                        TermNode::Value(argument),
+                    ),
+                    | Arguments::Binary([first, second]) => (
+                        Frame::NativeFirst { at, head, second },
+                        TermNode::Value(first),
+                    ),
+                }
+            },
             | Computation::Transport(path, value) => {
                 (Frame::TransportPath { at, value }, TermNode::Value(path))
             },
@@ -2965,6 +3084,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 | (Value::QuoteComputation(_), GroundSort::Value)
                 | (
                     Value::PathRefl(_)
+                    | Value::Primitive { .. }
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
                     | Value::Unit
@@ -3218,6 +3338,11 @@ impl<'source, 'positions> Erasure<'source, 'positions>
             | (Frame::Force { at }, AnyNode::Value(value)) => {
                 Ok(self.erased_computation(at, target.computation_force(value)))
             },
+            | (Frame::NativeFirst { at, head, second }, AnyNode::Value(first)) => {
+                let head = target.computation_application(head, first);
+                self.frames.push(Frame::ApplicationArgument { at, head });
+                self.argument(second)
+            },
             | (Frame::ApplicationHead { at, argument }, AnyNode::Computation(head)) => {
                 self.frames.push(Frame::ApplicationArgument { at, head });
                 self.argument(argument)
@@ -3351,6 +3476,7 @@ impl<'source, 'positions> Erasure<'source, 'positions>
                 | Frame::CaseScrutinee { .. }
                 | Frame::Force { .. }
                 | Frame::ApplicationArgument { .. }
+                | Frame::NativeFirst { .. }
                 | Frame::Return { .. }
                 | Frame::Reduced { .. }
                 | Frame::StaticHead { .. }
@@ -3514,6 +3640,67 @@ fn decoded(
 #[cfg(test)]
 mod tests
 {
+
+    #[test]
+    fn native_operations_cross_as_audited_assumptions()
+    {
+        use gandr_core_term::primitive::Arguments;
+        use gandr_core_term::primitive::PRELUDE;
+        let mut arena = CoreArena::new();
+        let sub = PRELUDE
+            .iter()
+            .copied()
+            .find(|primitive| primitive.name().as_ref() == "sub")
+            .unwrap();
+        let function = sub.thunk(&mut arena);
+        let function_type = sub.declared_type(&mut arena);
+        let function_type = arena.value_type_thunk(function_type);
+        let zero = arena.value_literal(integer_literal());
+        let saturated = arena.computation_primitive(sub, Arguments::Binary([zero, zero]));
+        let result = arena.value_thunk(saturated);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let returns = arena.comp_type_returner(integer);
+        let result_type = arena.value_type_thunk(returns);
+        let (_, readmission) = judge_and_readmit(&mut arena, &[
+            declaration(
+                At(0),
+                Maybe::Present(function_type),
+                Maybe::Present(function),
+            ),
+            declaration(At(1), Maybe::Present(result_type), Maybe::Present(result)),
+        ]);
+        assert!(
+            readmission
+                .readmitted()
+                .iter()
+                .all(|entry| matches!(entry.outcome(), Outcome::Defined { .. }))
+        );
+        assert_eq!(readmission.audit().axioms(), &[ConstantIndex::from(
+            0_usize
+        )]);
+        assert!(readmission.audit().unchecked_admissions().is_empty());
+        let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
+        let native = artifact.declarations().first().unwrap().declaration();
+        assert!(matches!(native.content(), DeclarationContent::Axiom { .. }));
+        assert_eq!(
+            native
+                .name()
+                .segments()
+                .iter()
+                .map(AsRef::as_ref)
+                .collect::<Vec<&str>>(),
+            ["sub"]
+        );
+        assert_eq!(
+            crossed_at(&readmission, At(0)),
+            ConstantIndex::from(1_usize)
+        );
+        assert_eq!(
+            crossed_at(&readmission, At(1)),
+            ConstantIndex::from(2_usize)
+        );
+    }
+
     use alloc::collections::BTreeMap;
     use alloc::string::String;
     use alloc::vec;

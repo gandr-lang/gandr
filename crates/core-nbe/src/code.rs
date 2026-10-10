@@ -544,6 +544,7 @@ impl<'run> Walk<'run>
                         ));
                     },
                     | Value::PathRefl(_)
+                    | Value::Primitive { .. }
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
                     | Value::Unit
@@ -574,6 +575,7 @@ impl<'run> Walk<'run>
                     | Value::Quote(quoted) => Ok(Atom::Quote(quoted, place)),
                     | Value::QuoteComputation(quoted) => Ok(Atom::QuoteComputation(quoted, place)),
                     | Value::PathRefl(_)
+                    | Value::Primitive { .. }
                     | Value::PathProduct(..)
                     | Value::PathEquiv { .. }
                     | Value::Variable { .. }
