@@ -27,6 +27,11 @@
 //! The crate's staging page records the measurement dependencies, alternatives
 //! and conditions for changing them alongside the observed family costs.
 
+extern crate alloc;
+
+#[path = "staging_templates/admission.rs"]
+mod admission;
+
 use core::time::Duration;
 use std::io;
 use std::io::Write as _;
@@ -68,6 +73,8 @@ enum ObservationError
     Image(serde_json::Error),
     /// A report row could not be written.
     Output(io::Error),
+    /// The kernel refused a guarded admission the observer measures.
+    Admission(gandr_kernel_core::admission::Refusal),
 }
 
 impl core::fmt::Display for ObservationError
@@ -85,6 +92,7 @@ impl core::fmt::Display for ObservationError
             | Self::Stage(ref error) => error.fmt(f),
             | Self::Image(ref error) => error.fmt(f),
             | Self::Output(ref error) => error.fmt(f),
+            | Self::Admission(ref error) => error.fmt(f),
         }
     }
 }
@@ -126,6 +134,18 @@ impl From<io::Error> for ObservationError
     fn from(error: io::Error) -> Self
     {
         Self::Output(error)
+    }
+}
+
+impl From<gandr_kernel_core::admission::Refusal> for ObservationError
+{
+    /// Preserve a guarded-admission refusal.
+    ///
+    /// # Specification
+    /// trivial.
+    fn from(error: gandr_kernel_core::admission::Refusal) -> Self
+    {
+        Self::Admission(error)
     }
 }
 
@@ -850,6 +870,7 @@ fn main() -> Result<(), ObservationError>
             }
         }
     }
+    admission::run(&mut output)?;
     output.flush()?;
     Ok(())
 }

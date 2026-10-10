@@ -2,6 +2,7 @@
 
 - [Production](#production)
 - [Measurements](#measurements)
+- [Guarded admission observer](#guarded-admission-observer)
 
 ## Production
 
@@ -51,3 +52,13 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest
 ```
 
 The example emits 540 family rows across 26 workloads and both prices. Its witnesses cover strict prices, source correlation, refusal variants, cold/warm caches, poisoned-cache admission, independent image reconstruction and ownership-scope release. Finite witnesses establish neither universal soundness nor a wall-clock bound.
+
+## Guarded admission observer
+
+`template::admission` exposes a paying family to the kernel's [guarded admission](../../kernel-core/docs/admission.md) as a `Proposal` plus one guard row per member. The `staging_templates` example's admission module is measurement scaffolding, not a supported scheduler. It times the kernel's judgments against local plain replay, and it is the only place a thread pool, a queue or a pool width appears; the kernel and this library spawn no thread.
+
+- Without environment variables it reports `COMPRESSED` rows: schema, binding, largest member and admission at 1, 2, 4 and 8 scoped threads.
+- `GANDR_HANDOFF=all` adds the standing-pool matrix. It covers `crossbeam-channel` MPMC, `crossbeam-deque` stealing and per-worker `rtrb`/`ringbuf` rings, with busy or parking waits, item or batch publication, drains of 1 or 32, and four task grains at 1, 2, 4 and 8 workers.
+- `GANDR_SWEEP=1` fixes the transport to `rtrb` busy polling, batch publication, drain 32 and member grain. It sweeps 1–12 workers, with the dispatcher either spinning on the result rings or executing one shard itself, over lookup rows and empty jobs. A second pass of every cell counts allocations on every executing thread and sums them.
+
+Every pooled verdict and counter is checked against an independently executed serial receipt. Workers borrow one immutable schema and one immutable binding per family and own their row buffers. The queue crates are dev-dependencies of this crate only; the observer's module documentation records why each was chosen and what would replace it. An allocator stays an environment variable of the measured process, such as `MallocNanoZone=0` on Darwin, never a library default. Busy polling reserves worker execution capacity and sets no CPU affinity. Thread-local allocation counting suffices for the pool because each thread reports its own count with its result.

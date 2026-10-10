@@ -30,6 +30,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
 - [Experimental stage universe](#experimental-stage-universe)
+- [Guarded admission](#guarded-admission)
 - [License](#license)
 <!-- tocstop -->
 
@@ -48,6 +49,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - **Type formation.** An iterative walk computing a type's universe level, gating lift strictness, level scope, a sealed atom's kind, and the code a decode of either family owes.
 - **Conversion.** `convert_value_type`, `convert_comp_type` and their `convertible_*` forms: structural comparison of two types, descending into the terms they carry, over `Convertibility`.
 - **Conversion replay.** `replay`: a conversion trace replayed against an engine's `EngineClaim` for two `ReplaySides`, unfolding only what `Unfoldings` defines and stopping at a `ReplayBudget`, answering a `KernelVerdict` — certified convertible, certified not convertible, or declined with a `ReplayDecline`, whose `ReplayRefusal` names the `TracePosition` that did not replay.
+- **Guarded admission.** `admission`: `Schema::check`, `Schema::bind`, `Schema::substitute` and `Substitution::admit` over a `Proposal`, with a caller-owned `Row` buffer per worker; a row allocates nothing once its buffer is sized, and refusals are named by `Refusal` ([docs/admission.md](docs/admission.md)).
 - **The content key.** `ContentTable`, `encode_support`, `content_digest`, `NodeSupport` and `SupportContext`: content ids, canonical support encodings and their digests.
 - **The rewrites.** `shift_value_type` and `substitute_comp_type`, de Bruijn shifting and substitution as memoized machines.
 - **Accounting.** `ExpansionCensus`: goal expansions and memo recalls per plane, the observation every measurement here is asserted through.
@@ -226,19 +228,7 @@ Shifting a value type and instantiating a computation type are the public rewrit
 
 ## Conversion replay
 
-Term conversion with δ-, β- and η-rules is proof search, and a concurrent search is too large to trust. Courant and Leroy (§9 of "A Lazy, Concurrent Convertibility Checker", POPL 2026, `doi:10.1145/3776695`) instrument their checker to emit a trace of its decisions and recheck the trace sequentially. `replay` is that recheck: the engine's search stays outside the trusted base, and what the kernel trusts is a loop that fires every step itself and reads the trace only where a rule leaves a choice.
-
-**Choice.** Every goal carries the verdict its derivation owes. Both sides are put in weak head form by the reductions that need no choice — β, a forced thunk, a returner met by a bind, an injection met by a case — and then exactly one rule row applies. A `ComparedShared` closes the goal when the sides are α-equal, or rigid and α-distinct, rigid meaning nothing inside can reduce. A defined head takes a δ-decision: `Unfold` with the reduction naming its side, after an optional `Postpone` naming the other side's head, or `Freeze`, or `ConstShortcut` over two applications of one constant. A thunk against a thunk or a neutral takes two `Force`s, and a lambda against a neutral takes `EtaExpand` on the neutral side. Every other goal is structural and reads no decision: a leaf decides it, a convertibility derivation pushes all its premises, and a refutation reads the `NegativeSubgoal` naming the one premise it rests on. Under a refutation, `Freeze` and `ConstShortcut` are refused outright: a frozen pair or a shortcut that fails proves nothing about the unfolded terms, so only the unfolding branch refutes. A `ComparedShared` met at a decomposable goal closes that goal when it can and otherwise passes to the first premise; the engine emits an agreeing decomposition it settled equal as that one closing, so the two readings coincide.
-
-**Three verdicts.** The replay certifies convertible or not convertible only when the trace replays as a derivation of the engine's claim, every decision used and none left over. Everything else declines: the engine's own decline, a budget the replay ran out of, or a refusal naming where the trace stopped applying. A schedule that starved the engine of the turns its answer needed is such a decline, and the kernel has no search of its own to recover it with. A decline is never read as a refutation, so a wrong or unlucky engine costs completeness and never soundness. Every step is charged to the budget, which bounds a long trace and a term that reduces forever alike, and the reducts the replay mints are truncated away before it returns.
-
-**Alternatives.** Running the engine's search inside the kernel would certify by trusting the search. Trusting the engine's verdict would certify nothing. Replaying a refuted decomposition without its negative subgoal means trying every premise, which is search. Memoizing replayed sub-derivations would let a trace refer back to a shared one; the engine emits a derivation shared by two parents once under each, so the trace is the derivation's expansion as a tree and the replay needs no table.
-
-**Reversal.** A back-reference decision, with a replay-side table keyed on the goal it names, replaces the expansion once a measured trace of a deeply shared proof outgrows the replay budget. A closing the kernel cannot reproduce, because the engine's structural equality and the kernel's α-equality disagree on a pair, shows up as a refusal on an engine trace and moves the tie-break into the vocabulary.
-
-**Laws and evidence.** The unit and purity specifications, their named witnesses and the goal-refinement composition shape live on [`replay`](src/replay.rs). `KernelVerdict` carries the refusal class table and the certified fragment's partial-equivalence scope. [`tests/replay_laws.rs`](tests/replay_laws.rs) generates 256 recipes, checking each claim twice and in a cloned arena, with exact unit-law goldens and rollback checks.
-
-**Property-test dependency.** Dev-only `proptest` uses the workspace's 1.11 version range, defaults off and only `std` for generation, shrinking and persistence. It reuses the workspace's runner without expanding the shipped kernel dependencies. QuickCheck would add a second runner; hand-written enumeration would lose shrinking of generated term recipes. Reconsider on an unmaintained release, a high-risk advisory or a need the existing strategy API cannot express.
+The `replay` module has its own page, [docs/conversion-replay.md](docs/conversion-replay.md): the sequential recheck of an untrusted engine's conversion trace after Courant and Leroy, its rule rows and decisions, its three verdicts, the alternatives and reversal, its laws and evidence, and its property-test dependency.
 
 ## Universe flows
 
@@ -427,6 +417,10 @@ Executable clauses, finite adequacy and explicit exemptions are indexed in the [
 ## Experimental stage universe
 
 The `stage` module has its own page, [docs/staging.md](docs/staging.md): the one-depth staging language and its [formation and replay](docs/staging.md#experimental-stage-universe), the placement decision, and the [readmission](docs/staging.md#experimental-stage-readmission) of a residual as an ordinary declaration through `add_decl`. Its representation is in [kernel-term](../kernel-term/README.md#experimental-stage-syntax), its producer in [core-nbe](../core-nbe/docs/staging.md#experimental-stage-normalization).
+
+## Guarded admission
+
+The `admission` module has its own page, [docs/admission.md](docs/admission.md). It admits every member of a guarded family of staging equations without replaying the rule per member. `Schema::check` establishes schema inheritance and rule-discrimination transparency once. `Schema::substitute` establishes guarded substitution, and `Substitution::admit` exact instance-side agreement by same-arena identity in an immutable shared binding. A fingerprint never authorizes a positive verdict. The page states the soundness boundary, the work bounds, the allocation-free row shape and the decisions behind them.
 
 ## License
 
