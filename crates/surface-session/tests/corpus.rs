@@ -22,9 +22,9 @@ use gandr_surface_session::Session;
 use gandr_surface_session::resumed;
 use quenchant_shape::shape::Maybe;
 
+use crate::common::GRAMMAR;
 use crate::common::backend;
 use crate::common::corpus;
-use crate::common::grammar;
 
 /// How many sources the walk read under each root.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -39,7 +39,7 @@ struct Sources
 #[test]
 fn every_source_submits_as_the_walk_composes_it()
 {
-    let grammar = grammar();
+    let grammar = &*GRAMMAR;
     let mut walk = Walk::new(vec![
         corpus(CorpusRoot::Strict),
         corpus(CorpusRoot::Fixture),

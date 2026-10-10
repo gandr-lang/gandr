@@ -28,17 +28,17 @@ use gandr_surface_session::Submission;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-/// The built-in grammar, assembled once per test process. Generated cases
-/// borrow it; sessions clone it only when taking ownership.
+/// The built-in grammar, assembled once per test process for borrowed fixtures.
+pub static GRAMMAR: LazyLock<Pbg> =
+    LazyLock::new(|| built_in().expect("the built-in grammar builds"));
+
+/// An owned grammar for sessions and lowering adapters.
 ///
 /// # Specification
 /// trivial.
-pub fn grammar() -> &'static Pbg
+pub fn grammar() -> Pbg
 {
-    /// Shared immutable fixture; each nextest test has its own process.
-    static GRAMMAR: LazyLock<Pbg> =
-        LazyLock::new(|| built_in().expect("the built-in grammar builds"));
-    &GRAMMAR
+    GRAMMAR.clone()
 }
 
 /// The backend identity every suite persists under.
@@ -57,7 +57,7 @@ pub fn backend() -> BackendArtifact
 pub fn session(root: SourceRoot) -> Session<MemoryCheckpointStore, InMemoryBlockStore>
 {
     Session::new(
-        grammar().clone(),
+        grammar(),
         root,
         MemoryCheckpointStore::default(),
         InMemoryBlockStore::default(),

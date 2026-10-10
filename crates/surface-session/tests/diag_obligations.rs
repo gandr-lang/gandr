@@ -25,9 +25,9 @@ use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
+use crate::common::GRAMMAR;
 use crate::common::Text;
 use crate::common::footprints;
-use crate::common::grammar;
 use crate::common::names;
 use crate::common::session;
 use crate::common::submit;
@@ -96,7 +96,7 @@ fn lowered_carries_the_parse_obligations_verbatim()
     // The melder decides what a revision's obligations are; the session
     // carries that buffer and re-derives nothing, on the path that judges the
     // revision and on the one that refuses it whole.
-    let pbg = grammar();
+    let pbg = &*GRAMMAR;
     for source in [
         MALFORMED_THEN_VALID,
         SEVERITY_AND_SOURCE_ORDER_DISAGREE,
@@ -125,7 +125,7 @@ fn lowered_carries_the_parse_obligations_verbatim()
 #[test]
 fn a_clean_source_carries_no_obligations()
 {
-    let parsed = parse(grammar(), SourceText::from(CLEAN)).expect("the parse is total");
+    let parsed = parse(&GRAMMAR, SourceText::from(CLEAN)).expect("the parse is total");
     assert!(
         bool::from(parsed.is_clean()),
         "the fixture must parse clean for this to witness anything"
@@ -173,7 +173,7 @@ fn rows_are_in_source_order_not_severity_order()
     // last obligation in the source first. The rows are read in source order,
     // so the submission sorts rather than inherits.
     let parsed = parse(
-        grammar(),
+        &GRAMMAR,
         SourceText::from(SEVERITY_AND_SOURCE_ORDER_DISAGREE),
     )
     .expect("the parse is total");
