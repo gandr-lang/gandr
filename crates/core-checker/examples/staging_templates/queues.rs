@@ -150,6 +150,31 @@ impl Publication
     }
 }
 
+/// Whether the dispatcher executes a share of a wave while workers run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Share
+{
+    /// Publish every shard to workers, then poll the result rings.
+    Spin,
+    /// Keep one round-robin shard, execute it, then poll the result rings.
+    Work,
+}
+
+impl Share
+{
+    /// Stable measurement label.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(super) fn label(self) -> Label
+    {
+        Label(match self {
+            | Self::Spin => "spin",
+            | Self::Work => "work",
+        })
+    }
+}
+
 /// Complete transport parameters for one matrix row.
 #[derive(Clone, Copy)]
 pub(super) struct Wire
@@ -160,6 +185,8 @@ pub(super) struct Wire
     pub publication: Publication,
     /// Maximum messages consumed per worker turn, either one or 32.
     pub drain: Natural,
+    /// Whether the dispatcher executes a shard of each wave.
+    pub share: Share,
 }
 
 /// Parent or worker producer endpoint.
@@ -391,7 +418,7 @@ pub(super) struct Wave
 }
 
 /// Parent-owned ends and notification handles for a standing pool.
-pub(super) struct Pool
+pub(super) struct Pool<'schema>
 {
     /// One MPMC sender or one SPSC sender per worker.
     jobs: Vec<Send<Command>>,
@@ -405,21 +432,30 @@ pub(super) struct Pool
     wire: Wire,
     /// Waiting policy.
     wake: Wake,
+    /// The dispatcher's own scratch, used only under `Share::Work`.
+    own: Scratch<'schema>,
+    /// The families every task indexes.
+    workload: &'schema [Workload],
 }
 
-impl Pool
+impl Pool<'_>
 {
     /// Partition Copy descriptors without any timed allocation or routing copy.
     ///
     /// # Specification
-    /// - ensures: ring jobs are round-robin; shared queues retain input order.
+    /// - ensures: ring jobs are round-robin; shared queues retain input order;
+    ///   under `Share::Work` the last round-robin shard is the dispatcher's.
     /// - panics: none.
     pub(super) fn prepare(
         &self,
         commands: &[Command],
     ) -> Wave
     {
-        let count = self.jobs.len().max(1);
+        let count = self
+            .jobs
+            .len()
+            .max(1)
+            .saturating_add(usize::from(self.wire.share == Share::Work));
         let shards = (0 .. count)
             .map(|worker| {
                 commands
@@ -436,7 +472,8 @@ impl Pool
         }
     }
 
-    /// Publish a wave, then collect all receipts into caller-reserved storage.
+    /// Publish a wave, execute the dispatcher's shard when it takes one, then
+    /// collect all receipts into caller-reserved storage.
     ///
     /// # Specification
     /// - requires: wave fits CAPACITY; output has capacity for every receipt.
@@ -453,20 +490,27 @@ impl Pool
         output: &mut Vec<Receipt>,
     ) -> io::Result<()>
     {
+        let (remote, local) = match (self.wire.share, wave.shards.split_last()) {
+            | (Share::Work, Some((local, remote))) => (remote, local.as_slice()),
+            | (Share::Work | Share::Spin, _) => (wave.shards.as_slice(), [].as_slice()),
+        };
         if self.wire.kind == Kind::Steal {
-            for shard in &wave.shards {
+            for shard in remote {
                 for command in shard {
                     self.injector.push(*command);
                 }
             }
         }
         else {
-            for (sender, shard) in self.jobs.iter_mut().zip(&wave.shards) {
+            for (sender, shard) in self.jobs.iter_mut().zip(remote) {
                 sender.publish(shard, self.wire.publication)?;
             }
         }
         for worker in &self.workers {
             self.wake.notify(worker);
+        }
+        for command in local {
+            output.push(execute(*command, &mut self.own, self.workload));
         }
         let mut buffer = [Receipt::empty(Natural(0)); 32];
         let mut misses = Natural(0);
@@ -548,15 +592,15 @@ fn worker(
 /// - hypothesis: L2 — every matrix receipt equals its independent serial
 ///   oracle.
 /// - witness: `template::tests::compressed_admission_matches_plain_families`
-pub(super) fn standing<F>(
+pub(super) fn standing<'schema, F>(
     wire: Wire,
     threads: Threads,
-    workload: &[Workload],
+    workload: &'schema [Workload],
     mode: Mode,
     experiment: F,
 ) -> io::Result<()>
 where
-    F: FnOnce(&mut Pool) -> io::Result<()>,
+    F: FnOnce(&mut Pool<'schema>) -> io::Result<()>,
 {
     let scratch = Scratch::new(workload, mode).map_err(io::Error::other)?;
     thread::scope(|scope| {
@@ -581,6 +625,8 @@ where
             workers: Vec::new(),
             wire,
             wake,
+            own: scratch.clone(),
+            workload,
         };
         if wire.kind == Kind::Channel {
             pool.jobs.push(Send::Channel(shared_jobs));

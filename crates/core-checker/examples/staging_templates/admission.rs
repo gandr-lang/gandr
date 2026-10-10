@@ -38,6 +38,8 @@
 //! on the intended wake policy and grain, including the CPU cost of busy
 //! polling.
 
+#[path = "frozen.rs"]
+mod frozen;
 #[path = "handoff.rs"]
 mod handoff;
 #[path = "queues.rs"]
@@ -48,10 +50,13 @@ use std::io::Write as _;
 use gandr_kernel_core::admission::Admission;
 use gandr_kernel_core::admission::Choice;
 use gandr_kernel_core::admission::Consumer;
+use gandr_kernel_core::admission::Proposal;
 use gandr_kernel_core::admission::Refusal;
+use gandr_kernel_core::admission::Row;
 use gandr_kernel_core::admission::Schema;
 use gandr_kernel_core::admission::Work;
 use gandr_kernel_term::stage::Step;
+use quenchant_shape::shape::Maybe;
 
 use super::Analysis;
 use super::Arena;
@@ -181,7 +186,8 @@ fn replay_measure(
     Ok(result)
 }
 
-/// Check a row and compare its sides, with no rule replay or member export.
+/// Check an original row and compare its sides, interning the instance into
+/// an owned consumer clone, with no rule replay or member export.
 ///
 /// # Specification
 /// - ensures: observes exactly the kernel's compressed instance judgment.
@@ -195,15 +201,43 @@ fn replay_measure(
 /// - hypothesis: L2 — every row is compared to its independently harvested
 ///   sides.
 /// - witness: `template::tests::compressed_admission_matches_plain_families`
-fn member(
+fn minting(
     schema: &Schema,
     consumer: &mut Consumer<'_>,
     choices: &[Choice],
     step: Step,
+    row: &mut Row,
 ) -> Result<Admission, Refusal>
 {
-    let row = schema.substitute(schema.classifiers(), choices)?;
-    row.admit(consumer, step, &mut Budget(10_000_000))
+    let substitution = schema.substitute_minting(schema.classifiers(), choices)?;
+    substitution.admit(consumer, step, row, &mut Budget(10_000_000))
+}
+
+/// Check a row into reused buffers and compare its sides by lookup in a
+/// shared binding, with no rule replay, member export or allocation.
+///
+/// # Specification
+/// - ensures: observes exactly the kernel's compressed instance judgment.
+/// - fails: the kernel's named row or side refusal.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `Refusal` unchanged.
+///
+/// # Adequacy
+/// - hypothesis: L2 — every row is compared to its independently harvested
+///   sides.
+/// - witness: `template::tests::compressed_admission_matches_plain_families`
+fn lookup(
+    schema: &Schema,
+    consumer: &Consumer<'_>,
+    choices: &[Choice],
+    step: Step,
+    row: &mut Row,
+) -> Result<Admission, Refusal>
+{
+    let mut substitution = schema.substitute(schema.classifiers(), choices, row)?;
+    substitution.admit(consumer, step, &mut Budget(10_000_000))
 }
 
 /// Measure independent compressed members under the requested worker count.
@@ -235,10 +269,11 @@ fn admission_measure(
         let start = Instant::now();
         let observations = if threads.0 == 1 {
             let mut consumer = consumers.into_iter().next().ok_or(Refusal::Malformed)?;
+            let mut row = Row::default();
             members
                 .iter()
                 .zip(rows)
-                .map(|(step, choices)| member(schema, &mut consumer, choices, *step))
+                .map(|(step, choices)| minting(schema, &mut consumer, choices, *step, &mut row))
                 .collect::<Result<Vec<_>, _>>()?
         }
         else {
@@ -249,11 +284,12 @@ fn admission_measure(
                     .zip(consumers)
                     .map(|((members, rows), mut consumer)| {
                         scope.spawn(move || {
+                            let mut row = Row::default();
                             members
                                 .iter()
                                 .zip(rows)
                                 .map(|(step, choices)| {
-                                    member(schema, &mut consumer, choices, *step)
+                                    minting(schema, &mut consumer, choices, *step, &mut row)
                                 })
                                 .collect::<Result<Vec<_>, _>>()
                         })
@@ -305,6 +341,10 @@ pub fn run(
 ) -> Result<(), Box<dyn core::error::Error>>
 {
     let mut workload = Vec::new();
+    let source = match std::env::var("GANDR_INPUT") {
+        | Ok(name) if name == "frozen" => Source::Frozen,
+        | _ => Source::Natural,
+    };
     let cases = (0 ..= 8)
         .map(|n| Case::Power(Natural(n)))
         .chain((0 ..= 8).map(|n| Case::DoubleProduct(Natural(n))))
@@ -319,11 +359,18 @@ pub fn run(
         let input = fixture(case)?;
         let families = harvest(&input.arena, ProgramId(0), &input.certificates)?;
         for (index, family) in families.iter().enumerate() {
-            let analysis = analyze(&input.arena, family.program, &family.members)?;
+            let (arena, members) = match source {
+                | Source::Natural => (input.arena.clone(), family.members.clone()),
+                | Source::Frozen => match frozen::load(case, Natural(index))? {
+                    | Maybe::Present(loaded) => loaded,
+                    | Maybe::Absent(_) => continue,
+                },
+            };
+            let analysis = analyze(&arena, family.program, &members)?;
             let production = produce(
-                &input.arena,
+                &arena,
                 family.program,
-                &family.members,
+                &members,
                 PriceGate::Memoized,
                 &mut InheritanceCache::new(),
                 &mut Budget(10_000_000),
@@ -332,7 +379,7 @@ pub fn run(
                 writeln!(
                     output,
                     "COMPRESSED-PLAIN,{case},family={index},members={}",
-                    family.members.len()
+                    members.len()
                 )?;
                 continue;
             }
@@ -341,30 +388,27 @@ pub fn run(
                 return Err(StageError::Unbalanced.into());
             };
             let admission = candidate.admission_candidate()?;
+            let proposal = admission.proposal.clone();
             let start = Instant::now();
             let schema = Schema::check(admission.proposal, &mut Budget(10_000_000))?;
             let schema_time = start.elapsed();
             let (checks, fuel, affected) = schema.work();
-            let arena = input.arena.clone();
+            let bound = arena.clone();
             let start = Instant::now();
-            let consumer = schema.bind(arena, &mut Budget(10_000_000))?;
+            let consumer = schema.bind(bound, &mut Budget(10_000_000))?;
             let binding_time = start.elapsed();
-            let serial = admission_measure(
-                &schema,
-                &consumer,
-                &family.members,
-                &admission.rows,
-                Threads(1),
-            )?;
-            let baseline = replay_measure(&input.arena, &family.members, Threads(1))?;
+            let serial =
+                admission_measure(&schema, &consumer, &members, &admission.rows, Threads(1))?;
+            let baseline = replay_measure(&arena, &members, Threads(1))?;
             let mut largest = Duration::ZERO;
             let mut largest_consumer = consumer.clone();
-            for (choices, step) in admission.rows.iter().zip(&family.members) {
+            let mut row = Row::default();
+            for (choices, step) in admission.rows.iter().zip(&members) {
                 let start = Instant::now();
-                member(&schema, &mut largest_consumer, choices, *step)?;
+                minting(&schema, &mut largest_consumer, choices, *step, &mut row)?;
                 largest = largest.max(start.elapsed());
             }
-            let rule = family.members.first().ok_or(StageError::Unbalanced)?.rule;
+            let rule = members.first().ok_or(StageError::Unbalanced)?.rule;
             let rule = match rule {
                 | gandr_kernel_term::stage::Rule::Congruence => "congruence",
                 | gandr_kernel_term::stage::Rule::Beta => "beta",
@@ -378,11 +422,11 @@ pub fn run(
                 let admitted = admission_measure(
                     &schema,
                     &consumer,
-                    &family.members,
+                    &members,
                     &admission.rows,
                     Threads(threads),
                 )?;
-                let plain = replay_measure(&input.arena, &family.members, Threads(threads))?;
+                let plain = replay_measure(&arena, &members, Threads(threads))?;
                 if admitted.work != serial.work
                     || admitted.choices != serial.choices
                     || admitted.instantiations != serial.instantiations
@@ -394,7 +438,7 @@ pub fn run(
                 writeln!(
                     output,
                     "COMPRESSED,{case},family={index},rule={rule},k={},threads={threads},schema_ns={},checks={},schema_fuel={},D={},row_ops={},comparisons={},classifier_ops={},instance_ops={},plain_fuel={},plain_ns={},admit_ns={},largest_ns={},binding_ns={}",
-                    family.members.len(),
+                    members.len(),
                     schema_time.as_nanos(),
                     checks.0,
                     fuel.0,
@@ -413,9 +457,10 @@ pub fn run(
             workload.push(handoff::Workload {
                 case,
                 index: Natural(index),
-                arena: input.arena.clone(),
+                arena,
                 schema,
-                members: family.members.clone(),
+                proposal,
+                members,
                 rows: admission.rows,
                 schema_time,
                 binding_time,
@@ -425,4 +470,14 @@ pub fn run(
     }
     handoff::run(output, &workload)?;
     Ok(())
+}
+
+/// Which equation occurrences the admission workload measures.
+#[derive(Clone, Copy)]
+enum Source
+{
+    /// Families regenerated by the current producer and canonical arena.
+    Natural,
+    /// The captured pre-interning occurrences, remapped before timing.
+    Frozen,
 }
