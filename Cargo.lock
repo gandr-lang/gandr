@@ -878,6 +878,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-nominal-automata"
+version = "0.0.0"
+dependencies = [
+ "anodized",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-theory-orders"
 version = "0.0.0"
 dependencies = [
