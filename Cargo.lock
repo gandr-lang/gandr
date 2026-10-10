@@ -597,7 +597,12 @@ dependencies = [
  "gandr-kernel-strata",
  "gandr-kernel-term",
  "gandr-storage-records",
+ "gandr-theory-cell-complexes",
+ "gandr-theory-coherent-resolutions",
+ "gandr-theory-decomposition-spaces",
+ "gandr-theory-deep-inference",
  "proptest",
+ "quenchant-shape",
 ]
 
 [[package]]

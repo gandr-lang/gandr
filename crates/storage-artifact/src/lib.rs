@@ -31,6 +31,7 @@ extern crate alloc;
 pub mod error;
 pub mod manifest;
 pub mod record;
+pub mod transport;
 
 use anodized::spec;
 use gandr_kernel_term::FORMAT_VERSION;
