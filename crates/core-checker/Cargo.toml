@@ -32,9 +32,11 @@ gandr-kernel-conversion-trace.workspace = true
 gandr-kernel-core.workspace = true
 gandr-kernel-strata.workspace = true
 gandr-kernel-term.workspace = true
+gandr-theory-deep-inference.workspace = true
 quenchant-shape.workspace = true
 
 [dev-dependencies]
+allocation-counter.workspace = true
 proptest.workspace = true
 
 [lints]

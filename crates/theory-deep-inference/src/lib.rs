@@ -145,3 +145,4 @@ pub use crate::template::TemplateObstruction;
 pub use crate::template::TemplateRefusal;
 pub use crate::template::anti_unify_tracelets;
 pub use crate::template::inheritance_lookup;
+pub use crate::template::price_family;

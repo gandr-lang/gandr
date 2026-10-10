@@ -56,6 +56,15 @@ publish = false
 # on only because a build or a test failed without it.
 [workspace.dependencies]
 
+# Thread-local heap high-water measurements in the staging example.
+# features:
+# - none: the allocator counter has no optional features.
+# consumers:
+# - core-checker (dev)
+[workspace.dependencies.allocation-counter]
+version = "0.8.1"
+default-features = false
+
 # Source-snippet layout: the backend the diagnostics renderer projects a
 # report into, the one rustc and cargo render through. Defaults off: `std`
 # only gives `anstyle` an `io::Write` sink, and a rendering is a `String`.
@@ -466,6 +475,7 @@ path = "crates/theory-coherent-resolutions"
 # The identity relations on derivations: earned shift equivalence and the
 # guard it is earned against, the causal order, the certificate normal form.
 # consumers:
+# - core-checker
 # - theory-computads
 [workspace.dependencies.gandr-theory-deep-inference]
 path = "crates/theory-deep-inference"

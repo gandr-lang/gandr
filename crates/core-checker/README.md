@@ -312,6 +312,8 @@ The alternatives were names on the checker's `Declaration`, which makes the judg
 `stage::compile`, `Program::admit` and `Program::execute` implement
 [certified first-order residual readmission](../kernel-core/README.md#experimental-stage-readmission).
 
+`template` adds [guarded equation families](src/template.rs), with peak-rooted instantiation and ordinary replay as authority. Run the `staging_templates` release example for strict-staging costs, replay differentials and scoped heap residency; its [measurement notes](examples/staging_templates.rs) state the limits.
+
 ## License
 
 Apache-2.0 WITH LLVM-exception. The licence text is at the repository root.

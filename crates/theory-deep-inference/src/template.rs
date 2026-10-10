@@ -86,6 +86,74 @@ pub struct TemplateAddress(ContentDigest);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArmAddress(ContentDigest);
 
+impl TemplateAddress
+{
+    /// Address domain-specific certificate content within one run.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn of<T>(content: &T) -> Self
+    where
+        T: core::hash::Hash,
+    {
+        let mut hasher = ContentHasher::new();
+        core::hash::Hasher::write(&mut hasher, REGION_DOMAIN);
+        core::hash::Hash::hash(content, &mut hasher);
+        Self(hasher.digest())
+    }
+}
+
+impl ArmAddress
+{
+    /// Address a substitution body within one run.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn of<T>(content: &T) -> Self
+    where
+        T: core::hash::Hash,
+    {
+        let mut hasher = ContentHasher::new();
+        core::hash::Hasher::write(&mut hasher, ARM_DOMAIN);
+        core::hash::Hash::hash(content, &mut hasher);
+        Self(hasher.digest())
+    }
+}
+
+/// Price any certificate family before inheritance replay.
+///
+/// # Specification
+/// - ensures: succeeds exactly when s < floor(F / s); zero size is refused.
+/// - fails: `DoesNotPay` retains both supplied sizes.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `TemplateRefusal::DoesNotPay` at or above the strict boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, equality and either side of the integer gate
+///   distinguish division rounding and a weakened comparison.
+/// - witness: `template::tests::price_boundary_is_strict`
+#[spec(ensures: |output| output.is_ok() == usize::from(plain_size)
+    .checked_div(usize::from(template_size))
+    .is_some_and(|factor| usize::from(template_size) < factor))]
+#[inline]
+pub fn price_family(
+    template_size: NodeCount,
+    plain_size: NodeCount,
+) -> Result<ExpansionFactor, TemplateRefusal>
+{
+    match usize::from(plain_size).checked_div(usize::from(template_size)) {
+        | Some(factor) if usize::from(template_size) < factor => Ok(ExpansionFactor::from(factor)),
+        | Some(_) | None => Err(TemplateRefusal::DoesNotPay {
+            template_size,
+            plain_size,
+        }),
+    }
+}
+
 /// The triple an inheritance check is memoized under: a template region, one
 /// of its entries, and the body of one arm at that entry.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -285,7 +353,8 @@ impl InheritanceCache
                 Maybe::Present(verdict) => held == Some(verdict),
                 Maybe::Absent(inheritance_lookup::Absent::Unchecked) => held.is_none(),
             })]
-    fn lookup(
+    #[inline]
+    pub fn lookup(
         &mut self,
         key: &InheritanceKey,
     ) -> Maybe<InheritanceVerdict, inheritance_lookup::Absent>
@@ -313,7 +382,8 @@ impl InheritanceCache
     #[spec(captures: [checked = self.checked, hits = self.hits], ensures:
         self.verdicts.get(&key) == Some(&verdict) && self.hits == hits
             && usize::from(self.checked) == usize::from(checked).saturating_add(1))]
-    fn record_check(
+    #[inline]
+    pub fn record_check(
         &mut self,
         key: InheritanceKey,
         verdict: InheritanceVerdict,
@@ -843,12 +913,7 @@ where
         .fold(0_usize, |total, member| {
             total.saturating_add(usize::from(member))
         });
-    if plain.checked_div(size).is_none_or(|factor| size >= factor) {
-        return Err(TemplateRefusal::DoesNotPay {
-            template_size: NodeCount::from(size),
-            plain_size: NodeCount::from(plain),
-        });
-    }
+    price_family(NodeCount::from(size), NodeCount::from(plain))?;
 
     let (checked_before, hits_before) = (usize::from(cache.checked()), usize::from(cache.hits()));
     let mut replayed = 0_usize;
@@ -1232,6 +1297,25 @@ impl<A: CellAlphabet> GuardedTemplate<A>
 #[cfg(test)]
 mod tests
 {
+    #[test]
+    fn price_boundary_is_strict()
+    {
+        for size in 0_usize ..= 16 {
+            for plain in 0_usize ..= 300 {
+                let expected =
+                    size > 0 && plain.checked_div(size).is_some_and(|factor| size < factor);
+                assert_eq!(
+                    super::price_family(
+                        super::NodeCount::from(size),
+                        super::NodeCount::from(plain)
+                    )
+                    .is_ok(),
+                    expected
+                );
+            }
+        }
+    }
+
     use super::ArmAddress;
     use super::ContentHasher;
     use super::EntryIndex;
