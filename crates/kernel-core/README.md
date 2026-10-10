@@ -121,6 +121,10 @@ The seam crate names no term type, so everything that makes a memo sound is a co
 
 The key carries no arena id, so dangling ids are not why the memo lives for one call. The lifetime rests on the two-wall discipline directly: a hit claims only its own history, and no kernel-checked support discipline exists. An outcome also carries arena ids even though the key does not, so an entry outliving its arena would hand back a type that no longer resolves.
 
+The verdict differential excludes operational refusal: with sound per-call histories, the typing answers agree when neither run reaches `CodeObligationCeiling`. That ceiling counts processed code obligations, not distinct supports. A memo can suppress duplicates, so it can accept a well-typed declaration that a memoless check refuses operationally. The boundary witness checks the exact allowed count, one excess occurrence under the null memo, and acceptance of the same shared above-limit declaration under a fresh live memo.
+
+The alternative is a support-based budget independent of memo policy. The occurrence budget is retained because it directly bounds the drain loop; reconsider it if callers need policy-independent resource refusals.
+
 ## Key derivation
 
 Content is named by a content id, assigned by interning each node's one-level record — its tag, its inline payload, and its children's already-assigned ids — bottom-up and exactly. No hash decides an id. The digest above it is a positive fast path only: different digests prove disagreement, equal digests hand off to byte equality of the canonical support encodings, and a collision costs one comparison and degrades to a miss.
