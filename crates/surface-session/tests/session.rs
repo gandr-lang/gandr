@@ -1,11 +1,11 @@
 //! The session's submissions: what each revision reports, and what the
 //! session keeps between them.
 //!
-//! The proto session appended each submission to a running transcript; this
-//! one takes each revision whole, so a later "line" is the earlier revision
-//! with the line appended, and what carries across lines is what the session
-//! keeps: the resume it adopts from and the import scope it resolves in.
+//! Each submission is a whole revision. Appending a line means resubmitting
+//! the previous source with that line added; the session carries the resume
+//! it adopts from and the import scope it resolves in.
 
+use anodized::spec;
 use gandr_core_checker::Verdict;
 use gandr_core_incremental::Adoption;
 use gandr_core_incremental::ContentNode;
@@ -41,7 +41,36 @@ use crate::common::submit;
 /// and settlement, in admission order.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the composition is settled.
+/// - ensures: one row per declaration, in admission order, with that
+///   declaration's name, outcome, and settlement.
+/// - panics: if the composition was refused as a whole.
+///
+/// # Adequacy
+/// - hypothesis: L3 — literal two-declaration successes, a surviving
+///   declaration after a malformed one, and a named type refusal. Exact ordered
+///   tuples expose dropped, reordered, renamed, or mismatched report fields;
+///   this is a bounded report projection, not an independent typing oracle.
+/// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
+/// - witness: `tests::session::a_malformed_declaration_is_declined_and_the_later_definition_binds`
+/// - witness: `tests::session::an_unbound_variable_is_a_type_error`
+#[spec(
+    requires: matches!(* composed, Composed::Settled { .. }),
+    ensures: |ret| match *composed {
+    Composed::Settled { ref report, .. } => {
+        ret.len() == report.declarations().len()
+            && ret
+                .iter()
+                .zip(report.declarations())
+                .all(|(row, declaration)| {
+                    row.0.as_str() == declaration.name().as_ref()
+                        && row.1 == declaration.outcome()
+                        && row.2 == declaration.settlement()
+                })
+    }
+    Composed::Refused(_) => false,
+},
+)]
 fn rows(composed: &Composed<'_>) -> Vec<(String, Outcome, Settlement)>
 {
     match *composed {
@@ -73,7 +102,27 @@ fn checks() -> Outcome
 /// typing.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: returns the original produced node slice for synthesized typing,
+///   and an empty slice for checked, owed, or refused typing.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — integer and string literal typings and a later reference
+///   compare exact base-type nodes. The predicate preserves the borrowed slice
+///   and excludes nodes from nonsynthesizing variants; the concrete witnesses
+///   cover synthesized outputs, not every typing variant.
+/// - witness: `tests::session::scalar_literals_carry_their_types`
+/// - witness: `tests::session::definitions_carry_across_lines`
+/// - witness: `tests::session::integer_literal_types_and_evaluates`
+#[spec(
+    ensures: |ret| match *typing {
+    Typing::Synthesised { ref produced, .. } => {
+        core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(produced.nodes()))
+    }
+    Typing::Checked { .. } | Typing::Owed | Typing::Refused(_) => ret.is_empty(),
+},
+)]
 fn produced(typing: &Typing) -> &[ContentNode]
 {
     match *typing {
@@ -85,7 +134,25 @@ fn produced(typing: &Typing) -> &[ContentNode]
 /// The census a submission's resume carries.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the submission carries a resume.
+/// - ensures: returns that resume's complete census unchanged.
+/// - panics: if the submission carries no resume.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact admitted item counts after a malformed declaration
+///   and exact adopted counts on an append. These observations distinguish
+///   report size from resume size and adoption from judging; they do not
+///   establish checker correctness.
+/// - witness: `tests::session::a_malformed_declaration_is_declined_and_the_later_definition_binds`
+/// - witness: `tests::session::checkpointed_session_matches_from_scratch`
+/// - witness: `tests::session::definitions_carry_across_lines`
+#[spec(
+    requires: matches!(submission.resumed(), Maybe::Present(_)),
+    ensures: |ret| match submission.resumed() {
+    Maybe::Present(resumed) => ret == resumed.census(),
+    Maybe::Absent(_) => false,
+},
+)]
 fn census(
     submission: &gandr_surface_session::Submission<'_>
 ) -> gandr_core_incremental::ResumeCensus
@@ -407,6 +474,8 @@ fn failed_submission_retains_latest_synthesis()
         panic!("an accepted submission publishes a stream");
     };
     let before: Vec<SynthesisEvent> = before.collect();
+    let before_snapshot = session.snapshot().items().to_vec();
+    let before_lowerings = usize::from(session.lowerings());
     let refused = submit(&mut session, "def retained = 40 ;\nret retained");
     assert!(
         matches!(refused.composed(), Composed::Refused(_)),
@@ -418,6 +487,11 @@ fn failed_submission_retains_latest_synthesis()
         "a refused revision is not resumed"
     );
     assert_eq!(refused.standing(), Standing::Refused, "and stands refused");
+    assert_eq!(session.snapshot().items(), before_snapshot.as_slice());
+    assert_eq!(
+        usize::from(session.lowerings()),
+        before_lowerings.saturating_add(1_usize)
+    );
     let Maybe::Present(after) = session.stream()
     else {
         panic!("the refused revision leaves the stream");
@@ -513,7 +587,39 @@ fn import_namespace_carries_across_lines_and_resolves_source_declarations()
 /// The position the settled composition admitted `name` at.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the composition is settled and contains a declaration named
+///   `name`.
+/// - ensures: returns the constant of the first declaration with that name.
+/// - panics: if the composition was refused as a whole or no such declaration
+///   exists.
+///
+/// # Adequacy
+/// - hypothesis: L3 — named integer, thunk, refused, and goal declarations feed
+///   actual evaluation. Distinct eligibility and value observations expose the
+///   wrong constant; the predicate checks first-match selection directly
+///   without evaluating a second time.
+/// - witness: `tests::session::integer_literal_types_and_evaluates`
+/// - witness: `tests::session::nullary_function_call_evaluates`
+/// - witness: `tests::session::evaluation_declines_missing_and_refused_items`
+/// - witness: `tests::session::holes_decline_evaluation`
+#[spec(
+    requires: match *composed {
+    Composed::Settled { ref report, .. } => {
+        report.declarations().iter().any(|declaration| declaration.name() == name)
+    }
+    Composed::Refused(_) => false,
+},
+    ensures: |ret| match *composed {
+    Composed::Settled { ref report, .. } => {
+        report
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.name() == name)
+            .is_some_and(|declaration| ret == declaration.constant())
+    }
+    Composed::Refused(_) => false,
+},
+)]
 fn constant_of(
     composed: &Composed<'_>,
     name: SurfaceName<'_>,
@@ -575,6 +681,71 @@ fn nullary_function_call_evaluates()
             "`{name}` runs the nullary body"
         );
     }
+}
+
+/// Missing constants, refused declarations, and refused revisions are not
+/// eligible for evaluation.
+#[test]
+fn evaluation_declines_missing_and_refused_items()
+{
+    let mut held = session(SourceRoot::Strict);
+    let mut accepted = submit(&mut held, r#"def answer = 42 ;"#);
+    assert!(matches!(
+        accepted.evaluate(ConstantIndex::from(999_usize)),
+        Maybe::Absent(evaluation::Absent::Unaccepted)
+    ));
+    let mut rejected = submit(
+        &mut held,
+        r#"def broken : String ;
+def broken = 1 ;"#,
+    );
+    let broken = constant_of(rejected.composed(), SurfaceName::from("broken"));
+    assert!(matches!(
+        rejected.evaluate(broken),
+        Maybe::Absent(evaluation::Absent::Unaccepted)
+    ));
+    let mut whole = submit(
+        &mut held,
+        r#"def answer = 42 ;
+ret answer"#,
+    );
+    assert!(matches!(
+        whole.evaluate(ConstantIndex::from(0_usize)),
+        Maybe::Absent(evaluation::Absent::Unaccepted)
+    ));
+}
+
+#[test]
+#[expect(
+    clippy::use_debug,
+    reason = "the Debug implementations’ sink-refusal contract is under test"
+)]
+fn formatters_propagate_sink_refusals()
+{
+    use core::fmt::Write as _;
+
+    use gandr_core_incremental::CheckpointStoreError;
+    use gandr_core_incremental::MemoryCheckpointStore;
+    use gandr_storage_records::InMemoryBlockStore;
+    use gandr_surface_session::Session;
+    use gandr_surface_session::SessionFault;
+    use gandr_surface_syntax::SourceText;
+
+    use crate::common::RefusingWriter;
+    let fault = SessionFault::Store(CheckpointStoreError::Io);
+    assert!(write!(&mut RefusingWriter, "{fault}").is_err());
+    let held = session(SourceRoot::Strict);
+    assert!(write!(&mut RefusingWriter, "{held:?}").is_err());
+    let reopened = Session::reopen(
+        crate::common::grammar(),
+        SourceRoot::Strict,
+        MemoryCheckpointStore::default(),
+        InMemoryBlockStore::default(),
+        crate::common::backend(),
+        SourceText::from(r#"def value = 1 ;"#),
+    )
+    .expect("an empty store reopens fresh");
+    assert!(write!(&mut RefusingWriter, "{reopened:?}").is_err());
 }
 
 /// A declaration owed its body is a goal and is not evaluated; one that runs

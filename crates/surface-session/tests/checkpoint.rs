@@ -5,6 +5,7 @@
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_core_incremental::BackendArtifact;
 use gandr_core_incremental::CheckpointAddress;
 use gandr_core_incremental::CheckpointStore;
@@ -24,8 +25,12 @@ use gandr_storage_artifact::ArtifactRecordSet;
 use gandr_storage_artifact::ManifestImage;
 use gandr_storage_artifact::SegmentBytes;
 use gandr_storage_artifact::build;
+use gandr_storage_records::BlockStore;
+use gandr_storage_records::FailureContext;
 use gandr_storage_records::InMemoryBlockStore;
+use gandr_storage_records::NodeHash;
 use gandr_storage_records::RecordTreeError;
+use gandr_storage_records::StoredNode;
 use gandr_storage_records::TreeParams;
 use gandr_surface_dispatcher::Composed;
 use gandr_surface_dispatcher::SourceRoot;
@@ -63,8 +68,21 @@ def c = b ;"#;
 #[derive(Clone, Copy, Debug)]
 struct Label(&'static str);
 
-/// A directory under the system temporary directory, emptied on creation and
-/// removed on drop.
+/// A process-and-label directory under the system temporary directory.
+/// Construction and drop attempt removal; neither promises that IO succeeds.
+///
+/// # Specification
+/// - requires: the consuming fixture’s context.
+/// - ensures: Owns the fixture directory’s path for best-effort cleanup.
+/// - executable: none — The declaration has no runtime invocation; its methods
+///   state the path or store relations at the boundary where their inputs and
+///   outcomes exist.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited storage lifecycle fixture, observed through the
+///   externally retained checkpoint or filesystem state; this does not claim
+///   universal IO success.
+/// - witness: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`
 #[repr(transparent)]
 #[derive(Debug)]
 struct Scratch(PathBuf);
@@ -74,7 +92,34 @@ impl Scratch
     /// The scratch directory of `label` for this process.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the label is exclusive to this test in the current process
+    ///   and contains neither a path separator nor a NUL byte.
+    /// - ensures: names a directory under the platform’s temporary directory
+    ///   using the process ID and label. Attempts to remove a prior directory;
+    ///   it neither creates the directory nor guarantees successful removal.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the real file-checkpoint reopen fixture, observed
+    ///   through restore/adoption and the absence of its directory after drop.
+    ///   The predicate checks the exact process-and-label namespace without
+    ///   repeating filesystem IO; cleanup failure remains best effort.
+    /// - witness: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`
+    #[spec(
+        requires: !label.0.contains(std::path::is_separator)
+    && !label.0.as_bytes().contains(&0_u8),
+        ensures: |ret| {
+    ret
+        .0
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix("gandr-surface-session-tests-"))
+        .and_then(|name| name.split_once('-'))
+        .is_some_and(|(process, name)| {
+            process.parse::<u32>() == Ok(std::process::id()) && name == label.0
+        })
+},
+    )]
     fn new(label: Label) -> Self
     {
         let path = std::env::temp_dir().join(format!(
@@ -101,7 +146,20 @@ impl Drop for Scratch
     /// Remove the directory.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the directory is still owned exclusively by this fixture.
+    /// - ensures: attempts recursive removal and ignores an IO refusal.
+    /// - panics: none.
+    /// - executable: none — Drop returns neither a removal status nor an owned
+    ///   path. A postcondition could only repeat filesystem IO and still could
+    ///   not guarantee cleanup after an ignored refusal; the fixture observes
+    ///   successful cleanup from a separately retained path.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the real file-checkpoint fixture after its session
+    ///   closes, with `try_exists` as the external observer. This catches
+    ///   skipped cleanup on the successful IO path, not every possible
+    ///   filesystem refusal.
+    /// - witness: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`
     fn drop(&mut self)
     {
         drop(std::fs::remove_dir_all(&self.0));
@@ -109,6 +167,20 @@ impl Drop for Scratch
 }
 
 /// A store that holds nothing and refuses every set.
+///
+/// # Specification
+/// - requires: the consuming fixture’s context.
+/// - ensures: Implements a checkpoint store that holds nothing and refuses all
+///   writes.
+/// - executable: none — The declaration has no runtime invocation; its methods
+///   state the path or store relations at the boundary where their inputs and
+///   outcomes exist.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited storage lifecycle fixture, observed through the
+///   externally retained checkpoint or filesystem state; this does not claim
+///   universal IO success.
+/// - witness: `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`
 #[derive(Debug, Default)]
 struct Refusing;
 
@@ -117,7 +189,18 @@ impl CheckpointStore for Refusing
     /// Nothing is stored.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: reports `NotStored` for every checkpoint address and backend.
+    /// - fails: never.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reopening after the store refused two submissions,
+    ///   observed as a fresh session rather than a restored checkpoint set. The
+    ///   predicate fixes the absence reason for every invocation.
+    /// - witness: `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`
+    #[spec(
+        ensures: |ret| matches!(ret, Ok(Maybe::Absent(stored::Absent::NotStored))),
+    )]
     fn load(
         &mut self,
         _address: CheckpointAddress,
@@ -130,7 +213,19 @@ impl CheckpointStore for Refusing
     /// The file system failed.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: retains no checkpoint set.
+    /// - fails: always returns Io.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two submissions followed by reopening, observed
+    ///   through failure status, adoption from retained in-memory state and
+    ///   absence from storage. This catches swallowing the refusal or
+    ///   discarding the accepted resume.
+    /// - witness: `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`
+    #[spec(
+        ensures: |ret| matches!(ret, Err(CheckpointStoreError::Io)),
+    )]
     fn store(
         &mut self,
         _address: CheckpointAddress,
@@ -202,6 +297,15 @@ fn a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote()
         resumed(&session),
         batch(&program),
         "the resume over restored checkpoints agrees with batch"
+    );
+    let path = scratch.path().to_owned();
+    assert_eq!(path.parent(), Some(std::env::temp_dir().as_path()));
+    drop(session);
+    drop(scratch);
+    assert!(
+        !path
+            .try_exists()
+            .expect("the scratch path can be inspected")
     );
 }
 
@@ -284,6 +388,19 @@ fn a_store_failure_is_reported_and_the_session_still_resumes()
         usize::from(session.lowerings()),
         2_usize,
         "one lowering per submission"
+    );
+    let reopened = Session::reopen(
+        grammar(),
+        SourceRoot::Strict,
+        session.into_store(),
+        InMemoryBlockStore::default(),
+        backend(),
+        SourceText::from(APPENDED),
+    )
+    .expect("a store with failed writes reopens fresh");
+    assert_eq!(
+        reopened.restored(),
+        Maybe::Absent(reopened::Absent::NotStored)
     );
 }
 
@@ -423,5 +540,135 @@ fn a_matching_identity_over_bytes_the_kernel_refuses_is_refused()
         reader.read_kernel(&carried),
         "the tree is held and seals under the matching identity, and the kernel's decoder refuses \
          its bytes"
+    );
+}
+/// A block store whose node-count width is exhausted before any admission.
+///
+/// # Specification
+/// - requires: the fixture’s session context.
+/// - ensures: admits no nodes and refuses insertion because the count width is
+///   exhausted.
+/// - executable: none — The type has no invocation; its `BlockStore` methods
+///   specify the two failure boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an accepted two-item revision and one appended item,
+///   observed through kernel failure, independently persisted incremental
+///   checkpoints, retained edit image and adoption. A genuine manifest from
+///   another store checks that no blocks were admitted.
+/// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
+#[derive(Debug, Default)]
+struct ExhaustedBlocks;
+
+impl BlockStore for ExhaustedBlocks
+{
+    /// Refuse an insertion at the exhausted count boundary.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: admits nothing.
+    /// - fails: returns `ArithmeticOverflow` for the node-count boundary.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the kernel-checkpoint failure path, observed through
+    ///   retained incremental state and subsequent adoption, not merely the
+    ///   injected error’s spelling.
+    /// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
+    #[spec(
+        ensures: |ret| matches!(ret, Err(RecordTreeError::ArithmeticOverflow { .. })),
+    )]
+    fn insert(
+        &mut self,
+        _node: StoredNode<'_>,
+    ) -> Result<(), RecordTreeError>
+    {
+        Err(RecordTreeError::ArithmeticOverflow {
+            context: FailureContext::from("fixture node count"),
+        })
+    }
+
+    /// No identity was admitted.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: returns no bytes.
+    /// - fails: reports the exact requested identity as `UnknownNode`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a genuine manifest stored elsewhere, observed through
+    ///   `Session::read_kernel` refusing its root after the local checkpoint
+    ///   write failed.
+    /// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
+    #[spec(
+        ensures: |ret| {
+    matches!(ret, Err(RecordTreeError::UnknownNode { hash : absent }) if absent == hash)
+},
+    )]
+    fn load(
+        &self,
+        hash: NodeHash,
+    ) -> Result<StoredNode<'_>, RecordTreeError>
+    {
+        Err(RecordTreeError::UnknownNode { hash })
+    }
+}
+
+#[test]
+fn a_kernel_store_failure_preserves_resume_and_edit_state()
+{
+    let mut session = Session::new(
+        grammar(),
+        SourceRoot::Strict,
+        MemoryCheckpointStore::default(),
+        ExhaustedBlocks,
+        backend(),
+    );
+    let first = session
+        .submit(SourceText::from(WRITTEN))
+        .expect("the revision is accepted despite the block refusal");
+    assert!(matches!(
+        first.kernel(),
+        Maybe::Present(KernelCheckpoint::Failed(ArtifactError::Records {
+            refusal: RecordTreeError::ArithmeticOverflow { .. }
+        }))
+    ));
+    assert!(
+        matches!(first.resumed(), Maybe::Present(resumed) if resumed.persistence() == Persistence::Stored)
+    );
+    let Composed::Settled { ref kernel, .. } = *first.composed()
+    else {
+        panic!("the accepted revision settles");
+    };
+    let records = ArtifactRecordSet::from_artifact(kernel.as_image())
+        .expect("the accepted kernel cuts into records");
+    let manifest = build(
+        &records,
+        TreeParams::current(),
+        &mut InMemoryBlockStore::default(),
+    )
+    .expect("another store admits the genuine records");
+    assert_eq!(
+        session.read_kernel(&manifest),
+        Err(ArtifactError::Records {
+            refusal: RecordTreeError::UnknownNode {
+                hash: manifest.root_node()
+            },
+        })
+    );
+    let before = session.snapshot().clone();
+    let second = session
+        .submit(SourceText::from(APPENDED))
+        .expect("a later revision can still resume");
+    assert!(
+        matches!(second.resumed(), Maybe::Present(resumed) if resumed.census().adopted == ItemCount::from(2_usize))
+    );
+    assert_eq!(session.snapshot().items().len(), 3_usize);
+    let Maybe::Present(edits) = second.edits()
+    else {
+        panic!("an accepted revision retains its edit script");
+    };
+    assert_eq!(
+        gandr_surface_session::apply(before.items(), edits),
+        session.snapshot().items()
     );
 }

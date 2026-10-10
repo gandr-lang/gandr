@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+use anodized::spec;
 use gandr_core_incremental::ItemKey;
 use gandr_core_term::FailureClass;
 use gandr_surface_diagnostics::Class;
@@ -48,6 +49,23 @@ const REFUSED_WHOLE: &str = "def answer = 42 ;\n#!{echo hello |";
 const CLEAN: &str = "def good = 2 ;\n";
 
 /// The obligation of class `$class` over the bytes `$start..$end`.
+///
+/// # Specification
+/// - requires: the literal start is no greater than the literal end.
+/// - ensures: constructs one obligation with the stated class and exact
+///   half-open byte range.
+/// - panics: when the literal range is reversed.
+/// - executable: none — A declarative macro has no function invocation for the
+///   specification attribute. Its expansion uses the checked span constructor;
+///   the source-row witnesses compare the resulting class and both bounds.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the literal expected rows for stray tokens and
+///   source-order repairs, compared with the submission’s actual obligations.
+///   These rows distinguish changed classes, shifted bounds and reordered
+///   repairs.
+/// - witness: `tests::diag_obligations::rows_carry_the_class_and_the_exact_span`
+/// - witness: `tests::diag_obligations::rows_are_in_source_order_not_severity_order`
 macro_rules! at {
     ($class:expr, $start:literal.. $end:literal) => {
         ObligationInstance::new(
@@ -61,7 +79,22 @@ macro_rules! at {
 /// The text `span` covers in `source`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the span lies within the converted source on UTF-8 character
+///   boundaries.
+/// - ensures: borrows exactly the span’s source characters, with the same byte
+///   extent.
+/// - panics: if the source range is invalid.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the stray-token and severity/source-order fixtures, whose
+///   callers compare the returned fragment with the literal offending token.
+///   The postcondition checks the byte extent; the opaque conversion is
+///   consumed only once, so it is not replayed to observe the input again.
+/// - witness: `tests::diag_obligations::rows_carry_the_class_and_the_exact_span`
+/// - witness: `tests::diag_obligations::rows_are_in_source_order_not_severity_order`
+#[spec(
+    ensures: |ret| ret.0.len() == usize::from(span.length()),
+)]
 fn spanned<'text>(
     source: impl Into<Text<'text>>,
     span: ByteSpan,
@@ -79,7 +112,28 @@ fn spanned<'text>(
 /// compare by content whatever order each keeps.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: returns the span/class rows sorted by span then class, preserving
+///   multiplicities and independent of input order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the three authority fixtures, comparing the submission’s
+///   buffer with the parser’s own buffer. The predicate checks sorting,
+///   cardinality and input-row coverage without another allocation or sort.
+///   This shared-parser comparison establishes transfer agreement on those
+///   fixtures, not independent correctness of the parser’s repairs.
+/// - witness: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`
+#[spec(
+    ensures: |ret| {
+    ret.len() == obligations.len() && ret.is_sorted()
+        && obligations
+            .iter()
+            .all(|obligation| {
+                ret.binary_search(&(obligation.span, obligation.class)).is_ok()
+            })
+},
+)]
 fn multiset(obligations: &[ObligationInstance]) -> Vec<(ByteSpan, Oblig)>
 {
     let mut rows: Vec<(ByteSpan, Oblig)> = obligations

@@ -1,13 +1,10 @@
-//! The differential over real surface text: a session resumed onto an edited
-//! revision reports and types it exactly as a from-scratch run does.
+//! Bounded differentials over real surface text: resumed typings are compared
+//! with a fresh checker, and compositions with the batch pipeline.
 //!
-//! The incremental checker gates its engine against its own toy front end;
-//! this is the same theorem driven through the dispatcher's parse and
-//! lowering. For every edit the resumed typings equal the checker's module
-//! entry over the edited program, and the submission's composition equals the
-//! dispatcher's for the edited text. Adoption skips work; these suites prove
-//! the skips never change the answer, and pin where the fragment lets them
-//! happen.
+//! Literal fixtures distinguish adoption, retyping, and downstream refusals.
+//! Generated edit chains extend that domain; they do not prove agreement for
+//! every source. The composition comparison shares the dispatcher's parse
+//! and judgement, unlike the independent fresh-checker comparison.
 
 use gandr_core_incremental::Adoption;
 use gandr_core_incremental::ItemCount;
@@ -48,7 +45,34 @@ const INCREMENTAL_EDITED: &str = include_str!("fixtures/incremental-edited.gandr
 /// submission's composition equals the dispatcher's.
 ///
 /// # Specification
-/// trivial.
+/// - requires: both inputs lower as modules, and the edited revision can be
+///   submitted and leaves a resume.
+/// - ensures: returns the edited revision's ordered adoption tags after
+///   checking its full resumed typings against a fresh checker and its
+///   composition against the batch pipeline.
+/// - panics: if either input cannot be submitted, the edited revision has no
+///   resume, or either comparison disagrees.
+/// - executable: none — the independently checked program, composition, and
+///   typings are local observations consumed before return. The opaque input
+///   conversions are consumed once; a postcondition would repeat parsing and
+///   checking or merely enumerate the closed adoption variants. The full
+///   comparisons already execute in the body.
+///
+/// # Adequacy
+/// - hypothesis: L2 for reuse — literal body, insertion, identity, retyping,
+///   deletion, and rename fixtures compare complete typings against a fresh
+///   checker. The separate property adds 200 generated edit chains. Composition
+///   agreement is L3 because both paths share the dispatcher. Exact adoption
+///   rows distinguish needless rechecking from unsound reuse; the sampled
+///   domain is not universal.
+/// - witness: `tests::incremental::body_edit_adopts_the_type_stable_dependent`
+/// - witness: `tests::incremental::insertion_adopts_untouched_neighbours`
+/// - witness: `tests::incremental::noop_edit_adopts_everything`
+/// - witness: `tests::incremental::type_change_retypes_the_dependent`
+/// - witness: `tests::incremental::downstream_error_surfaces`
+/// - witness: `tests::incremental::deletion_matches_from_scratch`
+/// - witness: `tests::incremental::rename_matches_from_scratch`
+/// - witness: `tests::incremental::incremental_equals_from_scratch`
 fn gate<'text>(
     base: impl Into<Text<'text>>,
     edited: impl Into<Text<'text>>,
