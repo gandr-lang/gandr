@@ -28,6 +28,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
+- [Experimental stage universe](#experimental-stage-universe)
 - [License](#license)
 <!-- tocstop -->
 
@@ -415,6 +416,10 @@ The `# Specification` prose is the statement of record. A combined `#[spec(...)]
 Further attributes check the level-scope boundary, the universe-order precondition, sealed-atom universe lookup, conversion mode-switch results, outstanding-mark counts, rewrite counts, and both type-witness projections. Conversion and witness postconditions repeat their named query only in the enforcing lane; no capture allocates or runs extra work in the ordinary lane.
 
 Each prose-only block names its boundary in `- provides:`: a cross-input law, arena provenance, a lifecycle transition, or a semantic graph judgement needing an independent traversal. The two const register projections keep their API without attributes, because the attribute's expansion calls a non-const evaluator (`E0015`). Runtime checks do not establish the adequacy hypotheses; the witnesses do.
+
+## Experimental stage universe
+
+The `stage` module has its own page, [docs/staging.md](docs/staging.md): the one-depth staging language and its [formation and replay](docs/staging.md#experimental-stage-universe), the placement decision, and the [readmission](docs/staging.md#experimental-stage-readmission) of a residual as an ordinary declaration through `add_decl`. Its representation is in [kernel-term](../kernel-term/README.md#experimental-stage-syntax), its producer in [core-nbe](../core-nbe/docs/staging.md#experimental-stage-normalization).
 
 ## License
 

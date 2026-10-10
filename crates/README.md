@@ -19,7 +19,7 @@ workflow  repository tooling and gates
 
 ## Members
 
-One row per directory: the directory and what it is. The package name follows from the directory by the rule above.
+// hint: Structural and logic conflict. Both design and behavior differ. One row per directory: the directory and what it is. The package name follows from the directory by the rule above.
 
 ```text
 crates/
@@ -34,13 +34,13 @@ crates/
 ├── theory-orders/                 order maintenance with constant-time comparison
 ├── theory-sites/                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── kernel-strata/                 the universe-level oracle with checkable order evidence
-├── kernel-term/                   the term arena, native universe paths, Empty and List codes, the sharing format and decode budgets
+├── kernel-term/                   the term arena, native universe paths, Empty and List codes, hypothesis-indexed stage syntax, the sharing format and decode budgets
 ├── kernel-check-memo/             the check-memo seam a checker consults
 ├── kernel-conversion-trace/       the conversion-decision vocabulary and its sink
-├── kernel-core/                   checking, conversion, admission and memoization; Path_U, identity and bridge recursion, higher fields, funext, Flow_U and guarded List observations
+├── kernel-core/                   checking, conversion, admission and memoization; Path_U, identity and bridge recursion, higher fields, funext, Flow_U and guarded List observations; stage formation and replay
 ├── core-term/                     core syntax with native universe paths and the one unified context
-├── core-nbe/                      the glued value domain, evaluation, readback, conversion and native path transport; the sharing overlay, its erasure and its measure
-├── core-checker/                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger and the refusal vocabulary
+├── core-nbe/                      the glued value domain, evaluation, readback, conversion and native path transport; the sharing overlay, its erasure and its measure; strict meta-level staging
+├── core-checker/                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger, the refusal vocabulary and residual readmission
 ├── core-incremental/              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
 ├── core-sequent/                  the command IL a core program is focused into and the two-region store its machine runs in
 ├── core-session/                  contractive binary session types, coinductive relations, and endpoint replay
