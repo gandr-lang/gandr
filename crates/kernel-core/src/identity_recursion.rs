@@ -426,10 +426,10 @@ impl Interpretation
     /// Form universe identity by the existing certified-equivalence judgement.
     ///
     /// # Specification
-    /// - ensures: returns exactly the classifier checked by
-    ///   `path_universe::form`.
-    /// - fails: `Classifier` outside identity at Codes; `Path` on invalid
-    ///   evidence.
+    /// - ensures: synthesizes the native path through the ordinary checker,
+    ///   then decodes its checked classifier.
+    /// - fails: `Classifier` outside identity at Codes; `Typing` for native
+    ///   checking failures; `Path` for invalid endpoints or exhausted budget.
     /// - panics: none.
     ///
     /// # Errors
@@ -444,15 +444,16 @@ impl Interpretation
     pub fn path(
         &self,
         arena: &mut TermArena,
-        paths: &path_universe::Paths,
-        path: path_universe::PathId,
+        path: ValueId,
         budget: ReplayBudget,
     ) -> Result<path_universe::PathType, RelationError>
     {
         if !matches!(self, Self::UniverseIdentity) {
             return Err(RelationError::Classifier);
         }
-        path_universe::form(arena, paths, path, budget)
+        let classifier = crate::check::synth_closed_value(arena, path)
+            .map_err(|error| RelationError::Typing(Box::new(error)))?;
+        path_universe::endpoints(arena, classifier, budget)
             .map_err(|error| RelationError::Path(Box::new(error)))
     }
 

@@ -30,7 +30,7 @@ fn concatenation_consumes_the_first_component_before_the_second()
     let one = core.value_constant(Name::One.constant());
     let pair = Sides::Values(core.value_pair(zero, one), core.value_pair(unit, unit));
     let world = World::new(core, &[(Name::Zero, first_body), (Name::One, second_body)]);
-    let mut concatenated = Vec::new();
+    let mut concatenated = Vec::from([ConversionDecision::Decompose]);
     for (name, reference) in [(Name::Zero, zero), (Name::One, one)] {
         let sides = Sides::Values(reference, unit);
         let (verdict, trace) = world.traced(sides);
@@ -54,10 +54,11 @@ fn concatenation_consumes_the_first_component_before_the_second()
         KernelVerdict::Convertible,
         world.replayed(pair, MachineVerdict::Convertible, &concatenated),
     );
-    concatenated.rotate_left(2);
+    let (_, components) = concatenated.split_at_mut(1);
+    components.rotate_left(2);
     assert_eq!(
         KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Inapplicable {
-            at: TracePosition::from(1_usize),
+            at: TracePosition::from(2_usize),
         })),
         world.replayed(pair, MachineVerdict::Convertible, &concatenated),
         "the reduction names the second component while the first goal is current",
@@ -79,7 +80,7 @@ fn every_pair_of_generated_ladder_traces_replays()
                 world.core.value_pair(first_left, second_left),
                 world.core.value_pair(first_right, second_right),
             );
-            let mut concatenated = Vec::new();
+            let mut concatenated = Vec::from([ConversionDecision::Decompose]);
             for sides in [first, second] {
                 let (verdict, trace) = world.traced(sides);
                 assert_eq!(MachineVerdict::Convertible, verdict);
@@ -111,6 +112,7 @@ proptest! {
         first_context in proptest::collection::vec(any::<bool>(), 0..8),
         second_context in proptest::collection::vec(any::<bool>(), 0..8),
         first_shared in any::<bool>(),
+        second_shared in any::<bool>(),
         reverse_first in any::<bool>(),
         reverse_second in any::<bool>(),
     ) {
@@ -118,7 +120,7 @@ proptest! {
         let body = core.value_unit();
         let components = [
             (Name::Zero, first_context, first_shared, reverse_first),
-            (Name::One, second_context, false, reverse_second),
+            (Name::One, second_context, second_shared, reverse_second),
         ].map(|(name, context, shared, reverse)| {
             let mut left = if shared { core.value_unit() } else { core.value_constant(name.constant()) };
             let mut right = core.value_unit();
@@ -136,7 +138,7 @@ proptest! {
         let [(first_left, first_right), (second_left, second_right)] = components;
         let pair = Sides::Values(core.value_pair(first_left, second_left), core.value_pair(first_right, second_right));
         let world = World::new(core, &[(Name::Zero, body), (Name::One, body)]);
-        let mut concatenated = Vec::new();
+        let mut concatenated = Vec::from([ConversionDecision::Decompose]);
         for (left, right) in components {
             let sides = Sides::Values(left, right);
             let (verdict, trace) = world.traced(sides);
@@ -147,9 +149,9 @@ proptest! {
         prop_assert_eq!(KernelVerdict::Convertible, world.replayed(pair, MachineVerdict::Convertible, &concatenated));
     }
 
-    /// Alpha equality closes the enclosing pair before the second unit is read.
+    /// Explicit decomposition preserves both units even at an alpha-equal head.
     #[test]
-    fn an_alpha_equal_pair_uses_its_unit_not_component_concatenation(
+    fn an_alpha_equal_pair_accepts_its_unit_and_component_pairing(
         contexts in proptest::array::uniform2(proptest::collection::vec(any::<bool>(), 0..8)),
     ) {
         let mut core = CoreArena::new();
@@ -171,7 +173,7 @@ proptest! {
         let pair = Sides::Values(core.value_pair(first_left, second_left), core.value_pair(first_right, second_right));
         let world = World::new(core, &[]);
         let unit = [ConversionDecision::ComparedShared { left: ReplayNode::Other, right: ReplayNode::Other }];
-        let mut concatenated = Vec::new();
+        let mut concatenated = Vec::from([ConversionDecision::Decompose]);
         for (left, right) in components {
             let sides = Sides::Values(left, right);
             let (verdict, trace) = world.traced(sides);
@@ -185,7 +187,7 @@ proptest! {
         prop_assert!(unit.into_iter().eq(trace.iter().copied().map(kernel_decision)));
         prop_assert_eq!(KernelVerdict::Convertible, world.replayed(pair, verdict, &trace));
         prop_assert_eq!(
-            KernelVerdict::Declined(ReplayDecline::Refused(ReplayRefusal::Leftover { at: TracePosition::from(1_usize) })),
+            KernelVerdict::Convertible,
             world.replayed(pair, verdict, &concatenated),
         );
     }

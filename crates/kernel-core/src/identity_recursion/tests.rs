@@ -29,9 +29,6 @@ use crate::check::check_closed_value;
 use crate::conv::Convertibility;
 use crate::conv::convertible_value_types;
 use crate::error::KernelError;
-use crate::path_universe::Path;
-use crate::path_universe::Paths;
-use crate::path_universe::RoundTrips;
 use crate::replay::ReplayBudget;
 
 /// A scalar fixture with two observably different canonical inhabitants.
@@ -439,27 +436,19 @@ fn universe_identity_consumes_path_formation()
     let ty = arena.value_type_unit();
     let code = arena.value_quote(ty);
     let unit = arena.value_unit();
-    let mut paths = Paths::new();
-    let refl = paths.push(Path::Refl(code)).expect("path syntax");
+    let refl = arena.value_path_refl(code);
     let identity =
         interpret(&arena, Mode::Identity, Domain::Codes).expect("identity universe clause");
     let formed = identity
-        .path(&mut arena, &paths, refl, ReplayBudget::from(1000_u64))
+        .path(&mut arena, refl, ReplayBudget::from(1000_u64))
         .expect("existing path formation");
     assert_eq!(formed.source, ty);
     assert_eq!(formed.target, ty);
-    let bad = paths
-        .push(Path::Equiv {
-            source: code,
-            target: code,
-            forward: unit,
-            backward: unit,
-            round_trips: RoundTrips::default(),
-        })
-        .expect("raw evidence");
+    let classifier = arena.value_type_path_universe(code, code);
+    let bad = arena.value_path_equiv(classifier, unit, unit, alloc::sync::Arc::default());
     assert!(matches!(
-        identity.path(&mut arena, &paths, bad, ReplayBudget::from(1000_u64)),
-        Err(RelationError::Path(_))
+        identity.path(&mut arena, bad, ReplayBudget::from(1000_u64)),
+        Err(RelationError::Typing(_))
     ));
     assert!(matches!(
         identity.elements(),

@@ -7,6 +7,7 @@ use alloc::vec::Vec;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
 use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueTypeId;
 
@@ -21,10 +22,7 @@ use crate::conv::Convertibility;
 use crate::conv::convertible_value_types;
 use crate::identity_recursion::RelationError;
 use crate::path_universe::Dialogue;
-use crate::path_universe::Path;
-use crate::path_universe::PathId;
-use crate::path_universe::Paths;
-use crate::path_universe::form;
+use crate::path_universe::endpoints;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
@@ -119,8 +117,9 @@ pub struct CoherenceEvidence
 ///   returns forward and backward pointwise identities and the two higher
 ///   round-trip coherence obligations. No certificate comparison is performed.
 /// - provides: an identity type's record view, not a universal inhabitant.
-/// - fails: `Path` for formation, `Boundary` for mismatched endpoints, or
-///   `ExpectedEquivalence` for a non-record introduction.
+/// - fails: `Relation(Typing(..))` for native checking, `Path` for endpoint
+///   decoding, `Boundary` for mismatched endpoints, or `ExpectedEquivalence`
+///   for a non-record introduction.
 /// - panics: none.
 ///
 /// # Errors
@@ -133,29 +132,32 @@ pub struct CoherenceEvidence
 #[inline]
 pub fn unfold(
     arena: &mut TermArena,
-    paths: &Paths,
-    left: PathId,
-    right: PathId,
+    left: ValueId,
+    right: ValueId,
     budget: ReplayBudget,
 ) -> Result<CertificateIdentity, HigherError>
 {
-    let first = form(arena, paths, left, budget)?;
-    let second = form(arena, paths, right, budget)?;
+    let first = crate::check::synth_closed_value(arena, left)
+        .map_err(|error| RelationError::Typing(Box::new(error)))?;
+    let first = endpoints(arena, first, budget)?;
+    let second = crate::check::synth_closed_value(arena, right)
+        .map_err(|error| RelationError::Typing(Box::new(error)))?;
+    let second = endpoints(arena, second, budget)?;
     if convertible_value_types(arena, first.source, second.source) != Convertibility::Convertible
         || convertible_value_types(arena, first.target, second.target)
             != Convertibility::Convertible
     {
         return Err(HigherError::Boundary);
     }
-    let left = paths.get(left)?;
-    let right = paths.get(right)?;
+    let left = arena.value(left).ok_or(HigherError::ExpectedEquivalence)?;
+    let right = arena.value(right).ok_or(HigherError::ExpectedEquivalence)?;
     let (
-        &Path::Equiv {
+        &Value::PathEquiv {
             forward: left_forward,
             backward: left_backward,
             ..
         },
-        &Path::Equiv {
+        &Value::PathEquiv {
             forward: right_forward,
             backward: right_backward,
             ..

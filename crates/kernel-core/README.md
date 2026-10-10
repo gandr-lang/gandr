@@ -257,6 +257,8 @@ The seven witnesses in `path_universe::tests` submit native declarations and use
 
 The experimental `identity_recursion` module folds one closed, level-zero code vocabulary with `Mode::Identity` or `Mode::Bridge`. It is an in-memory rule language beside `path_universe`, not a persisted element-identity syntax. Endpoints are ordinary typed values in an open context; unsupported codes are refused before interpretation.
 
+`Interpretation::path` consumes an ordinary native `ValueId`, synthesizes it through the declaration checker’s closed-value boundary and decodes the checked `PathUniverse` classifier. Native typing failures retain `KernelError` inside `RelationError::Typing`; endpoint failures retain `PathError`. No auxiliary path arena or formation cache participates.
+
 | Code | Both modes | Identity structure |
 | ---- | ---------- | ------------------ |
 | Unit | Unit fibre at every pair of indices. | Unit witness; reflexive transport returns its input. |
@@ -287,7 +289,7 @@ Universal introductions cover closed functions with first-order arguments and na
 
 Computed fibres lower to native Unit, Empty and Product types. Empty is the separate native extension: it forms at level zero, has no constructor, and `absurd e` checks against any expected computation type when `e : Empty`. It has no beta rule. Empty is an output fibre here, not an additional input code in the parent experiment's closed vocabulary.
 
-The arena handles remain scoped to their original nodes; callers must not truncate and reuse those nodes. Code folding, fibre evaluation and proof construction preserve DAG sharing with call-local tables. Those tables grant no admission capability or conversion authority. Declaration admission contains only the native Empty extension; no receipt admits these experimental identity programs.
+The arena handles remain scoped to their original nodes; callers must not truncate and reuse those nodes. Code folding, fibre evaluation and proof construction preserve DAG sharing with call-local tables. Those tables grant no admission capability or conversion authority. Declaration admission includes native Empty and universe paths; no receipt admits element-relation, higher-field or function-identity programs.
 
 **Choice.** One code fold produces relation combinators; a shared evaluator computes both modes, while only identity carries reflexivity and transport. Separate per-mode recursions would duplicate the former clauses. Native identity syntax would prematurely couple this experiment to persistent declarations. **Reversal.** Integrating element identity requires native syntax, scoped dependent motives and checked reduction/substitution laws; accepting Abstract requires its missing interface, not a default relation.
 
@@ -303,7 +305,7 @@ A `Codata` program is a flat graph of `Guard` and `Redirect` instructions. Each 
 
 `symmetry` checks that the source diagonal and inverse fibres have the same native type. It reindexes diagonal evidence into the path fibre, observes its higher identity with the supplied path evidence, and transports the diagonal in that fibre to produce the inverse. It then checks all four square faces and observes identity between the two boundary composites. Both Bool injections compute with distinct neutral Unit payloads and canonical evidence. A neutral proof-index action retains the existing transport boundary as `NeutralTransport`; this is not general dependent elimination.
 
-`unfold` checks two equivalence introductions and exposes the identity record:
+`unfold` consumes two native `Value::PathEquiv` introductions, checks each through the ordinary closed-value checker and exposes the identity record:
 
 | Field | Observation |
 | ----- | ----------- |
@@ -312,7 +314,9 @@ A `Codata` program is a flat graph of `Guard` and `Redirect` instructions. Each 
 | Source coherence | Replay both backward-after-forward composites to the input; observe identity between their reflected diagonal witnesses. |
 | Target coherence | The corresponding forward-after-backward coherence. |
 
-The negation and case-inlined triple-negation certificates satisfy all four fields at both Bool constructors, while certificate conversion remains `NotConvertible`. This is **replay-equivalence as identity, never in conversion**. The record is an identity type's observation interface: each point consumes supplied evidence; observing Base samples would not prove a universal field. Reflexivity and product certificate introductions retain their existing path operations; this record-unfolding operation requires `Equiv`.
+The negation and case-inlined triple-negation certificates satisfy all four fields at both Bool constructors, while native structural conversion reports `Distinct`. This is **replay-equivalence as identity, never in conversion**. The record is an identity type’s observation interface: each point consumes supplied evidence; observing Base samples would not prove a universal field. Reflexivity and product introductions retain their native path operations; record unfolding requires `PathEquiv`.
+
+`Identity::native_evidence` projects native fibre inhabitants only. Quantified function evidence returns `HigherEvaluationRequired`, preserving the distinction between a higher-evaluation program and a native value; suspended diagonals retain `NeutralFiber`. Function consumers borrow identities and replay their raw evidence.
 
 **Choice.** A first-order cyclic program makes guards and back edges inspectable and bounds each replay. Eager towers cannot represent infinite higher data; closures hide productivity obligations and allocate opaque continuations. The graph stores no checking verdict and adds no dependency or wire tag. **Reversal.** A native higher identity language would replace the auxiliary representation only with checked substitution, reduction and persistence rules. Function codes, universe and recursive codes, J and Flow are outside this module.
 

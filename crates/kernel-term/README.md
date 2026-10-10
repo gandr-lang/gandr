@@ -146,14 +146,7 @@ A decode failure is a format failure and never a typing failure. `DecodeError` i
 
 ## Tag numbering and versioning
 
-The tag space is one disjoint enumeration over the four families:
-
-| region | tags | holds |
-| ------ | ---- | ----- |
-| frozen block | `0x00–0x1F` | base vocabulary through the static operators |
-| sharing block | `0x20–0x27` | reserved stored sharing and explicit weakening forms |
-| empty fragment | `0x28–0x29` | reserved empty type and eliminator |
-| native paths | `0x2A–0x2E` | `PathUniverse`, `PathRefl`, `PathEquiv`, `PathProduct`, `Transport`, respectively |
+The tag space is one disjoint enumeration over four families. The allocation and reservation table in [`tags`](src/tags.rs) is authoritative; `NODE_TAG_TABLE` supplies the assigned formers and their arities. Empty, absurd and native paths have distinct bytes. Higher fields and function identity remain in-memory rule languages, with reserved ranges and no wire nodes.
 
 Universe sorts and dependent arrows have distinct tags rather than meaning-changing flags on existing nodes. Static operators occupy `0x1E–0x1F`. New formers use unassigned bytes above the reserved regions.
 

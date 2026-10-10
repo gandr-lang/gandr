@@ -183,6 +183,7 @@ fn children(
                 AnyNode::Computation(on_left),
                 AnyNode::Computation(on_right),
             ],
+            | Computation::Transport(..) => panic!("no native transport in fixtures"),
             | Computation::Absurd(_) => panic!("no Empty eliminator in fixtures"),
         },
         | AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("no type nodes"),
@@ -263,6 +264,7 @@ fn translate(
                         computations[&on_left],
                         computations[&on_right],
                     ),
+                    | Computation::Transport(..) => panic!("no native transport in fixtures"),
                     | Computation::Absurd(_) => panic!("unsupported computation"),
                 };
                 computations.insert(id, computation);
@@ -535,6 +537,10 @@ fn lambda_reflexivity_replays_higher_evaluation()
     );
     assert!(matches!(
         family.reflexivity(&mut arena, &[], boolean.not),
+        Err(RelationError::HigherEvaluationRequired)
+    ));
+    assert!(matches!(
+        identity.native_evidence(),
         Err(RelationError::HigherEvaluationRequired)
     ));
     let mut forged = higher(&mut arena, &boolean, (boolean.not, boolean.not), [

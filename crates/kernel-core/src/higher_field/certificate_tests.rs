@@ -12,6 +12,7 @@ use super::boolean;
 use super::engine;
 use super::equivalence;
 use super::inlined_triple_negation;
+use crate::error::KernelError;
 use crate::higher_field::Codata;
 use crate::higher_field::CoherenceEvidence;
 use crate::higher_field::Depth;
@@ -24,11 +25,7 @@ use crate::higher_field::Reduction;
 use crate::higher_field::unfold;
 use crate::identity_recursion::RelationError;
 use crate::path_universe::Dialogue;
-use crate::path_universe::Path;
 use crate::path_universe::PathError;
-use crate::path_universe::Paths;
-use crate::path_universe::RoundTrips;
-use crate::path_universe::convert;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
@@ -103,15 +100,13 @@ fn certificate_identity_unfolds()
     let mut arena = TermArena::new();
     let boolean = boolean(&mut arena);
     let thrice = inlined_triple_negation(&mut arena);
-    let mut paths = Paths::new();
-    let left = equivalence(&mut arena, &mut paths, &boolean, boolean.not, boolean.not);
-    let right = equivalence(&mut arena, &mut paths, &boolean, boolean.not, thrice);
+    let left = equivalence(&mut arena, boolean, boolean.not, boolean.not);
+    let right = equivalence(&mut arena, boolean, boolean.not, thrice);
     let budget = ObservationBudget {
         depth: Depth(6),
         replay: ReplayBudget::DEFAULT,
     };
-    let identity =
-        unfold(&mut arena, &paths, left, right, budget.replay).expect("record identity type");
+    let identity = unfold(&mut arena, left, right, budget.replay).expect("record identity type");
     let unit = arena.value_unit();
     for (input, opposite) in [
         (boolean.truth, boolean.falsity),
@@ -194,16 +189,15 @@ fn certificate_identity_unfolds()
     }
     // Identity observations do not alter the structural conversion boundary.
     assert_eq!(
-        convert(&arena, &paths, left, right, budget.replay).expect("structural comparison"),
-        KernelVerdict::NotConvertible
+        crate::conv::equal_values(&arena, left, right),
+        crate::conv::Convertibility::Distinct
     );
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
     let returned = arena.computation_return(variable);
     let lambda = arena.computation_lambda(returned);
     let id = arena.value_thunk(lambda);
-    let other = equivalence(&mut arena, &mut paths, &boolean, id, id);
-    let other =
-        unfold(&mut arena, &paths, left, other, budget.replay).expect("identity map certificate");
+    let other = equivalence(&mut arena, boolean, id, id);
+    let other = unfold(&mut arena, left, other, budget.replay).expect("identity map certificate");
     let evidence = PointwiseEvidence {
         left: reduction(&mut arena, boolean.not, boolean.truth, boolean.falsity),
         right: reduction(&mut arena, id, boolean.truth, boolean.truth),
@@ -216,28 +210,26 @@ fn certificate_identity_unfolds()
             .observe(&mut arena, boolean.truth, &evidence, budget),
         Err(HigherError::Relation(RelationError::Typing(_)))
     ));
-    let missing = paths
-        .push(Path::Equiv {
-            source: boolean.code,
-            target: boolean.code,
-            forward: boolean.not,
-            backward: boolean.not,
-            round_trips: RoundTrips::default(),
-        })
-        .expect("raw missing dialogues");
-    assert!(
-        matches!(unfold(&mut arena, &paths, left, missing, budget.replay), Err(HigherError::Path(error)) if matches!(*error, PathError::Coverage(_)))
+    let classifier = arena.value_type_path_universe(boolean.code, boolean.code);
+    let missing = arena.value_path_equiv(
+        classifier,
+        boolean.not,
+        boolean.not,
+        alloc::sync::Arc::default(),
     );
-    let refl = paths.push(Path::Refl(boolean.code)).expect("raw refl");
+    assert!(
+        matches!(unfold(&mut arena, left, missing, budget.replay), Err(HigherError::Relation(RelationError::Typing(error))) if matches!(*error, KernelError::Path(PathError::Coverage(_))))
+    );
+    let refl = arena.value_path_refl(boolean.code);
     assert!(matches!(
-        unfold(&mut arena, &paths, left, refl, budget.replay),
+        unfold(&mut arena, left, refl, budget.replay),
         Err(HigherError::ExpectedEquivalence)
     ));
     let unit_type = arena.value_type_unit();
     let unit_code = arena.value_quote(unit_type);
-    let other = paths.push(Path::Refl(unit_code)).expect("other endpoints");
+    let other = arena.value_path_refl(unit_code);
     assert!(matches!(
-        unfold(&mut arena, &paths, left, other, budget.replay),
+        unfold(&mut arena, left, other, budget.replay),
         Err(HigherError::Boundary)
     ));
 }

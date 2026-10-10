@@ -38,6 +38,10 @@
 //! | sharing block | `0x20–0x27` | the stored sharing plane: one former per family, plus held weakening |
 //! | empty fragment | `0x28–0x29` | Empty value type and checking-only absurd computation |
 //! | universe paths | `0x2A–0x2E` | `Path_U`, reflexivity, equivalence, product paths and transport        |
+//! | higher fields | `0x30–0x37` | reserved; guarded observations remain an in-memory rule language |
+//! | funext | `0x38–0x47` | reserved; higher evaluation remains an in-memory rule language |
+//! | directed paths | `0x48+` | reserved for directed universe-path formers |
+//!
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
 //! binder, so it is a different node from the non-dependent [`NODE_CT_ARROW`]
 //! at the same arity and takes its own tag rather than a flag on the arrow's.
@@ -480,6 +484,28 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 39] = [
 #[cfg(test)]
 mod tests
 {
+    use alloc::format;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    use super::NODE_TAG_TABLE;
+    use super::NodeTagVerdict;
+    use crate::arena::AnyNode;
+    use crate::arena::TermArena;
+    use crate::base::BaseType;
+    use crate::base::FractionDigits;
+    use crate::base::IntegerLiteral;
+    use crate::base::Literal;
+    use crate::base::Magnitude;
+    use crate::base::NumericLiteral;
+    use crate::base::Sign;
+    use crate::base::StringLiteral;
+    use crate::term::ConstantIndex;
+    use crate::term::DeBruijnIndex;
+    use crate::term::Side;
+    use crate::types::GroundSort;
+    use crate::wire::WireTag;
+
     /// One node of every former, in the tag table's order, in a fresh arena.
     ///
     /// # Specification
@@ -617,6 +643,10 @@ mod tests
             assert!(
                 !reserved.contains(&tag),
                 "an assigned former cannot consume a reserved sharing byte"
+            );
+            assert!(
+                !(0x30_u8 .. 0x48).contains(&tag),
+                "higher-field and funext reservations have no native formers"
             );
         }
     }

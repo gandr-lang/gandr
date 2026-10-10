@@ -86,7 +86,7 @@ pub fn symmetry(
     let observed = higher.observe(arena, context, Cell { evidence, ..path }, path, budget)?;
     let identity = observed.head.check(arena, context)?;
     let higher_relation = super::relation(arena, observed.head.code)?;
-    let result = higher_relation.transport(arena, context, identity, target, evidence)?;
+    let result = higher_relation.transport(arena, context, &identity, target, evidence)?;
     let evidence = match result {
         | Transport::Return(value) => value,
         | Transport::Neutral { .. } => return Err(HigherError::NeutralTransport),
@@ -100,8 +100,8 @@ pub fn symmetry(
     let backward = inverse.check(arena, context)?;
     let left = diagonal.check(arena, context)?;
     let bottom = diagonal.check(arena, context)?;
-    let upper = relation.compose(arena, context, forward, backward)?;
-    let lower = relation.compose(arena, context, left, bottom)?;
+    let upper = relation.compose(arena, context, &forward, &backward)?;
+    let lower = relation.compose(arena, context, &left, &bottom)?;
     let upper = upper.native_evidence()?;
     let lower = lower.native_evidence()?;
     let filler = higher.observe(

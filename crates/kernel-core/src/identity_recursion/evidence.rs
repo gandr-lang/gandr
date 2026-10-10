@@ -30,22 +30,25 @@ impl Identity
     ///
     /// # Specification
     /// - ensures: returns the native fibre inhabitant carried by this identity.
-    /// - fails: `NeutralFiber` for a suspended diagonal program.
+    /// - fails: `NeutralFiber` for a suspended diagonal program;
+    ///   `HigherEvaluationRequired` for quantified function evidence.
     /// - panics: none.
     ///
     /// # Errors
-    /// `RelationError::NeutralFiber`.
+    /// `RelationError::NeutralFiber` or `HigherEvaluationRequired`.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — higher replay consumes computed evidence, while a
     ///   suspended sum diagonal cannot become an invented native value.
     /// - witness: `higher_field::tests::higher_fibres_preserve_boundaries`
+    /// - witness: `identity_recursion::function::tests::lambda_reflexivity_replays_higher_evaluation`
     #[inline]
     pub fn native_evidence(self) -> Result<ValueId, RelationError>
     {
         match self.proof {
             | Proof::Native(value) => Ok(value),
             | Proof::Diagonal => Err(RelationError::NeutralFiber),
+            | Proof::HigherEvaluation(_) => Err(RelationError::HigherEvaluationRequired),
         }
     }
 }
