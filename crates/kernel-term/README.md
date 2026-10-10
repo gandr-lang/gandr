@@ -170,9 +170,12 @@ The original `0x00–0x1F` meanings are frozen, including static operators at `0
 | `0x48–0x4F` | `Flow_U` reservation | Refused |
 | `0x50` | List code, one element-type child | Admitted |
 | `0x51` | Reserved List inhabitant | Refused |
-| `0x52–0xFF` | Unassigned | Refused |
+| `0x52` | Session code, inline finite graph and one payload-type child | Admitted |
+| `0x53–0x59` | Inline send, receive, select, offer, end, Mu and Var opcodes | Graph fields only; refused as native node tags |
+| `0x5A` | Session Path evidence, classifier and payload-proof children | Admitted |
+| `0x5B–0xFF` | Unassigned | Refused |
 
-The admitted domain is sparse: the greatest assigned byte is `0x50`, not a promise to accept every smaller byte. The boundary witnesses admit `0x50`, refuse `0x51` and every other unassigned byte, and retain the frozen block. Empty is a zero-child leaf and may be a bounded-alias target; no reservation becomes an alias target by being below the maximum.
+The admitted domain is sparse: the greatest assigned native byte is `0x5A`, not a promise to accept every smaller byte. Boundary witnesses admit session tags, refuse inline opcodes as native nodes, and retain the frozen block. Empty is a zero-child leaf and may be a bounded-alias target; no reservation becomes an alias target by being below the maximum.
 
 The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
 
@@ -183,6 +186,12 @@ Assigning an unassigned tag or kind byte, or filling a reserved slot that is fra
 The portable decision alphabet comes from `kernel-conversion-trace`; unit anchors carry no arena identity. Reusing that vocabulary avoids a second replay protocol. The sharing-format witness preserves all decisions, empty dialogues and direction boundaries against independent bytes, and rejects malformed words and truncated prefixes. **Reversal:** introduce a new framing version if the alphabet needs payloads that cannot be encoded without changing existing word meanings.
 
 The List code (`NODE_VT_LIST`, `0x50`) has one value-type child, its element code. It represents the strictly positive fixed point `μX. Unit + A × X` without a back edge in the type arena. Its finite code round-trips through the ordinary sharing format. `NODE_LIST_VALUE_RESERVED` (`0x51`) remains unassigned: guarded list inhabitants are in-memory kernel observations, not persisted term values.
+
+Session codes use `NODE_VT_SESSION` (`0x52`). Their inline graph stores a root, node count, and finite nodes tagged send `0x53`, receive `0x54`, select `0x55`, offer `0x56`, end `0x57`, binder `0x58` and variable `0x59`. Graph integers are canonical unsigned varints. A label is its byte count followed by its exact UTF-8 bytes, each encoded as an unsigned varint. Choice maps are in label order. The graph's only native child is a right-associated payload-type product ending in Unit; payload slots index its fields. Internal recursion references finite graph positions, never a native type-arena back edge.
+
+`NODE_V_SESSION_PATH` (`0x5A`) has two native children: its `Path_U` classifier and a Unit-terminated product of native payload-path values. Inline evidence is a sorted set of source/target state pairs followed by ordered source/target payload-slot obligations. Decoding rejects unknown opcodes, malformed UTF-8, duplicate labels or relation pairs, truncation and noncanonical encodings. Counts consume input before growing allocations; exhausted input is `Truncated`, while the ordinary table and expanded-work budgets retain their typed refusals. Contractivity, scope, relation coverage and payload typing belong to kernel formation. All relation data participates in canonical bytes even when conversion erases derivation pairs.
+
+**Choice.** Inline finite graph data with one native payload-code child preserves the format's fixed child arities and ordinary content sharing without recursive Rust ownership. Separate native constructors would spread finite graph framing across seven additional native cases; a second opaque payload-identity scheme would bypass universe formation. **Reversal.** A distinct protocol universe or a persisted endpoint-value language requires its own formation and elimination rules. These tags encode protocol types and identity evidence, not live channels.
 
 ## Sharing and compression
 

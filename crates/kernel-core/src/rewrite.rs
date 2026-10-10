@@ -980,6 +980,7 @@ fn carried_occurrence(
         },
         | Value::PathRefl(_)
         | Value::PathProduct(..)
+        | Value::SessionPath { .. }
         | Value::PathEquiv { .. }
         | Value::Variable(_)
         | Value::Constant(_)
@@ -1042,10 +1043,11 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 ///   retain their positions; dropped or over-bound children change the rewrite.
 /// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
+/// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(captures: before = tasks.len(), ensures: tasks.len() == before.saturating_add(match node {
         AnyNode::Value(id) => match arena.value(id) {
             Some(&Value::PathEquiv { .. }) => 3,
-            Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..)) => 2,
+            Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..) | &Value::SessionPath { .. }) => 2,
             Some(&Value::Injection(..) | &Value::Lift { .. } | &Value::Thunk(_) | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::PathRefl(_)) => 1,
             _ => 0,
         },
@@ -1056,7 +1058,7 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
         },
         AnyNode::ValueType(id) => match arena.value_type(id) {
             Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. } | &ValueType::PathUniverse(..)) => 2,
-            Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. } | &ValueType::List(_)) => 1,
+            Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. } | &ValueType::List(_) | &ValueType::Session { .. }) => 1,
             _ => 0,
         },
         AnyNode::CompType(id) => match arena.comp_type(id) {
@@ -1086,6 +1088,22 @@ fn push_rewrite_children(
             }) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(backward), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(forward), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(path_type),
+                    depth,
+                    rewrite,
+                ));
+            },
+            | Some(&Value::SessionPath {
+                path_type,
+                payload_paths,
+                ..
+            }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Value(payload_paths),
+                    depth,
+                    rewrite,
+                ));
                 tasks.push(RewriteTask::Open(
                     AnyNode::ValueType(path_type),
                     depth,
@@ -1216,7 +1234,13 @@ fn push_rewrite_children(
             | Some(&ValueType::Thunk(body)) => {
                 tasks.push(RewriteTask::Open(AnyNode::CompType(body), depth, rewrite));
             },
-            | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+            | Some(
+                &ValueType::Session {
+                    payloads: inner, ..
+                }
+                | &ValueType::Lift { inner, .. }
+                | &ValueType::List(inner),
+            ) => {
                 tasks.push(RewriteTask::Open(AnyNode::ValueType(inner), depth, rewrite));
             },
             // The type-to-term edge: a code is rewritten at the depth the type
@@ -1347,8 +1371,9 @@ fn popped(
 ///   identities.
 /// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
 /// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
+/// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(
-    captures: [before = results.len(), arity = match arena.value(id) { Some(&Value::PathEquiv { .. }) => 3, Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..)) => 2, Some(&Value::Injection(..) | &Value::Lift { .. } | &Value::Thunk(_) | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::PathRefl(_)) => 1, _ => 0 }],
+    captures: [before = results.len(), arity = match arena.value(id) { Some(&Value::PathEquiv { .. }) => 3, Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..) | &Value::SessionPath { .. }) => 2, Some(&Value::Injection(..) | &Value::Lift { .. } | &Value::Thunk(_) | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::PathRefl(_)) => 1, _ => 0 }],
     ensures: |ret| results.len() == before.saturating_sub(arity) && match arena.value(id) {
         None => ret == id,
         Some(&Value::Variable(_)) => true,
@@ -1368,6 +1393,21 @@ fn close_value(
         return id;
     };
     match node {
+        | Value::SessionPath {
+            path_type,
+            payload_paths,
+            evidence,
+        } => {
+            let paths = popped(results, AnyNode::Value(payload_paths)).value_or(payload_paths);
+            let classifier =
+                popped(results, AnyNode::ValueType(path_type)).value_type_or(path_type);
+            if paths == payload_paths && classifier == path_type {
+                id
+            }
+            else {
+                arena.value_session_path(classifier, evidence, paths)
+            }
+        },
         | Value::PathRefl(code) => {
             let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
             if rewritten == code {
@@ -1691,8 +1731,9 @@ fn close_computation(
 /// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
 /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
 /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+/// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(
-    captures: [before = results.len(), arity = match arena.value_type(id) { Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. } | &ValueType::PathUniverse(..)) => 2, Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. } | &ValueType::List(_)) => 1, _ => 0 }, element = match arena.value_type(id) { Some(&ValueType::Element { code, .. }) => Some(results.last().copied().map_or(code, |outcome| outcome.value_or(code))), _ => None }],
+    captures: [before = results.len(), arity = match arena.value_type(id) { Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. } | &ValueType::PathUniverse(..)) => 2, Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. } | &ValueType::List(_) | &ValueType::Session { .. }) => 1, _ => 0 }, element = match arena.value_type(id) { Some(&ValueType::Element { code, .. }) => Some(results.last().copied().map_or(code, |outcome| outcome.value_or(code))), _ => None }],
     ensures: |ret| results.len() == before.saturating_sub(arity) && element.map_or_else(
         || arena.value_type(id).map_or_else(|| ret == id, |node| arena.value_type(ret).is_some_and(|rewritten| core::mem::discriminant(node) == core::mem::discriminant(rewritten))),
         |code| match arena.value(code) { Some(&Value::Quote(quoted)) => ret == quoted, _ => matches!(arena.value_type(ret), Some(&ValueType::Element { code: found, .. }) if code == found) },
@@ -1724,6 +1765,15 @@ fn close_value_type(
         | ValueType::Empty
         | ValueType::Universe { .. }
         | ValueType::Abstract(_) => id,
+        | ValueType::Session { graph, payloads } => {
+            let rewritten = popped(results, AnyNode::ValueType(payloads)).value_type_or(payloads);
+            if rewritten == payloads {
+                id
+            }
+            else {
+                arena.value_type_session(graph, rewritten)
+            }
+        },
         | ValueType::List(element) => {
             let rewritten = popped(results, AnyNode::ValueType(element)).value_type_or(element);
             if rewritten == element {
@@ -2328,5 +2378,131 @@ mod tests
             shift.agreement(&deeper),
             "and one subject at two binder depths is two questions"
         );
+    }
+
+    #[test]
+    fn session_rewrites_preserve_graph_evidence_and_native_children()
+    {
+        use gandr_kernel_term::session::Evidence;
+        use gandr_kernel_term::session::Graph;
+        use gandr_kernel_term::session::Node;
+        use gandr_kernel_term::session::State;
+        let mut arena = TermArena::new();
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let element = arena.value_type_element(variable, Level::zero());
+        let unit = arena.value_type_unit();
+        let payloads = arena.value_type_product(element, unit);
+        let graph = alloc::sync::Arc::new(Graph {
+            root: State(0),
+            nodes: alloc::vec![Node::End],
+        });
+        let evidence = alloc::sync::Arc::new(Evidence::default());
+        let session = arena.value_type_session(alloc::sync::Arc::clone(&graph), payloads);
+        let code = arena.value_quote(session);
+        let classifier = arena.value_type_path_universe(code, code);
+        let path =
+            arena.value_session_path(classifier, alloc::sync::Arc::clone(&evidence), variable);
+        let mut table = ContentTable::new();
+        let mut memo = RewriteMemo::new();
+        let shifted = super::shift_value(
+            &mut arena,
+            &mut table,
+            &mut memo,
+            path,
+            BinderDepth::NONE,
+            BinderDepth::from(1_u32),
+        );
+        let Some(&Value::SessionPath {
+            path_type,
+            payload_paths,
+            evidence: ref actual,
+        }) = arena.value(shifted)
+        else {
+            panic!("session path retained")
+        };
+        assert_eq!(actual, &evidence);
+        assert_eq!(
+            arena.value(payload_paths),
+            Some(&Value::Variable(DeBruijnIndex::from(1_u32)))
+        );
+        let Some(&ValueType::PathUniverse(source, target)) = arena.value_type(path_type)
+        else {
+            panic!("classifier retained")
+        };
+        assert_eq!(
+            crate::conv::equal_values(&arena, source, target),
+            crate::Convertibility::Convertible
+        );
+        let Some(&Value::Quote(ty)) = arena.value(source)
+        else {
+            panic!("quoted code")
+        };
+        let Some(&ValueType::Session {
+            graph: ref actual,
+            payloads,
+        }) = arena.value_type(ty)
+        else {
+            panic!("session code")
+        };
+        assert_eq!(actual, &graph);
+        let Some(&ValueType::Product(field, rest)) = arena.value_type(payloads)
+        else {
+            panic!("payload telescope")
+        };
+        assert_eq!(rest, unit);
+        let Some(&ValueType::Element { code, .. }) = arena.value_type(field)
+        else {
+            panic!("open payload code")
+        };
+        assert_eq!(
+            arena.value(code),
+            Some(&Value::Variable(DeBruijnIndex::from(1_u32)))
+        );
+        let replacement = arena.value_quote(unit);
+        let substituted =
+            super::substitute_value(&mut arena, &mut table, &mut memo, path, replacement);
+        let Some(&Value::SessionPath {
+            path_type,
+            payload_paths,
+            evidence: ref actual,
+        }) = arena.value(substituted)
+        else {
+            panic!("substituted session path")
+        };
+        assert_eq!(payload_paths, replacement);
+        assert_eq!(actual, &evidence);
+        let Some(&ValueType::PathUniverse(source, _)) = arena.value_type(path_type)
+        else {
+            panic!("classifier")
+        };
+        let Some(&Value::Quote(ty)) = arena.value(source)
+        else {
+            panic!("quoted code")
+        };
+        let Some(&ValueType::Session {
+            graph: ref actual,
+            payloads,
+        }) = arena.value_type(ty)
+        else {
+            panic!("session code")
+        };
+        assert_eq!(actual, &graph);
+        assert_eq!(
+            arena.value_type(payloads),
+            Some(&ValueType::Product(unit, unit))
+        );
+        let before = arena.watermark();
+        assert_eq!(
+            super::shift_value(
+                &mut arena,
+                &mut table,
+                &mut memo,
+                substituted,
+                BinderDepth::NONE,
+                BinderDepth::from(1_u32)
+            ),
+            substituted
+        );
+        assert_eq!(arena.watermark(), before);
     }
 }

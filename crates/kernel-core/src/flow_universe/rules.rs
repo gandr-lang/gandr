@@ -39,13 +39,15 @@ use crate::replay::Unfoldings;
 /// - ensures: every translator checks in a fresh closed-check session and every
 ///   symbolic image replays positively; sequential seams match types. Explicit
 ///   feedback is refused, even when both endpoint types coincide. Generated
-///   terms remain in `arena`; callers may restore its watermark.
+///   terms remain in `arena`; callers may restore its watermark. Session
+///   introductions recheck native payload formation, every supplied simulation
+///   pair and every native payload-path obligation.
 /// - provides: `Flow_U source target`, never an admission capability.
 /// - fails: code, typing, coverage, naturality, replay, seam or budget errors.
 /// - panics: none.
 ///
 /// # Errors
-/// Any `FlowError` except family, motive and Path errors.
+/// Code, typing, session-replay, seam or budget errors.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — both terminal branches form; wrong images refuse;
@@ -53,10 +55,11 @@ use crate::replay::Unfoldings;
 /// - witness: `flow_universe::tests::terminal_ride_and_stay_compute`
 /// - witness: `flow_universe::tests::constant_leaf_and_forged_evidence_refuse`
 /// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
+/// - witness: `session::tests::session_relations_replay_without_search`
 #[spec(ensures: |ret| match ret {
     Ok(classifier) => u64::from(budget) > 0 && match flows.get(root) {
         Ok(&Flow::Stay(code)) => classifier.source == classifier.target && matches!(arena.value(code), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.source),
-        Ok(&Flow::Forward { source, target, .. }) => matches!(arena.value(source), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.source) && matches!(arena.value(target), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.target),
+        Ok(&Flow::Forward { source, target, .. } | &Flow::Session { source, target, .. }) => matches!(arena.value(source), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.source) && matches!(arena.value(target), Some(&gandr_kernel_term::Value::Quote(root)) if root == classifier.target),
         Ok(&Flow::Compose { seam: Seam::Sequence, .. }) => true,
         _ => false,
     },
@@ -81,6 +84,32 @@ pub fn form(
             continue;
         }
         let classifier = match flows.get(id)? {
+            | &Flow::Session {
+                source,
+                target,
+                ref evidence,
+                payload_paths,
+            } => {
+                let _source_universe = synth_closed_value(arena, source)
+                    .map_err(|error| FlowError::Typing(Box::new(error)))?;
+                let _target_universe = synth_closed_value(arena, target)
+                    .map_err(|error| FlowError::Typing(Box::new(error)))?;
+                let source =
+                    crate::path_universe::code(arena, source, budget).map_err(FlowError::Path)?;
+                let target =
+                    crate::path_universe::code(arena, target, budget).map_err(FlowError::Path)?;
+                let expected = crate::session::obligations(
+                    arena,
+                    source,
+                    target,
+                    evidence,
+                    crate::session::Relation::Simulation,
+                )
+                .map_err(FlowError::Session)?;
+                check_closed_value(arena, payload_paths, expected)
+                    .map_err(|error| FlowError::Typing(Box::new(error)))?;
+                FlowType { source, target }
+            },
             | &Flow::Stay(code) => {
                 let source = coverage::code(arena, code, &mut allowance)?;
                 FlowType {
@@ -270,16 +299,19 @@ pub fn elaborate(
 /// - requires: `root` passed formation in the current arena.
 /// - ensures: Stay lowers to identity; Forward retains its translator; Sequence
 ///   uses CBPV bind in source-to-target order, with no inverse construction.
-/// - fails: `UnknownFlow`, `Arena`, `Cycle` or `Budget`.
+/// - fails: `UnknownFlow`, `Arena`, `Cycle` or `Budget`; session introductions
+///   return `RecordedRunRequired` because no endpoint-value eliminator exists.
 /// - panics: none.
 ///
 /// # Errors
 /// As `fails`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — composed injection/fold acts as identity, and terminal
-///   followed by an injection chooses that injection for either input.
+/// - hypothesis: L3 — composed injection/fold acts as identity, terminal then
+///   injection chooses that injection, and a formed session flow refuses value
+///   lowering rather than manufacturing an endpoint or identity translator.
 /// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
+/// - witness: `flow_universe::rules::tests::session_lowering_requires_a_recorded_run`
 #[spec(ensures: |ret| match ret {
     Ok(value) => u64::from(budget) > 0 && match flows.get(root) {
         Ok(&Flow::Forward { translator, .. }) => value == translator,
@@ -305,6 +337,7 @@ fn lower(
             continue;
         }
         let function = match flows.get(id)? {
+            | &Flow::Session { .. } => return Err(FlowError::RecordedRunRequired),
             | &Flow::Stay(_) => {
                 let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
                 let returned = arena.computation_return(variable);
@@ -478,4 +511,49 @@ fn replay_checked(
         dialogue.0.iter().copied(),
         budget,
     ))
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn session_lowering_requires_a_recorded_run()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let ty = arena.value_type_session(
+            alloc::sync::Arc::new(gandr_kernel_term::session::Graph {
+                root: gandr_kernel_term::session::State(0),
+                nodes: alloc::vec![gandr_kernel_term::session::Node::End],
+            }),
+            unit,
+        );
+        let code = arena.value_quote(ty);
+        let proofs = arena.value_unit();
+        let mut flows = Flows::new();
+        let flow = flows
+            .push(Flow::Session {
+                source: code,
+                target: code,
+                payload_paths: proofs,
+                evidence: alloc::sync::Arc::new(gandr_kernel_term::session::Evidence {
+                    pairs: [gandr_kernel_term::session::StatePair {
+                        source: gandr_kernel_term::session::State(0),
+                        target: gandr_kernel_term::session::State(0),
+                    }]
+                    .into(),
+                    payloads: Vec::new(),
+                }),
+            })
+            .expect("raw flow");
+        assert!(
+            matches!(form(&mut arena, &flows, flow, ReplayBudget::DEFAULT), Ok(FlowType { source, target }) if source == ty && target == ty)
+        );
+        assert!(matches!(
+            lower(&mut arena, &flows, flow, ReplayBudget::DEFAULT),
+            Err(FlowError::RecordedRunRequired)
+        ));
+    }
 }

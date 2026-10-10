@@ -139,6 +139,7 @@ pub use crate::replay::EngineClaim;
 pub use crate::replay::KernelVerdict;
 pub use crate::replay::ParameterCount;
 pub use crate::replay::ReplayBudget;
+pub mod session;
 pub use crate::replay::ReplayDecline;
 pub use crate::replay::ReplayNode;
 pub use crate::replay::ReplayRefusal;

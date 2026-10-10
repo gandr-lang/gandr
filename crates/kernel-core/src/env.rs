@@ -1132,6 +1132,14 @@ fn collect_reachable(
                     pending.push(AnyNode::Value(forward));
                     pending.push(AnyNode::Value(backward));
                 },
+                | Some(&Value::SessionPath {
+                    path_type,
+                    payload_paths,
+                    ..
+                }) => {
+                    pending.push(AnyNode::ValueType(path_type));
+                    pending.push(AnyNode::Value(payload_paths));
+                },
                 | Some(&Value::PathRefl(code)) => pending.push(AnyNode::Value(code)),
                 | Some(
                     &Value::PathProduct(first, second)
@@ -1213,7 +1221,13 @@ fn collect_reachable(
                     pending.push(AnyNode::ValueType(first));
                     pending.push(AnyNode::ValueType(second));
                 },
-                | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+                | Some(
+                    &ValueType::Session {
+                        payloads: inner, ..
+                    }
+                    | &ValueType::Lift { inner, .. }
+                    | &ValueType::List(inner),
+                ) => {
                     pending.push(AnyNode::ValueType(inner));
                 },
                 | Some(&ValueType::Thunk(body)) => pending.push(AnyNode::CompType(body)),

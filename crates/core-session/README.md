@@ -8,6 +8,7 @@ Contractive binary session types, coinductive relations, and endpoint replay.
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Leaf boundary](#leaf-boundary)
+- [Certified protocol identities](#certified-protocol-identities)
 - [Flat recursive syntax](#flat-recursive-syntax)
 - [One relation engine](#one-relation-engine)
 - [Opaque replay](#opaque-replay)
@@ -25,6 +26,7 @@ Contractive binary session types, coinductive relations, and endpoint replay.
 
 ## References
 
+- The Univalent Foundations Program, _Homotopy Type Theory: Univalent Foundations of Mathematics_, 2013, [arXiv:1308.0729](https://arxiv.org/abs/1308.0729): equivalences as universe identity and transport, without adding a universal equality eliminator here.
 - Simon Gay and Malcolm Hole, _Subtyping for Session Types in the Pi Calculus_, Acta Informatica 42, 2005, pp. 191–225, [doi:10.1007/s00236-005-0177-z](https://doi.org/10.1007/s00236-005-0177-z): contractive recursive types and visited-set coinductive subtyping.
 
 ## Provided features
@@ -33,10 +35,12 @@ Contractive binary session types, coinductive relations, and endpoint replay.
 - Construction-time closure and contractivity validation.
 - Equivalence, subtyping, and duality over opaque payload-type identities.
 - Search-free replay with distinct direction, label, payload, incomplete-run, and resume-after-end refusals.
+- Candidate finite relations exported by `relate`, checked independently as native `Path_U` or in-memory `Flow_U` evidence.
+- Recorded-run transport through a freshly replayed session Flow and independently checked target monitor.
 
 ## Expected features
 
-Consumers supply payload-type identities, payload digests, and endpoint-local moves. Identity assignment and payload-body validation belong to the consumer. The library uses `core` and `alloc` without a runtime, store, or dependency on another gandr crate.
+Consumers supply payload-type identities, payload digests, and endpoint-local moves. Identity assignment and payload-body validation belong to the consumer. Certified transport additionally requires native payload-code assignments. The crate uses `core` and `alloc` and depends on `gandr-kernel-term` and `gandr-kernel-core` with default features disabled.
 
 The workspace-pinned `anodized` facade supplies executable specifications with default features disabled. `--cfg anodized_panic` across the build graph enables runtime checks; ordinary builds retain construction validation and replay refusals without specification instrumentation. No optional crate feature is required.
 
@@ -53,6 +57,7 @@ let protocol = Session::new(
 )?;
 let body = Payload { identity, digest: PayloadDigest([9; 32]) };
 assert_eq!(replay(&protocol, &[Move::Send(body), Move::End]), Ok(Completion));
+
 # Ok::<(), gandr_core_session::TypeError>(())
 ```
 
@@ -67,11 +72,21 @@ The generator protocol is `mu t. &{next: !Y.t, stop: end}`. Its consumer selects
 
 ## Leaf boundary
 
-**Choice.** The engine and monitor form a leaf crate over `core` and `alloc`. Replay consumers need neither a checker machine nor term syntax. The sole dependency is the workspace's specification facade, with its optional logic and arithmetic features disabled.
+**Choice.** The engine and monitor own protocol search and replay over `core` and `alloc`. They use no runtime or store. The certified adapter depends on the kernel's term and checking crates; the kernel has no reverse dependency on this engine. The specification facade's optional logic and arithmetic features stay disabled.
 
 **Alternatives.** Placing the monitor in the checker couples replay to the typing machine. Placing the engine in the term crate gives declarative syntax a decision procedure. Handwritten assertions instead of `anodized` lose the workspace's shared specification representation and instrumentation modes.
 
-**Reversal.** If every monitor consumer also requires the checker, the monitor can fold into that crate. Reading integrated term syntax would justify a term dependency. The specification facade follows the workspace's policy choice.
+**Reversal.** If every monitor consumer requires the language checker, the monitor can fold into that crate. The specification facade follows the workspace's policy choice.
+
+## Certified protocol identities
+
+The engine searches; the kernel replays. `relate` exports candidate observable pairs, and `certified::encode` replaces opaque payload identities with slots in native payload codes. The [kernel's session rules](../kernel-core/README.md#session-code-identities) establish code identity and directed subtyping from supplied evidence.
+
+`certified::transport` re-forms a direct session Flow, checks both complete monitor/code bindings, replays the source run, maps moves through supplied pairs, and replays the target run. Labels, action directions and payload digests stay unchanged; payload identities follow the target assignment. Bodies stay opaque. The arena watermark is restored on success and refusal. A payload path certifies code identity, not a transformation of a stored body.
+
+The widened `SeatEnd'` adds `pause : !Report.turn`. Its two-report-retire and handoff runs transport forward unchanged; a widened pause run refuses backward. Offer width reverses inclusion, so a source-only offered label also refuses transport: a simulation does not license every local trace from a peer outside the target promise. There is no inverse operation.
+
+**Choice.** Reuse native formation and replay rather than duplicate a trusted checker in the producer. Neither relation data nor a stored Flow is an admission receipt. **Reversal.** A different protocol universe requires an explicit code binding and replay relation at this adapter.
 
 ## Flat recursive syntax
 
@@ -109,7 +124,7 @@ The independent elimination oracle exhausts 177 protocols: all send/receive word
 
 ## Integration boundary
 
-Live endpoint syntax and linear ownership belong to term syntax and the checker. This crate neither enforces endpoint linearity nor introduces a kernel session former. The monitor establishes endpoint-local skeleton conformance, not a kernel certificate. It does not correlate asynchronous peers, check FIFO delivery, validate bodies, or establish global deadlock freedom.
+Live endpoint syntax, ownership and typing belong to `core-term` and `core-checker`. This crate reads no core terms. The kernel reflects finite session protocols as codes beside first-order codes in the value universe, solely to check type-identity evidence; it gains no endpoint or channel values. Recorded skeleton transport is a monitor-level operation, not a CBPV session-value eliminator. Ordinary Flow lowering refuses a session introduction as `RecordedRunRequired`. Native declaration persistence includes session codes and Path evidence; Flow certificates retain the existing in-memory representation. The monitor does not correlate asynchronous peers, check FIFO delivery, validate bodies, or establish global deadlock freedom.
 
 ## License
 
