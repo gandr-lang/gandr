@@ -442,6 +442,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-core-session"
+version = "0.0.0"
+dependencies = [
+ "anodized",
+]
+
+[[package]]
 name = "gandr-core-term"
 version = "0.0.0"
 dependencies = [
