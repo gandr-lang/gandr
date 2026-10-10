@@ -266,15 +266,21 @@ impl ContentEncoding
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the sole decision surface is the continuation
-    ///   guard, separated by the single-byte value, the exact group boundary at
-    ///   128, and the ceiling, each asserted as an exact byte image.
+    /// - hypothesis: L1/L3 — the predicate fixes every appended payload group,
+    ///   continuation bit and minimal width. Exact images at 0, 127, 128 and
+    ///   `u64::MAX` separate zero, the first group transition and the ceiling;
+    ///   these finite cases do not enumerate every word.
     /// - witness: `encoding::tests::varint_images_are_minimal_at_the_boundaries`
-    // The predicate covers the continuation guard: at least one byte is
-    // appended and the last one clears the continuation bit. Minimality's other
-    // half — no redundant high group — has no reader on this side of the seam
-    // to state it against, and stays with the witness.
-    #[spec(captures: [entry_len = self.0.len()], ensures: self.0.len() > entry_len && self.0.last().is_some_and(|&byte| byte < 0x80))]
+    #[spec(
+        captures: entry_len = self.0.len(),
+        ensures: self.0.get(entry_len..).is_some_and(|image|
+            usize::try_from(64_u32.saturating_sub(value.0.leading_zeros()).max(1).div_ceil(7))
+                .is_ok_and(|groups| image.len() == groups)
+            && image.iter().enumerate().all(|(group, &byte)|
+                value.0.checked_shr(u32::try_from(group.saturating_mul(7)).unwrap_or(u32::MAX))
+                    .is_some_and(|remaining| u64::from(byte & 0x7f) == (remaining & 0x7f)
+                        && ((byte & 0x80) != 0) == (group.saturating_add(1) < image.len()))))
+    )]
     fn put_word(
         &mut self,
         value: EncodedWord,
@@ -349,7 +355,28 @@ impl ContentEncoding
     ///   payloads, and so keeps two literals from taking one content id.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — the appended suffix contains the original UTF-8
+    ///   bytes after their minimal byte-length prefix. Empty, multi-byte and
+    ///   127/128-byte text separates character counting, missing framing and
+    ///   prefix loss; adjacent split pairs separate ambiguous concatenation.
+    /// - witness: `encoding::tests::text_frames_count_bytes_and_preserve_component_boundaries`
     #[inline]
+    #[spec(
+        captures: entry_len = self.0.len(),
+        ensures: self.0.get(entry_len..).and_then(|image| image.strip_suffix(text.0.as_bytes()))
+            .is_some_and(|prefix| {
+                let length = text.0.len();
+                usize::try_from(usize::BITS.saturating_sub(length.leading_zeros()).max(1).div_ceil(7))
+                    .is_ok_and(|groups| prefix.len() == groups)
+                && prefix.iter().enumerate().all(|(group, &byte)|
+                    ((byte & 0x80) != 0) == (group.saturating_add(1) < prefix.len()))
+                && prefix.iter().rev().fold(0_u128, |value, &byte|
+                    value.saturating_mul(128).saturating_add(u128::from(byte & 0x7f)))
+                    == u128::try_from(length).unwrap_or(u128::MAX)
+            })
+    )]
     fn put_text(
         &mut self,
         text: EncodedText<'_>,
@@ -363,8 +390,33 @@ impl ContentEncoding
     /// Append `record` framed by its own byte length.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; the record may be empty or contain arbitrary bytes.
+    /// - ensures: appends the record's minimal byte-length varint followed by
+    ///   its complete bytes, without changing the preceding encoding.
+    /// - provides: unambiguous record boundaries in the canonical stream.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — the suffix predicate checks the minimal prefix and
+    ///   complete payload. Empty, binary and 128-byte records witness framing
+    ///   and preservation of an existing prefix; not every length is sampled.
+    /// - witness: `encoding::tests::record_frames_preserve_binary_payloads_at_the_group_boundary`
     #[inline]
+    #[spec(
+        captures: entry_len = self.0.len(),
+        ensures: self.0.get(entry_len..).and_then(|image| image.strip_suffix(record.0.as_slice()))
+            .is_some_and(|prefix| {
+                let length = (record.0.as_slice()).len();
+                usize::try_from(usize::BITS.saturating_sub(length.leading_zeros()).max(1).div_ceil(7))
+                    .is_ok_and(|groups| prefix.len() == groups)
+                && prefix.iter().enumerate().all(|(group, &byte)|
+                    ((byte & 0x80) != 0) == (group.saturating_add(1) < prefix.len()))
+                && prefix.iter().rev().fold(0_u128, |value, &byte|
+                    value.saturating_mul(128).saturating_add(u128::from(byte & 0x7f)))
+                    == u128::try_from(length).unwrap_or(u128::MAX)
+            })
+    )]
     fn put_record(
         &mut self,
         record: &Self,
@@ -378,25 +430,32 @@ impl ContentEncoding
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: equal encodings produce equal digests; **unequal encodings
-    ///   are not promised unequal digests**, which is the whole direction of
-    ///   the contract — a digest narrows and never decides.
+    /// - ensures: the high and low words of FNV-1a-128 over these bytes, using
+    ///   its offset basis and prime modulo 2^128. Equal encodings have equal
+    ///   digests; unequal encodings are not promised unequal digests.
     /// - provides: the positive fast path a memo buckets on, and the content
-    ///   identity a refusal's type witness carries. This cross-input law
-    ///   remains prose-only: a single invocation has no second encoding, and
-    ///   checking one chosen peer would weaken the universal claim.
+    ///   identity a refusal's type witness carries. The executable fold states
+    ///   the algorithm, not collision freedom: byte equality still decides.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are the per-byte fold and the word
-    ///   split, separated by the empty encoding, a one-byte difference, and a
-    ///   transposition (which an order-insensitive fold would miss), each
-    ///   asserted as an exact equality or inequality.
+    /// - hypothesis: L1/L3 — the fold fixes the recurrence and word split;
+    ///   empty and single-byte known answers separate the basis, multiplication
+    ///   and word order. Byte-change and transposition witnesses reject a
+    ///   constant or order-insensitive digest, not every possible collision.
     /// - witness: `encoding::tests::the_digest_separates_a_one_byte_difference`
     /// - witness: `encoding::tests::the_digest_separates_a_transposition`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| {
+        let fingerprint = self.0.iter().fold(0x6c62_272e_07bb_0142_62b8_2175_6295_c58d_u128,
+            |state, &byte| (state ^ u128::from(byte))
+                .wrapping_mul(0x0000_0000_0100_0000_0000_0000_0000_013b_u128));
+        ret == ContentDigest::new(
+            DigestWord::from(u64::try_from(fingerprint >> 64_u32).unwrap_or(u64::MAX)),
+            DigestWord::from(u64::try_from(fingerprint & u128::from(u64::MAX)).unwrap_or(u64::MAX)))
+    })]
     pub fn digest(&self) -> ContentDigest
     {
         // FNV-1a over 128 bits: order-sensitive by construction, so a
@@ -551,21 +610,37 @@ impl ContentTable
     ///   is structurally identical. The walk is iterative over an explicit task
     ///   stack, so it is total on any term depth, and each distinct node is
     ///   recorded once however many times it occurs or is asked about.
-    /// - provides: the sharing-aware half of the key derivation. Arena history,
-    ///   cross-node content equality, and traversal counts remain prose-only:
-    ///   the table carries no arena-history token or independent
-    ///   structural-equality oracle.
+    /// - provides: the sharing-aware key derivation. The predicate fixes the
+    ///   returned placement and preserves counts on a repeated node; arena
+    ///   provenance and equality across distinct graphs remain witnessed.
     /// - fails: never — an unreadable node takes the reserved dangling record.
     /// - panics: none.
     ///
     /// # Termination
     /// - reason: the walk is a loop over an explicit task stack, not recursion.
-    /// - measure: the number of reachable nodes without an assigned id, which
-    ///   strictly falls at every close step and never rises, since an open on
-    ///   an already-placed node pushes nothing.
-    /// - boundedness: the arena is finite and a child id is strictly below its
-    ///   parent's, so the reachable set is finite and acyclic.
+    /// - measure: lexicographically, reachable nodes not yet opened and pending
+    ///   tasks. A first open reduces the former; a close or repeated open
+    ///   consumes a task. Depth-first processing closes a node before another
+    ///   path opens it.
+    /// - boundedness: the finite arena is minted child-before-parent across all
+    ///   families, so its dependency graph is acyclic.
     /// - input recursion: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — one append-only arena supplies the input graph.
+    ///   The predicate checks placement and repeated-node stability; a shared
+    ///   depth-16 graph, its repeated query and its re-minted spelling separate
+    ///   occurrence expansion, lost reuse and arena-identity numbering.
+    /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
+    /// - witness: `encoding::tests::structurally_equal_nodes_encode_alike`
+    #[spec(
+        captures: [held = self.placed.get(&node).copied(), records_before = self.records,
+            stream_before = self.stream.0.len(), placed_before = self.placed.len()],
+        ensures: |ret| self.placed.get(&node) == Some(&ret) && ret.0 < self.records
+            && self.records >= records_before && self.placed.len() >= placed_before
+            && held.is_none_or(|prior| ret == prior && self.records == records_before
+                && self.stream.0.len() == stream_before && self.placed.len() == placed_before)
+    )]
     fn place(
         &mut self,
         arena: &TermArena,
@@ -604,14 +679,25 @@ impl ContentTable
     ///
     /// # Specification
     /// - requires: `node` has been placed by this table's own walk.
-    /// - ensures: the content id assigned to `node`, and the first id for a
-    ///   node this table never placed.
+    /// - ensures: returns the content id assigned to `node` by this table.
     /// - provides: the total read every record's children are written through.
     ///   The fallback is unreachable, since a record is built only after its
     ///   children are placed, and it keeps the read total rather than partial.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — the caller supplies a placed node. Lookup identity
+    ///   is executable; transposed products and shared/re-minted graphs
+    ///   exercise distinct child ids and reused ids, not arbitrary corrupted
+    ///   tables.
+    /// - witness: `encoding::tests::a_transposed_product_encodes_differently`
+    /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
     #[inline]
+    #[spec(
+        requires: self.placed.contains_key(&node),
+        ensures: |ret| self.placed.get(&node) == Some(&ret)
+    )]
     fn content_of(
         &self,
         node: AnyNode,
@@ -639,10 +725,23 @@ impl ContentTable
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 for the count/stream bound; content-collapse witnesses
-    ///   exercise reuse and fresh records, not an unallocatable u64 ceiling.
+    /// - hypothesis: L1/L3 — complete records with placed children enter a
+    ///   valid table. Fresh ids, exact-byte reuse and count/stream bounds are
+    ///   executable; shared and re-minted depth-16 graphs exercise both
+    ///   branches, not an unallocatable u64 ceiling.
     /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
-    #[spec(ensures: u128::try_from(self.stream.0.len()).is_ok_and(|bytes| u128::from(self.records) <= bytes))]
+    #[spec(
+        captures: [held = self.interned.get(&record).copied(), records_before = self.records,
+            stream_before = self.stream.0.len()],
+        ensures: |ret| u128::try_from(self.stream.0.len())
+            .is_ok_and(|bytes| u128::from(self.records) <= bytes)
+            && u64::try_from(self.interned.len()) == Ok(self.records) && ret.0 < self.records
+            && match held {
+                Some(prior) => ret == prior && self.records == records_before
+                    && self.stream.0.len() == stream_before,
+                None => ret.0 == records_before && records_before.checked_add(1) == Some(self.records),
+            }
+    )]
     fn intern(
         &mut self,
         record: ContentEncoding,
@@ -675,6 +774,26 @@ impl ContentTable
     ///   node still produces a record and stays total.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — children of readable nodes are placed. Readability
+    ///   selects a node record or the exact family-specific dangling record;
+    ///   all four unreadable families, transposed products and case children
+    ///   separate wrong dispatch and lost payloads without enumerating graphs.
+    /// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
+    /// - witness: `encoding::tests::a_transposed_product_encodes_differently`
+    /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
+    #[spec(ensures: |ret| {
+        let (readable, family) = match node { AnyNode::Value(id) => (arena.value(id).is_some(), 0_u8),
+AnyNode::Computation(id) => (arena.computation(id).is_some(), 1_u8),
+AnyNode::ValueType(id) => (arena.value_type(id).is_some(), 2_u8),
+AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
+        if readable {
+            ret.0.first().is_some_and(|&tag| tag != DANGLING_TAG)
+        } else {
+            ret.0.as_slice() == [DANGLING_TAG, family]
+        }
+    })]
     fn record_of(
         &self,
         arena: &TermArena,
@@ -715,6 +834,40 @@ impl ContentTable
     /// - provides: the value arm of the record vocabulary.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — children are already placed in this session. The
+    ///   predicate checks every required child and the appended node tag.
+    ///   Unit/pair, signed-literal and injection fixtures separate selected
+    ///   tags and payloads; they do not enumerate every value.
+    /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
+    /// - witness: `encoding::tests::signed_zeroes_collapse_and_signed_ones_do_not`
+    /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
+    #[spec(
+        requires: match *value {
+            Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => true,
+            Value::Pair(first, second) | Value::StaticApplication(first, second) => self.placed.contains_key(&AnyNode::Value(first))
+                            && self.placed.contains_key(&AnyNode::Value(second)),
+            Value::Injection(_, body) | Value::Lift { body, .. } => self.placed.contains_key(&AnyNode::Value(body)),
+            Value::Thunk(body) => self.placed.contains_key(&AnyNode::Computation(body)),
+            Value::Quote(quoted) => self.placed.contains_key(&AnyNode::ValueType(quoted)),
+            Value::QuoteComputation(quoted) => self.placed.contains_key(&AnyNode::CompType(quoted)),
+        },
+        captures: entry_len = record.0.len(),
+        ensures: record.0.get(entry_len) == Some(&u8::from(match *value {
+            Value::Variable(..) => gandr_kernel_term::NODE_V_VARIABLE,
+            Value::Constant(..) => gandr_kernel_term::NODE_V_CONSTANT,
+            Value::Unit => gandr_kernel_term::NODE_V_UNIT,
+            Value::Literal(..) => gandr_kernel_term::NODE_V_LITERAL,
+            Value::Pair(..) => gandr_kernel_term::NODE_V_PAIR,
+            Value::Injection(..) => gandr_kernel_term::NODE_V_INJECTION,
+            Value::Thunk(..) => gandr_kernel_term::NODE_V_THUNK,
+            Value::Lift { .. } => gandr_kernel_term::NODE_V_LIFT,
+            Value::Quote(..) => gandr_kernel_term::NODE_V_QUOTE,
+            Value::QuoteComputation(..) => gandr_kernel_term::NODE_V_QUOTE_COMPUTATION,
+            Value::StaticApplication(..) => gandr_kernel_term::NODE_V_STATIC_APPLICATION,
+        }))
+    )]
     fn put_value(
         &self,
         record: &mut ContentEncoding,
@@ -779,6 +932,36 @@ impl ContentTable
     /// - provides: the computation arm of the record vocabulary.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — children are already placed in this session. The
+    ///   predicate checks every required child and the appended node tag. Case
+    ///   fixtures change each of its three children independently and descend
+    ///   through returns; other forms retain executable tag and placement
+    ///   checks.
+    /// - witness: `encoding::tests::each_case_child_changes_canonical_content`
+    #[spec(
+        requires: match *computation {
+            Computation::Lambda(body) => self.placed.contains_key(&AnyNode::Computation(body)),
+            Computation::Application(head, argument) => self.placed.contains_key(&AnyNode::Computation(head))
+                            && self.placed.contains_key(&AnyNode::Value(argument)),
+            Computation::Return(value) | Computation::Force(value) => self.placed.contains_key(&AnyNode::Value(value)),
+            Computation::Bind(bound, body) => self.placed.contains_key(&AnyNode::Computation(bound))
+                            && self.placed.contains_key(&AnyNode::Computation(body)),
+            Computation::Case { scrutinee, on_left, on_right } => self.placed.contains_key(&AnyNode::Value(scrutinee))
+                            && self.placed.contains_key(&AnyNode::Computation(on_left))
+                            && self.placed.contains_key(&AnyNode::Computation(on_right)),
+        },
+        captures: entry_len = record.0.len(),
+        ensures: record.0.get(entry_len) == Some(&u8::from(match *computation {
+            Computation::Lambda(..) => gandr_kernel_term::NODE_C_LAMBDA,
+            Computation::Application(..) => gandr_kernel_term::NODE_C_APPLICATION,
+            Computation::Return(..) => gandr_kernel_term::NODE_C_RETURN,
+            Computation::Bind(..) => gandr_kernel_term::NODE_C_BIND,
+            Computation::Force(..) => gandr_kernel_term::NODE_C_FORCE,
+            Computation::Case { .. } => gandr_kernel_term::NODE_C_CASE,
+        }))
+    )]
     fn put_computation(
         &self,
         record: &mut ContentEncoding,
@@ -831,6 +1014,38 @@ impl ContentTable
     /// - provides: the value-type arm of the record vocabulary.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — children are already placed in this session. The
+    ///   predicate checks every required child and the appended node tag.
+    ///   Unit/base and transposed-product fixtures separate family tags and
+    ///   ordered child ids; no exhaustive graph domain is claimed.
+    /// - witness: `encoding::tests::a_transposed_product_encodes_differently`
+    /// - witness: `encoding::tests::two_families_with_one_payload_encode_differently`
+    #[spec(
+        requires: match *value_type {
+            ValueType::Base(_) | ValueType::Unit | ValueType::Universe { sort: GroundSort::Value, .. } | ValueType::Universe { sort: GroundSort::Computation, .. } | ValueType::Abstract(_) => true,
+            ValueType::Product(first, second) | ValueType::Sum(first, second) | ValueType::StaticPi { domain: first, codomain: second } => self.placed.contains_key(&AnyNode::ValueType(first))
+                            && self.placed.contains_key(&AnyNode::ValueType(second)),
+            ValueType::Thunk(body) => self.placed.contains_key(&AnyNode::CompType(body)),
+            ValueType::Lift { inner, .. } => self.placed.contains_key(&AnyNode::ValueType(inner)),
+            ValueType::Element { code, .. } => self.placed.contains_key(&AnyNode::Value(code)),
+        },
+        captures: entry_len = record.0.len(),
+        ensures: record.0.get(entry_len) == Some(&u8::from(match *value_type {
+            ValueType::Base(..) => gandr_kernel_term::NODE_VT_BASE,
+            ValueType::Unit => gandr_kernel_term::NODE_VT_UNIT,
+            ValueType::Universe { sort: GroundSort::Value, .. } => gandr_kernel_term::NODE_VT_UNIVERSE,
+            ValueType::Universe { sort: GroundSort::Computation, .. } => gandr_kernel_term::NODE_VT_COMPUTATION_UNIVERSE,
+            ValueType::Product(..) => gandr_kernel_term::NODE_VT_PRODUCT,
+            ValueType::Sum(..) => gandr_kernel_term::NODE_VT_SUM,
+            ValueType::Thunk(..) => gandr_kernel_term::NODE_VT_THUNK,
+            ValueType::Lift { .. } => gandr_kernel_term::NODE_VT_LIFT,
+            ValueType::Element { .. } => gandr_kernel_term::NODE_VT_ELEMENT,
+            ValueType::Abstract(..) => gandr_kernel_term::NODE_VT_ABSTRACT,
+            ValueType::StaticPi { .. } => gandr_kernel_term::NODE_VT_STATIC_PI,
+        }))
+    )]
     fn put_value_type(
         &self,
         record: &mut ContentEncoding,
@@ -905,6 +1120,28 @@ impl ContentTable
     /// - provides: the computation-type arm of the record vocabulary.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — children are already placed in this session. The
+    ///   predicate checks every required child and the appended node tag.
+    ///   Returner, arrow, dependent arrow and neutral element fixtures separate
+    ///   every computation-type tag; the arrows share identical children.
+    /// - witness: `encoding::tests::computation_type_formers_keep_distinct_content`
+    #[spec(
+        requires: match *comp_type {
+            CompType::Returner(result) => self.placed.contains_key(&AnyNode::ValueType(result)),
+            CompType::Arrow { domain, codomain } | CompType::Pi { domain, codomain } => self.placed.contains_key(&AnyNode::ValueType(domain))
+                            && self.placed.contains_key(&AnyNode::CompType(codomain)),
+            CompType::Element { code, .. } => self.placed.contains_key(&AnyNode::Value(code)),
+        },
+        captures: entry_len = record.0.len(),
+        ensures: record.0.get(entry_len) == Some(&u8::from(match *comp_type {
+            CompType::Returner(..) => gandr_kernel_term::NODE_CT_RETURNER,
+            CompType::Arrow { .. } => gandr_kernel_term::NODE_CT_ARROW,
+            CompType::Pi { .. } => gandr_kernel_term::NODE_CT_PI,
+            CompType::Element { .. } => gandr_kernel_term::NODE_CT_ELEMENT,
+        }))
+    )]
     fn put_comp_type(
         &self,
         record: &mut ContentEncoding,
@@ -950,6 +1187,105 @@ impl ContentTable
 ///   the record of a node a function of its children's ids.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — the predicate checks the exact appended open-task
+///   sequence for every readable former and no tasks for unreadable roots.
+///   Shared depth-16 pairs and independently varied case children exercise zero
+///   through three children and mixed families, not every graph.
+/// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
+/// - witness: `encoding::tests::each_case_child_changes_canonical_content`
+/// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
+#[spec(
+    captures: entry_len = tasks.len(),
+    ensures: {
+        let children = match node {
+            AnyNode::Value(id) => match arena.value(id) {
+                None | Some(
+                    &Value::Variable(_)
+                    | &Value::Constant(_)
+                    | &Value::Unit
+                    | &Value::Literal(_)
+                ) => [None; 3],
+                Some(
+                    &Value::Pair(first, second)
+                    | &Value::StaticApplication(first, second)
+                ) => [Some(AnyNode::Value(first)), Some(AnyNode::Value(second)), None],
+                Some(
+                    &Value::Injection(_, body)
+                    | &Value::Lift { body, .. }
+                ) => [Some(AnyNode::Value(body)), None, None],
+                Some(
+                    &Value::Thunk(body)
+                ) => [Some(AnyNode::Computation(body)), None, None],
+                Some(
+                    &Value::Quote(quoted)
+                ) => [Some(AnyNode::ValueType(quoted)), None, None],
+                Some(
+                    &Value::QuoteComputation(quoted)
+                ) => [Some(AnyNode::CompType(quoted)), None, None],
+            },
+            AnyNode::Computation(id) => match arena.computation(id) {
+                None => [None; 3],
+                Some(
+                    &Computation::Lambda(body)
+                ) => [Some(AnyNode::Computation(body)), None, None],
+                Some(
+                    &Computation::Application(head, argument)
+                ) => [Some(AnyNode::Computation(head)), Some(AnyNode::Value(argument)), None],
+                Some(
+                    &Computation::Return(value)
+                    | &Computation::Force(value)
+                ) => [Some(AnyNode::Value(value)), None, None],
+                Some(
+                    &Computation::Bind(bound, body)
+                ) => [Some(AnyNode::Computation(bound)), Some(AnyNode::Computation(body)), None],
+                Some(
+                    &Computation::Case { scrutinee, on_left, on_right }
+                ) => [Some(AnyNode::Value(scrutinee)), Some(AnyNode::Computation(on_left)), Some(AnyNode::Computation(on_right))],
+            },
+            AnyNode::ValueType(id) => match arena.value_type(id) {
+                None | Some(
+                    &ValueType::Base(_)
+                    | &ValueType::Unit
+                    | &ValueType::Universe { .. }
+                    | &ValueType::Abstract(_)
+                ) => [None; 3],
+                Some(
+                    &ValueType::Product(first, second)
+                    | &ValueType::Sum(first, second)
+                    | &ValueType::StaticPi { domain: first, codomain: second }
+                ) => [Some(AnyNode::ValueType(first)), Some(AnyNode::ValueType(second)), None],
+                Some(
+                    &ValueType::Thunk(body)
+                ) => [Some(AnyNode::CompType(body)), None, None],
+                Some(
+                    &ValueType::Lift { inner, .. }
+                ) => [Some(AnyNode::ValueType(inner)), None, None],
+                Some(
+                    &ValueType::Element { code, .. }
+                ) => [Some(AnyNode::Value(code)), None, None],
+            },
+            AnyNode::CompType(id) => match arena.comp_type(id) {
+                None => [None; 3],
+                Some(
+                    &CompType::Returner(result)
+                ) => [Some(AnyNode::ValueType(result)), None, None],
+                Some(
+                    &CompType::Arrow { domain, codomain }
+                    | &CompType::Pi { domain, codomain }
+                ) => [Some(AnyNode::ValueType(domain)), Some(AnyNode::CompType(codomain)), None],
+                Some(
+                    &CompType::Element { code, .. }
+                ) => [Some(AnyNode::Value(code)), None, None],
+            },
+        };
+        tasks.get(entry_len..).is_some_and(|added|
+            added.len() == children.iter().flatten().count()
+            && added.iter().zip(children.into_iter().flatten()).all(|(task, child)|
+                matches!(task, &EncodeTask::Open(held) if held == child)))
+    }
+)]
 fn push_children(
     arena: &TermArena,
     node: AnyNode,
@@ -1119,6 +1455,26 @@ const fn sign_tag(sign: Sign) -> WireTag
 ///   spellings of one number would otherwise become two content ids.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — canonical literals enter. Kind, sign and final text
+///   payload are executable; zero/one sign pairs and the numeric split pair
+///   separate sign loss and ambiguous component framing, not every literal.
+/// - witness: `encoding::tests::signed_zeroes_collapse_and_signed_ones_do_not`
+/// - witness: `encoding::tests::the_length_prefix_separates_a_split_pair`
+#[spec(
+    captures: entry_len = record.0.len(),
+    ensures: match *literal {
+        Literal::Integer(ref integer) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_INTEGER))
+            && record.0.get(entry_len.saturating_add(1)) == Some(&u8::from(sign_tag(integer.sign())))
+            && record.0.ends_with(integer.magnitude().as_ref().as_bytes()),
+        Literal::Text(ref text) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_TEXT))
+            && record.0.ends_with(text.as_ref().as_bytes()),
+        Literal::Numeric(ref numeric) => record.0.get(entry_len) == Some(&u8::from(gandr_kernel_term::LITERAL_NUMERIC))
+            && record.0.get(entry_len.saturating_add(1)) == Some(&u8::from(sign_tag(numeric.sign())))
+            && record.0.ends_with(numeric.fraction().as_ref().as_bytes()),
+    }
+)]
 fn put_literal(
     record: &mut ContentEncoding,
     literal: &Literal,
@@ -1157,6 +1513,31 @@ fn put_literal(
 /// - provides: the level payload of every record that carries one.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — canonical levels enter. The predicate fixes the
+///   constant, atom count, indices and offsets as a byte sequence without
+///   collecting atoms. Empty/constant and two-atom fixtures vary each component
+///   and reverse construction order; they do not enumerate the level algebra.
+/// - witness: `encoding::tests::level_frames_are_canonical_and_include_each_component`
+#[spec(
+    captures: entry_len = record.0.len(),
+    ensures: {
+        let words = core::iter::once(u64::from(level.constant_part()))
+            .chain(core::iter::once(u64::try_from(level.atoms().count()).unwrap_or(u64::MAX)))
+            .chain(level.atoms().flat_map(|(variable, offset)|
+                [u64::from(u32::from(variable.index())), u64::from(offset)]));
+        let expected = words.flat_map(|word| {
+    let groups = u64::BITS.saturating_sub(word.leading_zeros()).max(1).div_ceil(7);
+    (0 .. groups).map(move |group| {
+        let remaining = word.checked_shr(group.saturating_mul(7)).unwrap_or(0);
+        let low = u8::try_from(remaining & 0x7f).unwrap_or(0);
+        low | if group.saturating_add(1) < groups { 0x80 } else { 0 }
+    })
+});
+        record.0.get(entry_len..).is_some_and(|image| image.iter().copied().eq(expected))
+    }
+)]
 fn put_level(
     record: &mut ContentEncoding,
     level: &Level,
@@ -1266,17 +1647,29 @@ impl SupportGoal
     /// The expected type this goal checks against, if it checks at all.
     ///
     /// # Specification
+    /// - requires: nothing.
+    /// - ensures: checking retains the supplied type and its family; synthesis
+    ///   and formation return their respective absence reasons.
     /// - provides: the checked type, or [`Absent`] with `Synthesis` for a
     ///   synthesis goal and `Formation` for a universe-formation goal.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — synthesis and checking supports differ even over the
-    ///   same subject; the expected component belongs only to checking.
+    /// - hypothesis: L1/L3 — the const predicate fixes family and absence
+    ///   reason for all six goal variants. Checking-key pairs vary the expected
+    ///   type in both families; synthesis/checking and formation fixtures
+    ///   exercise presence without claiming exhaustive content equality.
     /// - witness: `encoding::tests::the_direction_is_part_of_the_key`
+    /// - witness: `encoding::tests::expected_type_content_changes_checking_keys`
+    /// - witness: `encoding::tests::computation_type_formers_keep_distinct_content`
     ///
     /// [`Absent`]: expected_type::Absent
     #[inline]
+    #[spec(ensures: |ret| matches!((self, ret),
+        (Self::CheckValue(..), Maybe::Present(AnyNode::ValueType(_)))
+        | (Self::CheckComp(..), Maybe::Present(AnyNode::CompType(_)))
+        | (Self::SynthValue(_) | Self::SynthComp(_), Maybe::Absent(expected_type::Absent::Synthesis))
+        | (Self::ValueTypeLevel(_) | Self::CompTypeLevel(_), Maybe::Absent(expected_type::Absent::Formation))))]
     const fn expected(self) -> Maybe<AnyNode, expected_type::Absent>
     {
         match self {
@@ -1304,21 +1697,19 @@ impl SupportGoal
 ///   session — no arena id, allocation order, or context length outside the
 ///   reached slice reaches it. Two goals encode alike exactly when they are the
 ///   same question.
-/// - provides: the whole memo key: `(direction, obligation content, expected
-///   content, telescope content)`, in that fixed order. Session provenance and
-///   equality across goals remain prose-only: a return predicate has neither
-///   the session history nor a second goal and independently derived content to
-///   compare.
+/// - provides: the memo key in direction, subject, expected-type and telescope
+///   order. The predicate checks direction and placement of every component;
+///   session provenance and equality across goals have the finite witnesses
+///   below rather than another content walk.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2/L3 — the derivation's injectivity is carried by the trap
-///   pairs, which separate the two field orders, the two families sharing a
-///   payload, the signed zeroes, and the length-prefix ambiguity; the L3
-///   residues are the direction component, the telescope-order fold, and the
-///   content collapse of two structurally equal nodes, each asserted as an
-///   exact equality or inequality of encodings.
+/// - hypothesis: L1/L2/L3 — one append-only session and the supplied telescope
+///   slice bound the domain. Direction and component placement are executable.
+///   Finite trap pairs separate field order, family, sign normalization and
+///   text framing; other pairs vary expected types and telescope order or
+///   re-mint equal content. They do not enumerate every support graph.
 /// - witness: `encoding::tests::a_transposed_product_encodes_differently`
 /// - witness: `encoding::tests::two_families_with_one_payload_encode_differently`
 /// - witness: `encoding::tests::signed_zeroes_collapse_and_signed_ones_do_not`
@@ -1327,8 +1718,16 @@ impl SupportGoal
 /// - witness: `encoding::tests::the_telescope_is_folded_in_order`
 /// - witness: `encoding::tests::structurally_equal_nodes_encode_alike`
 /// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
+/// - witness: `encoding::tests::expected_type_content_changes_checking_keys`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| ret.0.first() == Some(&u8::from(goal.direction()))
+    && table.placed.contains_key(&goal.subject())
+    && match goal.expected() {
+        Maybe::Present(node) => table.placed.contains_key(&node),
+        Maybe::Absent(_) => true,
+    }
+    && telescope.iter().all(|&entry| table.placed.contains_key(&AnyNode::ValueType(entry))))]
 pub fn encode_support(
     table: &mut ContentTable,
     arena: &TermArena,
@@ -1442,20 +1841,26 @@ impl RewriteGoal
 ///   alone. Two rewrite goals encode alike exactly when they rewrite the same
 ///   content the same way, so an entry can only answer for a goal that would
 ///   have produced it.
-/// - provides: the rewrite memo's key. Session provenance and equality across
-///   rewrites remain prose-only: a single invocation cannot compare every
-///   goal's content, binder depth, and rewrite semantics.
+/// - provides: the rewrite memo's key. Direction and required placements are
+///   executable; session provenance and equality across rewrite content and
+///   binder parameters are exercised by the bounded witness below.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surfaces are the direction component, the depth
-///   component and the parameter component, separated by two goals differing in
-///   exactly one of the three, each asserted as an inequality of encodings, and
-///   by two structurally equal subjects at one depth, asserted equal.
+/// - hypothesis: L1/L3 — one append-only session supplies the subject and any
+///   replacement. Direction and placements are executable. Shifts at depths 0/1
+///   and amounts 1/2, a substitution, and a re-minted subject separate lost key
+///   components without exhausting rewrite semantics.
 /// - witness: `encoding::tests::a_rewrite_key_separates_on_each_component`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| ret.0.first() == Some(&u8::from(goal.direction()))
+    && table.placed.contains_key(&goal.subject())
+    && match goal {
+        RewriteGoal::Shift { .. } => true,
+        RewriteGoal::Substitute { replacement, .. } => table.placed.contains_key(&AnyNode::Value(replacement)),
+    })]
 pub fn encode_rewrite(
     table: &mut ContentTable,
     arena: &TermArena,
@@ -1501,20 +1906,37 @@ pub fn encode_rewrite(
 /// - requires: nothing — an unreadable node digests as the dangling record.
 /// - ensures: equal reachable content produces equal digests, in any arena and
 ///   any session.
-/// - provides: the content identity a refusal's type witness carries. The
-///   cross-arena, cross-session law remains prose-only: this call supplies one
-///   node in one arena; recomputing its digest would not test that law.
+/// - provides: content identity for refusal witnesses. The predicate fixes the
+///   digest of every family-specific dangling record without rebuilding the
+///   graph. Cross-arena content equality remains a witnessed relational law.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surface is which content is folded, separated by two
-///   types of one head (unequal digests) and one type reached through two arena
-///   positions (equal digests), asserted exactly.
+/// - hypothesis: L1/L3 — any root, including an unreadable one, is admitted.
+///   The exact dangling-stream digest is executable for all four families;
+///   same-head distinct types and re-minted products separate lost content and
+///   accidental arena dependence, not every possible hash collision.
 /// - witness: `witness::tests::two_types_of_one_head_are_still_separated`
 /// - witness: `encoding::tests::an_absolute_digest_ignores_arena_position`
+/// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| {
+    let (readable, family) = match node { AnyNode::Value(id) => (arena.value(id).is_some(), 0_u8),
+AnyNode::Computation(id) => (arena.computation(id).is_some(), 1_u8),
+AnyNode::ValueType(id) => (arena.value_type(id).is_some(), 2_u8),
+AnyNode::CompType(id) => (arena.comp_type(id).is_some(), 3_u8), };
+    readable || {
+        let fingerprint = [2_u8, DANGLING_TAG, family].iter()
+            .fold(0x6c62_272e_07bb_0142_62b8_2175_6295_c58d_u128,
+                |state, &byte| (state ^ u128::from(byte))
+                    .wrapping_mul(0x0000_0000_0100_0000_0000_0000_0000_013b_u128));
+        ret == ContentDigest::new(
+            DigestWord::from(u64::try_from(fingerprint >> 64_u32).unwrap_or(u64::MAX)),
+            DigestWord::from(u64::try_from(fingerprint & u128::from(u64::MAX)).unwrap_or(u64::MAX)))
+    }
+})]
 pub fn content_digest(
     arena: &TermArena,
     node: AnyNode,
@@ -1556,11 +1978,19 @@ mod tests
     /// A magnitude from digit text, for a literal fixture.
     ///
     /// # Specification
-    /// - requires: `digits` is decimal text, which every fixture here supplies.
+    /// - requires: `digits` is nonempty ASCII decimal text.
     /// - ensures: the magnitude those digits denote.
     /// - provides: the literal fixtures the encoding cases are built from.
     /// - fails: never.
     /// - panics: when `digits` is not decimal text.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — the input grammar is executable. Zero/one and
+    ///   numeric split-pair fixtures exercise valid decimal magnitudes, not
+    ///   every decimal string or the rejected-input panic path.
+    /// - witness: `encoding::tests::signed_zeroes_collapse_and_signed_ones_do_not`
+    /// - witness: `encoding::tests::the_length_prefix_separates_a_split_pair`
+    #[anodized::spec(requires: !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))]
     fn magnitude(digits: String) -> Magnitude
     {
         Magnitude::from_decimal_text(digits).expect("the fixture digits are decimal")
@@ -1569,12 +1999,20 @@ mod tests
     /// A fractional-digit sequence, for a numeric literal fixture.
     ///
     /// # Specification
-    /// - requires: `digits` is decimal text, which every fixture here supplies.
+    /// - requires: `digits` contains only ASCII decimal digits; empty is valid.
     /// - ensures: the fractional-digit sequence those digits denote.
     /// - provides: the numeric-literal fixtures the encoding cases are built
     ///   from.
     /// - fails: never.
     /// - panics: when `digits` is not decimal text.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — ASCII decimal text, including empty, is the
+    ///   domain. The grammar is executable; the fractional parts 23 and 3
+    ///   participate in the framed numeric ambiguity pair, not an exhaustive
+    ///   parser corpus.
+    /// - witness: `encoding::tests::the_length_prefix_separates_a_split_pair`
+    #[anodized::spec(requires: digits.bytes().all(|byte| byte.is_ascii_digit()))]
     fn fraction(digits: String) -> FractionDigits
     {
         FractionDigits::from_decimal_text(digits).expect("the fixture digits are decimal")
@@ -1609,6 +2047,51 @@ mod tests
     }
 
     #[test]
+    fn text_frames_count_bytes_and_preserve_component_boundaries()
+    {
+        let cases = [
+            (String::new(), vec![0x00]),
+            (String::from("\u{e9}\0"), vec![0x03]),
+            ("x".repeat(127), vec![0x7f]),
+            ("x".repeat(128), vec![0x80, 0x01]),
+        ];
+        for (text, prefix) in cases {
+            let mut encoded = ContentEncoding(vec![0x7e]);
+            encoded.put_text(super::EncodedText(&text));
+            let mut expected = vec![0x7e];
+            expected.extend_from_slice(&prefix);
+            expected.extend_from_slice(text.as_bytes());
+            assert_eq!(encoded.0, expected);
+        }
+        let mut split_one = ContentEncoding::new();
+        split_one.put_text(super::EncodedText("a"));
+        split_one.put_text(super::EncodedText("bc"));
+        let mut split_two = ContentEncoding::new();
+        split_two.put_text(super::EncodedText("ab"));
+        split_two.put_text(super::EncodedText("c"));
+        assert_ne!(split_one, split_two);
+    }
+
+    #[test]
+    fn record_frames_preserve_binary_payloads_at_the_group_boundary()
+    {
+        let cases = [
+            (vec![], vec![0x00]),
+            (vec![0xff, 0x00], vec![0x02]),
+            (vec![0xff; 128], vec![0x80, 0x01]),
+        ];
+        for (bytes, prefix) in cases {
+            let record = ContentEncoding(bytes);
+            let mut encoded = ContentEncoding(vec![0x7e]);
+            encoded.put_record(&record);
+            let mut expected = vec![0x7e];
+            expected.extend_from_slice(&prefix);
+            expected.extend_from_slice(&record.0);
+            assert_eq!(encoded.0, expected);
+        }
+    }
+
+    #[test]
     fn the_digest_separates_a_one_byte_difference()
     {
         let mut first = ContentEncoding::new();
@@ -1622,8 +2105,17 @@ mod tests
         );
         assert_eq!(
             ContentEncoding::new().digest(),
-            ContentEncoding::new().digest(),
-            "and equal encodings digest equally, which is the only direction promised"
+            gandr_kernel_check_memo::ContentDigest::new(
+                gandr_kernel_check_memo::DigestWord::from(0x6c62_272e_07bb_0142_u64),
+                gandr_kernel_check_memo::DigestWord::from(0x62b8_2175_6295_c58d_u64)
+            ),
+        );
+        assert_eq!(
+            ContentEncoding(vec![0x61]).digest(),
+            gandr_kernel_check_memo::ContentDigest::new(
+                gandr_kernel_check_memo::DigestWord::from(0xd228_cb69_6f1a_8caf_u64),
+                gandr_kernel_check_memo::DigestWord::from(0x7891_2b70_4e4a_8964_u64)
+            ),
         );
     }
 
@@ -1925,20 +2417,174 @@ mod tests
         let floor = arena.watermark();
         let value = arena.value_unit();
         let comp = arena.computation_return(value);
+        let value_type = arena.value_type_unit();
+        let comp_type = arena.comp_type_returner(value_type);
         arena.truncate_to(floor);
+        let cases = [
+            (AnyNode::Value(value), SupportGoal::SynthValue(value), 0_u8),
+            (
+                AnyNode::Computation(comp),
+                SupportGoal::SynthComp(comp),
+                1_u8,
+            ),
+            (
+                AnyNode::ValueType(value_type),
+                SupportGoal::ValueTypeLevel(value_type),
+                2_u8,
+            ),
+            (
+                AnyNode::CompType(comp_type),
+                SupportGoal::CompTypeLevel(comp_type),
+                3_u8,
+            ),
+        ];
         let mut table = ContentTable::new();
-        let dangling_value =
-            encode_support(&mut table, &arena, SupportGoal::SynthValue(value), &[]);
-        let dangling_comp = encode_support(&mut table, &arena, SupportGoal::SynthComp(comp), &[]);
+        let keys = cases.map(|(node, goal, family)| {
+            let key = encode_support(&mut table, &arena, goal, &[]);
+            assert_eq!(table.record_of(&arena, node).as_ref(), &[0xff_u8, family]);
+            assert_eq!(
+                content_digest(&arena, node),
+                ContentEncoding(vec![2_u8, 0xff, family]).digest()
+            );
+            key
+        });
+        for (index, key) in keys.iter().enumerate() {
+            for other in keys.iter().skip(index.saturating_add(1)) {
+                assert_ne!(key, other, "unreadable families remain separate questions");
+            }
+        }
+    }
+
+    #[test]
+    fn each_case_child_changes_canonical_content()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let left = arena.value_injection(gandr_kernel_term::Side::Left, unit);
+        let right = arena.value_injection(gandr_kernel_term::Side::Right, unit);
+        let returns_unit = arena.computation_return(unit);
+        let returns_variable = arena.computation_return(variable);
+        let roots = [
+            arena.computation_case(left, returns_unit, returns_unit),
+            arena.computation_case(right, returns_unit, returns_unit),
+            arena.computation_case(left, returns_variable, returns_unit),
+            arena.computation_case(left, returns_unit, returns_variable),
+        ];
+        let mut table = ContentTable::new();
+        let keys =
+            roots.map(|root| encode_support(&mut table, &arena, SupportGoal::SynthComp(root), &[]));
+        for (index, key) in keys.iter().enumerate() {
+            for other in keys.iter().skip(index.saturating_add(1)) {
+                assert_ne!(
+                    key, other,
+                    "scrutinee and both branch positions affect content"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn computation_type_formers_keep_distinct_content()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let returner = arena.comp_type_returner(unit);
+        let arrow = arena.comp_type_arrow(unit, returner);
+        let dependent = arena.comp_type_pi(unit, returner);
+        let code = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let element = arena.comp_type_element(code, super::Level::zero());
+        let mut table = ContentTable::new();
+        let keys = [returner, arrow, dependent, element]
+            .map(|root| encode_support(&mut table, &arena, SupportGoal::CompTypeLevel(root), &[]));
+        for (index, key) in keys.iter().enumerate() {
+            for other in keys.iter().skip(index.saturating_add(1)) {
+                assert_ne!(
+                    key, other,
+                    "computation-type heads remain distinct, including the two arrows"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn expected_type_content_changes_checking_keys()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let comp = arena.computation_return(unit);
+        let unit_type = arena.value_type_unit();
+        let integer_type = arena.value_type_base(BaseType::Integer);
+        let unit_returner = arena.comp_type_returner(unit_type);
+        let integer_returner = arena.comp_type_returner(integer_type);
+        let mut table = ContentTable::new();
         assert_ne!(
-            usize::from(dangling_value.length()),
-            0,
-            "an unreadable node still produces bytes rather than refusing"
+            encode_support(
+                &mut table,
+                &arena,
+                SupportGoal::CheckValue(unit, unit_type),
+                &[]
+            ),
+            encode_support(
+                &mut table,
+                &arena,
+                SupportGoal::CheckValue(unit, integer_type),
+                &[]
+            )
         );
         assert_ne!(
-            dangling_value, dangling_comp,
-            "and an unreadable value stays distinct from an unreadable computation"
+            encode_support(
+                &mut table,
+                &arena,
+                SupportGoal::CheckComp(comp, unit_returner),
+                &[]
+            ),
+            encode_support(
+                &mut table,
+                &arena,
+                SupportGoal::CheckComp(comp, integer_returner),
+                &[]
+            )
         );
+    }
+
+    #[test]
+    fn level_frames_are_canonical_and_include_each_component()
+    {
+        let image = |level: &super::Level| {
+            let mut record = ContentEncoding(vec![0x7e]);
+            super::put_level(&mut record, level);
+            record
+        };
+        let zero = super::Level::zero();
+        let constant = super::Level::constant(gandr_kernel_strata::LevelConstant::from(2_u64));
+        assert_eq!(image(&zero).0, [0x7e_u8, 0, 0]);
+        assert_eq!(image(&constant).0, [0x7e_u8, 2, 0]);
+        let low = super::Level::var(super::LevelVar::new(
+            gandr_kernel_strata::LevelVarIndex::from(0_u32),
+        ));
+        let high = super::Level::var(super::LevelVar::new(
+            gandr_kernel_strata::LevelVarIndex::from(2_u32),
+        ))
+        .succ()
+        .expect("the unit offset fits");
+        let forward = low.max(&high);
+        let reverse = high.max(&low);
+        assert_eq!(image(&forward).0, [0x7e_u8, 0, 2, 0, 0, 2, 1]);
+        assert_eq!(image(&reverse), image(&forward));
+        assert_eq!(image(&forward.max(&constant)).0, [
+            0x7e_u8, 2, 2, 0, 0, 2, 1
+        ]);
+        assert_eq!(
+            image(&low.max(&high.succ().expect("the next offset fits"))).0,
+            [0x7e_u8, 0, 2, 0, 0, 2, 2]
+        );
+        let next = super::Level::var(super::LevelVar::new(
+            gandr_kernel_strata::LevelVarIndex::from(3_u32),
+        ))
+        .succ()
+        .expect("the unit offset fits");
+        assert_eq!(image(&low.max(&next)).0, [0x7e_u8, 0, 2, 0, 0, 3, 1]);
     }
 
     #[test]
@@ -1972,7 +2618,10 @@ mod tests
             body = arena.value_pair(body, body);
         }
         let mut table = ContentTable::new();
-        let _key = encode_support(&mut table, &arena, SupportGoal::SynthValue(body), &[]);
+        let key = encode_support(&mut table, &arena, SupportGoal::SynthValue(body), &[]);
+        assert_eq!(table.records, 17_u64);
+        assert_eq!(table.interned.len(), 17_usize);
+        assert_eq!(table.placed.len(), 17_usize);
         let length = usize::from(table.stream().length());
         assert!(
             length < 512,
@@ -1981,12 +2630,26 @@ mod tests
         );
         // Asking again costs nothing: the session's table already holds it.
         let before = usize::from(table.stream().length());
-        let _again = encode_support(&mut table, &arena, SupportGoal::SynthValue(body), &[]);
+        let again = encode_support(&mut table, &arena, SupportGoal::SynthValue(body), &[]);
+        assert_eq!(again, key);
+        assert_eq!(table.records, 17_u64);
+        assert_eq!(table.placed.len(), 17_usize);
         assert_eq!(
             before,
             usize::from(table.stream().length()),
             "a second question about the same content adds no record, which is what keeps key \
              derivation linear across a whole check"
         );
+        let mut reminted = arena.value_unit();
+        for _step in 0 .. 16_u32 {
+            reminted = arena.value_pair(reminted, reminted);
+        }
+        let reminted_key =
+            encode_support(&mut table, &arena, SupportGoal::SynthValue(reminted), &[]);
+        assert_eq!(reminted_key, key);
+        assert_eq!(table.records, 17_u64);
+        assert_eq!(table.interned.len(), 17_usize);
+        assert_eq!(table.placed.len(), 34_usize);
+        assert_eq!(usize::from(table.stream().length()), before);
     }
 }

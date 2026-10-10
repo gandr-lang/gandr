@@ -124,9 +124,10 @@ enum ConversionGoal
 /// # Adequacy
 /// - hypothesis: L1/L2/L3 — root readability, readable reflexivity and head
 ///   separation are executable. The finite witnesses separate every value-type
-///   former, both base atoms, canonical levels, nominal atoms and selected term
-///   forms; equal content at distinct ids still converts. They do not enumerate
-///   all graphs or establish the relational laws by exhaustive testing.
+///   former, all three base atoms, canonical levels, nominal atoms and selected
+///   term forms; equal content at distinct ids still converts. They do not
+///   enumerate all graphs or establish the relational laws by exhaustive
+///   testing.
 /// - witness: `conv::tests::value_type_conversion_is_reflexive`
 /// - witness: `conv::tests::structurally_equal_types_at_distinct_ids_convert`
 /// - witness: `conv::tests::conversion_separates_every_former`
@@ -893,6 +894,7 @@ mod tests
         let unit = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
         let string = arena.value_type_base(BaseType::String);
+        let numeric = arena.value_type_base(BaseType::Numeric);
         let product = arena.value_type_product(unit, integer);
         let sum = arena.value_type_sum(unit, integer);
         let returner = arena.comp_type_returner(unit);
@@ -904,7 +906,8 @@ mod tests
         let lift = arena.value_type_lift(unit, level(LevelConstant::from(1)));
         let static_pi = arena.value_type_static_pi(universe, universe);
         let formers = [
-            unit, integer, string, product, sum, thunk, universe, atom, element, lift, static_pi,
+            unit, integer, string, numeric, product, sum, thunk, universe, atom, element, lift,
+            static_pi,
         ];
         for (one, left) in formers.iter().copied().enumerate() {
             for (other, right) in formers.iter().copied().enumerate() {

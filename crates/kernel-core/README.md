@@ -241,16 +241,19 @@ Two guards are pinned as kills. Removing the outstanding-staged-content guard fr
 
 ## Specification attributes
 
-The `# Specification` prose is the statement of record. A combined `#[spec(...)]` attribute mirrors expressible requirements and postconditions, and each predicate appears verbatim in its prose clause. Both admission choke points carry one:
+The `# Specification` prose is the statement of record. A combined `#[spec(...)]` attribute checks expressible requirements and postconditions; `# Adequacy` distinguishes those checks from the finite behavior witnessed by tests. Both admission choke points carry one:
 
 - `Environment::add_decl`: on success exactly one entry is appended and the admission floor ends at the arena's own watermark, the machine form of "the checker's intermediates were truncated rather than committed". Whether the declaration is well-typed is what the body decides and is not restated.
 - `Environment::add_decl_unchecked`: the same, plus the entry carrying `Admission::Unchecked` and the arena watermark unmoved, so the warned bypass cannot quietly grow or shrink the arena.
 - `check_sealing_provenance`: the ascending half, stated as a sortedness test rather than through the body's own previous-index loop. The occurrence half would re-derive the projected-atom set and double a walk over the declared type.
-- `StagedMarks::resolve` and `ContentEncoding::put_word`: exactly one mark gone when one was held, and the varint terminator.
+- `StagedMarks::resolve`: exactly one mark gone when one was held.
+- `ContentEncoding`: minimal varint width and every payload/continuation bit, complete UTF-8 and binary frames, and the high/low words of FNV-1a-128.
 
 Further attributes check level-scope precedence, consistency evidence, universe-refusal subjects and strictness, sealed-atom universe lookup, readable conversion identities and head separation, conversion mode-switch results, saturating census transitions, outstanding-mark counts, rewrite counts, and both type-witness projections. Mode-switch and witness postconditions repeat their named query only in the enforcing lane; no capture allocates or runs extra work in the ordinary lane.
 
-Each prose-only block names its boundary in `- provides:`: a cross-input law, arena provenance, a lifecycle transition, or a semantic graph judgement needing an independent traversal. The two const register projections keep their API without attributes, because the attribute's expansion calls a non-const evaluator (`E0015`). Runtime checks do not establish the adequacy hypotheses; the witnesses do.
+Encoding also checks content-id allocation and reuse, child placement and node tags, canonical level components, key directions, and the four family-specific dangling digests. Its captures retain scalar state; predicates use byte views, iterators and fixed child arrays rather than copies of the arena graph.
+
+Const predicates retain their const APIs and inspect observable fields or variants. Where an item has no executable clause, `- executable: none` names the missing observation, such as session provenance or future lifecycle behavior. Runtime checks do not establish unbounded adequacy claims; the named witnesses state their finite domains.
 
 ## License
 
