@@ -25,6 +25,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
   - [Native fibres and admission](#native-fibres-and-admission)
 - [Guarded higher fields](#guarded-higher-fields)
 - [Recursive code observations](#recursive-code-observations)
+- [Session code identities](#session-code-identities)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
@@ -261,11 +262,11 @@ The seven `flow_universe::tests` witnesses use the independent conversion engine
 
 ## Native universe paths
 
-`ValueType::PathUniverse(a, b)` forms `Path_U a b` over closed quoted Base, Unit, Sum and Product codes at level zero. `Value::PathEquiv`, `PathRefl` and `PathProduct` introduce paths; `Computation::Transport` is their only eliminator. They participate in ordinary arena traversal, declaration admission, structural conversion and artifact encoding. The surface parser has no path syntax.
+`ValueType::PathUniverse(a, b)` forms `Path_U a b` over closed quoted Base, Unit, Sum and Product codes, and finite session codes. First-order endpoints remain level zero; a session forms at its payload telescope’s universe level. `Value::PathEquiv`, `PathRefl`, `PathProduct` and `SessionPath` introduce paths. `Computation::Transport` computes for the first three; session evidence describes recorded action skeletons, not kernel endpoint values. They participate in ordinary arena traversal, declaration admission, structural conversion and artifact encoding. The surface parser has no path syntax.
 
 | Rule | Kernel obligation or computation |
 | ---- | -------------------------------- |
-| Formation | Both endpoints decode to closed first-order value types. |
+| Formation | Both endpoints decode to the admitted value-code vocabulary and pass ordinary type formation. Session payload codes are checked in an empty term context. |
 | Equivalence | Closed translators check at opposite CBPV arrows; every source and target round trip replays. |
 | Reflexivity | The endpoint code forms. |
 | Product | Both component paths form; endpoints are their products. |
@@ -386,6 +387,14 @@ One shared `ReplayBudget` counts both graphs’ Guard and Redirect visits. A con
 **Choice.** A native finite List code plus borrowed guarded inhabitants keeps code identity decidable and list observations incremental. Eager unfolding cannot retain an unobserved tail; recursive Rust data would compromise bounded stack use. **Reversal.** General strictly positive descriptions or persisted inhabitants require their own constructor, substitution and persistence rules; this surface supports the List fixed point and first-order element observations.
 
 **Mutation scope.** Recursive witnesses distinguish swapped constructor branches, dropped heads, eager tail reads, missing instruction charges, false productivity, truncated coverage, corrupt transport dialogues and finite-depth success on infinite input. No mutation campaign or infinite-coherence theorem is claimed.
+
+## Session code identities
+
+`ValueType::Session` is a finite protocol-code graph with a Unit-terminated payload-code telescope. Formation checks rooted syntax, lexical binders, immediate action guards, reachable states and payload slots; payload codes form in an empty term context. Mu and Var edges resolve within the finite graph. No endpoint or channel values enter the kernel, and no linearity is certified.
+
+Native identity replays supplied pairs without coinductive search; subtyping is forward-only. The [session certificate rules](docs/session-certificates.md) specify both judgements, their payload obligations, recorded transport and mutation scope.
+
+**Choice.** Session and first-order codes share the value universe, with finite formation and replay in the trusted base. The alternative, a `core-session` library decision alone, supplies no kernel certificate; trusting its Boolean answer would move search into admission. **Reversal.** A combined universe shown non-conservative beyond what finite replay can fence requires a separate protocol stratum. Finite witnesses establish no combined-universe conservativity theorem, live endpoint ownership, FIFO correlation or infinite-run productivity.
 
 ## Sharing and persistence
 

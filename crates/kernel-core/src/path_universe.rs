@@ -1,12 +1,12 @@
-//! Native certificate-typed identity at the closed first-order code universe.
+//! Native certificate-typed identity at closed first-order and session codes.
 //!
-//! `ValueType::PathUniverse`, the three path introductions and
+//! `ValueType::PathUniverse`, the native path introductions and
 //! `Computation::Transport` belong to the persisted term vocabulary. Admission
 //! checks translators in the ordinary iterative checker and replays both
-//! round trips on code-generated constructor patterns. Evidence contributes to
+//! round trips on code-generated constructor patterns. Session introductions
+//! instead replay a supplied finite bisimulation. Evidence contributes to
 //! content identity, never to certificate conversion. No path inspection, K or
 //! path-induction eliminator exists.
-
 use alloc::vec::Vec;
 use core::fmt;
 
@@ -30,7 +30,7 @@ use crate::replay::Unfoldings;
 
 pub(crate) mod coverage;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// One untrusted dialogue, interpreted against a kernel-derived boundary.
 #[repr(transparent)]
@@ -120,6 +120,8 @@ pub enum Reduction
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PathError
 {
+    /// A finite session graph is malformed.
+    Session(crate::session::SessionError),
     /// A supplied root does not resolve in the arena.
     Arena,
     /// An endpoint is not a quoted code.
@@ -157,9 +159,12 @@ impl fmt::Display for PathError
     ) -> fmt::Result
     {
         match *self {
+            | Self::Session(ref error) => error.fmt(f),
             | Self::Arena => f.write_str("a universe-path root was unreadable"),
             | Self::UnsupportedCode(_) => f.write_str("a universe-path endpoint was not quoted"),
-            | Self::UnsupportedType(_) => f.write_str("a universe-path code was not first-order"),
+            | Self::UnsupportedType(_) => {
+                f.write_str("a code was outside the native path vocabulary")
+            },
             | Self::ExpectedPath(_) => f.write_str("an equivalence annotation was not Path_U"),
             | Self::Coverage(Direction::Source) => {
                 f.write_str("incomplete source round-trip coverage")
@@ -230,10 +235,12 @@ impl Allowance
     }
 }
 
-/// Decode and validate every former reachable from a quoted first-order code.
+/// Inspect a quoted native path code and its finite session graph, if present.
 ///
 /// # Specification
-/// - ensures: accepts exactly quoted Unit, Base, Sum and Product graphs.
+/// - ensures: accepts quoted Unit, Base, Sum, Product and guarded Session
+///   shapes. Session payload typing belongs to ordinary native formation; this
+///   inspection is not a certificate or admission capability.
 /// - provides: the callable code walk for consumers of native universe paths.
 /// - fails: unsupported codes, unreadable roots or exhausted budget.
 /// - panics: none.
@@ -262,10 +269,12 @@ pub fn code(
     coverage::code(arena, code, &mut Allowance(u64::from(budget)))
 }
 
-/// Validate and decode both endpoints of a native path classifier.
+/// Inspect and decode both endpoints of a native path classifier.
 ///
 /// # Specification
-/// - ensures: both endpoint code graphs are closed and first-order.
+/// - ensures: both endpoint shapes belong to the native path code vocabulary;
+///   session graphs are finite and guarded. Ordinary checking still owes
+///   session payload formation in an empty term context.
 /// - fails: `ExpectedPath` for another classifier, or a code-walk refusal.
 /// - panics: none.
 ///

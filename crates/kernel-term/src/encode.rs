@@ -687,6 +687,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&ValueType::Abstract(_)) => tags::NODE_VT_ABSTRACT,
             Some(&ValueType::Product(..)) => tags::NODE_VT_PRODUCT,
             Some(&ValueType::Sum(..)) => tags::NODE_VT_SUM,
+            Some(&ValueType::Session { .. }) => tags::NODE_VT_SESSION,
             Some(&ValueType::List(_)) => tags::NODE_VT_LIST,
             Some(&ValueType::Thunk(_)) => tags::NODE_VT_THUNK,
             Some(&ValueType::Lift { .. }) => tags::NODE_VT_LIFT,
@@ -700,6 +701,7 @@ ensures: |ret| ret.0.as_image().as_ref().first().copied()
             Some(&CompType::Element { .. }) => tags::NODE_CT_ELEMENT,
         },
         AnyNode::Value(id) => match arena.value(id) {
+            Some(&Value::SessionPath { .. }) => tags::NODE_V_SESSION_PATH,
             Some(&Value::PathRefl(_)) => tags::NODE_V_PATH_REFL,
             Some(&Value::PathProduct(..)) => tags::NODE_V_PATH_PRODUCT,
             Some(&Value::PathEquiv { .. }) => tags::NODE_V_PATH_EQUIV,
@@ -764,6 +766,10 @@ fn encode_entry(
                 },
                 | ValueType::Product(..) => out.put_tag(tags::NODE_VT_PRODUCT),
                 | ValueType::Sum(..) => out.put_tag(tags::NODE_VT_SUM),
+                | ValueType::Session { ref graph, .. } => {
+                    out.put_tag(tags::NODE_VT_SESSION);
+                    graph.write(|word| out.put_uvarint(WireU64::from(word.0)));
+                },
                 | ValueType::List(_) => out.put_tag(tags::NODE_VT_LIST),
                 | ValueType::Thunk(_) => out.put_tag(tags::NODE_VT_THUNK),
                 | ValueType::Lift { ref target, .. } => {
@@ -796,6 +802,10 @@ fn encode_entry(
                 | Value::Constant(index) => {
                     out.put_tag(tags::NODE_V_CONSTANT);
                     out.put_uvarint(WireU64::from(WireUsize::from(usize::from(index))));
+                },
+                | Value::SessionPath { ref evidence, .. } => {
+                    out.put_tag(tags::NODE_V_SESSION_PATH);
+                    evidence.write(|word| out.put_uvarint(WireU64::from(word.0)));
                 },
                 | Value::PathRefl(_) => out.put_tag(tags::NODE_V_PATH_REFL),
                 | Value::PathProduct(..) => out.put_tag(tags::NODE_V_PATH_PRODUCT),

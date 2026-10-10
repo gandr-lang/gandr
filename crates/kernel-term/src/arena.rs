@@ -518,6 +518,38 @@ pub struct TermArena
 
 impl TermArena
 {
+    /// Append raw finite session-code syntax; admission checks its invariants.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_session(
+        &mut self,
+        graph: alloc::sync::Arc<crate::session::Graph>,
+        payloads: ValueTypeId,
+    ) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Session { graph, payloads })
+    }
+
+    /// Append an untrusted session-path introduction.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_session_path(
+        &mut self,
+        path_type: ValueTypeId,
+        evidence: alloc::sync::Arc<crate::session::Evidence>,
+        payload_paths: ValueId,
+    ) -> ValueId
+    {
+        self.alloc_value(Value::SessionPath {
+            path_type,
+            evidence,
+            payload_paths,
+        })
+    }
     /// An empty arena.
     ///
     /// # Specification
@@ -771,6 +803,7 @@ impl TermArena
             Value::Pair(first, second) | Value::StaticApplication(first, second) | Value::PathProduct(first, second) => self.value(first).is_some() && self.value(second).is_some(),
             Value::Injection(_, body) | Value::Lift { body, .. } | Value::PathRefl(body) => self.value(body).is_some(),
             Value::PathEquiv { path_type, forward, backward, .. } => self.value_type(path_type).is_some() && self.value(forward).is_some() && self.value(backward).is_some(),
+            Value::SessionPath { path_type, payload_paths, .. } => self.value_type(path_type).is_some() && self.value(payload_paths).is_some(),
             Value::Thunk(body) => self.computation(body).is_some(),
             Value::Quote(quoted) => self.value_type(quoted).is_some(),
             Value::QuoteComputation(quoted) => self.comp_type(quoted).is_some(),
@@ -866,6 +899,7 @@ impl TermArena
             ValueType::Product(first, second) | ValueType::Sum(first, second) | ValueType::StaticPi { domain: first, codomain: second } => self.value_type(first).is_some() && self.value_type(second).is_some(),
             ValueType::PathUniverse(first, second) => self.value(first).is_some() && self.value(second).is_some(),
             ValueType::Thunk(body) => self.comp_type(body).is_some(),
+            ValueType::Session { payloads, .. } => self.value_type(payloads).is_some(),
             ValueType::Lift { inner, .. } | ValueType::List(inner) => self.value_type(inner).is_some(),
             ValueType::Element { code, .. } => self.value(code).is_some(),
             ValueType::Base(_) | ValueType::Unit | ValueType::Empty | ValueType::Universe { .. } | ValueType::Abstract(_) => true,
@@ -2374,6 +2408,7 @@ impl TermArena
             | None => ret.is_empty(),
             Some(&Value::PathEquiv { path_type, forward, backward, .. }) =>
                 ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(forward), AnyNode::Value(backward)],
+            Some(&Value::SessionPath { path_type, payload_paths, .. }) => ret.as_slice() == [AnyNode::ValueType(path_type), AnyNode::Value(payload_paths)],
             Some(&Value::PathRefl(code)) => ret.as_slice() == [AnyNode::Value(code)],
             Some(&Value::PathProduct(first, second) | &Value::Pair(first, second) | &Value::StaticApplication(first, second)) =>
                 ret.as_slice() == [AnyNode::Value(first), AnyNode::Value(second)],
@@ -2406,6 +2441,7 @@ impl TermArena
             Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)
                 | &ValueType::StaticPi { domain: first, codomain: second }) =>
                 ret.as_slice() == [AnyNode::ValueType(first), AnyNode::ValueType(second)],
+            Some(&ValueType::Session { payloads, .. }) => ret.as_slice() == [AnyNode::ValueType(payloads)],
             Some(&ValueType::PathUniverse(source, target)) => ret.as_slice() == [AnyNode::Value(source), AnyNode::Value(target)],
             Some(&ValueType::Thunk(body)) => ret.as_slice() == [AnyNode::CompType(body)],
             Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => ret.as_slice() == [AnyNode::ValueType(inner)],
@@ -2440,6 +2476,14 @@ impl TermArena
                     children.push(AnyNode::ValueType(path_type));
                     children.push(AnyNode::Value(forward));
                     children.push(AnyNode::Value(backward));
+                },
+                | Some(&Value::SessionPath {
+                    path_type,
+                    payload_paths,
+                    ..
+                }) => {
+                    children.push(AnyNode::ValueType(path_type));
+                    children.push(AnyNode::Value(payload_paths));
                 },
                 | Some(&Value::PathRefl(code)) => children.push(AnyNode::Value(code)),
                 | Some(
@@ -2510,6 +2554,9 @@ impl TermArena
                 ) => {
                     children.push(AnyNode::ValueType(first));
                     children.push(AnyNode::ValueType(second));
+                },
+                | Some(&ValueType::Session { payloads, .. }) => {
+                    children.push(AnyNode::ValueType(payloads));
                 },
                 | Some(&ValueType::PathUniverse(source, target)) => {
                     children.push(AnyNode::Value(source));

@@ -728,6 +728,7 @@ impl ContentTable
         Value::StaticApplication(..) => gandr_kernel_term::NODE_V_STATIC_APPLICATION,
         Value::PathRefl(_) => gandr_kernel_term::NODE_V_PATH_REFL, Value::PathProduct(..) => gandr_kernel_term::NODE_V_PATH_PRODUCT,
         Value::PathEquiv { .. } => gandr_kernel_term::NODE_V_PATH_EQUIV,
+        Value::SessionPath { .. } => gandr_kernel_term::NODE_V_SESSION_PATH,
     }))) ]
     fn put_value(
         &self,
@@ -736,6 +737,16 @@ impl ContentTable
     )
     {
         match *value {
+            | Value::SessionPath {
+                path_type,
+                payload_paths,
+                ref evidence,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_V_SESSION_PATH);
+                evidence.write(|word| record.put_word(EncodedWord(word.0)));
+                record.put_content(self.content_of(AnyNode::ValueType(path_type)));
+                record.put_content(self.content_of(AnyNode::Value(payload_paths)));
+            },
             | Value::PathRefl(code) => {
                 record.put_tag(gandr_kernel_term::NODE_V_PATH_REFL);
                 record.put_content(self.content_of(AnyNode::Value(code)));
@@ -904,6 +915,7 @@ impl ContentTable
         ValueType::Element { .. } => gandr_kernel_term::NODE_VT_ELEMENT, ValueType::Abstract(_) => gandr_kernel_term::NODE_VT_ABSTRACT,
         ValueType::StaticPi { .. } => gandr_kernel_term::NODE_VT_STATIC_PI, ValueType::PathUniverse(..) => gandr_kernel_term::NODE_VT_PATH_UNIVERSE,
         ValueType::List(_) => gandr_kernel_term::NODE_VT_LIST,
+        ValueType::Session { .. } => gandr_kernel_term::NODE_VT_SESSION,
     }))) ]
     fn put_value_type(
         &self,
@@ -950,6 +962,14 @@ impl ContentTable
             | ValueType::Thunk(body) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_THUNK);
                 record.put_content(self.content_of(AnyNode::CompType(body)));
+            },
+            | ValueType::Session {
+                ref graph,
+                payloads,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_VT_SESSION);
+                graph.write(|word| record.put_word(EncodedWord(word.0)));
+                record.put_content(self.content_of(AnyNode::ValueType(payloads)));
             },
             | ValueType::List(element) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_LIST);
@@ -1040,10 +1060,11 @@ impl ContentTable
 ///   before its parent; missing a child changes the resulting content key.
 /// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
 /// - witness: `encoding::tests::a_transposed_product_encodes_differently`
+/// - witness: `session::tests::session_relations_replay_without_search`
 #[spec(captures: before = tasks.len(), ensures: tasks.len() == before.saturating_add(match node {
         AnyNode::Value(id) => match arena.value(id) {
             Some(&Value::PathEquiv { .. }) => 3,
-            Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..)) => 2,
+            Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..) | &Value::SessionPath { .. }) => 2,
             Some(&Value::Injection(..) | &Value::Lift { .. } | &Value::Thunk(_) | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::PathRefl(_)) => 1,
             _ => 0,
         },
@@ -1054,7 +1075,7 @@ impl ContentTable
         },
         AnyNode::ValueType(id) => match arena.value_type(id) {
             Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. } | &ValueType::PathUniverse(..)) => 2,
-            Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. } | &ValueType::List(_)) => 1,
+            Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. } | &ValueType::List(_) | &ValueType::Session { .. }) => 1,
             _ => 0,
         },
         AnyNode::CompType(id) => match arena.comp_type(id) {
@@ -1083,6 +1104,14 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(path_type)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(forward)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(backward)));
+            },
+            | Some(&Value::SessionPath {
+                path_type,
+                payload_paths,
+                ..
+            }) => {
+                tasks.push(EncodeTask::Open(AnyNode::ValueType(path_type)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(payload_paths)));
             },
             | Some(&Value::PathRefl(code)) => tasks.push(EncodeTask::Open(AnyNode::Value(code))),
             | Some(
@@ -1165,7 +1194,13 @@ fn push_children(
             | Some(&ValueType::Thunk(body)) => {
                 tasks.push(EncodeTask::Open(AnyNode::CompType(body)));
             },
-            | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+            | Some(
+                &ValueType::Session {
+                    payloads: inner, ..
+                }
+                | &ValueType::Lift { inner, .. }
+                | &ValueType::List(inner),
+            ) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(inner)));
             },
             | Some(&ValueType::Element { code, .. }) => {
