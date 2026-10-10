@@ -1,6 +1,9 @@
 //! The seven universe-path acceptance witnesses, using the untrusted `NbE`
 //! engine.
 
+#[path = "../higher_field/certificate_tests.rs"]
+mod higher_field_tests;
+
 use alloc::collections::BTreeMap;
 use alloc::vec;
 use alloc::vec::Vec;
