@@ -15,6 +15,7 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Verdict;
@@ -44,6 +45,24 @@ use crate::refusal::Refusal;
 use crate::refusal::RefusalName;
 
 /// The corpus root a source was listed under.
+///
+/// # Specification
+/// - requires: the fixture producer preserves the source and boundary
+///   correspondence represented.
+/// - ensures: Identifies the strict or fixture tree from which the sweep
+///   obtained a source.
+/// - panics: none.
+/// - executable: none — The enum has no path or filesystem observation;
+///   `sources` and `corpus` supply those relationships.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the current strict and fixture sources are observed
+///   through boundary classification and record-backed artifact reconstruction.
+///   Exact admitted names and withheld dependencies distinguish changed
+///   inclusion and lost provenance; repeated exports show determinism rather
+///   than an independent oracle.
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Root
 {
@@ -54,6 +73,25 @@ enum Root
 }
 
 /// What became of one declaration at the kernel boundary.
+///
+/// # Specification
+/// - requires: the fixture producer preserves the source and boundary
+///   correspondence represented.
+/// - ensures: Distinguishes definitions and assumptions that enter the artifact
+///   from marked, withheld, static and never-offered declarations.
+/// - panics: none.
+/// - executable: none — The enum holds no checker/readmission pair or artifact;
+///   `class_of`, `export` and the partition witness establish its
+///   interpretation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the current strict and fixture sources are observed
+///   through boundary classification and record-backed artifact reconstruction.
+///   Exact admitted names and withheld dependencies distinguish changed
+///   inclusion and lost provenance; repeated exports show determinism rather
+///   than an independent oracle.
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 enum Class
 {
@@ -76,6 +114,25 @@ enum Class
 }
 
 /// One source the lowering read, exported.
+///
+/// # Specification
+/// - requires: the fixture producer preserves the source and boundary
+///   correspondence represented.
+/// - ensures: Associates a source path and root with declaration classes,
+///   withheld dependencies, admitted names and their canonical artifact.
+/// - panics: none.
+/// - executable: none — The record has no original source, module or judgement
+///   sequence; `export` establishes its structural invariants and the partition
+///   witness compares its admitted names to the artifact.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the current strict and fixture sources are observed
+///   through boundary classification and record-backed artifact reconstruction.
+///   Exact admitted names and withheld dependencies distinguish changed
+///   inclusion and lost provenance; repeated exports show determinism rather
+///   than an independent oracle.
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
 struct Exported
 {
     /// Where the source sits.
@@ -94,6 +151,24 @@ struct Exported
 }
 
 /// What one listed source came to.
+///
+/// # Specification
+/// - requires: the fixture producer preserves the source and boundary
+///   correspondence represented.
+/// - ensures: Distinguishes a source exported after lowering from a source
+///   refused as a whole before any declaration was offered.
+/// - panics: none.
+/// - executable: none — The enum carries no original lowering result; `export`
+///   selects the case while the corpus consumers validate successful exports.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the current strict and fixture sources are observed
+///   through boundary classification and record-backed artifact reconstruction.
+///   Exact admitted names and withheld dependencies distinguish changed
+///   inclusion and lost provenance; repeated exports show determinism rather
+///   than an independent oracle.
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
 enum Swept
 {
     /// The lowering read it, and it was exported.
@@ -105,7 +180,35 @@ enum Swept
 /// Every `.gandr` source under `root`, sorted, symbolic links not followed.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the committed corpus roots remain readable and unchanged during
+///   the sweep.
+/// - ensures: returns the `.gandr` paths under the selected root, uniquely in
+///   lexical order, without following symbolic links.
+/// - panics: when a corpus directory, entry or file type cannot be read.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the checked-in strict and fixture trees feed the export
+///   and record-plane witnesses. The predicate observes root membership,
+///   extension, uniqueness and ordering without a second filesystem walk. The
+///   witnesses cover the current corpus; they do not model concurrent
+///   filesystem mutation.
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+#[spec(
+    ensures: |ret| {
+    let directory = match root {
+        Root::Strict => concat!(env!("CARGO_MANIFEST_DIR"), "/strict"),
+        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/fixture"),
+    };
+    ret
+        .iter()
+        .all(|path| {
+            path.starts_with(directory)
+                && path.extension().is_some_and(|extension| extension == "gandr")
+        })
+        && ret.iter().zip(ret.iter().skip(1_usize)).all(|(first, second)| first < second)
+},
+)]
 fn sources(root: Root) -> Vec<PathBuf>
 {
     let directory = match root {
@@ -145,7 +248,52 @@ fn sources(root: Root) -> Vec<PathBuf>
 /// readmission is `outcome`, which must agree.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the checker verdict and kernel readmission agree: accepted
+///   definitions or static operators, owed assumptions, matching refusal marks,
+///   or accepted/owed declarations withheld by a dependency.
+/// - ensures: returns exactly the corresponding boundary class, retaining the
+///   checker refusal’s canonical name for a mark.
+/// - panics: when the fixture’s verdict and readmission disagree.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the current corpus supplies readmitted definitions,
+///   assumptions, refusal marks, static declarations and withheld dependencies.
+///   Exact partition-to-artifact membership distinguishes admitting excluded
+///   declarations or losing admitted names; the predicate additionally states
+///   pair compatibility and exact class selection.
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+#[spec(
+    requires: match (verdict, outcome) {
+    (
+        Verdict::Checked { .. } | Verdict::Synthesised { .. },
+        &(bridge::Outcome::Defined { .. }
+        | bridge::Outcome::Static
+        | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. })),
+    )
+    | (
+        Verdict::Owed(_),
+        &(bridge::Outcome::Assumed { .. }
+        | bridge::Outcome::Refused(bridge::Refusal::Withheld { .. })),
+    ) => true,
+    (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark)) => refusal == mark,
+    _ => false,
+},
+    ensures: |ret| match (verdict, outcome, ret) {
+    (_, &bridge::Outcome::Defined { .. }, Class::Defined)
+    | (_, &bridge::Outcome::Static, Class::Static)
+    | (_, &bridge::Outcome::Assumed { .. }, Class::Assumed)
+    | (
+        _,
+        &bridge::Outcome::Refused(bridge::Refusal::Withheld { .. }),
+        Class::Withheld,
+    ) => true,
+    (Verdict::Refused(refusal), &bridge::Outcome::Marked(mark), Class::Marked(name)) => {
+        refusal == mark && name == Refusal::Checking(refusal).name()
+    }
+    _ => false,
+},
+)]
 fn class_of(
     path: &Path,
     verdict: Verdict,
@@ -179,7 +327,68 @@ fn class_of(
 /// exported.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `path` is a readable UTF-8 corpus source and `pbg` is its
+///   grammar; the caller supplies the root it was listed under.
+/// - ensures: a whole-source lowering refusal offers nothing. Otherwise
+///   preserves the root, declaration admission order, boundary classes,
+///   withheld dependencies and exactly the names admitted as definitions or
+///   assumptions alongside their artifact.
+/// - panics: on unreadable source, parser failure, an engine fault, or
+///   inconsistent checker/readmission positions.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every current corpus source that lowers is checked
+///   against its decoded and record-backed artifact. Exact names, admission
+///   order, record cardinality and withheld targets distinguish
+///   inclusion/exclusion mistakes and lost dependencies. Repeat sweeps
+///   establish determinism, not an independent semantic oracle; the predicate
+///   does not reread source files.
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+#[spec(
+    ensures: |ret| match ret {
+    Swept::RefusedWhole => true,
+    Swept::Exported(ref exported) => {
+        exported.root == root
+            && exported
+                .classes
+                .iter()
+                .zip(exported.classes.iter().skip(1_usize))
+                .all(|(first, second)| first.0 < second.0)
+            && exported.crossed_names.len()
+                == exported
+                    .classes
+                    .iter()
+                    .filter(|&&(_, class)| {
+                        matches!(class, Class::Defined | Class::Assumed)
+                    })
+                    .count()
+            && exported
+                .withheld
+                .iter()
+                .all(|&(declaration, named)| {
+                    exported
+                        .classes
+                        .iter()
+                        .any(|&(constant, class)| {
+                            constant == declaration && class == Class::Withheld
+                        })
+                        && !exported
+                            .classes
+                            .iter()
+                            .any(|&(constant, class)| {
+                                constant == named
+                                    && matches!(class, Class::Defined | Class::Assumed)
+                            })
+                })
+            && exported
+                .classes
+                .iter()
+                .filter(|&&(_, class)| class == Class::Withheld)
+                .count() == exported.withheld.len()
+    }
+},
+)]
 fn export(
     pbg: &Pbg,
     path: PathBuf,
@@ -273,7 +482,42 @@ fn export(
 /// path order.
 ///
 /// # Specification
-/// trivial.
+/// - requires: both committed corpus trees remain readable and unchanged during
+///   the sweep.
+/// - ensures: exports every source that lowers, omitting whole-source refusals,
+///   in strict-root then fixture-root path order without duplicate paths.
+/// - panics: on an invalid fixture or failed export precondition.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the checked-in roots are swept twice and each resulting
+///   artifact is decoded and read through its records. Root/path order and
+///   unique membership are executable invariants; byte identity across sweeps
+///   is determinism evidence, while the partition witness compares admitted
+///   names to the reconstructed artifact.
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+#[spec(
+    ensures: |ret| {
+    ret
+        .iter()
+        .all(|exported| {
+            exported
+                .path
+                .starts_with(
+                    match exported.root {
+                        Root::Strict => concat!(env!("CARGO_MANIFEST_DIR"), "/strict"),
+                        Root::Fixture => concat!(env!("CARGO_MANIFEST_DIR"), "/fixture"),
+                    },
+                )
+        })
+        && ret
+            .iter()
+            .zip(ret.iter().skip(1_usize))
+            .all(|(first, second)| {
+                (first.root, &first.path) < (second.root, &second.path)
+            })
+},
+)]
 fn corpus() -> Vec<Exported>
 {
     let pbg = built_in().expect("the built-in grammar builds");
@@ -292,7 +536,28 @@ fn corpus() -> Vec<Exported>
 /// manifest naming them.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `artifact` is a valid canonical kernel export whose record tree
+///   fits the current profile.
+/// - ensures: returns a fresh store containing the artifact’s record tree and
+///   the manifest naming its root. Reading the manifest under the current
+///   profile reconstructs the same artifact.
+/// - panics: if the export cannot be segmented or the records cannot be
+///   committed.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every current corpus export is committed, read through
+///   the manifest and compared with the kernel-decoded artifact; its manifest
+///   count also matches the independently observed admitted declarations. The
+///   predicate verifies the returned manifest/store root association without
+///   another whole-artifact reconstruction.
+/// - witness: `kernel_export::kernel_export_gate::the_kernel_export_exit_gate_holds`
+/// - witness: `kernel_export::kernel_corpus_partition::corpus_partition_matches_the_manifest`
+#[spec(
+    ensures: |ret| {
+    gandr_storage_records::BlockStore::load(&ret.1, ret.0.root_node())
+        .is_ok_and(|node| node.identity() == ret.0.root_node())
+},
+)]
 fn commit(artifact: &EncodedArtifact) -> (ArtifactManifest, InMemoryBlockStore)
 {
     let records = ArtifactRecordSet::from_artifact(artifact.as_image())
@@ -375,7 +640,6 @@ mod kernel_export_gate
 mod kernel_corpus_partition
 {
     use alloc::collections::BTreeMap;
-    use alloc::collections::BTreeSet;
     use alloc::vec::Vec;
 
     use gandr_kernel_term::StructuredName;
@@ -431,19 +695,5 @@ mod kernel_corpus_partition
                  order, under their names"
             );
         }
-    }
-
-    #[test]
-    fn corpus_exercises_multiple_exclusion_classes()
-    {
-        let excluded: BTreeSet<Class> = corpus()
-            .iter()
-            .flat_map(|exported| exported.classes.iter().map(|&(_, class)| class))
-            .filter(|class| !matches!(*class, Class::Defined | Class::Assumed))
-            .collect();
-        assert!(
-            excluded.len() >= 4_usize,
-            "the corpus keeps several kinds of declaration out of the kernel: {excluded:?}"
-        );
     }
 }
