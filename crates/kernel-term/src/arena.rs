@@ -345,6 +345,52 @@ impl TermArena
         self.comp_types.truncate(watermark.comp_types);
     }
 
+    /// Research scratch: append `source`'s nodes in `[from, to)`, family by
+    /// family: the copy that accepts a declaration checked in a clone whose
+    /// prefix equals this arena.
+    #[inline]
+    pub fn extend_from_segment(
+        &mut self,
+        source: &Self,
+        from: ArenaWatermark,
+        to: ArenaWatermark,
+    )
+    {
+        self.values
+            .extend_from_slice(source.values.get(from.values .. to.values).unwrap_or(&[]));
+        self.computations.extend_from_slice(
+            source
+                .computations
+                .get(from.computations .. to.computations)
+                .unwrap_or(&[]),
+        );
+        self.value_types.extend_from_slice(
+            source
+                .value_types
+                .get(from.value_types .. to.value_types)
+                .unwrap_or(&[]),
+        );
+        self.comp_types.extend_from_slice(
+            source
+                .comp_types
+                .get(from.comp_types .. to.comp_types)
+                .unwrap_or(&[]),
+        );
+    }
+
+    /// Research scratch: the node count in `[from, to)` over all families.
+    #[must_use]
+    pub fn segment_nodes(
+        from: ArenaWatermark,
+        to: ArenaWatermark,
+    ) -> usize
+    {
+        to.values.saturating_sub(from.values)
+            + to.computations.saturating_sub(from.computations)
+            + to.value_types.saturating_sub(from.value_types)
+            + to.comp_types.saturating_sub(from.comp_types)
+    }
+
     /// Resolve a value id, or `None` when it dangles.
     ///
     /// # Specification

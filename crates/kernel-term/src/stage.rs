@@ -377,6 +377,28 @@ impl Arena
         self.term_ids.insert(term, id);
         Ok(id)
     }
+
+    /// Research scratch: the term and type counts.
+    #[must_use]
+    pub fn extent(&self) -> (usize, usize)
+    {
+        (self.terms.len(), self.types.len())
+    }
+
+    /// Research scratch: drop every term and type at or above `extent`, and
+    /// their lookup entries, so a worker reuses one snapshot across sources.
+    pub fn truncate_to(
+        &mut self,
+        extent: (usize, usize),
+    )
+    {
+        for term in self.terms.drain(extent.0.min(self.terms.len()) ..) {
+            let _gone = self.term_ids.remove(&term);
+        }
+        for ty in self.types.drain(extent.1.min(self.types.len()) ..) {
+            let _gone = self.type_ids.remove(&ty);
+        }
+    }
 }
 
 /// A constructor child slot, vacant exactly when that position is unused.

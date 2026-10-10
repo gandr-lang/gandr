@@ -30,6 +30,8 @@ use gandr_core_checker::signature;
 use gandr_core_term::CoreArena;
 use gandr_kernel_core::LevelContext;
 use gandr_kernel_core::check_declaration;
+use gandr_kernel_term::ArenaWatermark;
+use gandr_kernel_term::TermArena;
 use gandr_storage_artifact::ArtifactRecordSet;
 use gandr_storage_artifact::build;
 use gandr_storage_records::BlockStore;
@@ -210,6 +212,22 @@ struct Swept
     kernel_decl_ns: Vec<u128>,
     core_decl_ns: Vec<u128>,
     snapshot_ok: bool,
+    /// Per admitted declaration: content nodes, segment copy and check
+    /// (best of five each), and the positions it names directly.
+    spec: Vec<SpecDecl>,
+    /// Readmission outcomes: defined, assumed, marked, static, refused,
+    /// rejected by the kernel.
+    outcomes: [usize; 6],
+}
+
+#[derive(Clone, Default)]
+struct SpecDecl
+{
+    position: usize,
+    nodes: usize,
+    copy_ns: u128,
+    check_ns: u128,
+    refs: Vec<usize>,
 }
 
 fn sweep(
@@ -277,6 +295,17 @@ fn sweep(
     out.node_sizes = store.sizes;
     let environment = readmission.environment();
     out.crossed = environment.entries().len();
+    for readmitted in readmission.readmitted() {
+        let slot = match readmitted.outcome() {
+            | bridge::Outcome::Defined { .. } => 0,
+            | bridge::Outcome::Assumed { .. } => 1,
+            | bridge::Outcome::Marked(_) => 2,
+            | bridge::Outcome::Static => 3,
+            | bridge::Outcome::Refused(_) => 4,
+            | bridge::Outcome::Rejected(_) => 5,
+        };
+        out.outcomes[slot] += 1;
+    }
     out.digest = format!(
         "{:?}",
         verdicts
@@ -334,6 +363,57 @@ fn sweep(
             )
             .collect();
         out.snapshot_ok = ok && forked.iter().all(|&v| v) && forked.len() == admitted.len();
+        // Speculation probe: the accept copy of each declaration's content
+        // segment against its check, and what it names.
+        let full = environment.arena();
+        let floors = environment.floors();
+        for position in 0 .. entries.len().min(admitted.len()).min(floors.len()) {
+            let from = if position == 0 {
+                ArenaWatermark::default()
+            }
+            else {
+                floors[position - 1]
+            };
+            let to = floors[position];
+            let mut destination = full.clone();
+            destination.truncate_to(from);
+            let mut copy_ns = u128::MAX;
+            for _ in 0 .. 5 {
+                let start = Instant::now();
+                destination.extend_from_segment(full, from, to);
+                copy_ns = copy_ns.min(start.elapsed().as_nanos());
+                destination.truncate_to(from);
+            }
+            let declaration = &admitted[position];
+            let mut check_ns = u128::MAX;
+            for _ in 0 .. 5 {
+                if let Ok(levels) = LevelContext::admit(
+                    declaration.levels().params(),
+                    declaration.levels().constraints().to_vec(),
+                ) {
+                    let start = Instant::now();
+                    let _ = check_declaration(
+                        &mut scratch,
+                        &entries[.. position],
+                        &levels,
+                        declaration,
+                    );
+                    check_ns = check_ns.min(start.elapsed().as_nanos());
+                    scratch.truncate_to(floor);
+                }
+            }
+            let refs = environment
+                .direct_references(position)
+                .map(|set| set.into_iter().map(usize::from).collect())
+                .unwrap_or_default();
+            out.spec.push(SpecDecl {
+                position,
+                nodes: TermArena::segment_nodes(from, to),
+                copy_ns,
+                check_ns,
+                refs,
+            });
+        }
     }
     out
 }
@@ -444,6 +524,72 @@ fn main()
         pctu(&core_ns, 99),
         pctu(&core_ns, 100),
         core_ns.iter().sum::<u128>()
+    );
+    // Speculation probe over every admitted declaration of the corpus.
+    let mut outcomes = [0_usize; 6];
+    let mut copy = Vec::new();
+    let mut check = Vec::new();
+    let mut ratio = Vec::new();
+    let mut nodes = Vec::new();
+    let mut below = [0_usize; 3];
+    let mut total = 0_usize;
+    for ((path, _), swept) in texts.iter().zip(&detail) {
+        for (o, n) in outcomes.iter_mut().zip(swept.outcomes) {
+            *o += n;
+        }
+        for decl in &swept.spec {
+            let name = path
+                .strip_prefix(env!("CARGO_MANIFEST_DIR"))
+                .unwrap()
+                .display();
+            let max_ref = decl.refs.iter().max().map_or(-1, |&r| r as i64);
+            println!(
+                "SPECDECL,{name},position={},nodes={},copy_ns={},check_ns={},refs={},max_ref={max_ref}",
+                decl.position,
+                decl.nodes,
+                decl.copy_ns,
+                decl.check_ns,
+                decl.refs.len()
+            );
+            copy.push(decl.copy_ns);
+            check.push(decl.check_ns);
+            ratio.push(decl.copy_ns as f64 / decl.check_ns.max(1) as f64);
+            nodes.push(decl.nodes);
+            total += 1;
+            for (slot, batch) in [4_usize, 8, 16].into_iter().enumerate() {
+                let start = decl.position / batch * batch;
+                if decl.refs.iter().all(|&r| r < start) {
+                    below[slot] += 1;
+                }
+            }
+        }
+    }
+    copy.sort_unstable();
+    check.sort_unstable();
+    nodes.sort_unstable();
+    ratio.sort_by(f64::total_cmp);
+    let pf = |v: &Vec<f64>, p: usize| {
+        v.get(v.len().saturating_sub(1) * p / 100)
+            .copied()
+            .unwrap_or(0.0)
+    };
+    println!(
+        "SPECSUM,declarations={total},copy_p50_ns={},copy_p90_ns={},check_p50_ns={},check_p90_ns={},copy_over_check_p50={:.4},copy_over_check_p90={:.4},nodes_p50={},nodes_p90={},below_batch_start_4={:.3},below_batch_start_8={:.3},below_batch_start_16={:.3}",
+        pctu(&copy, 50),
+        pctu(&copy, 90),
+        pctu(&check, 50),
+        pctu(&check, 90),
+        pf(&ratio, 50),
+        pf(&ratio, 90),
+        pct(&nodes, 50),
+        pct(&nodes, 90),
+        below[0] as f64 / total.max(1) as f64,
+        below[1] as f64 / total.max(1) as f64,
+        below[2] as f64 / total.max(1) as f64
+    );
+    println!(
+        "OUTCOMES,defined={},assumed={},marked={},static={},refused={},rejected={}",
+        outcomes[0], outcomes[1], outcomes[2], outcomes[3], outcomes[4], outcomes[5]
     );
     if let Ok(path) = std::env::var("GANDR_NODE_SIZES") {
         fs::write(

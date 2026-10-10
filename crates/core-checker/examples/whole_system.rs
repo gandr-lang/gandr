@@ -390,6 +390,143 @@ fn fixture_forked(case: Case) -> Result<(Fixture, Duration), StageError>
     ))
 }
 
+/// One source's normalization exported from a reused worker snapshot: the
+/// terms and types it added above the base extent, and its certificate.
+struct Segment
+{
+    terms: Vec<Term>,
+    types: Vec<Type>,
+    certificate: Certificate,
+    elapsed: Duration,
+}
+
+/// Normalize every source in one snapshot per worker, truncated back to
+/// the base extent between sources, then merge the exported segments in
+/// source order: the per-source clone of `fixture_forked` removed.
+fn fixture_forked_reuse(case: Case) -> Result<(Fixture, Duration), StageError>
+{
+    let mut arena = Arena::default();
+    let token = arena.alloc_type(Type::In(Model(0)))?;
+    let roots = sources(&mut arena, case)?;
+    let floor = arena.extent();
+    let segments: Vec<Segment> = roots
+        .par_iter()
+        .map_init(
+            || arena.clone(),
+            |worker, &source| {
+                let start = Instant::now();
+                let certificate =
+                    gandr_core_nbe::stage::normalize(worker, source, &mut Budget(10_000_000))?;
+                let (terms, types) = worker.extent();
+                let segment = Segment {
+                    terms: (floor.0 .. terms)
+                        .map(|i| worker.term(TermId(i)))
+                        .collect::<Result<_, _>>()?,
+                    types: (floor.1 .. types)
+                        .map(|i| worker.ty(TypeId(i)))
+                        .collect::<Result<_, _>>()?,
+                    certificate,
+                    elapsed: start.elapsed(),
+                };
+                worker.truncate_to(floor);
+                Ok(segment)
+            },
+        )
+        .collect::<Result<_, StageError>>()?;
+    let start = Instant::now();
+    let mut certificates = Vec::with_capacity(segments.len());
+    let mut normalize = Vec::with_capacity(segments.len());
+    for segment in &segments {
+        certificates.push(merge_segment(&mut arena, floor, segment)?);
+        normalize.push(segment.elapsed);
+    }
+    let merged = start.elapsed();
+    if std::env::var_os("GANDR_SEGMENTS").is_some() {
+        // Terms each source minted from the base snapshot, against the terms
+        // the merged arena keeps: the sharing a serial run gets for free.
+        let minted: usize = segments.iter().map(|s| s.terms.len()).sum();
+        let kept = arena.extent().0 - floor.0;
+        println!(
+            "SEGMENTS,{case},sources={},minted_terms={minted},merged_terms={kept},shared_fraction={:.3}",
+            segments.len(),
+            1.0 - kept as f64 / minted.max(1) as f64
+        );
+    }
+    Ok((
+        Fixture {
+            arena,
+            context: Vec::from([token]),
+            certificates,
+            normalize,
+        },
+        merged,
+    ))
+}
+
+/// [`merge`] reading an exported segment instead of a worker arena.
+fn merge_segment(
+    main: &mut Arena,
+    floor: (usize, usize),
+    segment: &Segment,
+) -> Result<Certificate, StageError>
+{
+    let type_at = |map: &[TypeId], id: TypeId| {
+        if id.0 < floor.1 {
+            id
+        }
+        else {
+            map[id.0 - floor.1]
+        }
+    };
+    let mut type_map: Vec<TypeId> = Vec::with_capacity(segment.types.len());
+    for ty in &segment.types {
+        let ty = match *ty {
+            | Type::Arrow(a, b) => Type::Arrow(type_at(&type_map, a), type_at(&type_map, b)),
+            | Type::Lift(inner) => Type::Lift(type_at(&type_map, inner)),
+            | leaf => leaf,
+        };
+        type_map.push(main.alloc_type(ty)?);
+    }
+    let term_at = |map: &[TermId], id: TermId| {
+        if id.0 < floor.0 {
+            id
+        }
+        else {
+            map[id.0 - floor.0]
+        }
+    };
+    let mut term_map: Vec<TermId> = Vec::with_capacity(segment.terms.len());
+    for term in &segment.terms {
+        let term = match *term {
+            | Term::Code(ty) => Term::Code(type_at(&type_map, ty)),
+            | Term::Lambda(ty, body) => Term::Lambda(type_at(&type_map, ty), body),
+            | Term::Eliminate(body, ty) => Term::Eliminate(body, type_at(&type_map, ty)),
+            | term => term,
+        };
+        let mut children = [gandr_kernel_term::stage::Child::Vacant; 3];
+        for (child, output) in term.children().into_iter().zip(&mut children) {
+            if let gandr_kernel_term::stage::Child::Present(child) = child {
+                *output = gandr_kernel_term::stage::Child::Present(term_at(&term_map, child));
+            }
+        }
+        term_map.push(main.alloc(term.rebuild(children)?)?);
+    }
+    let certificate = &segment.certificate;
+    Ok(Certificate {
+        source: term_at(&term_map, certificate.source),
+        target: term_at(&term_map, certificate.target),
+        steps: certificate
+            .steps
+            .iter()
+            .map(|step| Step {
+                source: term_at(&term_map, step.source),
+                target: term_at(&term_map, step.target),
+                rule: step.rule,
+            })
+            .collect(),
+    })
+}
+
 // ---------------------------------------------------------------- forks
 
 /// A rayon fork for the kernel's obligation jobs.
@@ -475,6 +612,7 @@ struct Levels
     obligations: bool,
     beside: bool,
     normalize: bool,
+    reuse: bool,
     leaf: usize,
 }
 
@@ -492,6 +630,7 @@ impl Levels
             obligations: text.contains('o'),
             beside: text.contains('x'),
             normalize: text.contains('n'),
+            reuse: text.contains('m'),
             leaf,
         }
     }
@@ -633,6 +772,11 @@ fn whole_program(
     let start = Instant::now();
     let input = if levels.normalize {
         let (input, merged) = fixture_forked(case)?;
+        outcome.stages.push(("merge", merged));
+        input
+    }
+    else if levels.reuse {
+        let (input, merged) = fixture_forked_reuse(case)?;
         outcome.stages.push(("merge", merged));
         input
     }

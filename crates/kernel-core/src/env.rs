@@ -588,6 +588,9 @@ pub struct Environment
     /// The content-start marks of declarations staged into the arena and not
     /// yet resolved. What a rejection may not truncate through.
     outstanding: StagedMarks,
+    /// Research scratch: the admission floor after each admission, so
+    /// declaration `i`'s content is `[floors[i - 1], floors[i])`.
+    floors: Vec<ArenaWatermark>,
 }
 
 impl Environment
@@ -623,6 +626,33 @@ impl Environment
     pub fn entries(&self) -> &[AdmittedDeclaration]
     {
         self.entries.as_slice()
+    }
+
+    /// Research scratch: the admission floor after each admission.
+    #[must_use]
+    pub fn floors(&self) -> &[ArenaWatermark]
+    {
+        self.floors.as_slice()
+    }
+
+    /// Research scratch: the positions declaration `position`'s declared type
+    /// and body name directly, following codes as the audit does.
+    #[must_use]
+    pub fn direct_references(
+        &self,
+        position: usize,
+    ) -> Option<BTreeSet<ConstantIndex>>
+    {
+        let content = self.entries.get(position)?.declaration.content();
+        let mut direct = audited_type_constants(&self.arena, content.declared_id());
+        if let DeclarationContent::Def { body, .. } = *content {
+            direct.append(&mut collect_reachable(
+                &self.arena,
+                AnyNode::Value(body),
+                CodeEdges::Follow,
+            ));
+        }
+        Some(direct)
     }
 
     /// Begin building one declaration's content into this environment's arena.
@@ -853,6 +883,7 @@ impl Environment
                 // allocated past it.
                 self.arena.truncate_to(content_end);
                 self.admission_floor = content_end;
+                self.floors.push(content_end);
                 let rested_on =
                     self.transitive_rest(declaration.content(), position, Admission::Checked);
                 self.entries.push(AdmittedDeclaration {
@@ -925,6 +956,7 @@ impl Environment
         // rises to the current watermark. Without this a later rejection could
         // truncate through bypassed content.
         self.admission_floor = self.arena.watermark();
+        self.floors.push(self.admission_floor);
         let rested_on = self.transitive_rest(declaration.content(), position, Admission::Unchecked);
         self.entries.push(AdmittedDeclaration {
             declaration,
