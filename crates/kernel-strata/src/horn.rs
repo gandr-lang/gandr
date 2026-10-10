@@ -1065,9 +1065,11 @@ pub struct Firing
 /// - hypothesis: L1 — the published example fixes each finite model value and
 ///   its loop variant fixes the infinite components. L2 — the empty-system
 ///   differential covers unconstrained queries, exposing incorrect propagation
-///   or a finite/infinite misclassification.
+///   or a finite/infinite misclassification. L3 — an infinite seed remains
+///   divergent even when the empty system performs no update.
 /// - witness: `horn::tests::paper_example_reaches_the_published_fixpoint`
 /// - witness: `horn::tests::paper_loop_variant_diverges_everywhere`
+/// - witness: `horn::tests::saturation_preserves_seeded_infinity_without_a_firing`
 /// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
 #[derive(Clone, Debug)]
 pub struct Saturation
@@ -1079,8 +1081,8 @@ pub struct Saturation
     /// not logged: they have no single replayable instance and occur only after
     /// divergence is already recorded.
     pub log: Vec<FiringLogStep>,
-    /// Whether some component was driven past the small-model bound, so its
-    /// true least-model value is infinite.
+    /// Whether the resulting model has an infinite component, including one
+    /// already present in the seed.
     pub diverged: SaturationDiverged,
 }
 
@@ -1098,9 +1100,9 @@ pub struct Saturation
 ///   component is infinite; the log replays every finite-shift update in order.
 /// - provides: the shared model engine of poset admission and entailment.
 ///   Leastness quantifies over all models; the finite update log is not a
-///   leastness certificate. The postcondition stays prose rather than being
-///   weakened to fixed-point or divergence checks. The consumed seed would also
-///   need an owned snapshot, evaluated even without runtime checks.
+///   leastness certificate. The executable postcondition checks divergence
+///   against the returned model; leastness remains the stronger mathematical
+///   obligation rather than requiring a snapshot of the consumed seed.
 /// - fails: [`LevelError::Overflow`] only through [`fire`] on adversarial
 ///   inputs; engine-internal values stay at most `snap_bound` plus the maximum
 ///   gain.
@@ -1119,24 +1121,49 @@ pub struct Saturation
 ///   variant fixes the divergent components. L2 — unconstrained queries agree
 ///   with the free oracle. L3 — a zero-gain conclusion exactly at the bound
 ///   remains finite, while a unit-gain loop records the updates at and just
-///   above its bound; exact models and logs expose early or late snapping.
+///   above its bound; exact models and logs expose early or late snapping. An
+///   infinite seed with no clauses must report divergence without a firing.
 /// - witness: `horn::tests::saturation_snaps_only_above_the_bound`
+/// - witness: `horn::tests::saturation_preserves_seeded_infinity_without_a_firing`
 /// - witness: `horn::tests::paper_example_reaches_the_published_fixpoint`
 /// - witness: `horn::tests::paper_loop_variant_diverges_everywhere`
 /// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
-#[spec(requires: {
-    let variables: alloc::collections::BTreeSet<_> = seed.keys().copied()
-        .chain(system.clauses.iter().flat_map(|clause| {
-            clause.body().iter().map(|atom| atom.variable())
-                .chain(core::iter::once(clause.head().variable()))
-        })).collect();
-    let ceiling = seed.values().filter_map(|value| value.as_finite())
-        .map(u128::from).max().unwrap_or(0);
-    u128::try_from(variables.len()).ok()
-        .and_then(|count| count.checked_mul(u128::from(system.maxgain())))
-        .and_then(|gain| ceiling.checked_add(gain))
-        .is_some_and(|bound| bound <= u128::from(snap_bound))
-})]
+#[spec(
+    requires: {
+        let variables: alloc::collections::BTreeSet<_> = seed
+            .keys()
+            .copied()
+            .chain(system.clauses.iter().flat_map(|clause| {
+                clause
+                    .body()
+                    .iter()
+                    .map(|atom| atom.variable())
+                    .chain(core::iter::once(clause.head().variable()))
+            }))
+            .collect();
+        let ceiling = seed
+            .values()
+            .filter_map(|value| value.as_finite())
+            .map(u128::from)
+            .max()
+            .unwrap_or(0);
+        u128::try_from(variables.len())
+            .ok()
+            .and_then(|count| count.checked_mul(u128::from(system.maxgain())))
+            .and_then(|gain| ceiling.checked_add(gain))
+            .is_some_and(|bound| bound <= u128::from(snap_bound))
+    },
+    ensures: |ret| match ret.as_ref() {
+        | Ok(saturation) => {
+            bool::from(saturation.diverged)
+                == saturation
+                    .values
+                    .values()
+                    .any(|value| bool::from(value.is_infinite()))
+        },
+        | Err(_) => true,
+    },
+)]
 pub fn saturate(
     system: &ClauseSystem,
     seed: BTreeMap<HVar, ModelValue>,
@@ -1145,7 +1172,7 @@ pub fn saturate(
 {
     let mut values = seed;
     let mut log = Vec::new();
-    let mut diverged = false;
+    let mut diverged = values.values().any(|value| bool::from(value.is_infinite()));
     loop {
         let mut progress = false;
         for (index, clause) in system.clauses.iter().enumerate() {
@@ -1450,6 +1477,30 @@ mod tests
     use super::saturate;
     use crate::level::LevelVar;
     use crate::level::LevelVarIndex;
+
+    #[test]
+    fn saturation_preserves_seeded_infinity_without_a_firing()
+    {
+        let system = ClauseSystem {
+            clauses: Vec::new(),
+            min_shift: HornShift::ZERO,
+        };
+        let seed = BTreeMap::from([
+            (v0(), ModelValue::Infinite),
+            (v1(), ModelValue::Finite(HornOffset::from(3_u128))),
+        ]);
+        let fixed = saturate(&system, seed, SaturationBound::from(3_u128))
+            .expect("an empty system preserves its seed");
+        assert_eq!(
+            fixed.values,
+            BTreeMap::from([
+                (v0(), ModelValue::Infinite),
+                (v1(), ModelValue::Finite(HornOffset::from(3_u128))),
+            ])
+        );
+        assert!(bool::from(fixed.diverged));
+        assert!(fixed.log.is_empty());
+    }
 
     #[test]
     fn saturation_snaps_only_above_the_bound()
