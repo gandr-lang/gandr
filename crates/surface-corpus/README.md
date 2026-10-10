@@ -17,6 +17,7 @@ The expectation language over a lowered module and its verdicts — the `checks`
 - [Sealed is reported, never gated](#sealed-is-reported-never-gated)
 - [The ledger size is always printed](#the-ledger-size-is-always-printed)
 - [A closed vocabulary, named by variant](#a-closed-vocabulary-named-by-variant)
+- [Native universe-path refusals](#native-universe-path-refusals)
 - [One expectation per name](#one-expectation-per-name)
 - [Lockstep with the checker](#lockstep-with-the-checker)
 - [Inputs, not a pipeline](#inputs-not-a-pipeline)
@@ -178,6 +179,12 @@ The alternative was a report of failures alone, a list of mismatches per fixture
 A `refuses` payload names a refusal by its variant: `RefusalName` holds one name per refusal the lowering, the checker and this crate raise, spelled as the variant is, and a payload is matched byte for byte — no case folding, trimming or prefix match — so a near miss names nothing and the fixture fails with `ExpectationFault::UnknownRefusal` rather than settling on a guess. The maps from each producer's refusal type to its name are exhaustive matches without a fallback arm, so a refusal added upstream fails to compile here until it is named. The lowering's `OutOfFragment` and the checker's `OutOfFragment` are one name, as are the two `BudgetExceeded`: an expectation states which refusal a declaration carries, not which pass noticed it, and the produced class distinguishes nothing the name would need to.
 
 The alternatives were free text matched against a refusal's rendering, which breaks whenever a message is reworded, and a name per producer and variant, which makes a fixture restate the pipeline's pass order. The choice reverses if two producers' same-named refusals come to mean different things, at which point the names split.
+
+## Native universe-path refusals
+
+`PathCode` is the closed vocabulary name for a malformed native universe-path endpoint. The refusal table includes its producer variant, spelling and malformed-source class; it is not renamed to a generic unsupported-form error. Sums, injections and case are admitted by the checker and no longer appear as `UnadmittedFormer` alternatives.
+
+**Choice.** Preserve the checker’s refusal identity through settlement instead of matching rendered prose. Native `Path_U` forms are programmatic core inputs, not new source grammar, so a vocabulary witness is distinct from a source-reachability claim. **Reversal.** Source fixtures for paths enter when the parser and lowering acquire their syntax; the kernel’s code, bridge, higher-field, funext, Flow and List rule-language witnesses remain at their owning boundaries.
 
 ## One expectation per name
 

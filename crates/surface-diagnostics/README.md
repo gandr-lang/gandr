@@ -9,6 +9,7 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [What a report shows](#what-a-report-shows)
+- [Native universe-path diagnostics](#native-universe-path-diagnostics)
 - [The one input is the step](#the-one-input-is-the-step)
 - [Every span is the producer's](#every-span-is-the-producers)
 - [Context is causal](#context-is-causal)
@@ -93,6 +94,12 @@ error[TypeMismatch]: the type this term synthesises does not convert to the type
 ```
 
 The checker's refusals are worded here; the lowering's and the corpus root's use their own `Display`. Mismatch labels name causal roles, such as checked-against or synthesised type, while origins locate those roles in source. Labels expose no core node addresses. An empty path renders as `<input>`.
+
+## Native universe-path diagnostics
+
+A checker `PathCode` refusal retains its code-node locus and malformed-source class. Shape diagnostics can name the expected sum or `Path_U` classifier; injection and case remain checking forms, not unsupported language constructs. A missing origin remains an absent annotation rather than an invented source span.
+
+**Choice.** Project the same typed refusal and causal roles used by ordinary checking, rather than add a second universe-specific diagnostic pipeline. The renderer certifies neither the candidate path nor its evidence. **Reversal.** A source notation may supply more precise origins; it must not change the refusal’s semantic class or infer certificate equality from its displayed maps.
 
 ## The one input is the step
 

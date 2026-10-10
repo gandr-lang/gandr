@@ -13,6 +13,7 @@ The sequent tier of the core: the command IL a call-by-push-value program is foc
 - [Children before parents](#children-before-parents)
 - [Focusing names only what is not a tail](#focusing-names-only-what-is-not-a-tail)
 - [A code has no producer](#a-code-has-no-producer)
+- [Native universe paths](#native-universe-paths)
 - [Unfocusing is the left inverse](#unfocusing-is-the-left-inverse)
 - [The typed-IL check](#the-typed-il-check)
 - [The machine runs over marks, not copies](#the-machine-runs-over-marks-not-copies)
@@ -166,6 +167,12 @@ The earlier implementation of this design passed the continuation under the bind
 ## A code has no producer
 
 A quote `⌜A⌝` or `⌜C⌝` is a value of a universe, and the IL carries no types: no producer can stand for the type a code names, so focusing refuses a code by name with `FocusRefusal::Code`, the arena and the table left at their marks. A static lambda and a static application build codes, so focusing refuses them under the same name. A code is an ordinary argument in the core term, so a polymorphic function instantiated at one has no image here yet either. The alternatives were a producer leaf holding a reference into the core arena, which ties the IL to an arena it otherwise never reads, and erasing a code to the unit value, which the readback could not tell from a unit and the differential would accept unread. The choice reverses with the run verb, which runs instantiated programs: the IL then gains a code leaf over a type vocabulary of its own, or erases codes on a typed path that keeps their readback.
+
+## Native universe paths
+
+Native path values and `Transport` have no image in the command IL. Focusing answers `FocusRefusal::UniverseTransport` and restores the command arena and provenance to their entry marks. `Path_U` transport is computed by `core-nbe` and checked by kernel replay; accepting a native certificate does not authorize this machine to erase its evidence or invent a producer.
+
+**Choice.** An explicit refusal, rather than lowering a path to a pair of functions without the obligations that certify it. **Reversal.** A command-level image must specify its types, eliminations and certified readback before focusing admits it. The in-memory bridge mode, higher fields, funext, `Flow_U` and guarded List observations likewise remain outside this IL.
 
 ## Unfocusing is the left inverse
 

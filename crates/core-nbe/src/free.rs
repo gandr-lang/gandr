@@ -27,6 +27,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
+use anodized::spec;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
@@ -520,6 +521,26 @@ impl Children
     ///
     /// # Errors
     /// - [`FreeFault::Dangling`] — `node` does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — crossing binder and code boundaries preserves free
+    ///   dependencies; native path children are unbound and retain wire order.
+    /// - witness: `full_laziness::full_laziness::an_open_configuration_is_evaluated_per_occurrence`
+    /// - witness: `eval::tests::native_transport_sequences_product_components`
+    #[spec(ensures: |ret| match ret {
+        Ok(children) => children.listed.iter().skip_while(|item| item.is_some()).all(Option::is_none) && match node {
+            Reached::Term(CoreTerm::Value(id)) => match core.value(id) {
+                Some(&Value::PathRefl(code)) => children.listed == [Some((Reached::Term(CoreTerm::Value(code)), Lowering::NONE)), None, None],
+                Some(&Value::PathProduct(a, b)) => children.listed == [Some((Reached::Term(CoreTerm::Value(a)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(b)), Lowering::NONE)), None],
+                Some(&Value::PathEquiv { path_type, forward, backward, .. }) => children.listed == [Some((Reached::ValueType(path_type), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(forward)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(backward)), Lowering::NONE))],
+                _ => true,
+            },
+            Reached::Term(CoreTerm::Computation(id)) => match core.computation(id) { Some(&Computation::Transport(path, value)) => children.listed == [Some((Reached::Term(CoreTerm::Value(path)), Lowering::NONE)), Some((Reached::Term(CoreTerm::Value(value)), Lowering::NONE)), None], _ => true },
+            _ => true,
+        },
+        Err(FreeFault::Dangling) => match node { Reached::Term(CoreTerm::Value(id)) => core.value(id).is_none(), Reached::Term(CoreTerm::Computation(id)) => core.computation(id).is_none(), Reached::ValueType(id) => core.value_type(id).is_none(), Reached::CompType(id) => core.comp_type(id).is_none() },
+        Err(_) => false,
+    })]
     fn of(
         core: &CoreArena,
         node: Reached,
@@ -539,7 +560,20 @@ impl Children
                     | Value::Constant(_)
                     | Value::Unit
                     | Value::Literal(_) => [None, None, None],
-                    | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
+                    | Value::PathEquiv {
+                        path_type,
+                        forward,
+                        backward,
+                        ..
+                    } => [
+                        Some((Reached::ValueType(path_type), Lowering::NONE)),
+                        Some((value(forward), Lowering::NONE)),
+                        Some((value(backward), Lowering::NONE)),
+                    ],
+                    | Value::PathRefl(code) => one(value(code), Lowering::NONE),
+                    | Value::PathProduct(first, second)
+                    | Value::Pair(first, second)
+                    | Value::StaticApplication(first, second) => {
                         two(value(first), value(second), Lowering::NONE)
                     },
                     | Value::StaticLambda(body) => one(value(body), Lowering::ONE),
@@ -556,6 +590,9 @@ impl Children
             | Reached::Term(CoreTerm::Computation(id)) => {
                 let held = core.computation(id).ok_or(FreeFault::Dangling)?;
                 match *held {
+                    | Computation::Transport(path, operand) => {
+                        two(value(path), value(operand), Lowering::NONE)
+                    },
                     | Computation::Lambda(body) => one(computation(body), Lowering::ONE),
                     | Computation::Application(head, argument) => {
                         two(computation(head), value(argument), Lowering::NONE)
@@ -580,6 +617,9 @@ impl Children
             | Reached::ValueType(id) => {
                 let held = core.value_type(id).ok_or(FreeFault::Dangling)?;
                 match *held {
+                    | ValueType::PathUniverse(source, target) => {
+                        two(value(source), value(target), Lowering::NONE)
+                    },
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Universe { .. }

@@ -14,6 +14,7 @@ Incremental checking over the core judgement: reuse applicable earlier answers a
 - [Validated resume](#validated-resume)
 - [Checkpoints and their stores](#checkpoints-and-their-stores)
 - [The synthesis stream](#the-synthesis-stream)
+- [Native universe-path content](#native-universe-path-content)
 - [Specification evidence](#specification-evidence)
 - [Consumer and open rows](#consumer-and-open-rows)
 - [License](#license)
@@ -174,6 +175,14 @@ A recalled checkpoint is adopted when four things hold, checked in this order; t
 
 A stream opens with the item count, carries one event per item in source order — its handle, typing and adoption — then the match liveness its producer computed, by origin, and closes. Liveness follows the items because a match is addressed by source coordinates and one source item may lower to several core items. A submission whose source records are gone is named by an event of its own, because silence would read as a submission without matches. The stream is a function of its inputs: a run that adopted and one that judged publish the same events but for the adoption marks.
 
+## Native universe-path content
+
+The content table preserves universe sorts and levels, quotes, static operators and native universe paths. Native path tags occupy `0x40–0x44` in this cache codec; they are not kernel artifact tags. Candidate evidence is exact content, including ordered direction and dialogue boundaries, and never a cached admission receipt. Type-only signature content refuses term-bearing path classifiers just as it refuses quotes and decodes.
+
+Checkpoint sets use `GCKPT\0\0\x04`; programs use `GPROG\0\0\x02`. Their identities bind the current checker and refusal vocabulary, including admitted sums, checking-only injection and case, and invalid path-code refusals. Earlier identities are rejected rather than reusing answers from a different fragment. Static family and universe round-trip witnesses continue to exercise their distinct tags and payloads.
+
+**Choice.** Preserve native classifiers, maps and candidate evidence as content instead of caching a certificate verdict. Structural path conversion may erase evidence, but checkpoint identity must not. **Reversal.** Persisting `Flow_U`, element identity, the bridge mode, higher fields, funext or guarded List inhabitants requires its own versioned content vocabulary and validated dependency support; none is inferred from a native path entry.
+
 ## Specification evidence
 
 Item-level `#[spec]` predicates check observable boundaries and transitions. Each `# Adequacy` section names its witness and bounds the claim; a data declaration, abstract protocol or unsupported opaque return states why it has no executable predicate. Generated differential cases support a finite-domain claim, not a proof over every program.
@@ -188,7 +197,7 @@ Item-level `#[spec]` predicates check observable boundaries and transitions. Eac
 | Reachability and work | [defect witnesses](tests/defects.rs) | deterministic value-only-edit census, shadowing termination and exact work counts for chains of 250 through 2,000 items; zero-length chains are empty |
 | Session and stream transitions | [session](src/session.rs), [stream](src/stream.rs) | retained state on failure, item ordering, liveness and terminal events |
 
-The content vocabulary includes sorted universes, quotes, decodes and static operators. A static Pi seats as a value type; static lambdas, applications and quotes are terms, not seatable types. Checkpoint version 3 records that vocabulary and its refusal payloads; another magic is rejected rather than interpreted under different tags. Native primitives, modules and packages are outside this crate's current vocabulary.
+The content vocabulary includes sorted universes, quotes, decodes, static operators and native paths. A static Pi seats as a value type; static lambdas, applications and quotes are terms, not seatable types. The [native content format](#native-universe-path-content) binds that vocabulary and its refusal payloads; another magic is rejected rather than interpreted under different tags. Native primitives, modules and packages are outside this crate’s current vocabulary.
 
 ## Consumer and open rows
 

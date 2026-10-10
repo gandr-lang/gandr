@@ -72,6 +72,10 @@ pub enum CoreNode
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ExpectedShape
 {
+    /// A native universe-path classifier.
+    PathUniverse,
+    /// A sum classifier.
+    Sum,
     /// A thunk type `U C`: what a thunk is checked against and what a forced
     /// value must synthesise.
     Thunk,
@@ -90,6 +94,10 @@ pub enum ExpectedShape
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckingForm
 {
+    /// A sum injection needs its other summand from the expected type.
+    Injection(ValueId),
+    /// A sum case is checked against a common result type.
+    Case(ComputationId),
     /// A thunk value.
     Thunk(ValueId),
     /// A lambda.
@@ -107,18 +115,14 @@ pub enum CheckingForm
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum UnadmittedFormer
 {
-    /// A sum injection.
-    Injection,
     /// An explicit universe lift of a value.
     ValueLift,
     /// A numeric literal.
     NumericLiteral,
-    /// A sum elimination.
-    Case,
+
     /// The numeric base atom.
     NumericAtom,
-    /// The sum type.
-    Sum,
+
     /// A lift of a value type whose target does not lie above the type's
     /// level: the judgement has a rule only for a lift that raises.
     TypeLift,
@@ -231,6 +235,8 @@ pub enum Mismatch
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckRefusal
 {
+    /// A native path endpoint was not a quoted closed first-order code.
+    PathCode(ValueId),
     /// A synthesising term in checking position synthesised a type the expected
     /// type does not convert to.
     TypeMismatch(Mismatch),
@@ -434,6 +440,7 @@ impl CheckRefusal
         | Self::AdmissionOrder { .. }
         | Self::MachineInvariant
         | Self::Undecided { .. } => matches!(ret, FailureClass::EngineFault),
+        | Self::PathCode(_)
         | Self::TypeMismatch(_)
         | Self::ShapeMismatch { .. }
         | Self::NotSynthesisable { .. }
@@ -451,6 +458,7 @@ impl CheckRefusal
     pub const fn classify(&self) -> FailureClass
     {
         match *self {
+            | Self::PathCode(_)
             | Self::TypeMismatch(_)
             | Self::ShapeMismatch { .. }
             | Self::NotSynthesisable { .. }
@@ -510,7 +518,7 @@ mod tests
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the finite eighteen-variant refusal vocabulary is
+    /// - hypothesis: L3 — the finite nineteen-variant refusal vocabulary is
     ///   observed through exhaustive coverage and classification of two
     ///   payloads per variant; these separate omitted, repeated or mispaired
     ///   rows and incorrect class assignments, not arbitrary payload values.
@@ -522,7 +530,7 @@ mod tests
                 core::mem::discriminant(&row.0) != core::mem::discriminant(&earlier.0)
             })
     }))]
-    fn table() -> [(CheckRefusal, CheckRefusal, FailureClass); 18]
+    fn table() -> [(CheckRefusal, CheckRefusal, FailureClass); 19]
     {
         let mut arena = CoreArena::new();
         let first_value = arena.value_unit();
@@ -536,6 +544,11 @@ mod tests
         let zero = ConstantIndex::from(0_usize);
         let one = ConstantIndex::from(1_usize);
         [
+            (
+                CheckRefusal::PathCode(first_value),
+                CheckRefusal::PathCode(second_value),
+                FailureClass::MalformedSource,
+            ),
             (
                 CheckRefusal::TypeMismatch(Mismatch::Value {
                     at: first_value,
@@ -585,7 +598,7 @@ mod tests
             (
                 CheckRefusal::OutOfFragment {
                     at: CoreNode::Term(TermNode::Value(first_value)),
-                    former: UnadmittedFormer::Injection,
+                    former: UnadmittedFormer::ValueLift,
                 },
                 CheckRefusal::OutOfFragment {
                     at: CoreNode::Type(TypeNode::Value(second_type)),
@@ -734,9 +747,10 @@ mod tests
     #[test]
     fn every_refusal_carries_its_pinned_class()
     {
-        let mut covered = [false; 18];
+        let mut covered = [false; 19];
         for (refusal, _, class) in table() {
             let row = match refusal {
+                | CheckRefusal::PathCode(_) => 18_usize,
                 | CheckRefusal::TypeMismatch(_) => 0_usize,
                 | CheckRefusal::ShapeMismatch { .. } => 1_usize,
                 | CheckRefusal::NotSynthesisable { .. } => 2_usize,
@@ -763,7 +777,7 @@ mod tests
                 "{refusal:?} must classify as {class}"
             );
         }
-        assert_eq!(covered, [true; 18], "the table names every variant once");
+        assert_eq!(covered, [true; 19], "the table names every variant once");
     }
 
     #[test]

@@ -366,6 +366,24 @@ pub(crate) fn case_branch_mismatch(
 /// - witness: `conv::tests::structurally_equal_types_at_distinct_ids_convert`
 /// - witness: `conv::tests::an_unreadable_id_fails_closed`
 /// - witness: `conv::tests::a_shared_composite_converts_without_expanding`
+#[spec(ensures: |ret| match initial {
+    ConversionGoal::ValueType(left, right) => if left == right { ret == Convertibility::Convertible } else { match (arena.value_type(left), arena.value_type(right)) {
+        (Some(a), Some(b)) => ret != Convertibility::Convertible || core::mem::discriminant(a) == core::mem::discriminant(b),
+        _ => ret == Convertibility::Distinct,
+    } },
+    ConversionGoal::CompType(left, right) => if left == right { ret == Convertibility::Convertible } else { match (arena.comp_type(left), arena.comp_type(right)) {
+        (Some(a), Some(b)) => ret != Convertibility::Convertible || core::mem::discriminant(a) == core::mem::discriminant(b),
+        _ => ret == Convertibility::Distinct,
+    } },
+    ConversionGoal::Value(left, right) => if left == right { ret == Convertibility::Convertible } else { match (arena.value(left), arena.value(right)) {
+        (Some(a), Some(b)) => ret != Convertibility::Convertible || core::mem::discriminant(a) == core::mem::discriminant(b),
+        _ => ret == Convertibility::Distinct,
+    } },
+    ConversionGoal::Computation(left, right) => if left == right { ret == Convertibility::Convertible } else { match (arena.computation(left), arena.computation(right)) {
+        (Some(a), Some(b)) => ret != Convertibility::Convertible || core::mem::discriminant(a) == core::mem::discriminant(b),
+        _ => ret == Convertibility::Distinct,
+    } },
+})]
 fn converge(
     arena: &TermArena,
     initial: ConversionGoal,
@@ -390,12 +408,17 @@ fn converge(
                     return Convertibility::Distinct;
                 };
                 match (left, right) {
+                    | (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) => {
+                        stack.push(ConversionGoal::Value(a, c));
+                        stack.push(ConversionGoal::Value(b, d));
+                    },
                     | (&ValueType::Base(one), &ValueType::Base(other)) => {
                         if one != other {
                             return Convertibility::Distinct;
                         }
                     },
-                    | (&ValueType::Unit, &ValueType::Unit) => {},
+                    | (&ValueType::Unit, &ValueType::Unit)
+                    | (&ValueType::Empty, &ValueType::Empty) => {},
                     | (
                         &ValueType::Product(one_first, one_second),
                         &ValueType::Product(other_first, other_second),
@@ -419,6 +442,9 @@ fn converge(
                     },
                     | (&ValueType::Thunk(one_body), &ValueType::Thunk(other_body)) => {
                         stack.push(ConversionGoal::CompType(one_body, other_body));
+                    },
+                    | (&ValueType::List(one), &ValueType::List(other)) => {
+                        stack.push(ConversionGoal::ValueType(one, other));
                     },
                     // Both sides are pinned to the universe former by the
                     // pattern, and the former carries a sort and a level and no
@@ -472,10 +498,13 @@ fn converge(
                         stack.push(ConversionGoal::ValueType(one_inner, other_inner));
                     },
                     | (
-                        &ValueType::Base(_)
+                        &ValueType::PathUniverse(..)
+                        | &ValueType::Base(_)
                         | &ValueType::Unit
+                        | &ValueType::Empty
                         | &ValueType::Product(..)
                         | &ValueType::Sum(..)
+                        | &ValueType::List(_)
                         | &ValueType::Thunk(_)
                         | &ValueType::Universe { .. }
                         | &ValueType::Abstract(_)
@@ -563,6 +592,18 @@ fn converge(
                     return Convertibility::Distinct;
                 };
                 match (left, right) {
+                    | (&Value::PathRefl(one), &Value::PathRefl(other)) => stack.push(ConversionGoal::Value(one, other)),
+                    | (&Value::PathProduct(a, b), &Value::PathProduct(c, d)) => {
+                        stack.push(ConversionGoal::Value(a, c));
+                        stack.push(ConversionGoal::Value(b, d));
+                    },
+                    | (&Value::PathEquiv { path_type: one_type, forward: one_forward, backward: one_backward, .. },
+                       &Value::PathEquiv { path_type: other_type, forward: other_forward, backward: other_backward, .. }) => {
+                        // Round-trip evidence is erased, not translator syntax.
+                        stack.push(ConversionGoal::ValueType(one_type, other_type));
+                        stack.push(ConversionGoal::Value(one_forward, other_forward));
+                        stack.push(ConversionGoal::Value(one_backward, other_backward));
+                    },
                     | (&Value::Variable(one), &Value::Variable(other)) => {
                         if one != other {
                             return Convertibility::Distinct;
@@ -640,7 +681,8 @@ fn converge(
                         stack.push(ConversionGoal::CompType(one, other));
                     },
                     | (
-                        &Value::Variable(_)
+                        &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
+                        | &Value::Variable(_)
                         | &Value::Constant(_)
                         | &Value::Unit
                         | &Value::Literal(_)
@@ -664,6 +706,10 @@ fn converge(
                     return Convertibility::Distinct;
                 };
                 match (left, right) {
+                    | (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
+                        stack.push(ConversionGoal::Value(a, c));
+                        stack.push(ConversionGoal::Value(b, d));
+                    },
                     | (&Computation::Lambda(one), &Computation::Lambda(other)) => {
                         stack.push(ConversionGoal::Computation(one, other));
                     },
@@ -675,6 +721,7 @@ fn converge(
                         stack.push(ConversionGoal::Value(one_argument, other_argument));
                     },
                     | (&Computation::Return(one), &Computation::Return(other))
+                    | (&Computation::Absurd(one), &Computation::Absurd(other))
                     | (&Computation::Force(one), &Computation::Force(other)) => {
                         stack.push(ConversionGoal::Value(one, other));
                     },
@@ -702,9 +749,11 @@ fn converge(
                         stack.push(ConversionGoal::Computation(one_right, other_right));
                     },
                     | (
-                        &Computation::Lambda(_)
+                        &Computation::Transport(..)
+                        | &Computation::Lambda(_)
                         | &Computation::Application(..)
                         | &Computation::Return(_)
+                        | &Computation::Absurd(_)
                         | &Computation::Bind(..)
                         | &Computation::Force(_)
                         | &Computation::Case { .. },

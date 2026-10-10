@@ -127,7 +127,10 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+    /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value(id), ret) {
+        | (Some(&Value::PathRefl(code)), Former::PathRefl(actual)) => actual == CoreNode::Value(code),
+        | (Some(&Value::PathEquiv { forward, backward, .. }), Former::PathEquiv(actual_forward, actual_backward)) => actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
         | (Some(&Value::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
             zone == actual_zone && index == actual_index,
         | (Some(&Value::Constant(index)), Former::Constant(name)) => self.names.get(usize::from(index))
@@ -139,7 +142,8 @@ impl<'arena> CoreSource<'arena>
         | (Some(&Value::Lift { .. }), Former::ValueLift) => true,
         | (Some(&Value::Literal(ref literal)), Former::Literal(actual)) =>
             core::ptr::eq(core::ptr::from_ref(literal), core::ptr::from_ref(actual)),
-        | (Some(&Value::Pair(first, second)), Former::Pair(actual_first, actual_second)) =>
+        | (Some(&Value::Pair(first, second)), Former::Pair(actual_first, actual_second))
+        | (Some(&Value::PathProduct(first, second)), Former::PathProduct(actual_first, actual_second)) =>
             actual_first == CoreNode::Value(first) && actual_second == CoreNode::Value(second),
         | (Some(&Value::Injection(side, body)), Former::Injection(actual_side, actual_body)) =>
             side == actual_side && actual_body == CoreNode::Value(body),
@@ -160,6 +164,13 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable;
         };
         match *value {
+            | Value::PathRefl(code) => Former::PathRefl(CoreNode::Value(code)),
+            | Value::PathProduct(first, second) => {
+                Former::PathProduct(CoreNode::Value(first), CoreNode::Value(second))
+            },
+            | Value::PathEquiv {
+                forward, backward, ..
+            } => Former::PathEquiv(CoreNode::Value(forward), CoreNode::Value(backward)),
             | Value::Variable { zone, index } => Former::Variable { zone, index },
             | Value::Constant(constant) => self.named(constant, Former::Constant),
             | Value::Unit => Former::Unit,
@@ -202,7 +213,9 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+    /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value_type(id), ret) {
+        | (Some(&ValueType::PathUniverse(source, target)), Former::PathUniverse(actual_source, actual_target)) => actual_source == CoreNode::Value(source) && actual_target == CoreNode::Value(target),
         | (None, Former::Unreadable)
         | (Some(&ValueType::Unit), Former::UnitType)
         | (Some(&ValueType::Lift { .. }), Former::TypeLift) => true,
@@ -231,6 +244,9 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable;
         };
         match *value_type {
+            | ValueType::PathUniverse(source, target) => {
+                Former::PathUniverse(CoreNode::Value(source), CoreNode::Value(target))
+            },
             | ValueType::Base(base) => Former::BaseType(base),
             | ValueType::Unit => Former::UnitType,
             | ValueType::Product(first, second) => {
@@ -329,6 +345,7 @@ impl Source for CoreSource<'_>
     /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
     /// - witness: `core_source::tests::family_reads_preserve_children_and_reject_truncation`
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
+    /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match node {
         | CoreNode::Computation(id) => matches!((self.arena.computation(id).is_some(), ret),
             (true, Former::Computation) | (false, Former::Unreadable)),
@@ -338,10 +355,10 @@ impl Source for CoreSource<'_>
         | CoreNode::Value(_) => matches!(ret, Former::Variable { .. } | Former::Constant(_) | Former::Unit
             | Former::Literal(_) | Former::Pair(..) | Former::Injection(..) | Former::Thunk | Former::ValueLift
             | Former::Quote(_) | Former::QuoteComputation(_) | Former::StaticLambda(_) | Former::StaticApplication(..)
-            | Former::Unreadable),
+            | Former::PathRefl(_) | Former::PathEquiv(..) | Former::PathProduct(..) | Former::Unreadable),
         | CoreNode::ValueType(_) => matches!(ret, Former::BaseType(_) | Former::UnitType | Former::Product(..)
             | Former::Sum(..) | Former::ThunkType(_) | Former::Universe { .. } | Former::TypeLift
-            | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::Unreadable),
+            | Former::Element(_) | Former::Abstract(_) | Former::StaticPi { .. } | Former::PathUniverse(..) | Former::Unreadable),
         | CoreNode::CompType(_) => matches!(ret, Former::Returner(_) | Former::Arrow { .. } | Former::Pi { .. }
             | Former::ComputationElement(_) | Former::Unreadable),
     })]
@@ -355,7 +372,8 @@ impl Source for CoreSource<'_>
             | CoreNode::Value(id) => self.value(id),
             | CoreNode::Computation(id) => match self.arena.computation(id) {
                 | Some(
-                    &(Computation::Lambda(_)
+                    &(Computation::Transport(..)
+                    | Computation::Lambda(_)
                     | Computation::Application(..)
                     | Computation::Return(_)
                     | Computation::Bind(..)

@@ -35,6 +35,7 @@
 //! equality: two structurally equal subterms need not share an id, so every use
 //! site either compares inline leaf payloads or resolves ids explicitly.
 
+use anodized::spec;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -72,6 +73,22 @@ pub enum Zone
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Value
 {
+    /// Reflexivity at a quoted closed code.
+    PathRefl(ValueId),
+    /// Componentwise product of two native path values.
+    PathProduct(ValueId, ValueId),
+    /// A native equivalence with untrusted, arena-independent replay evidence.
+    PathEquiv
+    {
+        /// The native universe-path classifier.
+        path_type: ValueTypeId,
+        /// The closed forward translator.
+        forward: ValueId,
+        /// The closed backward translator.
+        backward: ValueId,
+        /// Both round-trip dialogues, checked again at kernel admission.
+        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+    },
     /// A bound value variable, in a named zone of the unified context.
     Variable
     {
@@ -127,6 +144,8 @@ pub enum Value
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Computation
 {
+    /// Transport a value along a native universe path.
+    Transport(ValueId, ValueId),
     /// A lambda `λ. M`, binding one intuitionistic value variable; introduces
     /// `A → C`.
     Lambda(ComputationId),
@@ -154,6 +173,8 @@ pub enum Computation
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ValueType
 {
+    /// Certified equivalences between two quoted closed first-order codes.
+    PathUniverse(ValueId, ValueId),
     /// A rigid base-type atom.
     Base(BaseType),
     /// The unit type, inhabited by [`Value::Unit`] alone.
@@ -257,4 +278,311 @@ pub enum CompType
         /// level.
         target: Level,
     },
+}
+
+/// One pair of native syntax roots awaiting structural comparison.
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+enum StructuralGoal
+{
+    /// Values.
+    Value(ValueId, ValueId),
+    /// Computations.
+    Computation(ComputationId, ComputationId),
+    /// Value types.
+    ValueType(ValueTypeId, ValueTypeId),
+    /// Computation types.
+    CompType(CompTypeId, CompTypeId),
+}
+
+/// Result of evidence-erasing certificate syntax comparison.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CertificateEquality
+{
+    /// Every constructor and non-evidence payload agrees.
+    Equal,
+    /// Syntax differs, or a requested node is unreadable.
+    Different,
+}
+
+/// Compare native certificate syntax, erasing evidence but performing no
+/// reduction.
+///
+/// # Specification
+/// - requires: nothing; unreadable roots or children fail closed.
+/// - ensures: compares every constructor, leaf and child, except path evidence;
+///   distinct translator programs stay distinct even if extensionally equal.
+/// - provides: certificate conversion independent of allocation and proof
+///   bytes.
+/// - fails: returns `Different` on a dangling node.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fresh allocations and different evidence compare equal;
+///   an administrative translator redex changes the certificate.
+/// - witness: `syntax::tests::certificate_syntax_erases_only_evidence`
+#[spec(ensures: |ret| match (arena.value(left), arena.value(right)) {
+    (Some(&Value::Unit), Some(&Value::Unit)) => ret == CertificateEquality::Equal,
+    (Some(a), Some(b)) => ret != CertificateEquality::Equal || core::mem::discriminant(a) == core::mem::discriminant(b),
+    _ => ret == CertificateEquality::Different,
+})]
+#[inline]
+#[must_use]
+pub fn equal_certificate_syntax(
+    arena: &crate::CoreArena,
+    left: ValueId,
+    right: ValueId,
+) -> CertificateEquality
+{
+    use StructuralGoal::CompType as CT;
+    use StructuralGoal::Computation as C;
+    use StructuralGoal::Value as V;
+    use StructuralGoal::ValueType as VT;
+    let mut pending = alloc::vec![V(left, right)];
+    let mut visited = alloc::collections::BTreeSet::new();
+    while let Some(goal) = pending.pop() {
+        if !visited.insert(goal) {
+            continue;
+        }
+        match goal {
+            | V(a, b) => {
+                let (Some(a), Some(b)) = (arena.value(a), arena.value(b))
+                else {
+                    return CertificateEquality::Different;
+                };
+                match (a, b) {
+                    | (&Value::PathRefl(a), &Value::PathRefl(b))
+                    | (&Value::StaticLambda(a), &Value::StaticLambda(b)) => pending.push(V(a, b)),
+                    | (&Value::PathProduct(a, b), &Value::PathProduct(c, d))
+                    | (&Value::Pair(a, b), &Value::Pair(c, d))
+                    | (&Value::StaticApplication(a, b), &Value::StaticApplication(c, d)) => {
+                        pending.extend([V(a, c), V(b, d)]);
+                    },
+                    | (
+                        &Value::PathEquiv {
+                            path_type: left_type,
+                            forward: left_forward,
+                            backward: left_backward,
+                            ..
+                        },
+                        &Value::PathEquiv {
+                            path_type: right_type,
+                            forward: right_forward,
+                            backward: right_backward,
+                            ..
+                        },
+                    ) => pending.extend([
+                        VT(left_type, right_type),
+                        V(left_forward, right_forward),
+                        V(left_backward, right_backward),
+                    ]),
+                    | (&Value::Injection(s, a), &Value::Injection(t, b)) if s == t => {
+                        pending.push(V(a, b));
+                    },
+                    | (&Value::Thunk(a), &Value::Thunk(b)) => pending.push(C(a, b)),
+                    | (
+                        &Value::Lift { ref target, body },
+                        &Value::Lift {
+                            target: ref other,
+                            body: right,
+                        },
+                    ) if target == other => pending.push(V(body, right)),
+                    | (&Value::Quote(a), &Value::Quote(b)) => pending.push(VT(a, b)),
+                    | (&Value::QuoteComputation(a), &Value::QuoteComputation(b)) => {
+                        pending.push(CT(a, b));
+                    },
+                    | (
+                        &(Value::Variable { .. }
+                        | Value::Constant(_)
+                        | Value::Unit
+                        | Value::Literal(_)),
+                        _,
+                    ) if a == b => {},
+                    | _ => return CertificateEquality::Different,
+                }
+            },
+            | C(a, b) => {
+                let (Some(a), Some(b)) = (arena.computation(a), arena.computation(b))
+                else {
+                    return CertificateEquality::Different;
+                };
+                match (a, b) {
+                    | (&Computation::Lambda(a), &Computation::Lambda(b)) => pending.push(C(a, b)),
+                    | (&Computation::Return(a), &Computation::Return(b))
+                    | (&Computation::Force(a), &Computation::Force(b)) => pending.push(V(a, b)),
+                    | (&Computation::Application(a, b), &Computation::Application(c, d)) => {
+                        pending.extend([C(a, c), V(b, d)]);
+                    },
+                    | (&Computation::Transport(a, b), &Computation::Transport(c, d)) => {
+                        pending.extend([V(a, c), V(b, d)]);
+                    },
+                    | (&Computation::Bind(a, b), &Computation::Bind(c, d)) => {
+                        pending.extend([C(a, c), C(b, d)]);
+                    },
+                    | (
+                        &Computation::Case {
+                            scrutinee: left_scrutinee,
+                            on_left: left_branch,
+                            on_right: right_branch,
+                        },
+                        &Computation::Case {
+                            scrutinee: right_scrutinee,
+                            on_left: other_left_branch,
+                            on_right: other_right_branch,
+                        },
+                    ) => pending.extend([
+                        V(left_scrutinee, right_scrutinee),
+                        C(left_branch, other_left_branch),
+                        C(right_branch, other_right_branch),
+                    ]),
+                    | _ => return CertificateEquality::Different,
+                }
+            },
+            | VT(a, b) => {
+                let (Some(a), Some(b)) = (arena.value_type(a), arena.value_type(b))
+                else {
+                    return CertificateEquality::Different;
+                };
+                match (a, b) {
+                    | (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) => {
+                        pending.extend([V(a, c), V(b, d)]);
+                    },
+                    | (&ValueType::Product(a, b), &ValueType::Product(c, d))
+                    | (&ValueType::Sum(a, b), &ValueType::Sum(c, d))
+                    | (
+                        &ValueType::StaticPi {
+                            domain: a,
+                            codomain: b,
+                        },
+                        &ValueType::StaticPi {
+                            domain: c,
+                            codomain: d,
+                        },
+                    ) => pending.extend([VT(a, c), VT(b, d)]),
+                    | (&ValueType::Thunk(a), &ValueType::Thunk(b)) => pending.push(CT(a, b)),
+                    | (
+                        &ValueType::Lift {
+                            inner: a,
+                            ref target,
+                        },
+                        &ValueType::Lift {
+                            inner: b,
+                            target: ref other,
+                        },
+                    ) if target == other => pending.push(VT(a, b)),
+                    | (
+                        &ValueType::Element {
+                            code: a,
+                            ref target,
+                        },
+                        &ValueType::Element {
+                            code: b,
+                            target: ref other,
+                        },
+                    ) if target == other => pending.push(V(a, b)),
+                    | (
+                        &(ValueType::Base(_)
+                        | ValueType::Unit
+                        | ValueType::Universe { .. }
+                        | ValueType::Abstract(_)),
+                        _,
+                    ) if a == b => {},
+                    | _ => return CertificateEquality::Different,
+                }
+            },
+            | CT(a, b) => {
+                let (Some(a), Some(b)) = (arena.comp_type(a), arena.comp_type(b))
+                else {
+                    return CertificateEquality::Different;
+                };
+                match (a, b) {
+                    | (&CompType::Returner(a), &CompType::Returner(b)) => pending.push(VT(a, b)),
+                    | (
+                        &CompType::Arrow {
+                            domain: a,
+                            codomain: b,
+                        },
+                        &CompType::Arrow {
+                            domain: c,
+                            codomain: d,
+                        },
+                    )
+                    | (
+                        &CompType::Pi {
+                            domain: a,
+                            codomain: b,
+                        },
+                        &CompType::Pi {
+                            domain: c,
+                            codomain: d,
+                        },
+                    ) => pending.extend([VT(a, c), CT(b, d)]),
+                    | (
+                        &CompType::Element {
+                            code: a,
+                            ref target,
+                        },
+                        &CompType::Element {
+                            code: b,
+                            target: ref other,
+                        },
+                    ) if target == other => pending.push(V(a, b)),
+                    | _ => return CertificateEquality::Different,
+                }
+            },
+        }
+    }
+    CertificateEquality::Equal
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn certificate_syntax_erases_only_evidence()
+    {
+        let mut arena = crate::CoreArena::new();
+        let unit = arena.value_type_unit();
+        let code = arena.value_quote(unit);
+        let classifier = arena.value_type_path_universe(code, code);
+        let variable = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let returned = arena.computation_return(variable);
+        let lambda = arena.computation_lambda(returned);
+        let identity = arena.value_thunk(lambda);
+        let first =
+            arena.value_path_equiv(classifier, identity, identity, alloc::sync::Arc::default());
+        let mut evidence = gandr_kernel_term::PathEvidence::default();
+        evidence.source.push(alloc::vec::Vec::new());
+        let evidence = alloc::sync::Arc::new(evidence);
+        let same = arena.value_path_equiv(
+            classifier,
+            identity,
+            identity,
+            alloc::sync::Arc::clone(&evidence),
+        );
+        assert_eq!(
+            CertificateEquality::Equal,
+            equal_certificate_syntax(&arena, first, same)
+        );
+        let extra = arena.computation_bind(returned, returned);
+        let extra = arena.computation_lambda(extra);
+        let extra = arena.value_thunk(extra);
+        let different = arena.value_path_equiv(classifier, extra, identity, evidence);
+        assert_eq!(
+            CertificateEquality::Different,
+            equal_certificate_syntax(&arena, first, different)
+        );
+        let fresh = arena.value_type_unit();
+        let fresh = arena.value_quote(fresh);
+        let one = arena.value_path_refl(code);
+        let two = arena.value_path_refl(fresh);
+        assert_eq!(
+            CertificateEquality::Equal,
+            equal_certificate_syntax(&arena, one, two)
+        );
+    }
 }

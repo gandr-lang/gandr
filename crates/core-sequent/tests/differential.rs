@@ -326,6 +326,7 @@ fn normaliser_stop(fault: EvalFault) -> Stop
         | EvalFault::ForcedNonThunk => Stop::ForcedNonThunk,
         | EvalFault::CasedNonInjection => Stop::CasedNonInjection,
         | EvalFault::UnboundVariable { .. } => Stop::UnboundVariable,
+        | EvalFault::TransportedNonPath
         | EvalFault::OutOfFuel
         | EvalFault::DanglingTerm
         | EvalFault::Domain(_)

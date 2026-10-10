@@ -40,6 +40,7 @@ use gandr_core_incremental::NodeIndex;
 use gandr_core_incremental::Program;
 use gandr_core_incremental::Reference;
 use gandr_core_incremental::Sort;
+use gandr_core_incremental::map_children;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Computation;
@@ -1410,6 +1411,12 @@ fn children(node: &ContentNode) -> Children
 {
     let unused = NodeIndex::default();
     let (slots, count) = match *node {
+        | ContentNode::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            ..
+        } => ([path_type, forward, backward], 3_usize),
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)
         | ContentNode::Unit
@@ -1419,6 +1426,7 @@ fn children(node: &ContentNode) -> Children
         | ContentNode::Universe { .. }
         | ContentNode::Abstract(_)
         | ContentNode::Unresolved(_) => ([unused; 3], 0_usize),
+        | ContentNode::PathRefl(only)
         | ContentNode::Injection(_, only)
         | ContentNode::Thunk(only)
         | ContentNode::ValueLift { body: only, .. }
@@ -1433,6 +1441,9 @@ fn children(node: &ContentNode) -> Children
         | ContentNode::Element { code: only, .. }
         | ContentNode::ComputationElement { code: only, .. }
         | ContentNode::Returner(only) => ([only, unused, unused], 1_usize),
+        | ContentNode::PathUniverse(first, second)
+        | ContentNode::PathProduct(first, second)
+        | ContentNode::Transport(first, second)
         | ContentNode::Pair(first, second)
         | ContentNode::Application(first, second)
         | ContentNode::Bind(first, second)
@@ -1458,115 +1469,6 @@ fn children(node: &ContentNode) -> Children
         } => ([scrutinee, on_left, on_right], 3_usize),
     };
     Children { slots, count }
-}
-
-/// `node` with each child replaced by its image under `image`, children
-/// visited in the former's order.
-///
-/// # Specification
-/// trivial.
-fn map_children<Image>(
-    node: &ContentNode,
-    image: &mut Image,
-) -> ContentNode
-where
-    Image: FnMut(NodeIndex) -> NodeIndex,
-{
-    match *node {
-        | ContentNode::Variable { .. }
-        | ContentNode::Constant(_)
-        | ContentNode::Unit
-        | ContentNode::Literal(_)
-        | ContentNode::Base(_)
-        | ContentNode::UnitType
-        | ContentNode::Universe { .. }
-        | ContentNode::Abstract(_)
-        | ContentNode::Unresolved(_) => node.clone(),
-        | ContentNode::Pair(first, second) => {
-            let first = image(first);
-            ContentNode::Pair(first, image(second))
-        },
-        | ContentNode::Injection(side, body) => ContentNode::Injection(side, image(body)),
-        | ContentNode::Thunk(body) => ContentNode::Thunk(image(body)),
-        | ContentNode::ValueLift { ref target, body } => ContentNode::ValueLift {
-            target: target.clone(),
-            body: image(body),
-        },
-        | ContentNode::Quote(quoted) => ContentNode::Quote(image(quoted)),
-        | ContentNode::QuoteComputation(quoted) => ContentNode::QuoteComputation(image(quoted)),
-        | ContentNode::StaticLambda(body) => ContentNode::StaticLambda(image(body)),
-        | ContentNode::StaticApplication(head, argument) => {
-            let head = image(head);
-            ContentNode::StaticApplication(head, image(argument))
-        },
-        | ContentNode::StaticPi { domain, codomain } => {
-            let domain = image(domain);
-            ContentNode::StaticPi {
-                domain,
-                codomain: image(codomain),
-            }
-        },
-        | ContentNode::Lambda(body) => ContentNode::Lambda(image(body)),
-        | ContentNode::Application(head, argument) => {
-            let head = image(head);
-            ContentNode::Application(head, image(argument))
-        },
-        | ContentNode::Return(value) => ContentNode::Return(image(value)),
-        | ContentNode::Bind(bound, rest) => {
-            let bound = image(bound);
-            ContentNode::Bind(bound, image(rest))
-        },
-        | ContentNode::Force(value) => ContentNode::Force(image(value)),
-        | ContentNode::Case {
-            scrutinee,
-            on_left,
-            on_right,
-        } => {
-            let scrutinee = image(scrutinee);
-            let on_left = image(on_left);
-            ContentNode::Case {
-                scrutinee,
-                on_left,
-                on_right: image(on_right),
-            }
-        },
-        | ContentNode::Product(first, second) => {
-            let first = image(first);
-            ContentNode::Product(first, image(second))
-        },
-        | ContentNode::Sum(first, second) => {
-            let first = image(first);
-            ContentNode::Sum(first, image(second))
-        },
-        | ContentNode::ThunkType(body) => ContentNode::ThunkType(image(body)),
-        | ContentNode::TypeLift { inner, ref target } => ContentNode::TypeLift {
-            inner: image(inner),
-            target: target.clone(),
-        },
-        | ContentNode::Element { code, ref target } => ContentNode::Element {
-            code: image(code),
-            target: target.clone(),
-        },
-        | ContentNode::ComputationElement { code, ref target } => ContentNode::ComputationElement {
-            code: image(code),
-            target: target.clone(),
-        },
-        | ContentNode::Returner(result) => ContentNode::Returner(image(result)),
-        | ContentNode::Arrow { domain, codomain } => {
-            let domain = image(domain);
-            ContentNode::Arrow {
-                domain,
-                codomain: image(codomain),
-            }
-        },
-        | ContentNode::Pi { domain, codomain } => {
-            let domain = image(domain);
-            ContentNode::Pi {
-                domain,
-                codomain: image(codomain),
-            }
-        },
-    }
 }
 
 /// The root a tree is read from.
@@ -1643,6 +1545,22 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().value(id) {
+        | Some(&Value::PathRefl(code)) => ContentNode::PathRefl(child(Root::Value(code))),
+        | Some(&Value::PathProduct(first, second)) => {
+            let first = child(Root::Value(first));
+            ContentNode::PathProduct(first, child(Root::Value(second)))
+        },
+        | Some(&Value::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            ref evidence,
+        }) => ContentNode::PathEquiv {
+            path_type: child(Root::ValueType(path_type)),
+            forward: child(Root::Value(forward)),
+            backward: child(Root::Value(backward)),
+            evidence: alloc::sync::Arc::clone(evidence),
+        },
         | Some(&Value::Variable { zone, index }) => ContentNode::Variable { zone, index },
         | Some(&Value::Constant(position)) => ContentNode::Constant(program.resolve(position)),
         | Some(&Value::Unit) => ContentNode::Unit,
@@ -1685,6 +1603,10 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().computation(id) {
+        | Some(&Computation::Transport(path, value)) => {
+            let path = child(Root::Value(path));
+            ContentNode::Transport(path, child(Root::Value(value)))
+        },
         | Some(&Computation::Lambda(body)) => ContentNode::Lambda(child(Root::Computation(body))),
         | Some(&Computation::Application(head, argument)) => {
             let head = child(Root::Computation(head));
@@ -1726,6 +1648,10 @@ where
     Child: FnMut(Root) -> NodeIndex,
 {
     match program.arena().value_type(id) {
+        | Some(&ValueType::PathUniverse(source, target)) => {
+            let source = child(Root::Value(source));
+            ContentNode::PathUniverse(source, child(Root::Value(target)))
+        },
         | Some(&ValueType::Base(base)) => ContentNode::Base(base),
         | Some(&ValueType::Unit) => ContentNode::UnitType,
         | Some(&ValueType::Product(first, second)) => {

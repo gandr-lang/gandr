@@ -129,30 +129,28 @@ fn record_dangling() -> WireTag
 /// top of the byte range, as far from the block as the alphabet allows.
 const DANGLING_TAG: u8 = 0xFF;
 
-/// How many node tags the alphabet may hold before it reaches
-/// [`DANGLING_TAG`]: the same number, counted in tags rather than spelled as a
-/// byte, since a count and a tag are two quantities that share one literal.
-const TAGS_BELOW_DANGLING: usize = 0xFF;
-
-/// The dangling sentinel is reserved out of the node-tag block, at compile
-/// time.
+/// Keep the dangling sentinel outside every admitted node tag.
 ///
-/// The block is contiguous from zero and frozen at that shape by the term
-/// crate's own table, so its length is one past its highest tag and the
-/// sentinel must stay strictly above it. Stated as a compile-time assertion
-/// rather than as a test because the hazard is future-facing: a tag addition
-/// that reached the sentinel would make an unreadable reference encode
-/// identically to a node, and that should be a build failure rather than a test
-/// somebody has to remember to keep. The assertion never executes — the
-/// compiler evaluates it — so it is not a panic on any path.
+/// # Specification
+/// - ensures: compilation refuses a table row that uses the dangling byte.
+/// - panics: no runtime path; a violation fails constant evaluation.
+/// - executable: none — this is an evaluated compile-time assertion, not a
+///   callable boundary.
 ///
-/// The item is **anonymous** deliberately: a named unused constant is never
-/// evaluated, so `const _NAME: () = assert!(..)` is a guard that does not
-/// guard. `const _` is always evaluated.
-const _: () = assert!(
-    gandr_kernel_term::NODE_TAG_TABLE.len() < TAGS_BELOW_DANGLING,
-    "the dangling sentinel must stay above the contiguous node-tag block"
-);
+/// # Adequacy
+/// - hypothesis: L3 — sparse native tags and unreadable references encode
+///   separately; adding a row at the sentinel fails compilation.
+/// - witness: `encoding::tests::an_unreadable_reference_still_encodes`
+const _: () = {
+    let mut rows = gandr_kernel_term::NODE_TAG_TABLE.as_slice();
+    while let &[row, ref rest @ ..] = rows {
+        assert!(
+            row.tag.0 < DANGLING_TAG,
+            "node tag overlaps dangling sentinel"
+        );
+        rows = rest;
+    }
+};
 
 /// The tag distinguishing an absent optional component from a present one.
 ///
@@ -715,6 +713,22 @@ impl ContentTable
     /// - provides: the value arm of the record vocabulary.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact tags separate node families; asymmetric
+    ///   children and distinct evidence must not share a content record.
+    /// - witness: `encoding::tests::two_families_with_one_payload_encode_differently`
+    /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
+    #[spec(captures: start = record.0.len(), ensures: record.0.get(start) == Some(&u8::from(match *value {
+        Value::Variable(_) => gandr_kernel_term::NODE_V_VARIABLE, Value::Constant(_) => gandr_kernel_term::NODE_V_CONSTANT,
+        Value::Unit => gandr_kernel_term::NODE_V_UNIT, Value::Literal(_) => gandr_kernel_term::NODE_V_LITERAL,
+        Value::Pair(..) => gandr_kernel_term::NODE_V_PAIR, Value::Injection(..) => gandr_kernel_term::NODE_V_INJECTION,
+        Value::Thunk(_) => gandr_kernel_term::NODE_V_THUNK, Value::Lift { .. } => gandr_kernel_term::NODE_V_LIFT,
+        Value::Quote(_) => gandr_kernel_term::NODE_V_QUOTE, Value::QuoteComputation(_) => gandr_kernel_term::NODE_V_QUOTE_COMPUTATION,
+        Value::StaticApplication(..) => gandr_kernel_term::NODE_V_STATIC_APPLICATION,
+        Value::PathRefl(_) => gandr_kernel_term::NODE_V_PATH_REFL, Value::PathProduct(..) => gandr_kernel_term::NODE_V_PATH_PRODUCT,
+        Value::PathEquiv { .. } => gandr_kernel_term::NODE_V_PATH_EQUIV,
+    }))) ]
     fn put_value(
         &self,
         record: &mut ContentEncoding,
@@ -722,6 +736,29 @@ impl ContentTable
     )
     {
         match *value {
+            | Value::PathRefl(code) => {
+                record.put_tag(gandr_kernel_term::NODE_V_PATH_REFL);
+                record.put_content(self.content_of(AnyNode::Value(code)));
+            },
+            | Value::PathProduct(first, second) => {
+                record.put_tag(gandr_kernel_term::NODE_V_PATH_PRODUCT);
+                record.put_content(self.content_of(AnyNode::Value(first)));
+                record.put_content(self.content_of(AnyNode::Value(second)));
+            },
+            | Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ref evidence,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_V_PATH_EQUIV);
+                for word in evidence.words() {
+                    record.put_word(EncodedWord(word.0));
+                }
+                record.put_content(self.content_of(AnyNode::ValueType(path_type)));
+                record.put_content(self.content_of(AnyNode::Value(forward)));
+                record.put_content(self.content_of(AnyNode::Value(backward)));
+            },
             | Value::Variable(index) => {
                 record.put_tag(gandr_kernel_term::NODE_V_VARIABLE);
                 record.put_word(EncodedWord(u64::from(u32::from(index))));
@@ -779,6 +816,18 @@ impl ContentTable
     /// - provides: the computation arm of the record vocabulary.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact tags separate node families; asymmetric
+    ///   children and distinct evidence must not share a content record.
+    /// - witness: `encoding::tests::two_families_with_one_payload_encode_differently`
+    /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
+    #[spec(captures: start = record.0.len(), ensures: record.0.get(start) == Some(&u8::from(match *computation {
+        Computation::Lambda(_) => gandr_kernel_term::NODE_C_LAMBDA, Computation::Application(..) => gandr_kernel_term::NODE_C_APPLICATION,
+        Computation::Return(_) => gandr_kernel_term::NODE_C_RETURN, Computation::Bind(..) => gandr_kernel_term::NODE_C_BIND,
+        Computation::Force(_) => gandr_kernel_term::NODE_C_FORCE, Computation::Case { .. } => gandr_kernel_term::NODE_C_CASE,
+        Computation::Absurd(_) => gandr_kernel_term::NODE_C_ABSURD, Computation::Transport(..) => gandr_kernel_term::NODE_C_TRANSPORT,
+    }))) ]
     fn put_computation(
         &self,
         record: &mut ContentEncoding,
@@ -786,6 +835,15 @@ impl ContentTable
     )
     {
         match *computation {
+            | Computation::Absurd(value) => {
+                record.put_tag(gandr_kernel_term::NODE_C_ABSURD);
+                record.put_content(self.content_of(AnyNode::Value(value)));
+            },
+            | Computation::Transport(path, value) => {
+                record.put_tag(gandr_kernel_term::NODE_C_TRANSPORT);
+                record.put_content(self.content_of(AnyNode::Value(path)));
+                record.put_content(self.content_of(AnyNode::Value(value)));
+            },
             | Computation::Lambda(body) => {
                 record.put_tag(gandr_kernel_term::NODE_C_LAMBDA);
                 record.put_content(self.content_of(AnyNode::Computation(body)));
@@ -831,6 +889,22 @@ impl ContentTable
     /// - provides: the value-type arm of the record vocabulary.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact tags separate node families; asymmetric
+    ///   children and distinct evidence must not share a content record.
+    /// - witness: `encoding::tests::a_transposed_product_encodes_differently`
+    /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
+    #[spec(captures: start = record.0.len(), ensures: record.0.get(start) == Some(&u8::from(match *value_type {
+        ValueType::Base(_) => gandr_kernel_term::NODE_VT_BASE, ValueType::Unit => gandr_kernel_term::NODE_VT_UNIT, ValueType::Empty => gandr_kernel_term::NODE_VT_EMPTY,
+        ValueType::Universe { sort: GroundSort::Value, .. } => gandr_kernel_term::NODE_VT_UNIVERSE,
+        ValueType::Universe { sort: GroundSort::Computation, .. } => gandr_kernel_term::NODE_VT_COMPUTATION_UNIVERSE,
+        ValueType::Product(..) => gandr_kernel_term::NODE_VT_PRODUCT, ValueType::Sum(..) => gandr_kernel_term::NODE_VT_SUM,
+        ValueType::Thunk(_) => gandr_kernel_term::NODE_VT_THUNK, ValueType::Lift { .. } => gandr_kernel_term::NODE_VT_LIFT,
+        ValueType::Element { .. } => gandr_kernel_term::NODE_VT_ELEMENT, ValueType::Abstract(_) => gandr_kernel_term::NODE_VT_ABSTRACT,
+        ValueType::StaticPi { .. } => gandr_kernel_term::NODE_VT_STATIC_PI, ValueType::PathUniverse(..) => gandr_kernel_term::NODE_VT_PATH_UNIVERSE,
+        ValueType::List(_) => gandr_kernel_term::NODE_VT_LIST,
+    }))) ]
     fn put_value_type(
         &self,
         record: &mut ContentEncoding,
@@ -838,11 +912,17 @@ impl ContentTable
     )
     {
         match *value_type {
+            | ValueType::PathUniverse(source, target) => {
+                record.put_tag(gandr_kernel_term::NODE_VT_PATH_UNIVERSE);
+                record.put_content(self.content_of(AnyNode::Value(source)));
+                record.put_content(self.content_of(AnyNode::Value(target)));
+            },
             | ValueType::Base(base) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_BASE);
                 record.put_tag(base_tag(base));
             },
             | ValueType::Unit => record.put_tag(gandr_kernel_term::NODE_VT_UNIT),
+            | ValueType::Empty => record.put_tag(gandr_kernel_term::NODE_VT_EMPTY),
             | ValueType::Universe {
                 sort: GroundSort::Value,
                 ref level,
@@ -870,6 +950,10 @@ impl ContentTable
             | ValueType::Thunk(body) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_THUNK);
                 record.put_content(self.content_of(AnyNode::CompType(body)));
+            },
+            | ValueType::List(element) => {
+                record.put_tag(gandr_kernel_term::NODE_VT_LIST);
+                record.put_content(self.content_of(AnyNode::ValueType(element)));
             },
             | ValueType::Lift { inner, ref target } => {
                 record.put_tag(gandr_kernel_term::NODE_VT_LIFT);
@@ -950,6 +1034,34 @@ impl ContentTable
 ///   the record of a node a function of its children's ids.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested, shared and asymmetric graphs retain every child
+///   before its parent; missing a child changes the resulting content key.
+/// - witness: `encoding::tests::one_table_records_each_distinct_node_once`
+/// - witness: `encoding::tests::a_transposed_product_encodes_differently`
+#[spec(captures: before = tasks.len(), ensures: tasks.len() == before.saturating_add(match node {
+        AnyNode::Value(id) => match arena.value(id) {
+            Some(&Value::PathEquiv { .. }) => 3,
+            Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..)) => 2,
+            Some(&Value::Injection(..) | &Value::Lift { .. } | &Value::Thunk(_) | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::PathRefl(_)) => 1,
+            _ => 0,
+        },
+        AnyNode::Computation(id) => match arena.computation(id) {
+            Some(&Computation::Case { .. }) => 3,
+            Some(&Computation::Application(..) | &Computation::Bind(..) | &Computation::Transport(..)) => 2,
+            Some(_) => 1, None => 0,
+        },
+        AnyNode::ValueType(id) => match arena.value_type(id) {
+            Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. } | &ValueType::PathUniverse(..)) => 2,
+            Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. } | &ValueType::List(_)) => 1,
+            _ => 0,
+        },
+        AnyNode::CompType(id) => match arena.comp_type(id) {
+            Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
+            Some(_) => 1, None => 0,
+        },
+    }))]
 fn push_children(
     arena: &TermArena,
     node: AnyNode,
@@ -962,7 +1074,22 @@ fn push_children(
             | Some(
                 &Value::Variable(_) | &Value::Constant(_) | &Value::Unit | &Value::Literal(_),
             ) => {},
-            | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
+            | Some(&Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ..
+            }) => {
+                tasks.push(EncodeTask::Open(AnyNode::ValueType(path_type)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(forward)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(backward)));
+            },
+            | Some(&Value::PathRefl(code)) => tasks.push(EncodeTask::Open(AnyNode::Value(code))),
+            | Some(
+                &Value::PathProduct(first, second)
+                | &Value::Pair(first, second)
+                | &Value::StaticApplication(first, second),
+            ) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(first)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(second)));
             },
@@ -979,6 +1106,10 @@ fn push_children(
         },
         | AnyNode::Computation(id) => match arena.computation(id) {
             | None => {},
+            | Some(&Computation::Transport(path, value)) => {
+                tasks.push(EncodeTask::Open(AnyNode::Value(path)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(value)));
+            },
             | Some(&Computation::Lambda(body)) => {
                 tasks.push(EncodeTask::Open(AnyNode::Computation(body)));
             },
@@ -986,7 +1117,11 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Computation(head)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(argument)));
             },
-            | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+            | Some(
+                &Computation::Return(value)
+                | &Computation::Force(value)
+                | &Computation::Absurd(value),
+            ) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(value)));
             },
             | Some(&Computation::Bind(bound, body)) => {
@@ -1008,6 +1143,7 @@ fn push_children(
             | Some(
                 &ValueType::Base(_)
                 | &ValueType::Unit
+                | &ValueType::Empty
                 | &ValueType::Universe { .. }
                 | &ValueType::Abstract(_),
             ) => {},
@@ -1022,10 +1158,14 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(first)));
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(second)));
             },
+            | Some(&ValueType::PathUniverse(source, target)) => {
+                tasks.push(EncodeTask::Open(AnyNode::Value(source)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(target)));
+            },
             | Some(&ValueType::Thunk(body)) => {
                 tasks.push(EncodeTask::Open(AnyNode::CompType(body)));
             },
-            | Some(&ValueType::Lift { inner, .. }) => {
+            | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(inner)));
             },
             | Some(&ValueType::Element { code, .. }) => {
