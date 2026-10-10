@@ -473,6 +473,7 @@ dependencies = [
  "gandr-kernel-conversion-trace",
  "gandr-kernel-strata",
  "gandr-kernel-term",
+ "proptest",
  "quenchant-arith",
  "quenchant-shape",
 ]

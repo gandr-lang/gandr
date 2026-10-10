@@ -400,6 +400,35 @@ pub enum ReplayDecline
 }
 
 /// The kernel's verdict on a replayed claim.
+///
+/// # Specification
+/// - provides: two certified verdicts and a decline carrying its reason. For
+///   fixed sides, unfoldings and budget, traces carrying the same claim are
+///   equivalent evidence only when both replay to a certified verdict. A
+///   declining trace is not equivalent to itself: this is a partial
+///   equivalence, distinct from this enum's Rust equality. The unit and
+///   composition laws quantify over certified verdicts only. Purity also
+///   preserves declines, without making them certified evidence.
+///
+/// | Class | Verdict or reason |
+/// | --- | --- |
+/// | Ill-formed query | `Refused(Unreadable)` |
+/// | Foreign answer | `Refused(Inapplicable { at })`, `Refused(NonAuthoritative { at })` |
+/// | Path disagreement | `Refused(Contradicted { at })`, `Refused(Exhausted)`, `Refused(Leftover { at })` |
+/// | No dialogue | `EngineDeclined` |
+/// | Budget | `Budget` |
+/// | Certified negative | `NotConvertible`: an element, never a refusal |
+///
+/// Refused reasons are [`ReplayRefusal`] variants inside
+/// [`ReplayDecline::Refused`]; every decline is inside [`Self::Declined`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — a pinned table of replay inputs separates every refusal
+///   variant; the unit witnesses distinguish both certified answers from
+///   disagreement and budget exhaustion.
+/// - witness: `replay_laws::laws::every_replay_refusal_carries_its_pinned_class`
+/// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+/// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum KernelVerdict
 {
@@ -414,6 +443,12 @@ pub enum KernelVerdict
 /// Replay `trace` against `claim` for the two `sides`, firing every step in
 /// `arena` and unfolding only what `unfoldings` defines.
 ///
+/// Composition has the shape of goal refinement: decisions rewriting a goal
+/// precede the rewritten goal's dialogue. A decomposed pair visits its first
+/// component before its second; a leading `ComparedShared` can instead close
+/// an alpha-equal pair whole. There is no certificate-composition operation,
+/// and traces for `a = b` and `b = c` do not supply a trace for `a = c`.
+///
 /// # Specification
 /// - requires: the two sides and every body in `unfoldings` live in `arena`.
 /// - ensures: [`KernelVerdict::Convertible`] or
@@ -424,16 +459,30 @@ pub enum KernelVerdict
 ///   [`ReplayDecline::EngineDeclined`] without reading the trace; a budget
 ///   exhausted answers [`ReplayDecline::Budget`]; anything else answers the
 ///   refusal. `arena` holds what it held on entry.
+/// - ensures: unit — on the budget-terminating fragment, the one-decision trace
+///   `[ComparedShared]` certifies `Convertible` on alpha-equal sides and
+///   `NotConvertible` on rigid alpha-distinct sides, under the matching claim.
+///   Weak head reduction precedes that decision; a divergent side declines with
+///   [`ReplayDecline::Budget`], even against itself.
+/// - ensures: purity — the verdict depends only on the sides' content,
+///   unfoldings, claim, trace and budget. Replaying twice or in a cloned arena
+///   gives the same verdict and restores the entry watermark on every return.
+///   No verdict adds data to the classified object.
 /// - provides: the certified recheck of an untrusted engine's conversion
 ///   verdict, search-free and sequential.
 /// - fails: never — a refusal is a verdict.
 /// - panics: none.
+/// - intension: each active replay uses a fresh content table and no memo
+///   shared with another call; temporary reducts are discarded.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — the surfaces are the rule table's rows, the refusal kinds
 ///   and the two decline sources, each separated by a hand-written trace that
 ///   takes it. The traces an engine produces are replayed end to end by that
-///   engine's own tests, which sit above this crate.
+///   engine's own tests, which sit above this crate. L2/L3 — generated rigid
+///   terms, beta redexes, static unfoldings and a divergent term exercise
+///   repeat/clone invariance and rollback, with independent unit-law goldens
+///   preventing agreement on a constant verdict.
 /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
 /// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
 /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
@@ -442,6 +491,19 @@ pub enum KernelVerdict
 /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
 /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
 /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
+/// - witness: `replay_laws::laws::replay_is_pure_across_repeated_and_cloned_arenas`
+// Unit and cross-run purity are witnessed relations, not predicates over one
+// result. The executable clause checks their per-call boundary: rollback and
+// preservation of the claimed verdict, including the no-dialogue case.
+#[spec(captures: [entry = arena.watermark()], ensures: |ret| {
+    arena.watermark() == entry && matches!((claim, ret),
+        (EngineClaim::Convertible, KernelVerdict::Convertible)
+        | (EngineClaim::NotConvertible, KernelVerdict::NotConvertible)
+        | (EngineClaim::Declined, KernelVerdict::Declined(ReplayDecline::EngineDeclined))
+        | (EngineClaim::Convertible | EngineClaim::NotConvertible,
+           KernelVerdict::Declined(ReplayDecline::Budget | ReplayDecline::Refused(_)))
+    )
+})]
 #[inline]
 #[must_use]
 pub fn replay<I>(
@@ -2338,6 +2400,7 @@ mod tests
         let same = arena.value_pair(unit, near);
         let apart = arena.value_pair(unit, far);
         let pairs = |right| ReplaySides::Values(left, right);
+        let mark = arena.watermark();
 
         assert_eq!(
             run(&mut arena, &none, pairs(same), EngineClaim::Convertible, &[
@@ -2378,6 +2441,8 @@ mod tests
             ),
             after
         );
+
+        assert_eq!(arena.watermark(), mark);
 
         // A thunk and a defined constant can still reduce, so their
         // α-distinctness separates nothing and the closing does not apply.
@@ -2953,15 +3018,23 @@ mod tests
         let suspended = arena.value_thunk(lambda);
         let omega = arena.computation_application(lambda, suspended);
         let mark = arena.watermark();
-        let verdict = replay(
-            &mut arena,
-            &none,
+        for sides in [
             ReplaySides::Computations(omega, returned_unit),
-            EngineClaim::Convertible,
-            [],
-            ReplayBudget::from(64_u64),
-        );
-        assert_eq!(verdict, KernelVerdict::Declined(ReplayDecline::Budget));
-        assert_eq!(arena.watermark(), mark, "every reduct is truncated away");
+            ReplaySides::Computations(returned_unit, omega),
+            ReplaySides::Computations(omega, omega),
+        ] {
+            for claim in [EngineClaim::Convertible, EngineClaim::NotConvertible] {
+                let verdict = replay(
+                    &mut arena,
+                    &none,
+                    sides,
+                    claim,
+                    [SHARED],
+                    ReplayBudget::from(64_u64),
+                );
+                assert_eq!(verdict, KernelVerdict::Declined(ReplayDecline::Budget));
+                assert_eq!(arena.watermark(), mark, "every reduct is truncated away");
+            }
+        }
     }
 }
