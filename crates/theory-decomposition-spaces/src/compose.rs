@@ -68,6 +68,12 @@ where
 
 /// Compose directed certificates when their seam variable flow is acyclic.
 ///
+/// This is a single-shot batch gate: its node set depends on the current
+/// certificate pair and the left recorded join. Chaining changes the hole
+/// filter, so successive graphs are not insertion-only. Retain batch traversal
+/// here; reconsider dynamic maintenance only when a composition surface owns
+/// a standing graph across calls or its constraint edges genuinely accumulate.
+///
 /// # Specification
 /// - requires: replayable inputs meet at `a.joins_at == b.overlap.peak`; the
 ///   verdict reads recorded support.

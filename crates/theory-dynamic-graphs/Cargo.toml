@@ -1,0 +1,24 @@
+[package]
+name = "gandr-theory-dynamic-graphs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Insertion-only topological orders and feasible offset valuations"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["constraints", "graphs", "incremental"]
+categories = ["algorithms", "no-std"]
+publish.workspace = true
+
+[dependencies]
+anodized.workspace = true
+gandr-theory-graphs.workspace = true
+gandr-theory-orders.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true
