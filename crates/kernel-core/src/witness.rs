@@ -2,9 +2,8 @@
 //!
 //! A refusal outlives the arena that produced it — admission truncates on
 //! rejection — so what it carries has to be content rather than a reference.
-//! These two functions are the only place a witness is minted, so "an error
-//! names a type by content" is one decision in one place rather than a
-//! convention every refusal site has to remember.
+//! These functions derive witnesses from arena content, so refusal sites
+//! share one construction of the head and digest.
 
 use anodized::spec;
 use gandr_kernel_term::AnyNode;
@@ -33,9 +32,9 @@ use crate::error::ValueTypeWitness;
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surfaces are the head projection and the digest
-///   subject, separated by two types of one head (equal heads, unequal digests)
-///   and by an unreadable id (the unreadable head), each asserted exactly.
+/// - hypothesis: L3 on integer/string base types and a unit type before and
+///   after truncation; exact heads and differing digests distinguish head
+///   substitution, hashing only the head and stale readable content.
 /// - witness: `witness::tests::two_types_of_one_head_are_still_separated`
 /// - witness: `witness::tests::an_unreadable_type_witnesses_as_unreadable`
 #[inline]
@@ -67,8 +66,11 @@ pub fn value_type_witness(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`value_type_witness`], on the computation plane.
+/// - hypothesis: L3 on unit/integer returners and a returner before and after
+///   truncation; exact heads and differing digests distinguish head
+///   substitution, hashing only the head and stale readable content.
 /// - witness: `witness::tests::two_computation_types_of_one_head_are_separated`
+/// - witness: `witness::tests::an_unreadable_computation_type_witnesses_as_unreadable`
 #[inline]
 #[must_use]
 #[spec(ensures: |ret| ret.head() == arena.comp_type(id).map_or(CompTypeHead::Unreadable, CompTypeHead::of) && ret.digest() == content_digest(arena, AnyNode::CompType(id)))]
@@ -118,12 +120,16 @@ mod tests
         let mut arena = TermArena::new();
         let floor = arena.watermark();
         let unit = arena.value_type_unit();
+        let readable = value_type_witness(&arena, unit);
+        assert_eq!(readable.head(), ValueTypeHead::Unit);
         arena.truncate_to(floor);
+        let unreadable = value_type_witness(&arena, unit);
         assert_eq!(
             ValueTypeHead::Unreadable,
-            value_type_witness(&arena, unit).head(),
+            unreadable.head(),
             "a refusal about a node that is gone still says so rather than panicking"
         );
+        assert_ne!(unreadable.digest(), readable.digest());
     }
 
     #[test]
@@ -139,5 +145,20 @@ mod tests
         assert_eq!(CompTypeHead::Returner, first.head());
         assert_eq!(CompTypeHead::Returner, second.head());
         assert_ne!(first.digest(), second.digest());
+    }
+
+    #[test]
+    fn an_unreadable_computation_type_witnesses_as_unreadable()
+    {
+        let mut arena = TermArena::new();
+        let floor = arena.watermark();
+        let unit = arena.value_type_unit();
+        let returner = arena.comp_type_returner(unit);
+        let readable = comp_type_witness(&arena, returner);
+        assert_eq!(readable.head(), CompTypeHead::Returner);
+        arena.truncate_to(floor);
+        let unreadable = comp_type_witness(&arena, returner);
+        assert_eq!(unreadable.head(), CompTypeHead::Unreadable);
+        assert_ne!(unreadable.digest(), readable.digest());
     }
 }
