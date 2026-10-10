@@ -73,6 +73,12 @@ static TOOLKIT: OnceLock<Result<Toolkit, PbgError>> = OnceLock::new();
 /// # Adequacy
 /// - hypothesis: L3 — two calls are asserted to answer one address.
 /// - witness: `recheck::tests::the_grammar_is_built_once_per_process`
+#[anodized::spec(ensures: |ret| TOOLKIT.get().is_some_and(|stored|
+    match (stored.as_ref(), ret) {
+        (Ok(expected), Ok(actual)) => core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(actual)),
+        (Err(expected), Err(actual)) => core::ptr::eq(core::ptr::from_ref(expected), core::ptr::from_ref(actual)),
+        _ => false,
+    }))]
 fn toolkit() -> Result<&'static Toolkit, &'static PbgError>
 {
     TOOLKIT
@@ -113,6 +119,11 @@ fn toolkit() -> Result<&'static Toolkit, &'static PbgError>
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
+#[anodized::spec(ensures: |ret| ret.iter().all(|diagnostic|
+    diagnostic.source == "gandr" && diagnostic.range.start <= diagnostic.range.end
+        && matches!(diagnostic.severity, Severity::ERROR | Severity::INFORMATION)
+        && diagnostic.related_information.iter().all(|related|
+            related.location.uri == *uri && related.location.range.start <= related.location.range.end)))]
 #[inline]
 #[must_use]
 pub fn recheck(
@@ -165,10 +176,17 @@ pub fn recheck(
 /// - intension: one parse per call.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — a definition is asserted at its exact stream; L2 — over
-///   every corpus source, the encoded stream covers the spans this answers.
+/// - hypothesis: L2 — a definition has a pinned semantic-token stream; over
+///   every corpus source, encoded coverage agrees with the highlighter. Runtime
+///   checks distinguish out-of-text, split-character, unsorted and overlapping
+///   spans without reparsing the source.
 /// - witness: `recheck::tests::a_definition_produces_semantic_tokens`
 /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
+#[anodized::spec(ensures: |ret| ret.iter().all(|span|
+    usize::from(span.range.end()) <= text.as_ref().len()
+        && text.as_ref().is_char_boundary(usize::from(span.range.start()))
+        && text.as_ref().is_char_boundary(usize::from(span.range.end())))
+    && ret.iter().zip(ret.iter().skip(1)).all(|(first, second)| first.range.end() <= second.range.start()))]
 #[inline]
 #[must_use]
 pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
@@ -210,6 +228,16 @@ pub fn highlight(text: SourceText<'_>) -> Vec<HlSpan>
 ///   diagnostics published agree with the walk's own reports.
 /// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
 /// - witness: `recheck::tests::a_fault_is_published_at_the_origin`
+#[anodized::spec(ensures: |ret| match *composed {
+    Composed::Refused(_) => matches!((root, ret),
+        (SourceRoot::Pending, Standing::Pending) | (SourceRoot::Strict | SourceRoot::Fixture, Standing::Refused)),
+    Composed::Settled { ref unstatable, ref report, .. } => match root {
+        SourceRoot::Pending => (ret == Standing::Lowered && unstatable.is_empty())
+            || (ret == Standing::Pending && !unstatable.is_empty()),
+        SourceRoot::Strict | SourceRoot::Fixture => matches!((ret, report.tally().settlement()),
+            (Standing::Settled, Settlement::Settled) | (Standing::Unsettled, Settlement::Unsettled)),
+    },
+})]
 fn standing(
     root: SourceRoot,
     composed: &Composed<'_>,
@@ -247,10 +275,19 @@ fn standing(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a type mismatch and a duplicate signature are each
-///   asserted at their exact diagnostic.
+/// - hypothesis: L3 — a type mismatch and duplicate signature have exact
+///   primary and causal locations. L2 — every corpus report agrees with its
+///   wire ranges, code, title and related labels, distinguishing omitted,
+///   misclassified or misprojected report fields without pinning wording.
 /// - witness: `recheck::tests::causal_contexts_become_lsp_related_information`
 /// - witness: `recheck::tests::a_labeled_context_keeps_its_locus_and_cause_in_related_information`
+/// - witness: `session::session::every_corpus_report_is_published_where_the_walk_renders_it`
+#[anodized::spec(ensures: |ret| ret.source == "gandr"
+    && ret.severity == match report.class() { Class::Goal => Severity::INFORMATION, _ => Severity::ERROR }
+    && ret.code.is_some() == matches!(report.identifier(), Maybe::Present(_))
+    && ret.related_information.len() == report.context().into_iter()
+        .filter(|slot| matches!(slot, Maybe::Present(_))).count()
+    && ret.related_information.iter().all(|related| related.location.uri == *uri))]
 fn diagnostic(
     report: &Report<'_>,
     index: &LineIndex<'_>,
@@ -306,10 +343,8 @@ mod tests
     use crate::position::Line;
     use crate::position::Position;
     use crate::position::Range;
-    use crate::protocol::Diagnostic;
     use crate::protocol::DocumentUri;
     use crate::protocol::Location;
-    use crate::protocol::RelatedInformation;
     use crate::protocol::Severity;
     use crate::tokens::TokenStream;
     use crate::tokens::encode;
@@ -364,25 +399,33 @@ mod tests
     {
         let uri = DocumentUri::from("file:///strict/mismatch.gandr");
         let text = "def wrong : Integer ;\ndef wrong = \"text\" ;\n";
-        let mut expected = Diagnostic::new(
-            range(Span(1, 12, 1, 18)),
-            Severity::ERROR,
-            "the type this term synthesises does not convert to the type it is checked against"
-                .to_owned(),
-        );
-        expected.code = Some("TypeMismatch".to_owned());
-        expected.related_information = vec![RelatedInformation {
-            location: Location {
-                uri: uri.clone(),
-                range: range(Span(0, 12, 0, 19)),
-            },
-            message: "the type it is checked against".to_owned(),
-        }];
+        let diagnostics = recheck(&uri, SourceText::from(text));
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("one mismatch");
+        };
         assert_eq!(
-            recheck(&uri, SourceText::from(text)),
-            vec![expected],
-            "the signature's type explains the mismatch from where it is written"
+            (
+                diagnostic.range,
+                diagnostic.severity,
+                diagnostic.code.as_deref(),
+                diagnostic.source
+            ),
+            (
+                range(Span(1, 12, 1, 18)),
+                Severity::ERROR,
+                Some("TypeMismatch"),
+                "gandr"
+            )
         );
+        let [ref related] = *diagnostic.related_information.as_slice()
+        else {
+            panic!("one causal location");
+        };
+        assert_eq!(related.location, Location {
+            uri,
+            range: range(Span(0, 12, 0, 19))
+        });
     }
 
     #[test]
@@ -391,36 +434,34 @@ mod tests
         let uri = DocumentUri::from("file:///strict/duplicate.gandr");
         let text = "def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n";
         let diagnostics = recheck(&uri, SourceText::from(text));
-        assert_eq!(diagnostics.len(), 1_usize, "one duplicate, one diagnostic");
-        let related = diagnostics
-            .first()
-            .map(|diagnostic| diagnostic.related_information.clone());
-        assert_eq!(
-            related,
-            Some(vec![RelatedInformation {
-                location: Location {
-                    uri,
-                    range: range(Span(0, 0, 0, 17)),
-                },
-                message: "first written here".to_owned(),
-            }]),
-            "the first signature is the related location, labelled as what it is"
-        );
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("one duplicate signature");
+        };
+        let [ref related] = *diagnostic.related_information.as_slice()
+        else {
+            panic!("one original declaration");
+        };
+        assert_eq!(related.location, Location {
+            uri,
+            range: range(Span(0, 0, 0, 17))
+        });
     }
 
     #[test]
     fn a_fault_is_published_at_the_origin()
     {
         let lowered = DocumentUri::from("file:///corpus/fixture/pending/lowered.gandr");
-        assert_eq!(
-            recheck(&lowered, SourceText::from("def a = 1 ;\n")),
-            vec![Diagnostic::at_origin(
-                "/corpus/fixture/pending/lowered.gandr: unsettled: a pending source whose every \
-                 expectation can be stated; it belongs under the fixture root"
-                    .to_owned()
-            )],
-            "a pending source the lowering reads is its ledger line, at the origin"
-        );
+        let diagnostics = recheck(&lowered, SourceText::from("def a = 1 ;\n"));
+        let [ref diagnostic] = *diagnostics.as_slice()
+        else {
+            panic!("one pending-root ledger line");
+        };
+        assert_eq!(diagnostic.range, Range::default());
+        assert_eq!(diagnostic.severity, Severity::ERROR);
+        assert_eq!(diagnostic.source, "gandr");
+        assert_eq!(diagnostic.code, None);
+        assert!(diagnostic.related_information.is_empty());
         let pending = DocumentUri::from("file:///corpus/fixture/pending/whole.gandr");
         assert_eq!(
             recheck(&pending, SourceText::from("ret 3\n")),

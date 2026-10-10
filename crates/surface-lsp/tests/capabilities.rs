@@ -34,4 +34,43 @@ mod capabilities
             "the legend the crate exports, and nothing unserved: no hover, no completion"
         );
     }
+    /// A formatter sink refusing every write.
+    struct Refuses;
+
+    impl core::fmt::Write for Refuses
+    {
+        /// Refuse the formatted bytes.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: no write succeeds.
+        /// - provides: an observable formatting failure.
+        /// - fails: returns the formatter's error.
+        /// - panics: none.
+        ///
+        /// # Errors
+        /// Returns `core::fmt::Error` on every call.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — rendering the capability object into a refusing
+        ///   sink exposes swallowed errors through the exact failed result.
+        /// - witness: `capabilities::capabilities::a_refused_capabilities_write_is_propagated`
+        #[anodized::spec(ensures: |ret| ret.is_err())]
+        fn write_str(
+            &mut self,
+            _s: &str,
+        ) -> core::fmt::Result
+        {
+            Err(core::fmt::Error)
+        }
+    }
+
+    #[test]
+    fn a_refused_capabilities_write_is_propagated()
+    {
+        assert_eq!(
+            core::fmt::write(&mut Refuses, format_args!("{Capabilities}")),
+            Err(core::fmt::Error)
+        );
+    }
 }
