@@ -13,6 +13,7 @@ use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use expect_test::expect_file;
 use gandr_surface_grammar::HighlightError;
 use gandr_surface_grammar::Pbg;
@@ -67,6 +68,15 @@ fn golden_root() -> PathBuf
 /// - ensures: a walk of `dir` and its subdirectories, unreadable entries
 ///   skipped, the paths sorted so a run is deterministic.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the checked-in corpus and golden trees, L3 path-correlated
+///   role observations catch wrong extension selection and unstable ordering.
+///   The predicate observes lexical containment, extensions and ordering
+///   without another filesystem walk; unreadable directories, concurrent
+///   mutations and symlink cycles are outside the witnesses.
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| ret.is_sorted() && ret.iter().all(|path| path.starts_with(dir) && path.extension() == Some(extension)))]
 fn files_under(
     dir: &Path,
     extension: &OsStr,
@@ -91,10 +101,21 @@ fn files_under(
     out
 }
 
-/// Every source of both corpus roots, the pending set included, sorted.
+/// Every source of both corpus roots, strict before fixture and sorted within
+/// each root, including the pending set.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: strict sources then fixture sources, each in lexical path order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the checked-in corpus, L3 per-source goldens observe both
+///   root families and catch omitted or misclassified sources. The predicate
+///   checks the root order and each root's lexical order; filesystem
+///   completeness under read errors or concurrent changes is not established.
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| { let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../surface-corpus")); let is_fixture = |path: &Path| { let relative = path.strip_prefix(root).ok()?; let component = relative.components().next()?; let name = component.as_os_str(); if name == OsStr::new("strict") { Some(false) } else if name == OsStr::new("fixture") { Some(true) } else { None } }; ret.iter().all(|path| is_fixture(path).is_some() && path.extension() == Some(OsStr::new("gandr"))) && ret.is_sorted_by(|left, right| (is_fixture(left), left) <= (is_fixture(right), right)) })]
 fn corpus_sources() -> Vec<PathBuf>
 {
     let root = corpus_root();
@@ -110,6 +131,14 @@ fn corpus_sources() -> Vec<PathBuf>
 /// - ensures: returns the grammar.
 /// - fails: a gate refuses the form, which a single tile never meets.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the grammar-mismatch fixture, L2 typed refusal observes a
+///   distinct one-tile grammar rather than another copy of the built-in
+///   surface. The predicate checks its rule and mold inventory; resource
+///   failures are outside the witness.
+/// - witness: `tests::highlight::a_tree_under_another_grammar_is_refused`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|pbg| pbg.rules().len() == 1 && pbg.rules().first().is_some_and(|rule| rule.name().0 == "only" && rule.sort() == Sort::Item) && pbg.iter_molds().map(|(_, def)| def.label).eq(["x"])))]
 fn one_tile_grammar() -> Result<Pbg, Box<dyn Error>>
 {
     let mut spec = PrecSpec::new();
@@ -126,7 +155,18 @@ fn one_tile_grammar() -> Result<Pbg, Box<dyn Error>>
 /// The text of one span of `source`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the exact UTF-8 slice, or empty text for an invalid range.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For parser-produced corpus spans, L3 quoted text and L2
+///   span-partition observations catch wrong endpoints or slices. The predicate
+///   also observes the invalid-range fallback; invalid ranges are not exhausted
+///   by the corpus.
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `tests::highlight::spans_partition_the_tile_bytes`
+#[spec(ensures: |ret| <&str>::from(ret) == <&str>::from(source).get(usize::from(range.start())..usize::from(range.end())).unwrap_or_default())]
 fn text_of(
     source: SourceText<'_>,
     range: ByteRange,
@@ -148,7 +188,19 @@ impl Display for RoleName
     /// Writes the variant's name.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the role variant's name.
+    /// - fails: the formatter refuses a write.
+    /// - panics: none.
+    /// - executable: none — Formatter exposes neither written text nor sink
+    ///   capacity, so successful emission and refusal have no predicate
+    ///   observer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For roles reached by the built-in inventory, L3 role
+    ///   goldens catch changed names and wrong variant selection. Other role
+    ///   variants and formatter refusal are not exhausted.
+    /// - witness: `tests::highlight::corpus_roles_match_the_golden`
     fn fmt(
         &self,
         f: &mut Formatter<'_>,
@@ -189,6 +241,14 @@ impl Display for RoleName
 /// - ensures: `start..end Role "text"` per span, in the order given.
 /// - fails: never; writing into a string does not fail.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For corpus spans, L3 complete line goldens catch wrong ranges,
+///   roles, escaping and order. The predicate observes one ordered range per
+///   line and successful string formatting; arbitrary span sequences and
+///   control-character combinations are not exhausted.
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|rendered| { let mut lines = rendered.lines(); spans.iter().all(|span| lines.next().is_some_and(|line| line.split_once(' ').and_then(|(range, _)| range.split_once("..")).is_some_and(|(start, end)| start.parse::<usize>().ok() == Some(usize::from(span.range.start())) && end.parse::<usize>().ok() == Some(usize::from(span.range.end()))) && line.ends_with('"'))) && lines.next().is_none() }))]
 fn role_lines(
     tree: &SyntaxTree<'_>,
     spans: &[HlSpan],
@@ -213,7 +273,17 @@ fn role_lines(
 /// by label and holes by sort.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the sorted, deduplicated textual symbols joined by spaces.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For built-in contexts, L3 unexercised-mold goldens catch
+///   missing, duplicated or reordered symbols. The predicate observes each
+///   input's text and the exact empty-output boundary; arbitrary labels
+///   containing whitespace are not exhausted.
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| ret.is_empty() == steps.iter().all(|step| matches!(step.crossed, StepSym::Tile(""))) && steps.iter().all(|step| match step.crossed { StepSym::Tile(label) => ret.contains(label), StepSym::Sort(sort) => ret.contains(sort.name().0) }))]
 fn side_of(steps: &[RCtxStep]) -> String
 {
     let crossed: BTreeSet<String> = steps
@@ -233,6 +303,15 @@ fn side_of(steps: &[RCtxStep]) -> String
 /// - ensures: one line per mold of `pbg` absent from `exercised`, in id order.
 /// - fails: a lookup the grammar refuses, which a built grammar never does.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in inventory and corpus coverage set, L3
+///   complete goldens catch wrong omissions, roles, context text and order. The
+///   predicate observes concrete error families, ordered omitted ids and the
+///   all-covered empty case; arbitrary metadata containing line breaks is not
+///   exhausted.
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.downcast_ref::<HighlightError>().is_some() || error.downcast_ref::<gandr_surface_grammar::PbgError>().is_some() || error.downcast_ref::<FmtError>().is_some(), |rendered| { let mut expected = pbg.iter_molds().filter(|&(id, _)| !exercised.contains(&id)).peekable(); let empty = expected.peek().is_none(); let mut lines = rendered.lines(); rendered.is_empty() == empty && expected.all(|(id, _)| lines.by_ref().any(|line| line.split_once(' ').is_some_and(|(prefix, _)| prefix.parse::<u32>().ok() == Some(u32::from(id))))) }))]
 fn unexercised_lines(
     pbg: &Pbg,
     table: &RoleTable,
@@ -526,6 +605,51 @@ fn a_tile_past_the_table_is_refused() -> Result<(), Box<dyn Error>>
         Err(HighlightError::UnknownMold { id: past }),
         table.highlight(&tree_of(past)?),
         "the first id past the table is refused"
+    );
+    Ok(())
+}
+
+#[test]
+fn highlight_preserves_overlapping_tile_spans() -> Result<(), Box<dyn Error>>
+{
+    let grammar = built_in()?;
+    let table = RoleTable::build(&grammar)?;
+    let &mold = grammar
+        .candidates(TileLabel("number"))
+        .first()
+        .expect("number mold");
+    let outer = ByteSpan::new(ByteOffset::from(0_usize), ByteOffset::from(2_usize))?;
+    let inner = ByteSpan::new(ByteOffset::from(1_usize), ByteOffset::from(2_usize))?;
+    let mut builder = TreeBuilder::new(SourceText::from("12"), grammar.fingerprint())?;
+    let first = builder.node(NodeLabel::Tile(mold), inner, &[])?;
+    let second = builder.node(NodeLabel::Tile(mold), outer, &[])?;
+    let third = builder.node(NodeLabel::Tile(mold), inner, &[])?;
+    let root = builder.node(NodeLabel::Wald, outer, &[first, second, third])?;
+    let tree = builder.finish(root)?;
+    let outer_range = ByteRange::new(
+        gandr_surface_render_remote::ByteOffset::from(0_usize),
+        gandr_surface_render_remote::ByteOffset::from(2_usize),
+    )?;
+    let inner_range = ByteRange::new(
+        gandr_surface_render_remote::ByteOffset::from(1_usize),
+        gandr_surface_render_remote::ByteOffset::from(2_usize),
+    )?;
+    assert_eq!(
+        Ok(vec![
+            HlSpan {
+                range: outer_range,
+                role: HlRole::Number
+            },
+            HlSpan {
+                range: inner_range,
+                role: HlRole::Number
+            },
+            HlSpan {
+                range: inner_range,
+                role: HlRole::Number
+            },
+        ]),
+        table.highlight(&tree)
     );
     Ok(())
 }

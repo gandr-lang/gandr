@@ -18,6 +18,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::DelimSpelling;
 use gandr_surface_syntax::GrammarFingerprint;
@@ -242,6 +243,39 @@ impl MoldTable
     /// # Errors
     /// [`PbgError::DuplicateTile`] for the first redundant occurrence, or
     /// [`PbgError::MoldOverflow`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: For finite checked rule lists, L3 duplicate-context and
+    ///   ordered-owner observations plus a built-in finite inventory catch
+    ///   misaligned tables, invalid context ids and wrong ownership. The
+    ///   predicate checks adjacency order, same-owner edges and exact incoming
+    ///   and outgoing flags once at construction; 32-bit exhaustion is outside
+    ///   the allocated fixtures.
+    /// - witness: `tests::pbg::pbg_rejects_duplicate_rctx_tile`
+    /// - witness: `tests::pbg::pbg_accepts_same_label_at_distinct_contexts`
+    /// - witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`
+    /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| matches!(error, PbgError::DuplicateTile { .. } | PbgError::MoldOverflow),
+        |table| {
+            let count = table.molds.len();
+            table.bounds.len() == count && table.owners.len() == count && table.closing.len() == count && table.has_pred.len() == count && table.has_succ.len() == count
+                && table.owners.is_sorted()
+                && table.molds.iter().zip(&table.owners).all(|(mold, &owner)| rules.get(owner).is_some_and(|rule| mold.sort == rule.sort && mold.prec == rule.prec) && usize::try_from(mold.rctx.0).is_ok_and(|index| index < table.rctxs.len()))
+                && table.adjacencies.iter().is_sorted_by(|left, right| left < right)
+                && {
+                    let mut incidence = vec![(false, false); count];
+                    for &(left, right) in &table.adjacencies {
+                        let Some((left_index, right_index)) = usize::try_from(u32::from(left)).ok().zip(usize::try_from(u32::from(right)).ok()) else { return false; };
+                        if table.owners.get(left_index).zip(table.owners.get(right_index)).is_none_or(|(left_owner, right_owner)| left_owner != right_owner) { return false; }
+                        let Some(left_flags) = incidence.get_mut(left_index) else { return false; };
+                        left_flags.1 = true;
+                        let Some(right_flags) = incidence.get_mut(right_index) else { return false; };
+                        right_flags.0 = true;
+                    }
+                    incidence.iter().zip(&table.has_pred).zip(&table.has_succ).all(|((&(incoming, outgoing), &has_pred), &has_succ)| incoming == has_pred && outgoing == has_succ)
+                }
+        }))]
     pub(crate) fn build(
         rules: &[Rule],
         dag_fingerprint: GrammarFingerprint,
@@ -380,6 +414,17 @@ impl MoldTable
     ///
     /// # Errors
     /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For a finite table, L3 first, last and first-invalid mold
+    ///   observations catch wrong indexing, a copied or substituted entry and
+    ///   incorrect refusal identity; very large identities are not exhaustively
+    ///   exercised.
+    /// - witness: `tests::walk::mold_lookup_checks_bounds`
+    #[spec(ensures: |ret| {
+        let expected = usize::try_from(u32::from(id)).ok().and_then(|index| self.molds.get(index));
+        ret.as_ref().map_or_else(|error| expected.is_none() && matches!(error, PbgError::UnknownMold { id: missing } if *missing == id), |mold| expected.is_some_and(|held| core::ptr::eq(core::ptr::from_ref(*mold), core::ptr::from_ref(held))))
+    })]
     #[inline]
     pub(crate) fn mold(
         &self,
@@ -403,6 +448,17 @@ impl MoldTable
     ///
     /// # Errors
     /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For the rules used to build the table, L2 built-in owner
+    ///   census and L3 invalid-id observations catch shifted owners, cross-rule
+    ///   aliases and lost refusal identity; the original-rule provenance
+    ///   requirement is not reconstructed from unrelated rule lists.
+    /// - witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`
+    #[spec(ensures: |ret| {
+        let expected = usize::try_from(u32::from(id)).ok().and_then(|index| self.owners.get(index)).and_then(|&owner| rules.get(owner));
+        ret.as_ref().map_or_else(|error| expected.is_none() && matches!(error, PbgError::UnknownMold { id: missing } if *missing == id), |rule| expected.is_some_and(|held| core::ptr::eq(core::ptr::from_ref(*rule), core::ptr::from_ref(held))))
+    })]
     #[inline]
     pub(crate) fn rule_of<'rules>(
         &self,
@@ -430,6 +486,18 @@ impl MoldTable
     ///
     /// # Errors
     /// [`PbgError::UnknownMold`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For valid infix, prefix and atom molds and the first
+    ///   invalid id, L3 side-specific observations catch swapped or misindexed
+    ///   bounds and mistaken acceptance; the fixtures do not enumerate every
+    ///   form.
+    /// - witness: `tests::walk::mold_bounds_follow_context_nullability`
+    /// - witness: `tests::walk::mold_lookup_checks_bounds`
+    #[spec(ensures: |ret| {
+        let expected = usize::try_from(u32::from(id)).ok().and_then(|index| self.bounds.get(index));
+        ret.as_ref().map_or_else(|error| expected.is_none() && matches!(error, PbgError::UnknownMold { id: missing } if *missing == id), |bounds| expected == Some(bounds))
+    })]
     #[inline]
     pub(crate) fn bounds(
         &self,
@@ -454,6 +522,18 @@ impl MoldTable
     ///
     /// # Errors
     /// [`PbgError::UnknownRCtx`] for an id past the table.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For both sides of an infix context and an unknown id, L3
+    ///   exact step and refusal observations catch direction reversal,
+    ///   truncation and incorrect error payloads; arbitrary context languages
+    ///   are outside the finite witness.
+    /// - witness: `tests::walk::rctx_steps_cross_adjacent_symbols`
+    /// - witness: `tests::walk::unknown_context_preserves_its_identity`
+    #[spec(ensures: |ret| {
+        let expected = usize::try_from(rctx.0).ok().and_then(|index| self.rctxs.get(index)).map(|data| match dir { Dir::Left => data.left_steps.as_slice(), Dir::Right => data.right_steps.as_slice() });
+        ret.as_ref().map_or_else(|error| expected.is_none() && matches!(error, PbgError::UnknownRCtx { rctx: missing } if *missing == rctx), |steps| expected == Some(*steps))
+    })]
     #[inline]
     pub(crate) fn step(
         &self,
@@ -531,7 +611,18 @@ impl MoldTable
     /// Whether `mold` has a same-form predecessor; false past the table.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the stored predecessor flag, false for an id outside the
+    ///   table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every built-in mold and the first invalid id, L2
+    ///   finite adjacency and L3 boundary observations catch direction swaps
+    ///   and out-of-range truth; unrelated malformed internal tables are
+    ///   excluded.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| ret.0 == usize::try_from(u32::from(mold)).ok().and_then(|index| self.has_pred.get(index)).copied().unwrap_or(false))]
     #[inline]
     #[must_use]
     pub(crate) fn has_predecessor(
@@ -550,7 +641,17 @@ impl MoldTable
     /// Whether `mold` has a same-form successor; false past the table.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the stored successor flag, false for an id outside the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every built-in mold and the first invalid id, L2
+    ///   finite adjacency and L3 boundary observations catch direction swaps
+    ///   and out-of-range truth; unrelated malformed internal tables are
+    ///   excluded.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| ret.0 == usize::try_from(u32::from(mold)).ok().and_then(|index| self.has_succ.get(index)).copied().unwrap_or(false))]
     #[inline]
     #[must_use]
     pub(crate) fn has_successor(
@@ -569,7 +670,16 @@ impl MoldTable
     /// Whether `mold` can open a form.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the first-mold list is sorted.
+    /// - ensures: true exactly for membership in the first-mold list.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every built-in mold and the first invalid id, L2
+    ///   membership and L3 boundary observations catch missed or invented form
+    ///   openers; an unsorted private list is outside the builder invariant.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| ret.0 == self.form_first.contains(&mold))]
     #[inline]
     #[must_use]
     pub(crate) fn is_form_first(
@@ -583,7 +693,17 @@ impl MoldTable
     /// Whether `mold` can complete its form with no hole still required.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the complete-last list is sorted.
+    /// - ensures: true exactly for membership in the complete-last list.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For built-in molds, L2 membership and L3 prefix/infix
+    ///   observations catch premature or lost clean completion; an unsorted
+    ///   private list is outside the builder invariant.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    /// - witness: `tests::surface::infix_type_operator_keeps_clean_completion`
+    #[spec(ensures: |ret| ret.0 == self.complete_last.contains(&mold))]
     #[inline]
     #[must_use]
     pub(crate) fn is_form_last(
@@ -597,7 +717,17 @@ impl MoldTable
     /// Whether `mold` can end its form only once a trailing hole is filled.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the required-tail list is sorted.
+    /// - ensures: true exactly for membership in the required-tail list.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For built-in molds and the first invalid id, L2 membership
+    ///   and L3 prefix observations catch missing required operands and
+    ///   invented tails; arbitrary form languages are not enumerated.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    /// - witness: `tests::surface::prefix_formers_keep_required_type_tails_unclosed`
+    #[spec(ensures: |ret| ret.0 == self.required_tail.contains(&mold))]
     #[inline]
     #[must_use]
     pub(crate) fn has_required_tail(
@@ -633,7 +763,18 @@ impl MoldTable
     /// The closing class of mold `id`; `None` past the table.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the stored closing class for a valid id, otherwise none.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For paired, divergent and unpaired forms and the first
+    ///   invalid id, L3 class observations catch wrong lookup offsets and
+    ///   accidental fallback pairing; derivation of every possible form is not
+    ///   exhausted.
+    /// - witness: `tests::closing_class::closing_class_is_form_level`
+    /// - witness: `tests::closing_class::closing_class_repeat_with_exit_shares_its_component_answer`
+    #[spec(ensures: |ret| ret == usize::try_from(u32::from(id)).ok().and_then(|index| self.closing.get(index)).copied().flatten())]
     #[inline]
     pub(crate) fn closing_class(
         &self,
@@ -658,7 +799,17 @@ impl MoldTable
     /// Every mold with its id, ascending.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: every stored position fits a mold id.
+    /// - ensures: yields each mold once with its position, in ascending order.
+    /// - panics: none.
+    /// - executable: none — the specification macro cannot name this opaque
+    ///   iterator return; the caller owns its cursor.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For the finite built-in table, L2 projection observations
+    ///   catch missing and duplicate mold ids; arbitrary huge tables and cursor
+    ///   interleavings are outside the witness.
+    /// - witness: `tests::walk::walk_index_projects_every_mold_once`
     #[inline]
     pub(crate) fn iter(&self) -> impl Iterator<Item = (MoldId, &MoldDef)>
     {
@@ -719,6 +870,18 @@ impl ContextInterner
     /// - ensures: a key seen before returns its id and discards `data`; a new
     ///   key takes the next dense id.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For repeated and distinct canonical keys, L3 interning
+    ///   transitions observe stable identity, first-data retention and dense
+    ///   insertion order, catching accidental replacement and gaps; the
+    ///   saturating conversion past the 32-bit domain is not allocated by the
+    ///   witness.
+    /// - witness: `mold::tests::context_interning_keeps_first_data_and_dense_ids`
+    #[spec(captures: before = (self.keys.get(&key).copied(), self.data.len()), ensures: |ret| match before.0 {
+        Some(existing) => ret.0 == existing && self.data.len() == before.1,
+        None => ret.0 == u32::try_from(before.1).unwrap_or(u32::MAX) && self.data.len() == before.1.saturating_add(1),
+    })]
     fn intern(
         &mut self,
         key: String,
@@ -831,6 +994,15 @@ impl EndingVerdict
     /// - ensures: empty becomes agreement on `class`; agreement on `class`
     ///   stays; anything else is divergent.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For empty, agreeing and divergent verdicts across bracket
+    ///   families, L2 finite fold laws observe identity, absorption and
+    ///   disagreement, catching an invented agreement or failure to retain a
+    ///   matching class; this finite algebra does not establish graph
+    ///   reachability.
+    /// - witness: `mold::tests::ending_verdict_fold_has_identity_absorption_and_agreement`
+    #[spec(ensures: |ret| ret == if self == Self::Empty || self == Self::Agree(class) { Self::Agree(class) } else { Self::Divergent })]
     fn merge_class(
         self,
         class: ClosingClass,
@@ -850,6 +1022,14 @@ impl EndingVerdict
     /// - ensures: an empty successor changes nothing, an agreeing one folds its
     ///   family in, a divergent one makes this divergent.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For all finite verdict pairs, L2 identity, absorption,
+    ///   commutativity and associativity observations catch losing a successor
+    ///   conflict or inventing an ending; graph condensation is witnessed
+    ///   separately.
+    /// - witness: `mold::tests::ending_verdict_fold_has_identity_absorption_and_agreement`
+    #[spec(ensures: |ret| match successor { Self::Empty => ret == self, Self::Agree(class) => ret == self.merge_class(class), Self::Divergent => ret == Self::Divergent })]
     fn merge_successor(
         self,
         successor: Self,
@@ -881,7 +1061,18 @@ impl EdgeSource for TileGraph
     /// One node per row.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the row count, capped at the largest representable graph
+    ///   count.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For empty and multi-row adapters, L3 graph observations
+    ///   catch off-by-one counts and dropped rows; the unallocatable capacity
+    ///   boundary is checked by the conversion predicate rather than the
+    ///   fixture.
+    /// - witness: `mold::tests::tile_graph_preserves_successor_order_and_refuses_unknown_nodes`
+    #[spec(ensures: |ret| u32::from(ret) == u32::try_from(self.rows.len()).unwrap_or(u32::MAX))]
     #[inline]
     fn node_count(&self) -> NodeCount
     {
@@ -891,7 +1082,17 @@ impl EdgeSource for TileGraph
     /// The node's row; none past the graph.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: yields exactly the selected row in its order, or nothing for
+    ///   an unknown node.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For a row with ordered repeated edges, an empty row and an
+    ///   invalid node, L3 cursor observations catch sorting, deduplication or
+    ///   wrong-row selection; larger graphs are outside the witness.
+    /// - witness: `mold::tests::tile_graph_preserves_successor_order_and_refuses_unknown_nodes`
+    #[spec(ensures: |ret| ret.clone().eq(usize::try_from(u32::from(node)).ok().and_then(|index| self.rows.get(index)).into_iter().flatten().copied()))]
     #[inline]
     fn successors(
         &self,
@@ -941,6 +1142,15 @@ impl EdgeSource for TileGraph
 /// - intension: one condensation and one sinks-first fold, linear in the rule's
 ///   tiles and adjacencies; a graph the condensation refuses gives every
 ///   occurrence `None`.
+///
+/// # Adequacy
+/// - hypothesis: For paired, unpaired, divergent and cyclic-with-exit forms, L3
+///   per-occurrence class observations catch pairing without an opener and
+///   premature memoization; the predicate checks cardinality and family
+///   provenance, not arbitrary reachability or the linear-time cost.
+/// - witness: `tests::closing_class::closing_class_is_form_level`
+/// - witness: `tests::closing_class::closing_class_repeat_with_exit_shares_its_component_answer`
+#[spec(ensures: |ret| ret.len() == occurrences.len() && ret.iter().flatten().all(|&class| occurrences.iter().any(|occurrence| ClosingClass::opening(DelimSpelling::from(occurrence.label)) == Some(class)) && occurrences.iter().any(|occurrence| ClosingClass::closing(DelimSpelling::from(occurrence.label)) == Some(class))))]
 fn closing_classes(
     occurrences: &[Occurrence],
     facet: &TileFacet,
@@ -1156,6 +1366,17 @@ enum WalkFrame<'regex>
 /// - panics: none.
 /// - intension: an explicit frame stack, so nesting depth costs heap rather
 ///   than call stack.
+///
+/// # Adequacy
+/// - hypothesis: For sequences with optional and repeated tiles, L3 exact
+///   occurrence and edge observations catch reordering, lost repetition seams
+///   and wrong context identities; the predicate checks new references and
+///   facet provenance without copying the existing output prefix.
+/// - witness: `mold::tests::occurrence_order_and_nullable_seams_are_exact`
+/// - witness: `tests::pbg::pbg_rejects_duplicate_rctx_tile`
+#[spec(captures: start = out.len(), ensures: |ret| out.len() >= start
+    && out.iter().skip(start).all(|occurrence| usize::try_from(occurrence.rctx.0).is_ok_and(|index| index < interner.data.len()))
+    && ret.first.iter().chain(&ret.last).chain(&ret.complete_last).all(|key| out.iter().skip(start).any(|occurrence| key.0.0.0 == occurrence.label && key.0.1 == occurrence.rctx)))]
 fn walk_regex(
     regex: RegexView<'_>,
     left: &FaceCtx,
@@ -1323,7 +1544,26 @@ fn walk_regex(
 /// Resolves tile keys to their molds, ascending and unique.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: resolves known keys to ascending distinct mold ids; unknown keys
+///   contribute nothing.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For reversed identities, aliases and a missing key, L3 exact
+///   output observations catch key-order leakage, duplicate ids and accidental
+///   inclusion of missing keys; arbitrary large indexes are not enumerated.
+/// - witness: `mold::tests::resolutions_sort_deduplicate_and_skip_missing_keys`
+#[spec(ensures: |ret| {
+    if !ret.iter().is_sorted_by(|left, right| left < right) { return false; }
+    let mut covered = vec![false; ret.len()];
+    for value in keys.iter().filter_map(|key| index.get(key).copied()) {
+        let Ok(position) = ret.binary_search(&value) else { return false; };
+        let Some(slot) = covered.get_mut(position) else { return false; };
+        *slot = true;
+    }
+    covered.into_iter().all(core::convert::identity)
+})]
 fn resolve_keys(
     index: &BTreeMap<TileKey, MoldId>,
     keys: &BTreeSet<TileKey>,
@@ -1341,7 +1581,26 @@ fn resolve_keys(
 /// Resolves tile-key pairs to mold pairs, ascending and unique.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: resolves fully known key pairs to ascending distinct mold pairs;
+///   a missing endpoint drops the pair.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For alias keys, reversed ids and missing endpoints, L3 exact
+///   edge observations catch half-resolved pairs, duplicate edges and wrong
+///   ordering; arbitrary large indexes are outside the fixture.
+/// - witness: `mold::tests::resolutions_sort_deduplicate_and_skip_missing_keys`
+#[spec(ensures: |ret| {
+    if !ret.iter().is_sorted_by(|left, right| left < right) { return false; }
+    let mut covered = vec![false; ret.len()];
+    for value in keys.iter().filter_map(|&(left, right)| index.get(&left).copied().zip(index.get(&right).copied())) {
+        let Ok(position) = ret.binary_search(&value) else { return false; };
+        let Some(slot) = covered.get_mut(position) else { return false; };
+        *slot = true;
+    }
+    covered.into_iter().all(core::convert::identity)
+})]
 fn resolve_adjacencies(
     index: &BTreeMap<TileKey, MoldId>,
     keys: &BTreeSet<(TileKey, TileKey)>,
@@ -1359,7 +1618,19 @@ fn resolve_adjacencies(
 /// Indexes molds by tile key.
 ///
 /// # Specification
-/// trivial.
+/// - requires: mold keys are unique and every position fits a mold id.
+/// - ensures: every key maps to its position, with no omitted or additional
+///   entries.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For distinct ordered molds, L3 index inversion and built-in
+///   adjacency observations catch shifted positions and omitted keys; duplicate
+///   keys and unrepresentable positions are outside this caller-established
+///   domain.
+/// - witness: `mold::tests::resolutions_sort_deduplicate_and_skip_missing_keys`
+/// - witness: `tests::walk::same_form_adjacency_is_the_eq_relation`
+#[spec(ensures: |ret| ret.len() == molds.len() && ret.iter().all(|(key, &id)| usize::try_from(u32::from(id)).ok().and_then(|index| molds.get(index)).is_some_and(|mold| key.0.0.0 == mold.label && key.0.1 == mold.rctx)))]
 fn tile_index(molds: &[MoldDef]) -> BTreeMap<TileKey, MoldId>
 {
     molds
@@ -1380,6 +1651,14 @@ fn tile_index(molds: &[MoldDef]) -> BTreeMap<TileKey, MoldId>
 /// - ensures: a side faces a sort exactly when a hole is among the symbols that
 ///   can stand there; the steps are those symbols, ascending.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For asymmetric faces containing both sorts and tiles, L3 exact
+///   step observations catch using FIRST on the left, LAST on the right or
+///   dropping sort-facing flags; arbitrary face sets are not exhausted.
+/// - witness: `mold::tests::context_data_uses_left_last_and_right_first`
+/// - witness: `tests::walk::rctx_steps_cross_adjacent_symbols`
+#[spec(ensures: |ret| ret.left_faces_sort == left.last.iter().any(|symbol| matches!(symbol, StepSym::Sort(_))) && ret.right_faces_sort == right.first.iter().any(|symbol| matches!(symbol, StepSym::Sort(_))) && ret.left_steps.iter().map(|step| step.crossed).eq(left.last.iter().copied()) && ret.right_steps.iter().map(|step| step.crossed).eq(right.first.iter().copied()))]
 fn context_data(
     left: &FaceCtx,
     right: &FaceCtx,
@@ -1500,7 +1779,17 @@ impl FacetFlags
     /// Packs the four answers, in field order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the four named answers read back in field order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For all sixteen input answer tuples and single-field
+    ///   updates, L2 finite state observations catch exchanged fields and
+    ///   interference; unused upper bits are checked separately through masked
+    ///   updates.
+    /// - witness: `mold::tests::facet_flag_updates_preserve_other_answers`
+    #[spec(ensures: |ret| { let [nullable, form_nullable, required_first, required_last] = parts; ret.nullable().0 == nullable.0 && ret.form_nullable().0 == form_nullable.0 && ret.required_first().0 == required_first.0 && ret.required_last().0 == required_last.0 })]
     fn from_parts(parts: [FacetFlag; 4]) -> Self
     {
         let [nullable, form_nullable, required_first, required_last] = parts;
@@ -1515,7 +1804,17 @@ impl FacetFlags
     /// Reads one bit.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the mask is one of the four named bits.
+    /// - ensures: reads exactly the selected bit.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every byte state and each named mask, L2 exhaustive
+    ///   bit observations catch reading the wrong field; unnamed masks are
+    ///   outside the precondition, and a constant-evaluation witness covers the
+    ///   const path.
+    /// - witness: `mold::tests::facet_flag_updates_preserve_other_answers`
+    #[spec(requires: matches!(bit.0, 1 | 2 | 4 | 8), ensures: |ret| ret.0 == (self.0 & bit.0 != 0))]
     const fn get(
         self,
         bit: FacetBit,
@@ -1527,7 +1826,16 @@ impl FacetFlags
     /// Sets or clears one bit.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the mask is one of the four named bits.
+    /// - ensures: sets that answer and preserves every other bit.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For every byte state, named mask and boolean update, L2
+    ///   exhaustive transitions catch setting the wrong bit and clearing
+    ///   unrelated state; unnamed masks are outside the precondition.
+    /// - witness: `mold::tests::facet_flag_updates_preserve_other_answers`
+    #[spec(requires: matches!(bit.0, 1 | 2 | 4 | 8), captures: before = self.0, ensures: |()| self.0 & !bit.0 == before & !bit.0 && (self.0 & bit.0 != 0) == value.0)]
     fn set(
         &mut self,
         bit: FacetBit,
@@ -1651,7 +1959,17 @@ impl TileFacet
     /// The identity of sequencing: tile-empty and complete.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the documented nullability and required-hole answers, with no
+    ///   tile sets or adjacencies.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For finite tile and required-hole facets, L3 left/right
+    ///   sequencing identity observations catch an empty form that drops tiles
+    ///   or requires an operand; arbitrary composite facets are not exhausted.
+    /// - witness: `mold::tests::facet_composition_distinguishes_required_tails_and_empty_forms`
+    #[spec(ensures: |ret| (ret.flags.0 == FacetFlags::NULLABLE.0 | FacetFlags::FORM_NULLABLE.0) && ret.first.is_empty() && ret.last.is_empty() && ret.complete_last.is_empty() && ret.adjacent.is_empty())]
     fn empty() -> Self
     {
         Self::with_flags([
@@ -1665,7 +1983,17 @@ impl TileFacet
     /// A required hole: tile-empty but not complete.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the documented nullability and required-hole answers, with no
+    ///   tile sets or adjacencies.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For prefix and infix forms, L3 completion-set observations
+    ///   distinguish a required hole from an empty form, catching erased
+    ///   operands; arbitrary form languages are outside the witness.
+    /// - witness: `mold::tests::facet_composition_distinguishes_required_tails_and_empty_forms`
+    #[spec(ensures: |ret| (ret.flags.0 == FacetFlags::NULLABLE.0 | FacetFlags::REQUIRED_FIRST.0 | FacetFlags::REQUIRED_LAST.0) && ret.first.is_empty() && ret.last.is_empty() && ret.complete_last.is_empty() && ret.adjacent.is_empty())]
     fn required_hole() -> Self
     {
         Self::with_flags([
@@ -1679,7 +2007,17 @@ impl TileFacet
     /// The identity of alternation: matches nothing.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the documented nullability and required-hole answers, with no
+    ///   tile sets or adjacencies.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For finite tile facets, L3 alternation identity
+    ///   observations catch a void branch that spuriously permits emptiness or
+    ///   introduces an operand; arbitrary composite facets are not exhausted.
+    /// - witness: `mold::tests::facet_composition_distinguishes_required_tails_and_empty_forms`
+    #[spec(ensures: |ret| (ret.flags.0 == 0) && ret.first.is_empty() && ret.last.is_empty() && ret.complete_last.is_empty() && ret.adjacent.is_empty())]
     fn void() -> Self
     {
         Self::with_flags([FacetFlag(false); 4])
@@ -1721,6 +2059,15 @@ impl TileFacet
 /// - ensures: the standard FIRST/LAST/nullable composition of a concatenation;
 ///   the empty face is its identity.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For optional and mandatory faces and the empty face, L3
+///   boundary and identity observations catch reversed FIRST/LAST propagation
+///   and incorrect nullability; the predicate covers complete set unions, while
+///   arbitrary symbol sets are not exhaustively generated.
+/// - witness: `mold::tests::face_composition_and_wrappers_preserve_boundaries`
+/// - witness: `mold::tests::context_data_uses_left_last_and_right_first`
+#[spec(ensures: |ret| ret.nullable == (left.nullable && right.nullable) && (if left.nullable { ret.first.iter().eq(left.first.union(&right.first)) } else { ret.first == left.first }) && (if right.nullable { ret.last.iter().eq(left.last.union(&right.last)) } else { ret.last == right.last }))]
 fn compose_seq(
     left: &FaceCtx,
     right: &FaceCtx,
@@ -1765,6 +2112,14 @@ enum FoldFrame<'regex>
 ///   pushes its finishing frame then its children, last child first, and
 ///   returns `None`.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For a leaf, empty composites and ordered multi-child
+///   sequences, L3 stack observations catch pushing a leaf, omitting the finish
+///   frame and reversed evaluation order; arbitrary nesting is witnessed
+///   through the iterative consumers, not exhaustively generated.
+/// - witness: `mold::tests::expansion_preserves_pending_frames_and_left_to_right_evaluation`
+#[spec(captures: start = frames.len(), ensures: |ret| ret.as_ref().map_or_else(|| frames.len() > start && frames.get(start).is_some_and(|frame| !matches!(frame, FoldFrame::Enter(_))) && frames.iter().skip(start.saturating_add(1)).all(|frame| matches!(frame, FoldFrame::Enter(_))), |shape| frames.len() == start && matches!(shape, RegexShape::Empty | RegexShape::Sym(_))))]
 fn expand<'regex>(
     regex: RegexView<'regex>,
     frames: &mut Vec<FoldFrame<'regex>>,
@@ -1791,6 +2146,21 @@ fn expand<'regex>(
 /// - ensures: the standard FIRST/LAST/nullable summary over symbols, holes and
 ///   tiles alike.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For empty, leaf, nullable-wrapper and asymmetric sequence
+///   forms, L3 exact boundary observations catch lost symbols and wrong
+///   nullability; the runtime predicate checks root cases and wrappers, while
+///   general composite summaries are not exhaustively generated.
+/// - witness: `mold::tests::face_composition_and_wrappers_preserve_boundaries`
+#[spec(ensures: |ret| match regex.shape() {
+    RegexShape::Empty => ret.nullable && ret.first.is_empty() && ret.last.is_empty(),
+    RegexShape::Sym(sym) => { let symbol = match sym { Sym::Sort(sort) => StepSym::Sort(sort), Sym::Tile(tile) => StepSym::Tile(tile.label) }; !ret.nullable && ret.first.len() == 1 && ret.last.len() == 1 && ret.first.contains(&symbol) && ret.last.contains(&symbol) },
+    RegexShape::Optional(_) | RegexShape::Repeat(_) => ret.nullable,
+    RegexShape::Seq(items) if items.is_empty() => ret.nullable && ret.first.is_empty() && ret.last.is_empty(),
+    RegexShape::Alt(items) if items.is_empty() => !ret.nullable && ret.first.is_empty() && ret.last.is_empty(),
+    _ => true,
+})]
 fn face_of(regex: RegexView<'_>) -> FaceCtx
 {
     let mut frames = vec![FoldFrame::Enter(regex)];
@@ -1843,7 +2213,22 @@ fn face_of(regex: RegexView<'_>) -> FaceCtx
 /// root bound on a side none can.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: each known context side uses the mold precedence exactly when it
+///   faces a sort; an unknown context yields root bounds.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For asymmetric, two-sided and absent contexts, L3 exact bound
+///   observations catch direction reversal and fabricated precedence; arbitrary
+///   context tables are outside the finite fixtures.
+/// - witness: `tests::walk::mold_bounds_follow_context_nullability`
+/// - witness: `mold::tests::context_data_uses_left_last_and_right_first`
+#[spec(ensures: |ret| {
+    let data = usize::try_from(mold.rctx.0).ok().and_then(|index| rctxs.get(index));
+    ret.0 == if data.is_some_and(|ctx| ctx.left_faces_sort) { Bound::Value(mold.prec) } else { Bound::Root }
+        && ret.1 == if data.is_some_and(|ctx| ctx.right_faces_sort) { Bound::Value(mold.prec) } else { Bound::Root }
+})]
 fn bounds_for(
     mold: &MoldDef,
     rctxs: &[RCtxData],
@@ -1862,7 +2247,19 @@ fn bounds_for(
 /// One side's precedence bound.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the supplied precedence when the side faces a sort, otherwise the
+///   root bound; never the bottom bound.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the finite infix and bracket fixtures, L2 endpoint
+///   comparisons catch reversed sort-facing decisions and a wrong precedence
+///   value. The const predicate observes the bound variant; the fixture
+///   observes its concrete group. The whole precedence-index domain is not
+///   exhausted.
+/// - witness: `tests::walk::mold_bounds_follow_context_nullability`
+#[spec(ensures: |ret| match ret { Bound::Value(_) => faces_sort.0, Bound::Root => !faces_sort.0, Bound::Bottom => false })]
 const fn side_bound(
     faces_sort: SortFacing,
     prec: Prec,
@@ -1883,6 +2280,22 @@ const fn side_bound(
 /// - ensures: two forms that differ only in the order of alternation branches
 ///   spell the same; forms that differ otherwise spell differently.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For permuted alternatives, ordered sequences, empty composites
+///   and separator-bearing tile labels, L3 relational spelling observations
+///   catch erased order, constructor collisions and ambiguous payload framing;
+///   arbitrary labels and deep forms are not exhausted.
+/// - witness: `mold::tests::canonical_forms_forget_only_alternative_order`
+#[spec(ensures: |ret| match regex.shape() {
+    RegexShape::Empty => ret == "e",
+    RegexShape::Sym(Sym::Sort(_)) => ret.starts_with('s'),
+    RegexShape::Sym(Sym::Tile(tile)) => ret.starts_with('t') && ret.ends_with(tile.label),
+    RegexShape::Seq(_) => ret.starts_with("Q[") && ret.ends_with(']'),
+    RegexShape::Alt(_) => ret.starts_with("A[") && ret.ends_with(']'),
+    RegexShape::Optional(_) => ret.starts_with("O[") && ret.ends_with(']'),
+    RegexShape::Repeat(_) => ret.starts_with("R[") && ret.ends_with(']'),
+})]
 fn canon(regex: RegexView<'_>) -> String
 {
     let mut frames = vec![FoldFrame::Enter(regex)];
@@ -1934,6 +2347,26 @@ fn canon(regex: RegexView<'_>) -> String
 ///   infix operator between a required head and a required tail still completes
 ///   its form.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For empty identities, prefix and infix required holes, and
+///   adjacent tile pairs, L3 exact completion and edge observations catch lost
+///   seams, wrong nullability and premature prefix completion; arbitrary facets
+///   are not exhaustively generated, while the predicate checks full set
+///   relations.
+/// - witness: `mold::tests::facet_composition_distinguishes_required_tails_and_empty_forms`
+/// - witness: `tests::surface::prefix_formers_keep_required_type_tails_unclosed`
+/// - witness: `tests::surface::infix_type_operator_keeps_clean_completion`
+#[spec(ensures: |ret| ret.flags.nullable().0 == (left.flags.nullable().0 && right.flags.nullable().0)
+    && ret.flags.form_nullable().0 == (left.flags.form_nullable().0 && right.flags.form_nullable().0)
+    && ret.flags.required_first().0 == (left.flags.required_first().0 || (left.flags.nullable().0 && right.flags.required_first().0))
+    && ret.flags.required_last().0 == (right.flags.required_last().0 || (right.flags.nullable().0 && left.flags.required_last().0))
+    && (if left.flags.nullable().0 { ret.first.iter().eq(left.first.union(&right.first)) } else { ret.first == left.first })
+    && (if right.flags.nullable().0 { ret.last.iter().eq(left.last.union(&right.last)) } else { ret.last == right.last })
+    && (if right.flags.form_nullable().0 || (right.flags.required_last().0 && left.flags.required_first().0) { ret.complete_last.iter().eq(left.complete_last.union(&right.complete_last)) } else { ret.complete_last == right.complete_last })
+    && left.adjacent.is_subset(&ret.adjacent) && right.adjacent.is_subset(&ret.adjacent)
+    && left.last.iter().all(|&tail| right.first.iter().all(|&head| ret.adjacent.contains(&(tail, head))))
+    && ret.adjacent.iter().all(|pair| left.adjacent.contains(pair) || right.adjacent.contains(pair) || (left.last.contains(&pair.0) && right.first.contains(&pair.1))))]
 fn seq_facet(
     left: &TileFacet,
     right: &TileFacet,
@@ -1989,6 +2422,14 @@ fn seq_facet(
 /// - requires: nothing.
 /// - ensures: every set is the union and every flag the disjunction.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For a void branch and alternatives sharing a tile through
+///   complete and required-tail paths, L3 exact set and flag observations catch
+///   dropping one branch or deriving completion from LAST alone; arbitrary
+///   facet pairs are outside the finite witness.
+/// - witness: `mold::tests::facet_composition_distinguishes_required_tails_and_empty_forms`
+#[spec(ensures: |ret| ret.flags.0 == (left.flags.0 | right.flags.0) && ret.first.iter().eq(left.first.union(&right.first)) && ret.last.iter().eq(left.last.union(&right.last)) && ret.complete_last.iter().eq(left.complete_last.union(&right.complete_last)) && ret.adjacent.iter().eq(left.adjacent.union(&right.adjacent)))]
 fn alt_facet(
     left: &TileFacet,
     right: &TileFacet,
@@ -2015,7 +2456,19 @@ fn alt_facet(
 /// from each last tile back to each first tile.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: preserves tile boundaries and complete endings, permits emptiness
+///   without required holes, and adds exactly the LAST-to-FIRST repetition
+///   seams to existing adjacency.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For a two-tile body and nullable occurrence sequences, L3
+///   exact cycle-edge and completion observations catch missing backedges or
+///   retained mandatory tails; arbitrary facets are not exhausted.
+/// - witness: `mold::tests::facet_composition_distinguishes_required_tails_and_empty_forms`
+/// - witness: `mold::tests::occurrence_order_and_nullable_seams_are_exact`
+#[spec(ensures: |ret| ret.first == inner.first && ret.last == inner.last && ret.complete_last == inner.complete_last && ret.flags.nullable().0 && ret.flags.form_nullable().0 && !ret.flags.required_first().0 && !ret.flags.required_last().0 && inner.adjacent.is_subset(&ret.adjacent) && inner.last.iter().all(|&tail| inner.first.iter().all(|&head| ret.adjacent.contains(&(tail, head)))) && ret.adjacent.iter().all(|pair| inner.adjacent.contains(pair) || (inner.last.contains(&pair.0) && inner.first.contains(&pair.1))))]
 fn repeat_facet(inner: &TileFacet) -> TileFacet
 {
     let mut facet = inner.clone();
@@ -2040,6 +2493,35 @@ fn repeat_facet(inner: &TileFacet) -> TileFacet
 ///   each context (both sort-facing bytes, then both step lists); every word
 ///   little-endian and every count a 64-bit word.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For empty tables and a table with asymmetric sort/tile steps,
+///   L3 literal byte-stream observations and the built-in compatibility pin
+///   catch missing frame bytes, wrong word order and omitted state; hash
+///   collisions and arbitrary table sizes are not excluded.
+/// - witness: `mold::tests::fingerprint_framing_matches_literal_bytes`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+#[spec(ensures: |ret| {
+    let mut expected = Fnv64::new();
+    expected.write_bytes(&[FRAME_MOLD][..]);
+    expected.write_bytes(&u64::from(dag_fingerprint).to_le_bytes()[..]);
+    expected.write_bytes(&u64::try_from(molds.len()).unwrap_or(u64::MAX).to_le_bytes()[..]);
+    for mold in molds {
+        expected.write_bytes(mold.label.as_bytes());
+        expected.write_byte(0_u8);
+        expected.write_bytes(&mold.rctx.0.to_le_bytes()[..]);
+        expected.write_bytes(&u16::from(mold.prec.index()).to_le_bytes()[..]);
+        expected.write_bytes(&u16::from(mold.sort.grout_sort()).to_le_bytes()[..]);
+    }
+    expected.write_bytes(&u64::try_from(rctxs.len()).unwrap_or(u64::MAX).to_le_bytes()[..]);
+    for context in rctxs {
+        expected.write_byte(u8::from(context.left_faces_sort));
+        expected.write_byte(u8::from(context.right_faces_sort));
+        fold_steps(&mut expected, &context.left_steps);
+        fold_steps(&mut expected, &context.right_steps);
+    }
+    u64::from(ret) == u64::from(expected.finish())
+})]
 fn fold_fingerprint(
     dag_fingerprint: GrammarFingerprint,
     molds: &[MoldDef],
@@ -2071,7 +2553,28 @@ fn fold_fingerprint(
 /// `T`, the label and a zero byte.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: extends the existing accumulator with the 64-bit little-endian
+///   count, then tagged sort words or zero-terminated tile labels, in order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For empty and mixed step lists after a nonempty hash prefix,
+///   L3 literal byte observations catch resetting the accumulator, reversing
+///   steps or losing a tag/terminator; arbitrary labels and hash collisions are
+///   outside the finite witness.
+/// - witness: `mold::tests::step_framing_preserves_the_existing_hash_prefix`
+#[spec(captures: before = *hasher, ensures: |()| {
+    let mut expected = before;
+    expected.write_bytes(&u64::try_from(steps.len()).unwrap_or(u64::MAX).to_le_bytes()[..]);
+    for step in steps {
+        match step.crossed {
+            StepSym::Sort(sort) => { expected.write_byte(b'S'); expected.write_bytes(&u16::from(sort.grout_sort()).to_le_bytes()[..]); },
+            StepSym::Tile(label) => { expected.write_byte(b'T'); expected.write_bytes(label.as_bytes()); expected.write_byte(0_u8); },
+        }
+    }
+    hasher.finish() == expected.finish()
+})]
 fn fold_steps(
     hasher: &mut Fnv64,
     steps: &[RCtxStep],
@@ -2090,5 +2593,519 @@ fn fold_steps(
                 hasher.write_byte(0_u8);
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeMap;
+    use alloc::collections::BTreeSet;
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use gandr_surface_syntax::ClosingClass;
+    use gandr_surface_syntax::GrammarFingerprint;
+    use gandr_surface_syntax::MoldId;
+    use gandr_theory_graphs::EdgeSource as _;
+    use gandr_theory_graphs::Fnv64;
+    use gandr_theory_graphs::NodeId;
+    use gandr_theory_graphs::Prec;
+    use gandr_theory_graphs::PrecIndex;
+
+    use super::ContextInterner;
+    use super::EndingVerdict;
+    use super::FaceCtx;
+    use super::FacetFlag;
+    use super::FacetFlags;
+    use super::FoldFrame;
+    use super::MoldDef;
+    use super::RCtxData;
+    use super::RCtxId;
+    use super::RCtxStep;
+    use super::StepSym;
+    use super::TileFacet;
+    use super::TileGraph;
+    use super::TileKey;
+    use super::alt_facet;
+    use super::bounds_for;
+    use super::canon;
+    use super::collect_occurrences;
+    use super::compose_seq;
+    use super::context_data;
+    use super::expand;
+    use super::face_of;
+    use super::fold_fingerprint;
+    use super::fold_steps;
+    use super::repeat_facet;
+    use super::resolve_adjacencies;
+    use super::resolve_keys;
+    use super::seq_facet;
+    use super::tile_index;
+    use crate::model::Regex;
+    use crate::model::RegexShape;
+    use crate::model::Rule;
+    use crate::model::RuleName;
+    use crate::model::Sort;
+    use crate::model::Sym;
+    use crate::model::Tile;
+    use crate::model::TileLabel;
+
+    #[test]
+    fn context_interning_keeps_first_data_and_dense_ids()
+    {
+        let first = context_data(
+            &FaceCtx::leaf(StepSym::Tile("left")),
+            &FaceCtx::leaf(StepSym::Sort(Sort::Type)),
+        );
+        let replacement = context_data(&FaceCtx::empty(), &FaceCtx::empty());
+        let mut interner = ContextInterner::new();
+        let a = interner.intern("a".into(), first.clone());
+        let b = interner.intern("b".into(), replacement.clone());
+        assert_eq!(RCtxId(0), a);
+        assert_eq!(RCtxId(1), b);
+        assert_eq!(a, interner.intern("a".into(), replacement.clone()));
+        assert_eq!(vec![first, replacement], interner.finish());
+    }
+
+    #[test]
+    fn ending_verdict_fold_has_identity_absorption_and_agreement()
+    {
+        let verdicts = [
+            EndingVerdict::Empty,
+            EndingVerdict::Agree(ClosingClass::Paren),
+            EndingVerdict::Agree(ClosingClass::Bracket),
+            EndingVerdict::Agree(ClosingClass::Brace),
+            EndingVerdict::Divergent,
+        ];
+        for left in verdicts {
+            assert!(left.merge_successor(EndingVerdict::Empty) == left);
+            assert!(EndingVerdict::Empty.merge_successor(left) == left);
+            assert!(left.merge_successor(EndingVerdict::Divergent) == EndingVerdict::Divergent);
+            for right in verdicts {
+                assert!(left.merge_successor(right) == right.merge_successor(left));
+                for third in verdicts {
+                    assert!(
+                        left.merge_successor(right).merge_successor(third)
+                            == left.merge_successor(right.merge_successor(third))
+                    );
+                }
+            }
+        }
+        for class in [
+            ClosingClass::Paren,
+            ClosingClass::Bracket,
+            ClosingClass::Brace,
+        ] {
+            assert!(EndingVerdict::Empty.merge_class(class) == EndingVerdict::Agree(class));
+            assert!(EndingVerdict::Agree(class).merge_class(class) == EndingVerdict::Agree(class));
+            assert!(EndingVerdict::Divergent.merge_class(class) == EndingVerdict::Divergent);
+        }
+        assert!(
+            EndingVerdict::Agree(ClosingClass::Paren).merge_class(ClosingClass::Brace)
+                == EndingVerdict::Divergent
+        );
+    }
+
+    #[test]
+    fn tile_graph_preserves_successor_order_and_refuses_unknown_nodes()
+    {
+        let graph = TileGraph {
+            rows: vec![
+                vec![NodeId::from(2), NodeId::from(1), NodeId::from(2)],
+                vec![],
+                vec![NodeId::from(0)],
+            ],
+        };
+        assert_eq!(3, u32::from(graph.node_count()));
+        assert_eq!(
+            vec![NodeId::from(2), NodeId::from(1), NodeId::from(2)],
+            graph.successors(NodeId::from(0)).collect::<Vec<_>>()
+        );
+        assert_eq!(None, graph.successors(NodeId::from(1)).next());
+        assert_eq!(None, graph.successors(NodeId::from(3)).next());
+        assert_eq!(
+            vec![NodeId::from(0)],
+            graph.successors(NodeId::from(2)).collect::<Vec<_>>()
+        );
+        let empty = TileGraph { rows: vec![] };
+        assert_eq!(0, u32::from(empty.node_count()));
+        assert_eq!(None, empty.successors(NodeId::from(0)).next());
+    }
+
+    #[test]
+    fn occurrence_order_and_nullable_seams_are_exact()
+    {
+        let rule = Rule::new(
+            RuleName("nullable-seams"),
+            Sort::Expression,
+            Prec::new(PrecIndex::from(0)),
+            Regex::seq([
+                Regex::tile(TileLabel("z")),
+                Regex::optional(Regex::tile(TileLabel("a"))),
+                Regex::repeat(Regex::tile(TileLabel("b"))),
+            ]),
+        );
+        let mut interner = ContextInterner::new();
+        let mut out = Vec::new();
+        let facet = collect_occurrences(&rule, &mut interner, &mut out);
+        assert_eq!(
+            vec![("z", RCtxId(0)), ("a", RCtxId(1)), ("b", RCtxId(2))],
+            out.iter()
+                .map(|occurrence| (occurrence.label, occurrence.rctx))
+                .collect::<Vec<_>>()
+        );
+        let z = TileKey::new(TileLabel("z"), RCtxId(0));
+        let a = TileKey::new(TileLabel("a"), RCtxId(1));
+        let b = TileKey::new(TileLabel("b"), RCtxId(2));
+        assert_eq!(BTreeSet::from([z]), facet.first);
+        assert_eq!(BTreeSet::from([z, a, b]), facet.last);
+        assert_eq!(
+            BTreeSet::from([(z, a), (z, b), (a, b), (b, b)]),
+            facet.adjacent
+        );
+        assert_eq!(facet.last, facet.complete_last);
+        assert!(!facet.flags.nullable().0);
+    }
+
+    #[test]
+    fn resolutions_sort_deduplicate_and_skip_missing_keys()
+    {
+        let a = TileKey::new(TileLabel("a"), RCtxId(0));
+        let b = TileKey::new(TileLabel("b"), RCtxId(1));
+        let alias = TileKey::new(TileLabel("alias"), RCtxId(2));
+        let missing = TileKey::new(TileLabel("missing"), RCtxId(3));
+        let high = MoldId::try_from(7_usize).expect("small id");
+        let low = MoldId::try_from(2_usize).expect("small id");
+        let index = BTreeMap::from([(a, high), (b, low), (alias, high)]);
+        assert_eq!(
+            vec![low, high],
+            resolve_keys(&index, &BTreeSet::from([a, b, alias, missing]))
+        );
+        assert_eq!(
+            vec![(low, high), (high, low)],
+            resolve_adjacencies(
+                &index,
+                &BTreeSet::from([(a, b), (alias, b), (b, a), (a, missing), (missing, b)])
+            )
+        );
+        let prec = Prec::new(PrecIndex::from(0));
+        let molds = [
+            MoldDef {
+                label: "z",
+                rctx: RCtxId(4),
+                prec,
+                sort: Sort::Item,
+            },
+            MoldDef {
+                label: "a",
+                rctx: RCtxId(5),
+                prec,
+                sort: Sort::Type,
+            },
+        ];
+        assert_eq!(
+            BTreeMap::from([
+                (
+                    TileKey::new(TileLabel("z"), RCtxId(4)),
+                    MoldId::try_from(0_usize).expect("small id")
+                ),
+                (
+                    TileKey::new(TileLabel("a"), RCtxId(5)),
+                    MoldId::try_from(1_usize).expect("small id")
+                )
+            ]),
+            tile_index(&molds)
+        );
+    }
+
+    #[test]
+    fn context_data_uses_left_last_and_right_first()
+    {
+        let left = FaceCtx {
+            nullable: false,
+            first: BTreeSet::from([StepSym::Tile("ignored-first")]),
+            last: BTreeSet::from([StepSym::Sort(Sort::Type), StepSym::Tile("left")]),
+        };
+        let right = FaceCtx {
+            nullable: false,
+            first: BTreeSet::from([StepSym::Tile("right")]),
+            last: BTreeSet::from([StepSym::Sort(Sort::Item)]),
+        };
+        let data = context_data(&left, &right);
+        assert!(data.left_faces_sort);
+        assert!(!data.right_faces_sort);
+        assert_eq!(
+            vec![
+                RCtxStep {
+                    crossed: StepSym::Sort(Sort::Type)
+                },
+                RCtxStep {
+                    crossed: StepSym::Tile("left")
+                }
+            ],
+            data.left_steps
+        );
+        assert_eq!(
+            vec![RCtxStep {
+                crossed: StepSym::Tile("right")
+            }],
+            data.right_steps
+        );
+        let prec = Prec::new(PrecIndex::from(0));
+        let mold = MoldDef {
+            label: "x",
+            rctx: RCtxId(0),
+            prec,
+            sort: Sort::Expression,
+        };
+        assert_eq!(
+            (
+                gandr_theory_graphs::Bound::Value(prec),
+                gandr_theory_graphs::Bound::Root
+            ),
+            bounds_for(&mold, &[data])
+        );
+        assert_eq!(
+            (
+                gandr_theory_graphs::Bound::Root,
+                gandr_theory_graphs::Bound::Root
+            ),
+            bounds_for(&mold, &[])
+        );
+    }
+
+    #[test]
+    fn facet_flag_updates_preserve_other_answers()
+    {
+        const READ: FacetFlag =
+            FacetFlags(FacetFlags::FORM_NULLABLE.0).get(FacetFlags::FORM_NULLABLE);
+        let bits = [
+            FacetFlags::NULLABLE,
+            FacetFlags::FORM_NULLABLE,
+            FacetFlags::REQUIRED_FIRST,
+            FacetFlags::REQUIRED_LAST,
+        ];
+        for word in 0_u8 ..= u8::MAX {
+            for bit in bits {
+                assert_eq!(word & bit.0 != 0, FacetFlags(word).get(bit).0);
+                for value in [false, READ.0] {
+                    let mut flags = FacetFlags(word);
+                    flags.set(bit, FacetFlag(value));
+                    assert_eq!(value, flags.get(bit).0);
+                    assert_eq!(word & !bit.0, flags.0 & !bit.0);
+                }
+            }
+        }
+        for word in 0_u8 .. 16 {
+            let mut flags = FacetFlags::from_parts([
+                FacetFlag(word & 1 != 0),
+                FacetFlag(word & 2 != 0),
+                FacetFlag(word & 4 != 0),
+                FacetFlag(word & 8 != 0),
+            ]);
+            flags.set_nullable(FacetFlag(word & 1 == 0));
+            assert_eq!(word & 1 == 0, flags.nullable().0);
+            assert_eq!(word & 2 != 0, flags.form_nullable().0);
+            assert_eq!(word & 4 != 0, flags.required_first().0);
+            assert_eq!(word & 8 != 0, flags.required_last().0);
+        }
+    }
+
+    #[test]
+    fn facet_composition_distinguishes_required_tails_and_empty_forms()
+    {
+        let a = TileKey::new(TileLabel("a"), RCtxId(0));
+        let b = TileKey::new(TileLabel("b"), RCtxId(1));
+        let first = TileFacet::leaf(a);
+        let second = TileFacet::leaf(b);
+        let hole = TileFacet::required_hole();
+        let prefix = seq_facet(&first, &hole);
+        assert_eq!(BTreeSet::from([a]), prefix.last);
+        assert!(prefix.complete_last.is_empty());
+        assert!(prefix.flags.required_last().0);
+        let infix = seq_facet(&seq_facet(&hole, &first), &hole);
+        assert_eq!(BTreeSet::from([a]), infix.complete_last);
+        for facet in [&first, &prefix, &infix, &hole] {
+            assert_eq!(*facet, seq_facet(&TileFacet::empty(), facet));
+            assert_eq!(*facet, seq_facet(facet, &TileFacet::empty()));
+            assert_eq!(*facet, alt_facet(&TileFacet::void(), facet));
+            assert_eq!(*facet, alt_facet(facet, &TileFacet::void()));
+        }
+        let alternative = alt_facet(&prefix, &first);
+        assert_eq!(BTreeSet::from([a]), alternative.complete_last);
+        assert!(alternative.flags.required_last().0);
+        let repeated = repeat_facet(&seq_facet(&first, &second));
+        assert_eq!(BTreeSet::from([a]), repeated.first);
+        assert_eq!(BTreeSet::from([b]), repeated.last);
+        assert_eq!(BTreeSet::from([(a, b), (b, a)]), repeated.adjacent);
+        assert!(repeated.flags.nullable().0 && repeated.flags.form_nullable().0);
+        assert!(!repeated.flags.required_first().0 && !repeated.flags.required_last().0);
+    }
+
+    #[test]
+    fn expansion_preserves_pending_frames_and_left_to_right_evaluation()
+    {
+        let leaf = Regex::tile(TileLabel("leaf"));
+        let mut frames = vec![FoldFrame::FinishAlt(41)];
+        assert_eq!(
+            Some(RegexShape::Sym(Sym::Tile(Tile::new(TileLabel("leaf"))))),
+            expand(leaf.view(), &mut frames)
+        );
+        assert!(matches!(frames.as_slice(), [FoldFrame::FinishAlt(41)]));
+        let sequence = Regex::seq([
+            Regex::tile(TileLabel("a")),
+            Regex::tile(TileLabel("b")),
+            Regex::tile(TileLabel("c")),
+        ]);
+        assert_eq!(None, expand(sequence.view(), &mut frames));
+        for label in ["a", "b", "c"] {
+            let Some(FoldFrame::Enter(child)) = frames.pop()
+            else {
+                panic!("next child")
+            };
+            assert_eq!(
+                RegexShape::Sym(Sym::Tile(Tile::new(TileLabel(label)))),
+                child.shape()
+            );
+        }
+        assert!(matches!(frames.pop(), Some(FoldFrame::FinishSeq(3))));
+        assert!(matches!(frames.pop(), Some(FoldFrame::FinishAlt(41))));
+        let empty = Regex::alt([]);
+        assert_eq!(None, expand(empty.view(), &mut frames));
+        assert!(matches!(frames.as_slice(), [FoldFrame::FinishAlt(0)]));
+    }
+
+    #[test]
+    fn face_composition_and_wrappers_preserve_boundaries()
+    {
+        assert_eq!(FaceCtx::empty(), face_of(Regex::empty().view()));
+        assert_eq!(FaceCtx::empty(), face_of(Regex::seq([]).view()));
+        assert_eq!(FaceCtx::default(), face_of(Regex::alt([]).view()));
+        let sort = Regex::sort(Sort::Item);
+        let expected = BTreeSet::from([StepSym::Sort(Sort::Item)]);
+        for wrapped in [Regex::optional(sort.clone()), Regex::repeat(sort)] {
+            assert_eq!(
+                FaceCtx {
+                    nullable: true,
+                    first: expected.clone(),
+                    last: expected.clone()
+                },
+                face_of(wrapped.view())
+            );
+        }
+        let left = face_of(Regex::optional(Regex::sort(Sort::Item)).view());
+        let right = face_of(Regex::tile(TileLabel("}")).view());
+        let combined = compose_seq(&left, &right);
+        assert_eq!(
+            FaceCtx {
+                nullable: false,
+                first: BTreeSet::from([StepSym::Sort(Sort::Item), StepSym::Tile("}")]),
+                last: BTreeSet::from([StepSym::Tile("}")])
+            },
+            combined
+        );
+        assert_eq!(left, compose_seq(&FaceCtx::empty(), &left));
+        assert_eq!(right, compose_seq(&right, &FaceCtx::empty()));
+    }
+
+    #[test]
+    fn canonical_forms_forget_only_alternative_order()
+    {
+        let a = Regex::tile(TileLabel("a,b"));
+        let b = Regex::tile(TileLabel("]Q["));
+        assert_eq!(
+            canon(Regex::alt([a.clone(), b.clone()]).view()),
+            canon(Regex::alt([b.clone(), a.clone()]).view())
+        );
+        assert_ne!(
+            canon(Regex::seq([a.clone(), b.clone()]).view()),
+            canon(Regex::seq([b, a]).view())
+        );
+        let forms = [
+            Regex::empty(),
+            Regex::seq([]),
+            Regex::alt([]),
+            Regex::optional(Regex::empty()),
+            Regex::repeat(Regex::empty()),
+            Regex::tile(TileLabel("")),
+            Regex::tile(TileLabel("e")),
+            Regex::sort(Sort::Item),
+        ];
+        for (index, left) in forms.iter().enumerate() {
+            for right in forms.iter().skip(index.saturating_add(1)) {
+                assert_ne!(canon(left.view()), canon(right.view()));
+            }
+        }
+    }
+
+    #[test]
+    fn fingerprint_framing_matches_literal_bytes()
+    {
+        let mold = MoldDef {
+            label: "x",
+            rctx: RCtxId(0),
+            prec: Prec::new(PrecIndex::from(0)),
+            sort: Sort::Expression,
+        };
+        let data = RCtxData {
+            left_faces_sort: true,
+            right_faces_sort: false,
+            left_steps: vec![RCtxStep {
+                crossed: StepSym::Sort(Sort::Type),
+            }],
+            right_steps: vec![RCtxStep {
+                crossed: StepSym::Tile(")"),
+            }],
+        };
+        let bytes = [
+            b'M', 4, 3, 2, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, b'x', 0, 0, 0, 0, 0, 0, 0, 2, 0,
+            1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, b'S', 3, 0, 1, 0, 0, 0, 0, 0, 0,
+            0, b'T', b')', 0,
+        ];
+        let mut expected = Fnv64::new();
+        expected.write_bytes(bytes.as_slice());
+        assert_eq!(
+            u64::from(expected.finish()),
+            u64::from(fold_fingerprint(
+                GrammarFingerprint::from(0x0102_0304_u64),
+                &[mold],
+                &[data]
+            ))
+        );
+        let mut empty_expected = Fnv64::new();
+        empty_expected.write_bytes(
+            [
+                b'M', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            ]
+            .as_slice(),
+        );
+        assert_eq!(
+            u64::from(empty_expected.finish()),
+            u64::from(fold_fingerprint(GrammarFingerprint::from(0_u64), &[], &[]))
+        );
+    }
+
+    #[test]
+    fn step_framing_preserves_the_existing_hash_prefix()
+    {
+        let steps = [
+            RCtxStep {
+                crossed: StepSym::Sort(Sort::Type),
+            },
+            RCtxStep {
+                crossed: StepSym::Tile(")"),
+            },
+        ];
+        let mut actual = Fnv64::new();
+        actual.write_bytes(b"prefix".as_slice());
+        let mut expected = actual;
+        expected.write_bytes([2, 0, 0, 0, 0, 0, 0, 0, b'S', 3, 0, b'T', b')', 0].as_slice());
+        fold_steps(&mut actual, &steps);
+        assert_eq!(expected.finish(), actual.finish());
+        let mut empty_expected = actual;
+        empty_expected.write_bytes([0_u8; 8].as_slice());
+        fold_steps(&mut actual, &[]);
+        assert_eq!(empty_expected.finish(), actual.finish());
     }
 }

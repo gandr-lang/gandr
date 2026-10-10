@@ -3,11 +3,15 @@
 
 use core::error::Error;
 
+use anodized::spec;
 use gandr_surface_grammar::Adaptation;
 use gandr_surface_grammar::AdaptationReason;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
+use gandr_surface_grammar::PrecName;
+use gandr_surface_grammar::PrecTable;
 use gandr_surface_grammar::Regex;
+use gandr_surface_grammar::RegexShape;
 use gandr_surface_grammar::Rule;
 use gandr_surface_grammar::RuleName;
 use gandr_surface_grammar::Sort;
@@ -28,6 +32,16 @@ use gandr_theory_graphs::PrecSpec;
 /// - ensures: returns the DAG and its one group.
 /// - fails: never for one group.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the gate fixtures, L2 exact refusal and accepted-neighbor
+///   observations catch wrong group setup, swallowed failures and changed error
+///   provenance. The predicate checks the fixed DAG and the build-error family;
+///   allocation exhaustion and all invalid regex combinations are not
+///   exhausted.
+/// - witness: `tests::pbg::pbg_rejects_direct_adjacent_sorts_in_sequence`
+/// - witness: `tests::pbg::pbg_accepts_terminal_separators_between_sort_uses`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|&(ref dag, base)| dag.groups().count() == 1 && dag.name(base).is_some_and(|name| name == "base") && dag.assoc(base) == Some(Assoc::Non) && dag.edges().next().is_none()))]
 fn one_node_dag() -> Result<(PrecDag, Prec), Box<dyn Error>>
 {
     let mut spec = PrecSpec::new();
@@ -43,6 +57,17 @@ fn one_node_dag() -> Result<(PrecDag, Prec), Box<dyn Error>>
 /// - ensures: returns the refusal.
 /// - fails: the DAG cannot be built.
 /// - panics: when the build succeeds.
+///
+/// # Adequacy
+/// - hypothesis: For the gate fixtures, L2 exact refusal and accepted-neighbor
+///   observations catch wrong group setup, swallowed failures and changed error
+///   provenance. The predicate checks the fixed DAG and the build-error family;
+///   allocation exhaustion and all invalid regex combinations are not
+///   exhausted.
+/// - witness: `tests::pbg::pbg_rejects_direct_adjacent_sorts_in_sequence`
+/// - witness: `tests::pbg::pbg_rejects_adjacency_exposed_by_nullable_sequence_paths`
+/// - witness: `tests::pbg::pbg_rejects_duplicate_rctx_tile`
+#[spec(requires: !rules.is_empty(), ensures: |ret| ret.as_ref().is_ok_and(|error| matches!(error, PbgError::InvalidPrec { .. } | PbgError::DuplicateRule { .. } | PbgError::AdjacentSorts { .. } | PbgError::DuplicateTile { .. } | PbgError::MoldOverflow | PbgError::Assumption3Conflict { .. })))]
 fn exact_error(rules: Vec<Rule>) -> Result<PbgError, Box<dyn Error>>
 {
     let (dag, _base) = one_node_dag()?;
@@ -398,5 +423,70 @@ fn pbg_rejects_invalid_prec_before_later_header_errors() -> Result<(), Box<dyn E
         },
         error
     );
+    Ok(())
+}
+
+#[test]
+fn grouped_forms_preserve_branch_and_rule_order() -> Result<(), Box<dyn Error>>
+{
+    let (dag, base) = one_node_dag()?;
+    let first = Regex::tile(TileLabel("a"));
+    let nested = Regex::seq([Regex::tile(TileLabel("b")), Regex::tile(TileLabel("c"))]);
+    let last = Regex::tile(TileLabel("d"));
+    let other = Regex::tile(TileLabel("t"));
+    let pbg = Pbg::build_table(PrecTable::new(dag, [(PrecName("base"), base)]), vec![
+        Rule::new(
+            RuleName("first"),
+            Sort::Expression,
+            base,
+            Regex::alt([first.clone(), nested.clone()]),
+        ),
+        Rule::new(RuleName("other"), Sort::Type, base, other.clone()),
+        Rule::new(RuleName("last"), Sort::Expression, base, last.clone()),
+        Rule::new(RuleName("void"), Sort::Expression, base, Regex::alt([])),
+    ])?;
+    let form = pbg
+        .forms()
+        .get(&(Sort::Expression, base))
+        .expect("expression group");
+    let RegexShape::Alt(branches) = form.view().shape()
+    else {
+        panic!("grouped alternation")
+    };
+    assert_eq!(
+        vec![first, nested, last],
+        branches
+            .iter()
+            .map(|branch| branch.to_regex())
+            .collect::<Vec<_>>()
+    );
+    let type_form = pbg.forms().get(&(Sort::Type, base)).expect("type group");
+    let RegexShape::Alt(type_branches) = type_form.view().shape()
+    else {
+        panic!("type alternation")
+    };
+    assert_eq!(
+        vec![other],
+        type_branches
+            .iter()
+            .map(|branch| branch.to_regex())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        ["first", "other", "last", "void"],
+        pbg.rules()
+            .iter()
+            .map(|rule| rule.name)
+            .collect::<Vec<_>>()
+            .as_slice()
+    );
+    assert!(pbg.adaptations().is_empty());
+    for (label, owner) in [("a", "first"), ("t", "other"), ("d", "last")] {
+        let &[mold] = pbg.candidates(TileLabel(label))
+        else {
+            panic!("one occurrence")
+        };
+        assert_eq!(owner, pbg.named_kind(mold)?.0);
+    }
     Ok(())
 }
