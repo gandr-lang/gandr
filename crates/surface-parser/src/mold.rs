@@ -56,13 +56,16 @@ use gandr_theory_graphs::Dir;
 
 use crate::Frontier;
 use crate::MeldState;
-use crate::MoldedTile;
 use crate::label::Lexeme;
 use crate::label::Token;
 use crate::meld::CandidateLabels;
+use crate::meld::DeclarationStart;
+use crate::meld::FormUnit;
 use crate::meld::Mark;
 use crate::meld::SpaceText;
 use crate::meld::TileText;
+use crate::meld::UnitSeam;
+use crate::meld::declaration_head;
 use crate::meld::primitive_copy_wrapper;
 use crate::oblig::Delta;
 
@@ -179,10 +182,10 @@ primitive_copy_wrapper!(
     struct DirectRuleBinderAdmission(bool);
 );
 
-/// Dense token-stream position used by bounded lookahead.
+/// Dense token-stream position used by bounded lookahead and form runs.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct TokenIndex(usize);
+pub struct TokenIndex(usize);
 
 impl From<usize> for TokenIndex
 {
@@ -210,6 +213,70 @@ impl From<TokenIndex> for usize
     }
 }
 
+/// A half-open run of token-stream positions: the tokens one molding pass
+/// pushes, inside a stream whose later tokens it still reads as lookahead.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: names the positions from `start` up to, not including, `end`; an
+///   `end` before `start` names no position.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; its constructor
+///   and observers carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a stream molded as consecutive runs commits the state the
+///   whole stream does, and a run's lookahead reads past its end; an off-by-one
+///   bound pushes a token twice or drops one.
+/// - witness: `mold::tests::runs_mold_as_the_whole_stream`
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TokenRun
+{
+    /// The first position pushed.
+    start: TokenIndex,
+    /// The position after the last one pushed.
+    end: TokenIndex,
+}
+
+impl TokenRun
+{
+    /// The run from `start` up to, not including, `end`.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn new(
+        start: TokenIndex,
+        end: TokenIndex,
+    ) -> Self
+    {
+        Self { start, end }
+    }
+
+    /// The first position the run pushes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn start(self) -> TokenIndex
+    {
+        self.start
+    }
+
+    /// The position after the last one the run pushes.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn end(self) -> TokenIndex
+    {
+        self.end
+    }
+}
+
 /// Binary rank component in a molder candidate key.
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -228,7 +295,29 @@ impl From<bool> for CandidateRank
     }
 }
 
-/// Local candidate minimization key.
+/// Local candidate minimization key: `(Delta, continuation, sort, operand
+/// continuation)`.
+///
+/// * `Delta` is the obligation change the push itself flags — the **streaming**
+///   delta only. It deliberately excludes the `finalize` completion penalty: a
+///   form-start (`Inl` opening a constructor pattern, `def` opening an item)
+///   momentarily leaves the slope incomplete, and penalizing that would make
+///   the bare atom always strictly cheaper, so the two would never tie and the
+///   shared-prefix lookahead ([`Molder::choose_stream`]) would never fire to
+///   see the discriminating tile. Completion is measured in the lookahead
+///   window, where it belongs.
+/// * The **continuation** rank is `0` when the candidate `≐`-continues the open
+///   form frontier and `1` otherwise, so a `def`'s name reads as the form's
+///   name tile rather than a bare variable.
+/// * The **sort** rank is `0` when the candidate's grammar sort matches the
+///   slot the head expects ([`MeldState::expected_operand_sort`]) and `1`
+///   otherwise, so `"hi"` reads as the expression string at an expression slot
+///   and the pattern string in a pattern slot.
+/// * The **operand continuation** rank is `0` when the candidate extends the
+///   operand at the head and `1` otherwise.
+///
+/// An exact key tie keeps the smaller [`MoldId`] — the documented,
+/// process-invariant tie-break.
 ///
 /// # Specification
 /// - ensures: compares obligation delta before form continuation, expected sort
@@ -255,6 +344,59 @@ struct CandidateKey
     operand_continuation: CandidateRank,
 }
 
+/// Every candidate floor key — the empty delta with each combination of the
+/// three ranks — in ascending order.
+const RANK_FLOORS: [CandidateKey; 8] = [
+    CandidateKey {
+        delta: Delta::empty(),
+        continuation: CandidateRank(0),
+        sort: CandidateRank(0),
+        operand_continuation: CandidateRank(0),
+    },
+    CandidateKey {
+        delta: Delta::empty(),
+        continuation: CandidateRank(0),
+        sort: CandidateRank(0),
+        operand_continuation: CandidateRank(1),
+    },
+    CandidateKey {
+        delta: Delta::empty(),
+        continuation: CandidateRank(0),
+        sort: CandidateRank(1),
+        operand_continuation: CandidateRank(0),
+    },
+    CandidateKey {
+        delta: Delta::empty(),
+        continuation: CandidateRank(0),
+        sort: CandidateRank(1),
+        operand_continuation: CandidateRank(1),
+    },
+    CandidateKey {
+        delta: Delta::empty(),
+        continuation: CandidateRank(1),
+        sort: CandidateRank(0),
+        operand_continuation: CandidateRank(0),
+    },
+    CandidateKey {
+        delta: Delta::empty(),
+        continuation: CandidateRank(1),
+        sort: CandidateRank(0),
+        operand_continuation: CandidateRank(1),
+    },
+    CandidateKey {
+        delta: Delta::empty(),
+        continuation: CandidateRank(1),
+        sort: CandidateRank(1),
+        operand_continuation: CandidateRank(0),
+    },
+    CandidateKey {
+        delta: Delta::empty(),
+        continuation: CandidateRank(1),
+        sort: CandidateRank(1),
+        operand_continuation: CandidateRank(1),
+    },
+];
+
 /// Candidate menu scope used by the gather step.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CandidateMenu
@@ -263,6 +405,34 @@ enum CandidateMenu
     Fresh,
     /// Full declared candidate menu.
     Declared,
+}
+
+/// The delta a tied opener's lookahead window must stay below to win.
+///
+/// # Specification
+/// - ensures: `Below` carries the least delta an earlier opener's window
+///   reached; a later opener wins only with a strictly smaller one.
+/// - panics: none.
+/// - executable: none — a plain value; [`Molder::mold_window`] carries the
+///   executable clause.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WindowBound
+{
+    /// No earlier opener's window has finished: the window runs to its end.
+    Unbounded,
+    /// The least delta an earlier opener's window reached.
+    Below(Delta),
+}
+
+/// How a lookahead window ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum WindowEnd
+{
+    /// Every token the window covers was molded.
+    Molded,
+    /// The window's obligations reached its bound before it finished, so its
+    /// opener cannot win; the remaining tokens were not molded.
+    Dominated,
 }
 
 /// Wrap the molder's source view for the labeler token-text API.
@@ -505,13 +675,16 @@ pub struct Molder<'pbg>
     candidates: Vec<MoldId>,
     /// Static candidate labels declared by this grammar, sorted by label text.
     labels: Vec<TileLabel>,
-    /// Pooled dry-run marks, reused across candidates and tokens so the
-    /// per-candidate `mark`/`rollback` transaction reaches a zero-allocation
-    /// steady state ([`MeldState::mark_into`] fills a pooled mark with
-    /// `clone_from`, reusing its buffers). A pool (not one scratch slot)
-    /// because dry-runs nest: the lookahead window's outer mark must survive
-    /// the inner per-token marks its greedy molding takes.
-    marks: Vec<Mark>,
+    /// Reused per-token candidates that survive the pre-filter (or the whole
+    /// menu when none does), in ascending `MoldId` order.
+    eligible: Vec<MoldId>,
+    /// Reused floor keys of the eligible candidates, beside each mold.
+    ranked: Vec<(CandidateKey, MoldId)>,
+    /// Reused candidates holding the least key, in ascending `MoldId` order.
+    tied: Vec<MoldId>,
+    /// Reused tied lookahead openers; separate from `tied` because each
+    /// opener's window scores its own tokens.
+    openers: Vec<MoldId>,
 }
 
 impl<'pbg> Molder<'pbg>
@@ -534,7 +707,7 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.candidates.is_empty() && ret.marks.is_empty() && ret.labels.iter().zip(ret.labels.iter().skip(1)).all(|(left, right)| left.as_ref() < right.as_ref()))]
+    #[spec(ensures: |ret| ret.candidates.is_empty() && ret.eligible.is_empty() && ret.ranked.is_empty() && ret.tied.is_empty() && ret.openers.is_empty() && ret.labels.iter().zip(ret.labels.iter().skip(1)).all(|(left, right)| left.as_ref() < right.as_ref()))]
     pub fn new(pbg: &'pbg Pbg) -> Self
     {
         let labels = pbg
@@ -546,44 +719,22 @@ impl<'pbg> Molder<'pbg>
             pbg,
             candidates: Vec::new(),
             labels,
-            marks: Vec::new(),
+            eligible: Vec::new(),
+            ranked: Vec::new(),
+            tied: Vec::new(),
+            openers: Vec::new(),
         }
     }
 
-    /// Take a pooled mark filled with `state`'s current snapshot.
-    ///
-    /// # Specification
-    /// - ensures: returns a snapshot of the current melder, overwriting a
-    ///   reused pool slot.
-    /// - panics: none.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — empty and reused mark pools surround an obligation-
-    ///   bearing push; rolling back reproduces exact checkpoint bytes.
-    ///   Returning a stale mark or leaking dry-run source, slope or obligations
-    ///   changes them.
-    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
-    #[spec(ensures: |ret| bool::from(state.delta_since(&ret).is_empty()))]
-    fn take_mark(
-        &mut self,
-        state: &MeldState<'_>,
-    ) -> Mark
-    {
-        let mut mark = self.marks.pop().unwrap_or_default();
-        state.mark_into(&mut mark);
-        mark
-    }
-
-    /// Return a used mark to the pool, keeping its buffers for reuse.
+    /// The grammar this molder molds against.
     ///
     /// # Specification
     /// trivial.
-    fn put_mark(
-        &mut self,
-        mark: Mark,
-    )
+    #[inline]
+    #[must_use]
+    pub const fn pbg(&self) -> &'pbg Pbg
     {
-        self.marks.push(mark);
+        self.pbg
     }
 
     /// Resolve a candidate label spelling to this grammar's static tile label.
@@ -739,9 +890,46 @@ impl<'pbg> Molder<'pbg>
         src: SourceText<'_>,
     )
     {
+        let whole = TokenRun::new(TokenIndex::from(0_usize), TokenIndex::from(tokens.len()));
+        self.mold_run(state, tokens, whole, src);
+    }
+
+    /// Mold and push the tokens of `run`, reading the stream past the run's
+    /// end as lookahead only.
+    ///
+    /// Each token is molded exactly as [`mold_stream`](Self::mold_stream)
+    /// molds it, lookahead windows included, so a stream molded as
+    /// consecutive runs into one state leaves the state the whole stream does.
+    ///
+    /// # Specification
+    /// - requires: `state` was built over this molder's `pbg`; `tokens` came
+    ///   from the labeler over `src`.
+    /// - ensures: pushes exactly one tile per non-space token of `run` and
+    ///   records each of its spaces, choosing each tile as
+    ///   [`mold_stream`](Self::mold_stream) would at that position; never
+    ///   pushes a token outside `run`.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a corpus source molded as two runs split at every
+    ///   significant position commits the whole stream's checkpoint bytes; a
+    ///   lookahead that stopped at the run's end, or a bound off by one,
+    ///   changes a choice or a pushed token.
+    /// - witness: `mold::tests::runs_mold_as_the_whole_stream`
+    #[inline]
+    #[spec(requires: tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()))]
+    pub fn mold_run(
+        &mut self,
+        state: &mut MeldState<'_>,
+        tokens: &[Token],
+        run: TokenRun,
+        src: SourceText<'_>,
+    )
+    {
         let source = source_slice(src);
-        let mut index = 0;
-        while index < tokens.len() {
+        let end = usize::from(run.end()).min(tokens.len());
+        let mut index = usize::from(run.start());
+        while index < end {
             let Some(&token) = tokens.get(index)
             else {
                 break;
@@ -760,6 +948,189 @@ impl<'pbg> Molder<'pbg>
             }
             index = index.saturating_add(1);
         }
+    }
+
+    /// Split a labeled stream into form runs at its predicted top-level
+    /// declaration boundaries.
+    ///
+    /// A boundary is predicted before a significant token that some
+    /// fresh-slot reading of opens an item-position declaration
+    /// ([`declaration_head`]), when the token before it is a `;` or a `}`
+    /// and no bracket opened before it is still unclosed. The prediction
+    /// reads tokens alone, so it is cheap and may be wrong: a `def` that a
+    /// keyword form without brackets still holds is predicted too.
+    /// [`join_unit`](Self::join_unit) re-molds a run whose seam does not
+    /// hold, so a wrong prediction costs time, never the parse.
+    ///
+    /// # Specification
+    /// - requires: `tokens` came from the labeler over `src`.
+    /// - ensures: returns consecutive runs covering every position of `tokens`
+    ///   exactly once, the first starting at position zero, each later one
+    ///   starting at a predicted declaration head; one empty run for an empty
+    ///   stream.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source of declarations, one decorated by an
+    ///   attribute, one a module holding members, splits before each top-level
+    ///   head and nowhere else; a run that skipped or repeated a token, a cut
+    ///   inside brackets or between an attribute and its declaration, changes
+    ///   the runs.
+    /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
+    #[inline]
+    #[must_use]
+    #[spec(requires: tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()), ensures: |ret| ret.first().is_some_and(|run| usize::from(run.start()) == 0) && ret.last().is_some_and(|run| usize::from(run.end()) == tokens.len()) && ret.windows(2).all(|pair| matches!(pair, [left, right] if left.end() == right.start())) && (tokens.is_empty() || ret.iter().all(|run| run.start() < run.end())))]
+    pub fn form_runs(
+        &self,
+        tokens: &[Token],
+        src: SourceText<'_>,
+    ) -> Vec<TokenRun>
+    {
+        let source = source_slice(src);
+        let mut runs = Vec::new();
+        let mut start = 0_usize;
+        let mut depth = 0_usize;
+        let mut after_terminator = false;
+        for (index, &token) in tokens.iter().enumerate() {
+            if matches!(token.lexeme, Lexeme::Space) {
+                continue;
+            }
+            if depth == 0 && after_terminator && bool::from(self.heads_declaration(token, &source))
+            {
+                runs.push(TokenRun::new(
+                    TokenIndex::from(start),
+                    TokenIndex::from(index),
+                ));
+                start = index;
+            }
+            let slice = token.text(&source);
+            let text = AsRef::<str>::as_ref(&slice);
+            let bracket = matches!(
+                token.lexeme,
+                Lexeme::Punct | Lexeme::SubshellOpen | Lexeme::SubshellClose
+            );
+            if bracket && text.ends_with(['(', '[', '{']) {
+                depth = depth.saturating_add(1);
+            }
+            else if bracket && matches!(text, ")" | "]" | "}") {
+                depth = depth.saturating_sub(1);
+            }
+            after_terminator = matches!(token.lexeme, Lexeme::Punct) && matches!(text, ";" | "}");
+        }
+        runs.push(TokenRun::new(
+            TokenIndex::from(start),
+            TokenIndex::from(tokens.len()),
+        ));
+        runs
+    }
+
+    /// Return whether some fresh-slot reading of `token` opens an
+    /// item-position declaration.
+    ///
+    /// # Specification
+    /// - requires: the token bounds identify its exact source fragment.
+    /// - ensures: true exactly when one of the token's candidate labels has a
+    ///   fresh-slot mold that [`declaration_head`] accepts.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — declaration keywords, an attribute opener, an
+    ///   identifier and a terminator distinguish heads from the rest; reading
+    ///   the declared menu instead of the fresh one, or one label of several,
+    ///   moves a predicted boundary.
+    /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
+    #[spec(requires: source.as_ref().get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some())]
+    fn heads_declaration<'src>(
+        &self,
+        token: Token,
+        source: &'src SourceFragment<'src>,
+    ) -> DeclarationStart
+    {
+        let slice = token.text(source);
+        let text = TokenText::from(AsRef::<str>::as_ref(&slice));
+        let heads = candidate_labels(token.lexeme, text).iter().any(|&label| {
+            self.candidate_label(label).is_some_and(|label| {
+                self.pbg
+                    .fresh_candidates(label)
+                    .iter()
+                    .any(|&mold| bool::from(declaration_head(self.pbg, mold)))
+            })
+        });
+        DeclarationStart::from(heads)
+    }
+
+    /// Mold `run` of `tokens` into a fresh form unit.
+    ///
+    /// The unit begins from the empty slope when `run` starts the stream and
+    /// from the form-boundary checkpoint otherwise
+    /// ([`FormUnit::new`]); either way its tokens are molded as
+    /// [`mold_run`](Self::mold_run) molds them, lookahead past the run
+    /// included.
+    ///
+    /// # Specification
+    /// - requires: `tokens` came from the labeler over `src`.
+    /// - ensures: returns the unit for `run`, every token of `run` molded into
+    ///   it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+    ///   four fragments, molded unit by unit and joined, parse as the whole
+    ///   source; a unit begun from the wrong base, or molded without its
+    ///   lookahead, changes a joined tree.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+    #[inline]
+    #[must_use]
+    #[spec(requires: tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()), ensures: |ret| ret.run() == run)]
+    pub fn mold_unit(
+        &mut self,
+        tokens: &[Token],
+        run: TokenRun,
+        src: SourceText<'_>,
+    ) -> FormUnit<'pbg>
+    {
+        let mut unit = FormUnit::new(self.pbg, run);
+        self.mold_run(unit.state_mut(), tokens, run, src);
+        unit
+    }
+
+    /// Join `unit` to `whole`, the state the runs before it left, re-molding
+    /// the unit's run onto `whole` when the seam does not hold.
+    ///
+    /// # Specification
+    /// - requires: `whole` holds exactly the runs before `unit`'s, molded or
+    ///   joined in order, with no mark live; `tokens` came from the labeler
+    ///   over `src`.
+    /// - ensures: `whole` then holds the runs through `unit`'s exactly as
+    ///   [`mold_run`](Self::mold_run) over each in turn would leave it; returns
+    ///   how the seam stood.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+    ///   four fragments, split at every predicted boundary, join to the whole
+    ///   parse whether their seams hold or break; skipping the re-mold on a
+    ///   broken seam drops the run's tokens.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+    #[inline]
+    #[spec(requires: tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()))]
+    pub fn join_unit<'state>(
+        &mut self,
+        whole: &mut MeldState<'state>,
+        unit: FormUnit<'state>,
+        tokens: &[Token],
+        src: SourceText<'_>,
+    ) -> UnitSeam
+    {
+        let run = unit.run();
+        let seam = whole.join_unit(unit);
+        if matches!(seam, UnitSeam::Broken(_)) {
+            self.mold_run(whole, tokens, run, src);
+        }
+        seam
     }
 
     /// Eagerly settle any completable `?` hole frontier the upcoming `token`
@@ -833,14 +1204,11 @@ impl<'pbg> Molder<'pbg>
     )
     {
         match choice {
-            | Some(mold) => state.push(&MoldedTile::new(mold, TileText::from(text))),
+            | Some(mold) => state.push_text(mold, TileText::from(text)),
             // No candidate mold: the totally-defined unmolded path. An
             // out-of-range mold id routes `push` to `UnmoldedTok` (grammar-total
             // fallback) while preserving the token text.
-            | None => state.push(&MoldedTile::new(
-                MoldId::from(u32::MAX),
-                TileText::from(text),
-            )),
+            | None => state.push_text(MoldId::from(u32::MAX), TileText::from(text)),
         }
     }
 
@@ -1082,12 +1450,7 @@ impl<'pbg> Molder<'pbg>
     )
     {
         let pbg = self.pbg;
-        let adjacencies = pbg.adjacencies();
-        let start = adjacencies.partition_point(|&(left, _)| left < open);
-        for &(left, right) in adjacencies.get(start ..).unwrap_or(&[]) {
-            if left != open {
-                break;
-            }
+        for &(_open, right) in pbg.mold_successors(open) {
             if pbg
                 .mold(right)
                 .is_ok_and(|def| labels.contains(&CandidateLabel::from(def.label)))
@@ -1097,48 +1460,26 @@ impl<'pbg> Molder<'pbg>
         }
     }
 
-    /// The local minimization key of a candidate: `(Delta, continuation,
-    /// sort)`.
-    ///
-    /// * `Delta` is the obligation change the push itself flags — the
-    ///   **streaming** delta only. It deliberately excludes the `finalize`
-    ///   completion penalty: a form-start (`Inl` opening a constructor pattern,
-    ///   `def` opening an item) momentarily leaves the slope incomplete, and
-    ///   penalizing that would make the bare atom always strictly cheaper, so
-    ///   the two would never tie and the shared-prefix lookahead
-    ///   ([`choose_stream`](Self::choose_stream)) would never fire to see the
-    ///   discriminating tile. Completion is measured in the lookahead window,
-    ///   where it belongs.
-    /// * The **continuation** rank is `0` when the candidate `≐`-continues the
-    ///   open form frontier and `1` otherwise, so a `def`'s name reads as the
-    ///   form's name tile rather than a bare variable.
-    /// * The **sort** rank is `0` when the candidate's grammar sort matches the
-    ///   slot the head expects ([`MeldState::expected_operand_sort`]) and `1`
-    ///   otherwise, so `"hi"` reads as the expression string at an expression
-    ///   slot and the pattern string in a pattern slot.
-    ///
-    /// Candidates are visited in ascending [`MoldId`] order under a strict `<`,
-    /// so an exact key tie keeps the smaller `MoldId` — the documented,
-    /// process-invariant tie-break.
+    /// The least key `mold` can have: its continuation, sort and operand
+    /// ranks over an empty delta, read without a dry-run.
     ///
     /// # Specification
-    /// - ensures: computes the streaming candidate key without completion
-    ///   penalties and restores the melder exactly.
+    /// - ensures: returns the candidate's [`CandidateKey`] with its delta
+    ///   replaced by the empty delta, so the returned key is at most the full
+    ///   key; reads `state` without changing it.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a live state with prior obligations is dry-run
-    ///   through a valid and invalid mold, using fresh and reused marks.
-    ///   Checkpoint bytes before and after expose source, slope, cache or
-    ///   obligation leakage; streaming and completion deltas distinguish their
-    ///   scoring boundaries.
-    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
-    #[spec(captures: before = (state.admissibility_frontier(), state.obligations().len()), ensures: |_| state.admissibility_frontier() == before.0 && state.obligations().len() == before.1)]
-    fn key(
-        &mut self,
-        state: &mut MeldState<'_>,
+    /// - hypothesis: L3 — the ranks are the full key's; a floor above a found
+    ///   key is what lets [`least_candidates`](Self::least_candidates) skip a
+    ///   candidate's dry-run. A floor carrying a nonempty delta, or ranks that
+    ///   differ from the key's, changes which candidates are kept.
+    /// - witness: `mold::tests::dry_runs_restore_exact_state`
+    #[spec(ensures: |ret| bool::from(ret.delta.is_empty()))]
+    fn floor_key(
+        &self,
+        state: &MeldState<'_>,
         mold: MoldId,
-        text: TokenText<'_>,
         expected: Sort,
     ) -> CandidateKey
     {
@@ -1152,16 +1493,113 @@ impl<'pbg> Molder<'pbg>
         // lookahead window. It ranks below sort so it never overrides a
         // sort-correct reading.
         let continue_rank = CandidateRank::from(!bool::from(state.continues_operand(mold)));
-        let mark = self.take_mark(state);
-        state.push(&MoldedTile::new(mold, TileText::from(text)));
-        let delta = state.delta_since(&mark);
-        state.rollback_to(&mark);
-        self.put_mark(mark);
         CandidateKey {
-            delta,
+            delta: Delta::empty(),
             continuation,
             sort: sort_rank,
             operand_continuation: continue_rank,
+        }
+    }
+
+    /// The obligations pushing `mold` flags, read by a dry-run.
+    ///
+    /// # Specification
+    /// - ensures: returns the streaming delta of pushing `mold` with `text` and
+    ///   restores the melder exactly.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the dry-run of a valid and an invalid mold over a
+    ///   state with prior obligations; checkpoint bytes before and after expose
+    ///   leakage, and the unmolded class exposes the delta.
+    /// - witness: `mold::tests::dry_runs_restore_exact_state`
+    #[spec(captures: before = (state.admissibility_frontier(), state.obligations().len()), ensures: |_| state.admissibility_frontier() == before.0 && state.obligations().len() == before.1)]
+    fn push_delta(
+        state: &mut MeldState<'_>,
+        mold: MoldId,
+        text: TokenText<'_>,
+    ) -> Delta
+    {
+        let mark = state.mark();
+        state.push_text(mold, TileText::from(text));
+        let delta = state.delta_since(&mark);
+        state.rollback_to(&mark);
+        delta
+    }
+
+    /// Gather into `self.tied` every eligible candidate whose key is least, in
+    /// ascending [`MoldId`] order.
+    ///
+    /// Candidates are visited by their [`floor_key`](Self::floor_key), least
+    /// floor first, and within one floor in ascending `MoldId` order. A
+    /// candidate's key is at least its floor, so once the least key found has
+    /// an empty delta and the next floor lies above it, no remaining candidate
+    /// can reach it and their dry-runs are skipped. The keys found are the
+    /// [`CandidateKey`] of each visited candidate, so the least key and its
+    /// ties are exactly those of scoring every candidate.
+    ///
+    /// # Specification
+    /// - requires: `self.eligible` holds distinct molds in ascending order.
+    /// - ensures: `self.tied` holds, in ascending order, exactly the eligible
+    ///   candidates whose [`CandidateKey`] is the least among all eligible
+    ///   candidates; it is empty exactly when none is eligible; the melder is
+    ///   restored exactly.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — menus whose least key has an empty delta, a nonempty
+    ///   delta, and ties across one floor; the chosen molds and the corpus
+    ///   moldings expose a skipped candidate that could have tied or won.
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
+    #[spec(captures: before = state.obligations().len(), ensures: |_| state.obligations().len() == before && self.tied.iter().all(|mold| self.eligible.contains(mold)) && self.tied.is_empty() == self.eligible.is_empty() && self.tied.iter().zip(self.tied.iter().skip(1)).all(|(left, right)| left < right))]
+    fn least_candidates(
+        &mut self,
+        state: &mut MeldState<'_>,
+        text: TokenText<'_>,
+        expected: Sort,
+    )
+    {
+        self.ranked.clear();
+        for slot in 0 .. self.eligible.len() {
+            let Some(&mold) = self.eligible.get(slot)
+            else {
+                break;
+            };
+            let floor = self.floor_key(state, mold, expected);
+            self.ranked.push((floor, mold));
+        }
+        self.tied.clear();
+        let mut least: Option<CandidateKey> = None;
+        for floor in RANK_FLOORS {
+            if least.is_some_and(|least| floor > least) {
+                break;
+            }
+            for slot in 0 .. self.ranked.len() {
+                let Some(&(ranks, mold)) = self.ranked.get(slot)
+                else {
+                    break;
+                };
+                // Every floor carries the empty delta: the ranks decide.
+                if (ranks.continuation, ranks.sort, ranks.operand_continuation)
+                    != (floor.continuation, floor.sort, floor.operand_continuation)
+                {
+                    continue;
+                }
+                let key = CandidateKey {
+                    delta: Self::push_delta(state, mold, text),
+                    ..floor
+                };
+                match least {
+                    | Some(found) if key > found => {},
+                    | Some(found) if key == found => self.tied.push(mold),
+                    | _ => {
+                        least = Some(key);
+                        self.tied.clear();
+                        self.tied.push(mold);
+                    },
+                }
+            }
         }
     }
 
@@ -1173,7 +1611,7 @@ impl<'pbg> Molder<'pbg>
     /// deeper lookahead runs (the single-token [`mold`](Self::mold), or a
     /// candidate the lookahead cannot separate): it prefers the reading that
     /// leaves the slope closest to complete. It is deliberately kept OUT of the
-    /// [`key`](Self::key) tie-detection so a form-start (which momentarily
+    /// [`CandidateKey`] tie-detection so a form-start (which momentarily
     /// leaves the slope incomplete) still ties the bare atom on the local key
     /// and triggers the lookahead — completion breaks the tie only among
     /// candidates the window cannot.
@@ -1185,27 +1623,21 @@ impl<'pbg> Molder<'pbg>
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a live state with prior obligations is dry-run
-    ///   through a valid and invalid mold, using fresh and reused marks.
-    ///   Checkpoint bytes before and after expose source, slope, cache or
-    ///   obligation leakage; streaming and completion deltas distinguish their
-    ///   scoring boundaries.
-    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
+    ///   through a valid and invalid mold. Checkpoint bytes before and after
+    ///   expose source, slope, cache or obligation leakage; streaming and
+    ///   completion deltas distinguish their scoring boundaries.
+    /// - witness: `mold::tests::dry_runs_restore_exact_state`
     #[spec(captures: before = (state.admissibility_frontier(), state.obligations().len()), ensures: |_| state.admissibility_frontier() == before.0 && state.obligations().len() == before.1)]
     fn completion(
-        &mut self,
         state: &mut MeldState<'_>,
         mold: MoldId,
         text: TokenText<'_>,
     ) -> Delta
     {
-        let mark = self.take_mark(state);
-        state.push(&MoldedTile::new(mold, TileText::from(text)));
-        let mut delta = Delta::empty();
-        for obligation in state.finalize().obligations() {
-            delta.insert(obligation.class);
-        }
+        let mark = state.mark();
+        state.push_text(mold, TileText::from(text));
+        let delta = state.completion_delta(Delta::empty());
         state.rollback_to(&mark);
-        self.put_mark(mark);
         delta
     }
 
@@ -1218,7 +1650,7 @@ impl<'pbg> Molder<'pbg>
     /// molder from committing a form-continuation tile with no matching open
     /// frontier. If the filter would empty the menu, the full menu is kept so
     /// molding stays total. Among survivors the order is the local
-    /// [`key`](Self::key) then the [`completion`](Self::completion) penalty
+    /// [`CandidateKey`] then the [`completion`](Self::completion) penalty
     /// then ascending [`MoldId`] — the completion penalty is the greedy
     /// stand-in for the lookahead the single-token path cannot run.
     ///
@@ -1233,7 +1665,7 @@ impl<'pbg> Molder<'pbg>
     ///   no-admissible fallback, expose the selected mold and final repairs.
     ///   Dropped candidates, choosing outside the menu or changing priority
     ///   changes those observations; dry-run state is compared byte-for-byte.
-    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
+    /// - witness: `mold::tests::dry_runs_restore_exact_state`
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
     #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), ensures: |ret| ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
     fn choose(
@@ -1247,81 +1679,55 @@ impl<'pbg> Molder<'pbg>
         // point of the filter, and what keeps the batch cost inside budget. The
         // admissibility frontier is computed once and reused for every candidate.
         let frontier = state.admissibility_frontier();
-        let mut sole: Option<MoldId> = None;
-        let mut admissible = 0_usize;
-        for &mold in &self.candidates {
+        self.eligible.clear();
+        for slot in 0 .. self.candidates.len() {
+            let Some(&mold) = self.candidates.get(slot)
+            else {
+                break;
+            };
             if bool::from(state.admits_at(mold, &frontier)) {
-                admissible = admissible.saturating_add(1);
-                sole = Some(mold);
+                self.eligible.push(mold);
             }
         }
-        if admissible == 1 {
-            return sole;
+        if let [sole] = *self.eligible.as_slice() {
+            return Some(sole);
         }
         // Keep the pre-filter only when at least one candidate survives it; an
         // empty admissible set falls back to the full menu (push is total on any
         // mold, so a last resort always exists).
-        let filter = admissible > 0;
-        let expected = frontier.expected;
-        // Pass one: the cheap local `(Delta, continuation, sort)` key, minimised
-        // in ascending `MoldId` order (a strict `<` keeps the smaller `MoldId` on
-        // a tie). The expensive `completion` finalize is deferred: it only breaks
-        // a residual key-tie, and the overwhelming majority of tokens have a
-        // unique key minimum, so the finalize never runs for them.
-        let mut best_key: Option<CandidateKey> = None;
-        let mut best_mold: Option<MoldId> = None;
-        let mut key_tie = false;
-        for index in 0 .. self.candidates.len() {
-            let Some(&mold) = self.candidates.get(index)
-            else {
-                break;
-            };
-            if filter && !bool::from(state.admits_at(mold, &frontier)) {
-                continue;
-            }
-            let key = self.key(state, mold, text, expected);
-            match best_key {
-                | Some(prev) if key == prev => key_tie = true,
-                | Some(prev) if key < prev => {
-                    best_key = Some(key);
-                    best_mold = Some(mold);
-                    key_tie = false;
-                },
-                | Some(_) => {},
-                | None => {
-                    best_key = Some(key);
-                    best_mold = Some(mold);
-                },
-            }
+        if self.eligible.is_empty() {
+            self.eligible.extend_from_slice(&self.candidates);
         }
-        let (Some(min_key), true) = (best_key, key_tie)
-        else {
-            // Unique key minimum: no finalize needed.
-            return best_mold;
-        };
+        // Pass one: the least local `(Delta, continuation, sort)` key and its
+        // ties, in ascending `MoldId` order. The expensive `completion` finalize
+        // only breaks a residual key-tie, and the overwhelming majority of
+        // tokens have a unique key minimum, so the finalize never runs for them.
+        self.least_candidates(state, text, frontier.expected);
+        if self.tied.len() <= 1 {
+            return self.tied.first().copied();
+        }
         // Pass two: break the key-tie by the single-token completion penalty,
         // keeping the smaller `MoldId` on a further tie (ascending visitation).
+        // An empty completion is the least there is, so no later tie can beat
+        // it.
         let mut best: Option<(Delta, MoldId)> = None;
-        for index in 0 .. self.candidates.len() {
-            let Some(&mold) = self.candidates.get(index)
+        for slot in 0 .. self.tied.len() {
+            let Some(&mold) = self.tied.get(slot)
             else {
                 break;
             };
-            if filter && !bool::from(state.admits_at(mold, &frontier)) {
-                continue;
-            }
-            if self.key(state, mold, text, expected) != min_key {
-                continue;
-            }
-            let completion = self.completion(state, mold, text);
+            let completion = Self::completion(state, mold, text);
             if best
                 .as_ref()
                 .is_none_or(|&(best_completion, _mold)| completion < best_completion)
             {
                 best = Some((completion, mold));
             }
+            if bool::from(completion.is_empty()) {
+                break;
+            }
         }
-        best.map(|(_, mold)| mold).or(best_mold)
+        best.map(|(_, mold)| mold)
     }
 
     /// Return whether a direct circuit-rule binder opener has a binder-shaped
@@ -1410,7 +1816,7 @@ impl<'pbg> Molder<'pbg>
     }
     /// Choose token `index`'s mold, breaking a shared-prefix tie by lookahead.
     ///
-    /// The admissibility-filtered local [`key`](Self::key) settles every
+    /// The admissibility-filtered local [`CandidateKey`] settles every
     /// decision with a unique minimum. What survives is a **shared-prefix**
     /// tie: a bare atom versus a form-start over the same lexeme (`Inl` alone
     /// versus `Inl(x)` opening a constructor pattern, `List` versus `List(T)`
@@ -1458,73 +1864,65 @@ impl<'pbg> Molder<'pbg>
         // Fast path: a lone admissible candidate needs no dry-run.
         // The admissibility frontier is computed once and reused per candidate.
         let frontier = state.admissibility_frontier();
-        let mut sole: Option<MoldId> = None;
-        let mut admissible = 0_usize;
-        for &mold in &self.candidates {
-            if bool::from(
-                self.direct_rule_binder_admits(state, mold, &frontier, tokens, index, source),
-            ) {
-                admissible = admissible.saturating_add(1);
-                sole = Some(mold);
-            }
-        }
-        if admissible == 1 {
-            return sole;
-        }
-        let filter = admissible > 0;
-        let expected = frontier.expected;
-        // Score each surviving candidate once by its local key, in ascending
-        // MoldId order (the process-invariant tie-break).
-        let mut scored: Vec<(CandidateKey, MoldId)> = Vec::new();
+        self.eligible.clear();
         for slot in 0 .. self.candidates.len() {
             let Some(&mold) = self.candidates.get(slot)
             else {
                 break;
             };
-            if filter
-                && !bool::from(
-                    self.direct_rule_binder_admits(state, mold, &frontier, tokens, index, source),
-                )
-            {
-                continue;
+            if bool::from(
+                self.direct_rule_binder_admits(state, mold, &frontier, tokens, index, source),
+            ) {
+                self.eligible.push(mold);
             }
-            scored.push((self.key(state, mold, text, expected), mold));
         }
-        let min_key = scored.iter().map(|&(key, _)| key).min()?;
-        let tied: Vec<MoldId> = scored
-            .iter()
-            .filter(|&&(key, _)| key == min_key)
-            .map(|&(_, mold)| mold)
-            .collect();
-        if tied.len() <= 1 {
-            return tied.first().copied();
+        if let [sole] = *self.eligible.as_slice() {
+            return Some(sole);
         }
+        if self.eligible.is_empty() {
+            self.eligible.extend_from_slice(&self.candidates);
+        }
+        // The surviving candidates' least local key and its ties, in ascending
+        // MoldId order (the process-invariant tie-break). Each tied opener's
+        // window scores its own tokens into `self.tied`, so the openers move
+        // to their own buffer.
+        self.least_candidates(state, text, frontier.expected);
+        if self.tied.len() <= 1 {
+            return self.tied.first().copied();
+        }
+        core::mem::swap(&mut self.tied, &mut self.openers);
 
         // A shared-prefix family: break the tie by a bounded greedy lookahead.
+        // Windows run in ascending MoldId order and a later opener wins only
+        // with a strictly smaller delta, so each window after the first is
+        // bounded by the best delta so far: a window delta never shrinks as
+        // tokens are molded, and one that reaches the bound cannot win.
+        let start = TokenIndex::from(usize::from(index).saturating_add(1));
         let mut best: Option<(Delta, MoldId)> = None;
-        for &mold in &tied {
-            let mark = self.take_mark(state);
-            state.push(&MoldedTile::new(mold, TileText::from(text)));
-            self.mold_window(
-                state,
-                tokens,
-                TokenIndex::from(usize::from(index).saturating_add(1)),
-                source,
-            );
-            let mut delta = state.delta_since(&mark);
-            for obligation in state.finalize().obligations() {
-                delta.insert(obligation.class);
+        for slot in 0 .. self.openers.len() {
+            let Some(&mold) = self.openers.get(slot)
+            else {
+                break;
+            };
+            let mark = state.mark();
+            state.push_text(mold, TileText::from(text));
+            let bound = best.map_or(WindowBound::Unbounded, |(delta, _mold)| {
+                WindowBound::Below(delta)
+            });
+            let end = self.mold_window(state, tokens, start, source, &mark, bound);
+            if end == WindowEnd::Molded {
+                let delta = state.completion_delta(state.delta_since(&mark));
+                // Ascending MoldId visitation with a strict `<` keeps the
+                // smaller MoldId on an exact window tie — the documented
+                // tie-break.
+                if best
+                    .as_ref()
+                    .is_none_or(|&(best_delta, _mold)| delta < best_delta)
+                {
+                    best = Some((delta, mold));
+                }
             }
             state.rollback_to(&mark);
-            self.put_mark(mark);
-            // Ascending MoldId visitation with a strict `<` keeps the smaller
-            // MoldId on an exact window tie — the documented tie-break.
-            if best
-                .as_ref()
-                .is_none_or(|&(best_delta, _mold)| delta < best_delta)
-            {
-                best = Some((delta, mold));
-            }
         }
         best.map(|(_, mold)| mold)
     }
@@ -1544,25 +1942,34 @@ impl<'pbg> Molder<'pbg>
     /// form completes.
     ///
     /// # Specification
-    /// - requires: start is within the token stream or its end sentinel.
+    /// - requires: start is within the token stream or its end sentinel; `mark`
+    ///   was taken from `state` before the tied opener was pushed.
     /// - ensures: molds at most eight non-space tokens and records
-    ///   preceding/intervening trivia, leaving the following token untouched.
+    ///   preceding/intervening trivia, leaving the following token untouched;
+    ///   returns [`WindowEnd::Dominated`] exactly when `bound` is
+    ///   [`WindowBound::Below`] and the obligations flagged since `mark` reach
+    ///   it before a token is molded, and stops molding there.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — an empty suffix and nine significant tokens separated
     ///   by spaces expose the exact committed prefix. Counting spaces against
     ///   the window, using seven or nine tokens, or consuming trailing trivia
-    ///   after the eighth token changes the preserved source.
+    ///   after the eighth token changes the preserved source. A bound the
+    ///   window's obligations reach stops it before its next token; one they
+    ///   stay below leaves the window whole.
     /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
-    #[spec(requires: start.0 <= tokens.len())]
+    /// - witness: `mold::tests::a_dominated_window_stops_before_its_next_token`
+    #[spec(requires: start.0 <= tokens.len(), ensures: |ret| ret == WindowEnd::Molded || matches!(bound, WindowBound::Below(least) if state.delta_since(mark) >= least))]
     fn mold_window<'src>(
         &mut self,
         state: &mut MeldState<'_>,
         tokens: &[Token],
         start: TokenIndex,
         source: &'src SourceFragment<'src>,
-    )
+        mark: &Mark,
+        bound: WindowBound,
+    ) -> WindowEnd
     {
         let mut molded = 0_usize;
         let mut index = usize::from(start);
@@ -1576,6 +1983,11 @@ impl<'pbg> Molder<'pbg>
                 state.space(SpaceText::from(AsRef::<str>::as_ref(&slice)));
             }
             else {
+                if let WindowBound::Below(least) = bound
+                    && state.delta_since(mark) >= least
+                {
+                    return WindowEnd::Dominated;
+                }
                 let text = TokenText::from(AsRef::<str>::as_ref(&slice));
                 self.settle_shadowing(state, token, source);
                 self.gather(state, token, source);
@@ -1586,6 +1998,7 @@ impl<'pbg> Molder<'pbg>
             }
             index = index.saturating_add(1);
         }
+        WindowEnd::Molded
     }
 }
 
@@ -1752,7 +2165,6 @@ mod tests
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
         assert!(molder.candidates.is_empty());
-        assert!(molder.marks.is_empty());
         for (declared, _) in pbg.candidate_counts() {
             assert_eq!(
                 molder.candidate_label(CandidateLabel::from(declared.0)),
@@ -1829,35 +2241,21 @@ mod tests
     }
 
     #[test]
-    fn pooled_marks_and_dry_runs_restore_exact_state() -> Result<(), Box<dyn Error>>
+    fn dry_runs_restore_exact_state() -> Result<(), Box<dyn Error>>
     {
         let pbg = built()?;
         let mut molder = Molder::new(&pbg);
         let mut state = MeldState::new(&pbg);
         let invalid = gandr_surface_syntax::MoldId::from(u32::MAX);
         state.push(&crate::MoldedTile::new(invalid, crate::TileText::from("~")));
-        for _ in 0_u8 .. 2_u8 {
-            let before = state.checkpoint().to_bytes();
-            let mark = molder.take_mark(&state);
-            assert_eq!(mark, state.mark());
-            state.push(&crate::MoldedTile::new(invalid, crate::TileText::from("!")));
-            state.rollback_to(&mark);
-            assert_eq!(state.checkpoint().to_bytes(), before);
-            molder.put_mark(mark);
-        }
         let before = state.checkpoint().to_bytes();
-        let key = molder.key(
-            &mut state,
-            invalid,
-            TokenText::from("!"),
-            gandr_surface_grammar::Sort::Expression,
-        );
-        assert_eq!(
-            usize::from(key.delta.inserted(crate::Oblig::UnmoldedTok)),
-            1
-        );
+        let floor = molder.floor_key(&state, invalid, gandr_surface_grammar::Sort::Expression);
+        assert!(bool::from(floor.delta.is_empty()));
         assert_eq!(state.checkpoint().to_bytes(), before);
-        let _completion = molder.completion(&mut state, invalid, TokenText::from("!"));
+        let delta = Molder::push_delta(&mut state, invalid, TokenText::from("!"));
+        assert_eq!(usize::from(delta.inserted(crate::Oblig::UnmoldedTok)), 1);
+        assert_eq!(state.checkpoint().to_bytes(), before);
+        let _completion = Molder::completion(&mut state, invalid, TokenText::from("!"));
         assert_eq!(state.checkpoint().to_bytes(), before);
         let candidate = *pbg
             .candidates(gandr_surface_grammar::TileLabel("identifier"))
@@ -1892,6 +2290,40 @@ mod tests
     }
 
     #[test]
+    fn runs_mold_as_the_whole_stream() -> Result<(), Box<dyn Error>>
+    {
+        // Shared-prefix openers (`List` a type or an application, `Inl` an
+        // atom or a constructor) need lookahead past the token, so a split
+        // right after one only matches the whole stream when the first run's
+        // window reads into the second run's tokens.
+        let pbg = built()?;
+        let src = "def a : Type = List(Integer);\ndef b = Inl(1);\ndef c = case b { Inl(x) => x, Inr(y) => y };\n";
+        let source = SourceText::from(src);
+        let tokens = label(SourceFragment::from(src));
+        let mut molder = Molder::new(&pbg);
+        let mut whole = MeldState::new(&pbg);
+        molder.mold_stream(&mut whole, &tokens, source);
+        let want = whole.checkpoint().to_bytes();
+        for cut in 0 ..= tokens.len() {
+            let mut state = MeldState::new(&pbg);
+            for run in [
+                super::TokenRun::new(
+                    super::TokenIndex::from(0_usize),
+                    super::TokenIndex::from(cut),
+                ),
+                super::TokenRun::new(
+                    super::TokenIndex::from(cut),
+                    super::TokenIndex::from(tokens.len()),
+                ),
+            ] {
+                molder.mold_run(&mut state, &tokens, run, source);
+            }
+            assert_eq!(state.checkpoint().to_bytes(), want, "split at token {cut}");
+        }
+        Ok(())
+    }
+
+    #[test]
     fn lookahead_window_stops_after_eight_significant_tokens() -> Result<(), Box<dyn Error>>
     {
         let pbg = built()?;
@@ -1899,20 +2331,27 @@ mod tests
         let source = SourceFragment::from("1 2 3 4 5 6 7 8 9");
         let tokens = label(source);
         let mut state = MeldState::new(&pbg);
-        molder.mold_window(
+        let mark = state.mark();
+        let end = molder.mold_window(
             &mut state,
             &tokens,
             super::TokenIndex::from(0_usize),
             &source,
+            &mark,
+            super::WindowBound::Unbounded,
         );
+        assert_eq!(end, super::WindowEnd::Molded);
         let tree = state.commit(SourceText::from("1 2 3 4 5 6 7 8"))?;
         assert_eq!(crate::testing::reconstruct(&tree), "1 2 3 4 5 6 7 8");
         let mut state = MeldState::new(&pbg);
+        let mark = state.mark();
         molder.mold_window(
             &mut state,
             &tokens,
             super::TokenIndex::from(tokens.len()),
             &source,
+            &mark,
+            super::WindowBound::Unbounded,
         );
         assert_eq!(
             state.checkpoint().to_bytes(),
@@ -1937,6 +2376,61 @@ mod tests
             ),
             None
         );
+        Ok(())
+    }
+
+    #[test]
+    fn a_dominated_window_stops_before_its_next_token() -> Result<(), Box<dyn Error>>
+    {
+        let pbg = built()?;
+        let mut molder = Molder::new(&pbg);
+        let source = SourceFragment::from("~ 1 2");
+        let tokens = label(source);
+        let unmolded_tokens = |count: usize| {
+            let mut delta = crate::Delta::empty();
+            for _ in 0 .. count {
+                delta.insert(crate::Oblig::UnmoldedTok);
+            }
+            delta
+        };
+        // The unmolded `~` flags one obligation before the window's first
+        // token, `1`: a bound it reaches stops the window there, one above it
+        // lets the window mold to its end.
+        let window = |molder: &mut Molder<'_>, bound| {
+            let mut state = MeldState::new(&pbg);
+            let mark = state.mark();
+            state.push(&crate::MoldedTile::new(
+                gandr_surface_syntax::MoldId::from(u32::MAX),
+                crate::TileText::from("~"),
+            ));
+            let end = molder.mold_window(
+                &mut state,
+                &tokens,
+                super::TokenIndex::from(2_usize),
+                &source,
+                &mark,
+                bound,
+            );
+            (end, state.checkpoint().to_bytes())
+        };
+        let mut unmolded = MeldState::new(&pbg);
+        unmolded.push(&crate::MoldedTile::new(
+            gandr_surface_syntax::MoldId::from(u32::MAX),
+            crate::TileText::from("~"),
+        ));
+        for reached in [crate::Delta::empty(), unmolded_tokens(1)] {
+            assert_eq!(
+                window(&mut molder, super::WindowBound::Below(reached)),
+                (
+                    super::WindowEnd::Dominated,
+                    unmolded.checkpoint().to_bytes()
+                )
+            );
+        }
+        let (end, bytes) = window(&mut molder, super::WindowBound::Below(unmolded_tokens(2)));
+        assert_eq!(end, super::WindowEnd::Molded);
+        assert_eq!(bytes, window(&mut molder, super::WindowBound::Unbounded).1);
+        assert_ne!(bytes, unmolded.checkpoint().to_bytes());
         Ok(())
     }
 
