@@ -70,7 +70,24 @@ impl fmt::Display for GroundSort
     /// sort.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a formatter accepting or refusing writes.
+    /// - ensures: writes + for the value sort and - for the computation sort.
+    /// - provides: the polarity literal of the selected universe family.
+    /// - fails: propagates the formatter write failure.
+    /// - panics: none.
+    /// - executable: none — Formatter has no readable output or refusal state;
+    ///   a predicate cannot observe these effects without wrapping or replaying
+    ///   the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 covers every refusal category and site, all tag-byte
+    ///   spellings, version and quantity ceilings, the two sort literals, and
+    ///   refusal by a real exhausted byte sink. It observes distinct causes,
+    ///   complete numeric payloads and exact sink error kinds, separating
+    ///   collapsed classifications, lost high bits and swallowed failures.
+    ///   Diagnostic wording and nondefault formatter flags are outside the
+    ///   hypothesis.
+    /// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -85,6 +102,25 @@ impl fmt::Display for GroundSort
 }
 
 /// A value type: the positive fragment of the type vocabulary.
+///
+/// # Specification
+/// - requires: payload types are well formed; formation, code classification
+///   and live-child resolution are external obligations.
+/// - ensures: retains the selected positive type former, levels and typed child
+///   ids; derived equality is shallow in graph depth.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 builds all former families with distinguishable children,
+///   nonzero levels and literal payloads, observes the exact stored nodes and
+///   ordered edges, and checks each operation changes only its own family
+///   length. Quote decoding covers matching, crossed and non-quote codes
+///   without allocating an alias node. These distinguish child permutations,
+///   payload loss, wrong-family minting and accidental hash-consing; the probes
+///   are not a typing or arena-provenance proof.
+/// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ValueType
 {
@@ -167,6 +203,26 @@ pub enum ValueType
 }
 
 /// A computation type: the negative fragment of the type vocabulary.
+///
+/// # Specification
+/// - requires: payload types are well formed; formation, code classification
+///   and live-child resolution are external obligations.
+/// - ensures: retains the selected negative type former; Arrow and Pi remain
+///   distinct even with the same children, and derived equality is shallow in
+///   graph depth.
+/// - panics: none.
+/// - executable: none — data declaration, not a callable boundary; executable
+///   predicates belong to its constructors and observers.
+///
+/// # Adequacy
+/// - hypothesis: L3 builds all former families with distinguishable children,
+///   nonzero levels and literal payloads, observes the exact stored nodes and
+///   ordered edges, and checks each operation changes only its own family
+///   length. Quote decoding covers matching, crossed and non-quote codes
+///   without allocating an alias node. These distinguish child permutations,
+///   payload loss, wrong-family minting and accidental hash-consing; the probes
+///   are not a typing or arena-provenance proof.
+/// - witness: `arena::tests::ordered_edges_preserve_distinct_children_and_quote_boundaries`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CompType
 {
