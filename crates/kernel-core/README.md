@@ -49,6 +49,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 ## Expected features
 
 - **Staging discipline.** A producer resolves every staged declaration by admitting, bypassing or abandoning it. A staged declaration left unresolved keeps its content in the arena and blocks the admission of every declaration staged before it (see [Staging order and admission](#staging-order-and-admission)).
+- **Receipt scope.** A `CheckedId` names a position, not an environment identity. Use it only with the corresponding admission history; the position alone cannot establish that relationship.
 - **A vouched bypass.** `add_decl_unchecked` performs no checking: the caller vouches for the declaration, a wrong one can make the kernel prove anything, and `audit` reports every declaration that rests on it.
 - **A trace in the kernel's terms.** A replay's caller translates its sides and the bodies it allows unfolding into the replay's arena, maps each trace identifier to the constant it names or `ReplayNode::Other`, and maps its engine's verdict to an `EngineClaim`. A body is a closed value, an operator's body is closed beyond its parameters, and a constant given neither is opaque.
 - **Reduced codes.** Conversion fires no reduction, so two codes convert only when they are structurally equal. A producer hands the kernel reduced codes to avoid a refusal.
@@ -248,8 +249,9 @@ The `# Specification` prose is the statement of record. A combined `#[spec(...)]
 - `Environment::add_decl`: on success exactly one entry is appended and the admission floor ends at the arena's own watermark, the machine form of "the checker's intermediates were truncated rather than committed". Whether the declaration is well-typed is what the body decides and is not restated.
 - `Environment::add_decl_unchecked`: the same, plus the entry carrying `Admission::Unchecked` and the arena watermark unmoved, so the warned bypass cannot quietly grow or shrink the arena.
 - `check_sealing_provenance`: the ascending half, stated as a sortedness test rather than through the body's own previous-index loop. The occurrence half would re-derive the projected-atom set and double a walk over the declared type.
-- `StagedMarks::resolve`: exactly one mark gone when one was held.
+- `StagedMarks` and staging: registration multiplicity and endpoints, ownership handoff, and abandonment's exact clamped watermark without copying the registration history.
 - `ContentEncoding`: minimal varint width and every payload/continuation bit, complete UTF-8 and binary frames, and the high/low words of FNV-1a-128.
+- `Environment::audit`: the exact ordered partition of stored dependencies into axiom and unchecked-admission reasons. Reachability predicates cover root leaves, direct references, code-edge policy and unreadable roots without a second graph traversal.
 
 Further attributes check level-scope precedence, consistency evidence, universe-refusal subjects and strictness, sealed-atom universe lookup, readable conversion identities and head separation, conversion mode-switch results, saturating census transitions, outstanding-mark counts, rewrite counts, and both type-witness projections. Mode-switch and witness postconditions repeat their named query only in the enforcing lane; no capture allocates or runs extra work in the ordinary lane.
 
