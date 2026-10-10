@@ -15,13 +15,12 @@ use gandr_surface_session::program;
 use gandr_surface_syntax::SourceText;
 use quenchant_shape::shape::Maybe;
 
-use crate::common::GRAMMAR;
 use crate::common::grammar;
 
 #[test]
 fn each_unrefused_declaration_is_one_item_keyed_by_its_name()
 {
-    let grammar = &*GRAMMAR;
+    let grammar = &*crate::common::GRAMMAR;
     let mut lowerings = LoweringCount::default();
     let lowering = lower_source(
         grammar,
