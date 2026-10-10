@@ -16,6 +16,7 @@ use core::fmt::Display;
 use core::fmt::Formatter;
 use core::fmt::Result as FmtResult;
 
+use anodized::spec;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::ByteRange;
 use gandr_surface_render_remote::HlRole;
@@ -199,10 +200,12 @@ impl Side<'_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — read by every context-dependent role the goldens pin,
-    ///   and L3 by the pinned identifier places, each separated from its
-    ///   neighbours by the tile beside it.
+    /// - hypothesis: For empty, mixed and duplicate context steps, L3 exact
+    ///   membership observations catch first-only searches and treating a sort
+    ///   hole as a tile; the built-in role matrix covers its use in context.
     /// - witness: `highlight::tests::role_of_pins_context_free_classes`
+    /// - witness: `highlight::tests::crossings_distinguish_tiles_from_holes`
+    #[spec(ensures: |ret| ret.0 == self.0.iter().any(|step| matches!(step.crossed, StepSym::Tile(label) if label == tile.0)))]
     fn crosses(
         self,
         tile: TileLabel,
@@ -250,6 +253,14 @@ enum Layout
 /// - ensures: one role per mold of the grammar the table was built from, by id,
 ///   and that grammar's fingerprint, so a tree molded under another grammar is
 ///   refused rather than misread.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in grammar, L3 complete role lookup and
+///   foreign-grammar refusals catch incomplete identity tables and stale
+///   fingerprint acceptance; this is a constructor and observer invariant, not
+///   parser language equivalence.
+/// - witness: `tests::highlight::every_mold_has_a_role`
+/// - witness: `tests::highlight::a_tree_under_another_grammar_is_refused`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoleTable
 {
@@ -281,17 +292,17 @@ impl RoleTable
     /// occurrence or a context the mold table does not hold.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the role goldens pin, source by source, the role of
-    ///   every mold the corpus exercises, and name every mold it does not with
-    ///   its role, so a misclassified mold or a walk out of step with the mold
-    ///   table moves a golden line; L3 — the context-free classes are pinned
-    ///   pointwise, and the walk is checked against the mold table occurrence
-    ///   by occurrence. The refusals are unreachable for a grammar
-    ///   [`Pbg::build`] produced and carry no witness.
+    /// - hypothesis: The built-in inventory and corpus provide an L2 finite
+    ///   census of mold roles and L3 classification and provenance
+    ///   observations, catching omitted molds, wrong grammar identity and
+    ///   context misclassification. Arbitrary custom grammars are not
+    ///   exhausted; the lookup refusals are unreachable for a grammar
+    ///   constructed by `Pbg::build`.
     /// - witness: `highlight::tests::mold_provenance_alignment`
     /// - witness: `highlight::tests::role_of_pins_context_free_classes`
     /// - witness: `tests::highlight::corpus_roles_match_the_golden`
     /// - witness: `tests::highlight::every_mold_has_a_role`
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.grammar == pbg.fingerprint() && table.roles.len() == pbg.mold_count().0))]
     #[inline]
     pub fn build(pbg: &Pbg) -> Result<Self, PbgError>
     {
@@ -342,12 +353,13 @@ impl RoleTable
     /// [`PbgError::UnknownMold`] for an id past the table.
     ///
     /// # Adequacy
-    /// - hypothesis: L0 — the answer is an [`HlRole`], never an absence, so
-    ///   every mold of the inventory has a role by type; L3 boundary — every id
-    ///   of the built-in inventory answers, and the first id past it is refused
-    ///   with that id.
+    /// - hypothesis: Over the complete built-in inventory and its first-invalid
+    ///   identity, L3 exact class and refusal observations catch off-by-one
+    ///   lookup, substituted roles and wrong error identities; arbitrary custom
+    ///   tables and integer widths are not exhausted.
     /// - witness: `tests::highlight::every_mold_has_a_role`
     /// - witness: `highlight::tests::role_of_pins_context_free_classes`
+    #[spec(ensures: |ret| ret == usize::try_from(u32::from(mold)).ok().and_then(|index| self.roles.get(index)).copied().ok_or(PbgError::UnknownMold { id: mold }))]
     #[inline]
     pub fn role_of(
         &self,
@@ -370,9 +382,9 @@ impl RoleTable
     /// - ensures: one span per tile, covering exactly the tile's bytes, with
     ///   its mold's role; one span per comment, [`HlRole::Comment`], and per
     ///   shebang, [`HlRole::Directive`]; no span for whitespace, grout, a
-    ///   minted close or an interior node. The spans are sorted by range and
-    ///   pairwise disjoint, so the tile spans partition the bytes the tiles
-    ///   cover.
+    ///   minted close, a Wald or a Meld node. The spans are sorted by range.
+    ///   Tile spans preserve their input multiplicity and overlap; disjoint
+    ///   input tiles yield a partition of exactly the bytes those tiles cover.
     /// - provides: the spans a renderer paints, one per token: two adjacent
     ///   tiles of one role stay two spans.
     /// - fails: [`HighlightError::GrammarMismatch`] when the tree's fingerprint
@@ -390,20 +402,49 @@ impl RoleTable
     /// [`HighlightError::InvertedSpan`], each as above.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — over every corpus source, the bytes no span covers
-    ///   are whitespace, every span's text is one tile's or one comment's, the
-    ///   spans are sorted and disjoint, and the spans match the source's
-    ///   golden; L3 — a tree under another grammar and a tile past the table
-    ///   are each refused with the exact variant, and the layout classes are
-    ///   asserted pointwise. The inverted-span refusal is unreachable and
-    ///   carries no witness.
+    /// - hypothesis: The parser-produced corpus supplies L2 finite token
+    ///   coverage and L3 exact range, role and partition observations. The
+    ///   admitted-tree overlap fixture catches clamping, deduplication and
+    ///   wrong range order; fingerprint and mold boundaries catch incorrect
+    ///   refusal identity. The predicate checks token observations, count and
+    ///   order. Arbitrary tree shapes are not exhausted; disjointness belongs
+    ///   to the input, and ordered spans exclude an inverted-range refusal.
     /// - witness: `tests::highlight::spans_partition_the_tile_bytes`
     /// - witness: `tests::highlight::corpus_roles_match_the_golden`
     /// - witness: `tests::highlight::a_tree_under_another_grammar_is_refused`
     /// - witness: `tests::highlight::a_tile_past_the_table_is_refused`
     /// - witness: `tests::highlight::layout_takes_a_role_only_as_a_comment_or_a_shebang`
+    /// - witness: `tests::highlight::highlight_preserves_overlapping_tile_spans`
     ///
     /// [`ByteSpan`]: gandr_surface_syntax::ByteSpan
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| match *error {
+            HighlightError::GrammarMismatch { tree: recorded, table } => recorded == tree.grammar() && table == self.grammar && recorded != table,
+            HighlightError::UnknownMold { id } => tree.grammar() == self.grammar && self.role_of(id).is_err() && tree.positions().any(|position| tree.node(position).is_some_and(|node| node.label() == NodeLabel::Tile(id))),
+            HighlightError::InvertedSpan(_) => false,
+        },
+        |spans| {
+            let mut expected_count = 0_usize;
+            tree.grammar() == self.grammar && spans.iter().is_sorted_by(|left, right| left.range <= right.range) && tree.positions().all(|position| tree.node(position).is_none_or(|node| {
+                let role = match node.label() {
+                    NodeLabel::Tile(id) => self.role_of(id).map(Some),
+                    NodeLabel::Space => Ok(match tree.fragment(position).map_or(Layout::Whitespace, layout_of) {
+                        Layout::Comment => Some(HlRole::Comment),
+                        Layout::Directive => Some(HlRole::Directive),
+                        Layout::Whitespace => None,
+                    }),
+                    NodeLabel::Wald | NodeLabel::Meld(_) | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } => Ok(None),
+                };
+                role.is_ok_and(|role| role.is_none_or(|role| {
+                    expected_count = expected_count.saturating_add(1);
+                    let start = usize::from(node.span().start());
+                    let end = usize::from(node.span().end());
+                    let first = spans.partition_point(|span| usize::from(span.range.start()) < start);
+                    spans.iter().skip(first).take_while(|span| usize::from(span.range.start()) == start).any(|span| usize::from(span.range.end()) == end && span.role == role)
+                }))
+            })) && spans.len() == expected_count
+        }
+    ))]
     #[inline]
     pub fn highlight(
         &self,
@@ -481,7 +522,20 @@ impl Display for HighlightError
     /// Writes the refusal with the values it names.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the refusal is distinguished and its identities or range
+    ///   endpoints are shown.
+    /// - fails: the formatter refuses a write.
+    /// - panics: none.
+    /// - executable: none — `Formatter` is write-only and exposes neither the
+    ///   emitted bytes nor the sink failure that formatting must preserve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For each refusal variant and a one-byte sink, L3 payload
+    ///   and write-failure observations catch omitted identities, lost range
+    ///   endpoints and swallowed formatter errors; wording and other sink
+    ///   implementations are not pinned.
+    /// - witness: `highlight::tests::highlight_error_messages_preserve_values_and_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -508,7 +562,17 @@ impl Error for HighlightError
     /// The wrapped refusal, for the variant that wraps one.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: an inverted range exposes its original typed cause; local
+    ///   refusals have no cause.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For all three refusal classes, L3 typed downcast and
+    ///   absence observations catch a hidden, substituted or invented cause;
+    ///   recursive causes outside these variants are not represented.
+    /// - witness: `highlight::tests::highlight_error_sources_preserve_the_range_cause`
+    #[spec(ensures: |ret| match *self { Self::InvertedSpan(ref error) => ret.and_then(|source| source.downcast_ref::<InvertedRange>()) == Some(error), Self::GrammarMismatch { .. } | Self::UnknownMold { .. } => ret.is_none() })]
     #[inline]
     fn source(&self) -> Option<&(dyn Error + 'static)>
     {
@@ -540,11 +604,13 @@ impl Error for HighlightError
 /// [`PbgError::MoldOverflow`] past the 32-bit identity.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the walk is cross-checked against the mold table
-///   occurrence by occurrence: one occurrence per mold, each with the mold's
-///   label and its rule's sort, precedence and named kind, and every enclosure
-///   an opener of the same rule met before the occurrence.
+/// - hypothesis: The complete built-in inventory and an explicit branching form
+///   supply L3 exact occurrence and enclosure observations, catching changed
+///   numbering, wrong owners and bracket state leaking between alternatives or
+///   rules. Huge identities and arbitrary unbalanced forms are not exhausted.
 /// - witness: `highlight::tests::mold_provenance_alignment`
+/// - witness: `highlight::tests::alternative_brackets_restore_before_each_branch`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|items| items.len() == pbg.mold_count().0 && items.iter().enumerate().all(|(index, occurrence)| MoldId::try_from(index).is_ok_and(|id| pbg.mold(id).is_ok_and(|mold| mold.label == occurrence.label.0) && pbg.rule_of(id).is_ok_and(|rule| core::ptr::eq(core::ptr::from_ref(rule), core::ptr::from_ref(occurrence.rule))) && match occurrence.enclosure { Enclosure::Form => true, Enclosure::Bracket(opener) => opener < id && pbg.mold(opener).is_ok_and(|mold| OPENERS.contains(&mold.label)) && pbg.rule_of(opener).is_ok_and(|rule| core::ptr::eq(core::ptr::from_ref(rule), core::ptr::from_ref(occurrence.rule))) }))))]
 fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
 {
     let mut out = Vec::with_capacity(pbg.mold_count().0);
@@ -615,12 +681,43 @@ fn occurrences(pbg: &Pbg) -> Result<Vec<Occurrence<'_>>, PbgError>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — one mold per class is pinned to its exact role,
-///   label-shared molds told apart by their rule; L2 — every mold's role stands
-///   in a golden line, so a label moved between classes moves the lines of
-///   every mold it labels.
+/// - hypothesis: The built-in role matrix and finite competing context fixtures
+///   supply L3 exact class observations, catching misplaced rule overrides,
+///   omitted labels and changed context priority. Corpus goldens cover every
+///   inventoried mold; arbitrary custom combinations are not exhausted.
 /// - witness: `highlight::tests::role_of_pins_context_free_classes`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `highlight::tests::role_priorities_distinguish_competing_contexts`
+#[spec(ensures: |ret| ret == match facts.kind.0 {
+    "line_comment" | "block_comment" => HlRole::Comment,
+    "shebang" => HlRole::Directive,
+    "list_operator" | "redirection_operator" => HlRole::Operator,
+    _ => match facts.label.0 {
+        "identifier" => identifier_role(facts),
+        "_" if matches!(facts.opener, Opener::Bracket { label: TileLabel("("), .. }) => HlRole::VariableParam,
+        "!" if facts.left.crosses(TileLabel("fork")).0 => HlRole::Keyword,
+        "+" | "-" if facts.kind.0 == "universe_type" => HlRole::Keyword,
+        "?" if facts.kind.0 == "hole" => HlRole::Hole,
+        "?" if facts.kind.0 == "unknown_type" => HlRole::TypeBuiltin,
+        "!" | "?" => HlRole::Operator,
+        "true" | "false" => HlRole::Boolean,
+        "character" => HlRole::Character,
+        "number" | "typed_number" | "ω" | "file_descriptor" => HlRole::Number,
+        "\"" | "'" | "string_fragment" | "double_string_fragment" | "single_quoted_content" => HlRole::StringLit,
+        "escape_sequence" => HlRole::Escape,
+        "constructor" => HlRole::Constructor,
+        "type_identifier" => HlRole::Type,
+        "type_variable" => HlRole::TypeVariable,
+        "hole_name" => HlRole::Label,
+        "_" | "variable_name" => HlRole::Variable,
+        "environment_assignment" => HlRole::VariableParam,
+        "shell_word" => HlRole::Path,
+        label if KEYWORDS.contains(&label) => HlRole::Keyword,
+        label if OPERATORS.contains(&label) => HlRole::Operator,
+        label if PRIMITIVE_TYPES.contains(&label) => HlRole::TypeBuiltin,
+        _ => HlRole::Other,
+    }
+})]
 fn classify(facts: &MoldFacts<'_>) -> HlRole
 {
     let label = facts.label.0;
@@ -689,10 +786,37 @@ fn classify(facts: &MoldFacts<'_>) -> HlRole
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — each place is pinned on one mold of the built-in surface;
-///   L2 — every identifier mold's role stands in a golden line.
+/// - hypothesis: Built-in identifier places and explicit competing contexts
+///   provide L3 exact role observations, catching reversed kind, neighbor and
+///   enclosure priority; every built-in mold is covered by a golden, but
+///   arbitrary custom context combinations are not exhausted.
 /// - witness: `highlight::tests::role_of_pins_context_free_classes`
 /// - witness: `tests::highlight::corpus_roles_match_the_golden`
+/// - witness: `highlight::tests::role_priorities_distinguish_competing_contexts`
+#[spec(requires: facts.label.0 == "identifier", ensures: |ret| ret == match facts.kind.0 {
+    "identifier" => HlRole::Variable,
+    "projection_expression" => HlRole::Member,
+    "at_type" | "offer_session_type" | "select_session_type" => HlRole::Label,
+    "attribute_block" => HlRole::Other,
+    "instantiation_expression" => HlRole::VariableParam,
+    _ if facts.left.crosses(TileLabel(".")).0 => HlRole::Member,
+    _ if facts.left.crosses(TileLabel(":")).0 && facts.right.crosses(TileLabel("(")).0 => HlRole::FunctionCall,
+    _ if DEFINERS.iter().any(|&label| facts.left.crosses(TileLabel(label)).0) => if matches!(facts.opener, Opener::Bracket { label: TileLabel("("), .. }) { HlRole::VariableParam } else { HlRole::FunctionDef },
+    _ if BINDERS.iter().any(|&label| facts.left.crosses(TileLabel(label)).0) => if matches!(facts.opener, Opener::Bracket { label: TileLabel("("), .. }) { HlRole::VariableParam } else { HlRole::VariableDef },
+    _ => match facts.opener {
+        Opener::Form => HlRole::Variable,
+        Opener::Bracket { label, left } => match label.0 {
+            "#{" | "{" => HlRole::Member,
+            "@[" if facts.right.crosses(TileLabel(":")).0 => HlRole::VariableParam,
+            "[" if matches!(facts.kind.0, "u_type" | "thunk_expression") => HlRole::Number,
+            "[" if facts.kind.0 == "migrate_expression" => HlRole::Label,
+            "@[" | "[" => HlRole::Other,
+            "(" if left.crosses(TileLabel("select")).0 => HlRole::Label,
+            "(" => HlRole::VariableParam,
+            _ => HlRole::Variable,
+        }
+    }
+})]
 fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
 {
     let kind = facts.kind.0;
@@ -760,9 +884,12 @@ fn identifier_role(facts: &MoldFacts<'_>) -> HlRole
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a line comment, a block comment, a shebang and
-///   whitespace, each asserted as its exact role or as no span.
+/// - hypothesis: For line comments, nested block comments, shebangs and
+///   whitespace produced by the labeler, L3 exact role and no-span observations
+///   catch wrong prefix priority and highlighting whitespace; arbitrary
+///   non-layout text is outside the caller domain.
 /// - witness: `tests::highlight::layout_takes_a_role_only_as_a_comment_or_a_shebang`
+#[spec(ensures: |ret| { let bytes = <&str>::from(text); ret == if bytes.starts_with("//") || bytes.starts_with("/*") { Layout::Comment } else if bytes.starts_with("#!") { Layout::Directive } else { Layout::Whitespace } })]
 fn layout_of(text: SourceFragment<'_>) -> Layout
 {
     let text = <&str>::from(text);
@@ -781,14 +908,35 @@ fn layout_of(text: SourceFragment<'_>) -> Layout
 mod tests
 {
     use alloc::vec::Vec;
+    extern crate std;
+
+    use alloc::string::ToString as _;
+    use std::io::Write as _;
+
+    use gandr_theory_graphs::Assoc;
+    use gandr_theory_graphs::PrecDag;
+    use gandr_theory_graphs::PrecSpec;
 
     use super::*;
+    use crate::model::Regex;
+    use crate::model::RuleName;
+    use crate::model::Sort;
     use crate::surface::built_in;
 
     /// The molds labelled `label` whose rule realises `kind`, in id order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: exactly the label candidates with matching named kind, in
+    ///   mold order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For the built-in class matrix and missing label and kind
+    ///   boundaries, L3 exact roles and empty selections catch unfiltered or
+    ///   reordered candidates; arbitrary grammars are not exhausted.
+    /// - witness: `highlight::tests::role_of_pins_context_free_classes`
+    #[spec(ensures: |ret| ret.iter().copied().eq(pbg.candidates(label).iter().copied().filter(|&id| pbg.named_kind(id).is_ok_and(|named| named.0 == kind.0))))]
     fn molds_of(
         pbg: &Pbg,
         label: TileLabel,
@@ -1003,5 +1151,323 @@ mod tests
             table.role_of(past),
             "the first id past the table is refused"
         );
+        assert!(molds_of(&pbg, TileLabel("number"), NamedKind("absent-kind")).is_empty());
+        assert!(molds_of(&pbg, TileLabel("absent-label"), NamedKind("number")).is_empty());
+    }
+
+    #[test]
+    fn crossings_distinguish_tiles_from_holes()
+    {
+        let steps = [
+            RCtxStep {
+                crossed: StepSym::Sort(Sort::Expression),
+            },
+            RCtxStep {
+                crossed: StepSym::Tile("first"),
+            },
+            RCtxStep {
+                crossed: StepSym::Tile("last"),
+            },
+            RCtxStep {
+                crossed: StepSym::Tile("first"),
+            },
+        ];
+        for (label, expected) in [
+            ("first", true),
+            ("last", true),
+            ("missing", false),
+            ("expression", false),
+        ] {
+            assert_eq!(Crossing(expected), Side(&steps).crosses(TileLabel(label)));
+            assert_eq!(Crossing(false), Side(&[]).crosses(TileLabel(label)));
+        }
+    }
+
+    #[test]
+    fn alternative_brackets_restore_before_each_branch()
+    {
+        let mut spec = PrecSpec::new();
+        let base = spec.insert("base", Assoc::Non).expect("one group");
+        let pbg = Pbg::build(PrecDag::build(&spec).expect("acyclic"), vec![
+            Rule::new(
+                RuleName("branch"),
+                Sort::Expression,
+                base,
+                Regex::seq([
+                    Regex::tile(TileLabel("(")),
+                    Regex::alt([
+                        Regex::seq([Regex::tile(TileLabel("[")), Regex::tile(TileLabel("x"))]),
+                        Regex::seq([
+                            Regex::tile(TileLabel("{")),
+                            Regex::tile(TileLabel("y")),
+                            Regex::tile(TileLabel("}")),
+                        ]),
+                    ]),
+                    Regex::tile(TileLabel(")")),
+                ]),
+            ),
+            Rule::new(
+                RuleName("plain"),
+                Sort::Expression,
+                base,
+                Regex::tile(TileLabel("z")),
+            ),
+        ])
+        .expect("unique operator forms");
+        let walked = occurrences(&pbg).expect("finite occurrences");
+        let observed: Vec<_> = walked
+            .iter()
+            .map(|occurrence| (occurrence.label.0, occurrence.enclosure))
+            .collect();
+        assert_eq!(
+            vec![
+                ("(", Enclosure::Form),
+                ("[", Enclosure::Bracket(MoldId::from(0))),
+                ("x", Enclosure::Bracket(MoldId::from(1))),
+                ("{", Enclosure::Bracket(MoldId::from(0))),
+                ("y", Enclosure::Bracket(MoldId::from(3))),
+                ("}", Enclosure::Bracket(MoldId::from(3))),
+                (")", Enclosure::Bracket(MoldId::from(0))),
+                ("z", Enclosure::Form),
+            ],
+            observed
+        );
+        assert_eq!(
+            Some(RuleName("plain")),
+            walked.last().map(|occurrence| occurrence.rule.name())
+        );
+    }
+
+    #[test]
+    fn role_priorities_distinguish_competing_contexts()
+    {
+        let definition = [RCtxStep {
+            crossed: StepSym::Tile("def"),
+        }];
+        let dot_and_definition = [
+            RCtxStep {
+                crossed: StepSym::Tile("."),
+            },
+            definition[0],
+        ];
+        let call_and_definition = [
+            RCtxStep {
+                crossed: StepSym::Tile(":"),
+            },
+            definition[0],
+        ];
+        let binder = [RCtxStep {
+            crossed: StepSym::Tile("as"),
+        }];
+        let definer_and_binder = [definition[0], binder[0]];
+        let opening = [RCtxStep {
+            crossed: StepSym::Tile("("),
+        }];
+        let selection = [RCtxStep {
+            crossed: StepSym::Tile("select"),
+        }];
+        let parens = Opener::Bracket {
+            label: TileLabel("("),
+            left: Side(&[]),
+        };
+        let record = Opener::Bracket {
+            label: TileLabel("#{"),
+            left: Side(&[]),
+        };
+        for (kind, expected) in [
+            ("line_comment", HlRole::Comment),
+            ("block_comment", HlRole::Comment),
+            ("shebang", HlRole::Directive),
+            ("redirection_operator", HlRole::Operator),
+        ] {
+            for label in ["identifier", "number", "+", "unknown"] {
+                assert_eq!(
+                    expected,
+                    classify(&MoldFacts {
+                        label: TileLabel(label),
+                        kind: NamedKind(kind),
+                        left: Side(&definition),
+                        right: Side(&[]),
+                        opener: parens
+                    })
+                );
+            }
+        }
+        let cases = [
+            (
+                "identifier",
+                Side(&dot_and_definition),
+                Side(&opening),
+                parens,
+                HlRole::Variable,
+            ),
+            (
+                "projection_expression",
+                Side(&definition),
+                Side(&[]),
+                parens,
+                HlRole::Member,
+            ),
+            (
+                "at_type",
+                Side(&dot_and_definition),
+                Side(&[]),
+                record,
+                HlRole::Label,
+            ),
+            (
+                "attribute_block",
+                Side(&definition),
+                Side(&[]),
+                parens,
+                HlRole::Other,
+            ),
+            (
+                "instantiation_expression",
+                Side(&call_and_definition),
+                Side(&opening),
+                Opener::Form,
+                HlRole::VariableParam,
+            ),
+            (
+                "custom",
+                Side(&dot_and_definition),
+                Side(&opening),
+                Opener::Form,
+                HlRole::Member,
+            ),
+            (
+                "custom",
+                Side(&call_and_definition),
+                Side(&opening),
+                Opener::Form,
+                HlRole::FunctionCall,
+            ),
+            (
+                "custom",
+                Side(&definer_and_binder),
+                Side(&[]),
+                Opener::Form,
+                HlRole::FunctionDef,
+            ),
+            (
+                "custom",
+                Side(&definer_and_binder),
+                Side(&[]),
+                parens,
+                HlRole::VariableParam,
+            ),
+            (
+                "custom",
+                Side(&binder),
+                Side(&[]),
+                record,
+                HlRole::VariableDef,
+            ),
+            ("custom", Side(&[]), Side(&[]), record, HlRole::Member),
+            (
+                "custom",
+                Side(&[]),
+                Side(&[]),
+                Opener::Bracket {
+                    label: TileLabel("("),
+                    left: Side(&selection),
+                },
+                HlRole::Label,
+            ),
+            (
+                "custom",
+                Side(&[]),
+                Side(&[]),
+                parens,
+                HlRole::VariableParam,
+            ),
+            (
+                "custom",
+                Side(&[]),
+                Side(&[]),
+                Opener::Form,
+                HlRole::Variable,
+            ),
+        ];
+        for (kind, left, right, opener, expected) in cases {
+            assert_eq!(
+                expected,
+                classify(&MoldFacts {
+                    label: TileLabel("identifier"),
+                    kind: NamedKind(kind),
+                    left,
+                    right,
+                    opener
+                })
+            );
+        }
+        assert_eq!(
+            HlRole::Other,
+            classify(&MoldFacts {
+                label: TileLabel("unclassified"),
+                kind: NamedKind("custom"),
+                left: Side(&[]),
+                right: Side(&[]),
+                opener: Opener::Form
+            })
+        );
+    }
+
+    #[test]
+    fn highlight_error_sources_preserve_the_range_cause()
+    {
+        let cause = ByteRange::new(ByteOffset::from(19_usize), ByteOffset::from(7_usize))
+            .expect_err("inverted range");
+        let wrapped = HighlightError::InvertedSpan(cause);
+        assert_eq!(
+            Some(&cause),
+            wrapped
+                .source()
+                .and_then(|source| source.downcast_ref::<InvertedRange>())
+        );
+        for local in [
+            HighlightError::GrammarMismatch {
+                tree: GrammarFingerprint::from(7_u64),
+                table: GrammarFingerprint::from(9_u64),
+            },
+            HighlightError::UnknownMold {
+                id: MoldId::from(17),
+            },
+        ] {
+            assert!(local.source().is_none());
+        }
+    }
+
+    #[test]
+    fn highlight_error_messages_preserve_values_and_sink_failure()
+    {
+        let cause = ByteRange::new(ByteOffset::from(19_usize), ByteOffset::from(7_usize))
+            .expect_err("inverted range");
+        let cases: &[(HighlightError, &[&str])] = &[
+            (
+                HighlightError::GrammarMismatch {
+                    tree: GrammarFingerprint::from(7_u64),
+                    table: GrammarFingerprint::from(9_u64),
+                },
+                &["0x0000000000000007", "0x0000000000000009"],
+            ),
+            (
+                HighlightError::UnknownMold {
+                    id: MoldId::from(17),
+                },
+                &["17"],
+            ),
+            (HighlightError::InvertedSpan(cause), &["19", "7"]),
+        ];
+        for &(error, values) in cases {
+            let message = error.to_string();
+            for value in values {
+                assert!(message.contains(value));
+            }
+            let mut bytes = [0_u8; 1];
+            let mut sink = bytes.as_mut_slice();
+            assert!(write!(&mut sink, "{error}").is_err());
+        }
     }
 }

@@ -6,6 +6,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_syntax::GrammarFingerprint;
 
 use crate::model::PbgError;
@@ -44,11 +45,14 @@ struct Summary
 /// [`PbgError::AdjacentSorts`] naming the rule and both sorts.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise — direct adjacency, adjacency exposed through a
-///   nullable bridge, and a tile separator between two holes.
+/// - hypothesis: For direct adjacency, nullable bridges and mandatory tile
+///   separators, L3 exact refusal and acceptance observations catch lost
+///   FIRST/LAST exposure and misattributed errors; repetition-backedge
+///   adjacency is outside these witnesses.
 /// - witness: `tests::pbg::pbg_rejects_direct_adjacent_sorts_in_sequence`
 /// - witness: `tests::pbg::pbg_rejects_adjacency_exposed_by_nullable_sequence_paths`
 /// - witness: `tests::pbg::pbg_accepts_terminal_separators_between_sort_uses`
+#[spec(ensures: |ret| ret.as_ref().err().is_none_or(|error| matches!(error, PbgError::AdjacentSorts { rule: name, .. } if *name == rule.name)))]
 #[inline]
 pub fn validate_operator_form(rule: &Rule) -> Result<(), PbgError>
 {
@@ -71,10 +75,17 @@ pub fn validate_operator_form(rule: &Rule) -> Result<(), PbgError>
 /// [`PbgError::MoldOverflow`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise — identical alternation branches collide, the
-///   same label at distinct positions does not.
+/// - hypothesis: For identical branches and same-label occurrences at distinct
+///   positions, L3 identity observations catch accidental context collisions
+///   and missed duplicate tiles; capacity exhaustion and arbitrary canonical
+///   expressions are outside the witnesses.
 /// - witness: `tests::pbg::pbg_rejects_duplicate_rctx_tile`
 /// - witness: `tests::pbg::pbg_accepts_same_label_at_distinct_contexts`
+#[spec(ensures: |ret| ret.as_ref().err().is_none_or(|error| match *error {
+    PbgError::DuplicateTile { sort, prec, first_rule, second_rule, .. } => rules.iter().any(|rule| rule.name == first_rule) && rules.iter().any(|rule| rule.name == second_rule && rule.sort == sort && rule.prec == prec),
+    PbgError::MoldOverflow => true,
+    _ => false,
+}))]
 #[inline]
 pub fn validate_unique_tiles(rules: &[Rule]) -> Result<(), PbgError>
 {
@@ -98,9 +109,16 @@ pub fn validate_unique_tiles(rules: &[Rule]) -> Result<(), PbgError>
 /// [`PbgError::AdjacentSorts`] for a rule that skipped Operator Form.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise — a form beginning with one sort paired with a
-///   form ending with the other is refused, and the built-in surface passes.
+/// - hypothesis: For two legal forms with opposing boundary sorts and the
+///   nearest non-conflicting forms, L3 exact pair and acceptance observations
+///   catch ignored cross-sort edges; arbitrary rule sets and all sort-order
+///   ties are not enumerated.
 /// - witness: `tests::pbg::assumption_3_contract`
+#[spec(ensures: |ret| ret.as_ref().err().is_none_or(|error| match *error {
+    PbgError::Assumption3Conflict { first_sort, second_sort } => first_sort != second_sort && rules.iter().any(|rule| rule.sort == first_sort) && rules.iter().any(|rule| rule.sort == second_sort),
+    PbgError::AdjacentSorts { rule: name, .. } => rules.iter().any(|rule| rule.name == name),
+    _ => false,
+}))]
 #[inline]
 pub fn validate_assumption_3(rules: &[Rule]) -> Result<(), PbgError>
 {
@@ -163,6 +181,16 @@ enum Frame<'regex>
 ///
 /// # Errors
 /// [`PbgError::AdjacentSorts`] for the first exposure.
+///
+/// # Adequacy
+/// - hypothesis: For direct adjacency and nullable bridges, L3 exposed-boundary
+///   observations catch lost nullability and first/last sorts; the predicate
+///   protects refusal provenance, not every accepted summary or repetition
+///   backedge.
+/// - witness: `tests::pbg::pbg_rejects_direct_adjacent_sorts_in_sequence`
+/// - witness: `tests::pbg::pbg_rejects_adjacency_exposed_by_nullable_sequence_paths`
+/// - witness: `tests::pbg::pbg_accepts_terminal_separators_between_sort_uses`
+#[spec(ensures: |ret| ret.as_ref().err().is_none_or(|error| matches!(error, PbgError::AdjacentSorts { rule: name, .. } if *name == rule.0)))]
 fn summarize(
     rule: RuleName,
     regex: RegexView<'_>,
@@ -241,6 +269,14 @@ fn summarize(
 ///
 /// # Errors
 /// [`PbgError::AdjacentSorts`].
+///
+/// # Adequacy
+/// - hypothesis: For empty boundary sets and two multi-sort sets, L3
+///   exact-result observations catch inverted acceptance and non-minimal error
+///   witnesses; the closed sort domain is sampled rather than every subset pair
+///   enumerated.
+/// - witness: `check::tests::adjacency_refusal_uses_smallest_boundary_sorts`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::AdjacentSorts { rule: name, left: a, right: b } if *name == rule.0 && left.first() == Some(a) && right.first() == Some(b)), |&()| left.is_empty() || right.is_empty()))]
 fn reject_adjacent(
     rule: RuleName,
     left: &BTreeSet<Sort>,
@@ -263,6 +299,14 @@ fn reject_adjacent(
 /// - requires: nothing.
 /// - ensures: the standard FIRST/LAST/nullable composition of a concatenation.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For distinct boundary sorts under all four nullability pairs,
+///   L2 finite truth-table observations catch swapped FIRST/LAST propagation
+///   and incorrect conjunction; larger sets are not exhausted, while the
+///   predicate checks their full unions without allocation.
+/// - witness: `check::tests::sequence_summary_obeys_all_nullability_pairs`
+#[spec(ensures: |ret| ret.nullable == (left.nullable && right.nullable) && (if left.nullable { ret.first.iter().eq(left.first.union(&right.first)) } else { ret.first == left.first }) && (if right.nullable { ret.last.iter().eq(left.last.union(&right.last)) } else { ret.last == right.last }))]
 fn seq_summary(
     left: &Summary,
     right: &Summary,
@@ -280,5 +324,91 @@ fn seq_summary(
         nullable: left.nullable && right.nullable,
         first,
         last,
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeSet;
+
+    use super::PbgError;
+    use super::RuleName;
+    use super::Sort;
+    use super::Summary;
+    use super::reject_adjacent;
+    use super::seq_summary;
+
+    #[test]
+    fn adjacency_refusal_uses_smallest_boundary_sorts()
+    {
+        let empty = BTreeSet::new();
+        let left = BTreeSet::from([Sort::Type, Sort::Item, Sort::Expression]);
+        let right = BTreeSet::from([Sort::Type, Sort::Pattern]);
+        for (a, b) in [(&empty, &empty), (&empty, &right), (&left, &empty)] {
+            assert_eq!(Ok(()), reject_adjacent(RuleName("boundary"), a, b));
+        }
+        assert_eq!(
+            Err(PbgError::AdjacentSorts {
+                rule: "boundary",
+                left: Sort::Item,
+                right: Sort::Pattern
+            }),
+            reject_adjacent(RuleName("boundary"), &left, &right)
+        );
+    }
+
+    #[test]
+    fn sequence_summary_obeys_all_nullability_pairs()
+    {
+        for (left_nullable, right_nullable, first, last, nullable) in [
+            (
+                false,
+                false,
+                BTreeSet::from([Sort::Item]),
+                BTreeSet::from([Sort::Type]),
+                false,
+            ),
+            (
+                false,
+                true,
+                BTreeSet::from([Sort::Item]),
+                BTreeSet::from([Sort::Pattern, Sort::Type]),
+                false,
+            ),
+            (
+                true,
+                false,
+                BTreeSet::from([Sort::Item, Sort::Expression]),
+                BTreeSet::from([Sort::Type]),
+                false,
+            ),
+            (
+                true,
+                true,
+                BTreeSet::from([Sort::Item, Sort::Expression]),
+                BTreeSet::from([Sort::Pattern, Sort::Type]),
+                true,
+            ),
+        ] {
+            let left = Summary {
+                nullable: left_nullable,
+                first: BTreeSet::from([Sort::Item]),
+                last: BTreeSet::from([Sort::Pattern]),
+            };
+            let right = Summary {
+                nullable: right_nullable,
+                first: BTreeSet::from([Sort::Expression]),
+                last: BTreeSet::from([Sort::Type]),
+            };
+            assert_eq!(
+                Summary {
+                    nullable,
+                    first,
+                    last
+                },
+                seq_summary(&left, &right)
+            );
+        }
     }
 }

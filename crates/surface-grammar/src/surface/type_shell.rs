@@ -2,6 +2,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_graphs::Prec;
 
 use crate::Adaptation;
@@ -16,6 +17,8 @@ use crate::RuleName;
 use crate::Sort;
 use crate::SurfaceForm;
 use crate::TileLabel;
+use crate::model::RegexShape;
+use crate::model::Sym;
 
 /// Builds the type, session-type, lexical and shell-context rules.
 ///
@@ -29,6 +32,17 @@ use crate::TileLabel;
 ///
 /// # Errors
 /// [`PbgError::MissingPrec`] naming the absent group.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in groups and missing-band tables, L2 suffix and
+///   prefix observations plus L3 grammar identity catch reordered families,
+///   incorrect sorts, lost prior rules and premature mutation. The predicate
+///   observes returned metadata and the first missing lookup; arbitrary table
+///   aliases and allocation failure are not exhausted.
+/// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow", "item.singleton", "expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |rules| rules.len() == 50 && rules.iter().take(29).all(|rule| rule.sort() == Sort::Type) && rules.iter().skip(29).take(3).all(|rule| rule.sort() == Sort::Item) && rules.iter().skip(32).all(|rule| rule.sort() == Sort::Expression) && rules.first().is_some_and(|rule| rule.name().0 == "forall_type") && rules.last().is_some_and(|rule| rule.name().0 == "redirection_operator")))]
 pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 {
     let mut rules = Vec::new();
@@ -48,6 +62,17 @@ pub(super) fn rules(precs: &PrecTable) -> Result<Vec<Rule>, PbgError>
 ///
 /// # Errors
 /// [`PbgError::MissingPrec`] naming the absent group.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in groups and missing-band tables, L2 suffix and
+///   prefix observations plus L3 grammar identity catch reordered families,
+///   incorrect sorts, lost prior rules and premature mutation. The predicate
+///   observes returned metadata and the first missing lookup; arbitrary table
+///   aliases and allocation failure are not exhausted.
+/// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["type.atom", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 29 && added.iter().all(|rule| rule.sort() == Sort::Type && ["type.atom", "type.application", "type.product", "type.sum", "type.union", "type.intersection", "type.lazy_product", "type.arrow"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "forall_type") && added.last().is_some_and(|rule| rule.name().0 == "number.type"))))]
 fn add_type_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -475,6 +500,17 @@ fn add_type_rules(
 ///
 /// # Errors
 /// [`PbgError::MissingPrec`] naming the absent group.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in groups and missing-band tables, L2 suffix and
+///   prefix observations plus L3 grammar identity catch reordered families,
+///   incorrect sorts, lost prior rules and premature mutation. The predicate
+///   observes returned metadata and the first missing lookup; arbitrary table
+///   aliases and allocation failure are not exhausted.
+/// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name: "item.singleton" }) && precs.get(PrecName("item.singleton")).is_none(), |&()| rules.get(before..).is_some_and(|added| added.len() == 3 && added.iter().zip(["line_comment", "block_comment", "shebang"]).all(|(rule, name)| rule.name().0 == name && rule.provenance().0 == name && rule.sort() == Sort::Item && precs.get(PrecName("item.singleton")) == Some(rule.prec())))))]
 fn add_lexical_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -589,6 +625,17 @@ fn add_lexical_rules(
 ///
 /// # Errors
 /// [`PbgError::MissingPrec`] naming the absent group.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in groups and missing-band tables, L2 suffix and
+///   prefix observations plus L3 grammar identity catch reordered families,
+///   incorrect sorts, lost prior rules and premature mutation. The predicate
+///   observes returned metadata and the first missing lookup; arbitrary table
+///   aliases and allocation failure are not exhausted.
+/// - witness: `surface::type_shell::tests::assembly_refusal_and_success_preserve_prior_rules`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(captures: before = rules.len(), ensures: |ret| ret.as_ref().map_or_else(|error| rules.len() == before && matches!(error, &PbgError::MissingPrec { name } if ["expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().find(|&group| precs.get(PrecName(group)).is_none()) == Some(name)), |&()| rules.get(before..).is_some_and(|added| added.len() == 18 && added.iter().all(|rule| rule.sort() == Sort::Expression && ["expression.atom", "expression.postfix", "expression.and", "expression.or"].into_iter().any(|group| precs.get(PrecName(group)) == Some(rule.prec()))) && added.first().is_some_and(|rule| rule.name().0 == "shell_list") && added.last().is_some_and(|rule| rule.name().0 == "redirection_operator"))))]
 fn add_shell_rules(
     rules: &mut Vec<Rule>,
     precs: &PrecTable,
@@ -902,7 +949,20 @@ fn tile(label: TileLabel) -> Regex
 /// kind.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: preserves the supplied name, sort and band and places one
+///   operator between two recursive holes under the pipeline provenance.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
+///   corpus roles catch changed delimiters, alternatives and sort boundaries.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `surface::type_shell::tests::binary_rules_remain_operators_without_repeat_seams`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| ret.name() == name && ret.sort() == sort && ret.prec() == prec && ret.provenance().0 == "pipeline" && matches!(ret.regex().view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == operator.0)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort))))]
 fn pipe_rule(
     name: RuleName,
     sort: Sort,
@@ -928,7 +988,19 @@ fn pipe_rule(
 /// unified.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the simple and braced variable-name expansions, with their
+///   distinct openers and a closer only on the braced branch.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
+///   corpus roles catch changed delimiters, alternatives and sort boundaries.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 2 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "$")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "variable_name")))) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 3 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "${")) && sequence.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "variable_name")) && sequence.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "}"))))))]
 fn dquote_variable_expansion() -> Regex
 {
     Regex::alt([
@@ -941,7 +1013,6 @@ fn dquote_variable_expansion() -> Regex
     ])
 }
 
-/// Build a flat repeated infix type rule.
 /// Build a binary infix type rule `T op T` at the given precedence band.
 ///
 /// The operator is a single-tile infix between two recursive-sort holes, so the
@@ -956,7 +1027,20 @@ fn dquote_variable_expansion() -> Regex
 /// status.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: preserves the supplied header and places one operator between two
+///   recursive holes, without a repeated continuation.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
+///   corpus roles catch changed delimiters, alternatives and sort boundaries.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `surface::type_shell::tests::binary_rules_remain_operators_without_repeat_seams`
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| ret.name() == name && ret.sort() == sort && ret.prec() == prec && ret.provenance().0 == name.0 && matches!(ret.regex().view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort)) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == operator.0)) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort))))]
 fn binary_infix_rule(
     name: RuleName,
     sort: Sort,
@@ -976,7 +1060,18 @@ fn binary_infix_rule(
 /// type.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the ordered number, identifier and omega grade alternatives.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
+///   corpus roles catch changed delimiters, alternatives and sort boundaries.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Alt(ref parts) if parts.len() == 3 && parts.iter().zip(["number","identifier","ω"]).all(|(part, label)| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == label))))]
 fn grade_shape() -> Regex
 {
     Regex::alt([
@@ -989,7 +1084,20 @@ fn grade_shape() -> Regex
 /// Build a comma-separated non-empty repetition.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one item followed by zero or more comma-prefixed items; no
+///   leading or trailing separator is introduced.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
+///   corpus roles catch changed delimiters, alternatives and sort boundaries.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted. Arbitrary nullable list elements are not
+///   exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 2 && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Repeat(tail) if matches!(tail.shape(), RegexShape::Seq(ref sequence) if sequence.len() == 2 && sequence.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ",")))))))]
 fn comma1(item: Regex) -> Regex
 {
     Regex::seq([
@@ -1001,7 +1109,19 @@ fn comma1(item: Regex) -> Regex
 /// Build an inline `id : T` field shape, shared by record and session types.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: an identifier, colon and hole of the supplied sort, in that
+///   order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in type and shell forms, L3 grammar identity and
+///   corpus roles catch changed delimiters, alternatives and sort boundaries.
+///   The predicate observes the stated shape; source programs outside the
+///   finite corpus are not exhausted.
+/// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| matches!(ret.view().shape(), RegexShape::Seq(ref parts) if parts.len() == 3 && parts.first().is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == "identifier")) && parts.get(1).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Tile(tile)) if tile.label == ":")) && parts.get(2).is_some_and(|part| matches!(part.shape(), RegexShape::Sym(Sym::Sort(actual)) if actual == sort))))]
 fn field_shape(sort: Sort) -> Regex
 {
     Regex::seq([
@@ -1009,4 +1129,106 @@ fn field_shape(sort: Sort) -> Regex
         tile(TileLabel(":")),
         Regex::sort(sort),
     ])
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use gandr_theory_graphs::PrecDag;
+    use gandr_theory_graphs::PrecSpec;
+
+    use super::add_lexical_rules;
+    use super::add_shell_rules;
+    use super::add_type_rules;
+    use super::binary_infix_rule;
+    use super::pipe_rule;
+    use crate::Pbg;
+    use crate::PbgError;
+    use crate::PrecName;
+    use crate::PrecTable;
+    use crate::Regex;
+    use crate::Rule;
+    use crate::RuleName;
+    use crate::Sort;
+    use crate::TileLabel;
+    use crate::surface::PREC_GROUPS;
+    use crate::surface::built_in_prec_table;
+
+    #[test]
+    fn assembly_refusal_and_success_preserve_prior_rules()
+    {
+        let add_types: fn(&mut Vec<Rule>, &PrecTable) -> Result<(), PbgError> = add_type_rules;
+        for (missing, assemble) in [
+            ("type.atom", add_types),
+            ("type.arrow", add_type_rules),
+            ("item.singleton", add_lexical_rules),
+            ("expression.or", add_shell_rules),
+        ] {
+            let complete = built_in_prec_table().expect("built-in bands");
+            let mut spec = PrecSpec::new();
+            let mut names = Vec::new();
+            for &(name, assoc) in PREC_GROUPS {
+                if name != missing {
+                    let id = spec.insert(name, assoc).expect("unique band");
+                    names.push((PrecName(name), id));
+                }
+            }
+            let partial = PrecTable::new(PrecDag::build(&spec).expect("acyclic bands"), names);
+            let sentinel = Rule::new(
+                RuleName("sentinel"),
+                Sort::Pattern,
+                complete
+                    .prec(PrecName("pattern.atom"))
+                    .expect("pattern band"),
+                Regex::tile(TileLabel("sentinel")),
+            );
+            let before = vec![sentinel];
+            let mut held = before.clone();
+            assert_eq!(
+                Err(PbgError::MissingPrec { name: missing }),
+                assemble(&mut held, &partial)
+            );
+            assert_eq!(before, held);
+            assemble(&mut held, &complete).expect("complete band table");
+            assert_eq!(Some(before.as_slice()), held.get(.. before.len()));
+        }
+    }
+
+    #[test]
+    fn binary_rules_remain_operators_without_repeat_seams()
+    {
+        for (sort, band, operator, provenance) in [
+            (Sort::Type, "type.sum", "+", "synthetic"),
+            (Sort::Expression, "expression.postfix", "|", "pipeline"),
+        ] {
+            let table = built_in_prec_table().expect("built-in bands");
+            let prec = table.prec(PrecName(band)).expect("operator band");
+            let rule = if sort == Sort::Type {
+                binary_infix_rule(RuleName("synthetic"), sort, prec, TileLabel(operator))
+            }
+            else {
+                pipe_rule(RuleName("synthetic"), sort, prec, TileLabel(operator))
+            };
+            let grammar = Pbg::build(table.into_dag(), vec![rule]).expect("operator form");
+            let &[mold] = grammar.candidates(TileLabel(operator))
+            else {
+                panic!("one operator occurrence");
+            };
+            assert_eq!([mold], grammar.form_first());
+            assert_eq!([mold], grammar.form_last());
+            assert!(grammar.adjacencies().is_empty());
+            assert!(!bool::from(grammar.mold_has_required_tail(mold)));
+            assert_eq!(
+                provenance,
+                grammar
+                    .rule_of(mold)
+                    .expect("operator owner")
+                    .provenance()
+                    .0
+            );
+        }
+    }
 }

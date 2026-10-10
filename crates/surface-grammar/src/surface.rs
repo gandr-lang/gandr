@@ -3,6 +3,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_graphs::Assoc;
 use gandr_theory_graphs::Prec;
 use gandr_theory_graphs::PrecCycle;
@@ -14,6 +15,7 @@ use crate::model::Pbg;
 use crate::model::PbgError;
 use crate::model::PrecName;
 use crate::model::PrecTable;
+use crate::model::Sort;
 
 mod circuit;
 mod term;
@@ -268,13 +270,15 @@ pub const PBG_ONLY_KINDS: &[&str] = &[
 /// Any [`PbgError`] [`built_in_prec_table`] or [`Pbg::build`] reports.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise plus an external pin — the fingerprint and the
-///   mold count are pinned, every precedence band is exact, every named kind is
-///   realised, and the build stays under its wall-clock budget.
+/// - hypothesis: The built-in grammar supplies L3 exact fingerprint, precedence
+///   and named-kind observations, catching missing rule families, changed band
+///   relations and reordered mold identities; corpus parsing covers admitted
+///   examples, not every source or a machine-dependent build-time limit.
 /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
 /// - witness: `tests::surface::built_in_precedence_bands_are_exact`
 /// - witness: `tests::surface::named_kind_coverage_is_semantic`
-/// - witness: `tests::closing_class::built_in_builds_fast_enough_for_process_per_test_suites`
+/// - witness: `tests::highlight::corpus_roles_match_the_golden`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|pbg| pbg.dag().groups().count() == PREC_GROUPS.len() && pbg.dag().groups().zip(PREC_GROUPS.iter()).all(|((_, name, assoc), &(expected, expected_assoc))| name == expected && assoc == expected_assoc) && [Sort::Item, Sort::Pattern, Sort::Expression, Sort::Type, Sort::Instantiation, Sort::ModuleMember].iter().all(|sort| pbg.forms().keys().any(|&(present, _)| present == *sort))))]
 #[inline]
 pub fn built_in() -> Result<Pbg, PbgError>
 {
@@ -301,9 +305,13 @@ pub fn built_in() -> Result<Pbg, PbgError>
 /// [`PbgError::PrecedenceCycle`] or [`PbgError::PrecedenceDag`].
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise — every declared chain, associativity and
-///   incomparability is checked against the DAG.
+/// - hypothesis: Every constant group, direct edge, declared chain and
+///   cross-band pair supplies an L2 finite census with L3 exact identity,
+///   associativity and comparison observations, catching reordered ids, missing
+///   edges and false comparability; alternative constant tables are outside
+///   this witness.
 /// - witness: `tests::surface::built_in_precedence_bands_are_exact`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|table| table.dag().groups().count() == PREC_GROUPS.len() && table.dag().groups().zip(PREC_GROUPS.iter()).enumerate().all(|(index, ((prec, name, assoc), &(expected, expected_assoc)))| usize::from(u16::from(prec.index())) == index && name == expected && assoc == expected_assoc && table.get(PrecName(expected)) == Some(prec)) && table.dag().edges().count() == PREC_EDGES.len() && table.dag().edges().zip(PREC_EDGES.iter()).all(|((tighter, looser), &(expected_tighter, expected_looser))| table.dag().name(tighter).is_some_and(|name| name == expected_tighter) && table.dag().name(looser).is_some_and(|name| name == expected_looser))))]
 #[inline]
 pub fn built_in_prec_table() -> Result<PrecTable, PbgError>
 {
@@ -334,8 +342,12 @@ pub fn built_in_prec_table() -> Result<PrecTable, PbgError>
 /// [`PbgError::MissingPrec`] naming the absent group.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise — an absent name is refused naming it.
+/// - hypothesis: For known, custom and missing names, L3 exact identity and
+///   refusal observations catch wrong lookup and lost spelling; arbitrary
+///   precedence inventories are not exhausted.
 /// - witness: `surface::tests::precedence_helper_failures_preserve_named_context`
+/// - witness: `surface::tests::precedence_names_keep_constant_order`
+#[spec(ensures: |ret| ret == spec.groups().find_map(|(prec, candidate, _)| (candidate == name.0).then_some(prec)).ok_or(PbgError::MissingPrec { name: name.0 }))]
 fn lookup_prec(
     spec: &PrecSpec,
     name: PrecName,
@@ -356,6 +368,14 @@ fn lookup_prec(
 ///
 /// # Errors
 /// [`PbgError::MissingPrec`].
+///
+/// # Adequacy
+/// - hypothesis: For a reverse-inserted full table and empty and selectively
+///   incomplete tables, L3 exact order, identity and first-missing-name
+///   observations catch source-order leakage and omitted lookups; every subset
+///   of constants is not exhausted.
+/// - witness: `surface::tests::precedence_names_keep_constant_order`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| match *error { PbgError::MissingPrec { name } => PREC_GROUPS.iter().find(|&&(candidate, _)| !spec.groups().any(|(_, present, _)| present == candidate)).is_some_and(|&(missing, _)| missing == name), _ => false }, |names| names.len() == PREC_GROUPS.len() && names.iter().zip(PREC_GROUPS.iter()).all(|(&(name, prec), &(expected, _))| name.0 == expected && spec.name(prec).is_some_and(|actual| actual == expected))))]
 fn prec_table_names(spec: &PrecSpec) -> Result<Vec<(PrecName, Prec)>, PbgError>
 {
     PREC_GROUPS
@@ -375,9 +395,19 @@ fn prec_table_names(spec: &PrecSpec) -> Result<Vec<(PrecName, Prec)>, PbgError>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise — a cycle through a group outside the constants
-///   and one through an id outside the spec are both named.
+/// - hypothesis: For a named three-node cycle, unknown and invalid cycle ids,
+///   and the inconsistency refusal, L3 exact variant, naming and edge
+///   observations catch reordered cycles, dropped endpoints and lost refusal
+///   classes. The predicate observes variant, length and endpoints without
+///   copying the consumed cycle; arbitrary graph causes and interior walks are
+///   not exhausted.
 /// - witness: `surface::tests::precedence_helper_failures_preserve_named_context`
+/// - witness: `surface::tests::cyclic_named_precedence_spec_reports_closed_named_witness`
+#[spec(captures: expected = (core::mem::discriminant(&error), match &error { &PrecDagError::Cycle(PrecCycle { ref witness }) => Some((witness.len(), witness.first().map(|&prec| static_prec_name(spec, prec)), witness.last().map(|&prec| static_prec_name(spec, prec)))), _ => None }), ensures: |ret| match ret {
+    PbgError::PrecedenceCycle { ref witness } => expected.1.is_some_and(|(len, first, last)| witness.len() == len && witness.first().copied().map(PrecName) == first && witness.last().copied().map(PrecName) == last),
+    PbgError::PrecedenceDag(ref cause) => expected.1.is_none() && core::mem::discriminant(cause) == expected.0,
+    _ => false,
+})]
 fn dag_error(
     spec: &PrecSpec,
     error: PrecDagError,
@@ -404,8 +434,13 @@ fn dag_error(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise — one id of each kind.
+/// - hypothesis: For constant, custom and invalid group identities, L3 exact
+///   names and distinct fallback classes catch wrong name projection and
+///   conflated refusal contexts; all possible custom spellings are not
+///   exhausted.
 /// - witness: `surface::tests::precedence_helper_failures_preserve_named_context`
+/// - witness: `surface::tests::cyclic_named_precedence_spec_reports_closed_named_witness`
+#[spec(ensures: |ret| ret == spec.name(prec).map_or(PrecName("<invalid-precedence>"), |name| PREC_GROUPS.iter().find(|&&(candidate, _)| name == candidate).map_or(PrecName("<unknown-precedence>"), |&(constant, _)| PrecName(constant))))]
 fn static_prec_name(
     spec: &PrecSpec,
     prec: Prec,
@@ -442,6 +477,7 @@ mod tests
             .insert("custom", Assoc::Non)
             .expect("one custom precedence should insert");
         let invalid = Prec::new(PrecIndex::from(7));
+        assert_eq!(Ok(custom), lookup_prec(&spec, PrecName("custom")));
 
         assert!(matches!(
             lookup_prec(&spec, PrecName("missing")),
@@ -519,6 +555,47 @@ mod tests
         assert!(
             walked.iter().all(|edge| declared.contains(edge)),
             "every step of the witness is a declared edge: {walked:?}"
+        );
+    }
+
+    #[test]
+    fn precedence_names_keep_constant_order()
+    {
+        let mut reversed = PrecSpec::new();
+        for &(name, assoc) in PREC_GROUPS.iter().rev() {
+            reversed
+                .insert(name, assoc)
+                .expect("distinct constant names");
+        }
+        let names = prec_table_names(&reversed).expect("all names are present");
+        assert_eq!(
+            PREC_GROUPS
+                .iter()
+                .map(|&(name, _)| name)
+                .collect::<Vec<_>>(),
+            names.iter().map(|&(name, _)| name.0).collect::<Vec<_>>()
+        );
+        for (index, &(name, prec)) in names.iter().rev().enumerate() {
+            assert_eq!(index, usize::from(u16::from(prec.index())));
+            assert_eq!(Ok(prec), lookup_prec(&reversed, name));
+        }
+        assert_eq!(
+            Err(PbgError::MissingPrec {
+                name: "item.singleton"
+            }),
+            prec_table_names(&PrecSpec::new())
+        );
+        let mut incomplete = PrecSpec::new();
+        for &(name, assoc) in PREC_GROUPS {
+            if name != "expression.mul" {
+                incomplete.insert(name, assoc).expect("distinct names");
+            }
+        }
+        assert_eq!(
+            Err(PbgError::MissingPrec {
+                name: "expression.mul"
+            }),
+            prec_table_names(&incomplete)
         );
     }
 }

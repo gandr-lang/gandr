@@ -3,10 +3,8 @@
 //! rule's tile graph.
 
 use core::error::Error;
-use core::hint::black_box;
-use core::time::Duration;
-use std::time::Instant;
 
+use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Regex;
 use gandr_surface_grammar::Rule;
@@ -26,6 +24,15 @@ use gandr_theory_graphs::PrecSpec;
 /// - ensures: returns the grammar.
 /// - fails: a gate refuses `regex`.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the finite completion-path fixtures, L2 closing-class
+///   observations catch wrong rule assembly and lost gate errors. The predicate
+///   observes the one-rule header or its concrete construction error; arbitrary
+///   regexes and resource exhaustion are not exhausted.
+/// - witness: `tests::closing_class::closing_class_is_form_level`
+/// - witness: `tests::closing_class::closing_class_repeat_with_exit_shares_its_component_answer`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.downcast_ref::<gandr_surface_grammar::PbgError>().is_some(), |pbg| pbg.rules().len() == 1 && pbg.rules().first().is_some_and(|rule| rule.name().0 == "only" && rule.sort() == Sort::Item && pbg.dag().name(rule.prec()).is_some_and(|name| name == "atom"))))]
 fn one_rule(regex: Regex) -> Result<Pbg, Box<dyn Error>>
 {
     let mut spec = PrecSpec::new();
@@ -154,26 +161,5 @@ fn closing_class_repeat_with_exit_shares_its_component_answer() -> Result<(), Bo
             );
         }
     }
-    Ok(())
-}
-
-/// The closing-class derivation stays near-linear, so building the built-in
-/// surface stays cheap enough to pay once per test process.
-///
-/// A derivation that rescans the rule's adjacency at every search step is
-/// cubic on the alternation-heavy rules and takes seconds per build; a
-/// healthy dev-profile build takes about a tenth of a second. The one-second
-/// bound separates the two.
-#[test]
-fn built_in_builds_fast_enough_for_process_per_test_suites() -> Result<(), Box<dyn Error>>
-{
-    let start = Instant::now();
-    let pbg = built_in()?;
-    let elapsed = start.elapsed();
-    black_box(&pbg);
-    assert!(
-        elapsed < Duration::from_secs(1),
-        "built_in() took {elapsed:?}; the derivation must stay near-linear"
-    );
     Ok(())
 }

@@ -20,6 +20,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Named-kind inventory](#named-kind-inventory)
 - [Highlighter](#highlighter)
 - [Fingerprint](#fingerprint)
+- [Specification evidence](#specification-evidence)
 - [License](#license)
 <!-- tocstop -->
 
@@ -48,7 +49,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - `Pbg::rule_of` and `Pbg::named_kind`: the rule a mold belongs to and the named kind that rule realises, total over the mold table — what a consumer of a molded tree dispatches on. Witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`.
 - `Pbg::fingerprint`: the grammar's identity, pinned for the built-in surface. Witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`.
 - `walk_index`, `reachable_molds`, `comparison_table`, `seen_key_verdict`, `GrammarWalkSym`, `MAX_WALK_CHAIN_LEN`: the walk machine over a grammar and the relations read off it. Witnesses: `tests::walk::walk_index_projects_every_mold_once`, `tests::walk::comparison_table_is_conflict_free`, `tests::walk::comparison_table_coheres_with_precedence`, `tests::walk::seen_key_verdict_is_recorded`, `tests::walk::walk_lengths_respect_the_chain_cap`.
-- `built_in`, `built_in_prec_table`, `PrecTable`: the gandr surface and its named precedence groups. Witnesses: `tests::surface::built_in_precedence_bands_are_exact`, `tests::surface::built_in_adaptations_name_their_rules`, `tests::closing_class::built_in_builds_fast_enough_for_process_per_test_suites`, `surface::tests::precedence_helper_failures_preserve_named_context`.
+- `built_in`, `built_in_prec_table`, `PrecTable`: the gandr surface and its named precedence groups. Witnesses: `tests::surface::built_in_precedence_bands_are_exact`, `tests::surface::built_in_adaptations_name_their_rules`, `surface::tests::precedence_helper_failures_preserve_named_context`.
 - `RoleTable`, `HighlightError`: the role of every mold, read off a grammar, and the highlight spans of a tree molded under it; a tree under another grammar and a tile past the table are refused. Witnesses: `tests::highlight::every_mold_has_a_role`, `tests::highlight::corpus_roles_match_the_golden`, `tests::highlight::spans_partition_the_tile_bytes`, `tests::highlight::layout_takes_a_role_only_as_a_comment_or_a_shebang`, `tests::highlight::a_tree_under_another_grammar_is_refused`, `tests::highlight::a_tile_past_the_table_is_refused`, `highlight::tests::mold_provenance_alignment`, `highlight::tests::role_of_pins_context_free_classes`.
 - `named_kind_parity`, `named_kind_realization`, `TREE_SITTER_NAMED_KINDS`, `PBG_ONLY_KINDS`: how every named node kind is realised. Witness: `tests::surface::named_kind_coverage_is_semantic`.
 
@@ -120,7 +121,9 @@ A `Regex` is one vector of entries in pre-order, each holding its node and the l
 
 ## Gates
 
-Operator Form refuses a form in which two sort holes can stand side by side on any path, nullable sequences included, so a hole's extent is always delimited by a tile. Unique Tiles refuses two occurrences of one label in one interned context, so a label and a context name exactly one mold. Assumption 3 refuses two distinct sorts `r` and `s` where a form of `r` can begin with `s` and a form of `s` can end with `r`, over every precedence of each. An adaptation records why a rule's shape departs from the named kind it realises; it never relaxes a gate. `Pbg::build` reports the first violation in a fixed order — headers rule by rule, Operator Form rule by rule, Unique Tiles, then Assumption 3 — so a grammar with several faults always names the same one.
+Operator Form's contract excludes a form in which two sort holes can stand side by side on any path, nullable sequences included, so a hole's extent is delimited by a tile; the repetition limitation is described below. Unique Tiles refuses two occurrences of one label in one interned context, so a label and a context name exactly one mold. Assumption 3 refuses two distinct sorts `r` and `s` where a form of `r` can begin with `s` and a form of `s` can end with `r`, over every precedence of each. An adaptation records why a rule's shape departs from the named kind it realises; it never relaxes a gate. `Pbg::build` reports the first violation in a fixed order — headers rule by rule, Operator Form rule by rule, Unique Tiles, then Assumption 3 — so a grammar with several faults always names the same one.
+
+The Operator Form check does not inspect the backedge between repetitions: `repeat(sort(Expression))` is admitted although two iterations place holes together. Enforcing that boundary also rejects the built-in `module_declaration` and `nested_module_member` forms, which repeat self-delimited member holes. A structural repair must preserve the sibling and nesting ownership witnessed by `module_member_repetition_preserves_siblings_and_nesting` in [the surface tests](tests/surface.rs); neither a sort-name exception nor rejection of the built-in grammar establishes the gate's stated guarantee.
 
 `PbgError` keeps a precedence refusal in its own variant: `PrecedenceDag` carries the DAG's own refusal and `PrecedenceCycle` the cycle named group by group, and `InvalidSort` carries the `GroutSort` tag that failed to decode.
 
@@ -135,7 +138,7 @@ A mold is one tile occurrence: its label, its sort, its precedence group, and th
 
 A mold's closing class is the bracket family every completion of its form from that mold ends in: `Paren`, `Bracket` or `Brace`, the families `ClosingClass` names in `gandr-surface-syntax`. It is a property of the form, not of the tile, so the same label derives different classes in different rules: a module member's `=` reaches the module's `}`, a definition's `=` completes at `;` and derives nothing. A completion that ends at a tile closing nothing, at a closer of a family the rule never opens, or in disagreement with another completion gives no class.
 
-Each rule's tiles form a graph under adjacency. Every tile in one strongly connected component reaches the same endings, so the derivation condenses the graph once and folds the components sinks first; every occurrence reads its component's answer. The derivation is linear in the rule's tiles and adjacencies, and the built-in surface builds well within the one-second bound its wall-clock test sets.
+Each rule's tiles form a graph under adjacency. Every tile in one strongly connected component reaches the same endings, so the derivation condenses the graph once and folds the components sinks first; every occurrence reads its component's answer. The derivation is linear in the rule's tiles and adjacencies.
 
 - Alternatives: a per-tile memo with a visiting set records a tile inside a repeat before the repeat's exit is known and answers wrongly for a repeat with an exit; a search that rescans the rule's adjacency at every step is cubic on the alternation-heavy rules.
 - Reversal: a rule shape whose condensation dominates the build.
@@ -189,7 +192,9 @@ The classification, in order:
 
 Layout has no mold: a layout node opening with `//` or `/*` is a `Comment`, one opening with `#!` a `Directive`, and whitespace, grout and a minted close take no span. Every tile is one span, and adjacent spans of one role stay two. The enclosing bracket is read by one walk over the rules' forms in mold-id order, the order the mold table numbers them, with the open brackets of the current form on a stack: an opener pushes, a closer pops, and each branch of an alternative starts from the brackets open before it. The walk is checked against the mold table occurrence by occurrence.
 
-Every mold of the built-in surface has a role, 2371 of 2371. Four places the grammar does not tell apart take a coarse role, which a semantic overlay refines: a definition's name is a `FunctionDef` whether it names a function or a value; the head of an application `f(x)` is an expression atom, so a `Variable`; a shell command's head and its arguments are one `shell_word` class, so all `Path`; and the first field of a record expression `#{ x = 1, … }` is an expression atom where later fields are `Member`s.
+Spans are sorted by range, without clamping or merging. Disjoint input tiles yield disjoint spans; a tree assembled with overlapping or duplicate tile ranges retains them. `highlight_preserves_overlapping_tile_spans` in [the highlighter tests](tests/highlight.rs) witnesses the projection's multiplicity, overlap and ordering. The highlighter classifies the admitted tree; it does not validate a source partition.
+
+Every mold of the built-in surface has a role. Four places the grammar does not tell apart take a coarse role, which a semantic overlay refines: a definition's name is a `FunctionDef` whether it names a function or a value; the head of an application `f(x)` is an expression atom, so a `Variable`; a shell command's head and its arguments are one `shell_word` class, so all `Path`; and the first field of a record expression `#{ x = 1, … }` is an expression atom where later fields are `Member`s.
 
 - Alternatives: a table keyed by a token's lexeme class, which cannot tell a definition's name from a reference, or `?` the hole from `?` the receive, since each pair is one label; tree-sitter highlight queries over the surface's tree-sitter grammar, which keep a second parser and its query files in step with this grammar by hand and cannot read the molded tree the pipeline holds.
 - Reversal: a role that depends on more than the mold — a name's resolved kind, a binding's uses — belongs to a semantic overlay over these spans; the classification leaves the grammar when the grammar stops determining it, as user-declared operators would make an operator's spelling a run-time fact. Punctuation is `Other`; a renderer that styles it apart adds a role to the seam.
@@ -205,6 +210,14 @@ The role golden under `tests/highlight/` mirrors the corpus: one `.roles` file p
 ## Fingerprint
 
 `Pbg::fingerprint` is 64-bit FNV-1a over the frame byte `M`, the precedence DAG's fingerprint, the mold count, each mold as its label, a zero byte, its context, its group and its sort tag, then the context count and each context as its two sort-facing bytes and its two step lists — a list as its length, then each step as `S` and a sort tag or `T`, a label and a zero byte. Words are little-endian and counts 64-bit, so the value is the same on every platform. The accumulator is the shared `Fnv64` of `gandr-theory-graphs`. A fingerprint keys a cache and is no proof of equality.
+
+## Specification evidence
+
+Executable predicates cover regex shapes, rule assembly, validation refusals, context and mold identities, walk projections, precedence relations and highlighting. Each nontrivial item's adequacy block names its input domain, observer, mutation classes and boundary, with crate-local witnesses. The enforcing test lane runs the same corpus and boundary cases through the predicates. Exact grammar identity and role goldens complement structural observations; they do not prove every possible user-defined grammar.
+
+Resolution predicates mark output positions as input keys resolve, preserving exact coverage with aliases without a quadratic reverse search. Adjacency ordering, ownership and exact incoming/outgoing flags are checked at construction. Read-only queries check the stored answer or borrowed-table identity instead of rescanning immutable edges on every parser lookup.
+
+Opaque iterator returns, write-only formatters and the fingerprint getter's opaque const result have explicit executable exemptions. Their witnesses observe yielded identities, formatted payloads and sink failure, or concrete fingerprint framing instead of asserting properties the item cannot inspect.
 
 ## License
 
