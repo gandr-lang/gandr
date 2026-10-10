@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! Adversarial-depth totality of the two machines and of the key derivation.
 //!
 //! Decode can build an arbitrarily deep term from bytes, so every walk the
@@ -28,6 +17,7 @@
 #[cfg(test)]
 mod adversarial_depth
 {
+    use anodized::spec;
     use gandr_kernel_check_memo::CheckMemo as _;
     use gandr_kernel_check_memo::MemoEntryCount;
     use gandr_kernel_check_memo::NullMemo;
@@ -72,6 +62,13 @@ mod adversarial_depth
     /// - fails: never.
     /// - panics: when admission refuses, which an empty constraint set never
     ///   does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: both checker variants admit the closed 20,000-link
+    ///   fixture under a zero-parameter level context; this fixes the fixture
+    ///   scope, not arbitrary level constraints.
+    /// - witness: `adversarial_depth::adversarial_depth::the_two_machines_are_total_on_a_chain_deep_term`
+    #[spec(ensures: |ret| u32::from(ret.params()) == 0)]
     fn levels() -> LevelContext
     {
         LevelContext::admit(LevelParamCount::from(0_u32), Vec::new())
@@ -99,6 +96,15 @@ mod adversarial_depth
     /// - fails: never.
     /// - panics: when the chain-deep definition does not check, which is the
     ///   assertion this helper exists for.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: at 20,000 links on a 256 KiB thread stack, both memo
+    ///   choices must finish checking and teardown, with the exact term census
+    ///   and a type descent beyond the link count. No unbounded stack theorem
+    ///   is claimed.
+    /// - witness: `adversarial_depth::adversarial_depth::the_two_machines_are_total_on_a_chain_deep_term`
+    #[spec(ensures: |ret| u64::from(ret.plane_expansions(SupportPlane::Term)) == u64::from(CHAIN_LINKS).saturating_mul(2).saturating_add(2)
+        && u64::from(ret.plane_expansions(SupportPlane::Type)) > u64::from(CHAIN_LINKS))]
     fn check_a_deep_chain(active: MemoActivityChoice) -> ExpansionCensus
     {
         let mut arena = TermArena::new();
@@ -170,7 +176,7 @@ mod adversarial_depth
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `2 * CHAIN_LINKS + 2`: two term goals per link, plus the unit
-    ///   leaf's check, its synthesis, and the root's own check.
+    ///   leaf's check and its synthesis.
     /// - provides: the closed form both instantiations are asserted against.
     ///   Every node of the chain is distinct, so the memo collapses nothing and
     ///   the two agree — which is what makes this a depth case rather than a
@@ -178,10 +184,17 @@ mod adversarial_depth
     /// - fails: never.
     /// - panics: when the form leaves the representable range, which the pinned
     ///   chain length does not reach.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the closed form is compared with independently counted
+    ///   live and null-memo executions at 20,000 links, distinguishing a
+    ///   missing leaf synthesis or an omitted link plane.
+    /// - witness: `adversarial_depth::adversarial_depth::the_two_machines_are_total_on_a_chain_deep_term`
+    #[spec(ensures: |ret| u64::from(ret) == u64::from(CHAIN_LINKS).saturating_add(u64::from(CHAIN_LINKS)).saturating_add(2))]
     fn expected_term_expansions() -> ExpansionCount
     {
         // Two term goals per link (the thunk's check and the returner's check),
-        // plus the unit leaf's check, its synthesis, and the root's own check.
+        // plus the unit leaf's check and its synthesis.
         let scaled = arith::mul(
             arith::Int::from(u64::from(CHAIN_LINKS)),
             arith::Int::from(2_u64),
@@ -222,23 +235,29 @@ mod adversarial_depth
     /// this deep needs megabytes of frames and cannot fit the worker's
     /// stack; an explicit task stack on the heap needs none.
     ///
-    /// The depth is asserted through the memo's own entry count before the
-    /// answer is read, so the case cannot degenerate into a shallow chain
-    /// and keep passing.
+    /// The returned memo entry count lets the outer witness assert the descent
+    /// after the arena has been dropped on the same small stack, so a shallow
+    /// fixture cannot masquerade as a deep traversal.
     ///
     /// # Specification
     /// - requires: nothing; the caller runs this on the small-stack worker.
     /// - ensures: substituting into the closed chain hands back the very node
-    ///   it came from, and the substitution plane's memo holds at least one
-    ///   entry per link — asserted before the answer is read, so the case
-    ///   cannot degenerate into a shallow chain and keep passing.
+    ///   it came from; the returned substitution memo count reaches one entry
+    ///   per link, so the outer witness observes the descent after teardown.
     /// - provides: the reuse path's depth claim: the walk descends the full
     ///   depth, mints nothing, and needs no frames on the worker's stack.
     /// - fails: never.
     /// - panics: when the chain does not instantiate to itself, when the
     ///   descent did not reach one entry per link, or when the chain length
     ///   does not fit a machine index.
-    fn instantiate_a_deep_chain()
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a 20,000-link closed chain is reused and torn down on
+    ///   a 256 KiB stack; the returned memo count distinguishes full descent
+    ///   from a shallow fixture.
+    /// - witness: `adversarial_depth::adversarial_depth::the_rewrite_machines_are_total_on_a_chain_deep_term`
+    #[spec(ensures: |ret| ret >= MemoEntryCount::from(usize::try_from(REWRITE_CHAIN_LINKS).expect("the chain length fits a usize")))]
+    fn instantiate_a_deep_chain() -> MemoEntryCount
     {
         let mut arena = TermArena::new();
         let mut node = arena.value_type_unit();
@@ -256,11 +275,7 @@ mod adversarial_depth
             root, instantiated,
             "a closed chain instantiates to the very node it came from"
         );
-        let links = usize::try_from(REWRITE_CHAIN_LINKS).expect("the chain length fits a usize");
-        assert!(
-            memo.plane_entry_count(RewritePlane::Substitute) >= MemoEntryCount::from(links),
-            "the walk descended one entry per link, so the totality claim is not vacuous"
-        );
+        memo.plane_entry_count(RewritePlane::Substitute)
     }
 
     #[test]
@@ -270,7 +285,12 @@ mod adversarial_depth
             .stack_size(SMALL_STACK_BYTES)
             .spawn(instantiate_a_deep_chain)
             .expect("the small-stack worker starts");
-        worker.join().expect("the small-stack worker finishes");
+        let entries = worker.join().expect("the small-stack worker finishes");
+        let links = usize::try_from(REWRITE_CHAIN_LINKS).expect("the chain length fits a usize");
+        assert!(
+            entries >= MemoEntryCount::from(links),
+            "the reuse walk descended every link"
+        );
     }
 
     /// Shift a chain-deep type whose leaf is a code, and read the rewritten
@@ -286,14 +306,22 @@ mod adversarial_depth
     /// # Specification
     /// - requires: nothing; the caller runs this on the small-stack worker.
     /// - ensures: shifting the code-carrying chain re-mints the whole spine and
-    ///   the rewritten spine reads back link for link.
+    ///   the rewritten spine reads back link for link; the returned shift memo
+    ///   count lets the outer witness observe the descent after teardown.
     /// - provides: the minting path's depth claim, where the closed-chain case
     ///   pins the reuse path's: the innermost node is a type read off a bound
     ///   variable, so every link's rewrite changes.
     /// - fails: never.
     /// - panics: when the rewritten spine does not read back as the shift
     ///   requires.
-    fn shift_a_deep_code_carrying_chain()
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a 20,000-link code-carrying chain is shifted and torn
+    ///   down on a 256 KiB stack; read-back distinguishes a collapsed spine or
+    ///   wrong free index, and the returned memo count witnesses full descent.
+    /// - witness: `adversarial_depth::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
+    #[spec(ensures: |ret| ret >= MemoEntryCount::from(usize::try_from(REWRITE_CHAIN_LINKS).expect("the chain length fits a usize")))]
+    fn shift_a_deep_code_carrying_chain() -> MemoEntryCount
     {
         let zero = Level::zero();
         let mut arena = TermArena::new();
@@ -343,6 +371,7 @@ mod adversarial_depth
             arena.value(raised),
             "whose free index rose with the type it sits in"
         );
+        memo.plane_entry_count(RewritePlane::Shift)
     }
 
     #[test]
@@ -352,6 +381,11 @@ mod adversarial_depth
             .stack_size(SMALL_STACK_BYTES)
             .spawn(shift_a_deep_code_carrying_chain)
             .expect("the small-stack worker starts");
-        worker.join().expect("the small-stack worker finishes");
+        let entries = worker.join().expect("the small-stack worker finishes");
+        let links = usize::try_from(REWRITE_CHAIN_LINKS).expect("the chain length fits a usize");
+        assert!(
+            entries >= MemoEntryCount::from(links),
+            "the minting walk descended every link"
+        );
     }
 }

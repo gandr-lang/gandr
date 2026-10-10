@@ -174,22 +174,24 @@ fn terminal(
 /// Compare a lowered ride with an independently specified output and replay it.
 ///
 /// # Specification
-/// - ensures: both the engine and kernel certify the explicit expected value.
+/// - ensures: returns the independently produced engine claim and kernel
+///   verdict; both certify the explicit expected value.
 /// - panics: on any failed elaboration, reduction or replay assertion.
-/// - executable: none — independent production and kernel acceptance are
-///   asserted inside this unit-returning helper; no verdict is retained.
+/// - provides: both observations to the executable postcondition without
+///   elaborating or replaying a second time.
 ///
 /// # Adequacy
 /// - hypothesis: L2/L3 — golden outputs distinguish forward maps and order; the
 ///   independent engine supplies decisions, never a kernel verdict.
 /// - witness: `flow_universe::tests::composition_preserves_direction_and_refuses_feedback`
+#[spec(ensures: |ret| ret == (EngineClaim::Convertible, KernelVerdict::Convertible))]
 fn computes(
     arena: &mut TermArena,
     flows: &Flows,
     id: FlowId,
     input: ValueId,
     output: ValueId,
-)
+) -> (EngineClaim, KernelVerdict)
 {
     let term = Ride {
         certificate: Certificate::Flow(id),
@@ -207,20 +209,19 @@ fn computes(
     let (claim, dialogue) = engine(arena, action, expected);
     assert_eq!(claim, EngineClaim::Convertible);
     let watermark = arena.watermark();
-    assert_eq!(
-        replay_ride(
-            arena,
-            flows,
-            term,
-            expected,
-            claim,
-            &dialogue,
-            ReplayBudget::DEFAULT
-        )
-        .expect("ride replay"),
-        KernelVerdict::Convertible
-    );
+    let verdict = replay_ride(
+        arena,
+        flows,
+        term,
+        expected,
+        claim,
+        &dialogue,
+        ReplayBudget::DEFAULT,
+    )
+    .expect("ride replay");
+    assert_eq!(verdict, KernelVerdict::Convertible);
     assert_eq!(arena.watermark(), watermark);
+    (claim, verdict)
 }
 
 #[test]

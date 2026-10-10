@@ -262,13 +262,26 @@ fn compose(
 /// # Specification
 /// - ensures: both Bool constructors are negated, with distinct map syntax.
 /// - panics: none.
-/// - executable: none — checking both applications requires mutable admission
-///   and independent normalization. The witness consumes this raw fixture
-///   through both engines rather than storing a verdict in it.
+/// - provides: a fixed syntax observer for the two administrative bind seams;
+///   normalization of both applications remains an independent witness.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — extensional agreement does not identify certificates.
+/// - hypothesis: L3 — extensional agreement does not identify certificates; the
+///   local predicate retains opposite branches and both bind seams.
 /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
+#[spec(ensures: |ret| {
+    let Some(&Value::Thunk(lambda)) = arena.value(ret) else { return false; };
+    let Some(&Computation::Lambda(case)) = arena.computation(lambda) else { return false; };
+    let Some(&Computation::Case { scrutinee, on_left, on_right }) = arena.computation(case) else { return false; };
+    matches!(arena.value(scrutinee), Some(&Value::Variable(index)) if u32::from(index) == 0)
+        && [(on_left, Side::Right), (on_right, Side::Left)].into_iter().all(|(branch, side)| {
+            let Some(&Computation::Bind(payload, inner)) = arena.computation(branch) else { return false; };
+            let Some(&Computation::Bind(again, returned)) = arena.computation(inner) else { return false; };
+            let Some(&Computation::Return(injection)) = arena.computation(returned) else { return false; };
+            payload == again && arena.computation(payload) == Some(&Computation::Return(scrutinee))
+                && arena.value(injection) == Some(&Value::Injection(side, scrutinee))
+        })
+})]
 fn inlined_triple_negation(arena: &mut TermArena) -> ValueId
 {
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));

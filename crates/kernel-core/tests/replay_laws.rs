@@ -1,20 +1,10 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! Unit-law goldens, replay purity and the refusal vocabulary.
 
 /// Replay laws exercised through the public kernel API.
 #[cfg(test)]
 mod laws
 {
+    use anodized::spec;
     use gandr_kernel_conversion_trace::ConversionDecision;
     use gandr_kernel_core::EngineClaim;
     use gandr_kernel_core::KernelVerdict;
@@ -59,6 +49,7 @@ mod laws
     ///   allocation or call-local state; unit-law goldens distinguish a common
     ///   wrong verdict that self-agreement alone would miss.
     /// - witness: `replay_laws::laws::replay_is_pure_across_repeated_and_cloned_arenas`
+    #[spec(captures: before = arena.watermark(), ensures: |ret| ret.is_err() || arena.watermark() == before)]
     fn repeat_and_clone(
         arena: &mut TermArena,
         unfoldings: &Unfoldings,

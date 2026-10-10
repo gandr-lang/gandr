@@ -56,21 +56,43 @@
 //! reads one, rechecking an untrusted engine's term-conversion verdict decision
 //! by decision.
 //!
+//! # Contract boundaries
+//!
+//! The source `# Specification` is authoritative; `#[spec(...)]` checks
+//! executable clauses. `# Adequacy` bounds finite witnesses, not unbounded
+//! proofs.
+//!
+//! | Area | Contract source |
+//! | ---- | --------------- |
+//! | Admission, staging and audit | [Environment](crate::env): committed prefixes, rollback, registration ownership, provenance ordering, ordered dependency reasons and reachability boundaries. |
+//! | Checking and conversion | [Checker](crate::check), [conversion](crate::conv) and `witness`: level precedence, refusal subjects, readable identities, mode transitions and witness projections. |
+//! | Encoding and support | [Encoding](crate::encoding) and [support]: byte-exact frames and hashes, ordered children, content-id reuse, cache observations and binder reach. |
+//! | Replay and rewrite | [Replay](mod@crate::replay) and [rewrite]: arena restoration, trace consumption, ordered premises, freezing, rule priority and unchanged-subject reuse. |
+//! | Fixture observations | `acceptance`, `adversarial_depth`, `flow_universe::tests` and `path_universe::tests`: differential verdicts, closed-form counts, small-stack teardown and fixed syntax seams. |
+//!
+//! Scalar captures, byte views and fixed child arrays avoid repeated
+//! conversion, normalization, hashing or graph walks. Captures allocate nothing
+//! and add no ordinary-lane work. Const APIs stay const and compare fields or
+//! variants; private runtime rewrite projections compare opaque ids.
+//!
+//! Saturated reach stays widest beneath binders and selects the whole
+//! telescope: it is an unknown bound. Replay refuses exhausted budgets before
+//! incrementing, including at the counter ceiling. Structural refusal may
+//! consume an optional `Decompose` marker.
+//!
+//! Explicit `- executable: none` exemptions:
+//!
+//! | Boundary | Items | Unavailable observation |
+//! | -------- | ----: | ----------------------- |
+//! | Data declarations | 10 | Evidence validity, event history or comparison of executions; producers and consumers carry the callable obligations. |
+//! | Evaluated tag assertion | 1 | No callable boundary; constant evaluation checks the sparse tag bound. |
+//! | `KernelError::fmt` | 1 | No readable formatter output buffer. |
+//! | `Unfoldings::new` | 1 | No arena provenance or closure observer; lookup and replay witness it. |
+//!
 //! The crate's measurements, mutation findings and admission rules are in its
 //! `README.md`.
 
 #![no_std]
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 
 extern crate alloc;
 
