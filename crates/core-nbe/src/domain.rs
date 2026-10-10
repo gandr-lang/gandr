@@ -231,8 +231,8 @@ pub struct Neutral
 {
     /// What the neutral is stuck on.
     head: NeutralHead,
-    /// The eliminations, innermost first, so the last is the outermost. Empty
-    /// exactly when the neutral stands in a value position.
+    /// The eliminations, innermost first, so the last is the outermost. A
+    /// value-position spine holds only static applications.
     spine: Vec<Elimination>,
     /// The unfolding face, beside the neutral form rather than instead of it.
     unfolding: Unfolding,
@@ -254,8 +254,18 @@ impl Neutral
     /// - fails: never — the two conditions are refused at the arena's mint, not
     ///   here.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and ordered nonempty spines over rigid,
+    ///   unforced and forced heads are observed by their head, unfolding
+    ///   transition and reconstructed eliminations; losing a face, changing a
+    ///   head or dropping or reversing the spine changes an observation.
+    /// - witness: `domain::tests::forcing_adds_a_reading_and_keeps_the_neutral_form`
+    /// - witness: `domain::tests::forcing_preserves_nonempty_spines_on_every_outcome`
+    /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.head == head && ret.unfolding == unfolding)]
     pub(crate) fn new(
         head: NeutralHead,
         spine: Vec<Elimination>,
@@ -292,8 +302,18 @@ impl Neutral
     ///   walk readback rebuilds an eliminated term from.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty spine and a force followed by an application
+    ///   are observed before and after every forcing outcome and through
+    ///   readback; a missing elimination, changed argument or reversed order
+    ///   changes the reconstructed term or retained spine.
+    /// - witness: `domain::tests::forcing_adds_a_reading_and_keeps_the_neutral_form`
+    /// - witness: `domain::tests::forcing_preserves_nonempty_spines_on_every_outcome`
+    /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.len() == self.spine.len())]
     pub fn spine(&self) -> &[Elimination]
     {
         &self.spine
@@ -339,8 +359,11 @@ impl Neutral
     /// - hypothesis: L3 — the decision surface is the three-state match,
     ///   separated by forcing an unforced neutral, forcing a rigid one, and
     ///   forcing a forced one, with the head and spine asserted unchanged in
-    ///   every case.
+    ///   every case. Nonempty spines cover retention of contents and order;
+    ///   overwriting a forced face, changing a refusal or losing the neutral
+    ///   form changes an observation.
     /// - witness: `domain::tests::forcing_adds_a_reading_and_keeps_the_neutral_form`
+    /// - witness: `domain::tests::forcing_preserves_nonempty_spines_on_every_outcome`
     /// - witness: `domain::tests::a_rigid_neutral_has_nothing_to_force`
     #[inline]
     #[spec(
@@ -515,9 +538,37 @@ impl DomainValue
     /// field.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; every arm carries a face.
+    /// - ensures: the face the arm holds, whichever arm this value is.
+    /// - provides: the one read that spares every caller a match over the whole
+    ///   vocabulary, so adding an arm cannot leave a caller reading a stale
+    ///   face.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — source-tagged closed pairs and substituted reduced
+    ///   pairs are observed by zero-unfold readback: the original id without
+    ///   allocation, or reconstructed ordered children. Losing a source,
+    ///   inventing one for a reduced value or returning a stale face changes
+    ///   these observations.
+    /// - witness: `readback::tests::an_unreduced_value_reads_back_as_its_own_source`
+    /// - witness: `readback::tests::a_reduced_value_is_rebuilt_from_the_domain`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| match *self {
+        | Self::PathCertificate { face, .. }
+        | Self::PathProduct { face, .. }
+        | Self::Unit { face }
+        | Self::Literal { face, .. }
+        | Self::Pair { face, .. }
+        | Self::Injection { face, .. }
+        | Self::Thunk { face, .. }
+        | Self::Lift { face, .. }
+        | Self::Neutral { face, .. }
+        | Self::Code { face, .. }
+        | Self::StaticLambda { face, .. } => ret == face,
+    })]
     pub fn face(&self) -> TermFace
     {
         match *self {
@@ -619,8 +670,21 @@ impl DomainComp
     ///   vocabulary.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — a source-tagged returner and a reduced stuck
+    ///   force/application are observed by source-id reuse without allocation
+    ///   and ordered spine reconstruction. Losing the retained source or
+    ///   inventing one for the stuck computation changes the result.
+    /// - witness: `readback::tests::an_unreduced_weak_head_reads_back_as_its_own_source`
+    /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| match *self {
+        | Self::Lambda { face, .. }
+        | Self::Return { face, .. }
+        | Self::Neutral { face, .. } => ret == face,
+    })]
     pub fn face(&self) -> CompTermFace
     {
         match *self {
@@ -670,9 +734,12 @@ mod tests
 {
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_kernel_term::ConstantIndex;
     use gandr_kernel_term::GlobalIndex;
 
+    use super::CompTermFace;
+    use super::Elimination;
     use super::ForceRefusal;
     use super::Glued;
     use super::Neutral;
@@ -691,6 +758,17 @@ mod tests
     /// - provides: the entry state the three-state force fixture below is
     ///   separated from.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixture has no input and supplies the unforced
+    ///   boundary of the three-state transition; successful forcing records the
+    ///   requested face and a repeated force refuses without replacing it. A
+    ///   rigid or already-forced fixture, a nonempty spine or loss of the head
+    ///   changes those observations.
+    /// - witness: `domain::tests::forcing_adds_a_reading_and_keeps_the_neutral_form`
+    #[spec(ensures: |ret| ret.spine.is_empty()
+        && matches!(ret.head, NeutralHead::Constant(_))
+        && matches!(ret.unfolding, Unfolding::Unforced(_)))]
     fn unforced() -> Neutral
     {
         Neutral::new(
@@ -756,5 +834,35 @@ mod tests
             neutral.unfolding(),
             "and the refusal left it rigid rather than half-forced"
         );
+    }
+
+    #[test]
+    fn forcing_preserves_nonempty_spines_on_every_outcome()
+    {
+        let mut arena = DomainArena::new();
+        let argument = arena.value_unit(TermFace::Reduced);
+        let first = Glued::Value(argument);
+        let second = Glued::Computation(arena.comp_return(argument, CompTermFace::Reduced));
+        let head = NeutralHead::Constant(ConstantIndex::from(3_usize));
+        let spine = Vec::from([Elimination::Force, Elimination::Apply(argument)]);
+        for (initial, result, final_face) in [
+            (Unfolding::Rigid, Err(ForceRefusal::Rigid), Unfolding::Rigid),
+            (
+                Unfolding::Unforced(GlobalIndex::from(7_u32)),
+                Ok(()),
+                Unfolding::Forced(second),
+            ),
+            (
+                Unfolding::Forced(first),
+                Err(ForceRefusal::AlreadyForced),
+                Unfolding::Forced(first),
+            ),
+        ] {
+            let mut neutral = Neutral::new(head, spine.clone(), initial);
+            assert_eq!(result, neutral.force_to(second));
+            assert_eq!(final_face, neutral.unfolding());
+            assert_eq!(head, neutral.head());
+            assert_eq!(spine.as_slice(), neutral.spine());
+        }
     }
 }

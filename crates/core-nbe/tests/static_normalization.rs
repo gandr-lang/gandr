@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! Static normalization through the public surface: a defined operator at an
 //! instance reads back as the ground type it stands for, two reduction orders
 //! over generated well-kinded terms reach the readback's normal form, and a
@@ -20,9 +9,13 @@
 //! read back under binders — and the confluence case sets two more beside it,
 //! written by substitution: leftmost-outermost and leftmost-innermost.
 
+#[path = "support/trees.rs"]
+mod trees;
+
 #[cfg(test)]
 mod static_normalization
 {
+    use anodized::spec;
     use gandr_core_nbe::Definitions;
     use gandr_core_nbe::DomainArena;
     use gandr_core_nbe::Fuel;
@@ -46,6 +39,10 @@ mod static_normalization
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_kernel_term::GlobalIndex;
 
+    use crate::trees::Term;
+    use crate::trees::Trees;
+    use crate::trees::same_tree;
+
     /// Fuel far above what any case needs, so a case fails on its property
     /// rather than on the budget.
     const AMPLE: u32 = 4_000_000;
@@ -61,7 +58,25 @@ mod static_normalization
     /// Evaluate `term` and read it back in the spending mode.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a closed, well-kinded static term whose evaluation and
+    ///   readback fit the budget.
+    /// - ensures: a live normalized code in the same arena.
+    /// - provides: the evaluator/readback side of the substitution
+    ///   differential.
+    /// - panics: when evaluation or readback refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — normalization fits the fixed budget. The predicate
+    ///   checks arena membership, while ground-type, independent
+    ///   reduction-order and deep rigid-spine witnesses distinguish missing
+    ///   beta steps and a wrong rebuilt type.
+    /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+    /// - witness: `static_normalization::static_normalization::a_static_redex_normalizes_to_its_ground_type`
+    /// - witness: `static_normalization::static_normalization::a_deep_static_term_normalizes_inside_a_small_stack`
+    #[spec(
+        requires: core.value(term).is_some(),
+        ensures: |ret| core.value(ret).is_some()
+    )]
     fn normal_form(
         core: &mut CoreArena,
         chain: &LoweredChain,
@@ -95,7 +110,37 @@ mod static_normalization
     /// The children of `position`, left to right.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; unsupported or missing nodes are leaves of this
+    ///   reference fragment.
+    /// - ensures: the ordered children of a static lambda, application, quote,
+    ///   product or decode; no children otherwise.
+    /// - provides: the fragment traversal shared by reference search and
+    ///   rebuilding.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the reference fragment is explicit. Exact ordered
+    ///   child slices distinguish swapping application arguments, dropping a
+    ///   quote boundary and descending through a missing id. The
+    ///   order-selection and confluence witnesses observe their use on nested
+    ///   redexes.
+    /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+    /// - witness: `static_normalization::static_normalization::the_reference_orders_choose_distinct_redexes_and_preserve_the_other_child`
+    #[spec(
+        ensures: |ret| match position {
+            Position::Value(id) => match core.value(id) {
+                Some(&Value::StaticLambda(body)) => ret.as_slice() == [Position::Value(body)],
+                Some(&Value::StaticApplication(head, argument)) => ret.as_slice() == [Position::Value(head), Position::Value(argument)],
+                Some(&Value::Quote(quoted)) => ret.as_slice() == [Position::ValueType(quoted)],
+                _ => ret.is_empty(),
+            },
+            Position::ValueType(id) => match core.value_type(id) {
+                Some(&ValueType::Product(first, second)) => ret.as_slice() == [Position::ValueType(first), Position::ValueType(second)],
+                Some(&ValueType::Element { code, .. }) => ret.as_slice() == [Position::Value(code)],
+                _ => ret.is_empty(),
+            },
+        }
+    )]
     fn children(
         core: &CoreArena,
         position: Position,
@@ -120,10 +165,34 @@ mod static_normalization
         }
     }
 
-    /// Whether `position` is a static redex, and its reduct when it is.
+    /// A static redex's uninstantiated body and argument, when present.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the uninstantiated body and argument exactly for an
+    ///   application headed by a static lambda; nothing otherwise.
+    /// - provides: beta-redex recognition without contracting it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the core may contain missing nodes. Exact payload
+    ///   selection distinguishes returning the abstraction instead of its body
+    ///   and accepting an application of a rigid head. The nested-redex witness
+    ///   observes different bodies and arguments at each selected site.
+    /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+    /// - witness: `static_normalization::static_normalization::the_reference_orders_choose_distinct_redexes_and_preserve_the_other_child`
+    #[spec(
+        ensures: |ret| match position {
+            Position::Value(id) => match core.value(id) {
+                Some(&Value::StaticApplication(head, argument)) => match core.value(head) {
+                    Some(&Value::StaticLambda(body)) => ret == Some((body, argument)),
+                    _ => ret.is_none(),
+                },
+                _ => ret.is_none(),
+            },
+            Position::ValueType(_) => ret.is_none(),
+        }
+    )]
     fn redex(
         core: &CoreArena,
         position: Position,
@@ -166,7 +235,37 @@ mod static_normalization
     /// ancestor and the child slot taken, or nothing when `root` is normal.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a live root of a finite acyclic term in the reference
+    ///   fragment.
+    /// - ensures: the leftmost redex selected by the requested outermost or
+    ///   innermost order, with its ancestor path; nothing for a normal term.
+    /// - provides: the two independently scheduled substitution walks.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite fragment is traversable. A returned path
+    ///   must start at the root, follow actual child slots and end at the
+    ///   returned redex. Absence also excludes a root redex. The explicit
+    ///   nested case distinguishes outermost from innermost selection;
+    ///   confluence compares their completed results.
+    /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+    /// - witness: `static_normalization::static_normalization::the_reference_orders_choose_distinct_redexes_and_preserve_the_other_child`
+    #[spec(
+        requires: core.value(root).is_some(),
+        ensures: |ret| match ret {
+            Some((ref path, body, argument)) => {
+                let mut current = Position::Value(root);
+                for &(ancestor, slot) in path {
+                    if current != ancestor { return false; }
+                    let below = children(core, ancestor);
+                    let Some(&child) = below.get(slot.0) else { return false; };
+                    current = child;
+                }
+                redex(core, current) == Some((body, argument))
+            },
+            None => redex(core, Position::Value(root)).is_none(),
+        }
+    )]
     fn first_redex(
         core: &CoreArena,
         root: ValueId,
@@ -207,7 +306,29 @@ mod static_normalization
     /// Rebuild the ancestors on `path` over `replacement` at its end.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a valid ancestor path rooted at a code, and a live
+    ///   replacement of the selected child family.
+    /// - ensures: the rebuilt code, retaining each untouched sibling and using
+    ///   canonical decoding when a replacement is quoted.
+    /// - provides: replacement at the selected redex without recursive
+    ///   reconstruction.
+    /// - panics: when the path or replacement violates its family requirements.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the path comes from a valid reference search. The
+    ///   replacement and returned code resolve; an empty path returns the
+    ///   replacement itself. Ordered ground-product and generated confluence
+    ///   comparisons observe sibling preservation and canonical decode across
+    ///   nonempty paths.
+    /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+    /// - witness: `static_normalization::static_normalization::the_reference_orders_choose_distinct_redexes_and_preserve_the_other_child`
+    #[spec(
+        requires: match replacement {
+            Position::Value(id) => core.value(id).is_some(),
+            Position::ValueType(id) => core.value_type(id).is_some(),
+        },
+        ensures: |ret| core.value(ret).is_some() && (!path.is_empty() || replacement == Position::Value(ret))
+    )]
     fn rebuild(
         core: &mut CoreArena,
         path: &[(Position, Slot)],
@@ -274,7 +395,25 @@ mod static_normalization
     /// Normalize `root` by substitution, contracting redexes in `order`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a closed, simply kinded term in the reference fragment whose
+    ///   chosen reduction order fits the step cap.
+    /// - ensures: a live beta-normal code reached by substitution in that
+    ///   order.
+    /// - provides: normal forms independent of closure evaluation and readback.
+    /// - panics: when a malformed path or the step cap refuses the run.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the source normalizes within the cap. The result is
+    ///   live and has no remaining redex. Distinct order selection, ordered
+    ///   products and comparison with closure normalization distinguish
+    ///   skipping contraction, rebuilding the wrong child and stopping before
+    ///   normal form.
+    /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+    /// - witness: `static_normalization::static_normalization::the_reference_orders_choose_distinct_redexes_and_preserve_the_other_child`
+    #[spec(
+        requires: core.value(root).is_some(),
+        ensures: |ret| core.value(ret).is_some() && first_redex(core, ret, Order::Outermost).is_none()
+    )]
     fn reduced(
         core: &mut CoreArena,
         root: ValueId,
@@ -291,66 +430,6 @@ mod static_normalization
             current = rebuild(core, &path, Position::Value(reduct));
         }
         panic!("a simply kinded term reaches its normal form well inside the step cap")
-    }
-
-    /// Whether two terms agree.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    enum Alike
-    {
-        /// One term up to node identity.
-        Same,
-        /// Two terms.
-        Different,
-    }
-
-    /// Whether two nodes are one term up to node identity.
-    ///
-    /// # Specification
-    /// trivial.
-    fn same_term(
-        core: &CoreArena,
-        left: ValueId,
-        right: ValueId,
-    ) -> Alike
-    {
-        let mut pending = Vec::from([(Position::Value(left), Position::Value(right))]);
-        while let Some((one, other)) = pending.pop() {
-            let alike = match (one, other) {
-                | (Position::Value(a), Position::Value(b)) => {
-                    match (core.value(a), core.value(b)) {
-                        | (Some(&Value::StaticLambda(_)), Some(&Value::StaticLambda(_)))
-                        | (
-                            Some(&Value::StaticApplication(..)),
-                            Some(&Value::StaticApplication(..)),
-                        )
-                        | (Some(&Value::Quote(_)), Some(&Value::Quote(_))) => true,
-                        | (Some(x), Some(y)) => x == y,
-                        | _ => false,
-                    }
-                },
-                | (Position::ValueType(a), Position::ValueType(b)) => {
-                    match (core.value_type(a), core.value_type(b)) {
-                        | (Some(&ValueType::Product(..)), Some(&ValueType::Product(..))) => true,
-                        | (
-                            Some(&ValueType::Element { target: ref x, .. }),
-                            Some(&ValueType::Element { target: ref y, .. }),
-                        ) => x == y,
-                        | (Some(x), Some(y)) => x == y,
-                        | _ => false,
-                    }
-                },
-                | _ => false,
-            };
-            if !alike {
-                return Alike::Different;
-            }
-            let (ones, others) = (children(core, one), children(core, other));
-            if ones.len() != others.len() {
-                return Alike::Different;
-            }
-            pending.extend(ones.into_iter().zip(others));
-        }
-        Alike::Same
     }
 
     /// A static classifier of the generated fragment.
@@ -372,7 +451,25 @@ mod static_normalization
         /// The domain and codomain of an arrow kind.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: the domain and codomain of the three arrow kinds; no
+        ///   arrow for `Star`.
+        /// - provides: the finite kind decomposition used by generation.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — these four kinds are exhaustive. The exact
+        ///   decomposition fixes argument polarity and currying depth;
+        ///   generated terms of every root kind normalize by both substitution
+        ///   orders and closure evaluation.
+        /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+        #[spec(
+            ensures: |ret| matches!((self, ret),
+                (Self::Star, None)
+                | (Self::Unary, Some((Self::Star, Self::Star)))
+                | (Self::Binary, Some((Self::Star, Self::Unary)))
+                | (Self::Higher, Some((Self::Unary, Self::Star))))
+        )]
         fn arrow(self) -> Option<(Self, Self)>
         {
             match self {
@@ -386,7 +483,24 @@ mod static_normalization
         /// The arrow kinds whose codomain is this kind.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: exactly the arrow kinds whose codomain is this kind, in
+        ///   their fixed declaration order.
+        /// - provides: all admissible application heads of a requested result
+        ///   kind.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — the kind universe is finite. Membership is
+        ///   equivalent to having this codomain, with no repeated operator;
+        ///   confluence exercises applications at every generated result kind
+        ///   and distinguishes an ill-kinded head choice.
+        /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+        #[spec(
+            ensures: |ret| [Self::Star, Self::Unary, Self::Binary, Self::Higher].into_iter().all(|operator|
+                ret.contains(&operator) == operator.arrow().is_some_and(|(_, codomain)| codomain == self))
+                && ret.iter().enumerate().all(|(index, operator)| !ret[..index].contains(operator))
+        )]
         fn operators(self) -> &'static [Self]
         {
             match self {
@@ -426,7 +540,29 @@ mod static_normalization
         /// The next draw among `choices`, or nothing when there are none.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: the slice length fits the stream word and index
+        ///   conversions.
+        /// - ensures: a borrowed member selected by the advanced word, or
+        ///   nothing exactly when the slice is empty.
+        /// - provides: deterministic draws without an equality requirement on
+        ///   the payload.
+        /// - panics: when a length conversion cannot fit.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — lengths fit the platform counters. Pointer
+        ///   identity checks the exact selected member without re-running an
+        ///   effectful payload equality. The zero state is absorbing and a
+        ///   nonzero state remains nonzero; generated choices exercise empty
+        ///   variable lists and nonempty alternatives.
+        /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+        #[spec(
+            captures: [was_zero = self.0 == 0],
+            ensures: |ret| (self.0 == 0) == was_zero && ret.map_or(choices.is_empty(), |item| {
+                u64::try_from(choices.len()).ok().and_then(|length| self.0.checked_rem(length))
+                    .and_then(|index| usize::try_from(index).ok()).and_then(|index| choices.get(index))
+                    .is_some_and(|chosen| core::ptr::eq(core::ptr::from_ref(item), core::ptr::from_ref(chosen)))
+            })
+        )]
         fn pick<'choices, T>(
             &mut self,
             choices: &'choices [T],
@@ -445,11 +581,58 @@ mod static_normalization
     #[derive(Clone, Copy, Debug)]
     struct Depth(u32);
 
-    /// Generate a closed term of `kind`, at most `depth` formers deep before
-    /// the leaves.
+    /// Generate a closed term of `kind`, spending `depth` before branching
+    /// stops; the kind may still require up to two arrow introductions.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the generated finite tree fits memory and its index
+    ///   counters.
+    /// - ensures: a closed, well-kinded preorder tree; the depth budget
+    ///   controls branching, with arrow introductions permitted after it is
+    ///   spent.
+    /// - provides: deterministic higher-order inputs for the confluence
+    ///   differential.
+    /// - panics: when an index or allocation cannot be represented.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite generation fits its counters. A separate
+    ///   preorder walk checks exact child arities, closed de Bruijn indices,
+    ///   branching fuel and the two extra arrow introductions possible in this
+    ///   kind universe. Root-shape constraints and three-way normalization
+    ///   witness kind-directed generation without replaying the random stream.
+    /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+    #[spec(
+        ensures: |ret| {
+            let Some(&(root, _)) = ret.nodes.first() else { return false; };
+            if !match root {
+                Shape::Lambda => kind.arrow().is_some(),
+                Shape::Apply => !kind.operators().is_empty(),
+                Shape::Rigid | Shape::Integer | Shape::Product => kind == Kind::Star,
+                Shape::Variable(_) => false,
+            } { return false; }
+            let mut pending = Vec::from([(0_usize, 0_usize, depth.0, 0_u64)]);
+            let mut visited = 0_usize;
+            while let Some((here, binders, fuel, height)) = pending.pop() {
+                if here != visited || height > u64::from(depth.0).saturating_add(2) { return false; }
+                let Some(&(shape, ref below)) = ret.nodes.get(here) else { return false; };
+                visited = visited.saturating_add(1);
+                let (arity, nested) = match shape {
+                    Shape::Lambda => (1, binders.saturating_add(1)),
+                    Shape::Apply | Shape::Product => { if fuel == 0 { return false; } (2, binders) },
+                    Shape::Variable(index) => {
+                        if !usize::try_from(index).is_ok_and(|index| index < binders) { return false; }
+                        (0, binders)
+                    },
+                    Shape::Rigid | Shape::Integer => (0, binders),
+                };
+                if below.len() != arity { return false; }
+                for &child in below.iter().rev() {
+                    pending.push((child, nested, fuel.saturating_sub(1), height.saturating_add(1)));
+                }
+            }
+            visited == ret.nodes.len()
+        }
+    )]
     fn generate(
         stream: &mut Stream,
         kind: Kind,
@@ -529,7 +712,28 @@ mod static_normalization
     /// Mint `tree` into `core`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a nonempty, well-kinded preorder tree whose child references
+    ///   point forward and have the declared arities.
+    /// - ensures: a live code of the root shape, with every generated former
+    ///   translated into core syntax.
+    /// - provides: the common syntax input to all three normalization paths.
+    /// - panics: when a malformed tree names an absent child.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the tree is kinded and has forward child references.
+    ///   Arity and index predicates exclude malformed construction order; the
+    ///   output root resolves. The independent normalization paths compare
+    ///   complete translated trees, including ordered products and higher-order
+    ///   binders.
+    /// - witness: `static_normalization::static_normalization::static_normalization_is_confluent`
+    /// - witness: `static_normalization::static_normalization::the_reference_orders_choose_distinct_redexes_and_preserve_the_other_child`
+    #[spec(
+        requires: !tree.nodes.is_empty() && tree.nodes.iter().enumerate().all(|(here, &(shape, ref below))| {
+            let arity = match shape { Shape::Lambda => 1, Shape::Apply | Shape::Product => 2, Shape::Variable(_) | Shape::Rigid | Shape::Integer => 0 };
+            below.len() == arity && below.iter().all(|&child| child > here && child < tree.nodes.len())
+        }),
+        ensures: |ret| core.value(ret).is_some()
+    )]
     fn build(
         core: &mut CoreArena,
         tree: &Tree,
@@ -626,38 +830,61 @@ mod static_normalization
         let mut stream = Stream(0x2545_F491_4F6C_DD1D);
         let kinds = [Kind::Star, Kind::Unary, Kind::Binary, Kind::Higher];
         let rounds = 800_usize;
-        let mut reducible = 0_usize;
         for round in 0 .. rounds {
             let kind = kinds[round % kinds.len()];
             let tree = generate(&mut stream, kind, Depth(4_u32));
             let mut core = CoreArena::new();
             let term = build(&mut core, &tree);
-            if first_redex(&core, term, Order::Outermost).is_some() {
-                reducible = reducible.checked_add(1_usize).unwrap();
-            }
             let outermost = reduced(&mut core, term, Order::Outermost);
             let innermost = reduced(&mut core, term, Order::Innermost);
             let read = normal_form(&mut core, &LoweredChain::new(), term);
             assert_eq!(
-                Alike::Same,
-                same_term(&core, outermost, innermost),
+                Trees::Same,
+                same_tree(&core, Term::Value(outermost), &core, Term::Value(innermost)),
                 "round {round}: normal order and applicative order reach one normal form for \
                  {tree:?}"
             );
             assert_eq!(
-                Alike::Same,
-                same_term(&core, outermost, read),
+                Trees::Same,
+                same_tree(&core, Term::Value(outermost), &core, Term::Value(read)),
                 "round {round}: and the readback reaches it too, for {tree:?}"
             );
         }
-        assert!(
-            reducible.checked_mul(4_usize).unwrap() >= rounds,
-            "the generator reaches redexes in at least a quarter of its terms, so the orders \
-             are compared on reductions rather than on terms already normal ({reducible} of \
-             {rounds})"
-        );
     }
 
+    #[test]
+    fn the_reference_orders_choose_distinct_redexes_and_preserve_the_other_child()
+    {
+        let mut core = CoreArena::new();
+        let variable = core.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
+        let decoded = core.value_type_element(variable, Level::zero());
+        let integer = core.value_type_base(BaseType::Integer);
+        let product = core.value_type_product(decoded, integer);
+        let body = core.value_quote(product);
+        let operator = core.value_static_lambda(body);
+        let identity = core.value_static_lambda(variable);
+        let unit = core.value_type_unit();
+        let argument = core.value_quote(unit);
+        let inner = core.value_static_application(identity, argument);
+        let root = core.value_static_application(operator, inner);
+        assert_eq!(
+            first_redex(&core, root, Order::Outermost),
+            Some((Vec::new(), body, inner))
+        );
+        assert_eq!(
+            first_redex(&core, root, Order::Innermost),
+            Some((vec![(Position::Value(root), Slot(1))], variable, argument))
+        );
+        let product = core.value_type_product(unit, integer);
+        let expected = core.value_quote(product);
+        for order in [Order::Outermost, Order::Innermost] {
+            let actual = reduced(&mut core, root, order);
+            assert_eq!(
+                same_tree(&core, Term::Value(expected), &core, Term::Value(actual)),
+                Trees::Same
+            );
+        }
+    }
     #[test]
     fn a_deep_static_term_normalizes_inside_a_small_stack()
     {

@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! Evaluation is iterative, observed as stack usage rather than as completion.
 //!
 //! The machine's whole reason for existing is that the direct presentation —
@@ -68,6 +57,7 @@ mod trees;
 #[cfg(test)]
 mod deep_evaluation
 {
+    use anodized::spec;
     use gandr_core_nbe::Bound;
     use gandr_core_nbe::CompGraft;
     use gandr_core_nbe::CompNode;
@@ -101,9 +91,11 @@ mod deep_evaluation
     use gandr_core_nbe::eval_value;
     use gandr_core_nbe::readback_computation;
     use gandr_core_nbe::readback_value;
+    use gandr_core_term::Computation;
     use gandr_core_term::ComputationId;
     use gandr_core_term::CoreArena;
     use gandr_core_term::DefinitionalEnvironment;
+    use gandr_core_term::Value;
     use gandr_core_term::ValueId;
     use gandr_core_term::Zone;
     use gandr_kernel_conversion_trace::TraceLog;
@@ -141,6 +133,16 @@ mod deep_evaluation
     /// - provides: the budget that keeps a refusal in these witnesses a depth
     ///   result rather than an exhaustion one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the fixed budget is observed directly; completing the
+    ///   independently walked 50,000-link fixtures on a 256 KiB stack
+    ///   establishes adequacy for these cases, not arbitrary closed terms.
+    /// - witness: `deep_evaluation::deep_evaluation::a_deep_value_evaluates_inside_a_small_stack`
+    /// - witness: `deep_evaluation::deep_evaluation::a_deep_computation_evaluates_inside_a_small_stack`
+    #[spec(
+        ensures: |ret| ret == Fuel::from(4_000_000_u32)
+    )]
     fn ample() -> Fuel
     {
         Fuel::from(4_000_000_u32)
@@ -160,6 +162,29 @@ mod deep_evaluation
     ///   outermost pair's id.
     /// - provides: the deep value and the reference its overlay erases to.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed depth fits core ids. A bounded descent
+    ///   requires every pair to reuse one unit leaf and ends at that leaf at
+    ///   exactly the requested depth. Exact erased-arena equality and the
+    ///   independently walked readback distinguish a shorter chain, a non-unit
+    ///   second child and exponential self-sharing.
+    /// - witness: `deep_evaluation::deep_evaluation::a_deep_value_evaluates_inside_a_small_stack`
+    /// - witness: `deep_evaluation::deep_evaluation::an_erased_value_chain_evaluates_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_value_chain_evaluates_as_the_erased_one`
+    #[spec(
+        ensures: |ret| {
+            let mut top = ret.1;
+            let mut leaf = None;
+            for _ in 0..CHAIN_LINKS {
+                let Some(&Value::Pair(first, second)) = ret.0.value(top) else { return false; };
+                if ret.0.value(second) != Some(&Value::Unit) || leaf.is_some_and(|held| held != second) { return false; }
+                leaf = Some(second);
+                top = first;
+            }
+            ret.0.value(top) == Some(&Value::Unit) && leaf.is_none_or(|held| held == top)
+        }
+    )]
     fn unshared_value_chain() -> (CoreArena, ValueId)
     {
         let mut core = CoreArena::new();
@@ -182,6 +207,31 @@ mod deep_evaluation
     ///   occurrence than [`CHAIN_LINKS`], placed in preorder down the chain.
     /// - provides: the overlay that erases to [`unshared_value_chain`].
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed depth and arity fit their counters. The
+    ///   root shares one unit, the right occurrence at each pair has its
+    ///   descending preorder position, and the terminal occurrence has position
+    ///   zero. Exact erased-arena equality and measured quantities distinguish
+    ///   reversed numbering, a wrong arity and a missing link.
+    /// - witness: `deep_evaluation::deep_evaluation::a_deep_value_evaluates_inside_a_small_stack`
+    /// - witness: `deep_evaluation::deep_evaluation::an_erased_value_chain_evaluates_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_value_chain_evaluates_as_the_erased_one`
+    #[spec(
+        ensures: |ret| {
+            let Some(&ValueNode::Shared(sharing)) = ret.0.value(ret.1) else { return false; };
+            let OverlayId::Value(leg) = sharing.leg else { return false; };
+            let Ok(links) = u32::try_from(CHAIN_LINKS) else { return false; };
+            if sharing.arity != ShareArity::from(links.saturating_add(1)) || ret.0.value(leg) != Some(&ValueNode::Grafted(ValueGraft::Unit)) { return false; }
+            let mut top = sharing.body;
+            for position in (1..=links).rev() {
+                let Some(&ValueNode::Grafted(ValueGraft::Pair(first, second))) = ret.0.value(top) else { return false; };
+                if ret.0.value(second) != Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position: SharePosition::from(position) })) { return false; }
+                top = first;
+            }
+            ret.0.value(top) == Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position: SharePosition::from(0_u32) }))
+        }
+    )]
     fn shared_value_chain() -> (Overlay, OverlayValueId)
     {
         let mut overlay = Overlay::new();
@@ -220,6 +270,34 @@ mod deep_evaluation
     ///   outermost application's id.
     /// - provides: the curried case and the reference its overlay erases to.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed arity fits core ids. Exactly that many
+    ///   applications reuse one unit argument, followed by the same number of
+    ///   lambdas and return of intuitionistic index zero. Independent erasure
+    ///   equality and the linear fuel witness distinguish a shorter spine, a
+    ///   wrong index and accidental duplication.
+    /// - witness: `deep_evaluation::deep_evaluation::a_deeply_curried_application_costs_linear_steps`
+    /// - witness: `deep_evaluation::deep_evaluation::an_erased_curried_application_evaluates_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_curried_application_evaluates_as_the_erased_one`
+    #[spec(
+        ensures: |ret| {
+            let mut top = ret.1;
+            let mut argument = None;
+            for _ in 0..CURRIED_ARGUMENTS {
+                let Some(&Computation::Application(head, value)) = ret.0.computation(top) else { return false; };
+                if ret.0.value(value) != Some(&Value::Unit) || argument.is_some_and(|held| held != value) { return false; }
+                argument = Some(value);
+                top = head;
+            }
+            for _ in 0..CURRIED_ARGUMENTS {
+                let Some(&Computation::Lambda(body)) = ret.0.computation(top) else { return false; };
+                top = body;
+            }
+            matches!(ret.0.computation(top), Some(&Computation::Return(value))
+                if ret.0.value(value) == Some(&Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) }))
+        }
+    )]
     fn unshared_curried_application() -> (CoreArena, ComputationId)
     {
         let mut core = CoreArena::new();
@@ -249,6 +327,36 @@ mod deep_evaluation
     ///   [`CURRIED_ARGUMENTS`] applications.
     /// - provides: the overlay that erases to [`unshared_curried_application`].
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed arity fits overlay ids. The root shares a
+    ///   unit with exactly numbered application occurrences, followed by the
+    ///   fixed abstraction spine and return of index zero. Core erasure and
+    ///   domain equality independently distinguish a misplaced occurrence,
+    ///   wrong binder count and wrong variable.
+    /// - witness: `deep_evaluation::deep_evaluation::a_deeply_curried_application_costs_linear_steps`
+    /// - witness: `deep_evaluation::deep_evaluation::an_erased_curried_application_evaluates_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_curried_application_evaluates_as_the_erased_one`
+    #[spec(
+        ensures: |ret| {
+            let Some(&CompNode::Shared(sharing)) = ret.0.computation(ret.1) else { return false; };
+            let OverlayId::Value(leg) = sharing.leg else { return false; };
+            let Ok(arity) = u32::try_from(CURRIED_ARGUMENTS) else { return false; };
+            if sharing.arity != ShareArity::from(arity) || ret.0.value(leg) != Some(&ValueNode::Grafted(ValueGraft::Unit)) { return false; }
+            let mut top = sharing.body;
+            for position in (0..arity).rev() {
+                let Some(&CompNode::Grafted(CompGraft::Application(head, argument))) = ret.0.computation(top) else { return false; };
+                if ret.0.value(argument) != Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position: SharePosition::from(position) })) { return false; }
+                top = head;
+            }
+            for _ in 0..CURRIED_ARGUMENTS {
+                let Some(&CompNode::Grafted(CompGraft::Lambda(body))) = ret.0.computation(top) else { return false; };
+                top = body;
+            }
+            matches!(ret.0.computation(top), Some(&CompNode::Grafted(CompGraft::Return(value)))
+                if ret.0.value(value) == Some(&ValueNode::Grafted(ValueGraft::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) })))
+        }
+    )]
     fn shared_curried_application() -> (Overlay, OverlayCompId)
     {
         let mut overlay = Overlay::new();
@@ -304,6 +412,30 @@ mod deep_evaluation
     /// - provides: the deep computation and the reference its overlay erases
     ///   to.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed depth fits core ids. Each bind reuses one
+    ///   return/index-zero continuation and the bound spine ends at return/unit
+    ///   after exactly the fixed number of links. Independent erased-arena and
+    ///   evaluated-domain equality distinguish wrong continuation scope, early
+    ///   termination and exponential self-sharing.
+    /// - witness: `deep_evaluation::deep_evaluation::a_deep_computation_evaluates_inside_a_small_stack`
+    /// - witness: `deep_evaluation::deep_evaluation::an_erased_bind_chain_evaluates_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_bind_chain_evaluates_as_the_erased_one`
+    #[spec(
+        ensures: |ret| {
+            let mut top = ret.1;
+            let mut continuation = None;
+            for _ in 0..CHAIN_LINKS {
+                let Some(&Computation::Bind(bound, body)) = ret.0.computation(top) else { return false; };
+                if continuation.is_some_and(|held| held != body) || !matches!(ret.0.computation(body), Some(&Computation::Return(value))
+                    if ret.0.value(value) == Some(&Value::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) })) { return false; }
+                continuation = Some(body);
+                top = bound;
+            }
+            matches!(ret.0.computation(top), Some(&Computation::Return(value)) if ret.0.value(value) == Some(&Value::Unit))
+        }
+    )]
     fn unshared_bind_chain() -> (CoreArena, ComputationId)
     {
         let mut core = CoreArena::new();
@@ -331,6 +463,34 @@ mod deep_evaluation
     /// - provides: the overlay that erases to [`unshared_bind_chain`], with the
     ///   arena it erases into.
     /// - panics: when a mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed depth and arity fit their counters. The
+    ///   shared continuation is return/index-zero; a bounded bind descent
+    ///   verifies every occurrence position and ends at an opaque return/unit
+    ///   in the paired core arena. Independent core and domain equality
+    ///   distinguish losing the opaque boundary or reading the continuation
+    ///   outside its binder.
+    /// - witness: `deep_evaluation::deep_evaluation::a_deep_computation_evaluates_inside_a_small_stack`
+    /// - witness: `deep_evaluation::deep_evaluation::an_erased_bind_chain_evaluates_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_bind_chain_evaluates_as_the_erased_one`
+    #[spec(
+        ensures: |ret| {
+            let Some(&CompNode::Shared(sharing)) = ret.1.computation(ret.2) else { return false; };
+            let OverlayId::Computation(leg) = sharing.leg else { return false; };
+            let Ok(arity) = u32::try_from(CHAIN_LINKS) else { return false; };
+            if sharing.arity != ShareArity::from(arity) || !matches!(ret.1.computation(leg), Some(&CompNode::Grafted(CompGraft::Return(value)))
+                if ret.1.value(value) == Some(&ValueNode::Grafted(ValueGraft::Variable { zone: Zone::Intuitionistic, index: DeBruijnIndex::from(0_u32) }))) { return false; }
+            let mut top = sharing.body;
+            for position in (0..arity).rev() {
+                let Some(&CompNode::Grafted(CompGraft::Bind(bound, continuation))) = ret.1.computation(top) else { return false; };
+                if ret.1.computation(continuation) != Some(&CompNode::Bound(Bound { distance: ShareDistance::from(0_u32), position: SharePosition::from(position) })) { return false; }
+                top = bound;
+            }
+            let Some(&CompNode::Opaque(base)) = ret.1.computation(top) else { return false; };
+            matches!(ret.0.computation(base), Some(&Computation::Return(value)) if ret.0.value(value) == Some(&Value::Unit))
+        }
+    )]
     fn shared_bind_chain() -> (CoreArena, Overlay, OverlayCompId)
     {
         let mut core = CoreArena::new();
@@ -382,6 +542,18 @@ mod deep_evaluation
     /// - ensures: a fresh occurrence at distance zero.
     /// - provides: the occurrences the shared builders place in preorder.
     /// - panics: when the mint is refused, which only the id ceiling causes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — any occurrence position fits its own counter and the
+    ///   mint fits overlay ids. Exact distance and position preserve the
+    ///   preorder numbering; the shared chain erasing byte for byte and its
+    ///   measured arity distinguish a shifted or repeated occurrence.
+    /// - witness: `deep_evaluation::deep_evaluation::a_deep_value_evaluates_inside_a_small_stack`
+    /// - witness: `deep_evaluation::deep_evaluation::an_erased_value_chain_evaluates_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_value_chain_evaluates_as_the_erased_one`
+    #[spec(
+        ensures: |ret| overlay.value(ret) == Some(&ValueNode::Bound(Bound { distance: ShareDistance::from(0_u32), position }))
+    )]
     fn value_occurrence(
         overlay: &mut Overlay,
         position: SharePosition,
@@ -398,13 +570,26 @@ mod deep_evaluation
     /// Evaluate a closed value with no definitions, into a fresh domain arena.
     ///
     /// # Specification
-    /// - requires: `term` is a closed value of `core`.
+    /// - requires: `term` is a closed value of `core` whose evaluation fits the
+    ///   supplied budget.
     /// - ensures: the domain arena the evaluation filled and the value it
     ///   produced.
     /// - provides: the one run of the unshared pipeline both sides of a
     ///   comparison go through.
-    /// - panics: when the evaluation is refused, which a closed term under an
-    ///   ample budget does not provoke.
+    /// - panics: when evaluation refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the source is closed and evaluation fits the budget.
+    ///   The source id and returned domain id must resolve in their respective
+    ///   arenas. The independent depth walk and exact domain equality
+    ///   distinguish a shallow result and an id from a different arena.
+    /// - witness: `deep_evaluation::deep_evaluation::a_deep_value_evaluates_inside_a_small_stack`
+    /// - witness: `deep_evaluation::deep_evaluation::an_erased_value_chain_evaluates_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_value_chain_evaluates_as_the_erased_one`
+    #[spec(
+        requires: core.value(term).is_some(),
+        ensures: |ret| ret.0.value(ret.1).is_some()
+    )]
     fn evaluated_value(
         core: &CoreArena,
         term: ValueId,
@@ -437,6 +622,22 @@ mod deep_evaluation
     ///   comparison go through.
     /// - panics: when the evaluation is refused, which the requirement
     ///   excludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the closed source evaluates within the supplied fuel.
+    ///   The source id and weak head must resolve in their respective arenas.
+    ///   Exact domain equality, the linear curried budget and the final unit
+    ///   distinguish a wrong returner, family and environment.
+    /// - witness: `deep_evaluation::deep_evaluation::a_deeply_curried_application_costs_linear_steps`
+    /// - witness: `deep_evaluation::deep_evaluation::an_erased_curried_application_evaluates_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_curried_application_evaluates_as_the_erased_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_deep_computation_evaluates_inside_a_small_stack`
+    /// - witness: `deep_evaluation::deep_evaluation::an_erased_bind_chain_evaluates_byte_for_byte_as_the_unshared_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_bind_chain_evaluates_as_the_erased_one`
+    #[spec(
+        requires: core.computation(term).is_some(),
+        ensures: |ret| ret.0.computation(ret.1).is_some()
+    )]
     fn evaluated_computation(
         core: &CoreArena,
         term: ComputationId,
@@ -463,12 +664,31 @@ mod deep_evaluation
     ///
     /// # Specification
     /// - requires: `core` holds the overlay's opaque nodes, and `root` stands
-    ///   for a closed term.
+    ///   for a closed evaluation root whose run fits the supplied budget.
     /// - ensures: the arena the run erased and read back into, and the result
     ///   read back; the overlay is as it was.
     /// - provides: the one run both sides of a spinal differential go through.
     /// - panics: when installation, evaluation or readback refuses, which no
     ///   deep case under an ample budget provokes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a closed evaluation root resolves its opaque leaves
+    ///   in the input core and the run fits its budget. The entry overlay
+    ///   watermark survives and the output id resolves in the returned arena
+    ///   with the input family. Independent erased-pipeline comparisons
+    ///   distinguish wrong sharing and arena or family confusion.
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_value_chain_evaluates_as_the_erased_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_curried_application_evaluates_as_the_erased_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_bind_chain_evaluates_as_the_erased_one`
+    #[spec(
+        requires: matches!(root, OverlayId::Value(_) | OverlayId::Computation(_)) && overlay.validate(root).is_ok(),
+        captures: [mark = overlay.watermark()],
+        ensures: |ret| overlay.watermark() == mark && match (root, ret.1) {
+            (OverlayId::Value(_), Term::Value(id)) => ret.0.value(id).is_some(),
+            (OverlayId::Computation(_), Term::Computation(id)) => ret.0.computation(id).is_some(),
+            _ => false,
+        }
+    )]
     fn read_back_under(
         stance: DuplicationStance,
         overlay: &mut Overlay,
@@ -540,6 +760,19 @@ mod deep_evaluation
     /// - provides: the spinal differential each deep case runs.
     /// - panics: when the spinal readback is another tree than the reference's,
     ///   or when a run panics.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the evaluation root is structurally valid and meets
+    ///   the readback helper requirements. The precondition excludes type
+    ///   roots; the body compares independently evaluated readbacks from both
+    ///   stances. The value, application and bind witnesses distinguish an
+    ///   unequal result and exercise the assertion inside a small-stack thread.
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_value_chain_evaluates_as_the_erased_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_curried_application_evaluates_as_the_erased_one`
+    /// - witness: `deep_evaluation::deep_evaluation::a_spinal_bind_chain_evaluates_as_the_erased_one`
+    #[spec(
+        requires: matches!(root, OverlayId::Value(_) | OverlayId::Computation(_)) && overlay.validate(root).is_ok()
+    )]
     fn spinal_agrees(
         mut overlay: Overlay,
         core: &CoreArena,
