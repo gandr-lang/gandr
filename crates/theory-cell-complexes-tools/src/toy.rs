@@ -141,17 +141,17 @@ impl ToyCount
     /// The next index.
     ///
     /// # Specification
-    /// - ensures: one more than `self`; a table held in memory never reaches
-    ///   the saturation bound.
+    /// - ensures: one more than `self`, saturating at `usize::MAX`; a table
+    ///   held in memory never reaches that bound.
     /// - panics: none.
-    /// - executable: none — instrumentation calls non-const helpers; this
-    ///   method retains its const interface.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — zero, ordinary, last-in-range and saturated indices
     ///   have exact successors. Wrapping or skipping the increment changes the
     ///   boundary observations.
     /// - witness: `toy::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
+    #[spec(ensures: |ret| if self.0 == usize::MAX { ret.0 == usize::MAX }
+        else { matches!(ret.0.checked_sub(self.0), Some(1)) })]
     const fn next(self) -> Self
     {
         Self(self.0.saturating_add(1))
