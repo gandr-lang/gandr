@@ -147,7 +147,7 @@ impl<H> Tree<H>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn leaf(head: H) -> Self
+    pub const fn leaf(head: H) -> Self
     {
         Self {
             below: Vec::new(),
@@ -181,7 +181,7 @@ impl<H> Tree<H>
         ensures: |ref tree| tree.below.len() == descendants
             && tree.root.extent.0 == descendants.saturating_add(1),
     )]
-    pub(crate) fn node(
+    pub fn node(
         head: H,
         children: Vec<Self>,
     ) -> Self
@@ -211,7 +211,7 @@ impl<H> Tree<H>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn to_ref(&self) -> TreeRef<'_, H>
+    pub fn to_ref(&self) -> TreeRef<'_, H>
     {
         TreeRef {
             below: &self.below,
@@ -302,7 +302,8 @@ impl<'tree, H> TreeRef<'tree, H>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) const fn head(self) -> &'tree H
+    #[must_use]
+    pub const fn head(self) -> &'tree H
     {
         &self.root.head
     }
@@ -345,7 +346,8 @@ impl<'tree, H> TreeRef<'tree, H>
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn to_tree(self) -> Tree<H>
+    #[must_use]
+    pub fn to_tree(self) -> Tree<H>
     where
         H: Clone,
     {
@@ -365,7 +367,8 @@ where
     /// # Specification
     /// trivial.
     #[inline]
-    pub(crate) fn children(self) -> Children<'tree, H>
+    #[must_use]
+    pub fn children(self) -> Children<'tree, H>
     {
         Children {
             rest: self.below,
