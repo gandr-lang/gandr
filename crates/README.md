@@ -13,6 +13,7 @@ theory    reusable metatheory machinery
 kernel    the certified trusted base and its substrate: levels, the term arena and sharing format, the checking machine
 core      the core language: call-by-push-value syntax, the unified context, normalization by evaluation
 storage   the content-addressed tier: authenticated record and value planes
+runtime   effectful host machinery below the faces: effects handlers, foreign calls, the compile host
 surface   syntax, grammar, parsing, lowering, the pipeline a driver invocation enters, and the driver a human or a tool runs
 workflow  repository tooling and gates
 ```
@@ -48,6 +49,7 @@ crates/
 ├── storage-records/               the authenticated ordered-record plane
 ├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
 ├── storage-artifact/              kernel artifacts on the record plane: declaration segments as keyed records under a BLAKE3 manifest identity, read back through the kernel's decoder
+├── runtime-compile-host/          feature-gated positive-core images, typed admission, C boundary vocabulary and canonical value rendering
 ├── surface-syntax/                the molded concrete syntax tree and the mold references a grammar and a parser exchange
 ├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame
 ├── surface-layout/                the document-layout engine: the sealed document arena, Pareto resolution with width taint, the plan arena and the first-order render machine
