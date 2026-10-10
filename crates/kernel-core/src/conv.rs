@@ -425,6 +425,22 @@ fn converge(
                     | (&ValueType::Thunk(one_body), &ValueType::Thunk(other_body)) => {
                         stack.push(ConversionGoal::CompType(one_body, other_body));
                     },
+                    | (
+                        &ValueType::Session {
+                            graph: ref one,
+                            payloads: a,
+                        },
+                        &ValueType::Session {
+                            graph: ref other,
+                            payloads: b,
+                        },
+                    ) => {
+                        // Graphs contain no native children; structural graph equality is finite.
+                        if one != other {
+                            return Convertibility::Distinct;
+                        }
+                        stack.push(ConversionGoal::ValueType(a, b));
+                    },
                     | (&ValueType::List(one), &ValueType::List(other)) => {
                         stack.push(ConversionGoal::ValueType(one, other));
                     },
@@ -486,6 +502,7 @@ fn converge(
                         | &ValueType::Empty
                         | &ValueType::Product(..)
                         | &ValueType::Sum(..)
+                        | &ValueType::Session { .. }
                         | &ValueType::List(_)
                         | &ValueType::Thunk(_)
                         | &ValueType::Universe { .. }
@@ -574,6 +591,12 @@ fn converge(
                     return Convertibility::Distinct;
                 };
                 match (left, right) {
+                    | (&Value::SessionPath { path_type: one_type, payload_paths: one_paths, evidence: ref one }, &Value::SessionPath { path_type: other_type, payload_paths: other_paths, evidence: ref other }) => {
+                        // Relation proof pairs are erased; payload translator assignment is not.
+                        if one.payloads != other.payloads { return Convertibility::Distinct; }
+                        stack.push(ConversionGoal::ValueType(one_type, other_type));
+                        stack.push(ConversionGoal::Value(one_paths, other_paths));
+                    },
                     | (&Value::PathRefl(one), &Value::PathRefl(other)) => stack.push(ConversionGoal::Value(one, other)),
                     | (&Value::PathProduct(a, b), &Value::PathProduct(c, d)) => {
                         stack.push(ConversionGoal::Value(a, c));
@@ -663,7 +686,7 @@ fn converge(
                         stack.push(ConversionGoal::CompType(one, other));
                     },
                     | (
-                        &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
+                        &Value::SessionPath { .. } | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }
                         | &Value::Variable(_)
                         | &Value::Constant(_)
                         | &Value::Unit

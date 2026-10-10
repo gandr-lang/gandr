@@ -38,13 +38,15 @@ use crate::replay::Unfoldings;
 /// - ensures: every translator checks in a fresh closed-check session and every
 ///   symbolic image replays positively; sequential seams match types. Explicit
 ///   feedback is refused, even when both endpoint types coincide. Generated
-///   terms remain in `arena`; callers may restore its watermark.
+///   terms remain in `arena`; callers may restore its watermark. Session
+///   introductions recheck native payload formation, every supplied simulation
+///   pair and every native payload-path obligation.
 /// - provides: `Flow_U source target`, never an admission capability.
 /// - fails: code, typing, coverage, naturality, replay, seam or budget errors.
 /// - panics: none.
 ///
 /// # Errors
-/// Any `FlowError` except family, motive and Path errors.
+/// Code, typing, session-replay, seam or budget errors.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — both terminal branches form; wrong images refuse;
@@ -69,6 +71,32 @@ pub fn form(
             continue;
         }
         let classifier = match flows.get(id)? {
+            | &Flow::Session {
+                source,
+                target,
+                ref evidence,
+                payload_paths,
+            } => {
+                let _source_universe = synth_closed_value(arena, source)
+                    .map_err(|error| FlowError::Typing(Box::new(error)))?;
+                let _target_universe = synth_closed_value(arena, target)
+                    .map_err(|error| FlowError::Typing(Box::new(error)))?;
+                let source =
+                    crate::path_universe::code(arena, source, budget).map_err(FlowError::Path)?;
+                let target =
+                    crate::path_universe::code(arena, target, budget).map_err(FlowError::Path)?;
+                let expected = crate::session::obligations(
+                    arena,
+                    source,
+                    target,
+                    evidence,
+                    crate::session::Relation::Simulation,
+                )
+                .map_err(FlowError::Session)?;
+                check_closed_value(arena, payload_paths, expected)
+                    .map_err(|error| FlowError::Typing(Box::new(error)))?;
+                FlowType { source, target }
+            },
             | &Flow::Stay(code) => {
                 let source = coverage::code(arena, code, &mut allowance)?;
                 FlowType {
@@ -270,6 +298,7 @@ fn lower(
             continue;
         }
         let function = match flows.get(id)? {
+            | &Flow::Session { .. } => return Err(FlowError::RecordedRunRequired),
             | &Flow::Stay(_) => {
                 let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
                 let returned = arena.computation_return(variable);

@@ -715,6 +715,14 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(forward));
                             tasks.push(ReachTask::OpenValue(backward));
                         },
+                        | Value::SessionPath {
+                            path_type,
+                            payload_paths,
+                            ..
+                        } => {
+                            tasks.push(ReachTask::OpenValueType(path_type));
+                            tasks.push(ReachTask::OpenValue(payload_paths));
+                        },
                         | Value::PathRefl(code) => tasks.push(ReachTask::OpenValue(code)),
                         | Value::PathProduct(first, second)
                         | Value::Pair(first, second)
@@ -809,7 +817,11 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValue(source));
                             tasks.push(ReachTask::OpenValue(target));
                         },
-                        | ValueType::Lift { inner, .. } | ValueType::List(inner) => {
+                        | ValueType::Session {
+                            payloads: inner, ..
+                        }
+                        | ValueType::Lift { inner, .. }
+                        | ValueType::List(inner) => {
                             tasks.push(ReachTask::OpenValueType(inner));
                         },
                         | ValueType::Thunk(body) => tasks.push(ReachTask::OpenCompType(body)),
@@ -976,9 +988,11 @@ impl LooseDepths
             } => self
                 .cached_value_type(first)
                 .join(self.cached_value_type(second)),
-            | ValueType::Lift { inner, .. } | ValueType::List(inner) => {
-                self.cached_value_type(inner)
-            },
+            | ValueType::Session {
+                payloads: inner, ..
+            }
+            | ValueType::Lift { inner, .. }
+            | ValueType::List(inner) => self.cached_value_type(inner),
             | ValueType::Thunk(body) => self.cached_comp_type(body),
             | ValueType::Element { code, .. } => self.cached_value(code),
         }
@@ -1066,6 +1080,13 @@ impl LooseDepths
                 .cached_value_type(path_type)
                 .join(self.cached_value(forward))
                 .join(self.cached_value(backward)),
+            | Value::SessionPath {
+                path_type,
+                payload_paths,
+                ..
+            } => self
+                .cached_value_type(path_type)
+                .join(self.cached_value(payload_paths)),
             | Value::PathRefl(code) => self.cached_value(code),
             | Value::PathProduct(first, second)
             | Value::Pair(first, second)

@@ -4,6 +4,7 @@
 
 extern crate alloc;
 
+mod certified;
 mod common;
 mod construction;
 mod monitor;

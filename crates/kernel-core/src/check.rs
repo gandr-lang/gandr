@@ -397,6 +397,9 @@ enum TypeLevelFrame
     MaxSecondCompUnder(ValueTypeId, CompTypeId),
     /// A formation binder closes: pop the innermost context slot.
     ScopeExit,
+    /// Restore the surrounding telescope after closed session payload
+    /// formation.
+    SessionScope(Vec<ValueTypeId>),
     /// The second operand's level is in the register; join with the first.
     MaxWith(Level),
     /// The inner level is in the register; check the lift's strictness and
@@ -505,14 +508,27 @@ where
                 | TypeLevelGoal::Value(id) => {
                     let value_type = arena.value_type(id).ok_or(KernelError::ArenaFault)?;
                     match *value_type {
+                        | ValueType::Session {
+                            ref graph,
+                            payloads,
+                        } => {
+                            crate::session::validate_graph(arena, graph, payloads)
+                                .map_err(KernelError::Session)?;
+                            frames
+                                .push(TypeLevelFrame::SessionScope(core::mem::take(&mut context)));
+                            goal = TypeLevelGoal::Value(payloads);
+                            continue 'expand;
+                        },
                         | ValueType::PathUniverse(..) => {
-                            let _endpoints = crate::path_universe::endpoints(
+                            let endpoints = crate::path_universe::endpoints(
                                 arena,
                                 id,
                                 crate::replay::ReplayBudget::DEFAULT,
                             )
                             .map_err(KernelError::Path)?;
-                            Level::zero()
+                            frames.push(TypeLevelFrame::MaxSecondValue(endpoints.target));
+                            goal = TypeLevelGoal::Value(endpoints.source);
+                            continue 'expand;
                         },
                         | ValueType::Base(_) | ValueType::Unit | ValueType::Empty => Level::zero(),
                         // A universe of either sort forms one level above the
@@ -649,6 +665,7 @@ where
                     goal = TypeLevelGoal::Comp(second);
                     continue 'expand;
                 },
+                | TypeLevelFrame::SessionScope(outer) => context = outer,
                 | TypeLevelFrame::ScopeExit => {
                     let _popped = context.pop();
                 },
@@ -734,6 +751,7 @@ fn abstract_atom_level(
         | ValueType::Unit
         | ValueType::Empty
         | ValueType::Product(..)
+        | ValueType::Session { .. }
         | ValueType::List(_)
         | ValueType::Sum(..)
         | ValueType::Thunk(_)
@@ -783,6 +801,7 @@ fn static_classifier(
         | ValueType::Unit
         | ValueType::Empty
         | ValueType::Product(..)
+        | ValueType::Session { .. }
         | ValueType::List(_)
         | ValueType::Sum(..)
         | ValueType::Thunk(_)
@@ -967,6 +986,14 @@ impl Goal
 #[derive(Debug)]
 enum Frame
 {
+    /// Restore the outer context after checking closed payload paths.
+    SessionPayload
+    {
+        /// Session-path classifier to synthesize after its obligations.
+        classifier: ValueTypeId,
+        /// Surrounding telescope, excluded from the closed proof tuple.
+        context: Vec<ValueTypeId>,
+    },
     /// Synthesize the second product-path component after the first.
     PathProductFirst(ValueId),
     /// Combine the two decoded component endpoints.
@@ -1425,13 +1452,63 @@ where
             | Some(outcome) => outcome,
             | None => match goal {
                 | Goal::SynthValue(id) => match read_value(arena, id)? {
+                    | Value::SessionPath {
+                        path_type,
+                        evidence,
+                        payload_paths,
+                    } => {
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(path_type),
+                            Vec::new(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
+                        let endpoints = crate::path_universe::endpoints(
+                            arena,
+                            path_type,
+                            crate::ReplayBudget::DEFAULT,
+                        )
+                        .map_err(KernelError::Path)?;
+                        let expected = crate::session::obligations(
+                            arena,
+                            endpoints.source,
+                            endpoints.target,
+                            &evidence,
+                            crate::session::Relation::Bisimulation,
+                        )
+                        .map_err(KernelError::Session)?;
+                        frames.push(Frame::SessionPayload {
+                            classifier: path_type,
+                            context: core::mem::take(&mut context),
+                        });
+                        goal = Goal::CheckValue(payload_paths, expected);
+                        continue 'expand;
+                    },
                     | Value::PathRefl(code) => {
-                        let _endpoint = crate::path_universe::code(
+                        let endpoint = crate::path_universe::code(
                             arena,
                             code,
                             crate::replay::ReplayBudget::DEFAULT,
                         )
                         .map_err(KernelError::Path)?;
+                        let _level = type_level(
+                            arena,
+                            judgement,
+                            TypeLevelGoal::Value(endpoint),
+                            Vec::new(),
+                            Recording {
+                                memo,
+                                session,
+                                census,
+                                owed,
+                            },
+                        )?;
                         Produced::ValueType(arena.value_type_path_universe(code, code))
                     },
                     | Value::PathProduct(first, second) => {
@@ -1596,6 +1673,7 @@ where
                     },
                     | Value::PathRefl(_)
                     | Value::PathProduct(..)
+                    | Value::SessionPath { .. }
                     | Value::PathEquiv { .. }
                     | Value::Variable(_)
                     | Value::Constant(_)
@@ -1939,6 +2017,13 @@ where
                             ));
                         },
                     }
+                },
+                | Frame::SessionPayload {
+                    classifier,
+                    context: outer,
+                } => {
+                    context = outer;
+                    produced = Produced::ValueType(classifier);
                 },
                 | Frame::ProduceValue(codomain) => {
                     produced = Produced::ValueType(codomain);
@@ -2332,6 +2417,7 @@ where
                 | ValueType::Unit
                 | ValueType::Empty
                 | ValueType::Product(..)
+                | ValueType::Session { .. }
                 | ValueType::List(_)
                 | ValueType::Sum(..)
                 | ValueType::Thunk(_)

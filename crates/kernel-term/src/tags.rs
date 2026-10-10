@@ -42,13 +42,14 @@
 //! | funext | `0x38–0x47` | reserved; higher evaluation remains an in-memory rule language |
 //! | universe flows | `0x48–0x4F` | reserved; forward certificates and replay remain an in-memory rule language |
 //! | recursive block | `0x50–0x51` | List code and a reserved, unassigned value tag |
+//! | session codes | `0x52–0x5A` | native session code, seven inline graph opcodes, native session Path evidence |
 //!
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
 //! binder, so it is a different node from the non-dependent [`NODE_CT_ARROW`]
 //! at the same arity and takes its own tag rather than a flag on the arrow's.
 //! [`NODE_VT_ELEMENT`] and [`NODE_VT_PATH_UNIVERSE`] carry value codes in
 //! type positions. [`NODE_CT_ELEMENT`] is the computation-family decode;
-//! path endpoints remain closed first-order value codes.
+//! path endpoints include closed first-order and finite session codes.
 //!
 //! The universe families took four tags from the growth room at once, one
 //! family at a time: the computation universe [`NODE_VT_COMPUTATION_UNIVERSE`]
@@ -253,6 +254,11 @@ pub const NODE_C_ABSURD: WireTag = WireTag(0x29);
 /// Node tag: the strictly positive list code, over one element type.
 pub const NODE_VT_LIST: WireTag = WireTag(0x50);
 
+/// Node tag: finite session graph and one payload-telescope child.
+pub const NODE_VT_SESSION: WireTag = WireTag(0x52);
+/// Node tag: finite bisimulation, classifier and payload-proof tuple.
+pub const NODE_V_SESSION_PATH: WireTag = WireTag(0x5A);
+
 /// Reserved tag for persisted recursive inhabitants; currently refused.
 pub const NODE_LIST_VALUE_RESERVED: WireTag = WireTag(0x51);
 /// The number of subterm-table child references an entry carries after its
@@ -439,7 +445,7 @@ const fn bounded_alias(
 /// own child relation, and its rows are pinned against the encoder's wire
 /// images by the round-trip suites, so a row that drifts from the code is a
 /// test failure rather than a comment that quietly went stale.
-pub const NODE_TAG_TABLE: [NodeTagDescription; 40] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 42] = [
     row(
         NODE_VT_BASE,
         ChildArity(0),
@@ -486,6 +492,8 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 40] = [
     unbounded(NODE_V_PATH_PRODUCT, ChildArity(2)),
     unbounded(NODE_C_TRANSPORT, ChildArity(2)),
     unbounded(NODE_VT_LIST, ChildArity(1)),
+    unbounded(NODE_VT_SESSION, ChildArity(1)),
+    unbounded(NODE_V_SESSION_PATH, ChildArity(2)),
 ];
 
 #[cfg(test)]
@@ -572,6 +580,14 @@ mod tests
         let equiv = arena.value_path_equiv(path_type, map, map, alloc::sync::Arc::default());
         let product_path = arena.value_path_product(refl, refl);
         let transport = arena.computation_transport(product_path, pair);
+        let session = arena.value_type_session(
+            alloc::sync::Arc::new(crate::session::Graph {
+                nodes: alloc::vec![crate::session::Node::End],
+                root: crate::session::State(0),
+            }),
+            unit_type,
+        );
+        let session_path = arena.value_session_path(path_type, alloc::sync::Arc::default(), unit);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(unit_type),
@@ -613,6 +629,8 @@ mod tests
             AnyNode::Value(product_path),
             AnyNode::Computation(transport),
             AnyNode::ValueType(arena.value_type_list(unit_type)),
+            AnyNode::ValueType(session),
+            AnyNode::Value(session_path),
         ];
         (arena, nodes)
     }
@@ -642,6 +660,25 @@ mod tests
     {
         let mut assigned = [false; 256];
         let reserved = u8::from(super::SHARING_BLOCK_FIRST) ..= u8::from(super::SHARING_BLOCK_LAST);
+        for word in [
+            crate::session::SEND,
+            crate::session::RECEIVE,
+            crate::session::SELECT,
+            crate::session::OFFER,
+            crate::session::END,
+            crate::session::MU,
+            crate::session::VAR,
+        ] {
+            let tag = usize::try_from(word.0).expect("session opcodes fit a byte");
+            assert!(
+                !core::mem::replace(&mut assigned[tag], true),
+                "session opcodes are distinct"
+            );
+            assert!(
+                (0x53 ..= 0x59).contains(&tag),
+                "List and reserved flow bytes remain untouched"
+            );
+        }
         for row in &NODE_TAG_TABLE {
             let tag = u8::from(row.tag);
             assert!(

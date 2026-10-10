@@ -231,9 +231,12 @@ path = "crates/kernel-conversion-trace"
 # consumers:
 # - core-checker
 # - core-nbe (dev)
+# - core-session
 # - surface-lowering (dev)
+# features: none; synchronous no_std certificate replay.
 [workspace.dependencies.gandr-kernel-core]
 path = "crates/kernel-core"
+default-features = false
 
 # The certified kernel's universe-level oracle.
 # consumers:
@@ -267,8 +270,11 @@ path = "crates/kernel-strata"
 # - surface-repl (dev)
 # - surface-session
 # - surface-tui (dev)
+# - core-session
+# features: none; native session code and evidence data.
 [workspace.dependencies.gandr-kernel-term]
 path = "crates/kernel-term"
+default-features = false
 
 # Kernel artifacts on the record plane, under a manifest identity, read back
 # through the kernel's decoder.

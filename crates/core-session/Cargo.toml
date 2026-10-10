@@ -16,5 +16,9 @@ autotests = false
 name = "tests"
 path = "tests/lib.rs"
 
+[dependencies]
+gandr-kernel-core.workspace = true
+gandr-kernel-term.workspace = true
+
 [lints]
 workspace = true

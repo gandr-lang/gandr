@@ -722,6 +722,16 @@ impl ContentTable
     )
     {
         match *value {
+            | Value::SessionPath {
+                path_type,
+                payload_paths,
+                ref evidence,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_V_SESSION_PATH);
+                evidence.write(|word| record.put_word(EncodedWord(word.0)));
+                record.put_content(self.content_of(AnyNode::ValueType(path_type)));
+                record.put_content(self.content_of(AnyNode::Value(payload_paths)));
+            },
             | Value::PathRefl(code) => {
                 record.put_tag(gandr_kernel_term::NODE_V_PATH_REFL);
                 record.put_content(self.content_of(AnyNode::Value(code)));
@@ -909,6 +919,14 @@ impl ContentTable
                 record.put_tag(gandr_kernel_term::NODE_VT_THUNK);
                 record.put_content(self.content_of(AnyNode::CompType(body)));
             },
+            | ValueType::Session {
+                ref graph,
+                payloads,
+            } => {
+                record.put_tag(gandr_kernel_term::NODE_VT_SESSION);
+                graph.write(|word| record.put_word(EncodedWord(word.0)));
+                record.put_content(self.content_of(AnyNode::ValueType(payloads)));
+            },
             | ValueType::List(element) => {
                 record.put_tag(gandr_kernel_term::NODE_VT_LIST);
                 record.put_content(self.content_of(AnyNode::ValueType(element)));
@@ -1014,6 +1032,14 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Value(forward)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(backward)));
             },
+            | Some(&Value::SessionPath {
+                path_type,
+                payload_paths,
+                ..
+            }) => {
+                tasks.push(EncodeTask::Open(AnyNode::ValueType(path_type)));
+                tasks.push(EncodeTask::Open(AnyNode::Value(payload_paths)));
+            },
             | Some(&Value::PathRefl(code)) => tasks.push(EncodeTask::Open(AnyNode::Value(code))),
             | Some(
                 &Value::PathProduct(first, second)
@@ -1095,7 +1121,13 @@ fn push_children(
             | Some(&ValueType::Thunk(body)) => {
                 tasks.push(EncodeTask::Open(AnyNode::CompType(body)));
             },
-            | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+            | Some(
+                &ValueType::Session {
+                    payloads: inner, ..
+                }
+                | &ValueType::Lift { inner, .. }
+                | &ValueType::List(inner),
+            ) => {
                 tasks.push(EncodeTask::Open(AnyNode::ValueType(inner)));
             },
             | Some(&ValueType::Element { code, .. }) => {

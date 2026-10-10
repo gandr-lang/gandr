@@ -25,13 +25,16 @@ use crate::replay::Unfoldings;
 use crate::rewrite::BinderDepth;
 use crate::rewrite::shift_value;
 
-/// Read a quoted code and validate its entire first-order type graph.
+/// Inspect quoted first-order shapes or finite guarded session graphs.
 ///
 /// # Specification
 /// - requires: the code root belongs to `arena`.
-/// - ensures: every reachable former is Base, Unit, Product or Sum.
-/// - provides: closed level-zero decoding without a type-level evaluator.
-/// - fails: `UnsupportedCode`, `UnsupportedType`, `Arena` or `Budget`.
+/// - ensures: outer formers are Base, Unit, Product, Sum or Session; session
+///   graph structure and guards check. Native formation separately checks
+///   session payload codes in an empty term context.
+/// - provides: code-shape inspection, never a checking verdict.
+/// - fails: `UnsupportedCode`, `UnsupportedType`, `Session`, `Arena` or
+///   `Budget`.
 /// - panics: none.
 ///
 /// # Errors
@@ -60,6 +63,15 @@ pub(super) fn code(
         let node = arena.value_type(id).ok_or(PathError::Arena)?;
         match node {
             | &ValueType::Unit | &ValueType::Base(_) => {},
+            | &ValueType::Session {
+                ref graph,
+                payloads,
+            } => {
+                crate::session::validate_graph(arena, graph, payloads)
+                    .map_err(PathError::Session)?;
+                // Ordinary formation checks payload codes in an empty
+                // telescope.
+            },
             | &ValueType::Sum(first, second) | &ValueType::Product(first, second) => {
                 pending.push(second);
                 pending.push(first);

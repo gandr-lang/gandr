@@ -88,6 +88,14 @@ impl fmt::Display for GroundSort
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ValueType
 {
+    /// A closed finite session graph with a product telescope of payload codes.
+    Session
+    {
+        /// Raw syntax; formation checks closure and contractivity.
+        graph: alloc::sync::Arc<crate::session::Graph>,
+        /// Right-associated payload product, terminated by Unit.
+        payloads: ValueTypeId,
+    },
     /// Certified equivalences between two quoted closed first-order codes.
     /// Both endpoints form at level zero; formation checks each code.
     PathUniverse(ValueId, ValueId),

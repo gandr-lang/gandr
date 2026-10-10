@@ -40,6 +40,8 @@
 //! The work budget runs first and bounds it, and the encoder is graph-aware on
 //! its own terms besides.
 
+pub mod session;
+
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -1225,6 +1227,25 @@ fn decode_entry(
     let tag = reader.next_tag()?;
     let mut children: Vec<GlobalIndex> = Vec::new();
     let (node, family) = match tag {
+        | tags::NODE_VT_SESSION => {
+            let graph = session::graph(reader)?;
+            let payloads = read_value_type(reader, table, this, &mut children)?;
+            let id = table
+                .arena
+                .value_type_session(alloc::sync::Arc::new(graph), payloads);
+            (DecodedNode::ValueType(id), Family::ValueType)
+        },
+        | tags::NODE_V_SESSION_PATH => {
+            let evidence = session::evidence(reader)?;
+            let path_type = read_value_type(reader, table, this, &mut children)?;
+            let payload_paths = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.value_session_path(
+                path_type,
+                alloc::sync::Arc::new(evidence),
+                payload_paths,
+            );
+            (DecodedNode::Value(id), Family::Value)
+        },
         | tags::NODE_VT_PATH_UNIVERSE => {
             let source = read_value(reader, table, this, &mut children)?;
             let target = read_value(reader, table, this, &mut children)?;

@@ -57,12 +57,54 @@ pub fn decide(
     relation: Relation,
 ) -> Result<Decision, TypeError>
 {
+    let result = relate(left, right, relation)?;
+    Ok(match result {
+        | RelationResult::Related(_) => Decision::Related,
+        | RelationResult::Unrelated => Decision::Unrelated,
+    })
+}
+
+/// The engine's untrusted finite witness or its negative decision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RelationResult
+{
+    /// Candidate data; only independent kernel replay establishes evidence.
+    Related(gandr_kernel_term::session::Evidence),
+    /// Some required local obligation fails.
+    Unrelated,
+}
+
+/// Produce the finite root-reachable relation used by the decision engine.
+///
+/// # Specification
+/// - ensures: Related contains every visited observable pair and preserves the
+///   chosen width direction; no kernel verdict is carried.
+/// - fails: broken session references retain their construction error.
+/// - panics: none.
+///
+/// # Errors
+/// An internal `TypeError`.
+///
+/// # Adequacy
+/// - hypothesis: L1 independent kernel replay accepts generated pairs and
+///   refuses deleted pairs, wrong orientation and inequivalent codes.
+/// - witness: `tests::certified::seat_and_generator_identity_witnesses`
+#[inline]
+pub fn relate(
+    left: &Session,
+    right: &Session,
+    relation: Relation,
+) -> Result<RelationResult, TypeError>
+{
     let mut visited = BTreeSet::new();
     let mut pending = alloc::vec![(left.root(), right.root())];
     while let Some((left_id, right_id)) = pending.pop() {
         let (left_id, left_node) = left.head(left_id)?;
         let (right_id, right_node) = right.head(right_id)?;
-        if !visited.insert((left_id, right_id)) {
+        if !visited.insert(gandr_kernel_term::session::StatePair {
+            source: gandr_kernel_term::session::State(left_id.0),
+            target: gandr_kernel_term::session::State(right_id.0),
+        }) {
             continue;
         }
         match (left_node, right_node) {
@@ -77,20 +119,25 @@ pub fn decide(
                 if branches(a, b, relation, Orientation::Forward, &mut pending)
                     == Decision::Unrelated
                 {
-                    return Ok(Decision::Unrelated);
+                    return Ok(RelationResult::Unrelated);
                 }
             },
             | (&Node::Offer(ref a), &Node::Offer(ref b)) => {
                 if branches(b, a, relation, Orientation::Reverse, &mut pending)
                     == Decision::Unrelated
                 {
-                    return Ok(Decision::Unrelated);
+                    return Ok(RelationResult::Unrelated);
                 }
             },
-            | _ => return Ok(Decision::Unrelated),
+            | _ => return Ok(RelationResult::Unrelated),
         }
     }
-    Ok(Decision::Related)
+    Ok(RelationResult::Related(
+        gandr_kernel_term::session::Evidence {
+            pairs: visited,
+            payloads: Vec::new(),
+        },
+    ))
 }
 
 /// Decide duality by comparing against exactly one dual transformation.

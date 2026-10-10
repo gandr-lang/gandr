@@ -972,6 +972,7 @@ fn carried_occurrence(
         },
         | Value::PathRefl(_)
         | Value::PathProduct(..)
+        | Value::SessionPath { .. }
         | Value::PathEquiv { .. }
         | Value::Variable(_)
         | Value::Constant(_)
@@ -1050,6 +1051,22 @@ fn push_rewrite_children(
             }) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(backward), depth, rewrite));
                 tasks.push(RewriteTask::Open(AnyNode::Value(forward), depth, rewrite));
+                tasks.push(RewriteTask::Open(
+                    AnyNode::ValueType(path_type),
+                    depth,
+                    rewrite,
+                ));
+            },
+            | Some(&Value::SessionPath {
+                path_type,
+                payload_paths,
+                ..
+            }) => {
+                tasks.push(RewriteTask::Open(
+                    AnyNode::Value(payload_paths),
+                    depth,
+                    rewrite,
+                ));
                 tasks.push(RewriteTask::Open(
                     AnyNode::ValueType(path_type),
                     depth,
@@ -1180,7 +1197,13 @@ fn push_rewrite_children(
             | Some(&ValueType::Thunk(body)) => {
                 tasks.push(RewriteTask::Open(AnyNode::CompType(body), depth, rewrite));
             },
-            | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+            | Some(
+                &ValueType::Session {
+                    payloads: inner, ..
+                }
+                | &ValueType::Lift { inner, .. }
+                | &ValueType::List(inner),
+            ) => {
                 tasks.push(RewriteTask::Open(AnyNode::ValueType(inner), depth, rewrite));
             },
             // The type-to-term edge: a code is rewritten at the depth the type
@@ -1317,6 +1340,21 @@ fn close_value(
         return id;
     };
     match node {
+        | Value::SessionPath {
+            path_type,
+            payload_paths,
+            evidence,
+        } => {
+            let paths = popped(results, AnyNode::Value(payload_paths)).value_or(payload_paths);
+            let classifier =
+                popped(results, AnyNode::ValueType(path_type)).value_type_or(path_type);
+            if paths == payload_paths && classifier == path_type {
+                id
+            }
+            else {
+                arena.value_session_path(classifier, evidence, paths)
+            }
+        },
         | Value::PathRefl(code) => {
             let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
             if rewritten == code {
@@ -1647,6 +1685,15 @@ fn close_value_type(
         | ValueType::Empty
         | ValueType::Universe { .. }
         | ValueType::Abstract(_) => id,
+        | ValueType::Session { graph, payloads } => {
+            let rewritten = popped(results, AnyNode::ValueType(payloads)).value_type_or(payloads);
+            if rewritten == payloads {
+                id
+            }
+            else {
+                arena.value_type_session(graph, rewritten)
+            }
+        },
         | ValueType::List(element) => {
             let rewritten = popped(results, AnyNode::ValueType(element)).value_type_or(element);
             if rewritten == element {

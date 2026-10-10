@@ -23,6 +23,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Identity and bridge recursion](#identity-and-bridge-recursion)
 - [Guarded higher fields](#guarded-higher-fields)
 - [Recursive code observations](#recursive-code-observations)
+- [Session code identities](#session-code-identities)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
@@ -254,11 +255,11 @@ The seven `flow_universe::tests` witnesses use the independent conversion engine
 
 ## Native universe paths
 
-`ValueType::PathUniverse(a, b)` forms `Path_U a b` over closed quoted Base, Unit, Sum and Product codes at level zero. `Value::PathEquiv`, `PathRefl` and `PathProduct` introduce paths; `Computation::Transport` is their only eliminator. They participate in ordinary arena traversal, declaration admission, structural conversion and artifact encoding. The surface parser has no path syntax.
+`ValueType::PathUniverse(a, b)` forms `Path_U a b` over closed quoted Base, Unit, Sum and Product codes, and finite session codes. First-order endpoints remain level zero; a session forms at its payload telescope’s universe level. `Value::PathEquiv`, `PathRefl`, `PathProduct` and `SessionPath` introduce paths. `Computation::Transport` computes for the first three; session evidence describes recorded action skeletons, not kernel endpoint values. They participate in ordinary arena traversal, declaration admission, structural conversion and artifact encoding. The surface parser has no path syntax.
 
 | Rule | Kernel obligation or computation |
 | ---- | -------------------------------- |
-| Formation | Both endpoints decode to closed first-order value types. |
+| Formation | Both endpoints decode to the admitted value-code vocabulary and pass ordinary type formation. Session payload codes are checked in an empty term context. |
 | Equivalence | Closed translators check at opposite CBPV arrows; every source and target round trip replays. |
 | Reflexivity | The endpoint code forms. |
 | Product | Both component paths form; endpoints are their products. |
@@ -375,6 +376,10 @@ One shared `ReplayBudget` counts both graphs’ Guard and Redirect visits. A con
 **Choice.** A native finite List code plus borrowed guarded inhabitants keeps code identity decidable and list observations incremental. Eager unfolding cannot retain an unobserved tail; recursive Rust data would compromise bounded stack use. **Reversal.** General strictly positive descriptions or persisted inhabitants require their own constructor, substitution and persistence rules; this surface supports the List fixed point and first-order element observations.
 
 **Mutation scope.** Recursive witnesses distinguish swapped constructor branches, dropped heads, eager tail reads, missing instruction charges, false productivity, truncated coverage, corrupt transport dialogues and finite-depth success on infinite input. No mutation campaign or infinite-coherence theorem is claimed.
+
+## Session code identities
+
+`Value::SessionPath` introduces native `Path_U` by replaying a supplied finite bisimulation. `Flow::Session` adds directional simulation to the in-memory Flow language; family coercion and backward width refuse. Ordinary formation checks session payload codes under an empty term context. The [protocol-identity contract](../core-session/README.md#certified-protocol-identities) records formation, local replay, the recorded-run consumer, the same-call evidence-isolation witness and the shared-universe cross-stratum seam. The six memo binding conditions above remain unchanged.
 
 ## Sharing and persistence
 

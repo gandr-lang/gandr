@@ -1,10 +1,12 @@
-//! Forward-only certificates over closed first-order universe codes.
+//! Forward-only certificates over closed first-order and session codes.
 //!
 //! Formation checks a closed translator and replays its action on every
 //! constructor pattern with rigid Base leaves. Output patterns may rearrange,
 //! duplicate or discard those leaves, but cannot manufacture or inspect them.
 //! `ride` replays the forward action; `stay` returns its argument in one step.
-//! The syntax is an in-memory rule language, separate from native terms and
+//! Session introductions replay finite simulations and have a recorded-run
+//! consumer rather than a CBPV endpoint-value action. The syntax is an
+//! in-memory rule language, separate from native terms and
 //! from universe paths. It carries no admission receipt or reusable verdict.
 
 use alloc::boxed::Box;
@@ -84,6 +86,18 @@ pub enum Seam
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Flow
 {
+    /// A finite session simulation with native payload-path obligations.
+    Session
+    {
+        /// Quoted source session code.
+        source: ValueId,
+        /// Quoted target session code.
+        target: ValueId,
+        /// Untrusted finite relation.
+        evidence: alloc::sync::Arc<gandr_kernel_term::session::Evidence>,
+        /// Native payload-path tuple, terminated by Unit.
+        payload_paths: ValueId,
+    },
     /// Directed reflexivity at a quoted closed first-order code.
     Stay(ValueId),
     /// A leaf-natural forward translator with exhaustive symbolic replay.
@@ -234,7 +248,8 @@ impl Flows
     /// # Adequacy
     /// - hypothesis: L3 — invalid ids cannot reach replay.
     /// - witness: `flow_universe::tests::formation_boundaries_refuse`
-    fn get(
+    #[inline]
+    pub fn get(
         &self,
         id: FlowId,
     ) -> Result<&Flow, FlowError>
@@ -272,6 +287,10 @@ pub struct PatternPosition(pub usize);
 #[derive(Debug)]
 pub enum FlowError
 {
+    /// A finite session simulation failed replay.
+    Session(crate::session::SessionError),
+    /// Session codes transport recorded runs, not native endpoint values.
+    RecordedRunRequired,
     /// Missing raw certificate.
     UnknownFlow(FlowId),
     /// Missing term or impossible internal assembly state.
@@ -336,6 +355,10 @@ impl fmt::Display for FlowError
     {
         match self {
             | &Self::UnknownFlow(id) => write!(f, "unknown universe flow {}", id.0),
+            | &Self::Session(ref error) => error.fmt(f),
+            | &Self::RecordedRunRequired => {
+                f.write_str("session transport requires a recorded run")
+            },
             | &Self::Arena => f.write_str("unresolved term arena reference"),
             | &Self::UnsupportedCode(_) => f.write_str("unsupported universe-flow code"),
             | &Self::UnsupportedType(_) => f.write_str("unsupported universe-flow type"),

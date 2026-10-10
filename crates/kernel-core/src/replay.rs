@@ -1226,6 +1226,7 @@ where
             | Some(
                 &(Value::PathRefl(_)
                 | Value::PathProduct(..)
+                | Value::SessionPath { .. }
                 | Value::PathEquiv { .. }
                 | Value::Unit
                 | Value::Literal(_)
@@ -1426,16 +1427,20 @@ where
             return Err(unreadable());
         };
         let structure = match (one, other) {
-            | (&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. }), _) => {
-                Structure::Leaf(
-                    if equal_values(self.arena, left, right) == Convertibility::Convertible {
-                        Expect::Convertible
-                    }
-                    else {
-                        Expect::NotConvertible
-                    },
-                )
-            },
+            | (
+                &(Value::PathRefl(_)
+                | Value::PathProduct(..)
+                | Value::SessionPath { .. }
+                | Value::PathEquiv { .. }),
+                _,
+            ) => Structure::Leaf(
+                if equal_values(self.arena, left, right) == Convertibility::Convertible {
+                    Expect::Convertible
+                }
+                else {
+                    Expect::NotConvertible
+                },
+            ),
             | (&Value::Unit, &Value::Unit) => Structure::Leaf(Expect::Convertible),
             | (&Value::Literal(_), &Value::Literal(_)) if one == other => {
                 Structure::Leaf(Expect::Convertible)
@@ -1579,6 +1584,7 @@ where
                         | Value::Variable(_)
                         | Value::PathRefl(_)
                         | Value::PathProduct(..)
+                        | Value::SessionPath { .. }
                         | Value::PathEquiv { .. }),
                     ) => {},
                     | Some(
@@ -1643,7 +1649,13 @@ where
                         work.extend([AnyNode::ValueType(first), AnyNode::ValueType(second)]);
                     },
                     | Some(&ValueType::Thunk(body)) => work.push(AnyNode::CompType(body)),
-                    | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+                    | Some(
+                        &ValueType::Session {
+                            payloads: inner, ..
+                        }
+                        | &ValueType::Lift { inner, .. }
+                        | &ValueType::List(inner),
+                    ) => {
                         work.push(AnyNode::ValueType(inner));
                     },
                     | Some(&ValueType::Element { code, .. }) => work.push(AnyNode::Value(code)),
@@ -1720,6 +1732,7 @@ where
                     | Some(
                         &(Value::PathRefl(_)
                         | Value::PathProduct(..)
+                        | Value::SessionPath { .. }
                         | Value::PathEquiv { .. }
                         | Value::Unit
                         | Value::Literal(_)
@@ -1812,6 +1825,7 @@ where
             | Some(
                 &(Value::PathRefl(_)
                 | Value::PathProduct(..)
+                | Value::SessionPath { .. }
                 | Value::PathEquiv { .. }
                 | Value::Unit
                 | Value::Literal(_)

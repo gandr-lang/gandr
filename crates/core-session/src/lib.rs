@@ -1,20 +1,25 @@
 //! Contractive binary session types, one coinductive relation engine, and
 //! search-free endpoint replay. Payload identities and digests stay opaque.
 //!
-//! The monitor checks conformance; it produces no kernel certificate.
+//! The monitor checks conformance; it produces no kernel certificate. The
+//! `certified` boundary exports candidate relations and transports recorded
+//! skeletons only after independent kernel replay.
 
 #![no_std]
 
 extern crate alloc;
 
+pub mod certified;
 mod relation;
 mod replay;
 mod session;
 
 pub use crate::relation::Decision;
 pub use crate::relation::Relation;
+pub use crate::relation::RelationResult;
 pub use crate::relation::decide;
 pub use crate::relation::duality;
+pub use crate::relation::relate;
 pub use crate::replay::Completion;
 pub use crate::replay::Move;
 pub use crate::replay::MoveIndex;
