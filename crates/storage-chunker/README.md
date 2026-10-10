@@ -74,7 +74,7 @@ fn main() -> Result<(), ChunkerError> {
 }
 ```
 
-Constant constructors, the wire discriminator, saturating token addition and the Gear table carry const-compatible specification predicates. They preserve constant evaluation; `anodized_panic` enforces the same predicates at runtime. Nominal equality observers keep primitive representations private without calling non-const trait methods.
+Constant constructors, the wire discriminator, saturating token addition and the Gear table carry const-compatible specification predicates. They preserve constant evaluation; `anodized_panic` enforces the same predicates at runtime. Predicates compare internal primitive fields directly, without an equality adapter or a new public representation. Crate-scoped fields keep the representation inaccessible to consumers; a narrowly scoped field-visibility expectation permits sibling modules to inspect it in constant predicates.
 
 Run the crate's tests from the repository root, both normally and with executable specifications enabled:
 

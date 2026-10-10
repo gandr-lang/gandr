@@ -722,12 +722,12 @@ impl ChunkerParams
             && ret.seed_policy.discriminator().0 == seed_policy.discriminator().0
             && ret.normalization.discriminator().0 == normalization.discriminator().0
             && ret.record_boundary_rule.discriminator().0 == record_boundary_rule.discriminator().0
-            && matches!(ret.limits.min_bytes.const_eq(limits.min_bytes), crate::units::ConstEquality::Equal)
-            && matches!(ret.limits.target_bytes.const_eq(limits.target_bytes), crate::units::ConstEquality::Equal)
-            && matches!(ret.limits.max_bytes.const_eq(limits.max_bytes), crate::units::ConstEquality::Equal)
-            && matches!(ret.limits.min_records.const_eq(limits.min_records), crate::units::ConstEquality::Equal)
-            && matches!(ret.limits.target_records.const_eq(limits.target_records), crate::units::ConstEquality::Equal)
-            && matches!(ret.limits.max_records.const_eq(limits.max_records), crate::units::ConstEquality::Equal)
+            && ret.limits.min_bytes.0 == limits.min_bytes.0
+            && ret.limits.target_bytes.0 == limits.target_bytes.0
+            && ret.limits.max_bytes.0 == limits.max_bytes.0
+            && ret.limits.min_records.0 == limits.min_records.0
+            && ret.limits.target_records.0 == limits.target_records.0
+            && ret.limits.max_records.0 == limits.max_records.0
     })]
     #[inline]
     #[must_use]

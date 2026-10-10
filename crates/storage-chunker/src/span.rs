@@ -48,7 +48,7 @@ impl ByteSpan
     ///   variants distinguish swapped endpoints and premature normalization.
     /// - witness: `tests::gear::span_lists_that_are_not_a_partition_are_refused`
     /// - witness: `tests::gear::empty_records_keep_their_record_positions`
-    #[anodized::spec(ensures: |ret| matches!(ret.start.const_eq(start), crate::units::ConstEquality::Equal) && matches!(ret.end.const_eq(end), crate::units::ConstEquality::Equal))]
+    #[anodized::spec(ensures: |ret| ret.start.0 == start.0 && ret.end.0 == end.0)]
     #[inline]
     #[must_use]
     pub const fn new(
