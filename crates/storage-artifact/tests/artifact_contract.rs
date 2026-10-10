@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! The artifact layer's specification suite: the record round trip, the
 //! identity's determinism, sensitivity and history-independence, the stored
 //! read back through the kernel's decoder, and each refusal of that read.
@@ -90,7 +79,24 @@ mod artifact_contract
     /// by bypass, since storage reads no typing.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: an encoded artifact with one declaration per kind; a
+    ///   reference at position zero becomes a unit definition.
+    /// - provides: four declaration shapes and cross-declaration references.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 in 64 generated environments of zero to 47 declarations
+    ///   observes reassembly and stored-read agreement; a 300-declaration cycle
+    ///   exercises an internal root. The predicate checks count when decoding
+    ///   succeeds, while consumer reads distinguish invalid images. The
+    ///   witnesses do not independently classify every generated declaration's
+    ///   term shape.
+    /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
+    /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
+    #[anodized::spec(ensures: |ret| decode(ret.as_image()).map_or(true, |decoded|
+            decoded.declarations().len() == kinds.len()))]
     fn artifact_of(kinds: &[Kind]) -> EncodedArtifact
     {
         let mut arena = TermArena::new();
@@ -139,7 +145,23 @@ mod artifact_contract
     /// definition, a definition naming it, a universe axiom and a unit axiom.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a structurally decodable four-declaration artifact in the
+    ///   documented order, with the second declaration referring to the first.
+    /// - provides: the small shared-subterm consumer fixture.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 for this fixed four-declaration artifact observes every
+    ///   reassembled byte and a stored read equal to its kernel decode. It
+    ///   distinguishes lost declarations or damaged images, not an alternative
+    ///   well-formed four-declaration fixture; the predicate checks count and
+    ///   structural decodability rather than full term-shape equivalence.
+    /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
+    /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
+    #[anodized::spec(ensures: |ret| decode(ret.as_image())
+        .is_ok_and(|decoded| decoded.declarations().len() == 4))]
     fn shared_artifact() -> EncodedArtifact
     {
         artifact_of(&[
@@ -153,7 +175,21 @@ mod artifact_contract
     /// An artifact of `count` declarations cycling through every kind.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: an encoded artifact with exactly count declarations, cycling
+    ///   through the four fixture kinds.
+    /// - provides: a multi-leaf artifact under the current boundary profile.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 at 300 declarations observes exact stored-read
+    ///   agreement with the kernel decode and an internal record-tree root. It
+    ///   distinguishes truncated cycles and malformed output within decoder
+    ///   budgets, not every permutation of the four declaration kinds.
+    /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
+    #[anodized::spec(ensures: |ret| decode(ret.as_image()).map_or(true, |decoded|
+            decoded.declarations().len() == count.0))]
     fn long_artifact(count: Count) -> EncodedArtifact
     {
         let cycle = [
@@ -170,7 +206,36 @@ mod artifact_contract
     /// The record set `artifact` cuts into.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the encoded fixture lies within the kernel decoder's
+    ///   budgets.
+    /// - ensures: the returned header and ordered segments concatenate to
+    ///   artifact.
+    /// - provides: the record set consumed by the integration scenarios.
+    /// - fails: never.
+    /// - panics: if the fixture violates the decoder's admission conditions.
+    ///
+    /// # Panics
+    /// Panics if the fixture does not decode within the kernel's budgets.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the fixed four-declaration fixture and 64 generated
+    ///   environments with at most 47 declarations observes exact byte
+    ///   equality, distinguishing lost headers, changed segment order and
+    ///   dropped bytes. Refused images are not the domain of this asserting
+    ///   helper.
+    /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
+    /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
+    #[anodized::spec(ensures: |ret| {
+        let mut offset = ret.header().as_ref().len();
+        artifact.as_ref().starts_with(ret.header().as_ref())
+            && ret.records().iter().all(|record| {
+                let segment = record.segment();
+                let end = offset.saturating_add(segment.as_ref().len());
+                let agrees = artifact.as_ref().get(offset .. end) == Some(segment.as_ref());
+                offset = end;
+                agrees
+            }) && offset == artifact.as_ref().len()
+    })]
     fn records_of(artifact: &EncodedArtifact) -> ArtifactRecordSet
     {
         ArtifactRecordSet::from_artifact(artifact.as_image()).expect("the artifact decodes")
@@ -179,7 +244,31 @@ mod artifact_contract
     /// `set` committed into a fresh store under the current parameters.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: set is within the record plane's current admission limits.
+    /// - ensures: the manifest names the set's header and declarations and the
+    ///   returned store holds its root; invalid kernel bytes remain
+    ///   unvalidated.
+    /// - provides: an isolated committed artifact for each consumer scenario.
+    /// - fails: never.
+    /// - panics: if the record plane refuses the fixture.
+    ///
+    /// # Panics
+    /// Panics when the fixture cannot be built or written under current
+    /// parameters.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on one- and 300-declaration fixtures observes the
+    ///   complete decoded artifact after store traversal, detecting missing
+    ///   roots or children and mismatched counts. L3 stores a corrupt kernel
+    ///   header and observes a kernel refusal rather than storage validation.
+    ///   Arbitrary record-plane limits and failing stores are outside this
+    ///   helper's domain.
+    /// - witness: `artifact_contract::artifact_contract::tree_nodes_store_and_reopen`
+    /// - witness: `artifact_contract::artifact_contract::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`
+    #[anodized::spec(ensures: |ret| ret.0.kernel_format() == FORMAT_VERSION
+        && usize::try_from(u64::from(ret.0.record_count())).ok()
+            == Some(set.records().len().saturating_add(1))
+        && ret.1.load(ret.0.root_node()).is_ok())]
     fn committed(set: &ArtifactRecordSet) -> (ArtifactManifest, InMemoryBlockStore)
     {
         let mut store = InMemoryBlockStore::new();
@@ -192,7 +281,32 @@ mod artifact_contract
     /// the manifest naming that tree exactly.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: records are strictly ascending and within current
+    ///   record-plane limits.
+    /// - ensures: the manifest counts exactly records and its root is present
+    ///   in the returned store; the artifact layer has not admitted their keys.
+    /// - provides: authenticated but potentially misplaced records for refusal
+    ///   probes.
+    /// - fails: never.
+    /// - panics: if the record plane refuses the supplied fixture.
+    ///
+    /// # Panics
+    /// Panics when the records cannot be built or stored under current
+    /// parameters.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a missing-header tree and a skipped-initial-index
+    ///   tree observes exact misplaced-key positions after authentication. It
+    ///   distinguishes losing the stored root from the intended key refusal;
+    ///   arbitrary record-plane refusal paths are outside this helper's domain.
+    /// - witness: `artifact_contract::artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`
+    #[anodized::spec(
+        requires: records.iter().zip(records.iter().skip(1))
+            .all(|(previous, next)| previous.key() < next.key()),
+        ensures: |ret| ret.0.kernel_format() == FORMAT_VERSION
+            && usize::try_from(u64::from(ret.0.record_count())).ok() == Some(records.len())
+            && ret.1.load(ret.0.root_node()).is_ok(),
+    )]
     fn stored_as_named(records: &[RecordRef<'_>]) -> (ArtifactManifest, InMemoryBlockStore)
     {
         let params = TreeParams::current();
@@ -212,10 +326,50 @@ mod artifact_contract
     /// A record count of `count`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; supported targets' declaration counts fit u64.
+    /// - ensures: the record count is numerically equal to count.
+    /// - provides: a lossless count observer across the usize/u64 boundary.
+    /// - fails: never.
+    /// - panics: none on supported targets.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 observes the manifest's count against the explicit five
+    ///   records of the shared fixture and against generated lengths plus one.
+    ///   This distinguishes omitted headers and off-by-one counts within zero
+    ///   to 47 generated declarations, not the full integer domain.
+    /// - witness: `artifact_contract::artifact_contract::records_round_trip_to_a_byte_identical_artifact`
+    /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
+    #[anodized::spec(ensures: |ret| usize::try_from(u64::from(ret)).ok() == Some(count.0))]
     fn record_count(count: Count) -> RecordCount
     {
         RecordCount(u64::try_from(count.0).expect("a count fits sixty-four bits"))
+    }
+
+    #[test]
+    fn unsupported_build_parameters_do_not_write_nodes()
+    {
+        let set = records_of(&shared_artifact());
+        let current = TreeParams::current();
+        let stale = TreeParams::new(
+            current.kind(),
+            EncodingVersion::V1,
+            current.hash_algorithm(),
+            current.separator_convention(),
+            current.boundary(),
+        );
+        let mut store = InMemoryBlockStore::new();
+        assert_eq!(
+            Err(ArtifactError::Records {
+                refusal: RecordTreeError::UnsupportedVersion {
+                    version: EncodingVersion::V1.number(),
+                }
+            }),
+            build(&set, stale, &mut store),
+        );
+        assert_eq!(
+            gandr_storage_records::StoredNodeCount::from(0_usize),
+            store.len()
+        );
     }
 
     #[test]
@@ -310,10 +464,21 @@ mod artifact_contract
     #[test]
     fn tree_nodes_store_and_reopen()
     {
-        // Three hundred records cut into many leaves under a mean of sixteen,
-        // so the read walks an internal root as well as a lone leaf.
-        for artifact in [shared_artifact(), long_artifact(Count(300))] {
+        // These concrete fixtures witness both supported root shapes.
+        for (artifact, root_kind) in [
+            (artifact_of(&[Kind::UnitDefinition]), NodeKind::Leaf),
+            (long_artifact(Count(300)), NodeKind::Internal),
+        ] {
             let (manifest, store) = committed(&records_of(&artifact));
+            let root = store
+                .load(manifest.root_node())
+                .expect("the root is stored");
+            assert_eq!(
+                root_kind,
+                decode_node(root.bytes(), &mut DecodeWork::new())
+                    .expect("the root decodes")
+                    .kind()
+            );
             let expected = decode(artifact.as_image()).expect("the artifact decodes");
             assert_eq!(
                 Ok(expected.clone()),
@@ -337,17 +502,6 @@ mod artifact_contract
                 "a store without the root refuses it by name"
             );
         }
-        let (manifest, store) = committed(&records_of(&long_artifact(Count(300))));
-        let root = store
-            .load(manifest.root_node())
-            .expect("the root is stored");
-        assert_eq!(
-            NodeKind::Internal,
-            decode_node(root.bytes(), &mut DecodeWork::new())
-                .expect("the root decodes")
-                .kind(),
-            "the long artifact's root is internal"
-        );
     }
 
     #[test]
@@ -538,7 +692,21 @@ mod artifact_contract
     /// One generated declaration kind.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: generated values are drawn from the four declaration kinds.
+    /// - provides: the declaration domain of the generated storage laws.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the returned opaque strategy does not expose its
+    ///   support; enumerating all generated and shrunk values requires a
+    ///   runner.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 runs 64 environments of zero to 47 generated kinds,
+    ///   observing complete byte reconstruction and stored-read agreement. It
+    ///   detects storage failures reached by those samples, not absent
+    ///   generator alternatives, a distribution promise or all shrink paths.
+    /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
     fn kind() -> impl Strategy<Value = Kind>
     {
         prop_oneof![
