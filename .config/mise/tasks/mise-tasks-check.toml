@@ -81,7 +81,7 @@ run = "quenchant-gates anodized --manifest-path Cargo.toml --require-enforcing"
 description = "Unit and integration tests over every target, specifications enforced"
 env.RUSTFLAGS = "--cfg anodized_panic"
 env.CARGO_TARGET_DIR = "{{ config_root }}/target/enforcing"
-run = "cargo nextest run --workspace --locked"
+run = "cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The enforcing configuration admits the cfg-gated runtime sentinels, so their
 # witnesses enter the inventory.
@@ -108,7 +108,7 @@ run = "typos"
 
 ["check:tests"]
 description = "Unit and integration tests over every target"
-run = "cargo nextest run --workspace --locked"
+run = "cargo nextest run --workspace --locked --profile {{ env.NEXTEST_PROFILE | default(value='default') }}"
 
 # The corpus's two roots, run through the driver as an author runs them: the
 # strict root under `check`, every declaration checking and owing nothing;
@@ -117,8 +117,8 @@ run = "cargo nextest run --workspace --locked"
 ["check:corpus"]
 description = "The strict root under `gandr check`, the fixture root under `gandr test`"
 run = [
-  "cargo run --locked --quiet --package gandr-lang -- check crates/surface-corpus/strict",
-  "cargo run --locked --quiet --package gandr-lang -- test crates/surface-corpus/fixture",
+  "cargo run --locked --quiet --profile test --package gandr-lang -- check crates/surface-corpus/strict",
+  "cargo run --locked --quiet --profile test --package gandr-lang -- test crates/surface-corpus/fixture",
 ]
 
 # Git writes conflict markers as EXACTLY seven marker characters followed by
