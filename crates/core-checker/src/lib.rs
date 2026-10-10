@@ -174,6 +174,7 @@ mod module;
 mod refusal;
 pub mod stage;
 mod support;
+pub mod template;
 mod view;
 
 pub use crate::code::Certificate;

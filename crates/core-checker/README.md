@@ -323,6 +323,8 @@ The alternatives were names on the checker's `Declaration`, which makes the judg
 `stage::compile`, `Program::admit` and `Program::execute` implement
 [certified first-order residual readmission](../kernel-core/docs/staging.md#experimental-stage-readmission).
 
+`template` implements [guarded equation families](docs/staging.md).
+
 ## License
 
 Apache-2.0 WITH LLVM-exception. The licence text is at the repository root.
