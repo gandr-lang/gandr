@@ -1096,11 +1096,14 @@ fn compressed_admission_matches_plain_families()
         let schema =
             gandr_kernel_core::admission::Schema::check(input.proposal, &mut Budget(1_000_000))
                 .unwrap();
-        let mut consumer = schema.bind(arena.clone(), &mut Budget(1_000_000)).unwrap();
+        let consumer = schema.bind(arena.clone(), &mut Budget(1_000_000)).unwrap();
+        let mut buffer = gandr_kernel_core::admission::Row::default();
         for (choices, step) in input.rows.iter().zip(&family) {
-            let row = schema.substitute(schema.classifiers(), choices).unwrap();
+            let mut row = schema
+                .substitute(schema.classifiers(), choices, &mut buffer)
+                .unwrap();
             assert_eq!(
-                row.admit(&mut consumer, *step, &mut Budget(100_000))
+                row.admit(&consumer, *step, &mut Budget(100_000))
                     .map(|_| ()),
                 replay_equation(&mut arena, *step, &mut Budget(100_000))
                     .map_err(gandr_kernel_core::admission::Refusal::from)

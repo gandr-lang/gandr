@@ -9,6 +9,8 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
+use quenchant_shape::shape::Maybe;
+
 /// Declare an arena-local nominal coordinate.
 macro_rules! coordinate {
     ($name:ident, $doc:literal) => {
@@ -207,6 +209,18 @@ pub struct Arena
     term_ids: BTreeMap<Term, TermId>,
 }
 
+quenchant_shape::reason_enum! {
+    /// Why an exact lookup names no coordinate.
+    pub mod interned {
+        /// The reason no coordinate is returned.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// No term with this constructor, payload and children is interned.
+            Uninterned,
+        }
+    }
+}
+
 impl Budget
 {
     /// Charge one bounded operation.
@@ -280,6 +294,30 @@ impl Arena
             .get(id.0)
             .copied()
             .ok_or(StageError::UnknownTerm(id))
+    }
+
+    /// Look up an exact term without interning it.
+    ///
+    /// # Specification
+    /// - ensures: `Present(id)` exactly when `alloc(term)` would return the
+    ///   existing `id`; the arena is unchanged and nothing is allocated.
+    /// - provides: `interned::Absent::Uninterned` when no equal term is live.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — interned, uninterned and payload-distinct terms
+    ///   distinguish exact lookup from coincidence.
+    /// - witness: `stage::tests::term_interning_preserves_exact_content`
+    #[inline]
+    pub fn find(
+        &self,
+        term: &Term,
+    ) -> Maybe<TermId, interned::Absent>
+    {
+        match self.term_ids.get(term) {
+            | Some(id) => Maybe::Present(*id),
+            | None => Maybe::Absent(interned::Absent::Uninterned),
+        }
     }
 
     /// Intern a classifier over existing children, without forming it.
@@ -748,18 +786,37 @@ mod tests
             Term::Eliminate(a, inner),
             Term::Eliminate(b, outer),
         ];
+        let before = terms.map(|term| arena.find(&term));
         let ids: Vec<_> = terms
             .iter()
             .map(|term| arena.alloc(*term).unwrap())
             .collect();
         let mut cloned = arena.clone();
-        for (term, id) in terms.iter().zip(&ids) {
+        for ((term, id), found) in terms.iter().zip(&ids).zip(before) {
+            let preexisting = *id == a || *id == b;
+            assert_eq!(
+                found,
+                if preexisting {
+                    Maybe::Present(*id)
+                }
+                else {
+                    Maybe::Absent(interned::Absent::Uninterned)
+                }
+            );
+            assert_eq!(arena.find(term), Maybe::Present(*id));
+            assert_eq!(cloned.find(term), Maybe::Present(*id));
             assert_eq!(arena.alloc(*term), Ok(*id));
             assert_eq!(cloned.alloc(*term), Ok(*id));
             for (other, other_id) in terms.iter().zip(&ids) {
                 assert_eq!(term == other, id == other_id);
             }
         }
+        let fresh = Term::Natural(Stage::Outer, Natural(4));
+        assert_eq!(
+            arena.find(&fresh),
+            Maybe::Absent(interned::Absent::Uninterned)
+        );
+        assert_eq!(arena.alloc(fresh), Ok(TermId(ids.len())));
         assert_eq!(
             arena.alloc(Term::Quote(TermId(usize::MAX))),
             Err(StageError::UnknownTerm(TermId(usize::MAX)))

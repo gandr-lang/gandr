@@ -542,6 +542,7 @@ dependencies = [
  "anodized",
  "gandr-kernel-strata",
  "proptest",
+ "quenchant-shape",
 ]
 
 [[package]]

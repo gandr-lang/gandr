@@ -195,7 +195,8 @@ pub struct Schema
     affected: Work,
 }
 
-/// Schema-bound consumer syntax; no mutable arena replacement is exposed.
+/// Schema-bound consumer syntax, immutable after binding and shared by
+/// reference across rows; no mutable arena replacement is exposed.
 #[derive(Clone, Debug)]
 pub struct Consumer<'schema>
 {
@@ -205,16 +206,83 @@ pub struct Consumer<'schema>
     content: content::Instance,
 }
 
-/// An admissible point-ordered substitution, tied to its checked schema.
+/// One point's selection while a row is validated.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Selected
+{
+    /// No occurrence of the point has been supplied yet.
+    Open,
+    /// Every supplied occurrence selected this guard.
+    Chosen(Guard),
+}
+
+/// Reusable buffers for one row at a time, owned by the caller.
+///
+/// The buffers grow to the largest schema they serve and are rewritten by
+/// every row; once sized, validating and admitting a row allocates nothing.
+#[derive(Clone, Debug, Default)]
+pub struct Row
+{
+    /// One selection per point, rewritten by every substitution.
+    selected: Vec<Selected>,
+    /// The current row's dependent coordinates, dense by pattern node.
+    coordinates: Vec<content::Slot>,
+}
+
+/// An admissible point-ordered substitution, tied to its checked schema and
+/// held in the caller's row buffers.
 #[derive(Debug)]
-pub struct Substitution<'schema>
+pub struct Substitution<'schema, 'row>
 {
     /// The only authority for this row.
     schema: &'schema Schema,
-    /// Exactly one guard per point, including all repeated correlations.
-    guards: Vec<Guard>,
+    /// Exactly one chosen guard per point, plus the dependent coordinates.
+    row: &'row mut Row,
     /// Number of supplied choices validated.
     choices: Work,
+}
+
+/// Spike control: the original row, which allocates its selection and
+/// interns instance records into an owned consumer clone.
+#[derive(Debug)]
+pub struct Minting<'schema>
+{
+    /// The only authority for this row.
+    schema: &'schema Schema,
+    /// Exactly one chosen guard per point.
+    selected: Vec<Selected>,
+    /// Number of supplied choices validated.
+    choices: Work,
+}
+
+/// Fixed probe content shared by every inheritance obligation of one schema.
+#[derive(Clone, Debug)]
+struct Base
+{
+    /// The vocabulary, skolems and every fixed skeleton node.
+    arena: Arena,
+    /// Probe coordinate per pattern node; dependent nodes stay pending.
+    known: Vec<content::Slot>,
+}
+
+/// Which guarded body one inheritance obligation binds.
+#[derive(Clone, Copy, Debug)]
+enum Obligation
+{
+    /// A schema without points owes one ground replay.
+    Ground,
+    /// One point bound to one of its arms; every other point stays rigid.
+    Arm(Point, TermId),
+}
+
+/// Spike control: which inheritance discharge `check_limited` runs.
+#[derive(Clone, Copy, Debug)]
+enum Path
+{
+    /// One shared probe base; only dependent nodes are interned per replay.
+    Fast,
+    /// One fresh probe per replay, reached through an ordered map.
+    Reference,
 }
 
 /// Work charged by exact instance admission.
@@ -269,7 +337,9 @@ impl Schema
     ///   fuel.
     /// - panics: none.
     /// - intension: one replay per distinct point/body, or one ground replay;
-    ///   no imported cache supplies evidence. Scratch dies after each replay.
+    ///   no imported cache supplies evidence. The fixed skeleton is interned
+    ///   once into a probe base; each replay clones it, interns only the
+    ///   dependent nodes, and dies after replay.
     ///
     /// # Errors
     /// Returns the named `Refusal` without admitting an instance.
@@ -279,10 +349,57 @@ impl Schema
     ///   distinguish trusted inheritance from a producer assertion.
     /// - witness: `admission::tests::schema_and_instance_refusals`
     /// - witness: `admission::tests::successor_and_transparency`
+    /// - witness: `admission::tests::fast_and_reference_schemas_agree`
     #[inline]
     pub fn check(
         proposal: Proposal,
         budget: &mut Budget,
+    ) -> Result<Self, Refusal>
+    {
+        Self::bounded(proposal, budget, Path::Fast)
+    }
+
+    /// Spike control: establish the schema through one fresh probe per
+    /// obligation, as before the fast path.
+    ///
+    /// # Specification
+    /// - ensures: the verdict, checks and replay fuel of `check`.
+    /// - fails: as `check`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the named `Refusal` without admitting an instance.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the fast path is compared against this reference.
+    /// - witness: `admission::tests::fast_and_reference_schemas_agree`
+    #[inline]
+    pub fn check_reference(
+        proposal: Proposal,
+        budget: &mut Budget,
+    ) -> Result<Self, Refusal>
+    {
+        Self::bounded(proposal, budget, Path::Reference)
+    }
+
+    /// Validate under an allowance bounded by the native proposal bytes.
+    ///
+    /// # Specification
+    /// - ensures: exhausting the input-sized allowance is `SchemaWorkBound`;
+    ///   exhausting the caller's smaller budget is `Exhausted`.
+    /// - fails: as `check_limited`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the named `Refusal`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — shared syntax cannot amplify uncharged schema work.
+    /// - witness: `admission::tests::schema_work_is_bounded_by_input`
+    fn bounded(
+        proposal: Proposal,
+        budget: &mut Budget,
+        path: Path,
     ) -> Result<Self, Refusal>
     {
         let bytes = core::mem::size_of_val(proposal.nodes.as_slice())
@@ -294,7 +411,7 @@ impl Schema
         });
         let available = budget.0.min(bytes);
         let mut limited = Budget(available);
-        let result = Self::check_limited(proposal, &mut limited);
+        let result = Self::check_limited(proposal, &mut limited, path);
         budget.0 = budget.0.saturating_sub(available.saturating_sub(limited.0));
         if result
             .as_ref()
@@ -322,6 +439,7 @@ impl Schema
     fn check_limited(
         proposal: Proposal,
         budget: &mut Budget,
+        path: Path,
     ) -> Result<Self, Refusal>
     {
         let mut vocabulary = Arena::default();
@@ -447,16 +565,36 @@ impl Schema
             .arms
             .iter()
             .enumerate()
-            .flat_map(|(point, arms)| arms.iter().map(move |arm| (Point(point), *arm)))
+            .flat_map(|(point, arms)| {
+                arms.iter()
+                    .map(move |arm| Obligation::Arm(Point(point), *arm))
+            })
             .collect();
-        if obligations.is_empty() {
-            schema.inherit(&BTreeMap::new(), budget)?;
+        let obligations = if obligations.is_empty() {
+            Vec::from([Obligation::Ground])
         }
-        for (point, arm) in obligations {
-            schema.inherit(&BTreeMap::from([(point, arm)]), budget)?;
-        }
+        else {
+            obligations
+        };
         schema.content =
             content::Prepared::build(content::Dependencies(dependent), &reached, budget)?;
+        match path {
+            | Path::Fast => {
+                let base = schema.base(budget)?;
+                for obligation in obligations {
+                    schema.inherit_fast(&base, obligation, budget)?;
+                }
+            },
+            | Path::Reference => {
+                for obligation in obligations {
+                    let bindings = match obligation {
+                        | Obligation::Ground => BTreeMap::new(),
+                        | Obligation::Arm(point, arm) => BTreeMap::from([(point, arm)]),
+                    };
+                    schema.inherit(&bindings, budget)?;
+                }
+            },
+        }
         Ok(schema)
     }
 
@@ -511,7 +649,8 @@ impl Schema
         })
     }
 
-    /// Validate every supplied occurrence and require every point.
+    /// Validate every supplied occurrence into the caller's row buffers and
+    /// require every point.
     ///
     /// # Specification
     /// - ensures: every point selects an existing arm; repeated selections
@@ -520,6 +659,8 @@ impl Schema
     /// - panics: none.
     /// - intension: linear in supplied choices plus classifier bytes; borrowing
     ///   the schema's own classifier slice makes that comparison constant-time.
+    ///   The selection is written into `row`, which allocates only while it
+    ///   grows to the largest schema it has served.
     ///
     /// # Errors
     /// Returns the distinct substitution `Refusal`.
@@ -528,11 +669,72 @@ impl Schema
     /// - hypothesis: L3 — poisoned rows distinguish each independent premise.
     /// - witness: `admission::tests::schema_and_instance_refusals`
     #[inline]
-    pub fn substitute(
+    pub fn substitute<'row>(
         &self,
         classifiers: &[Type],
         choices: &[Choice],
-    ) -> Result<Substitution<'_>, Refusal>
+        row: &'row mut Row,
+    ) -> Result<Substitution<'_, 'row>, Refusal>
+    {
+        self.select(classifiers, choices, &mut row.selected)?;
+        Ok(Substitution {
+            schema: self,
+            row,
+            choices: Work(choices.len()),
+        })
+    }
+
+    /// Spike control: validate a row into freshly allocated selections, as
+    /// the original row did.
+    ///
+    /// # Specification
+    /// - ensures: the verdict of `substitute`.
+    /// - fails: as `substitute`.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns the distinct substitution `Refusal`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the observer compares both row shapes per member.
+    /// - witness: `admission::tests::lookup_rows_agree_with_minting_rows`
+    #[inline]
+    pub fn substitute_minting(
+        &self,
+        classifiers: &[Type],
+        choices: &[Choice],
+    ) -> Result<Minting<'_>, Refusal>
+    {
+        let mut selected = Vec::new();
+        self.select(classifiers, choices, &mut selected)?;
+        Ok(Minting {
+            schema: self,
+            selected: selected.as_slice().to_vec(),
+            choices: Work(choices.len()),
+        })
+    }
+
+    /// Write one selection per point, refusing the first invalid premise.
+    ///
+    /// # Specification
+    /// - ensures: on success `selected` holds exactly one chosen guard per
+    ///   point, agreeing with every supplied occurrence.
+    /// - fails: classifier mismatch, unknown arm, correlation or missing point.
+    /// - panics: none.
+    /// - intension: reuses `selected`'s capacity; allocates only to grow it.
+    ///
+    /// # Errors
+    /// Returns the distinct substitution `Refusal`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — poisoned rows distinguish each independent premise.
+    /// - witness: `admission::tests::schema_and_instance_refusals`
+    fn select(
+        &self,
+        classifiers: &[Type],
+        choices: &[Choice],
+        selected: &mut Vec<Selected>,
+    ) -> Result<(), Refusal>
     {
         if !core::ptr::eq(
             core::ptr::from_ref(classifiers),
@@ -541,7 +743,8 @@ impl Schema
         {
             return Err(Refusal::ClassifierMismatch);
         }
-        let mut selected = alloc::vec![None; self.proposal.arms.len()];
+        selected.clear();
+        selected.resize(self.proposal.arms.len(), Selected::Open);
         for choice in choices {
             let arms = self
                 .proposal
@@ -554,21 +757,17 @@ impl Schema
             let slot = selected
                 .get_mut(choice.point.0)
                 .ok_or(Refusal::UnknownArm(choice.point))?;
-            if slot.is_some_and(|old| old != choice.guard) {
-                return Err(Refusal::Correlation(choice.point));
+            match *slot {
+                | Selected::Chosen(old) if old != choice.guard => {
+                    return Err(Refusal::Correlation(choice.point));
+                },
+                | Selected::Open | Selected::Chosen(_) => *slot = Selected::Chosen(choice.guard),
             }
-            *slot = Some(choice.guard);
         }
-        let guards = selected
-            .into_iter()
-            .enumerate()
-            .map(|(point, guard)| guard.ok_or(Refusal::MissingPoint(Point(point))))
-            .collect::<Result<_, _>>()?;
-        Ok(Substitution {
-            schema: self,
-            guards,
-            choices: Work(choices.len()),
-        })
+        if let Some(point) = selected.iter().position(|slot| *slot == Selected::Open) {
+            return Err(Refusal::MissingPoint(Point(point)));
+        }
+        Ok(())
     }
 
     /// Check all rule observations independently of inheritance replay.
@@ -795,7 +994,30 @@ impl Schema
         budget: &mut Budget,
     ) -> Result<(), Refusal>
     {
-        let (mut arena, step) = self.probe(bindings, budget)?;
+        let (arena, step) = self.probe(bindings, budget)?;
+        self.discharge(arena, step, budget)
+    }
+
+    /// Replay one reified probe equation under a closed reflexive endpoint.
+    ///
+    /// # Specification
+    /// - ensures: success records one valid local equation and consumed fuel.
+    /// - fails: `CorruptStep` on an invalid equation; preserves exhausted fuel.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `Refusal::CorruptStep` or a syntax/fuel refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a changed target or decision cannot mint a schema.
+    /// - witness: `admission::tests::schema_and_instance_refusals`
+    fn discharge(
+        &mut self,
+        mut arena: Arena,
+        step: Step,
+        budget: &mut Budget,
+    ) -> Result<(), Refusal>
+    {
         let endpoint = arena.alloc(Term::Natural(Stage::Outer, Natural(0)))?;
         let certificate = Certificate {
             source: endpoint,
@@ -817,20 +1039,159 @@ impl Schema
             | Err(_) => Err(Refusal::CorruptStep),
         }
     }
+
+    /// Intern the vocabulary, skolems and every fixed skeleton node once.
+    ///
+    /// # Specification
+    /// - ensures: every fixed node has a probe coordinate holding its exact
+    ///   syntax; every dependent node is pending.
+    /// - fails: malformed syntax or exhausted work.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns `Refusal` for malformed syntax or exhausted work.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every obligation over the base replays the same probe
+    ///   equation as a fresh reference probe.
+    /// - witness: `admission::tests::fast_and_reference_schemas_agree`
+    fn base(
+        &self,
+        budget: &mut Budget,
+    ) -> Result<Base, Refusal>
+    {
+        budget.0 = budget
+            .0
+            .checked_sub(
+                self.proposal
+                    .classifiers
+                    .len()
+                    .saturating_add(self.skolems.len()),
+            )
+            .ok_or(StageError::Exhausted)?;
+        let mut arena = self.vocabulary.clone();
+        let mut known = Vec::with_capacity(self.proposal.nodes.len());
+        for (index, node) in self.proposal.nodes.iter().enumerate() {
+            budget.spend()?;
+            let dependence = self.content.dependence(TermId(index))?;
+            let slot = match (dependence, *node) {
+                | (content::Dependence::Dependent, _) => content::Slot::Pending,
+                | (content::Dependence::Fixed, Node::Rigid(term)) => {
+                    let term = content::relink(term, &known)?;
+                    content::Slot::Known(arena.alloc(term)?)
+                },
+                | (content::Dependence::Fixed, Node::Point(_) | Node::Predecessor(_)) => {
+                    return Err(Refusal::Malformed);
+                },
+            };
+            known.push(slot);
+        }
+        Ok(Base { arena, known })
+    }
+
+    /// Discharge one inheritance obligation over the shared probe base.
+    ///
+    /// # Specification
+    /// - ensures: replays exactly the probe `probe` reifies for the same
+    ///   binding: the bound point takes its arm, every other point and
+    ///   predecessor a fresh rigid code.
+    /// - fails: `CorruptStep` on an invalid equation; malformed syntax or
+    ///   exhausted work.
+    /// - panics: none.
+    /// - intension: charges the vocabulary and one unit per pattern node, the
+    ///   size of the base clone; interns only dependent nodes.
+    ///
+    /// # Errors
+    /// Returns `Refusal::CorruptStep` or a syntax/fuel refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — the reference path and corrupt steps distinguish a
+    ///   shared base from a weakened probe.
+    /// - witness: `admission::tests::fast_and_reference_schemas_agree`
+    /// - witness: `admission::tests::schema_and_instance_refusals`
+    fn inherit_fast(
+        &mut self,
+        base: &Base,
+        obligation: Obligation,
+        budget: &mut Budget,
+    ) -> Result<(), Refusal>
+    {
+        budget.0 = budget
+            .0
+            .checked_sub(
+                self.proposal
+                    .classifiers
+                    .len()
+                    .saturating_add(self.skolems.len()),
+            )
+            .ok_or(StageError::Exhausted)?;
+        let mut arena = base.arena.clone();
+        let mut known = base.known.clone();
+        for (index, node) in self.proposal.nodes.iter().enumerate() {
+            budget.spend()?;
+            let dependence = self.content.dependence(TermId(index))?;
+            if dependence == content::Dependence::Fixed {
+                continue;
+            }
+            let term = match (*node, obligation) {
+                | (Node::Point(point), Obligation::Arm(bound, arm)) if point == bound => {
+                    let value = known.get(arm.0).ok_or(Refusal::Malformed)?.id()?;
+                    *known.get_mut(index).ok_or(Refusal::Malformed)? = content::Slot::Known(value);
+                    continue;
+                },
+                | (Node::Point(point), _) => {
+                    Term::Code(*self.skolems.get(point.0).ok_or(Refusal::Malformed)?)
+                },
+                | (Node::Predecessor(point), Obligation::Arm(bound, arm)) if point == bound => {
+                    let Node::Rigid(Term::Natural(Stage::Outer, Natural(value))) =
+                        self.proposal.node(arm)?
+                    else {
+                        return Err(Refusal::Malformed);
+                    };
+                    Term::Natural(
+                        Stage::Outer,
+                        Natural(value.checked_sub(1).ok_or(Refusal::Transparency)?),
+                    )
+                },
+                | (Node::Predecessor(point), _) => Term::Code(
+                    *self
+                        .skolems
+                        .get(point.0.saturating_add(self.proposal.arms.len()))
+                        .ok_or(Refusal::Malformed)?,
+                ),
+                | (Node::Rigid(term), _) => content::relink(term, &known)?,
+            };
+            *known.get_mut(index).ok_or(Refusal::Malformed)? =
+                content::Slot::Known(arena.alloc(term)?);
+        }
+        let side = |id: TermId| known.get(id.0).ok_or(Refusal::Malformed)?.id();
+        let step = Step {
+            source: side(self.proposal.equation.source)?,
+            target: side(self.proposal.equation.target)?,
+            rule: self.proposal.equation.rule,
+        };
+        self.discharge(arena, step, budget)
+    }
 }
 
-impl Substitution<'_>
+impl Substitution<'_, '_>
 {
-    /// Compare materialized consumer sides to this instance without replay.
+    /// Compare materialized consumer sides to this instance without replay,
+    /// by lookup in the shared binding.
     ///
     /// # Specification
     /// - ensures: success certifies exactly the schema's instantiated local
-    ///   equation by same-arena identities, without member rule replay.
-    /// - fails: `SidesMismatch` for unequal syntax or decision; `Malformed` for
-    ///   a consumer bound to another schema; syntax/fuel errors.
+    ///   equation by same-arena identities, without member rule replay; the
+    ///   binding is read, never extended.
+    /// - fails: `SidesMismatch` for unequal syntax or decision, including an
+    ///   instance record absent from the binding; `Malformed` for a consumer
+    ///   bound to another schema; syntax/fuel errors.
     /// - panics: none.
-    /// - intension: row validation and D plus two root liveness checks and two
-    ///   exact id comparisons; no consumer-side term or classifier walk.
+    /// - intension: row validation and D exact lookups plus two root liveness
+    ///   checks and two exact id comparisons; no consumer-side term or
+    ///   classifier walk and no allocation once the row buffers are sized. The
+    ///   binding's arena holds every record of each live term, so a record it
+    ///   lacks belongs to no live side.
     ///
     /// # Errors
     /// Returns side/schema mismatch or syntax/fuel refusals.
@@ -840,10 +1201,11 @@ impl Substitution<'_>
     ///   classifier coordinates distinguish exact instance admission.
     /// - witness: `admission::tests::schema_and_instance_refusals`
     /// - witness: `admission::tests::successor_and_transparency`
+    /// - witness: `admission::tests::lookup_rows_agree_with_minting_rows`
     #[inline]
     pub fn admit(
-        &self,
-        consumer: &mut Consumer<'_>,
+        &mut self,
+        consumer: &Consumer<'_>,
         equation: Step,
         budget: &mut Budget,
     ) -> Result<Admission, Refusal>
@@ -862,11 +1224,67 @@ impl Substitution<'_>
             affected: self.schema.affected,
             ..Admission::default()
         };
+        let Row {
+            ref selected,
+            ref mut coordinates,
+        } = *self.row;
         content::compare(
             self.schema,
-            &self.guards,
+            selected,
+            &consumer.content,
+            [equation.source, equation.target],
+            coordinates,
+            budget,
+            work,
+        )
+    }
+}
+
+impl Minting<'_>
+{
+    /// Spike control: admit by interning the instance into an owned consumer
+    /// clone, as the original row did.
+    ///
+    /// # Specification
+    /// - ensures: the verdict and counters of `Substitution::admit`.
+    /// - fails: as `Substitution::admit`, without the absent-record refusal.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Returns side/schema mismatch or syntax/fuel refusals.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the observer compares both row shapes per member.
+    /// - witness: `admission::tests::lookup_rows_agree_with_minting_rows`
+    #[inline]
+    pub fn admit(
+        &self,
+        consumer: &mut Consumer<'_>,
+        equation: Step,
+        row: &mut Row,
+        budget: &mut Budget,
+    ) -> Result<Admission, Refusal>
+    {
+        if !core::ptr::eq(
+            core::ptr::from_ref(self.schema),
+            core::ptr::from_ref(consumer.schema),
+        ) {
+            return Err(Refusal::Malformed);
+        }
+        if equation.rule != self.schema.proposal.equation.rule {
+            return Err(Refusal::SidesMismatch);
+        }
+        let work = Admission {
+            choices: self.choices,
+            affected: self.schema.affected,
+            ..Admission::default()
+        };
+        content::compare_minting(
+            self.schema,
+            &self.selected,
             &mut consumer.content,
             [equation.source, equation.target],
+            &mut row.coordinates,
             budget,
             work,
         )

@@ -26,37 +26,56 @@ fn cancellation() -> Proposal
     }
 }
 
+/// Intern `splice (quote n)` and return its cancellation equation.
+///
+/// # Specification
+/// trivial.
+fn cancelled(
+    arena: &mut Arena,
+    value: Natural,
+) -> Step
+{
+    let target = arena.alloc(Term::Natural(Stage::Outer, value)).unwrap();
+    let quote = arena.alloc(Term::Quote(target)).unwrap();
+    let source = arena.alloc(Term::Splice(quote)).unwrap();
+    Step {
+        source,
+        target,
+        rule: Rule::SpliceQuote,
+    }
+}
+
+/// The single choice selecting `guard` at point zero.
+///
+/// # Specification
+/// trivial.
+const fn only(guard: Guard) -> [Choice; 1]
+{
+    [Choice {
+        point: Point(0),
+        guard,
+    }]
+}
+
 #[test]
 fn schema_and_instance_refusals()
 {
     let schema = Schema::check(cancellation(), &mut Budget(10_000)).unwrap();
     assert_eq!(schema.work().0, Work(2));
     assert_eq!(schema.work().2, Work(2));
+    let mut buffer = Row::default();
     for guard in 0_usize .. 2 {
-        let choices = [Choice {
-            point: Point(0),
-            guard: Guard(guard),
-        }];
-        let row = schema.substitute(schema.classifiers(), &choices).unwrap();
+        let choices = only(Guard(guard));
         let mut arena = Arena::default();
-        let body = arena
-            .alloc(Term::Natural(
-                Stage::Outer,
-                Natural(guard.saturating_add(2)),
-            ))
-            .unwrap();
-        let quote = arena.alloc(Term::Quote(body)).unwrap();
-        let source = arena.alloc(Term::Splice(quote)).unwrap();
-        let step = Step {
-            source,
-            target: body,
-            rule: Rule::SpliceQuote,
-        };
+        let step = cancelled(&mut arena, Natural(guard.saturating_add(2)));
         let wrong = arena
             .alloc(Term::Natural(Stage::Outer, Natural(10)))
             .unwrap();
-        let mut consumer = schema.bind(arena.clone(), &mut Budget(10_000)).unwrap();
-        let observation = row.admit(&mut consumer, step, &mut Budget(10_000)).unwrap();
+        let consumer = schema.bind(arena.clone(), &mut Budget(10_000)).unwrap();
+        let mut row = schema
+            .substitute(schema.classifiers(), &choices, &mut buffer)
+            .unwrap();
+        let observation = row.admit(&consumer, step, &mut Budget(10_000)).unwrap();
         assert_eq!(observation.choices, Work(1));
         assert_eq!(observation.comparisons, Work(0));
         let endpoint = arena
@@ -70,7 +89,7 @@ fn schema_and_instance_refusals()
         assert!(crate::stage::replay(&mut arena, &[], &certificate, &mut Budget(10_000)).is_ok());
         assert_eq!(
             row.admit(
-                &mut consumer,
+                &consumer,
                 Step {
                     target: wrong,
                     ..step
@@ -81,39 +100,31 @@ fn schema_and_instance_refusals()
         );
     }
     assert!(matches!(
-        schema.substitute(schema.classifiers(), &[]),
+        schema.substitute(schema.classifiers(), &[], &mut buffer),
         Err(Refusal::MissingPoint(Point(0)))
     ));
     assert!(matches!(
-        schema.substitute(schema.classifiers(), &[Choice {
-            point: Point(0),
-            guard: Guard(2)
-        }]),
+        schema.substitute(schema.classifiers(), &only(Guard(2)), &mut buffer),
         Err(Refusal::UnknownArm(Point(0)))
     ));
     assert!(matches!(
-        schema.substitute(schema.classifiers(), &[Choice {
-            point: Point(1),
-            guard: Guard(0)
-        }]),
+        schema.substitute(
+            schema.classifiers(),
+            &[Choice {
+                point: Point(1),
+                guard: Guard(0)
+            }],
+            &mut buffer
+        ),
         Err(Refusal::UnknownArm(Point(1)))
     ));
-    let choices = [
-        Choice {
-            point: Point(0),
-            guard: Guard(0),
-        },
-        Choice {
-            point: Point(0),
-            guard: Guard(1),
-        },
-    ];
+    let choices = [only(Guard(0)), only(Guard(1))].concat();
     assert!(matches!(
-        schema.substitute(schema.classifiers(), &choices),
+        schema.substitute(schema.classifiers(), &choices, &mut buffer),
         Err(Refusal::Correlation(Point(0)))
     ));
     assert!(matches!(
-        schema.substitute(&[Type::Nat(Stage::Outer)], &choices),
+        schema.substitute(&[Type::Nat(Stage::Outer)], &choices, &mut buffer),
         Err(Refusal::ClassifierMismatch)
     ));
     let mut corrupt = cancellation();
@@ -168,20 +179,20 @@ fn successor() -> Proposal
 fn successor_and_transparency()
 {
     let schema = Schema::check(successor(), &mut Budget(10_000)).unwrap();
+    let mut buffer = Row::default();
     for guard in 0_usize .. 2 {
-        let choice = Choice {
-            point: Point(0),
-            guard: Guard(guard),
-        };
-        let row = schema.substitute(schema.classifiers(), &[choice]).unwrap();
+        let choices = only(Guard(guard));
         let (mut arena, step) = schema
             .probe(
                 &BTreeMap::from([(Point(0), TermId(guard))]),
                 &mut Budget(10_000),
             )
             .unwrap();
-        let mut consumer = schema.bind(arena.clone(), &mut Budget(10_000)).unwrap();
-        assert!(row.admit(&mut consumer, step, &mut Budget(10_000)).is_ok());
+        let consumer = schema.bind(arena.clone(), &mut Budget(10_000)).unwrap();
+        let mut row = schema
+            .substitute(schema.classifiers(), &choices, &mut buffer)
+            .unwrap();
+        assert!(row.admit(&consumer, step, &mut Budget(10_000)).is_ok());
         let certificate = Certificate {
             source: step.source,
             target: step.target,
@@ -256,16 +267,19 @@ fn classifier_coordinates_are_not_content()
         arms: Vec::new(),
     };
     let schema = Schema::check(proposal, &mut Budget(10_000)).unwrap();
-    let row = schema.substitute(schema.classifiers(), &[]).unwrap();
+    let mut buffer = Row::default();
+    let mut row = schema
+        .substitute(schema.classifiers(), &[], &mut buffer)
+        .unwrap();
     let mut arena = Arena::default();
     let ty = arena.alloc_type(Type::In(Model(0))).unwrap();
     let body = arena.alloc(Term::Code(ty)).unwrap();
     let quote = arena.alloc(Term::Quote(body)).unwrap();
     let source = arena.alloc(Term::Splice(quote)).unwrap();
-    let mut consumer = schema.bind(arena, &mut Budget(10_000)).unwrap();
+    let consumer = schema.bind(arena, &mut Budget(10_000)).unwrap();
     assert_eq!(
         row.admit(
-            &mut consumer,
+            &consumer,
             Step {
                 source,
                 target: body,
@@ -287,61 +301,46 @@ fn bound_arenas_preserve_exactness_and_recovery()
     arena
         .alloc(Term::Natural(Stage::Outer, Natural(99)))
         .unwrap();
-    let steps: Vec<_> = [Natural(2), Natural(3)]
-        .into_iter()
-        .map(|value| {
-            let target = arena.alloc(Term::Natural(Stage::Outer, value)).unwrap();
-            let quote = arena.alloc(Term::Quote(target)).unwrap();
-            let source = arena.alloc(Term::Splice(quote)).unwrap();
-            Step {
-                source,
-                target,
-                rule: Rule::SpliceQuote,
-            }
-        })
-        .collect();
-    let mut consumer = schema.bind(arena.clone(), &mut Budget(10_000)).unwrap();
-    let mut foreign = other.bind(arena, &mut Budget(10_000)).unwrap();
+    let steps = [Natural(2), Natural(3)].map(|value| cancelled(&mut arena, value));
+    let consumer = schema.bind(arena.clone(), &mut Budget(10_000)).unwrap();
+    let foreign = other.bind(arena, &mut Budget(10_000)).unwrap();
+    let mut buffer = Row::default();
+    let mut other_buffer = Row::default();
     for (guard, step) in steps.iter().enumerate() {
-        let row = schema
-            .substitute(schema.classifiers(), &[Choice {
-                point: Point(0),
-                guard: Guard(guard),
-            }])
+        let mut row = schema
+            .substitute(schema.classifiers(), &only(Guard(guard)), &mut buffer)
             .unwrap();
-        let observed = row.admit(&mut consumer, *step, &mut Budget(100)).unwrap();
+        let observed = row.admit(&consumer, *step, &mut Budget(100)).unwrap();
         assert_eq!(observed.comparisons, Work(0));
         assert_eq!(observed.classifiers, Work(0));
         assert_eq!(observed.instantiations, Work(2));
         assert_eq!(
-            row.admit(&mut foreign, *step, &mut Budget(100)),
+            row.admit(&foreign, *step, &mut Budget(100)),
             Err(Refusal::Malformed)
         );
         let wrong = steps[guard.wrapping_add(1) % 2];
         assert_eq!(
-            row.admit(&mut consumer, wrong, &mut Budget(100)),
+            row.admit(&consumer, wrong, &mut Budget(100)),
             Err(Refusal::SidesMismatch)
         );
-        let other_row = schema
-            .substitute(schema.classifiers(), &[Choice {
-                point: Point(0),
-                guard: Guard(guard.wrapping_add(1) % 2),
-            }])
+        let mut other_row = schema
+            .substitute(
+                schema.classifiers(),
+                &only(Guard(guard.wrapping_add(1) % 2)),
+                &mut other_buffer,
+            )
             .unwrap();
         assert_eq!(
-            other_row.admit(&mut consumer, wrong, &mut Budget(3)),
+            other_row.admit(&consumer, wrong, &mut Budget(3)),
             Err(Refusal::Syntax(StageError::Exhausted))
         );
+        assert_eq!(row.admit(&consumer, *step, &mut Budget(100)), Ok(observed));
         assert_eq!(
-            row.admit(&mut consumer, *step, &mut Budget(100)),
-            Ok(observed)
-        );
-        assert_eq!(
-            row.admit(&mut consumer.clone(), *step, &mut Budget(100)),
+            row.admit(&consumer.clone(), *step, &mut Budget(100)),
             Ok(observed)
         );
     }
-    // A caller cannot name a future root that instantiation would make live.
+    // A caller cannot name a root absent from the bound arena.
     let mut prefix = Arena::default();
     let target = prefix
         .alloc(Term::Natural(Stage::Outer, Natural(2)))
@@ -352,16 +351,13 @@ fn bound_arenas_preserve_exactness_and_recovery()
     let mut future = prefix.clone();
     let quote = future.alloc(Term::Quote(target)).unwrap();
     let source = future.alloc(Term::Splice(quote)).unwrap();
-    let mut consumer = schema.bind(prefix, &mut Budget(10_000)).unwrap();
-    let row = schema
-        .substitute(schema.classifiers(), &[Choice {
-            point: Point(0),
-            guard: Guard(0),
-        }])
+    let consumer = schema.bind(prefix, &mut Budget(10_000)).unwrap();
+    let mut row = schema
+        .substitute(schema.classifiers(), &only(Guard(0)), &mut buffer)
         .unwrap();
     assert_eq!(
         row.admit(
-            &mut consumer,
+            &consumer,
             Step {
                 source,
                 target,
@@ -371,6 +367,68 @@ fn bound_arenas_preserve_exactness_and_recovery()
         ),
         Err(Refusal::Syntax(StageError::UnknownTerm(source)))
     );
+}
+
+#[test]
+fn lookup_rows_agree_with_minting_rows()
+{
+    let schemas = [cancellation(), successor()]
+        .map(|proposal| Schema::check(proposal, &mut Budget(10_000)).unwrap());
+    // One row buffer serves both schemas, growing once.
+    let mut buffer = Row::default();
+    let mut scratch = Row::default();
+    for schema in &schemas {
+        let (arena, steps) = if schema.proposal.equation.rule == Rule::SpliceQuote {
+            let mut arena = Arena::default();
+            // Only the first arm's instance is interned.
+            let step = cancelled(&mut arena, Natural(2));
+            arena
+                .alloc(Term::Natural(Stage::Outer, Natural(3)))
+                .unwrap();
+            (arena, Vec::from([step, step]))
+        }
+        else {
+            let (arena, step) = schema
+                .probe(
+                    &BTreeMap::from([(Point(0), TermId(0))]),
+                    &mut Budget(10_000),
+                )
+                .unwrap();
+            (arena, Vec::from([step, step]))
+        };
+        let shared = schema.bind(arena, &mut Budget(10_000)).unwrap();
+        for (guard, step) in steps.iter().enumerate() {
+            let lookup = schema
+                .substitute(schema.classifiers(), &only(Guard(guard)), &mut buffer)
+                .unwrap()
+                .admit(&shared, *step, &mut Budget(10_000));
+            let mut minted = shared.clone();
+            let minting = schema
+                .substitute_minting(schema.classifiers(), &only(Guard(guard)))
+                .unwrap()
+                .admit(&mut minted, *step, &mut scratch, &mut Budget(10_000));
+            assert_eq!(lookup, minting);
+            assert_eq!(lookup.is_ok(), guard == 0);
+        }
+    }
+}
+
+#[test]
+fn fast_and_reference_schemas_agree()
+{
+    let mut corrupt = successor();
+    corrupt.equation.target = TermId(0);
+    let mut flipped = successor();
+    flipped.nodes[1] = Node::Rigid(Term::Natural(Stage::Outer, Natural(0)));
+    let mut ground = cancellation();
+    ground.nodes[2] = Node::Rigid(Term::Natural(Stage::Outer, Natural(4)));
+    ground.arms.clear();
+    for proposal in [cancellation(), successor(), corrupt, flipped, ground] {
+        let fast = Schema::check(proposal.clone(), &mut Budget(10_000)).map(|schema| schema.work());
+        let reference =
+            Schema::check_reference(proposal, &mut Budget(10_000)).map(|schema| schema.work());
+        assert_eq!(fast, reference);
+    }
 }
 
 #[test]
@@ -415,6 +473,7 @@ fn schema_work_is_bounded_by_input()
 #[test]
 fn affected_constructors_measure_fanout_not_depth()
 {
+    let mut buffer = Row::default();
     for width in [8_usize, 32] {
         let mut proposal = cancellation();
         let mut level = Vec::new();
@@ -456,20 +515,18 @@ fn affected_constructors_measure_fanout_not_depth()
         let schema = Schema::check(proposal, &mut Budget(1_000_000)).unwrap();
         let affected = Work(width.saturating_mul(2).saturating_add(1));
         assert_eq!(schema.work().2, affected);
-        let choices = [Choice {
-            point: Point(0),
-            guard: Guard(0),
-        }];
-        let row = schema.substitute(schema.classifiers(), &choices).unwrap();
         let (arena, step) = schema
             .probe(
                 &BTreeMap::from([(Point(0), TermId(0))]),
                 &mut Budget(100_000),
             )
             .unwrap();
-        let mut consumer = schema.bind(arena, &mut Budget(100_000)).unwrap();
+        let consumer = schema.bind(arena, &mut Budget(100_000)).unwrap();
+        let mut row = schema
+            .substitute(schema.classifiers(), &only(Guard(0)), &mut buffer)
+            .unwrap();
         assert_eq!(
-            row.admit(&mut consumer, step, &mut Budget(100_000))
+            row.admit(&consumer, step, &mut Budget(100_000))
                 .unwrap()
                 .instantiations,
             affected
@@ -482,6 +539,9 @@ fn thread_counts_preserve_valid_and_poisoned_rows()
 {
     extern crate std;
     let schema = Schema::check(cancellation(), &mut Budget(10_000)).unwrap();
+    let mut arena = Arena::default();
+    let steps = [Natural(2), Natural(3)].map(|value| cancelled(&mut arena, value));
+    let consumer = schema.bind(arena, &mut Budget(10_000)).unwrap();
     let selections = [
         Guard(0),
         Guard(1),
@@ -494,7 +554,7 @@ fn thread_counts_preserve_valid_and_poisoned_rows()
     ];
     let expected = selections.map(|guard| {
         if guard.0 < 2 {
-            Ok(())
+            Ok(Work(2))
         }
         else {
             Err(Refusal::UnknownArm(Point(0)))
@@ -506,16 +566,25 @@ fn thread_counts_preserve_valid_and_poisoned_rows()
                 .chunks(selections.len().div_ceil(threads))
                 .map(|chunk| {
                     let schema = &schema;
+                    let consumer = &consumer;
+                    let steps = &steps;
                     scope.spawn(move || {
+                        let mut buffer = Row::default();
                         chunk
                             .iter()
                             .map(|guard| {
-                                schema
-                                    .substitute(schema.classifiers(), &[Choice {
-                                        point: Point(0),
-                                        guard: *guard,
-                                    }])
-                                    .map(|_| ())
+                                let choice = [Choice {
+                                    point: Point(0),
+                                    guard: *guard,
+                                }];
+                                let mut row = schema.substitute(
+                                    schema.classifiers(),
+                                    &choice,
+                                    &mut buffer,
+                                )?;
+                                let step = steps[guard.0 % 2];
+                                row.admit(consumer, step, &mut Budget(100))
+                                    .map(|admission| admission.instantiations)
                             })
                             .collect::<Vec<_>>()
                     })
