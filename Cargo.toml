@@ -178,6 +178,7 @@ path = "crates/core-incremental"
 # consumers:
 # - core-checker
 # - core-sequent (dev)
+# - kernel-core (dev)
 # - surface-pretty (dev)
 [workspace.dependencies.gandr-core-nbe]
 path = "crates/core-nbe"
@@ -196,6 +197,7 @@ path = "crates/core-sequent"
 # - core-incremental
 # - core-nbe
 # - core-sequent
+# - kernel-core (dev)
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher

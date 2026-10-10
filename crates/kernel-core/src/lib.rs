@@ -70,6 +70,7 @@ pub mod encoding;
 pub mod env;
 pub mod error;
 pub mod levels;
+pub mod path_universe;
 pub mod replay;
 pub mod rewrite;
 pub mod support;

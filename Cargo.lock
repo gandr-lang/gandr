@@ -471,6 +471,8 @@ name = "gandr-kernel-core"
 version = "0.0.0"
 dependencies = [
  "anodized",
+ "gandr-core-nbe",
+ "gandr-core-term",
  "gandr-kernel-check-memo",
  "gandr-kernel-conversion-trace",
  "gandr-kernel-strata",

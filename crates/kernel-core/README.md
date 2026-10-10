@@ -19,6 +19,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Universe families, codes and the lift](#universe-families-codes-and-the-lift)
 - [Static operators](#static-operators)
 - [Conversion replay](#conversion-replay)
+- [Universe-path experiment](#universe-path-experiment)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
@@ -221,6 +222,32 @@ Term conversion with δ-, β- and η-rules is proof search, and a concurrent sea
 **Alternatives.** Running the engine's search inside the kernel would certify by trusting the search. Trusting the engine's verdict would certify nothing. Replaying a refuted decomposition without its negative subgoal means trying every premise, which is search. Memoizing replayed sub-derivations would let a trace refer back to a shared one; the engine emits a derivation shared by two parents once under each, so the trace is the derivation's expansion as a tree and the replay needs no table.
 
 **Reversal.** A back-reference decision, with a replay-side table keyed on the goal it names, replaces the expansion once a measured trace of a deeply shared proof outgrows the replay budget. A closing the kernel cannot reproduce, because the engine's structural equality and the kernel's α-equality disagree on a pair, shows up as a refusal on an engine trace and moves the tie-break into the vocabulary.
+
+## Universe-path experiment
+
+`path_universe` implements an additive rule language for `Path_U a b` over quoted Base, Unit, Sum and Product codes at level zero. It has `equiv`, `refl`, product introductions and transport as its only eliminator. The module is an in-memory kernel experiment; the persisted `ValueType` vocabulary, declaration admission and the surface parser do not contain it.
+
+| Rule | Kernel obligation or computation |
+| ---- | -------------------------------- |
+| Formation | Both endpoints decode to closed first-order value types. |
+| Equivalence | Closed translators check at opposite CBPV arrows; every source and target round trip replays. |
+| Reflexivity | The endpoint code forms. |
+| Product | Both component paths form; endpoints are their products. |
+| Transport | The input checks at the source and the comparison target at the target returner. |
+| Equivalence beta | `transport (equiv f g) v` becomes `force f v`. |
+| Reflexivity beta | `transport (refl a) v` becomes `return v` in one step. |
+| Product beta | Pair input becomes left and right component transports. |
+| Path conversion | Codes and translators compare structurally; round-trip evidence grants no certificate equality. |
+
+Round-trip coverage is symbolic: sums enumerate both injections, products enumerate constructor combinations, and Base leaves introduce distinct rigid variables rather than sample literals. Each pattern requires a dialogue. Missing, extra or invalid evidence refuses formation. A shape/coverage ceiling and per-dialogue replay budget bound the experiment; these are independent limits rather than one global work counter.
+
+`Dialogue::pair` constructs one product dialogue by prefixing explicit `Decompose` decisions for the returner and pair, then concatenating component traces. This prevents an initial `ComparedShared` from consuming a component trace at the enclosing pair. The kernel re-derives every boundary and premise. There is no transitive certificate-composition operation.
+
+The seven witnesses in `path_universe::tests` use the independent `core-nbe` engine for Bool negation, product transport, reflexivity, the wrong answer, non-equivalence refusal, intensional certificate conversion and absent K. Triple negation is supplied in its case-inlined, annotation-free kernel form; its two sequencing seams remain. The engine also compares it with the direct three-function composition at both Bool constructors.
+
+**Choice.** The rule module borrows the existing term arena and checker, without changing serialized syntax. Replaying ordinary CBPV reducts keeps evaluation independent of the producer and avoids a second evaluator. Extending the persisted vocabulary would require all exporters and importers to participate; using Rust translator closures would bypass the question. **Reversal.** Integration into declaration admission requires native term formers, content encoding and wire support before any persistent receipt can claim to admit a universe path. Element identity, open types, higher fields, function codes and general dependent elimination remain outside this experiment.
+
+**Mutation scope.** The universe-path source range owns a standalone campaign over omitted coverage, swapped translators or product legs, accepted bad dialogues, reflexivity reduction, and certificate-proof erasure. The seven witnesses name the expected distinguishing observations; no mutation score is claimed.
 
 ## Sharing and persistence
 

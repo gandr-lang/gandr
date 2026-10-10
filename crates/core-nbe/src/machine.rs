@@ -4170,6 +4170,7 @@ mod tests
             | ConversionDecision::NegativeSubgoal { position } => {
                 ConversionDecision::NegativeSubgoal { position }
             },
+            | ConversionDecision::Decompose => ConversionDecision::Decompose,
         }
     }
 

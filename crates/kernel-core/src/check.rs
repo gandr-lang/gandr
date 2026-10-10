@@ -2237,6 +2237,62 @@ where
     Ok(())
 }
 
+/// Check a closed value without admitting a declaration or retaining a memo.
+///
+/// # Specification
+/// - requires: both roots live in `arena`.
+/// - ensures: success exactly when `expected` forms and `value` checks in the
+///   empty term, declaration, and level contexts, including code obligations.
+/// - provides: the closed translator check for universe paths; no receipt.
+/// - fails: the formation or checking machine's `KernelError`.
+/// - panics: none.
+///
+/// # Errors
+/// Any `KernelError` from formation, checking, or code-obligation replay.
+///
+/// # Adequacy
+/// - hypothesis: L3 — malformed translator types must refuse before their
+///   round-trip dialogues can certify an equivalence.
+/// - witness: `path_universe::tests::a_non_equivalence_is_refused`
+pub(crate) fn check_closed_value(
+    arena: &mut TermArena,
+    value: ValueId,
+    expected: ValueTypeId,
+) -> Result<(), KernelError>
+{
+    let levels = LevelContext::admit(gandr_kernel_term::LevelParamCount::from(0_u32), Vec::new())?;
+    let judgement = Judgement::new(&[], &levels);
+    let mut memo = DefaultMemo::new();
+    let mut session = SupportContext::new();
+    let mut census = ExpansionCensus::new();
+    let mut owed = Vec::new();
+    let _level = type_level(
+        arena,
+        judgement,
+        TypeLevelGoal::Value(expected),
+        Vec::new(),
+        Recording {
+            memo: &mut memo,
+            session: &mut session,
+            census: &mut census,
+            owed: &mut owed,
+        },
+    )?;
+    let _checked = run(
+        arena,
+        judgement,
+        Vec::new(),
+        Goal::CheckValue(value, expected),
+        Recording {
+            memo: &mut memo,
+            session: &mut session,
+            census: &mut census,
+            owed: &mut owed,
+        },
+    )?;
+    drain_code_obligations(arena, judgement, &mut memo, &mut session, &mut census, owed)
+}
+
 #[cfg(test)]
 mod tests
 {

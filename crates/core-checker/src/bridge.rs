@@ -1130,6 +1130,7 @@ impl Positions
             | ConversionDecision::NegativeSubgoal { position } => {
                 ConversionDecision::NegativeSubgoal { position }
             },
+            | ConversionDecision::Decompose => ConversionDecision::Decompose,
         }
     }
 }

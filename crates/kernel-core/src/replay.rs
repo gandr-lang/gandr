@@ -971,6 +971,12 @@ where
             {
                 return Err(self.refuse(next));
             }
+            if matches!(next, Next::Decision(ConversionDecision::Decompose)) {
+                if !matches!(rule(&left_shape, &right_shape), Rule::Structural) {
+                    return Err(self.refuse(next));
+                }
+                return self.structural(&goal, &left_shape, &right_shape, goals);
+            }
             if matches!(
                 next,
                 Next::Decision(ConversionDecision::ComparedShared { .. })
@@ -1151,6 +1157,7 @@ where
             | ConversionDecision::EtaExpand { .. }
             | ConversionDecision::Force { .. }
             | ConversionDecision::ComparedShared { .. }
+            | ConversionDecision::Decompose
             | ConversionDecision::NegativeSubgoal { .. } => Err(self.refuse(next)),
         }
     }
@@ -1297,6 +1304,13 @@ where
     ) -> Result<(), Stop>
     {
         let structure = self.decompose(goal, left, right)?;
+        let next = self.peek();
+        if matches!(next, Next::Decision(ConversionDecision::Decompose)) {
+            if !matches!(structure, Structure::Premises(_)) {
+                return Err(self.refuse(next));
+            }
+            self.take();
+        }
         let premises = match structure {
             | Structure::Leaf(verdict) => return self.close(goal.expect, verdict),
             | Structure::Premises(premises) => premises,
