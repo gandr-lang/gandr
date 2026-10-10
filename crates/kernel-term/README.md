@@ -213,7 +213,11 @@ The deep-graph witness walks 100,000 thunk-over-returner links to unit and drops
 
 `stage::Arena` is a separate, append-only rule-language arena for
 [hypothesis-indexed staging](../kernel-core/README.md#experimental-stage-universe).
-It holds indexed classifiers, terms and untrusted conversion certificates. Classifier interning is exact syntactic equality; term sharing carries no conversion authority. Child coordinates must already exist. De Bruijn substitution uses an explicit worklist and raises replacements under binders. There is no staging wire format and no allocated wire tag.
+It holds indexed classifiers, terms and untrusted conversion certificates. Both classifiers and terms are interned by exact syntactic equality after child-liveness checks. Within one arena, equal term ids mean equal constructors, payloads, classifiers and children; ids from different arenas are not comparable. Cloning preserves the complete namespace. This is syntax identity, not conversion authority. De Bruijn substitution uses an explicit worklist and raises replacements under binders; its unchanged-constructor fast path avoids an unnecessary lookup. There is no staging wire format and no allocated wire tag.
+
+Terms use the same ordered-map design as classifiers: no new dependency or hash premise, at the cost of logarithmic lookup and retained indexing memory. Append-only allocation without canonical identity would require a separate exact content comparison. A hash-indexed accelerator is an alternative only if it retains exact equality on collisions and measured lookup cost justifies the added machinery.
+
+`Arena::find` answers the same exact lookup without interning: `Maybe::Present(id)` exactly when `alloc` would return the existing `id`, otherwise `interned::Absent::Uninterned`. A reader that must not extend an arena compares against it this way, as a [guarded-admission](../kernel-core/docs/admission.md) row does over a shared binding. The absence type is quenchant-shape's, the workspace's absence vocabulary; it adds no allocation and no `std` dependency to this `no_std` crate.
 
 ## License
 

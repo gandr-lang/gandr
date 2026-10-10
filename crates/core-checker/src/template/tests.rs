@@ -1094,6 +1094,41 @@ fn serialized_images_reconstruct_the_original_equations()
 }
 
 #[test]
+fn compressed_admission_matches_plain_families()
+{
+    let pairs: Vec<_> = (1_usize ..= 8)
+        .map(|n| (Natural(n), Natural(n.saturating_sub(1))))
+        .collect();
+    let fixtures = [
+        cancellations(Members(64), Arms(4)),
+        numeral_successors(Stage::Outer, &pairs, Members(72)),
+    ];
+    for (mut arena, family) in fixtures {
+        let Analysis::Candidate(candidate) = analyze(&arena, ProgramId(0), &family).unwrap()
+        else {
+            panic!("candidate");
+        };
+        let input = candidate.admission_candidate().unwrap();
+        let schema =
+            gandr_kernel_core::admission::Schema::check(input.proposal, &mut Budget(1_000_000))
+                .unwrap();
+        let consumer = schema.bind(arena.clone(), &mut Budget(1_000_000)).unwrap();
+        let mut buffer = gandr_kernel_core::admission::Row::default();
+        for (choices, step) in input.rows.iter().zip(&family) {
+            let mut row = schema
+                .substitute(schema.classifiers(), choices, &mut buffer)
+                .unwrap();
+            assert_eq!(
+                row.admit(&consumer, *step, &mut Budget(100_000))
+                    .map(|_| ()),
+                replay_equation(&mut arena, *step, &mut Budget(100_000))
+                    .map_err(gandr_kernel_core::admission::Refusal::from)
+            );
+        }
+    }
+}
+
+#[test]
 fn empty_and_malformed_families_preserve_refusals()
 {
     let arena = Arena::default();
