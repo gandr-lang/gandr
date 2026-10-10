@@ -12,6 +12,7 @@ use core::fmt::Display;
 use core::fmt::Formatter;
 use core::fmt::Result as FmtResult;
 
+use anodized::spec;
 use gandr_surface_syntax::ClosingClass;
 use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::GroutSort;
@@ -161,8 +162,11 @@ impl Sort
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — every sort round-trips through its tag.
+    /// - hypothesis: For all six sorts, L2 exhaustive tag observations catch
+    ///   reordered, aliased or shifted discriminants; decoding rejection beyond
+    ///   the closed set is checked separately.
     /// - witness: `tests::surface::sort_decode_contract`
+    #[spec(ensures: |ret| u16::from(ret) == match self { Self::Item => 0, Self::Pattern => 1, Self::Expression => 2, Self::Type => 3, Self::Instantiation => 4, Self::ModuleMember => 5 })]
     #[inline]
     #[must_use]
     pub fn grout_sort(self) -> GroutSort
@@ -210,9 +214,11 @@ impl Sort
     /// [`PbgError::InvalidSort`] for a tag past the closed set.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — every accepted tag and the first rejected
-    ///   tag.
+    /// - hypothesis: For the six legal tags and the first illegal tag, L3
+    ///   boundary observations catch missing sorts, swapped tags and mistaken
+    ///   acceptance; larger rejected tags are not individually enumerated.
     /// - witness: `tests::surface::sort_decode_contract`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::InvalidSort { sort: rejected } if *rejected == sort) && u16::from(sort) > 5, |decoded| decoded.grout_sort() == sort))]
     #[inline]
     pub fn try_from_tag(sort: GroutSort) -> Result<Self, PbgError>
     {
@@ -329,7 +335,16 @@ impl Regex
     /// Builds a one-node expression.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the node is empty or a single symbol, not a composite.
+    /// - ensures: the layout has exactly that node with extent one.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For empty, tile and sort leaves inside a nested
+    ///   expression, L3 shape observations catch the wrong leaf kind or extent;
+    ///   malformed composite leaves are excluded by the precondition.
+    /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    #[spec(requires: matches!(node, RegexNode::Empty | RegexNode::Sym(_)), ensures: |ret| ret.entries.len() == 1 && ret.entries.first().is_some_and(|root| root.node == node && root.extent.0 == 1))]
     fn leaf(node: RegexNode) -> Self
     {
         Self {
@@ -347,6 +362,15 @@ impl Regex
     /// - ensures: the root records the item count and the whole extent, and
     ///   each item's layout follows it unchanged, in order.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For finite constructor-built children, L3 nested and
+    ///   empty-composite shape observations catch wrong root kinds, extents and
+    ///   child order; the predicate checks root kind and extent, not the
+    ///   consumed input stream.
+    /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    /// - witness: `tests::regex::empty_alternation_stays_distinct_from_empty_sequence`
+    #[spec(ensures: |ret| ret.entries.first().is_some_and(|root| root.extent.0 == ret.entries.len() && matches!((kind, root.node), (Composite::Seq, RegexNode::Seq(_)) | (Composite::Alt, RegexNode::Alt(_)))))]
     fn composite<I>(
         kind: Composite,
         items: I,
@@ -381,6 +405,14 @@ impl Regex
     /// - ensures: the root is `node` with the whole extent, and `inner`'s
     ///   layout follows it unchanged.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For optional and repeated constructor-built subtrees, L3
+    ///   nested shape observations catch the wrong wrapper or lost child; the
+    ///   precondition rejects another node class, while the postcondition
+    ///   checks extent without copying the consumed child.
+    /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    #[spec(requires: matches!(node, RegexNode::Optional | RegexNode::Repeat), captures: inner_len = inner.entries.len(), ensures: |ret| ret.entries.len() == inner_len.saturating_add(1) && ret.entries.first().is_some_and(|root| root.node == node && root.extent.0 == ret.entries.len()))]
     fn wrap(
         node: RegexNode,
         inner: Self,
@@ -437,9 +469,11 @@ impl Regex
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — a nested expression using every constructor
-    ///   reads back node for node.
+    /// - hypothesis: For finite nested and empty sequences, L3 shape
+    ///   observations catch reordered or missing children and a wrong root
+    ///   kind; they do not enumerate arbitrary consumed iterators.
     /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    #[spec(ensures: |ret| ret.entries.first().is_some_and(|root| matches!(root.node, RegexNode::Seq(_)) && root.extent.0 == ret.entries.len()))]
     #[inline]
     #[must_use]
     pub fn seq<I>(items: I) -> Self
@@ -458,9 +492,12 @@ impl Regex
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — a nested expression using every constructor
-    ///   reads back node for node.
+    /// - hypothesis: For nested, empty and multi-branch alternatives, L3 shape
+    ///   observations catch branch loss, reordering and confusion with an empty
+    ///   sequence; arbitrary consumed iterators are outside this finite census.
     /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    /// - witness: `tests::regex::empty_alternation_stays_distinct_from_empty_sequence`
+    #[spec(ensures: |ret| ret.entries.first().is_some_and(|root| matches!(root.node, RegexNode::Alt(_)) && root.extent.0 == ret.entries.len()))]
     #[inline]
     #[must_use]
     pub fn alt<I>(items: I) -> Self
@@ -513,6 +550,14 @@ impl Regex
     /// - ensures: a root alternation yields its branches in order; any other
     ///   root yields the expression alone.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For root alternatives, other root kinds and empty
+    ///   alternatives, L3 grouped-form observations catch flattening at the
+    ///   wrong depth and reordered or dropped branches; no language-equivalence
+    ///   claim is made.
+    /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+    #[spec(ensures: |ret| match self.entries.first().map(|root| root.node) { Some(RegexNode::Alt(arity)) => ret.len() == arity.0 && ret.iter().flat_map(|branch| branch.entries.iter()).eq(self.entries.iter().skip(1)), _ => ret.as_slice() == core::slice::from_ref(self) })]
     pub(crate) fn alternatives(&self) -> Vec<Self>
     {
         match self.view().shape() {
@@ -564,10 +609,22 @@ impl<'regex> RegexView<'regex>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — a nested expression using every constructor
-    ///   reads back node for node, and an alternation's branches rebuild into
-    ///   expressions equal to the ones it was built from.
+    /// - hypothesis: For constructor-built nested expressions and zero-child
+    ///   composites, L3 structural observations catch wrong root tags, child
+    ///   order and subtree boundaries; malformed private layouts are outside
+    ///   the public domain.
     /// - witness: `tests::regex::nested_shapes_read_back_as_built`
+    #[spec(ensures: |ret| match (self.entries.split_first(), &ret) {
+        (None, &RegexShape::Empty) => true,
+        (Some((root, rest)), shape) => match (root.node, shape) {
+            (RegexNode::Empty, &RegexShape::Empty) => true,
+            (RegexNode::Sym(expected), &RegexShape::Sym(actual)) => expected == actual,
+            (RegexNode::Seq(arity), &RegexShape::Seq(ref items)) | (RegexNode::Alt(arity), &RegexShape::Alt(ref items)) => items.len() == arity.0 && items.iter().flat_map(|child| child.entries.iter()).eq(rest.iter()),
+            (RegexNode::Optional, &RegexShape::Optional(child)) | (RegexNode::Repeat, &RegexShape::Repeat(child)) => child.entries == rest,
+            _ => false,
+        },
+        _ => false,
+    })]
     #[inline]
     #[must_use]
     pub fn shape(self) -> RegexShape<'regex>
@@ -607,6 +664,14 @@ impl<'regex> RegexView<'regex>
 /// - requires: `rest` starts with `arity` consecutive subtrees.
 /// - ensures: returns one view per subtree, in order.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For consecutive well-formed subtree layouts, L3 nested and
+///   empty-composite observations catch skipped or merged child spans and
+///   incorrect arity; invalid private layouts are not a supported input.
+/// - witness: `tests::regex::nested_shapes_read_back_as_built`
+/// - witness: `tests::regex::empty_alternation_stays_distinct_from_empty_sequence`
+#[spec(ensures: |ret| ret.len() == arity.0 && ret.iter().all(|view| view.entries.first().is_some_and(|root| root.extent.0 == view.entries.len())))]
 fn children(
     rest: &[RegexEntry],
     arity: RegexArity,
@@ -634,6 +699,13 @@ fn children(
 /// - requires: `rest` starts with one subtree.
 /// - ensures: returns a view of exactly that subtree.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For a valid leading subtree, L3 nested wrapper observations
+///   catch inclusion of siblings or truncation; the predicate bounds and
+///   measures the first extent, not arbitrary malformed private layouts.
+/// - witness: `tests::regex::nested_shapes_read_back_as_built`
+#[spec(requires: rest.first().is_some_and(|root| root.extent.0 > 0 && root.extent.0 <= rest.len()), ensures: |ret| rest.first().is_some_and(|root| ret.entries.len() == root.extent.0) && core::ptr::eq(ret.entries.as_ptr(), rest.as_ptr()))]
 fn first_child(rest: &[RegexEntry]) -> RegexView<'_>
 {
     let extent = rest.first().map_or(0, |entry| entry.extent.0);
@@ -703,6 +775,14 @@ impl Rule
     /// - requires: nothing; uniqueness of `name` is checked by [`Pbg::build`].
     /// - ensures: the rule carries no adaptation records.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For checked rules with distinct names and ordered
+    ///   branches, L3 grouped-form and provenance observations catch fabricated
+    ///   adaptation records and name/provenance drift; the finite grammar is
+    ///   not a census of every possible rule body.
+    /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+    #[spec(ensures: |ret| ret.name == name.0 && ret.provenance == name.0 && ret.sort == sort && ret.prec == prec && ret.adaptations.is_empty())]
     #[inline]
     #[must_use]
     pub fn new(
@@ -850,6 +930,14 @@ impl PrecTable
     /// - requires: every pair names a group of `dag`.
     /// - ensures: [`get`](Self::get) answers each name with its group.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For a DAG whose supplied names reference its groups, L3
+    ///   built-in group observations catch foreign identities and name
+    ///   association errors; the predicate validates stored identities without
+    ///   replaying or copying the consumed name iterator.
+    /// - witness: `tests::surface::built_in_precedence_bands_are_exact`
+    #[spec(ensures: |ret| ret.names.values().all(|&prec| ret.dag.name(prec).is_some()))]
     #[inline]
     #[must_use]
     pub fn new<I>(
@@ -928,9 +1016,12 @@ impl PrecTable
     /// [`PbgError::MissingPrec`] naming the absent group.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — every built-in group resolves and an absent
-    ///   name is refused naming it.
+    /// - hypothesis: For the finite built-in name table and an absent name, L3
+    ///   exact lookup observations catch swapped identities and fabricated
+    ///   acceptance or refusal; arbitrary user-supplied alias maps are outside
+    ///   that census.
     /// - witness: `tests::surface::built_in_precedence_bands_are_exact`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| !self.names.contains_key(name.0) && matches!(error, PbgError::MissingPrec { name: missing } if *missing == name.0), |prec| self.names.get(name.0) == Some(prec)))]
     #[inline]
     pub fn prec(
         &self,
@@ -1039,7 +1130,21 @@ impl Display for PbgError
     /// Writes the refusal with the values it names.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: successful output identifies the refusal and its named
+    ///   values.
+    /// - fails: propagates a formatter write refusal.
+    /// - panics: none.
+    /// - executable: none — the formatter is a write-only sink with no
+    ///   observation of the emitted text or the originating write error.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For representative local refusals and a wrapped precedence
+    ///   error, L3 payload and distinguishability observations catch lost
+    ///   identities; a one-byte sink checks write refusal without pinning
+    ///   prose. Other formatting flags and every payload value are outside the
+    ///   witness.
+    /// - witness: `model::tests::grammar_error_messages_keep_payloads_and_refuse_a_full_sink`
     #[inline]
     fn fmt(
         &self,
@@ -1108,7 +1213,23 @@ impl Error for PbgError
     /// The wrapped refusal, for the variants that wrap one.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a wrapped precedence or walk refusal is the typed source;
+    ///   local refusals have no source.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For a wrapped duplicate-name cause and local refusals, L3
+    ///   typed downcast observations catch a missing, substituted or fabricated
+    ///   source; the predicate covers every wrapper class, but the witness does
+    ///   not enumerate every nested cause.
+    /// - witness: `model::tests::grammar_error_sources_keep_the_original_cause`
+    #[spec(ensures: |ret| match *self {
+            Self::PrecedenceSpec(ref error) => ret.and_then(|source| source.downcast_ref::<PrecSpecError>()) == Some(error),
+            Self::PrecedenceDag(ref error) => ret.and_then(|source| source.downcast_ref::<PrecDagError>()) == Some(error),
+            Self::Walk(ref error) => ret.and_then(|source| source.downcast_ref::<WalkBuildError>()) == Some(error),
+            _ => ret.is_none(),
+        })]
     #[inline]
     fn source(&self) -> Option<&(dyn Error + 'static)>
     {
@@ -1202,8 +1323,11 @@ impl Pbg
     /// [`PbgError::MoldOverflow`] or [`PbgError::Assumption3Conflict`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — each gate refuses a minimal violation
-    ///   naming it, and each accepts the nearest legal shape.
+    /// - hypothesis: For finite rule lists over checked DAGs, L3 minimal
+    ///   violations and neighboring legal grammars observe error identity,
+    ///   refusal priority and grouped-form order, catching skipped gates or
+    ///   reordered alternatives; mold-id exhaustion and arbitrary deep forms
+    ///   are outside these witnesses.
     /// - witness: `tests::pbg::pbg_rejects_invalid_prec_before_later_header_errors`
     /// - witness: `tests::pbg::pbg_rejects_duplicate_rule_names_deterministically`
     /// - witness: `tests::pbg::pbg_rejects_direct_adjacent_sorts_in_sequence`
@@ -1212,6 +1336,10 @@ impl Pbg
     /// - witness: `tests::pbg::pbg_rejects_duplicate_rctx_tile`
     /// - witness: `tests::pbg::pbg_accepts_same_label_at_distinct_contexts`
     /// - witness: `tests::pbg::assumption_3_contract`
+    /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+    #[spec(captures: input = (rules.len(), dag.fingerprint()), ensures: |ret| ret.as_ref().map_or_else(
+        |error| matches!(error, PbgError::InvalidPrec { .. } | PbgError::DuplicateRule { .. } | PbgError::AdjacentSorts { .. } | PbgError::DuplicateTile { .. } | PbgError::MoldOverflow | PbgError::Assumption3Conflict { .. }),
+        |pbg| pbg.rules.len() == input.0 && pbg.dag.fingerprint() == input.1 && pbg.rule_names.len() == input.0 && pbg.rules.iter().all(|rule| pbg.dag.name(rule.prec).is_some() && pbg.rule_names.contains(rule.name)) && pbg.adaptations.iter().eq(pbg.rules.iter().flat_map(|rule| rule.adaptations.iter()))))]
     #[inline]
     pub fn build(
         dag: PrecDag,
@@ -1253,6 +1381,14 @@ impl Pbg
     ///
     /// # Errors
     /// As [`build`](Self::build).
+    ///
+    /// # Adequacy
+    /// - hypothesis: For a named checked DAG and finite rules, L3 grouped-form
+    ///   observations catch loss of the table identity, rule multiplicity or
+    ///   branch order; the delegated gate refusals are witnessed at the build
+    ///   boundary.
+    /// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+    #[spec(captures: input = (rules.len(), table.dag.fingerprint()), ensures: |ret| ret.as_ref().map_or(true, |pbg| pbg.rules.len() == input.0 && pbg.dag.fingerprint() == input.1 && pbg.rule_names.len() == input.0))]
     #[inline]
     pub fn build_table(
         table: PrecTable,
@@ -1330,8 +1466,14 @@ impl Pbg
     /// [`PbgError::UnknownMold`] for an id past the table.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 boundary — the last id and the first id past it.
+    /// - hypothesis: For a two-mold grammar, L3 first, last and first-past-id
+    ///   observations catch off-by-one acceptance, wrong mold identity and
+    ///   incorrect error payloads; arbitrary huge tables are outside the
+    ///   witness.
     /// - witness: `tests::walk::mold_lookup_checks_bounds`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| usize::try_from(u32::from(id)).map_or(true, |index| index >= self.molds.len().0) && matches!(error, PbgError::UnknownMold { id: missing } if *missing == id),
+        |mold| self.molds.mold(id).is_ok_and(|expected| core::ptr::eq(core::ptr::from_ref(*mold), core::ptr::from_ref(expected)))))]
     #[inline]
     pub fn mold(
         &self,
@@ -1356,11 +1498,14 @@ impl Pbg
     /// [`PbgError::UnknownMold`] for an id past the table.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 exhaustive over the built-in table — every mold's rule
-    ///   agrees with the mold's sort and precedence, ids meet rules in order,
-    ///   and the first id past the table is refused; L3 pointwise — a `def`
-    ///   module member resolves to its rule.
+    /// - hypothesis: For all built-in molds and the first invalid id, L2 finite
+    ///   census plus L3 boundary observations catch wrong owner sort,
+    ///   precedence, ordering and refusal payload; arbitrary user grammars are
+    ///   not exhausted.
     /// - witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| self.molds.mold(id).is_err() && matches!(error, PbgError::UnknownMold { id: missing } if *missing == id),
+        |rule| self.molds.mold(id).is_ok_and(|mold| mold.sort == rule.sort && mold.prec == rule.prec) && self.molds.rule_of(&self.rules, id).is_ok_and(|expected| core::ptr::eq(core::ptr::from_ref(*rule), core::ptr::from_ref(expected)))))]
     #[inline]
     pub fn rule_of(
         &self,
@@ -1387,10 +1532,14 @@ impl Pbg
     /// [`PbgError::UnknownMold`] for an id past the table.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 exhaustive over the built-in table — every mold's named
-    ///   kind is its rule's provenance and is a known kind; L3 boundary — the
-    ///   first id past the table is refused.
+    /// - hypothesis: For every built-in mold and the first invalid id, L2
+    ///   finite census and L3 boundary observations catch wrong provenance and
+    ///   lost refusal identity; recognition of arbitrary caller-defined
+    ///   provenance is not claimed.
     /// - witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| self.rule_of(id).is_err() && matches!(error, PbgError::UnknownMold { id: missing } if *missing == id),
+        |kind| self.rule_of(id).is_ok_and(|rule| kind.0 == rule.provenance)))]
     #[inline]
     pub fn named_kind(
         &self,
@@ -1415,9 +1564,15 @@ impl Pbg
     /// [`PbgError::UnknownMold`] for an id past the table.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — an infix operator, an operand-facing prefix
-    ///   and a closed atom distinguish each side.
+    /// - hypothesis: For infix, operand-facing prefix and closed-atom contexts,
+    ///   L3 side-specific observations catch swapped root/value bounds and
+    ///   wrong precedence; first-past-id rejection covers the lookup boundary,
+    ///   not all context shapes.
     /// - witness: `tests::walk::mold_bounds_follow_context_nullability`
+    /// - witness: `tests::walk::mold_lookup_checks_bounds`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |error| self.molds.mold(id).is_err() && matches!(error, PbgError::UnknownMold { id: missing } if *missing == id),
+        |&(left, right)| self.molds.mold(id).is_ok_and(|mold| (matches!(left, Bound::Root) || left == Bound::Value(mold.prec)) && (matches!(right, Bound::Root) || right == Bound::Value(mold.prec)))))]
     #[inline]
     pub fn bounds(
         &self,
@@ -1441,8 +1596,13 @@ impl Pbg
     /// [`PbgError::UnknownRCtx`] for an id past the table.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — both directions over an infix context.
+    /// - hypothesis: For both directions of a finite infix context and an
+    ///   unknown context, L3 observations catch direction swaps, missing
+    ///   adjacent symbols and wrong refusal payload; larger context languages
+    ///   are not enumerated.
     /// - witness: `tests::walk::rctx_steps_cross_adjacent_symbols`
+    /// - witness: `tests::walk::unknown_context_preserves_its_identity`
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::UnknownRCtx { rctx: missing } if *missing == rctx), |steps| steps.iter().is_sorted_by(|left, right| left.crossed < right.crossed)))]
     #[inline]
     pub fn step(
         &self,
@@ -1462,9 +1622,11 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 generative — the built-in surface's whole inventory is
-    ///   pinned label by label.
+    /// - hypothesis: For the built-in label inventory and an absent label, L2
+    ///   finite inventory observations catch lost, duplicated or reordered mold
+    ///   occurrences; arbitrary grammars are outside the census.
     /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.iter().copied().eq(self.molds.iter().filter_map(|(id, mold)| (mold.label == label.0).then_some(id))))]
     #[inline]
     #[must_use]
     pub fn candidates(
@@ -1486,10 +1648,12 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 generative — over the built-in surface, every label's
-    ///   menu is exactly the predecessor-free and form-first subset of its
-    ///   candidates.
+    /// - hypothesis: For every built-in label and an absent label, L2 finite
+    ///   inventory observations compare fresh menus with the predecessor-free
+    ///   or form-first subset, catching dropped openers and retained dependent
+    ///   molds; arbitrary grammars are not enumerated.
     /// - witness: `tests::walk::fresh_menus_keep_exactly_the_form_openers`
+    #[spec(ensures: |ret| ret.iter().copied().eq(self.candidates(label).iter().copied().filter(|&mold| !bool::from(self.molds.has_predecessor(mold)) || bool::from(self.molds.is_form_first(mold)))))]
     #[inline]
     #[must_use]
     pub fn fresh_candidates(
@@ -1509,9 +1673,12 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 generative — the built-in surface's whole inventory is
-    ///   pinned label by label.
+    /// - hypothesis: For the complete built-in label inventory, L2 finite
+    ///   observations compare ordered labels and exact multiplicities, catching
+    ///   omitted labels, duplicate rows and incorrect counts; the inventory is
+    ///   not a proof for arbitrary user grammars.
     /// - witness: `tests::walk::declared_mold_candidate_inventory_is_exact`
+    #[spec(ensures: |ret| ret.iter().is_sorted_by(|left, right| left.0 < right.0) && ret.iter().all(|&(label, count)| count.0 > 0 && count.0 == self.candidates(label).len()) && ret.iter().try_fold(0_usize, |sum, &(_, count)| sum.checked_add(count.0)) == Some(self.molds.len().0))]
     #[inline]
     #[must_use]
     pub fn candidate_counts(&self) -> Vec<(TileLabel, CandidateCount)>
@@ -1536,10 +1703,15 @@ impl Pbg
     /// - requires: nothing.
     /// - ensures: yields each mold once, in id order.
     /// - panics: none.
+    /// - executable: none — the opaque iterator return cannot be named by the
+    ///   specification macro; consuming it in a predicate would also consume
+    ///   the caller's cursor.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 generative — the walk index projects every mold of the
-    ///   built-in surface exactly once.
+    /// - hypothesis: For the finite built-in table, L2 enumeration and
+    ///   walk-projection observations catch missing, repeated or reordered mold
+    ///   ids; this does not exhaust arbitrary grammars or iterator
+    ///   interleavings.
     /// - witness: `tests::walk::walk_index_projects_every_mold_once`
     #[inline]
     pub fn iter_molds(&self) -> impl Iterator<Item = (MoldId, &MoldDef)>
@@ -1553,13 +1725,19 @@ impl Pbg
     /// # Specification
     /// - requires: nothing.
     /// - ensures: `(left, right)` is present exactly when some form can put
-    ///   `right`'s occurrence next after `left`'s, past holes only.
+    ///   `right`'s occurrence next after `left`'s, past holes only; returns the
+    ///   complete stored table by reference.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — a bracket form yields its one pair across
-    ///   the hole, and a closed atom yields none.
+    /// - hypothesis: For a bracket form and a closed atom, L3 exact edge
+    ///   observations catch cross-hole omissions and invented same-form
+    ///   adjacency. Construction checks ordering and ownership; this predicate
+    ///   protects borrowed-table identity without rescanning immutable edges.
+    ///   Arbitrary regex languages are not exhausted.
     /// - witness: `tests::walk::same_form_adjacency_is_the_eq_relation`
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(self.molds.adjacencies())))]
     #[inline]
     #[must_use]
     pub fn adjacencies(&self) -> &[(MoldId, MoldId)]
@@ -1577,9 +1755,11 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 generative — over the built-in surface the list agrees
-    ///   mold by mold with [`mold_is_form_first`](Self::mold_is_form_first).
+    /// - hypothesis: For all built-in molds, L2 ordered-set and membership
+    ///   observations catch omitted or duplicated first tiles and inconsistent
+    ///   flags; nullable prefixes of arbitrary user forms are not exhausted.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| ret.iter().copied().eq(self.molds.iter().filter_map(|(id, _)| bool::from(self.molds.is_form_first(id)).then_some(id))))]
     #[inline]
     #[must_use]
     pub fn form_first(&self) -> &[MoldId]
@@ -1599,9 +1779,11 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 generative — over the built-in surface the list is
-    ///   partitioned by the clean-completion and required-tail flags.
+    /// - hypothesis: For all built-in molds, L2 finite membership observations
+    ///   catch omissions, duplicates and overlaps between clean completion and
+    ///   required tails; arbitrary form languages are outside the census.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| ret.iter().copied().eq(self.molds.iter().filter_map(|(id, _)| (bool::from(self.molds.is_form_last(id)) || bool::from(self.molds.has_required_tail(id))).then_some(id))))]
     #[inline]
     #[must_use]
     pub fn form_last(&self) -> &[MoldId]
@@ -1619,9 +1801,13 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 generative — over the built-in surface the flag agrees
-    ///   mold by mold with the adjacency list.
+    /// - hypothesis: For every built-in mold and the first invalid id, L2
+    ///   finite and L3 boundary observations compare the flag with incoming
+    ///   adjacency, catching reversed direction and fabricated out-of-range
+    ///   membership. Construction proves the edge/flag relation once; the
+    ///   predicate checks the immutable stored answer.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == bool::from(self.molds.has_predecessor(mold)))]
     #[inline]
     #[must_use]
     pub fn mold_has_predecessor(
@@ -1642,9 +1828,13 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 generative — over the built-in surface the flag agrees
-    ///   mold by mold with the adjacency list.
+    /// - hypothesis: For every built-in mold and the first invalid id, L2
+    ///   finite and L3 boundary observations compare the flag with outgoing
+    ///   adjacency, catching reversed direction and fabricated out-of-range
+    ///   membership. Construction proves the edge/flag relation once; the
+    ///   predicate checks the immutable stored answer.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == bool::from(self.molds.has_successor(mold)))]
     #[inline]
     #[must_use]
     pub fn mold_has_successor(
@@ -1664,9 +1854,11 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 generative — over the built-in surface the flag agrees
-    ///   mold by mold with the list.
+    /// - hypothesis: For every built-in mold and the first invalid id, L2
+    ///   finite and L3 boundary observations compare first membership with the
+    ///   ordered list, catching reversed flags and out-of-range acceptance.
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == self.molds.form_first().contains(&mold))]
     #[inline]
     #[must_use]
     pub fn mold_is_form_first(
@@ -1686,12 +1878,13 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus L2 generative — an infix type operator
-    ///   completes cleanly, the prefix formers `-F` and `+U` do not, and over
-    ///   the built-in surface the flag and the required-tail flag partition
-    ///   [`form_last`](Self::form_last).
+    /// - hypothesis: For built-in molds, L2 finite partition observations and
+    ///   L3 infix/prefix contrasts catch premature completion and missing clean
+    ///   completion; arbitrary user forms are outside the census, and the first
+    ///   invalid id is rejected.
     /// - witness: `tests::surface::infix_type_operator_keeps_clean_completion`
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == (self.molds.form_last().contains(&mold) && !bool::from(self.molds.has_required_tail(mold))))]
     #[inline]
     #[must_use]
     pub fn mold_is_form_last(
@@ -1711,12 +1904,13 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus L2 generative — the prefix formers `-F`
-    ///   and `+U` need their operand, and over the built-in surface the flag
-    ///   and the clean-completion flag partition
-    ///   [`form_last`](Self::form_last).
+    /// - hypothesis: For built-in molds, L2 finite partition observations and
+    ///   L3 required prefix operands catch lost tails and invented
+    ///   requirements; arbitrary user forms are outside the census, and the
+    ///   first invalid id is rejected.
     /// - witness: `tests::surface::prefix_formers_keep_required_type_tails_unclosed`
     /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == (self.molds.form_last().contains(&mold) && !bool::from(self.molds.is_form_last(mold))))]
     #[inline]
     #[must_use]
     pub fn mold_has_required_tail(
@@ -1741,11 +1935,13 @@ impl Pbg
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise — members inside a repeated container, a form
-    ///   ending at a non-closer, divergent alternatives and the pinned count of
-    ///   unclassed item braces distinguish the derivation.
+    /// - hypothesis: For repeated containers, non-closer endings and divergent
+    ///   branches, L3 class observations catch wrong-family and premature
+    ///   pairing; the predicate protects invalid-id refusal, while arbitrary
+    ///   completion languages are not enumerated.
     /// - witness: `tests::closing_class::closing_class_is_form_level`
     /// - witness: `tests::closing_class::closing_class_repeat_with_exit_shares_its_component_answer`
+    #[spec(ensures: |ret| ret.is_none() || self.molds.mold(mold).is_ok())]
     #[inline]
     #[must_use]
     pub fn closing_class(
@@ -1765,10 +1961,15 @@ impl Pbg
     ///   changed mold, context or precedence group moves it.
     /// - provides: the scope a tree's [`MoldId`]s are read in.
     /// - panics: none.
+    /// - executable: none — the returned fingerprint has a private primitive
+    ///   field in another crate and no const-readable observer or const
+    ///   comparison; direct instrumentation cannot compare it here.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 pointwise plus an external pin — the built-in value is
-    ///   pinned, two builds agree, and a changed precedence name moves it.
+    /// - hypothesis: For repeated built-in builds and a renamed precedence
+    ///   group, L3 value observations with an external compatibility pin catch
+    ///   ignored DAG input and unstable hashing; no collision-freedom or
+    ///   universal sensitivity claim follows.
     /// - witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`
     #[inline]
     #[must_use]
@@ -1790,6 +1991,21 @@ impl Pbg
 ///
 /// # Errors
 /// [`PbgError::InvalidPrec`] or [`PbgError::DuplicateRule`].
+///
+/// # Adequacy
+/// - hypothesis: For finite rules over a checked DAG, L3 duplicate and
+///   invalid-group observations catch swapped header priority and lost error
+///   identity; the predicate validates successful groups and refusal payloads,
+///   not every possible input ordering.
+/// - witness: `tests::pbg::pbg_rejects_invalid_prec_before_later_header_errors`
+/// - witness: `tests::pbg::pbg_rejects_duplicate_rule_names_deterministically`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(
+    |error| match *error {
+        PbgError::InvalidPrec { rule, prec } => dag.name(prec).is_none() && rules.iter().any(|item| item.name == rule && item.prec == prec),
+        PbgError::DuplicateRule { name } => rules.iter().filter(|rule| rule.name == name).take(2).count() == 2,
+        _ => false,
+    },
+    |&()| rules.iter().all(|rule| dag.name(rule.prec).is_some()) && rules.iter().enumerate().all(|(index, rule)| rules.iter().take(index).all(|prior| prior.name != rule.name))))]
 fn validate_rule_headers(
     dag: &PrecDag,
     rules: &[Rule],
@@ -1817,6 +2033,14 @@ fn validate_rule_headers(
 /// - ensures: each key maps to one alternation of every alternative of every
 ///   rule with that key, in input order.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For interleaved rule groups, top-level alternatives, nested
+///   sequences and an empty alternation, L3 exact branch observations catch
+///   sorting by the wrong key, branch loss and flattening below the root;
+///   arbitrary regex languages are not enumerated.
+/// - witness: `tests::pbg::grouped_forms_preserve_branch_and_rule_order`
+#[spec(ensures: |ret| rules.iter().all(|rule| ret.contains_key(&(rule.sort, rule.prec))) && ret.iter().all(|(key, regex)| rules.iter().any(|rule| (rule.sort, rule.prec) == *key) && regex.entries.first().is_some_and(|root| matches!(root.node, RegexNode::Alt(_)))))]
 fn grouped_forms(rules: &[Rule]) -> BTreeMap<(Sort, Prec), Regex>
 {
     let mut grouped: BTreeMap<(Sort, Prec), Vec<Regex>> = BTreeMap::new();
@@ -1830,4 +2054,77 @@ fn grouped_forms(rules: &[Rule]) -> BTreeMap<(Sort, Prec), Regex>
         .into_iter()
         .map(|(key, alternatives)| (key, Regex::alt(alternatives)))
         .collect()
+}
+
+#[cfg(test)]
+mod tests
+{
+    extern crate std;
+
+    use alloc::string::ToString as _;
+    use core::error::Error as _;
+    use std::io::Write as _;
+
+    use gandr_theory_graphs::PrecSpecError;
+
+    use super::PbgError;
+    use super::Sort;
+
+    #[test]
+    fn grammar_error_sources_keep_the_original_cause()
+    {
+        let cause = PrecSpecError::DuplicateName {
+            name: "duplicate-group".into(),
+        };
+        let wrapped = PbgError::from(cause.clone());
+        assert_eq!(
+            Some(&cause),
+            wrapped
+                .source()
+                .and_then(|source| source.downcast_ref::<PrecSpecError>())
+        );
+        assert!(PbgError::MissingPrec { name: "absent" }.source().is_none());
+        assert!(PbgError::MoldOverflow.source().is_none());
+    }
+
+    #[test]
+    fn grammar_error_messages_keep_payloads_and_refuse_a_full_sink()
+    {
+        let named = PbgError::MissingPrec {
+            name: "absent-group",
+        };
+        assert!(named.to_string().contains("absent-group"));
+        let wrapped = PbgError::from(PrecSpecError::DuplicateName {
+            name: "duplicate-group".into(),
+        });
+        assert!(wrapped.to_string().contains("duplicate-group"));
+        let messages = [
+            named.to_string(),
+            wrapped.to_string(),
+            PbgError::DuplicateRule {
+                name: "duplicate-rule",
+            }
+            .to_string(),
+            PbgError::AdjacentSorts {
+                rule: "adjacent-rule",
+                left: Sort::Type,
+                right: Sort::Pattern,
+            }
+            .to_string(),
+            PbgError::Assumption3Conflict {
+                first_sort: Sort::Expression,
+                second_sort: Sort::Type,
+            }
+            .to_string(),
+            PbgError::MoldOverflow.to_string(),
+        ];
+        for (index, left) in messages.iter().enumerate() {
+            for right in messages.iter().skip(index.saturating_add(1)) {
+                assert_ne!(left, right, "different refusals remain distinguishable");
+            }
+        }
+        let mut bytes = [0_u8; 1];
+        let mut sink = bytes.as_mut_slice();
+        assert!(write!(&mut sink, "{named}").is_err());
+    }
 }

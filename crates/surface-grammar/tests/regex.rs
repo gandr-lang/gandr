@@ -56,3 +56,14 @@ fn nested_shapes_read_back_as_built()
 
     assert_eq!(RegexShape::Seq(Vec::new()), fourth.shape());
 }
+
+#[test]
+fn empty_alternation_stays_distinct_from_empty_sequence()
+{
+    let choice = Regex::alt([]);
+    let sequence = Regex::seq([]);
+    assert_eq!(RegexShape::Alt(Vec::new()), choice.view().shape());
+    assert_eq!(RegexShape::Seq(Vec::new()), sequence.view().shape());
+    assert_ne!(choice, sequence);
+    assert_ne!(choice, Regex::empty());
+}

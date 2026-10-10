@@ -7,12 +7,14 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use core::error::Error;
 
+use anodized::spec;
 use gandr_surface_grammar::Comparison;
 use gandr_surface_grammar::MAX_WALK_CHAIN_LEN;
 use gandr_surface_grammar::MoldCount;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_grammar::PrecName;
+use gandr_surface_grammar::RCtxId;
 use gandr_surface_grammar::Regex;
 use gandr_surface_grammar::Rule;
 use gandr_surface_grammar::RuleName;
@@ -230,6 +232,15 @@ const DECLARED_CANDIDATE_INVENTORY: &[(&str, usize)] = &[
 /// - ensures: returns the grammar and its one group, named `group`.
 /// - fails: never for these rules.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the two finite fixture grammars, L2 bounds, steps and
+///   comparison observations catch wrong labels, group identities and context
+///   edges. The predicate checks their declared inventories; arbitrary grammar
+///   sizes and failing fixture construction are not exhausted.
+/// - witness: `tests::walk::mold_bounds_follow_context_nullability`
+/// - witness: `tests::walk::comparison_table_coheres_with_precedence`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|&(ref pbg, base)| pbg.dag().groups().count() == 1 && pbg.dag().name(base).is_some_and(|name| name == group.0) && pbg.dag().assoc(base) == Some(Assoc::Non) && pbg.rules().len() == 2 && pbg.rules().iter().all(|rule| rule.sort() == Sort::Expression && rule.prec() == base) && pbg.mold_count() == MoldCount(2) && pbg.candidates(TileLabel("+")).len() == 1 && pbg.candidates(TileLabel("x")).len() == 1))]
 fn synthetic_pbg(group: PrecName) -> Result<(Pbg, Prec), Box<dyn Error>>
 {
     let mut spec = PrecSpec::new();
@@ -263,6 +274,15 @@ fn synthetic_pbg(group: PrecName) -> Result<(Pbg, Prec), Box<dyn Error>>
 /// - ensures: returns the grammar.
 /// - fails: never for these rules.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the two finite fixture grammars, L2 bounds, steps and
+///   comparison observations catch wrong labels, group identities and context
+///   edges. The predicate checks their declared inventories; arbitrary grammar
+///   sizes and failing fixture construction are not exhausted.
+/// - witness: `tests::walk::rctx_steps_cross_adjacent_symbols`
+/// - witness: `tests::walk::same_form_adjacency_is_the_eq_relation`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|pbg| pbg.rules().len() == 2 && pbg.mold_count() == MoldCount(3) && ["(", ")", "x"].into_iter().all(|label| pbg.candidates(TileLabel(label)).len() == 1) && pbg.adjacencies().len() == 1 && pbg.adjacencies().first().is_some_and(|&(left, right)| pbg.mold(left).is_ok_and(|mold| mold.label == "(") && pbg.mold(right).is_ok_and(|mold| mold.label == ")"))))]
 fn paren_pbg() -> Result<Pbg, Box<dyn Error>>
 {
     let mut spec = PrecSpec::new();
@@ -295,6 +315,15 @@ fn paren_pbg() -> Result<Pbg, Box<dyn Error>>
 /// - requires: nothing.
 /// - ensures: returns the label's mold.
 /// - panics: when the label takes no mold or more than one.
+///
+/// # Adequacy
+/// - hypothesis: For the synthetic singleton label menus, L2 lookup and bound
+///   observations catch a wrong returned occurrence. The predicate observes
+///   exact singleton identity; missing and ambiguous labels are outside the
+///   witnesses.
+/// - witness: `tests::walk::mold_bounds_follow_context_nullability`
+/// - witness: `tests::walk::rctx_steps_cross_adjacent_symbols`
+#[spec(ensures: |ret| pbg.candidates(label) == [ret])]
 fn only_mold(
     pbg: &Pbg,
     label: TileLabel,
@@ -310,7 +339,18 @@ fn only_mold(
 /// Each `(sort, precedence)` form group's representative: its smallest mold.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: covers every inhabited sort/band group with its least mold id.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in and synthetic inventories, L2
+///   comparison-table observations catch absent groups and nonminimal or
+///   foreign representatives. The predicate proves coverage, membership and
+///   minimality over the supplied inventory; very large tables are not
+///   exercised.
+/// - witness: `tests::walk::comparison_table_coheres_with_precedence`
+#[spec(ensures: |ret| pbg.iter_molds().all(|(id, def)| ret.get(&(def.sort, def.prec)).is_some_and(|&representative| representative <= id)) && ret.iter().all(|(&(sort, prec), &id)| pbg.mold(id).is_ok_and(|def| def.sort == sort && def.prec == prec)))]
 fn group_reps(pbg: &Pbg) -> BTreeMap<(Sort, Prec), MoldId>
 {
     let mut reps: BTreeMap<(Sort, Prec), MoldId> = BTreeMap::new();
@@ -717,5 +757,16 @@ fn walk_lengths_respect_the_chain_cap() -> Result<(), Box<dyn Error>>
         }
     }
     assert!(walks > 0, "the index materialises walks");
+    Ok(())
+}
+
+#[test]
+fn unknown_context_preserves_its_identity() -> Result<(), Box<dyn Error>>
+{
+    let (pbg, _) = synthetic_pbg(PrecName("base"))?;
+    let rctx = RCtxId::from(u32::MAX);
+    for dir in [Dir::Left, Dir::Right] {
+        assert_eq!(Err(PbgError::UnknownRCtx { rctx }), pbg.step(rctx, dir));
+    }
     Ok(())
 }
