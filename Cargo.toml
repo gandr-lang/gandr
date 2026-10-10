@@ -40,6 +40,7 @@ members = [
   "crates/theory-deep-inference",
   "crates/theory-graphs",
   "crates/theory-levitation",
+  "crates/theory-nominal-automata",
   "crates/theory-orders",
   "crates/theory-sites",
 ]
@@ -122,6 +123,7 @@ default-features = false
 # - theory-deep-inference
 # - theory-graphs
 # - theory-levitation
+# - theory-nominal-automata
 # - theory-orders
 # - theory-sites
 [workspace.dependencies.anodized]
@@ -623,6 +625,7 @@ default-features = false
 # - theory-computads
 # - theory-deep-inference
 # - theory-levitation
+# - theory-nominal-automata
 # - theory-sites
 [workspace.dependencies.quenchant-shape]
 git = "https://github.com/gandr-lang/quenchant"
