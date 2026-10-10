@@ -10,10 +10,14 @@
 //!
 //! Both gates get fresh caches. Candidate JSON and every substitution are
 //! serialized outside timing/allocation scopes; plain bytes sum independent
-//! reachable-graph equations, with no normalization intermediates. Refused
-//! candidates' byte rows describe syntax, not accepted templates. JSON images
-//! include classifier tables, constructor payloads and edges, roots, rules and
-//! all guarded arms. A substitution is a guard row in declared point order.
+//! reachable-graph equations, with no normalization intermediates. Byte rows
+//! of a candidate production refuses describe syntax, not accepted templates.
+//! A family analysis refuses for a point outside its peak has no candidate:
+//! its candidate columns print a dash, and when its first and last members
+//! decide the refusal, `F`, `s` and `f` are unmeasured and print zero. JSON
+//! images include classifier tables, constructor payloads and edges, roots,
+//! rules and all guarded arms. A substitution is a guard row in declared point
+//! order.
 //! ADMISSION measures a template clone and one admission's scratch while
 //! borrowing fixture sources; unlike RESIDENCY it does not charge source input.
 //! The work price combines template nodes and a kernel-fuel allowance, not
@@ -62,6 +66,7 @@ use gandr_kernel_term::stage::TermId;
 use gandr_kernel_term::stage::Type;
 use gandr_kernel_term::stage::TypeId;
 use gandr_theory_deep_inference::InheritanceCache;
+use quenchant_shape::shape::Maybe;
 
 /// The observer boundary retains syntax, encoding and output failures.
 #[derive(Debug)]
@@ -528,17 +533,36 @@ struct ImageSize(usize);
 #[repr(transparent)]
 struct KernelFuel(usize);
 
-/// Format-specific observations, made outside timed and allocator scopes.
-struct FamilyObservation
+quenchant_shape::reason_enum! {
+    /// Why a family has no candidate to observe.
+    pub mod uncandidated {
+        /// The reason the candidate columns are empty.
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub enum Absent {
+            /// Analysis refused the family for a point outside its peak.
+            OutsidePeak,
+        }
+    }
+}
+
+/// Format-specific observations of one analyzed candidate.
+struct CandidateObservation
 {
     /// Prices are cold-cache prices for both routes.
     prices: FamilyPrices,
-    /// Generalized point nodes, including any target-only points.
+    /// Generalized point nodes.
     points: gandr_theory_deep_inference::NodeCount,
     /// Complete candidate image, including every guarded arm.
     template: ImageSize,
     /// Sum of independently encoded member substitution rows.
     substitutions: ImageSize,
+}
+
+/// Format-specific observations, made outside timed and allocator scopes.
+struct FamilyObservation
+{
+    /// The candidate's observations, absent for a family analysis refuses.
+    candidate: Maybe<CandidateObservation, uncandidated::Absent>,
     /// Sum of independent reachable-graph equation images.
     plain: ImageSize,
 }
@@ -546,9 +570,13 @@ struct FamilyObservation
 /// Charge actual compact JSON images for both representations.
 ///
 /// # Specification
-/// - ensures: charges all substitutions even for a refused candidate, whose
-///   bytes are descriptive rather than an admission claim.
-/// - fails: syntax, serialization, uniform-family or size-overflow failure.
+/// - ensures: charges all substitutions even for a candidate production
+///   refuses, whose bytes are descriptive rather than an admission claim;
+///   charges plain images for every family.
+/// - provides: `uncandidated::Absent::OutsidePeak` for a family analysis
+///   refuses for a point outside its peak.
+/// - fails: syntax, serialization, empty or mixed-rule family, or size-overflow
+///   failure.
 /// - panics: none.
 /// - executable: none — byte counts require running the serializer; the
 ///   independent image witness checks what those bytes represent.
@@ -558,7 +586,8 @@ struct FamilyObservation
 ///
 /// # Adequacy
 /// - hypothesis: L2 — real serializer output, with literals and classifiers,
-///   separates stored bytes from the node-cost model.
+///   separates stored bytes from the node-cost model; a harvested family
+///   refused outside its peak keeps its row.
 /// - witness: `template::tests::serialized_images_reconstruct_the_original_equations`
 /// - witness: `tests::measurements_preserve_structural_and_replay_refusals`
 fn observe_family(
@@ -566,9 +595,25 @@ fn observe_family(
     family: &Family,
 ) -> Result<FamilyObservation, ObservationError>
 {
-    let Analysis::Candidate(candidate) = analyze(arena, family.program, &family.members)?
-    else {
-        return Err(StageError::InvalidCertificate.into());
+    let mut plain = 0_usize;
+    for step in &family.members {
+        let image = plain_image(arena, step)?;
+        plain = plain
+            .checked_add(serde_json::to_vec(&image)?.len())
+            .ok_or(StageError::Overflow)?;
+    }
+    let candidate = match analyze(arena, family.program, &family.members)? {
+        | Analysis::Candidate(candidate) => candidate,
+        | Analysis::Refused {
+            reason: gandr_theory_deep_inference::TemplateRefusal::EntryOutsidePeak { .. },
+            ..
+        } => {
+            return Ok(FamilyObservation {
+                candidate: Maybe::Absent(uncandidated::Absent::OutsidePeak),
+                plain: ImageSize(plain),
+            });
+        },
+        | Analysis::Refused { .. } => return Err(StageError::InvalidCertificate.into()),
     };
     let image = candidate.image()?;
     let template = serde_json::to_vec(&image)?.len();
@@ -578,20 +623,72 @@ fn observe_family(
             .checked_add(serde_json::to_vec(&substitution)?.len())
             .ok_or(StageError::Overflow)?;
     }
-    let mut plain = 0_usize;
-    for step in &family.members {
-        let image = plain_image(arena, step)?;
-        plain = plain
-            .checked_add(serde_json::to_vec(&image)?.len())
-            .ok_or(StageError::Overflow)?;
-    }
     Ok(FamilyObservation {
-        prices: candidate.prices(),
-        points: gandr_theory_deep_inference::NodeCount::from(candidate.points().count()),
-        template: ImageSize(template),
-        substitutions: ImageSize(substitutions),
+        candidate: Maybe::Present(CandidateObservation {
+            prices: candidate.prices(),
+            points: gandr_theory_deep_inference::NodeCount::from(candidate.points().count()),
+            template: ImageSize(template),
+            substitutions: ImageSize(substitutions),
+        }),
         plain: ImageSize(plain),
     })
+}
+
+/// Render a family row's candidate columns, or one dash per column.
+///
+/// # Specification
+/// - ensures: nine comma-separated columns — points, `T`, `c`, `s + T*c`, both
+///   price verdicts, and template, substitution and total bytes — from the
+///   candidate and the producer's `s`; a dash in each without a candidate.
+/// - fails: Overflow when `s + T*c` or the byte total is unrepresentable.
+/// - panics: none.
+/// - executable: none — the rendering is the observer's external output.
+///
+/// # Errors
+/// Returns `StageError::Overflow`.
+///
+/// # Adequacy
+/// - hypothesis: L2 — a harvested family refused outside its peak renders
+///   dashes rather than failing the observer.
+/// - witness: `tests::measurements_preserve_structural_and_replay_refusals`
+fn candidate_columns(
+    observation: &FamilyObservation,
+    template_size: gandr_theory_deep_inference::NodeCount,
+) -> Result<String, StageError>
+{
+    let Maybe::Present(ref candidate) = observation.candidate
+    else {
+        return Ok(String::from("-,-,-,-,-,-,-,-,-"));
+    };
+    let combined = usize::from(candidate.prices.triples)
+        .checked_mul(usize::from(candidate.prices.check_bound))
+        .and_then(|work| work.checked_add(usize::from(template_size)))
+        .ok_or(StageError::Overflow)?;
+    let total = candidate
+        .template
+        .0
+        .checked_add(candidate.substitutions.0)
+        .ok_or(StageError::Overflow)?;
+    Ok(format!(
+        "{},{},{},{combined},{},{},{},{},{total}",
+        usize::from(candidate.points),
+        usize::from(candidate.prices.triples),
+        usize::from(candidate.prices.check_bound),
+        if candidate.prices.unmemoized.is_ok() {
+            "pass"
+        }
+        else {
+            "refuse"
+        },
+        if candidate.prices.memoized.is_ok() {
+            "pass"
+        }
+        else {
+            "refuse"
+        },
+        candidate.template.0,
+        candidate.substitutions.0,
+    ))
 }
 
 /// Measure template plus one admission's scratch, with fixture sources
@@ -764,37 +861,12 @@ fn main() -> Result<(), ObservationError>
                 };
                 writeln!(
                     output,
-                    "{case},{gate_name},{index},{rule},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{verdict}",
+                    "{case},{gate_name},{index},{rule},{},{},{},{},{},{},{},{},{},{},{},{},{},{verdict}",
                     usize::from(cost.members),
                     usize::from(cost.plain_size),
                     usize::from(cost.template_size),
                     usize::from(cost.expansion_factor),
-                    usize::from(observation.points),
-                    usize::from(observation.prices.triples),
-                    usize::from(observation.prices.check_bound),
-                    usize::from(observation.prices.triples)
-                        .checked_mul(usize::from(observation.prices.check_bound))
-                        .and_then(|work| work.checked_add(usize::from(cost.template_size)))
-                        .ok_or(StageError::Overflow)?,
-                    if observation.prices.unmemoized.is_ok() {
-                        "pass"
-                    }
-                    else {
-                        "refuse"
-                    },
-                    if observation.prices.memoized.is_ok() {
-                        "pass"
-                    }
-                    else {
-                        "refuse"
-                    },
-                    observation.template.0,
-                    observation.substitutions.0,
-                    observation
-                        .template
-                        .0
-                        .checked_add(observation.substitutions.0)
-                        .ok_or(StageError::Overflow)?,
+                    candidate_columns(observation, cost.template_size)?,
                     observation.plain.0,
                     usize::from(cost.triples_checked),
                     usize::from(cost.cache_hits),
@@ -1004,6 +1076,33 @@ mod tests
             observe_family(&input.arena, &families[0]),
             Err(ObservationError::Stage(StageError::InvalidCertificate))
         ));
+        let power = fixture(Case::PowerSeries).unwrap();
+        let outside = harvest(&power.arena, ProgramId(0), &power.certificates)
+            .unwrap()
+            .into_iter()
+            .find(|family| {
+                matches!(
+                    analyze(&power.arena, family.program, &family.members),
+                    Ok(Analysis::Refused {
+                        reason: gandr_theory_deep_inference::TemplateRefusal::EntryOutsidePeak { .. },
+                        ..
+                    })
+                )
+            })
+            .unwrap();
+        let observation = observe_family(&power.arena, &outside).unwrap();
+        assert!(matches!(
+            observation.candidate,
+            Maybe::Absent(uncandidated::Absent::OutsidePeak)
+        ));
+        assert!(observation.plain.0 > 0);
+        assert_eq!(
+            candidate_columns(
+                &observation,
+                gandr_theory_deep_inference::NodeCount::from(0)
+            ),
+            Ok(String::from("-,-,-,-,-,-,-,-,-"))
+        );
         let plain = produce(
             &input.arena,
             ProgramId(0),

@@ -1161,6 +1161,24 @@ fn empty_and_malformed_families_preserve_refusals()
     assert!(
         matches!(harvest(&arena, ProgramId(0), &[certificate]), Err(StageError::UnknownTerm(id)) if id == missing)
     );
+    let refusing = [
+        (Natural(1), Natural(0)),
+        (Natural(5), Natural(4)),
+        (Natural(8), Natural(6)),
+    ];
+    let (arena, mut family) = numeral_successors(Stage::Outer, &refusing, Members(3));
+    assert!(matches!(
+        analyze(&arena, ProgramId(0), &[family[0], family[2]]),
+        Ok(Analysis::Refused {
+            reason: TemplateRefusal::EntryOutsidePeak { .. },
+            ..
+        })
+    ));
+    let absent = TermId(usize::MAX);
+    family[1].source = absent;
+    assert!(
+        matches!(analyze(&arena, ProgramId(0), &family), Err(StageError::UnknownTerm(id)) if id == absent)
+    );
 }
 
 #[test]
@@ -1312,4 +1330,392 @@ fn image_substitutions_refuse_missing_members_and_guards()
         serde_json::to_vec(&row).unwrap_err().classify(),
         serde_json::error::Category::Data
     );
+}
+
+#[test]
+fn truncation_restores_the_imported_graph()
+{
+    let (arena, family) = cancellations(Members(2), Arms(2));
+    let mut graph = Graph::default();
+    let ids = import_members(&mut graph, &arena, &family).unwrap();
+    let end = graph.end();
+    let observed = ids
+        .iter()
+        .map(|id| (graph.size(*id).unwrap(), graph.address(*id).unwrap()))
+        .collect::<Vec<_>>();
+    let point = Node {
+        head: Head::Point(EntryIndex::from(0)),
+        children: Children([None; 3]),
+    };
+    let dropped = graph.intern(point).unwrap();
+    let address = graph.address(dropped).unwrap();
+    let pattern = graph
+        .intern(Node {
+            head: Head::Splice,
+            children: Children([Some(dropped), None, None]),
+        })
+        .unwrap();
+    assert_eq!(dropped, end);
+    graph.truncate(end);
+    assert_eq!(graph.end(), end);
+    assert_eq!(graph.node(pattern), Err(StageError::Unbalanced));
+    for (id, &(size, address)) in ids.iter().zip(&observed) {
+        assert_eq!(graph.size(*id).unwrap(), size);
+        assert_eq!(graph.address(*id).unwrap(), address);
+    }
+    let minted = graph.intern(point).unwrap();
+    assert_eq!(minted, end);
+    assert_eq!(graph.node(minted), Ok(point));
+    assert_eq!(usize::from(graph.size(minted).unwrap()), 1);
+    assert_eq!(graph.address(minted).unwrap(), address);
+    assert_eq!(graph.import(&arena, &[family[0].source]).unwrap(), [ids[0]]);
+}
+
+/// The structural cost every analysis starts from: member counts only.
+///
+/// # Specification
+/// trivial.
+fn members_only(family: &[Step]) -> FamilyCostReport
+{
+    FamilyCostReport {
+        members: MemberCount::from(family.len()),
+        plain_replayed_steps: ReplayStepCount::from(family.len()),
+        ..FamilyCostReport::default()
+    }
+}
+
+/// The analysis every member imported into a fresh graph yields, the probe
+/// skipped.
+///
+/// # Specification
+/// - requires: a nonempty single-rule family of arena terms.
+/// - ensures: the family's own generalization, priced, its cost counting every
+///   member.
+/// - panics: a malformed fixture.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the fresh import is the reference the probe's reuse is
+///   compared against.
+/// - witness: `template::tests::staged_families_keep_their_verdicts_under_the_probe`
+#[spec(
+    requires: !family.is_empty(),
+    ensures: |output| match output {
+        Analysis::Candidate(ref candidate) => candidate.cost().members,
+        Analysis::Refused { cost, .. } => cost.members,
+    } == MemberCount::from(family.len()),
+)]
+fn fresh_analysis(
+    arena: &Arena,
+    family: &[Step],
+) -> Analysis
+{
+    conclude(
+        generalize_all(arena, family).unwrap(),
+        ProgramId(0),
+        family[0].rule,
+        members_only(family),
+    )
+    .unwrap()
+}
+
+/// Compare two analyses by everything a consumer observes of them.
+///
+/// # Specification
+/// - ensures: returns only when both refuse with one reason and cost, or both
+///   are candidates with one cost, both prices and one point count.
+/// - panics: on any difference.
+/// - executable: none — the assertions are the comparison; a predicate would
+///   repeat them.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the observer behind every probe witness comparison.
+/// - witness: `template::tests::staged_families_keep_their_verdicts_under_the_probe`
+fn assert_same_analysis(
+    actual: &Analysis,
+    expected: &Analysis,
+)
+{
+    match (actual, expected) {
+        | (&Analysis::Candidate(ref actual), &Analysis::Candidate(ref expected)) => {
+            assert_eq!(actual.cost(), expected.cost());
+            assert_eq!(actual.prices(), expected.prices());
+            assert_eq!(actual.points().count(), expected.points().count());
+        },
+        | (
+            &Analysis::Refused { reason, cost },
+            &Analysis::Refused {
+                reason: expected_reason,
+                cost: expected_cost,
+            },
+        ) => {
+            assert_eq!(reason, expected_reason);
+            assert_eq!(cost, expected_cost);
+        },
+        | _ => panic!("one analysis refuses and the other does not"),
+    }
+}
+
+/// Compare two productions by verdict, payload and cost.
+///
+/// # Specification
+/// - ensures: returns only when both share one verdict, its payload and cost.
+/// - panics: on any difference.
+/// - executable: none — the assertions are the comparison; a predicate would
+///   repeat them.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the observer behind the staged production comparison.
+/// - witness: `template::tests::staged_families_keep_their_verdicts_under_the_probe`
+fn assert_same_production(
+    actual: &Production,
+    expected: &Production,
+)
+{
+    match (actual, expected) {
+        | (&Production::Go(_), &Production::Go(_)) => {},
+        | (
+            &Production::WorkBoundExceeded { bound, .. },
+            &Production::WorkBoundExceeded {
+                bound: expected_bound,
+                ..
+            },
+        ) => assert_eq!(bound, expected_bound),
+        | (
+            &Production::Plain { reason, .. },
+            &Production::Plain {
+                reason: expected_reason,
+                ..
+            },
+        ) => assert_eq!(reason, expected_reason),
+        | _ => panic!("the productions' verdicts differ"),
+    }
+    assert_eq!(actual.cost(), expected.cost());
+}
+
+#[test]
+fn outside_peak_refusals_follow_from_the_first_and_last_members()
+{
+    let numerals = |values: &[(usize, usize)]| {
+        values
+            .iter()
+            .map(|&(source, target)| (Natural(source), Natural(target)))
+            .collect::<Vec<_>>()
+    };
+    // Each family, and whether its first and last members alone refuse it.
+    let families = [
+        // The two are the extremes and break the predecessor relation.
+        (
+            numerals(&[
+                (1, 0),
+                (2, 1),
+                (3, 2),
+                (4, 3),
+                (5, 4),
+                (6, 5),
+                (7, 6),
+                (8, 6),
+            ]),
+            true,
+        ),
+        // The extremes sit inside; the two still break the relation.
+        (numerals(&[(5, 4), (1, 0), (8, 7), (3, 1)]), true),
+        // The two keep the relation; a member between them breaks it.
+        (numerals(&[(1, 0), (5, 3), (8, 7)]), false),
+        // Every member keeps the relation.
+        (
+            numerals(&[
+                (1, 0),
+                (2, 1),
+                (3, 2),
+                (4, 3),
+                (5, 4),
+                (6, 5),
+                (7, 6),
+                (8, 7),
+            ]),
+            false,
+        ),
+    ];
+    let mut refused_by_the_rest = 0_usize;
+    for (pairs, refused_by_the_two) in families {
+        let (arena, family) = numeral_successors(Stage::Outer, &pairs, Members(pairs.len()));
+        let ends = [family[0], *family.last().unwrap()];
+        let analysis = analyze(&arena, ProgramId(0), &family).unwrap();
+        let whole = generalize_all(&arena, &family).unwrap();
+        match probe(&arena, &family).unwrap() {
+            | Probe::Outside(entry) => {
+                assert!(refused_by_the_two);
+                assert!(matches!(whole.rooting, PeakRoots::Missing(_)));
+                assert!(matches!(
+                    analyze(&arena, ProgramId(0), &ends).unwrap(),
+                    Analysis::Refused { reason: TemplateRefusal::EntryOutsidePeak { entry: own }, .. }
+                        if own == entry
+                ));
+                assert!(matches!(
+                    analysis,
+                    Analysis::Refused { reason: TemplateRefusal::EntryOutsidePeak { entry: refused }, cost }
+                        if refused == entry && cost == members_only(&family)
+                ));
+            },
+            | Probe::Open { graph, .. } => {
+                assert!(!refused_by_the_two);
+                let mut imported = Graph::default();
+                import_members(&mut imported, &arena, &ends).unwrap();
+                assert_eq!(graph.end(), imported.end());
+                let expected = fresh_analysis(&arena, &family);
+                assert_same_analysis(&analysis, &expected);
+                if let Analysis::Refused { reason, cost } = analysis {
+                    assert!(matches!(reason, TemplateRefusal::EntryOutsidePeak { .. }));
+                    let plain = family.iter().fold(0_usize, |sum, step| {
+                        sum.checked_add(usize::from(nodes(&arena, step.source)))
+                            .unwrap()
+                            .checked_add(usize::from(nodes(&arena, step.target)))
+                            .unwrap()
+                            .checked_add(1)
+                            .unwrap()
+                    });
+                    assert_eq!(usize::from(cost.plain_size), plain);
+                    refused_by_the_rest = refused_by_the_rest.checked_add(1).unwrap();
+                }
+            },
+        }
+    }
+    assert_eq!(refused_by_the_rest, 1);
+}
+
+/// A staging observer program the probe witnesses normalize.
+#[derive(Clone, Copy)]
+enum Staged
+{
+    /// `pow`: `x^n` by repeated multiplication, one arm per exponent.
+    Power,
+    /// `double`: step `p -> <~x * ~p * ~x>`, inputs two and three per
+    /// exponent.
+    DoubleProduct,
+}
+
+/// Normalize a staging observer program at exponents zero through eight.
+///
+/// # Specification
+/// - ensures: one certificate per exponent and input arm, in that order: nine
+///   for the power program, eighteen for the double product.
+/// - panics: fixture allocation or normalization failure.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the staged families' verdicts are compared against a
+///   fresh full analysis, which does not depend on how they were built.
+/// - witness: `template::tests::staged_families_keep_their_verdicts_under_the_probe`
+#[spec(ensures: |output| output.1.len() == match program {
+    Staged::Power => 9,
+    Staged::DoubleProduct => 18,
+})]
+fn staged_program(program: Staged) -> (Arena, Vec<Certificate>)
+{
+    let power = matches!(program, Staged::Power);
+    let mut arena = Arena::default();
+    arena.alloc_type(Type::In(Model(0))).unwrap();
+    let inner = arena.alloc_type(Type::Nat(Stage::Inner(Model(0)))).unwrap();
+    let program = if power {
+        gandr_core_nbe::stage::power(&mut arena, Model(0)).unwrap()
+    }
+    else {
+        let outer = arena.alloc_type(Type::Nat(Stage::Outer)).unwrap();
+        let lifted = arena.alloc_type(Type::Lift(inner)).unwrap();
+        let one = arena
+            .alloc(Term::Natural(Stage::Inner(Model(0)), Natural(1)))
+            .unwrap();
+        let initial = arena.alloc(Term::Quote(one)).unwrap();
+        let input = arena.alloc(Term::Variable(Index(1))).unwrap();
+        let input = arena.alloc(Term::Splice(input)).unwrap();
+        let previous = arena.alloc(Term::Variable(Index(0))).unwrap();
+        let previous = arena.alloc(Term::Splice(previous)).unwrap();
+        let product = arena.alloc(Term::Multiply(input, previous)).unwrap();
+        let product = arena.alloc(Term::Multiply(product, input)).unwrap();
+        let body = arena.alloc(Term::Quote(product)).unwrap();
+        let step = arena.alloc(Term::Lambda(lifted, body)).unwrap();
+        let exponent = arena.alloc(Term::Variable(Index(1))).unwrap();
+        let body = arena.alloc(Term::Iterate(exponent, initial, step)).unwrap();
+        let body = arena.alloc(Term::Lambda(lifted, body)).unwrap();
+        arena.alloc(Term::Lambda(outer, body)).unwrap()
+    };
+    let arms: &[usize] = if power { &[0] } else { &[2, 3] };
+    let mut certificates = Vec::new();
+    for exponent in 0 ..= 8 {
+        for arm in arms {
+            let number = arena
+                .alloc(Term::Natural(Stage::Outer, Natural(exponent)))
+                .unwrap();
+            let source = arena.alloc(Term::Apply(program, number)).unwrap();
+            let input = if power {
+                arena.alloc(Term::Variable(Index(0))).unwrap()
+            }
+            else {
+                arena
+                    .alloc(Term::Natural(Stage::Inner(Model(0)), Natural(*arm)))
+                    .unwrap()
+            };
+            let input = arena.alloc(Term::Quote(input)).unwrap();
+            let source = arena.alloc(Term::Apply(source, input)).unwrap();
+            let source = if power {
+                let source = arena.alloc(Term::Splice(source)).unwrap();
+                let source = arena.alloc(Term::Lambda(inner, source)).unwrap();
+                arena.alloc(Term::Quote(source)).unwrap()
+            }
+            else {
+                source
+            };
+            certificates.push(
+                gandr_core_nbe::stage::normalize(&mut arena, source, &mut Budget(10_000_000))
+                    .unwrap(),
+            );
+        }
+    }
+    (arena, certificates)
+}
+
+#[test]
+fn staged_families_keep_their_verdicts_under_the_probe()
+{
+    let mut decided_by_the_two = 0_usize;
+    for program in [Staged::Power, Staged::DoubleProduct] {
+        let (arena, certificates) = staged_program(program);
+        for family in harvest(&arena, ProgramId(0), &certificates).unwrap() {
+            let members = &family.members;
+            let analysis = analyze(&arena, ProgramId(0), members).unwrap();
+            let expected = fresh_analysis(&arena, members);
+            if members.len() > 2
+                && let Probe::Outside(_) = probe(&arena, members).unwrap()
+            {
+                assert!(matches!(expected, Analysis::Refused {
+                    reason: TemplateRefusal::EntryOutsidePeak { .. },
+                    ..
+                }));
+                assert!(matches!(
+                    analysis,
+                    Analysis::Refused { reason: TemplateRefusal::EntryOutsidePeak { .. }, cost }
+                        if cost == members_only(members)
+                ));
+                decided_by_the_two = decided_by_the_two.checked_add(1).unwrap();
+                continue;
+            }
+            assert_same_analysis(&analysis, &expected);
+            for gate in [PriceGate::Unmemoized, PriceGate::Memoized] {
+                let (Analysis::Candidate(actual), Analysis::Candidate(expected)) = (
+                    analyze(&arena, ProgramId(0), members).unwrap(),
+                    fresh_analysis(&arena, members),
+                )
+                else {
+                    continue;
+                };
+                let actual = actual
+                    .produce(gate, &mut InheritanceCache::new(), &mut Budget(10_000_000))
+                    .unwrap();
+                let expected = expected
+                    .produce(gate, &mut InheritanceCache::new(), &mut Budget(10_000_000))
+                    .unwrap();
+                assert_same_production(&actual, &expected);
+            }
+        }
+    }
+    assert!(decided_by_the_two > 0);
 }
