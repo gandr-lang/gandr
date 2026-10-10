@@ -86,6 +86,170 @@ pub struct TemplateAddress(ContentDigest);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArmAddress(ContentDigest);
 
+impl TemplateAddress
+{
+    /// Address domain-specific certificate content within one run.
+    ///
+    /// # Specification
+    /// - provides: a region-domain hash of domain-specific content. The address
+    ///   is build-local and does not prove that two inputs are identical.
+    /// - panics: only if the supplied `Hash` implementation panics.
+    /// - executable: none — an opaque `Hash` implementation and a lossy digest
+    ///   have no independent inverse predicate over the original content.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — changing a region or body must separate cached
+    ///   verdicts in the finite corpus; this is not collision freedom.
+    /// - witness: `template::tests::cache_transitions_keep_checks_hits_and_seeds_distinct`
+    #[inline]
+    pub fn of<T>(content: &T) -> Self
+    where
+        T: core::hash::Hash,
+    {
+        let mut hasher = ContentHasher::new();
+        core::hash::Hasher::write(&mut hasher, REGION_DOMAIN);
+        core::hash::Hash::hash(content, &mut hasher);
+        Self(hasher.digest())
+    }
+}
+
+impl ArmAddress
+{
+    /// Address a substitution body within one run.
+    ///
+    /// # Specification
+    /// - provides: an arm-domain hash of substitution content. The address is
+    ///   build-local and does not prove that two inputs are identical.
+    /// - panics: only if the supplied `Hash` implementation panics.
+    /// - executable: none — an opaque `Hash` implementation and a lossy digest
+    ///   have no independent inverse predicate over the original content.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — changing a region or body must separate cached
+    ///   verdicts in the finite corpus; this is not collision freedom.
+    /// - witness: `template::tests::cache_transitions_keep_checks_hits_and_seeds_distinct`
+    #[inline]
+    pub fn of<T>(content: &T) -> Self
+    where
+        T: core::hash::Hash,
+    {
+        let mut hasher = ContentHasher::new();
+        core::hash::Hasher::write(&mut hasher, ARM_DOMAIN);
+        core::hash::Hash::hash(content, &mut hasher);
+        Self(hasher.digest())
+    }
+}
+
+/// Price any certificate family before inheritance replay.
+///
+/// # Specification
+/// - ensures: succeeds exactly when s < floor(F / s); zero size is refused.
+/// - fails: `DoesNotPay` retains both supplied sizes.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `TemplateRefusal::DoesNotPay` at or above the strict boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, equality and either side of the integer gate
+///   distinguish division rounding and a weakened comparison.
+/// - witness: `template::tests::price_boundary_is_strict`
+#[spec(ensures: |output| output.is_ok() == usize::from(plain_size)
+    .checked_div(usize::from(template_size))
+    .is_some_and(|factor| usize::from(template_size) < factor))]
+#[inline]
+pub fn price_family(
+    template_size: NodeCount,
+    plain_size: NodeCount,
+) -> Result<ExpansionFactor, TemplateRefusal>
+{
+    match usize::from(plain_size).checked_div(usize::from(template_size)) {
+        | Some(factor) if usize::from(template_size) < factor => Ok(ExpansionFactor::from(factor)),
+        | Some(_) | None => Err(TemplateRefusal::DoesNotPay {
+            template_size,
+            plain_size,
+        }),
+    }
+}
+
+/// Why the distinct-triple price cannot establish both strict bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MemoizedPriceRefusal
+{
+    /// Sizes, triple count and per-check cost must all be positive.
+    EmptyCost,
+    /// The supplied per-check bound exceeds the template's node bound.
+    CheckExceedsTemplate,
+    /// Machine arithmetic cannot represent the conservative charge.
+    Overflow,
+    /// Template storage plus distinct-triple work reaches the plain cost.
+    DoesNotPay
+    {
+        /// Combined storage and check-work charge.
+        charged: NodeCount,
+        /// Plain family cost.
+        plain_size: NodeCount,
+    },
+}
+
+/// Price storage and cold-cache inheritance work without replacing the original
+/// gate.
+///
+/// # Specification
+/// - requires: `check_bound` bounds one inheritance check in the caller's
+///   declared node-cost model; `triples` counts every distinct obligation
+///   before replay.
+/// - ensures: succeeds exactly when all costs are positive, c <= s, and s + T*c
+///   < F with representable arithmetic. The result is s + T*c. Hence both s < F
+///   and T*c < F hold strictly.
+/// - fails: named zero-cost, invalid-bound, overflow or strict-price refusal.
+/// - panics: none.
+/// - intension: this price assumes a run-local memo that checks each triple at
+///   most once; it discounts no triple merely because the cache is warm.
+///
+/// # Errors
+/// Returns `MemoizedPriceRefusal` with the failed boundary.
+///
+/// # Adequacy
+/// - hypothesis: L1/L3 — an independent widened-arithmetic observer checks both
+///   inequalities; equality, invalid bounds and machine overflow refuse.
+/// - witness: `template::tests::memoized_price_preserves_strict_storage_and_work_bounds`
+#[spec(ensures: |output| {
+    let s = usize::from(template_size);
+    let c = usize::from(check_bound);
+    let t = usize::from(triples);
+    output.is_ok() == (s > 0 && c > 0 && t > 0 && c <= s
+        && t.checked_mul(c).and_then(|work| s.checked_add(work))
+            .is_some_and(|charged| charged < usize::from(plain_size)))
+})]
+#[inline]
+pub fn price_family_memoized(
+    template_size: NodeCount,
+    plain_size: NodeCount,
+    triples: TripleCount,
+    check_bound: NodeCount,
+) -> Result<NodeCount, MemoizedPriceRefusal>
+{
+    let s = usize::from(template_size);
+    let c = usize::from(check_bound);
+    let t = usize::from(triples);
+    if s == 0 || c == 0 || t == 0 {
+        return Err(MemoizedPriceRefusal::EmptyCost);
+    }
+    if c > s {
+        return Err(MemoizedPriceRefusal::CheckExceedsTemplate);
+    }
+    let work = t.checked_mul(c).ok_or(MemoizedPriceRefusal::Overflow)?;
+    let charged = s.checked_add(work).ok_or(MemoizedPriceRefusal::Overflow)?;
+    if charged >= usize::from(plain_size) {
+        return Err(MemoizedPriceRefusal::DoesNotPay {
+            charged: NodeCount::from(charged),
+            plain_size,
+        });
+    }
+    Ok(NodeCount::from(charged))
+}
+
 /// The triple an inheritance check is memoized under: a template region, one
 /// of its entries, and the body of one arm at that entry.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -285,7 +449,8 @@ impl InheritanceCache
                 Maybe::Present(verdict) => held == Some(verdict),
                 Maybe::Absent(inheritance_lookup::Absent::Unchecked) => held.is_none(),
             })]
-    fn lookup(
+    #[inline]
+    pub fn lookup(
         &mut self,
         key: &InheritanceKey,
     ) -> Maybe<InheritanceVerdict, inheritance_lookup::Absent>
@@ -313,7 +478,8 @@ impl InheritanceCache
     #[spec(captures: [checked = self.checked, hits = self.hits], ensures:
         self.verdicts.get(&key) == Some(&verdict) && self.hits == hits
             && usize::from(self.checked) == usize::from(checked).saturating_add(1))]
-    fn record_check(
+    #[inline]
+    pub fn record_check(
         &mut self,
         key: InheritanceKey,
         verdict: InheritanceVerdict,
@@ -843,12 +1009,7 @@ where
         .fold(0_usize, |total, member| {
             total.saturating_add(usize::from(member))
         });
-    if plain.checked_div(size).is_none_or(|factor| size >= factor) {
-        return Err(TemplateRefusal::DoesNotPay {
-            template_size: NodeCount::from(size),
-            plain_size: NodeCount::from(plain),
-        });
-    }
+    price_family(NodeCount::from(size), NodeCount::from(plain))?;
 
     let (checked_before, hits_before) = (usize::from(cache.checked()), usize::from(cache.hits()));
     let mut replayed = 0_usize;
@@ -1232,8 +1393,98 @@ impl<A: CellAlphabet> GuardedTemplate<A>
 #[cfg(test)]
 mod tests
 {
+    #[test]
+    fn price_boundary_is_strict()
+    {
+        for size in 0_usize ..= 16 {
+            for plain in 0_usize ..= 300 {
+                let expected =
+                    size > 0 && plain.checked_div(size).is_some_and(|factor| size < factor);
+                assert_eq!(
+                    super::price_family(
+                        super::NodeCount::from(size),
+                        super::NodeCount::from(plain)
+                    )
+                    .is_ok(),
+                    expected
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn memoized_price_preserves_strict_storage_and_work_bounds()
+    {
+        use super::MemoizedPriceRefusal;
+        use super::NodeCount;
+        use super::TripleCount;
+        use super::price_family_memoized;
+        for s in 0_usize ..= 16 {
+            for c in 0_usize ..= 16 {
+                for t in 0_usize ..= 8 {
+                    for f in 0_usize ..= 128 {
+                        let total = u128::try_from(s).unwrap()
+                            + u128::try_from(t).unwrap() * u128::try_from(c).unwrap();
+                        let expected =
+                            s > 0 && c > 0 && t > 0 && c <= s && total < u128::try_from(f).unwrap();
+                        let result = price_family_memoized(
+                            NodeCount::from(s),
+                            NodeCount::from(f),
+                            TripleCount::from(t),
+                            NodeCount::from(c),
+                        );
+                        assert_eq!(result.is_ok(), expected);
+                        if let Ok(charged) = result {
+                            assert_eq!(u128::try_from(usize::from(charged)).unwrap(), total);
+                            assert!(s < f && t * c < f);
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            price_family_memoized(
+                NodeCount::from(63),
+                NodeCount::from(1116),
+                TripleCount::from(8),
+                NodeCount::from(63)
+            ),
+            Ok(NodeCount::from(567))
+        );
+        assert!(super::price_family(NodeCount::from(63), NodeCount::from(1116)).is_err());
+        assert_eq!(
+            price_family_memoized(
+                NodeCount::from(4),
+                NodeCount::from(12),
+                TripleCount::from(2),
+                NodeCount::from(4)
+            ),
+            Err(MemoizedPriceRefusal::DoesNotPay {
+                charged: NodeCount::from(12),
+                plain_size: NodeCount::from(12)
+            })
+        );
+        assert_eq!(
+            price_family_memoized(
+                NodeCount::from(1),
+                NodeCount::from(9),
+                TripleCount::from(1),
+                NodeCount::from(2)
+            ),
+            Err(MemoizedPriceRefusal::CheckExceedsTemplate)
+        );
+        assert_eq!(
+            price_family_memoized(
+                NodeCount::from(usize::MAX),
+                NodeCount::from(usize::MAX),
+                TripleCount::from(2),
+                NodeCount::from(usize::MAX)
+            ),
+            Err(MemoizedPriceRefusal::Overflow)
+        );
+    }
+
     use super::ArmAddress;
-    use super::ContentHasher;
     use super::EntryIndex;
     use super::InheritanceCache;
     use super::InheritanceKey;
@@ -1247,22 +1498,22 @@ mod tests
     #[test]
     fn cache_transitions_keep_checks_hits_and_seeds_distinct()
     {
-        let digest = ContentHasher::new().digest();
         let seeded = InheritanceKey {
-            region: TemplateAddress(digest),
+            region: TemplateAddress::of(&0_u64),
             entry: EntryIndex::from(0),
-            body: ArmAddress(digest),
+            body: ArmAddress::of(&0_u64),
         };
         let neighbor = InheritanceKey {
-            entry: EntryIndex::from(1),
+            region: TemplateAddress::of(&1_u64),
             ..seeded
         };
         let checked = InheritanceKey {
-            entry: EntryIndex::from(2),
+            body: ArmAddress::of(&1_u64),
             ..seeded
         };
         let missing = InheritanceKey {
-            entry: EntryIndex::from(3),
+            region: neighbor.region,
+            body: checked.body,
             ..seeded
         };
         let negative = InheritanceVerdict::MissesTheJoin {
@@ -1318,5 +1569,10 @@ mod tests
         );
         assert_eq!(cache.get(&checked), Maybe::Present(&stopped));
         assert!(matches!(cache.get(&missing), Maybe::Absent(_)));
+        let missing_entry = InheritanceKey {
+            entry: EntryIndex::from(1),
+            ..seeded
+        };
+        assert!(matches!(cache.get(&missing_entry), Maybe::Absent(_)));
     }
 }
