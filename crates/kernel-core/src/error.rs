@@ -620,6 +620,13 @@ impl From<LevelError> for KernelError
     ///   the kernel's refusal vocabulary.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at the constant-level successor ceiling for both
+    ///   universe sorts; predecessor admission and exact ceiling refusal
+    ///   distinguish saturation, a wrong refusal and lost prior content.
+    /// - witness: `error::tests::universe_successor_overflow_refuses_admission_without_truncating_prior_content`
+    #[anodized::spec(ensures: |ret| matches!(ret, Self::LevelArithmetic))]
     #[inline]
     fn from(_error: LevelError) -> Self
     {
@@ -629,10 +636,22 @@ impl From<LevelError> for KernelError
 
 impl core::fmt::Display for KernelError
 {
-    /// Writes a short description of this refusal.
+    /// Writes the description of this refusal class.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes a class-specific description; payloads remain
+    ///   available through the error's typed variants.
+    /// - provides: a readable refusal without depending on the rejected arena.
+    /// - fails: propagates the formatter's write failure unchanged.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over every refusal variant and failure on its first
+    ///   write; pairwise descriptions and exact errors distinguish conflated
+    ///   classes and suppressed sink failures, without pinning prose.
+    /// - witness: `error::tests::refusal_descriptions_separate_classes_and_propagate_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -701,4 +720,205 @@ impl core::fmt::Display for KernelError
 
 impl core::error::Error for KernelError
 {
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::string::ToString;
+    use alloc::vec;
+    use alloc::vec::Vec;
+
+    use gandr_kernel_strata::LandmarkConstraint;
+    use gandr_kernel_strata::Level;
+    use gandr_kernel_strata::LevelConstant;
+    use gandr_kernel_strata::LevelVar;
+    use gandr_kernel_strata::LevelVarIndex;
+    use gandr_kernel_strata::PosetError;
+    use gandr_kernel_term::BaseType;
+    use gandr_kernel_term::ConstantIndex;
+    use gandr_kernel_term::DeBruijnIndex;
+    use gandr_kernel_term::GroundSort;
+    use gandr_kernel_term::LevelParamCount;
+    use gandr_kernel_term::LevelSignature;
+    use gandr_kernel_term::TableEntryCount;
+    use gandr_kernel_term::TermArena;
+    use gandr_kernel_term::ValueType;
+
+    use super::CompTypeMismatch;
+    use super::ExpectedComputationShape;
+    use super::ExpectedValueShape;
+    use super::KernelError;
+    use super::NonInferableForm;
+    use super::RegisterFault;
+    use super::ValueTypeMismatch;
+    use crate::env::Environment;
+    use crate::env::OutstandingCount;
+    use crate::levels::LevelContext;
+    use crate::witness::comp_type_witness;
+    use crate::witness::value_type_witness;
+
+    /// A formatter whose first write fails.
+    struct RefusingSink;
+
+    impl core::fmt::Write for RefusingSink
+    {
+        /// Refuses every offered write.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: returns the formatter's write error.
+        /// - provides: an observable refusal at the formatter boundary.
+        /// - fails: always, with `core::fmt::Error`.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 at the first write of every refusal class; exact
+        ///   formatter errors distinguish swallowed write failures.
+        /// - witness: `error::tests::refusal_descriptions_separate_classes_and_propagate_sink_failure`
+        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        fn write_str(
+            &mut self,
+            _s: &str,
+        ) -> core::fmt::Result
+        {
+            Err(core::fmt::Error)
+        }
+    }
+
+    #[test]
+    fn refusal_descriptions_separate_classes_and_propagate_sink_failure()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_type_unit();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let unit_returner = arena.comp_type_returner(unit);
+        let integer_returner = arena.comp_type_returner(integer);
+        let unit = value_type_witness(&arena, unit);
+        let integer = value_type_witness(&arena, integer);
+        let unit_returner = comp_type_witness(&arena, unit_returner);
+        let integer_returner = comp_type_witness(&arena, integer_returner);
+        let mismatch = CompTypeMismatch::new(unit_returner, integer_returner);
+        let free = LevelContext::admit(LevelParamCount::from(0_u32), Vec::new())
+            .expect("an unconstrained context admits");
+        let universe = free
+            .check_universe_below(&Level::zero(), &Level::zero())
+            .expect_err("strict order is irreflexive");
+        let variable = LevelVar::new(LevelVarIndex::from(0_u32));
+        let level = Level::var(variable);
+        let constraint =
+            LandmarkConstraint::leq(level.succ().expect("one successor is representable"), level)
+                .expect("a variable-only constraint is well formed");
+        let inconsistent = LevelContext::admit(LevelParamCount::from(1_u32), vec![constraint])
+            .expect_err("a self-successor constraint has no model");
+        let index = ConstantIndex::from(usize::MAX);
+        let cases = [
+            KernelError::UnboundVariable {
+                index: DeBruijnIndex::from(u32::MAX),
+            },
+            KernelError::UnboundConstant { index },
+            KernelError::NotInferable {
+                form: NonInferableForm::Injection,
+            },
+            KernelError::ValueShapeMismatch {
+                expected: ExpectedValueShape::Product,
+                actual: unit,
+            },
+            KernelError::ComputationShapeMismatch {
+                expected: ExpectedComputationShape::Arrow,
+                actual: unit_returner,
+            },
+            KernelError::CodeObligationCeiling {
+                ceiling: TableEntryCount::from(usize::MAX),
+            },
+            KernelError::ValueTypeMismatch(ValueTypeMismatch::new(unit, integer)),
+            KernelError::ComputationTypeMismatch(mismatch),
+            KernelError::CaseBranchMismatch(mismatch),
+            KernelError::BinderEscape {
+                actual: unit_returner,
+            },
+            KernelError::LevelVariableOutOfScope { variable },
+            KernelError::LevelArithmetic,
+            universe,
+            inconsistent,
+            KernelError::LevelOracleFault(PosetError::Overflow),
+            KernelError::CheckerRegisterFault(RegisterFault::ExpectedValueType),
+            KernelError::ArenaFault,
+            KernelError::AbstractTypeKindNotUniverse { actual: unit },
+            KernelError::NotAnAbstractType { index },
+            KernelError::SealingProvenanceNotProjected { atom: index },
+            KernelError::SealingProvenanceNotCanonical { atom: index },
+            KernelError::OutstandingStagedContent {
+                above: OutstandingCount::from(usize::MAX),
+            },
+            KernelError::StaticClassifierExpected { actual: unit },
+        ];
+        let descriptions = cases.each_ref().map(ToString::to_string);
+        for (position, description) in descriptions.iter().enumerate() {
+            for other in descriptions.iter().skip(position.saturating_add(1)) {
+                assert_ne!(
+                    description, other,
+                    "different refusal classes remain distinguishable"
+                );
+            }
+        }
+        for error in cases {
+            assert_eq!(
+                core::fmt::write(&mut RefusingSink, format_args!("{error}")),
+                Err(core::fmt::Error)
+            );
+        }
+    }
+
+    #[test]
+    fn universe_successor_overflow_refuses_admission_without_truncating_prior_content()
+    {
+        let mut environment = Environment::new();
+        let (unit, first) = {
+            let mut staging = environment.stage();
+            let unit = staging.arena().value_type_unit();
+            (unit, staging.axiom(LevelSignature::monomorphic(), unit))
+        };
+        assert_eq!(
+            environment
+                .add_decl(first)
+                .expect("the unit type forms")
+                .position(),
+            ConstantIndex::from(0_usize)
+        );
+        for sort in [GroundSort::Value, GroundSort::Computation] {
+            let position = ConstantIndex::from(environment.entries().len());
+            let admitted = {
+                let mut staging = environment.stage();
+                let declared = staging.arena().value_type_universe(
+                    sort,
+                    Level::constant(LevelConstant::from(u64::MAX.saturating_sub(1))),
+                );
+                staging.axiom(LevelSignature::monomorphic(), declared)
+            };
+            assert_eq!(
+                environment
+                    .add_decl(admitted)
+                    .expect("the successor fits")
+                    .position(),
+                position
+            );
+            let watermark = environment.arena().watermark();
+            let entries = environment.entries().len();
+            let refused = {
+                let mut staging = environment.stage();
+                let declared = staging
+                    .arena()
+                    .value_type_universe(sort, Level::constant(LevelConstant::from(u64::MAX)));
+                staging.axiom(LevelSignature::monomorphic(), declared)
+            };
+            assert_eq!(
+                environment.add_decl(refused),
+                Err(KernelError::LevelArithmetic)
+            );
+            assert_eq!(environment.arena().watermark(), watermark);
+            assert_eq!(environment.entries().len(), entries);
+            assert_eq!(environment.arena().value_type(unit), Some(&ValueType::Unit));
+        }
+    }
 }
