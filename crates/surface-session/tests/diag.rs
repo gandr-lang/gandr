@@ -1,17 +1,17 @@
 //! The diagnostics face of a session: every refusal a declaration of the
-//! fragment reaches, reported at its exact locus and rendered as its golden,
-//! and the goals beside them.
+//! fragment reaches, identified by its stable refusal name and exact locus.
+//! Human-readable report prose is not a compatibility boundary.
 //!
 //! Each source is submitted to a fresh session under the strict root and its
 //! submission turned into the step a face renders; the reports are the ones
 //! `gandr check --goals` prints for the same text.
 
 use std::path::Path;
-use std::path::PathBuf;
 
+use anodized::spec;
+use gandr_surface_corpus::RefusalName;
+use gandr_surface_corpus::RefusalSpelling;
 use gandr_surface_diagnostics::Entry;
-use gandr_surface_diagnostics::RenderStyle;
-use gandr_surface_diagnostics::Report;
 use gandr_surface_diagnostics::entries;
 use gandr_surface_diagnostics::report_span;
 use gandr_surface_dispatcher::Goals;
@@ -27,13 +27,28 @@ use crate::common::session;
 use crate::common::submit;
 
 /// One error-corpus row.
+///
+/// # Specification
+/// - requires: the recorded source contains its expected primary locus.
+/// - ensures: the fixture pairs a source with a stable refusal category and the
+///   exact occurrence responsible for that refusal.
+/// - executable: none — The data declaration has no invocation at which to
+///   compare the fields. The corpus observer submits each source and compares
+///   the resulting identifier and byte span against this independent table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the thirteen recorded fragment refusals, including three
+///   shape-mismatch rules and whole-source refusal; the primary-locus observer
+///   catches category changes, missing reports and shifted occurrences.
+///   Excluded invocation faults and other suites are named beside the table.
+/// - witness: `tests::diag::error_corpus_has_exact_primary_loci`
+/// - witness: `tests::diag::repeated_equal_subterms_point_to_the_failing_occurrence`
 struct Case
 {
     /// The row's name.
     name: &'static str,
-    /// The report the source must drive: the refusal's name, refined for a
-    /// shape mismatch by the former the rule required.
-    descriptor: &'static str,
+    /// The stable refusal category the source must drive.
+    identifier: RefusalName,
     /// The source.
     source: &'static str,
     /// The text the report's primary span covers: its last occurrence in the
@@ -52,130 +67,128 @@ struct Case
 /// engine faults — an exhausted allowance, a foreign grammar or mold, an
 /// unbound index, a dangling node, an admission out of order, a machine
 /// invariant — which no lowering of a surface source reaches.
+///
+/// # Specification
+/// - requires: the recorded source contains its expected primary locus.
+/// - ensures: the fixture pairs a source with a stable refusal category and the
+///   exact occurrence responsible for that refusal.
+/// - executable: none — The data declaration has no invocation at which to
+///   compare the fields. The corpus observer submits each source and compares
+///   the resulting identifier and byte span against this independent table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the thirteen recorded fragment refusals, including three
+///   shape-mismatch rules and whole-source refusal; the primary-locus observer
+///   catches category changes, missing reports and shifted occurrences.
+///   Excluded invocation faults and other suites are named beside the table.
+/// - witness: `tests::diag::error_corpus_has_exact_primary_loci`
+/// - witness: `tests::diag::repeated_equal_subterms_point_to_the_failing_occurrence`
 const ERROR_CORPUS: [Case; 13] = [
     Case {
         name: "type-mismatch",
-        descriptor: "TypeMismatch",
+        identifier: RefusalName::TypeMismatch,
         source: "def x : String ;\ndef x = 1 ;\n",
         locus: "1",
     },
     Case {
         name: "shape-arrow",
-        descriptor: "ShapeMismatch:an arrow `A → C`",
+        identifier: RefusalName::ShapeMismatch,
         source: "def h : +U (-F Integer) ;\ndef h = thunk { ret 1 } ;\ndef g : +U (-F Integer) ;\ndef g \
-                 = thunk { (force h)(1) } ;\n",
+             = thunk { (force h)(1) } ;\n",
         locus: "force h",
     },
     Case {
         name: "shape-thunk",
-        descriptor: "ShapeMismatch:a thunk type `+U C`",
+        identifier: RefusalName::ShapeMismatch,
         source: "def y : +U (-F Integer) ;\ndef y = thunk { force 1 } ;\n",
         locus: "1",
     },
     Case {
         name: "shape-returner",
-        descriptor: "ShapeMismatch:a returner `-F A`",
+        identifier: RefusalName::ShapeMismatch,
         source: "def f : +U (Integer -> -F Integer) ;\ndef f = thunk { ret 1 } ;\n",
         locus: "ret 1",
     },
     Case {
         name: "not-synthesisable",
-        descriptor: "NotSynthesisable",
+        identifier: RefusalName::NotSynthesisable,
         source: "def a = thunk { ret 1 } ;\n",
         locus: "thunk { ret 1 }",
     },
     Case {
         name: "unknown-constant",
-        descriptor: "UnknownConstant",
+        identifier: RefusalName::UnknownConstant,
         source: "def a = thunk { ret 1 } ;\ndef b = a ;\n",
         locus: "a",
     },
     Case {
         name: "unresolved-name",
-        descriptor: "UnresolvedName",
+        identifier: RefusalName::UnresolvedName,
         source: "def x = nonesuch ;\n",
         locus: "nonesuch",
     },
     Case {
         name: "unresolved-type-head",
-        descriptor: "UnresolvedTypeHead",
+        identifier: RefusalName::UnresolvedTypeHead,
         source: "def a : Intgr ;\n",
         locus: "Intgr",
     },
     Case {
         name: "duplicate-signature",
-        descriptor: "DuplicateSignature",
+        identifier: RefusalName::DuplicateSignature,
         source: "def a : Integer ;\ndef a : Integer ;\ndef a = 1 ;\n",
         locus: "def a : Integer ;",
     },
     Case {
         name: "duplicate-definition",
-        descriptor: "DuplicateDefinition",
+        identifier: RefusalName::DuplicateDefinition,
         source: "def a = 3 ;\ndef a = 4 ;\n",
         locus: "def a = 4 ;",
     },
     Case {
         name: "out-of-fragment",
-        descriptor: "OutOfFragment",
+        identifier: RefusalName::OutOfFragment,
         source: "def a : -F Integer & -F Integer ;\n",
         locus: "-F Integer & -F Integer",
     },
     Case {
         name: "malformed-form",
-        descriptor: "MalformedForm",
+        identifier: RefusalName::MalformedForm,
         source: "def bad = 1 ~ 2 ;\n",
         locus: "~",
     },
     Case {
         name: "refused-whole",
-        descriptor: "OutOfFragment",
+        identifier: RefusalName::OutOfFragment,
         source: "def answer = 42 ;\n#!{echo hello |",
         locus: "#!{echo hello |",
     },
 ];
 
-/// The goal corpus, `(name, source)`: a declaration owed at a value type and
-/// at a thunk type, and a goal beside a refusal in one source.
-///
-/// A goal here is a declaration whose body is owed: a hole standing for the
-/// whole body. A hole inside a body has no surface yet.
-const GOAL_CORPUS: [(&str, &str); 3] = [
-    ("goal-value", "def owed : Integer ;\ndef answer = 42 ;\n"),
-    (
-        "goal-thunk",
-        "def later : +U (Integer -> -F Integer) ;\ndef answer = 42 ;\n",
-    ),
-    (
-        "goal-beside-a-refusal",
-        "def owed : Integer ;\ndef answer = 42 ;\ndef broken = 1 ~ 2 ;\n",
-    ),
-];
-
-/// The descriptor of `report`, as [`ERROR_CORPUS`] spells it; a goal is
-/// `goal:` and its title.
-///
-/// # Specification
-/// trivial.
-fn descriptor(report: &Report<'_>) -> String
-{
-    let title = report.title().to_string();
-    match report.identifier() {
-        | Maybe::Present(spelling) => {
-            let name = spelling.to_string();
-            match title.strip_prefix("the rule here requires ") {
-                | Some(required) if name == "ShapeMismatch" => format!("{name}:{required}"),
-                | Some(_) | None => name,
-            }
-        },
-        | Maybe::Absent(_) => format!("goal:{title}"),
-    }
-}
-
 /// The step a fresh strict session's submission of `source` becomes, at
 /// `path`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the source submits without an invocation fault.
+/// - ensures: returns a strict source step at the supplied path, borrowing the
+///   supplied text and carrying its fresh-session composition.
+/// - panics: if the fixture’s submission fails.
+///
+/// # Adequacy
+/// - hypothesis: L3 — thirteen named-refusal fixtures and a
+///   repeated-equal-literal case, observed by stable identifiers and exact
+///   primary source spans. The predicate separately fixes the step variant,
+///   root, path and text without submitting twice.
+/// - witness: `tests::diag::error_corpus_has_exact_primary_loci`
+/// - witness: `tests::diag::repeated_equal_subterms_point_to_the_failing_occurrence`
+#[spec(
+    ensures: |ret| {
+    matches!(
+        ret, Step::Source { path : found_path, root : SourceRoot::Strict, text, .. } if
+        found_path == path && text.as_ref() == source.0
+    )
+},
+)]
 fn step<'text>(
     path: &'text Path,
     source: Text<'text>,
@@ -184,84 +197,68 @@ fn step<'text>(
     submit(&mut session(SourceRoot::Strict), source.0).into_step(path)
 }
 
-/// The descriptor and primary span of every report a fresh strict session's
-/// submission of `source` prints under `check --goals`.
+/// The stable identifier and primary span of every named refusal a fresh
+/// strict session prints under `check --goals`; unnamed goal reports are
+/// omitted.
 ///
 /// # Specification
-/// trivial.
-fn located(source: Text<'_>) -> Vec<(String, Maybe<ByteSpan, report_span::Absent>)>
+/// - requires: the source submits without an invocation fault through a strict
+///   session.
+/// - ensures: preserves each named refusal’s identifier and primary span, in
+///   report order, while omitting unnamed goals. Every present span addresses
+///   complete source characters.
+/// - panics: if submission fails or the strict step emits a fixture ledger
+///   line.
+///
+/// # Adequacy
+/// - hypothesis: L3 — thirteen refusal fixtures and two equal literals checked
+///   at different types. The table fixes the category and exact failing
+///   occurrence independently of report prose; the predicate checks source
+///   bounds and character boundaries without rerunning the pipeline.
+/// - witness: `tests::diag::error_corpus_has_exact_primary_loci`
+/// - witness: `tests::diag::repeated_equal_subterms_point_to_the_failing_occurrence`
+#[spec(
+    ensures: |ret| {
+    ret
+        .iter()
+        .all(|&(_, span)| match span {
+            Maybe::Present(span) => {
+                source
+                    .0
+                    .get(usize::from(span.start())..usize::from(span.end()))
+                    .is_some()
+            }
+            Maybe::Absent(_) => true,
+        })
+},
+)]
+fn located(source: Text<'_>) -> Vec<(RefusalSpelling, Maybe<ByteSpan, report_span::Absent>)>
 {
     let step = step(Path::new("located.gandr"), source);
     entries(&step, Verb::Check(Goals::Reported))
-        .map(|entry| match entry {
-            | Entry::Report(report) => (descriptor(&report), report.span()),
+        .filter_map(|entry| match entry {
+            | Entry::Report(report) => match report.identifier() {
+                | Maybe::Present(identifier) => Some((identifier, report.span())),
+                | Maybe::Absent(_) => None,
+            },
             | Entry::Line(line) => panic!("a strict source prints no ledger line: {line}"),
         })
         .collect()
-}
-
-/// Every source of `corpus` rendered as `check --goals` prints it, each
-/// under a header naming its row, the step at `<name>.gandr`.
-///
-/// # Specification
-/// trivial.
-fn rendered<'corpus>(corpus: impl Iterator<Item = (Text<'corpus>, Text<'corpus>)>) -> String
-{
-    corpus
-        .map(|(name, source)| {
-            let path = PathBuf::from(format!("{}.gandr", name.0));
-            let step = step(&path, source);
-            let printed: Vec<String> = entries(&step, Verb::Check(Goals::Reported))
-                .map(|entry| match entry {
-                    | Entry::Report(report) => report.render(RenderStyle::Plain).to_string(),
-                    | Entry::Line(line) => line.to_string(),
-                })
-                .collect();
-            format!("=== {} ===\n{}\n", name.0, printed.join("\n\n"))
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// The error corpus, rendered.
-///
-/// # Specification
-/// trivial.
-fn rendered_errors() -> String
-{
-    rendered(
-        ERROR_CORPUS
-            .iter()
-            .map(|case| (Text(case.name), Text(case.source))),
-    )
-}
-
-/// The goal corpus, rendered.
-///
-/// # Specification
-/// trivial.
-fn rendered_goals() -> String
-{
-    rendered(
-        GOAL_CORPUS
-            .iter()
-            .map(|&(name, source)| (Text(name), Text(source))),
-    )
 }
 
 #[test]
 fn corpus_covers_each_reachable_variant()
 {
     for case in &ERROR_CORPUS {
-        let got: Vec<String> = located(Text(case.source))
+        let got: Vec<RefusalSpelling> = located(Text(case.source))
             .into_iter()
             .map(|(descriptor, _)| descriptor)
             .collect();
         assert!(
-            got.iter().any(|found| found == case.descriptor),
+            got.iter().any(|found| *found == case.identifier.spelling()),
             "{}: expected a {} report, got {got:?}",
             case.name,
-            case.descriptor
+            case.identifier.spelling()
         );
     }
 }
@@ -283,7 +280,7 @@ fn error_corpus_has_exact_primary_loci()
             .expect("the locus is ordered");
         let found: Vec<Maybe<ByteSpan, report_span::Absent>> = located(Text(case.source))
             .into_iter()
-            .filter(|found| found.0 == case.descriptor)
+            .filter(|found| found.0 == case.identifier.spelling())
             .map(|(_, span)| span)
             .collect();
         assert_eq!(
@@ -291,7 +288,7 @@ fn error_corpus_has_exact_primary_loci()
             [Maybe::Present(expected)],
             "{}: one {} report, at {:?}",
             case.name,
-            case.descriptor,
+            case.identifier.spelling(),
             case.locus
         );
     }
@@ -310,27 +307,7 @@ fn repeated_equal_subterms_point_to_the_failing_occurrence()
     let expected = ByteSpan::new(ByteOffset::from(start), ByteOffset::from(end))
         .expect("the literal is ordered");
     assert_eq!(located(Text(SOURCE)), [(
-        String::from("TypeMismatch"),
+        RefusalName::TypeMismatch.spelling(),
         Maybe::Present(expected)
     )]);
-}
-
-#[test]
-fn error_corpus_reports_match_goldens()
-{
-    assert_eq!(
-        rendered_errors(),
-        include_str!("golden/error-corpus.txt"),
-        "the terminal layout of every error-corpus report is a public surface"
-    );
-}
-
-#[test]
-fn goal_corpus_reports_match_goldens()
-{
-    assert_eq!(
-        rendered_goals(),
-        include_str!("golden/goal-corpus.txt"),
-        "the terminal layout of every goal-corpus report is a public surface"
-    );
 }

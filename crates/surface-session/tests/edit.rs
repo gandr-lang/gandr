@@ -8,6 +8,7 @@
 //! and the oracle, `apply` of a diff reproducing the new revision over
 //! generated pairs.
 
+use anodized::spec;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
 use gandr_core_checker::signature;
@@ -65,7 +66,35 @@ const EDITED: &str = include_str!("fixtures/incremental-edited.gandr");
 /// The snapshot of `text`, which the lowering must read as a module.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the text lowers as a module whose admitted declaration positions
+///   ascend.
+/// - ensures: returns that program’s signature/body image and source origins,
+///   with named UTF-8 item identities in admission order.
+/// - panics: if parsing, lowering or program admission fails.
+///
+/// # Adequacy
+/// - hypothesis: L3 — literal edits, insertion and hole transitions, whose
+///   callers independently name expected leaves, paths and item identities;
+///   generated pairs extend the exercised domain. The predicate checks the
+///   source-named identity boundary without repeating the consumed conversion
+///   or parse.
+/// - witness: `tests::edit::literal_edit_is_one_set_int`
+/// - witness: `tests::edit::item_insertion_leaves_neighbours_untouched`
+/// - witness: `tests::edit::hole_fill_and_erase`
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+#[spec(
+    ensures: |ret| {
+    ret
+        .items()
+        .iter()
+        .all(|item| {
+            matches!(
+                * item.reference(), Reference::Item { ref key, .. } if
+                core::str::from_utf8(key.as_ref()).is_ok()
+            )
+        })
+},
+)]
 fn snapshot<'text>(text: impl Into<Text<'text>>) -> Snapshot
 {
     let text = text.into().0;
@@ -84,7 +113,32 @@ fn snapshot<'text>(text: impl Into<Text<'text>>) -> Snapshot
 /// The diff of `old` into `new`, asserted to apply back to `new`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the snapshots retain their canonical item trees.
+/// - ensures: returns an edit script whose application reproduces the new
+///   items; equal item images yield no actions and every body path addresses
+///   the old snapshot.
+/// - panics: if reconstruction disagrees with the target image.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the literal, insertion, hole and constructor-change
+///   fixtures, observed by exact action payloads and old paths. The body checks
+///   full reconstruction once; the postcondition checks identity and anchors
+///   without allocating another replay.
+/// - witness: `tests::edit::literal_edit_is_one_set_int`
+/// - witness: `tests::edit::item_insertion_leaves_neighbours_untouched`
+/// - witness: `tests::edit::hole_fill_and_erase`
+#[spec(
+    ensures: |ret| {
+    (old.items() != new.items() || ret.actions().is_empty())
+        && ret
+            .actions()
+            .iter()
+            .all(|action| match action.path() {
+                Maybe::Present(path) => matches!(old.node(path), Maybe::Present(_)),
+                Maybe::Absent(_) => true,
+            })
+},
+)]
 fn diff_sound(
     old: &Snapshot,
     new: &Snapshot,
@@ -102,7 +156,27 @@ fn diff_sound(
 /// The integer literal written `text`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nonempty ASCII decimal digits.
+/// - ensures: returns their nonnegative integer value with canonical
+///   leading-zero normalization.
+/// - panics: if the text is not a decimal magnitude.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the explicit literal-edit and hole-fill expectations,
+///   observed as exact integer payloads. The predicate compares sign and
+///   borrowed canonical digits without constructing a second magnitude.
+/// - witness: `tests::edit::literal_edit_is_one_set_int`
+/// - witness: `tests::edit::hole_fill_and_erase`
+#[spec(
+    requires: !text.0.is_empty() && text.0.bytes().all(|byte| byte.is_ascii_digit()),
+    ensures: |ret| {
+    matches!(
+        ret, Literal::Integer(ref integer) if integer.sign() == Sign::NonNegative &&
+        integer.magnitude().as_ref() == { let digits = text.0.trim_start_matches('0'); if
+        digits.is_empty() { "0" } else { digits } }
+    )
+},
+)]
 fn integer(text: Text<'_>) -> Literal
 {
     let magnitude =
@@ -129,7 +203,23 @@ struct Nested(bool);
 /// Whether `inner` sits under `outer`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: holds exactly when the paths name the same item and the outer
+///   slots prefix the inner slots, including equality.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the literal and multi-point localization fixtures,
+///   observed by whether each changed old path lies under the selected source
+///   locus. The predicate keeps item identity separate from slot-prefix
+///   containment.
+/// - witness: `tests::edit::edit_locus_contains_the_diff`
+/// - witness: `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`
+#[spec(
+    ensures: |ret| {
+    ret.0 == (outer.item() == inner.item() && inner.slots().starts_with(outer.slots()))
+},
+)]
 fn nested(
     outer: &CorePath,
     inner: &CorePath,
@@ -141,7 +231,24 @@ fn nested(
 /// The first reference of the declaration named `name`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: names the first occurrence of the exact UTF-8 declaration name,
+///   without normalization.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the inserted declaration’s independently written name,
+///   compared with the edit action’s item reference. The predicate fixes both
+///   key bytes and first occurrence without creating another owned key.
+/// - witness: `tests::edit::item_insertion_leaves_neighbours_untouched`
+#[spec(
+    ensures: |ret| {
+    matches!(
+        ret, Reference::Item { ref key, occurrence } if key.as_ref() == name.0.as_bytes()
+        && occurrence == Occurrence::from(0_usize)
+    )
+},
+)]
 fn reference(name: Text<'_>) -> Reference
 {
     Reference::Item {
@@ -447,8 +554,8 @@ fn self_diff_is_empty_and_apply_is_identity()
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Leaf(usize);
 
-/// One item over a hand-built arena whose body holds every multi-child
-/// former of the body sorts, leaves 0 to 5 distinct string literals and leaf
+/// One item over a hand-built arena covering dynamic multi-child body
+/// formers, leaves 0 to 5 distinct string literals and leaf
 /// 6 the innermost bound variable, the leaf `changed` names reading
 /// `"changed"`, or the next variable out:
 ///
@@ -456,7 +563,95 @@ struct Leaf(usize);
 /// (force (pair "5" #0)))`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: returns one unsigned item with the documented dynamic body tree.
+///   Only the selected literal among leaves zero through five changes to the
+///   changed marker; leaf six selects the next variable out. Other indices
+///   leave the image unchanged.
+/// - panics: if the internally constructed one-item program is not admitted.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the unchanged tree and each of its seven leaf mutations.
+///   The predicate independently states the eighteen-node breadth-first image,
+///   edges, six exact text payloads and variable index without rebuilding an
+///   arena; the witness also names every leaf’s old path and resulting single
+///   edit.
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+#[spec(
+    ensures: |ret| {
+    ret.items().len() == 1_usize
+        && ret
+            .items()
+            .first()
+            .is_some_and(|item| {
+                matches!(item.signature(), Maybe::Absent(signature::Absent::Unsigned))
+                    && match item.body() {
+                        Maybe::Present(tree) => {
+                            match tree.nodes() {
+                                &[ContentNode::Thunk(thunk),
+                                ContentNode::Case { scrutinee, on_left, on_right },
+                                ContentNode::Pair(pair_first, pair_second),
+                                ContentNode::Bind(bound, rest), ContentNode::Force(forced),
+                                ContentNode::Literal(Literal::Text(ref zero)),
+                                ContentNode::Injection(Side::Left, injected),
+                                ContentNode::Return(two),
+                                ContentNode::Application(lambda, four),
+                                ContentNode::Pair(five, variable),
+                                ContentNode::Literal(Literal::Text(ref one)),
+                                ContentNode::Literal(Literal::Text(ref two_text)),
+                                ContentNode::Lambda(returned),
+                                ContentNode::Literal(Literal::Text(ref four_text)),
+                                ContentNode::Literal(Literal::Text(ref five_text)),
+                                ContentNode::Variable { zone: Zone::Intuitionistic, index },
+                                ContentNode::Return(three),
+                                ContentNode::Literal(Literal::Text(ref three_text))] => {
+                                    [
+                                        thunk,
+                                        scrutinee,
+                                        on_left,
+                                        on_right,
+                                        pair_first,
+                                        pair_second,
+                                        bound,
+                                        rest,
+                                        forced,
+                                        injected,
+                                        two,
+                                        lambda,
+                                        four,
+                                        five,
+                                        variable,
+                                        returned,
+                                        three,
+                                    ]
+                                        .into_iter()
+                                        .map(usize::from)
+                                        .eq(1_usize..18_usize)
+                                        && index
+                                            == DeBruijnIndex::from(
+                                                u32::from(changed == Some(Leaf(6_usize))),
+                                            )
+                                        && [zero, one, two_text, three_text, four_text, five_text]
+                                            .into_iter()
+                                            .zip(["0", "1", "2", "3", "4", "5"])
+                                            .enumerate()
+                                            .all(|(at, (literal, unchanged))| {
+                                                literal.as_ref()
+                                                    == if changed == Some(Leaf(at)) {
+                                                        "changed"
+                                                    } else {
+                                                        unchanged
+                                                    }
+                                            })
+                                }
+                                _ => false,
+                            }
+                        }
+                        Maybe::Absent(_) => false,
+                    }
+            })
+},
+)]
 fn hand_built(changed: Option<Leaf>) -> Snapshot
 {
     let mut arena = CoreArena::new();
@@ -494,7 +689,27 @@ fn hand_built(changed: Option<Leaf>) -> Snapshot
 /// The literal leaf `at` of [`hand_built`] holds when `changed` is changed.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: returns the changed marker only for the selected leaf; otherwise
+///   its canonical unsigned decimal label, as a text literal.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all six literal leaves, unchanged and selected one at a
+///   time, observed through the hand-built tree and exact edit payloads. The
+///   postcondition compares the marker or canonical decimal value without
+///   formatting a second string.
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+#[spec(
+    ensures: |ret| {
+    matches!(
+        ret, Literal::Text(ref text) if if changed == Some(at) { text.as_ref() ==
+        "changed" } else { let digits = text.as_ref(); digits.bytes().all(| byte | byte
+        .is_ascii_digit()) && (digits == "0" || ! digits.starts_with('0')) && digits
+        .parse::< usize > () == Ok(at.0) }
+    )
+},
+)]
 fn leaf_content(
     at: Leaf,
     changed: Option<Leaf>,
