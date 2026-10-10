@@ -186,15 +186,25 @@ impl From<MintRefusal> for ReifyRefusal
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a ground cut over every constructor head reifies to its
-///   exact rendering and passes the typed check closed, a return frame reifies
-///   to its `μ̃` definiens and runs to the re-wrapped value, and each refusal
-///   leaves the arena at its mark after nodes were minted.
+/// - hypothesis: L3 — finite ground cuts over the core constructor heads have
+///   exact structural readings; distinct nested return frames expose reversal
+///   and omission. A negative cut retains its polarity without a claim of type
+///   correctness. Open patterns, unknown symbols and wrong arities have exact
+///   first refusals and preserve a populated arena prefix.
 /// - witness: `bridge::tests::a_frozen_cut_reifies_to_the_command_il`
 /// - witness: `bridge::tests::a_return_frame_reifies_to_a_mu_tilde`
 /// - witness: `bridge::tests::an_operation_frame_is_the_opaque_boundary`
 /// - witness: `bridge::tests::a_refused_reification_leaves_the_arena_at_its_mark`
+/// - witness: `bridge::tests::reification_preserves_nested_frames_and_constructor_heads`
+/// - witness: `bridge::tests::resolution_refusals_preserve_order_and_arena_prefix`
 #[inline]
+#[anodized::spec(
+    captures: [entry = arena.watermark()],
+    ensures: |ref ret| match ret.as_ref() {
+        | Ok(&command) => matches!(arena.command(command), Some(&crate::il::CommandNode::Cut { polarity, .. }) if polarity == pattern.polarity()),
+        | Err(_) => arena.watermark() == entry,
+    },
+)]
 pub fn reify_command(
     arena: &mut CommandArena,
     pattern: &CmdPat,
@@ -212,10 +222,27 @@ pub fn reify_command(
 /// [`reify_command`] without its rollback.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the reified producer and consumer form a cut at the pattern's
+///   polarity.
+/// - provides: the construction inside the public rollback boundary.
+/// - fails: as [`reify_command`], retaining any nodes already minted.
+/// - panics: none.
 ///
 /// # Errors
 /// As [`reify_command`].
+///
+/// # Adequacy
+/// - hypothesis: L3 — constructor trees and nested return frames have exact
+///   core readings, while a negative pattern retains its cut polarity. Refusal
+///   after a producer was built is observed at the public rollback boundary;
+///   this distinguishes swapped halves and a fixed polarity.
+/// - witness: `bridge::tests::a_frozen_cut_reifies_to_the_command_il`
+/// - witness: `bridge::tests::reification_preserves_nested_frames_and_constructor_heads`
+/// - witness: `bridge::tests::a_refused_reification_leaves_the_arena_at_its_mark`
+#[anodized::spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&command|
+    arena.command(command).is_some_and(|&crate::il::CommandNode::Cut { polarity, producer, consumer }|
+        polarity == pattern.polarity() && arena.producer(producer).is_some() && arena.consumer(consumer).is_some())))]
 fn reify(
     arena: &mut CommandArena,
     pattern: &CmdPat,
@@ -239,6 +266,24 @@ fn reify(
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nullary, unary and binary resolved heads admit their
+///   declared arity; too few and too many arguments and an unknown symbol have
+///   exact symbol, expected-count and found-count refusals. This distinguishes
+///   a fixed arity and a fallback resolution.
+/// - witness: `bridge::tests::reification_preserves_nested_frames_and_constructor_heads`
+/// - witness: `bridge::tests::a_return_frame_reifies_to_a_mu_tilde`
+/// - witness: `bridge::tests::resolution_refusals_preserve_order_and_arena_prefix`
+#[anodized::spec(ensures: |ref ret| match ret.as_ref() {
+    | Ok(tag) => resolver.get(symbol) == Some(tag) && tag.producer_arity() == found,
+    | Err(error) => match *error {
+        | ReifyRefusal::UnresolvedConstructor(ref missing) => missing == symbol && resolver.get(symbol).is_none(),
+        | ReifyRefusal::ArityMismatch { ref constructor, expected, found: observed } => constructor == symbol && observed == found
+            && expected != found && resolver.get(symbol).is_some_and(|tag| tag.producer_arity() == expected),
+        | _ => false,
+    },
+})]
 fn resolved(
     resolver: &ConstructorResolver,
     symbol: &Sym,
@@ -283,6 +328,20 @@ enum Step<'pattern>
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested unit, pair, both injections and lift constructors
+///   are observed as exact core nodes after execution. An open producer and two
+///   differently invalid fields expose metavariable handling and left-to-right
+///   refusal; arity is checked before children.
+/// - witness: `bridge::tests::reification_preserves_nested_frames_and_constructor_heads`
+/// - witness: `bridge::tests::resolution_refusals_preserve_order_and_arena_prefix`
+#[anodized::spec(ensures: |ref ret| match root.view() {
+    | ProdView::Meta(var) => ret.as_ref().is_err_and(|error| matches!(*error, ReifyRefusal::Metavariable(ref found) if found == var)),
+    | ProdView::Ctor { ctor, args } => ret.is_err() || ret.as_ref().is_ok_and(|&id|
+        arena.producer(id).is_some_and(|node| matches!(*node, ProducerNode::Constructor { ref tag, ref producers, ref consumers }
+            if resolver.get(ctor) == Some(tag) && producers.len() == args.len() && consumers.is_empty()))),
+})]
 fn reify_producer(
     arena: &mut CommandArena,
     root: ProdRef<'_>,
@@ -337,6 +396,31 @@ fn reify_producer(
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — top and two differently named nested return frames are
+///   observed by the exact wrapped result; open tails, operation frames,
+///   unresolved heads and non-unary heads have exact refusals. This
+///   distinguishes frame reversal, skipped tails and an incorrect arity rule;
+///   the domain is the current constructor vocabulary.
+/// - witness: `bridge::tests::a_return_frame_reifies_to_a_mu_tilde`
+/// - witness: `bridge::tests::reification_preserves_nested_frames_and_constructor_heads`
+/// - witness: `bridge::tests::an_operation_frame_is_the_opaque_boundary`
+/// - witness: `bridge::tests::a_refused_reification_leaves_the_arena_at_its_mark`
+/// - witness: `bridge::tests::resolution_refusals_preserve_order_and_arena_prefix`
+#[anodized::spec(ensures: |ref ret| match root.view() {
+    | ConsView::Meta(var) => ret.as_ref().is_err_and(|error| matches!(*error, ReifyRefusal::Metavariable(ref found) if found == var)),
+    | ConsView::Op { op, .. } => ret.as_ref().is_err_and(|error| matches!(*error, ReifyRefusal::OperationFrame(ref found) if found == op)),
+    | ConsView::Top => ret.is_err() || ret.as_ref().is_ok_and(|&id| matches!(arena.consumer(id), Some(&ConsumerNode::Top))),
+    | ConsView::Frame { ctor, .. } => ret.is_err() || ret.as_ref().is_ok_and(|&id|
+        arena.consumer(id).is_some_and(|node| matches!(*node, ConsumerNode::MuTilde { body }
+            if arena.command(body).is_some_and(|&crate::il::CommandNode::Cut { polarity, producer, .. }|
+                polarity == Polarity::Positive && arena.producer(producer).is_some_and(|wrapped|
+                    matches!(*wrapped, ProducerNode::Constructor { ref tag, ref producers, ref consumers }
+                        if resolver.get(ctor) == Some(tag) && producers.len() == 1 && consumers.is_empty()
+                            && producers.first().is_some_and(|&bound|
+                                matches!(arena.producer(bound), Some(&ProducerNode::Variable { zone: Zone::Intuitionistic, index }) if index == DeBruijnIndex::from(0_u32))))))))),
+})]
 fn reify_consumer(
     arena: &mut CommandArena,
     root: ConsRef<'_>,
@@ -575,5 +659,161 @@ mod tests
             arena.watermark(),
             "every refusal leaves the arena at its mark"
         );
+    }
+
+    /// Nested unequal frames and all constructor heads retain their semantic
+    /// order.
+    #[test]
+    fn reification_preserves_nested_frames_and_constructor_heads()
+    {
+        use gandr_core_term::Value;
+        use gandr_kernel_strata::Level;
+
+        let mut resolver = core_resolver();
+        resolver.insert(Sym::new("Lift"), ConstructorTag::Lift(Level::zero()));
+        let pattern = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Pair", [
+                ProdPat::ctor("Lift", [ProdPat::ctor("Inr", [ProdPat::ctor("Unit", [])])]),
+                ProdPat::ctor("Inl", [ProdPat::ctor("Unit", [])]),
+            ]),
+            ConsPat::frame("Inl", ConsPat::frame("Inr", ConsPat::top())),
+        );
+        let mut arena = CommandArena::new();
+        let command = reify_command(&mut arena, &pattern, &resolver).expect("ground pattern");
+        assert_eq!(Ok(FreeSet::default()), check_command(&arena, command));
+        let definitions = Definitions::new();
+        let mut machine = Machine::new(&arena, &definitions);
+        let Ok(Outcome::Halted(value)) = machine.run(command, StepCount::from(64_usize))
+        else {
+            panic!("reified frames return");
+        };
+        let mut core = CoreArena::new();
+        let read = machine
+            .read_back_value(value, &mut core)
+            .expect("positive result");
+        let Some(&Value::Injection(Side::Right, outer)) = core.value(read)
+        else {
+            panic!("the last frame wraps last");
+        };
+        let Some(&Value::Injection(Side::Left, pair)) = core.value(outer)
+        else {
+            panic!("the first frame wraps first");
+        };
+        let Some(&Value::Pair(lift, right)) = core.value(pair)
+        else {
+            panic!("pair head survives");
+        };
+        let Some(&Value::Lift { ref target, body }) = core.value(lift)
+        else {
+            panic!("first field is lifted");
+        };
+        assert_eq!(&Level::zero(), target);
+        let Some(&Value::Injection(Side::Right, first_unit)) = core.value(body)
+        else {
+            panic!("right injection survives under lift");
+        };
+        let Some(&Value::Injection(Side::Left, last_unit)) = core.value(right)
+        else {
+            panic!("left injection remains the second field");
+        };
+        assert_eq!(Some(&Value::Unit), core.value(first_unit));
+        assert_eq!(Some(&Value::Unit), core.value(last_unit));
+        let negative = CmdPat::cut(
+            Polarity::Negative,
+            ProdPat::ctor("Unit", []),
+            ConsPat::top(),
+        );
+        let command = reify_command(&mut arena, &negative, &resolver)
+            .expect("reification preserves polarity without checking it");
+        assert_eq!("⟨() |− ★⟩", render_command(&arena, command));
+    }
+
+    /// Refusal order is left to right and arity precedes children; existing
+    /// nodes survive.
+    #[test]
+    fn resolution_refusals_preserve_order_and_arena_prefix()
+    {
+        let resolver = core_resolver();
+        let mut arena = CommandArena::new();
+        let prefix = CmdPat::cut(
+            Polarity::Positive,
+            ProdPat::ctor("Unit", []),
+            ConsPat::top(),
+        );
+        let kept = reify_command(&mut arena, &prefix, &resolver).expect("ground prefix");
+        let mark = arena.watermark();
+        for (pattern, expected) in [
+            (
+                CmdPat::cut(
+                    Polarity::Positive,
+                    ProdPat::ctor("Pair", [ProdPat::ctor("Unit", []), ProdPat::meta("hole")]),
+                    ConsPat::top(),
+                ),
+                ReifyRefusal::Metavariable(MetaVar::producer("hole")),
+            ),
+            (
+                CmdPat::cut(
+                    Polarity::Positive,
+                    ProdPat::ctor("Pair", [
+                        ProdPat::ctor("FirstMissing", []),
+                        ProdPat::ctor("LastMissing", []),
+                    ]),
+                    ConsPat::top(),
+                ),
+                ReifyRefusal::UnresolvedConstructor(Sym::new("FirstMissing")),
+            ),
+            (
+                CmdPat::cut(
+                    Polarity::Positive,
+                    ProdPat::ctor("Unit", [ProdPat::meta("too-late")]),
+                    ConsPat::top(),
+                ),
+                ReifyRefusal::ArityMismatch {
+                    constructor: Sym::new("Unit"),
+                    expected: ProducerArity::ZERO,
+                    found: ProducerArity::ONE,
+                },
+            ),
+            (
+                CmdPat::cut(
+                    Polarity::Positive,
+                    ProdPat::ctor("Pair", []),
+                    ConsPat::top(),
+                ),
+                ReifyRefusal::ArityMismatch {
+                    constructor: Sym::new("Pair"),
+                    expected: ProducerArity::TWO,
+                    found: ProducerArity::ZERO,
+                },
+            ),
+            (
+                CmdPat::cut(
+                    Polarity::Positive,
+                    ProdPat::ctor("Unit", []),
+                    ConsPat::frame("Unit", ConsPat::top()),
+                ),
+                ReifyRefusal::ArityMismatch {
+                    constructor: Sym::new("Unit"),
+                    expected: ProducerArity::ZERO,
+                    found: ProducerArity::ONE,
+                },
+            ),
+            (
+                CmdPat::cut(
+                    Polarity::Positive,
+                    ProdPat::ctor("Unit", []),
+                    ConsPat::frame("MissingFrame", ConsPat::op("later", [], ConsPat::top())),
+                ),
+                ReifyRefusal::UnresolvedConstructor(Sym::new("MissingFrame")),
+            ),
+        ] {
+            assert_eq!(
+                Err(expected),
+                reify_command(&mut arena, &pattern, &resolver)
+            );
+            assert_eq!(mark, arena.watermark());
+            assert_eq!("⟨() |+ ★⟩", render_command(&arena, kept));
+        }
     }
 }
