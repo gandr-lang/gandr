@@ -233,6 +233,25 @@ impl ModuleReport
 /// - witness: `module::tests::a_refused_signed_body_still_supplies_its_type`
 /// - witness: `module::tests::a_body_that_synthesised_nothing_supplies_no_type`
 /// - witness: `module::tests::a_later_declaration_reads_an_earlier_type`
+#[anodized::spec(
+    captures: depth = context.depth(gandr_core_term::Zone::Intuitionistic),
+    ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth && match ret {
+        | Verdict::Checked { declared, body, .. } => declaration.signature() == Maybe::Present(declared.id())
+            && declaration.body() == Maybe::Present(body)
+            && context.signature(declaration.constant()) == Maybe::Present(declared),
+        | Verdict::Synthesised { synthesised, body } => matches!(declaration.signature(), Maybe::Absent(_))
+            && declaration.body() == Maybe::Present(body)
+            && context.signature(declaration.constant()) == Maybe::Present(synthesised.produced()),
+        | Verdict::Owed(entry) => matches!(declaration.body(), Maybe::Absent(_))
+            && declaration.signature() == Maybe::Present(entry.absence().declared().id())
+            && entry.absence().constant() == declaration.constant()
+            && entry.absence().origin() == declaration.origin()
+            && context.signature(declaration.constant()) == Maybe::Present(entry.absence().declared()),
+        | Verdict::Refused(CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(constant) }) => constant == declaration.constant()
+            && matches!((declaration.signature(), declaration.body()), (Maybe::Absent(_), Maybe::Absent(_))),
+        | Verdict::Refused(_) => true,
+    },
+)]
 #[inline]
 #[must_use]
 pub fn check_declaration(
@@ -317,6 +336,15 @@ pub fn check_declaration(
 ///   position, and a refusal that stops the run before a later read.
 /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
 /// - witness: `module::tests::a_refusal_cuts_the_support_where_the_run_stopped`
+#[anodized::spec(ensures: |ret| {
+    let entries = ret.support().consulted();
+    entries.iter().zip(entries.iter().skip(1)).all(|(left, right)| left.constant() < right.constant())
+        && entries.iter().all(|entry| entry.answer() == if entry.constant() == declaration.constant() {
+            Maybe::Absent(crate::context::signature_table::Absent::Untyped)
+        } else {
+            context.signature(entry.constant())
+        })
+})]
 #[inline]
 #[must_use]
 pub fn check_declaration_supported(
@@ -350,6 +378,16 @@ pub fn check_declaration_supported(
 /// - witness: `module::tests::a_refusal_does_not_stop_the_run`
 /// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
 /// - witness: `module::tests::a_refusal_never_enters_the_ledger`
+#[anodized::spec(ensures: |ret| ret.judged.len() == declarations.len()
+    && ret.judged.iter().zip(declarations).all(|(judged, declaration)|
+        judged.constant == declaration.constant() && judged.origin == declaration.origin())
+    && ret.ledger.entries().iter().copied().eq(ret.judged.iter().filter_map(|judged| match judged.verdict {
+        | Verdict::Owed(entry) => Some(entry),
+        | Verdict::Checked { .. } | Verdict::Synthesised { .. } | Verdict::Refused(_) => None,
+    }))
+    && &ret.lifts == context.lifts()
+    && ret.definitions.iter().map(|(&constant, &body)| (constant, body))
+        .eq(context.definitions().definitions()))]
 #[inline]
 #[must_use]
 pub fn check_module(
@@ -387,6 +425,18 @@ pub fn check_module(
 /// - fails: [`CheckRefusal::NotSynthesisable`] naming the hole in synthesis
 ///   position.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — holes under a formed signature and without a signature
+///   expose either the exact owed type, position and origin or the named
+///   synthesis refusal; unformed signatures are rejected before this rule.
+/// - witness: `module::tests::each_combination_of_halves_gets_its_verdict`
+/// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
+#[anodized::spec(ensures: |ret| match direction {
+    | Direction::Check(expected) => ret.is_ok_and(|absence| absence.constant() == constant
+        && absence.declared() == expected && absence.origin() == origin),
+    | Direction::Synthesise => ret == Err(CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(constant) }),
+})]
 fn hole(
     direction: Direction<FormedValueType>,
     constant: ConstantIndex,
@@ -442,7 +492,23 @@ mod tests
     /// The declaration at `position`, its origin `position + 100`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: adding the origin offset one hundred does not overflow.
+    /// - ensures: the fixture position and the distinct origin are retained
+    ///   alongside the supplied signature and body.
+    /// - panics: the position lies outside the offset domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a module with all four declaration shapes observes
+    ///   verdicts and displaced origins, separating a lost half or confusion
+    ///   between admission position and diagnostic origin.
+    /// - witness: `module::tests::each_combination_of_halves_gets_its_verdict`
+    /// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
+    #[anodized::spec(
+        requires: position.0.checked_add(100).is_some(),
+        ensures: |ret| usize::from(ret.constant()) == position.0
+            && Some(usize::from(ret.origin())) == position.0.checked_add(100)
+            && ret.signature() == declared && ret.body() == defined,
+    )]
     fn declaration(
         position: At,
         declared: Maybe<ValueTypeId, signature::Absent>,
@@ -866,7 +932,19 @@ mod tests
     /// The answers of `supported`, positions and type ids, in order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: one position and underlying type-id answer per consultation,
+    ///   in the same order and retaining absence reasons.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — repeated, absent and interrupted consultation reads
+    ///   are compared with exact position/type pairs; the observer exposes
+    ///   wrong order, missing answers or loss of an absence.
+    /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
+    /// - witness: `module::tests::a_refusal_cuts_the_support_where_the_run_stopped`
+    #[anodized::spec(ensures: |ret| ret.iter().copied().eq(supported.support().consulted().iter()
+        .map(|entry| (entry.constant(), entry.answer().map(crate::formation::FormedValueType::id)))))]
     fn answers(
         supported: &super::Supported
     ) -> Vec<(

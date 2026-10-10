@@ -31,6 +31,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::Classifier;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::CoreArena;
@@ -72,7 +73,15 @@ impl FormedValueType
     ///   context minted.
     /// - ensures: [`Self::id`] returns `id`.
     /// - panics: none.
-    pub(crate) const fn derived(id: ValueTypeId) -> Self
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — literal, variable and application judgements expose
+    ///   the derived value types by subsequent checking. Wrong selected
+    ///   subtypes are separated for those forms, not arbitrary derivations.
+    /// - witness: `judgement::tests::every_value_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::a_dependent_application_instantiates_its_codomain_at_the_argument`
+    #[spec(ensures: |ret| ret.id() == id)]
+    pub(crate) fn derived(id: ValueTypeId) -> Self
     {
         Self(id)
     }
@@ -99,7 +108,15 @@ impl FormedCompType
     ///   instantiation of one.
     /// - ensures: [`Self::id`] returns `id`.
     /// - panics: none.
-    pub(crate) const fn derived(id: CompTypeId) -> Self
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — return, force, application and bind expose their
+    ///   derived computation types through synthesis and checking. The named
+    ///   forms separate a wrong selected result type, not every derivation.
+    /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    /// - witness: `judgement::tests::a_bind_synthesises_its_continuations_type`
+    #[spec(ensures: |ret| ret.id() == id)]
+    pub(crate) fn derived(id: CompTypeId) -> Self
     {
         Self(id)
     }
@@ -151,6 +168,11 @@ impl FormedCompType
 /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
 /// - witness: `context::tests::a_value_typed_hypothesis_does_not_become_a_type_variable`
 /// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
+#[spec(
+    captures: depth = context.depth(gandr_core_term::Zone::Intuitionistic),
+    ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth
+        && ret.is_ok_and(|formed| formed.id() == value_type) == ret.is_ok(),
+)]
 #[inline]
 pub fn form_value_type(
     context: &mut CheckingContext<'_>,
@@ -180,6 +202,11 @@ pub fn form_value_type(
 ///   each forming at its own classifier.
 /// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
 /// - witness: `formation::tests::the_dependent_arrow_forms_at_the_join_of_its_levels`
+#[spec(
+    captures: depth = context.depth(gandr_core_term::Zone::Intuitionistic),
+    ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth
+        && ret.is_ok_and(|formed| formed.id() == comp_type) == ret.is_ok(),
+)]
 #[inline]
 pub fn form_comp_type(
     context: &mut CheckingContext<'_>,
@@ -207,6 +234,7 @@ pub fn form_comp_type(
 /// - hypothesis: L1 — as [`form_value_type`].
 /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
 /// - witness: `formation::tests::universe_families_form_one_level_up_in_the_value_sort`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|classifier| classifier.sort == GroundSort::Value) == ret.is_ok())]
 #[inline]
 pub fn classify_value_type(
     context: &CheckingContext<'_>,
@@ -236,6 +264,7 @@ pub fn classify_value_type(
 /// - hypothesis: L3 — as [`form_comp_type`].
 /// - witness: `formation::tests::arrow_forms_at_the_join_of_its_premise_levels`
 /// - witness: `formation::tests::the_dependent_arrow_forms_at_the_join_of_its_levels`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|classifier| classifier.sort == GroundSort::Computation) == ret.is_ok())]
 #[inline]
 pub fn classify_comp_type(
     context: &CheckingContext<'_>,
@@ -284,6 +313,19 @@ enum Task
 ///   expected level by its own construction.
 /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
 /// - witness: `formation::tests::arrow_forms_at_the_join_of_its_premise_levels`
+#[spec(ensures: |ret| match root {
+    | TypeNode::Value(at) => match value_type_view(arena, at) {
+        | Ok(ValueTypeView::Integer | ValueTypeView::String | ValueTypeView::Unit) => ret == Ok(Level::zero()),
+        | Ok(ValueTypeView::Lift { target, .. } | ValueTypeView::Element { target, .. }) => ret.as_ref() == Ok(target),
+        | Err(refusal) => ret == Err(CheckRefusal::from(refusal)),
+        | Ok(_) => true,
+    },
+    | TypeNode::Computation(at) => match comp_type_view(arena, at) {
+        | Ok(CompTypeView::Element { target, .. }) => ret.as_ref() == Ok(target),
+        | Err(refusal) => ret == Err(CheckRefusal::from(refusal)),
+        | Ok(_) => true,
+    },
+})]
 #[inline]
 pub fn level_of(
     arena: &CoreArena,
@@ -356,6 +398,7 @@ mod tests
 {
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_term::Binders;
     use gandr_core_term::Classifier;
     use gandr_core_term::CompTypeId;
@@ -426,7 +469,18 @@ mod tests
     /// Form `value_type` in `context` and classify it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; invalid types are refused by formation.
+    /// - ensures: success supplies the value-sort classifier of the type.
+    /// - fails: formation or classification refuses the type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 over the bounded generated type programs, with L3
+    ///   former and dangling-id cases, compares the complete classifier or
+    ///   named refusal; this separates wrong sorts, levels and lost failures.
+    /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
+    /// - witness: `formation::tests::unsupported_forms_have_nominal_kinds`
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|classifier| classifier.sort == GroundSort::Value) == ret.is_ok())]
     fn classified(
         context: &mut CheckingContext<'_>,
         value_type: ValueTypeId,
@@ -439,7 +493,18 @@ mod tests
     /// Form `comp_type` in `context` and classify it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; invalid types are refused by formation.
+    /// - ensures: success supplies the computation-sort classifier.
+    /// - fails: formation or classification refuses the type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — returners, arrows and dependent arrows expose exact
+    ///   sorts and joined levels, separating swapped families and a dropped
+    ///   premise level; arbitrary generated computation trees are not claimed.
+    /// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
+    /// - witness: `formation::tests::the_dependent_arrow_forms_at_the_join_of_its_levels`
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|classifier| classifier.sort == GroundSort::Computation) == ret.is_ok())]
     fn classified_comp(
         context: &mut CheckingContext<'_>,
         comp_type: CompTypeId,
@@ -794,7 +859,20 @@ mod tests
     /// The step strategy.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: generated steps use the admitted eight constructors, with
+    ///   universe levels below three.
+    /// - panics: none.
+    /// - executable: none — the constructor holds no generated value; the
+    ///   obligation ranges over future generation and shrinking.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — programs of one to twenty-three generated steps over
+    ///   one to three universe binders are observed by their independently
+    ///   constructed classifier and by weakening; this bounds the generation
+    ///   evidence rather than claiming exhaustive random coverage.
+    /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
+    /// - witness: `formation::tests::weakening_preserves_formation`
     fn step() -> impl proptest::strategy::Strategy<Value = Step>
     {
         use proptest::prelude::Just;
@@ -826,7 +904,18 @@ mod tests
     /// A level a generated binder's universe stands at: zero to two.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: generated and shrunk levels are zero, one or two.
+    /// - panics: none.
+    /// - executable: none — no level is sampled until the returned strategy is
+    ///   run; construction cannot inspect all its future samples.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — lists of one to three bounded levels supply the
+    ///   universes used by the reference classifier and weakening properties;
+    ///   these separate an incorrect level interpretation, not distribution.
+    /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
+    /// - witness: `formation::tests::weakening_preserves_formation`
     fn small_level() -> impl proptest::strategy::Strategy<Value = LevelConstant>
     {
         use proptest::strategy::Strategy as _;
@@ -839,7 +928,23 @@ mod tests
     /// type.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: at most three binder levels below three and fewer than
+    ///   twenty-four steps, as produced by the property strategies.
+    /// - ensures: the root resolves in `arena` and its natural level equals the
+    ///   level computed alongside the postfix construction.
+    /// - panics: a level or binder index exceeds the bounded recipe domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — bounded postfix programs compare formation with their
+    ///   construction-derived level; weakening separates binder-offset changes.
+    ///   No arbitrary-depth or unbounded-level claim is made.
+    /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
+    /// - witness: `formation::tests::weakening_preserves_formation`
+    #[spec(
+        requires: levels.len() < 4 && steps.len() < 24
+            && levels.iter().all(|level| u64::from(*level) < 3),
+        ensures: |ret| super::level_of(arena, TypeNode::Value(ret.root)).as_ref() == Ok(&ret.level),
+    )]
     fn build(
         arena: &mut CoreArena,
         levels: &[LevelConstant],
@@ -919,7 +1024,21 @@ mod tests
     /// universe at its level.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: each supplied level denotes a universe.
+    /// - ensures: one intuitionistic binder is added per supplied level, in
+    ///   reverse input order so index zero reads the first supplied level.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — one to three generated binders and up to two fresh
+    ///   binders expose the classifier before and after weakening; wrong order
+    ///   or missing binders changes a decode or its level.
+    /// - witness: `formation::tests::every_type_has_exactly_one_classifier`
+    /// - witness: `formation::tests::weakening_preserves_formation`
+    #[spec(
+        captures: depth = usize::from(context.depth(Zone::Intuitionistic)),
+        ensures: usize::from(context.depth(Zone::Intuitionistic)).checked_sub(depth) == Some(levels.len()),
+    )]
     fn open_universes(
         context: &mut CheckingContext<'_>,
         levels: &[LevelConstant],

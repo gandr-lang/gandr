@@ -19,6 +19,7 @@
 //! and owes it, and with no signature it is refused, because nothing hands it a
 //! type.
 
+use anodized::spec;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
 use gandr_kernel_term::ConstantIndex;
@@ -103,14 +104,28 @@ impl Declaration
     /// The declaration at `constant` with these halves and this origin.
     ///
     /// # Specification
-    /// - requires: every id resolves in the arena the checking context reads,
-    ///   and `constant` is above every position already offered to that
-    ///   context; the checker refuses either breach rather than trusting it.
+    /// - requires: nothing; judgement checks arena membership and admission
+    ///   order rather than trusting the producer.
     /// - ensures: the accessors return exactly the arguments.
     /// - provides: the one constructor; every combination of present and absent
     ///   halves is representable, the body-less, signature-less one included,
     ///   because the hole rule answers it.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — over all four combinations of declaration halves,
+    ///   module verdicts distinguish checking, synthesis and the two hole
+    ///   directions; their origins separate lost provenance. Arena membership
+    ///   and admission order are obligations of judgement, not construction.
+    /// - witness: `module::tests::each_combination_of_halves_gets_its_verdict`
+    /// - witness: `module::tests::an_admission_out_of_order_is_refused`
+    #[spec(ensures: |ret| ret.origin.0 == origin.0
+        && matches!((ret.signature, signature),
+            (Maybe::Present(_), Maybe::Present(_))
+                | (Maybe::Absent(signature::Absent::Unsigned), Maybe::Absent(signature::Absent::Unsigned)))
+        && matches!((ret.body, body),
+            (Maybe::Present(_), Maybe::Present(_))
+                | (Maybe::Absent(body::Absent::Hole), Maybe::Absent(body::Absent::Hole))))]
     #[inline]
     #[must_use]
     pub const fn new(

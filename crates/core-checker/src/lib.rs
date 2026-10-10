@@ -141,6 +141,18 @@
 //! );
 //! ```
 //!
+//! # Executable contracts
+//!
+//! Nontrivial operations carry executable `#[spec]` predicates and bounded
+//! `# Adequacy` witnesses beside their implementation. The contracts of
+//! [`check_value`] and [`bridge::readmit`] cover scope, budget, remapping and
+//! publication; exemptions state the missing observation locally. Run the
+//! predicates with:
+//!
+//! ```sh
+//! RUSTFLAGS="--cfg anodized_panic" cargo test -p gandr-core-checker
+//! ```
+
 //! Each decision, with the alternative it was chosen over and what would
 //! reverse it, is in this crate's `README.md`.
 

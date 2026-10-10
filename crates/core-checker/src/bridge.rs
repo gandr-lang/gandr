@@ -325,6 +325,12 @@ impl Refusal
     ///   each payload-carrying variant differing in every field asserted to
     ///   classify alike.
     /// - witness: `bridge::tests::every_refusal_carries_its_pinned_class`
+    #[spec(ensures: |ret| match *self {
+        | Self::Withheld { .. } => matches!(ret, FailureClass::MalformedSource),
+        | Self::OutOfFragment { .. } => matches!(ret, FailureClass::Unrepresentable),
+        | Self::LinearVariable { .. } | Self::DanglingNode { .. } | Self::Cyclic { .. }
+            | Self::CertificateDeclined { .. } | Self::MachineInvariant => matches!(ret, FailureClass::EngineFault),
+    })]
     #[inline]
     #[must_use]
     pub const fn classify(&self) -> FailureClass
@@ -349,6 +355,17 @@ impl From<FragmentRefusal> for Refusal
     /// - ensures: each variant becomes the [`Refusal`] variant of the same
     ///   name, with the same payload.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unsupported type formers and a missing type id expose
+    ///   the exact refusal and payload; wrong family or diagnostic substitution
+    ///   changes the observed erasure, within those fragment boundaries.
+    /// - witness: `bridge::tests::every_former_outside_the_fragment_is_refused_by_name`
+    /// - witness: `bridge::tests::the_machine_faults_are_refused_exactly`
+    #[spec(ensures: |ret| match refusal {
+        | FragmentRefusal::DanglingNode { node } => ret == Self::DanglingNode { node },
+        | FragmentRefusal::OutOfFragment { at, former } => ret == Self::OutOfFragment { at, former },
+    })]
     #[inline]
     fn from(refusal: FragmentRefusal) -> Self
     {
@@ -532,6 +549,30 @@ impl ArtifactAudit
     ///   any [`Outcome::Defined`] or [`Outcome::Assumed`] entry, each ascending
     ///   and without repetition; entries that did not cross contribute nothing.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty ledgers, repeated uses of axioms and refused
+    ///   entries expose the exact sorted dependency union; missing, duplicated
+    ///   or spurious axioms change that audit. No unchecked admission is
+    ///   introduced.
+    /// - witness: `bridge::tests::an_empty_ledger_readmits_an_artifact_resting_on_no_axiom`
+    /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+    #[spec(ensures: |ret| ret.axioms.iter().zip(ret.axioms.iter().skip(1)).all(|(a,b)| a < b)
+        && ret.unchecked.iter().zip(ret.unchecked.iter().skip(1)).all(|(a,b)| a < b)
+        && readmitted.iter().all(|entry| match entry.outcome {
+            | Outcome::Defined { ref audit, .. } | Outcome::Assumed { ref audit, .. } =>
+                audit.axioms().iter().all(|at| ret.axioms.binary_search(at).is_ok())
+                && audit.unchecked_admissions().iter().all(|at| ret.unchecked.binary_search(at).is_ok()),
+            | _ => true,
+        })
+        && ret.axioms.len() <= readmitted.iter().map(|entry| match entry.outcome {
+            | Outcome::Defined { ref audit, .. } | Outcome::Assumed { ref audit, .. } => audit.axioms().len(),
+            | _ => 0,
+        }).sum::<usize>()
+        && ret.unchecked.len() <= readmitted.iter().map(|entry| match entry.outcome {
+            | Outcome::Defined { ref audit, .. } | Outcome::Assumed { ref audit, .. } => audit.unchecked_admissions().len(),
+            | _ => 0,
+        }).sum::<usize>())]
     fn of(readmitted: &[Readmitted]) -> Self
     {
         let mut axioms = BTreeSet::new();
@@ -631,7 +672,7 @@ impl Readmission
     ///
     /// # Specification
     /// - requires: `names` is keyed by module position, the positions the
-    ///   judged declarations carry.
+    ///   judged declarations carry; each crossed position indexes `admitted`.
     /// - ensures: the canonical encoding of the environment's arena and the
     ///   admitted declarations, in kernel admission order, each marked checked
     ///   and carrying the name `names` holds at its module position, or no name
@@ -649,6 +690,16 @@ impl Readmission
     ///   asserted at each declaration's exact name and the kernel position each
     ///   reference reads.
     /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
+    #[spec(
+        requires: self.readmitted.iter().all(|entry| match entry.outcome {
+            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } => self.admitted.get(usize::from(admitted.position())).is_some(),
+            | _ => true,
+        }),
+        captures: [before = names.len(), named = self.readmitted.iter().filter(|entry|
+            matches!(entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. }) && names.contains_key(&entry.constant)).count()],
+        ensures: before.checked_sub(names.len()) == Some(named) && self.readmitted.iter().all(|entry|
+            !matches!(entry.outcome, Outcome::Defined { .. } | Outcome::Assumed { .. }) || !names.contains_key(&entry.constant)),
+    )]
     #[inline]
     #[must_use]
     pub fn export(
@@ -926,6 +977,30 @@ enum Erased
 /// - fails: never; a refusal is [`Outcome::Refused`] and a rejection
 ///   [`Outcome::Rejected`].
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — definitions, owed axioms, refused erasures and declined
+///   certificates expose exact outcomes, receipts and environment contents;
+///   partial publication or confusing an axiom with a definition changes them.
+/// - witness: `bridge::tests::a_lowered_value_definition_admits`
+/// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+/// - witness: `bridge::tests::a_declining_certificate_faults_the_declaration`
+/// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
+#[spec(
+    captures: [entries = environment.entries().len(), exports = positions.exports.len(), crossed = positions.admitted.len()],
+    ensures: |ret| match ret.0 {
+        | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } =>
+            environment.entries().len().checked_sub(entries) == Some(1)
+            && positions.exports.len().checked_sub(exports) == Some(1)
+            && positions.admitted.len().checked_sub(crossed) == Some(1)
+            && positions.admitted.get(&constant) == Some(&admitted.position())
+            && matches!((offer, &ret.0), (Offer::Definition { .. }, &Outcome::Defined { .. }) | (Offer::Axiom { .. }, &Outcome::Assumed { .. }))
+            && ret.1.iter().all(|replay| replay.verdict() == KernelVerdict::Convertible),
+        | Outcome::Refused(_) | Outcome::Rejected(_) => environment.entries().len() == entries
+            && positions.exports.len() == exports && positions.admitted.len() == crossed,
+        | Outcome::Marked(_) | Outcome::Static => false,
+    },
+)]
 fn cross<Vouch>(
     environment: &mut Environment,
     arena: &mut CoreArena,
@@ -1009,11 +1084,25 @@ impl Positions
     /// crossed as `admitted` with kernel body `image`.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: `constant` follows every prior crossed or static definition;
+    ///   `admitted` is a fresh kernel position.
     /// - ensures: the crossed table answers `admitted`'s position for
     ///   `constant`; a decode of a code naming `constant` unfolds to `body`;
     ///   the kernel's replay may unfold `admitted` to `image`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — references to prior definitions and a defined code
+    ///   expose the remapped position and replayed unfolding; wrong-side bodies
+    ///   or retaining module positions change admission and certificate replay.
+    /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    #[spec(
+        requires: self.admitted.last_key_value().is_none_or(|(&last, _)| last < constant)
+            && !self.unfoldings.contains_key(&admitted.position()),
+        ensures: self.admitted.get(&constant) == Some(&admitted.position())
+            && self.unfoldings.get(&admitted.position()) == Some(&image),
+    )]
     fn define(
         &mut self,
         constant: ConstantIndex,
@@ -1031,10 +1120,25 @@ impl Positions
     /// `admitted`.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: `constant` follows every prior crossed or static definition;
+    ///   `admitted` is a fresh kernel position.
     /// - ensures: the crossed table answers `admitted`'s position for
     ///   `constant`, which stays rigid on both sides.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — owed declarations and their dependent uses expose
+    ///   axiom receipts and an exact artifact audit; inventing a definition for
+    ///   an axiom or failing to remap its position changes those observations.
+    /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+    /// - witness: `bridge::tests::a_body_naming_a_withheld_declaration_is_refused`
+    #[spec(
+        requires: self.admitted.last_key_value().is_none_or(|(&last, _)| last < constant)
+            && !self.unfoldings.contains_key(&admitted.position()),
+        captures: unfolded = self.unfoldings.len(),
+        ensures: self.admitted.get(&constant) == Some(&admitted.position())
+            && !self.unfoldings.contains_key(&admitted.position()) && self.unfoldings.len() == unfolded,
+    )]
     fn assume(
         &mut self,
         constant: ConstantIndex,
@@ -1095,7 +1199,41 @@ impl Positions
     /// the replay.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; unavailable constants become opaque replay nodes.
+    /// - ensures: the decision's kind, side and position survive; each constant
+    ///   uses its admitted position before its operator position, and every
+    ///   other trace node becomes opaque.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all decision variants over admitted, operator and
+    ///   unavailable nodes expose exact replay decisions; overlapping mappings
+    ///   separate admitted-position precedence, and side or position loss
+    ///   differs.
+    /// - witness: `bridge::tests::replay_decisions_preserve_shape_and_position_precedence`
+    #[spec(ensures: |ret| {
+        let mapped = |source: TraceNode, target: ReplayNode| match source {
+            | TraceNode::Constant(constant) => match self.admitted.get(&constant).copied()
+                .or_else(|| operators.get(&Unfolded::Definition(constant)).copied()) {
+                | Some(position) => target == ReplayNode::Constant(position),
+                | None => target == ReplayNode::Other,
+            },
+            | TraceNode::Value(_) | TraceNode::Computation(_) => target == ReplayNode::Other,
+        };
+        match (decision, ret) {
+            | (ConversionDecision::ReduceLeft { redex: a }, ConversionDecision::ReduceLeft { redex: b })
+            | (ConversionDecision::ReduceRight { redex: a }, ConversionDecision::ReduceRight { redex: b })
+            | (ConversionDecision::ConstShortcut { constant: a }, ConversionDecision::ConstShortcut { constant: b })
+            | (ConversionDecision::Unfold { constant: a }, ConversionDecision::Unfold { constant: b })
+            | (ConversionDecision::Postpone { constant: a }, ConversionDecision::Postpone { constant: b })
+            | (ConversionDecision::Force { thunk: a }, ConversionDecision::Force { thunk: b }) => mapped(a,b),
+            | (ConversionDecision::Freeze { constant: a, side: x }, ConversionDecision::Freeze { constant: b, side: y })
+            | (ConversionDecision::EtaExpand { side: x, variable: a }, ConversionDecision::EtaExpand { side: y, variable: b }) => x == y && mapped(a,b),
+            | (ConversionDecision::ComparedShared { left: a, right: b }, ConversionDecision::ComparedShared { left: c, right: d }) => mapped(a,c) && mapped(b,d),
+            | (ConversionDecision::NegativeSubgoal { position: a }, ConversionDecision::NegativeSubgoal { position: b }) => a == b,
+            | _ => false,
+        }
+    })]
     fn kernel_decision(
         &self,
         operators: &BTreeMap<Unfolded, ConstantIndex>,
@@ -1518,6 +1656,21 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ///
     /// # Errors
     /// - any [`Refusal`] [`Self::value_type`] or [`Self::value`] gives.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a checked definition and an owed declaration expose
+    ///   the exact offered family at admission; a refused declared type
+    ///   prevents the body from publishing. Wrong family or skipped erasure
+    ///   changes this.
+    /// - witness: `bridge::tests::a_lowered_value_definition_admits`
+    /// - witness: `bridge::tests::each_owed_hole_is_an_axiom_of_the_artifact`
+    /// - witness: `bridge::tests::a_refused_declaration_leaves_the_environment_unchanged`
+    #[spec(ensures: |ret| match (offer, ret) {
+        | (Offer::Definition { .. }, Ok(Erased::Definition { declared, body })) => target.value_type(declared).is_some() && target.value(body).is_some(),
+        | (Offer::Axiom { .. }, Ok(Erased::Axiom { declared })) => target.value_type(declared).is_some(),
+        | (_, Err(_)) => true,
+        | _ => false,
+    })]
     fn offer(
         &mut self,
         target: &mut TermArena,
@@ -1956,6 +2109,16 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// # Errors
     /// - any [`Refusal`] [`Self::erase`] gives.
     /// - [`Refusal::MachineInvariant`] — the machine produced another family.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — base, returner-containing and universe types expose
+    ///   their exact kernel formers or named refusal; returning an unrelated
+    ///   family or an unminted image changes this bounded erasure evidence.
+    /// - witness: `bridge::tests::returner_type_lowers`
+    /// - witness: `bridge::tests::a_sorted_universe_readmits_at_its_level`
+    /// - witness: `bridge::tests::the_machine_faults_are_refused_exactly`
+    #[spec(ensures: |ret| match ret { | Ok(image) => target.value_type(image).is_some()
+        && self.reached().value_types.get(&root) == Some(&Image::Erased(image)), | Err(_) => true })]
     fn value_type(
         &mut self,
         target: &mut TermArena,
@@ -1983,6 +2146,18 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// # Errors
     /// - any [`Refusal`] [`Self::erase`] gives.
     /// - [`Refusal::MachineInvariant`] — the machine produced another family.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — literals, bound variables, named constants and shared
+    ///   subterms expose exact kernel images or refusal; wrong remapping,
+    ///   duplicated sharing and an unminted result differ on these finite
+    ///   forms.
+    /// - witness: `bridge::tests::returning_a_literal_lowers`
+    /// - witness: `bridge::tests::a_bound_variable_resolves_to_a_de_bruijn_index`
+    /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    #[spec(ensures: |ret| match ret { | Ok(image) => target.value(image).is_some()
+        && self.reached().values.get(&root) == Some(&Image::Erased(image)), | Err(_) => true })]
     fn value(
         &mut self,
         target: &mut TermArena,
@@ -2045,6 +2220,16 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - witness: `bridge::tests::an_unbound_sealed_atom_is_refused`
     /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
     /// - witness: `bridge::tests::the_machine_faults_are_refused_exactly`
+    #[spec(ensures: |ret| match ret {
+        | Ok(image) => self.frames.is_empty() && match (root,image) {
+            | (CoreNode::Term(TermNode::Value(at)), AnyNode::Value(held)) => target.value(held).is_some() && self.reached().values.get(&at) == Some(&Image::Erased(held)),
+            | (CoreNode::Term(TermNode::Computation(at)), AnyNode::Computation(held)) => target.computation(held).is_some() && self.reached().computations.get(&at) == Some(&Image::Erased(held)),
+            | (CoreNode::Type(TypeNode::Value(at)), AnyNode::ValueType(held)) => target.value_type(held).is_some() && self.reached().value_types.get(&at) == Some(&Image::Erased(held)),
+            | (CoreNode::Type(TypeNode::Computation(at)), AnyNode::CompType(held)) => target.comp_type(held).is_some() && self.reached().comp_types.get(&at) == Some(&Image::Erased(held)),
+            | _ => false,
+        },
+        | Err(_) => true,
+    })]
     fn erase(
         &mut self,
         target: &mut TermArena,
@@ -2072,6 +2257,27 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     ///   first child.
     /// - fails: as [`Self::erase`], for the node itself.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each term/type family, a shared child and recursive
+    ///   back-edges expose exact images or cyclic faults; dispatching to
+    ///   another family or losing the continuation changes these observations.
+    /// - witness: `bridge::tests::returning_a_literal_lowers`
+    /// - witness: `bridge::tests::returner_type_lowers`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
+    #[spec(
+        captures: before = self.frames.len(),
+        ensures: |ret| self.frames.len() >= before && match ret {
+            | Ok(Step::Descend(_)) => self.frames.len() > before,
+            | Ok(Step::Ascend(image)) => matches!((node,image),
+                (CoreNode::Term(TermNode::Value(_)), AnyNode::Value(_))
+                | (CoreNode::Term(TermNode::Computation(_)), AnyNode::Computation(_))
+                | (CoreNode::Type(TypeNode::Value(_)), AnyNode::ValueType(_))
+                | (CoreNode::Type(TypeNode::Computation(_)), AnyNode::CompType(_))),
+            | Err(_) => true,
+        },
+    )]
     fn descend(
         &mut self,
         target: &mut TermArena,
@@ -2264,6 +2470,23 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - fails: [`Refusal::Cyclic`] for an open computation;
     ///   [`Refusal::DanglingNode`]; [`Refusal::OutOfFragment`] for a case.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted computation formers, a shared child and a
+    ///   back-edge expose exact images or cyclic refusal. Missing open marks,
+    ///   wrong cache hits and absent continuation frames change these answers.
+    /// - witness: `bridge::tests::returning_a_literal_lowers`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
+    #[spec(
+        captures: [before = self.frames.len(), held = self.reached().computations.get(&at).copied()],
+        ensures: |ret| match held {
+            | Some(Image::Erased(image)) => ret == Ok(Step::Ascend(AnyNode::Computation(image))) && self.frames.len() == before,
+            | Some(Image::Open) => ret == Err(Refusal::Cyclic { node: CoreNode::Term(TermNode::Computation(at)) }) && self.frames.len() == before,
+            | None => ret.is_err() || (matches!(ret, Ok(Step::Descend(_))) && self.frames.len().checked_sub(before) == Some(1)
+                && self.reached().computations.get(&at) == Some(&Image::Open)),
+        },
+    )]
     fn descend_computation(
         &mut self,
         at: ComputationId,
@@ -2315,6 +2538,20 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - fails: [`Refusal::Cyclic`] for an open value type; whatever the view
     ///   or the decode refuses, converted.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — atom, compound, universe and decode types expose
+    ///   their exact kernel images; a value-type back-edge is refused. Wrong
+    ///   family, absent memo publication or dropped cycle detection differs.
+    /// - witness: `bridge::tests::a_sorted_universe_readmits_at_its_level`
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Step::Ascend(AnyNode::ValueType(_)) | Step::Descend(_)) => self.reached().value_types.contains_key(&at),
+        | Ok(Step::Ascend(_)) => false,
+        | Err(Refusal::Cyclic { node }) => node == CoreNode::Type(TypeNode::Value(at)),
+        | Err(_) => true,
+    })]
     fn descend_value_type(
         &mut self,
         target: &mut TermArena,
@@ -2388,6 +2625,21 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// - fails: [`Refusal::Cyclic`] for an open computation type; whatever the
     ///   view or the decode refuses, converted.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — returners, arrows and decodes expose their exact
+    ///   kernel family; a computation-type back-edge is refused. Wrong family,
+    ///   missing memo publication and lost cycle detection change these
+    ///   results.
+    /// - witness: `bridge::tests::returner_type_lowers`
+    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
+    #[spec(ensures: |ret| match ret {
+        | Ok(Step::Ascend(AnyNode::CompType(_)) | Step::Descend(_)) => self.reached().comp_types.contains_key(&at),
+        | Ok(Step::Ascend(_)) => false,
+        | Err(Refusal::Cyclic { node }) => node == CoreNode::Type(TypeNode::Computation(at)),
+        | Err(_) => true,
+    })]
     fn descend_comp_type(
         &mut self,
         target: &mut TermArena,
@@ -2802,7 +3054,17 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// Record `erased` as the image of the value `at`, and ascend it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the image belongs to the caller's target arena.
+    /// - ensures: the current mode records this exact image and ascends it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted formers and shared descendants expose exact
+    ///   kernel images and preserved sharing; storing the wrong image or
+    ///   returning another family changes these observations.
+    /// - witness: `bridge::tests::returning_a_literal_lowers`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    #[spec(ensures: |ret| self.reached().values.get(&at) == Some(&Image::Erased(erased)) && ret == Step::Ascend(AnyNode::Value(erased)))]
     fn erased_value(
         &mut self,
         at: ValueId,
@@ -2816,7 +3078,16 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// Record `erased` as the image of the computation `at`, and ascend it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the image belongs to the caller's target arena.
+    /// - ensures: the current mode records this exact image and ascends it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted formers and shared descendants expose exact
+    ///   kernel images and preserved sharing; storing the wrong image or
+    ///   returning another family changes these observations.
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    #[spec(ensures: |ret| self.reached().computations.get(&at) == Some(&Image::Erased(erased)) && ret == Step::Ascend(AnyNode::Computation(erased)))]
     fn erased_computation(
         &mut self,
         at: ComputationId,
@@ -2830,7 +3101,17 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// Record `erased` as the image of the value type `at`, and ascend it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the image belongs to the caller's target arena.
+    /// - ensures: the current mode records this exact image and ascends it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted formers and shared descendants expose exact
+    ///   kernel images and preserved sharing; storing the wrong image or
+    ///   returning another family changes these observations.
+    /// - witness: `bridge::tests::every_checked_static_declaration_is_readmitted`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    #[spec(ensures: |ret| self.reached().value_types.get(&at) == Some(&Image::Erased(erased)) && ret == Step::Ascend(AnyNode::ValueType(erased)))]
     fn erased_value_type(
         &mut self,
         at: ValueTypeId,
@@ -2845,7 +3126,17 @@ impl<'source, 'positions> Erasure<'source, 'positions>
     /// it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the image belongs to the caller's target arena.
+    /// - ensures: the current mode records this exact image and ascends it.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted formers and shared descendants expose exact
+    ///   kernel images and preserved sharing; storing the wrong image or
+    ///   returning another family changes these observations.
+    /// - witness: `bridge::tests::returner_type_lowers`
+    /// - witness: `bridge::tests::a_shared_subterm_is_erased_once`
+    #[spec(ensures: |ret| self.reached().comp_types.get(&at) == Some(&Image::Erased(erased)) && ret == Step::Ascend(AnyNode::CompType(erased)))]
     fn erased_comp_type(
         &mut self,
         at: CompTypeId,
@@ -2896,6 +3187,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_nbe::TraceNode;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
@@ -2992,7 +3284,17 @@ mod tests
     /// plus one hundred, so an origin is never mistaken for a position.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the position plus one hundred fits in `usize`.
+    /// - ensures: that sum, preserving the distinction from a module position.
+    /// - panics: the sum overflows.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 over bounded generated modules observes each exact
+    ///   declaration origin after readmission; replacing the offset with a
+    ///   module position or dropping the origin changes the per-declaration
+    ///   comparison.
+    /// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
+    #[spec(requires: position.0.checked_add(100).is_some(), ensures: |ret| position.0.checked_add(100) == Some(usize::from(ret)))]
     fn origin(position: At) -> OriginToken
     {
         OriginToken::from(position.0.checked_add(100).unwrap())
@@ -3001,7 +3303,21 @@ mod tests
     /// The declaration at `position` with these halves.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the position plus one hundred fits in `usize`.
+    /// - ensures: the supplied halves, position and offset origin.
+    /// - panics: the origin offset overflows.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 over bounded generated typed and free terms observes
+    ///   each declaration outcome, hole and origin; dropping a half or
+    ///   confusing source and kernel positions changes the independent
+    ///   admission checks.
+    /// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
+    #[spec(
+        requires: position.0.checked_add(100).is_some(),
+        ensures: |ret| ret.constant() == ConstantIndex::from(position.0) && ret.signature() == declared
+            && ret.body() == defined && position.0.checked_add(100) == Some(usize::from(ret.origin())),
+    )]
     fn declaration(
         position: At,
         declared: Maybe<ValueTypeId, signature::Absent>,
@@ -3026,7 +3342,17 @@ mod tests
     /// Judge `module` over `arena`, then readmit what the judgement accepted.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the module's ids belong to the supplied arena.
+    /// - ensures: one judgement and one located readmission per declaration.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 over bounded typed and free-term modules compares
+    ///   judgement and readmission outcomes, origins and owed axioms; losing or
+    ///   reordering declarations changes the per-entry oracle.
+    /// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
+    #[spec(ensures: |ret| ret.0.judged().len() == module.len() && ret.1.readmitted().len() == module.len()
+        && ret.1.readmitted().iter().zip(module).all(|(entry,source)| entry.constant() == source.constant() && entry.origin() == source.origin()))]
     fn judge_and_readmit(
         arena: &mut CoreArena,
         module: &[Declaration],
@@ -3044,7 +3370,25 @@ mod tests
     /// declaration crossed.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; absent or cyclic nodes are refused.
+    /// - ensures: a successful image belongs to the returned fresh arena and to
+    ///   the root's family; no constant has a crossed declaration.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite former tables, missing ids and back-edges
+    ///   observe exact target nodes and refusals; dropping the arena or
+    ///   selecting a different node family changes these observations.
+    /// - witness: `bridge::tests::returning_a_literal_lowers`
+    /// - witness: `bridge::tests::returner_type_lowers`
+    /// - witness: `bridge::tests::every_recursive_node_family_refuses_a_back_edge`
+    #[spec(ensures: |ret| match ret.1 {
+        | Ok(AnyNode::Value(at)) => matches!(root, CoreNode::Term(TermNode::Value(_))) && ret.0.value(at).is_some(),
+        | Ok(AnyNode::Computation(at)) => matches!(root, CoreNode::Term(TermNode::Computation(_))) && ret.0.computation(at).is_some(),
+        | Ok(AnyNode::ValueType(at)) => matches!(root, CoreNode::Type(TypeNode::Value(_))) && ret.0.value_type(at).is_some(),
+        | Ok(AnyNode::CompType(at)) => matches!(root, CoreNode::Type(TypeNode::Computation(_))) && ret.0.comp_type(at).is_some(),
+        | Err(_) => true,
+    })]
     fn erase(
         arena: &mut CoreArena,
         root: CoreNode,
@@ -3066,7 +3410,17 @@ mod tests
     /// What each certificate `entry` replayed unfolded, beside its verdict.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: every recorded unfolding and verdict, in certificate order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — defined codes and two instances of one static
+    ///   definition expose exact replay sequences; omission, reversal or
+    ///   verdict substitution changes those certificate observations.
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
+    #[spec(ensures: |ret| ret.len() == entry.certificates().len() && ret.iter().zip(entry.certificates()).all(|(pair,replay)| *pair == (replay.unfolded(),replay.verdict())))]
     fn steps(entry: &Readmitted) -> Vec<(Unfolded, KernelVerdict)>
     {
         entry
@@ -3091,7 +3445,24 @@ mod tests
     /// The kernel position the entry at `position` crossed at.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the indexed entry exists and crossed as a definition or
+    ///   axiom.
+    /// - ensures: its admitted kernel position, not its module position.
+    /// - panics: the entry is absent or did not cross.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — marked entries before crossed ones separate module
+    ///   from kernel positions; exact references in the decoded artifact expose
+    ///   using the wrong coordinate or choosing another receipt.
+    /// - witness: `bridge::tests::a_constant_resolves_to_its_readmitted_position`
+    /// - witness: `bridge::tests::an_export_names_each_crossed_declaration_at_its_position`
+    #[spec(
+        requires: readmission.readmitted().get(position.0).is_some_and(|entry| matches!(entry.outcome(), Outcome::Defined { .. } | Outcome::Assumed { .. })),
+        ensures: |ret| readmission.readmitted().get(position.0).is_some_and(|entry| match *entry.outcome() {
+            | Outcome::Defined { admitted, .. } | Outcome::Assumed { admitted, .. } => ret == admitted.position(),
+            | _ => false,
+        }),
+    )]
     fn crossed_at(
         readmission: &Readmission,
         position: At,
@@ -3113,7 +3484,24 @@ mod tests
     /// exactly those axioms, so its audit is empty exactly when the ledger is.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the report and readmission concern the same module.
+    /// - ensures: success only when every acceptance, refusal, origin and owed
+    ///   axiom agrees, with no unchecked admission.
+    /// - fails: an assertion reports the first differing observation.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 over bounded typed, free, function and universe modules
+    ///   compares all located outcomes and axioms against judgement; missing,
+    ///   reordered or misclassified readmissions differ. Static-only
+    ///   declarations are outside this helper's accepted-module domain.
+    /// - witness: `bridge::tests::every_fixture_the_checker_accepts_is_readmitted`
+    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    /// - witness: `bridge::tests::every_checked_universe_declaration_is_readmitted`
+    #[spec(ensures: |ret| ret.is_err() || (readmission.readmitted().len() == report.judged().len()
+        && readmission.readmitted().iter().zip(report.judged()).all(|(entry,judged)| entry.constant() == judged.constant() && entry.origin() == judged.origin())
+        && readmission.audit().unchecked_admissions().is_empty()
+        && readmission.audit().axioms().is_empty() == report.ledger().entries().is_empty()))]
     fn assert_crossed(
         report: &ModuleReport,
         readmission: &Readmission,
@@ -4361,6 +4749,134 @@ mod tests
         );
     }
 
+    #[test]
+    fn replay_decisions_preserve_shape_and_position_precedence()
+    {
+        use gandr_core_nbe::TraceNode;
+        use gandr_kernel_conversion_trace::ConversionDecision;
+        use gandr_kernel_conversion_trace::ConversionSide;
+        use gandr_kernel_conversion_trace::SubgoalPosition;
+        use gandr_kernel_core::ReplayNode;
+
+        let crossed = ConstantIndex::from(0_usize);
+        let static_only = ConstantIndex::from(1_usize);
+        let missing = ConstantIndex::from(2_usize);
+        let admitted = ConstantIndex::from(7_usize);
+        let operator = ConstantIndex::from(9_usize);
+        let mut positions = Positions::default();
+        positions.admitted.insert(crossed, admitted);
+        let operators = BTreeMap::from([
+            (Unfolded::Definition(crossed), ConstantIndex::from(11_usize)),
+            (Unfolded::Definition(static_only), operator),
+        ]);
+        let mut arena = gandr_core_nbe::DomainArena::new();
+        let unit = arena.value_unit(gandr_core_nbe::TermFace::Reduced);
+        let returned = arena.comp_return(unit, gandr_core_nbe::CompTermFace::Reduced);
+        let nodes = [
+            (TraceNode::Constant(crossed), ReplayNode::Constant(admitted)),
+            (
+                TraceNode::Constant(static_only),
+                ReplayNode::Constant(operator),
+            ),
+            (TraceNode::Constant(missing), ReplayNode::Other),
+            (TraceNode::Value(unit), ReplayNode::Other),
+            (TraceNode::Computation(returned), ReplayNode::Other),
+        ];
+        for (source, image) in nodes {
+            let decisions = [
+                (
+                    ConversionDecision::ReduceLeft { redex: source },
+                    ConversionDecision::ReduceLeft { redex: image },
+                ),
+                (
+                    ConversionDecision::ReduceRight { redex: source },
+                    ConversionDecision::ReduceRight { redex: image },
+                ),
+                (
+                    ConversionDecision::ConstShortcut { constant: source },
+                    ConversionDecision::ConstShortcut { constant: image },
+                ),
+                (
+                    ConversionDecision::Unfold { constant: source },
+                    ConversionDecision::Unfold { constant: image },
+                ),
+                (
+                    ConversionDecision::Postpone { constant: source },
+                    ConversionDecision::Postpone { constant: image },
+                ),
+                (
+                    ConversionDecision::Freeze {
+                        constant: source,
+                        side: ConversionSide::Right,
+                    },
+                    ConversionDecision::Freeze {
+                        constant: image,
+                        side: ConversionSide::Right,
+                    },
+                ),
+                (
+                    ConversionDecision::EtaExpand {
+                        side: ConversionSide::Left,
+                        variable: source,
+                    },
+                    ConversionDecision::EtaExpand {
+                        side: ConversionSide::Left,
+                        variable: image,
+                    },
+                ),
+                (
+                    ConversionDecision::Force { thunk: source },
+                    ConversionDecision::Force { thunk: image },
+                ),
+                (
+                    ConversionDecision::ComparedShared {
+                        left: source,
+                        right: TraceNode::Constant(missing),
+                    },
+                    ConversionDecision::ComparedShared {
+                        left: image,
+                        right: ReplayNode::Other,
+                    },
+                ),
+            ];
+            for (decision, expected) in decisions {
+                assert_eq!(positions.kernel_decision(&operators, decision), expected);
+            }
+        }
+        let position = SubgoalPosition::from(3_u32);
+        assert_eq!(
+            positions.kernel_decision(&operators, ConversionDecision::NegativeSubgoal { position }),
+            ConversionDecision::NegativeSubgoal { position }
+        );
+    }
+
+    #[test]
+    fn every_recursive_node_family_refuses_a_back_edge()
+    {
+        let mut foreign = CoreArena::new();
+        let foreign_unit = foreign.value_unit();
+        let comp_ahead = foreign.computation_return(foreign_unit);
+        let type_ahead = foreign.value_type_unit();
+        let mut arena = CoreArena::new();
+        let thunk = arena.value_thunk(comp_ahead);
+        let force = arena.computation_force(thunk);
+        let returner = arena.comp_type_returner(type_ahead);
+        let suspended = arena.value_type_thunk(returner);
+        assert_eq!(force, comp_ahead);
+        assert_eq!(suspended, type_ahead);
+        for root in [
+            CoreNode::Term(TermNode::Value(thunk)),
+            CoreNode::Term(TermNode::Computation(force)),
+            CoreNode::Type(TypeNode::Value(suspended)),
+            CoreNode::Type(TypeNode::Computation(returner)),
+        ] {
+            assert_eq!(
+                erase(&mut arena, root).1,
+                Err(Refusal::Cyclic { node: root })
+            );
+        }
+    }
+
     /// The small value universe `Type`.
     ///
     /// # Specification
@@ -4373,7 +4889,23 @@ mod tests
     /// `\X. El X * El X`, an operator of one parameter over small codes.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: one static lambda quoting a product of two decodes of its
+    ///   bound variable, at de Bruijn zero and level zero.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one operator at two atom-code instances exposes two
+    ///   distinct normalized product bodies and replayed certificates; wrong
+    ///   binder index, level or product operand changes these observations.
+    /// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
+    #[spec(ensures: |ret| {
+        let Some(&gandr_core_term::Value::StaticLambda(body)) = arena.value(ret) else { return false; };
+        let Some(&gandr_core_term::Value::Quote(product)) = arena.value(body) else { return false; };
+        let Some(&ValueType::Product(first,second)) = arena.value_type(product) else { return false; };
+        first == second && matches!(arena.value_type(first), Some(ValueType::Element { code, target })
+            if bool::from(target.is_zero()) && matches!(arena.value(*code), Some(gandr_core_term::Value::Variable { zone: Zone::Intuitionistic, index }) if *index == DeBruijnIndex::from(0_u32)))
+    })]
     fn pair_operator(arena: &mut CoreArena) -> ValueId
     {
         let bound = arena.value_variable(Zone::Intuitionistic, DeBruijnIndex::from(0_u32));
@@ -4387,7 +4919,17 @@ mod tests
     /// order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the readmission is a valid export.
+    /// - ensures: one canonical content digest per defined body, in export
+    ///   order; axioms and refused declarations contribute none.
+    /// - panics: the export cannot be decoded.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two instances of one static operator expose exact
+    ///   expected normalized body digests; hashing a signature, dropping a body
+    ///   or retaining an unreduced application changes those comparisons.
+    /// - witness: `bridge::tests::one_static_definition_at_two_instances_records_two_certificates`
+    #[spec(ensures: |ret| ret.len() == readmission.admitted.iter().filter(|declaration| matches!(declaration.content(), DeclarationContent::Def { .. })).count())]
     fn exported_bodies(readmission: &Readmission) -> Vec<ContentDigest>
     {
         let artifact = decode(readmission.export(BTreeMap::new()).as_image()).unwrap();
@@ -5091,7 +5633,20 @@ mod tests
     /// The code recipe strategy.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: recipes choose one of seven shapes, levels below three, bumps
+    ///   below two and an arbitrary byte selecting an earlier code.
+    /// - panics: none.
+    /// - executable: none — constructing a strategy cannot observe its future
+    ///   draws or shrink tree; generated recipes are checked by the builder.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — one to five generated recipes build checked modules
+    ///   and replayable certificates; wrong sort, natural level or
+    ///   earlier-reference policy changes acceptance or replay. Sampling is not
+    ///   an exhaustive claim about random draws or shrinking.
+    /// - witness: `bridge::tests::every_checked_universe_declaration_is_readmitted`
+    /// - witness: `bridge::tests::every_readmission_certificate_replays`
     fn code_recipe() -> impl proptest::strategy::Strategy<Value = CodeRecipe>
     {
         use proptest::prelude::any;
@@ -5113,7 +5668,27 @@ mod tests
     /// The second list is the positions of the declarations over decodes.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: fewer than six recipes, each with shape below seven, level
+    ///   below three and bump below two.
+    /// - ensures: one declared code per recipe followed by one declaration
+    ///   using each decode, consecutively numbered and located by the returned
+    ///   use positions; every declared type and present body resolves.
+    /// - panics: none within the bounded recipe domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — one to five bounded code recipes expose complete
+    ///   readmission, exact axioms and convertible certificates; wrong decode
+    ///   family, numbering, level or reference changes these observations.
+    /// - witness: `bridge::tests::every_checked_universe_declaration_is_readmitted`
+    /// - witness: `bridge::tests::every_readmission_certificate_replays`
+    #[spec(
+        requires: recipes.len() < 6 && recipes.iter().all(|recipe| recipe.shape < 7 && recipe.level < 3 && recipe.bump < 2),
+        ensures: |ret| ret.0.len() == recipes.len().saturating_mul(2) && ret.1.len() == recipes.len()
+            && ret.1.iter().enumerate().all(|(index,at)| at.0 == recipes.len().saturating_add(index))
+            && ret.0.iter().enumerate().all(|(index,declaration)| declaration.constant() == ConstantIndex::from(index)
+                && matches!(declaration.signature(), Maybe::Present(ty) if arena.value_type(ty).is_some())
+                && match declaration.body() { | Maybe::Present(body) => arena.value(body).is_some(), | Maybe::Absent(_) => true }),
+    )]
     fn universe_module(
         arena: &mut CoreArena,
         recipes: &[CodeRecipe],
