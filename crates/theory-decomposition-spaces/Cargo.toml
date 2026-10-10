@@ -1,0 +1,28 @@
+[package]
+name = "gandr-theory-decomposition-spaces"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Two-mode certificate composition and bounded backward pathway queries"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["certificates", "gandr", "no-std", "rewriting"]
+categories = ["mathematics", "no-std"]
+publish.workspace = true
+
+[dependencies]
+anodized.workspace = true
+gandr-theory-cell-complexes.workspace = true
+gandr-theory-coherent-resolutions.workspace = true
+gandr-theory-deep-inference.workspace = true
+gandr-theory-graphs.workspace = true
+quenchant-shape.workspace = true
+
+[dev-dependencies]
+gandr-theory-cell-complexes-tools.workspace = true
+gandr-theory-computads.workspace = true
+gandr-theory-levitation.workspace = true
+
+[lints]
+workspace = true

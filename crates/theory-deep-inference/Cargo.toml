@@ -28,6 +28,7 @@ quenchant-shape.workspace = true
 
 [dev-dependencies]
 gandr-theory-cell-complexes-tools.workspace = true
+gandr-theory-decomposition-spaces.workspace = true
 proptest.workspace = true
 
 [lints]

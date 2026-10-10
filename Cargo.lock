@@ -836,6 +836,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "gandr-theory-decomposition-spaces"
+version = "0.0.0"
+dependencies = [
+ "anodized",
+ "gandr-theory-cell-complexes",
+ "gandr-theory-cell-complexes-tools",
+ "gandr-theory-coherent-resolutions",
+ "gandr-theory-computads",
+ "gandr-theory-deep-inference",
+ "gandr-theory-graphs",
+ "gandr-theory-levitation",
+ "quenchant-shape",
+]
+
+[[package]]
 name = "gandr-theory-deep-inference"
 version = "0.0.0"
 dependencies = [
@@ -843,6 +858,7 @@ dependencies = [
  "gandr-theory-cell-complexes",
  "gandr-theory-cell-complexes-tools",
  "gandr-theory-coherent-resolutions",
+ "gandr-theory-decomposition-spaces",
  "proptest",
  "quenchant-shape",
 ]
