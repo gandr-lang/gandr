@@ -37,6 +37,7 @@ members = [
   "crates/theory-circuit-algebras",
   "crates/theory-coherent-resolutions",
   "crates/theory-computads",
+  "crates/theory-decomposition-spaces",
   "crates/theory-deep-inference",
   "crates/theory-graphs",
   "crates/theory-levitation",
@@ -120,6 +121,7 @@ default-features = false
 # - theory-circuit-algebras
 # - theory-coherent-resolutions
 # - theory-computads
+# - theory-decomposition-spaces
 # - theory-deep-inference
 # - theory-graphs
 # - theory-levitation
@@ -482,6 +484,7 @@ path = "crates/surface-tui"
 # - theory-circuit-algebras
 # - theory-coherent-resolutions
 # - theory-computads
+# - theory-decomposition-spaces
 # - theory-deep-inference
 [workspace.dependencies.gandr-theory-cell-complexes]
 path = "crates/theory-cell-complexes"
@@ -491,6 +494,7 @@ path = "crates/theory-cell-complexes"
 # consumers:
 # - theory-coherent-resolutions (dev)
 # - theory-computads (dev)
+# - theory-decomposition-spaces (dev)
 # - theory-deep-inference (dev)
 [workspace.dependencies.gandr-theory-cell-complexes-tools]
 path = "crates/theory-cell-complexes-tools"
@@ -506,15 +510,35 @@ path = "crates/theory-circuit-algebras"
 # replayable coherence certificates, budgeted completion.
 # consumers:
 # - theory-computads
+# - theory-decomposition-spaces
 # - theory-deep-inference
 [workspace.dependencies.gandr-theory-coherent-resolutions]
 path = "crates/theory-coherent-resolutions"
+
+# Description elaboration into rewriting cells.
+# features:
+# - none: the certificate fixtures use the alloc-only elaborator.
+# consumers:
+# - theory-decomposition-spaces (dev)
+[workspace.dependencies.gandr-theory-computads]
+path = "crates/theory-computads"
+default-features = false
+
+# Certificate composition and bounded backward pathway queries.
+# features:
+# - none: alloc-only theory machinery.
+# consumers:
+# - theory-deep-inference (dev)
+[workspace.dependencies.gandr-theory-decomposition-spaces]
+path = "crates/theory-decomposition-spaces"
+default-features = false
 
 # The identity relations on derivations: earned shift equivalence and the
 # guard it is earned against, the causal order, the certificate normal form.
 # consumers:
 # - core-checker
 # - theory-computads
+# - theory-decomposition-spaces
 [workspace.dependencies.gandr-theory-deep-inference]
 path = "crates/theory-deep-inference"
 
@@ -522,6 +546,7 @@ path = "crates/theory-deep-inference"
 # consumers:
 # - surface-grammar
 # - surface-parser
+# - theory-decomposition-spaces
 [workspace.dependencies.gandr-theory-graphs]
 path = "crates/theory-graphs"
 
@@ -529,6 +554,7 @@ path = "crates/theory-graphs"
 # occurrence record, bridge arities.
 # consumers:
 # - theory-computads
+# - theory-decomposition-spaces (dev)
 [workspace.dependencies.gandr-theory-levitation]
 path = "crates/theory-levitation"
 
@@ -624,6 +650,7 @@ default-features = false
 # - theory-coherent-resolutions
 # - theory-computads
 # - theory-deep-inference
+# - theory-decomposition-spaces
 # - theory-levitation
 # - theory-nominal-automata
 # - theory-sites

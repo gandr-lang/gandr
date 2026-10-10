@@ -646,3 +646,61 @@ fn overlap_support_batches_replay_along_their_plans()
         "the `f` cluster joins in both batches, two paths each; the other clusters diverge"
     );
 }
+
+/// A consumer composes two certificates and certifies their exact combined
+/// path.
+#[test]
+fn composed_tracelets_replay_and_normalize_through_the_public_algebra()
+{
+    use gandr_theory_coherent_resolutions::derive_fused;
+    use gandr_theory_decomposition_spaces::compose_directed;
+    use gandr_theory_decomposition_spaces::compose_invertible;
+    use gandr_theory_decomposition_spaces::pathway::TargetLast;
+    use gandr_theory_decomposition_spaces::pathway::target_occurs_only_last;
+
+    let term =
+        |name: &str| CmdPat::cut(Polarity::Positive, ProdPat::ctor(name, []), ConsPat::top());
+    let mut store = CellStore::<SequentAlphabet>::new();
+    let [ab, bc, cd, de] = [("A", "B"), ("B", "C"), ("C", "D"), ("D", "E")].map(|(from, to)| {
+        store.insert(Cell::new(
+            term(from),
+            term(to),
+            Orientation::CompletionDerived,
+            CellProvenance::DerivedByCompletion,
+        ))
+    });
+    let left_overlap = enumerate_overlaps(&store)
+        .into_iter()
+        .find(|overlap| {
+            overlap.kind == OverlapKind::Composition && overlap.left == ab && overlap.right == bc
+        })
+        .expect("A to C seam");
+    let right_overlap = enumerate_overlaps(&store)
+        .into_iter()
+        .find(|overlap| {
+            overlap.kind == OverlapKind::Composition && overlap.left == cd && overlap.right == de
+        })
+        .expect("C to E seam");
+    let (_, left) = derive_fused(&left_overlap, &mut store).expect("left certificate");
+    let (_, right) = derive_fused(&right_overlap, &mut store).expect("right certificate");
+    let directed = compose_directed(&left, &right, &store).expect("ground seam is acyclic");
+    let invertible = compose_invertible(&left, &right);
+    assert_eq!(directed, invertible);
+    assert_eq!(directed.overlap.peak, term("A"));
+    assert_eq!(directed.joins_at, term("E"));
+    assert!(bool::from(directed.replay(&store)));
+    let receipt = normalize_certified(
+        &store,
+        &directed.overlap.peak,
+        &directed.joins_at,
+        &directed.path_a,
+    )
+    .expect("composite certifies");
+    let expected: Vec<_> = left.path_a.iter().chain(&right.path_a).cloned().collect();
+    let (normal_form, order) = receipt.into_parts();
+    assert_eq!(normal_form.canonical_path(), Maybe::Present(expected));
+    assert_eq!(
+        target_occurs_only_last(&order, de),
+        TargetLast::HoldsUnderGuard
+    );
+}
