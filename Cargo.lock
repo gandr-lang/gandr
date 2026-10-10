@@ -27,7 +27,7 @@ dependencies = [
 [[package]]
 name = "anodized"
 version = "0.7.0"
-source = "git+https://github.com/silvanshade/anodized?rev=2ccb1b0ef982a064c0ac5681b7b32b074344dae3#2ccb1b0ef982a064c0ac5681b7b32b074344dae3"
+source = "git+https://github.com/gandr-lang/anodized?rev=372f70b50ef7af68f4e8a750132d90d54e780426#372f70b50ef7af68f4e8a750132d90d54e780426"
 dependencies = [
  "anodized-macros",
 ]
@@ -35,7 +35,7 @@ dependencies = [
 [[package]]
 name = "anodized-core"
 version = "0.7.0"
-source = "git+https://github.com/silvanshade/anodized?rev=2ccb1b0ef982a064c0ac5681b7b32b074344dae3#2ccb1b0ef982a064c0ac5681b7b32b074344dae3"
+source = "git+https://github.com/gandr-lang/anodized?rev=372f70b50ef7af68f4e8a750132d90d54e780426#372f70b50ef7af68f4e8a750132d90d54e780426"
 dependencies = [
  "bitflags",
  "proc-macro2",
@@ -46,7 +46,7 @@ dependencies = [
 [[package]]
 name = "anodized-macros"
 version = "0.7.0"
-source = "git+https://github.com/silvanshade/anodized?rev=2ccb1b0ef982a064c0ac5681b7b32b074344dae3#2ccb1b0ef982a064c0ac5681b7b32b074344dae3"
+source = "git+https://github.com/gandr-lang/anodized?rev=372f70b50ef7af68f4e8a750132d90d54e780426#372f70b50ef7af68f4e8a750132d90d54e780426"
 dependencies = [
  "anodized-core",
  "proc-macro2",
