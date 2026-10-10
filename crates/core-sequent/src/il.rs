@@ -283,6 +283,14 @@ pub struct CopatternArm
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ProducerNode
 {
+    /// A saturated operation whose arguments are evaluated in source order.
+    Primitive
+    {
+        /// The shared vocabulary row.
+        primitive: gandr_core_term::primitive::Primitive,
+        /// Value-producing operands.
+        arguments: gandr_core_term::primitive::Arguments<ProducerId>,
+    },
     /// A bound producer variable in a zone of the unified context.
     Variable
     {
@@ -959,6 +967,7 @@ impl CommandArena
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
     #[spec(ensures: |ref ret| ret.is_ok() == match *node {
+        | ProducerNode::Primitive { arguments, .. } => arguments.iter().all(|id| self.producer(*id).is_some()),
         | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => true,
         | ProducerNode::Constructor { ref producers, ref consumers, .. } =>
             producers.iter().all(|id| self.producer(*id).is_some())
@@ -972,6 +981,7 @@ impl CommandArena
     ) -> Result<(), MintRefusal>
     {
         match *node {
+            | ProducerNode::Primitive { arguments, .. } => self.children_resolve(&arguments, &[]),
             | ProducerNode::Variable { .. }
             | ProducerNode::Constant(_)
             | ProducerNode::Literal(_) => Ok(()),

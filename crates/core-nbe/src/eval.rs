@@ -166,6 +166,8 @@ struct EnvId(usize);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum EvalFault
 {
+    /// Runtime-native arithmetic is outside the certificate normalizer.
+    NativePrimitive(gandr_core_term::primitive::Primitive),
     /// Transport met neither a native path nor a neutral path operand.
     TransportedNonPath,
     /// The budget ran out. The term may or may not have a weak-head form; the
@@ -2584,7 +2586,7 @@ fn step_value(
             machine.tasks.push(Task::Value { term: body, env });
             Ok(())
         },
-        | Value::Thunk(body) => {
+        | Value::Thunk(body) | Value::Primitive { body, .. } => {
             let captured = machine.capture(env)?;
             let closed = capture_keeps_source(&captured);
             let closure = domain.comp_closure_node(body, captured);
@@ -2679,6 +2681,7 @@ fn step_comp(
         return Err(EvalFault::DanglingTerm);
     };
     match *node {
+        | Computation::Primitive { primitive, .. } => Err(EvalFault::NativePrimitive(primitive)),
         | Computation::Transport(path, value) => {
             machine.tasks.push(Task::Transport);
             machine.tasks.push(Task::Value { term: value, env });

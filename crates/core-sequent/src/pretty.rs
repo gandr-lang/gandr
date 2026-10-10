@@ -332,6 +332,7 @@ fn command(
 }) && match arena.producer(id) {
     | None => matches!(ret.as_slice(), &[Piece::Text(Token("<dangling>"))]),
     | Some(node) => match *node {
+        | ProducerNode::Primitive { primitive, .. } => matches!(ret.first(), Some(Piece::Text(Token(name))) if *name == primitive.name().as_ref()),
         | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => matches!(ret.as_slice(), &[Piece::Owned(_)]),
         | ProducerNode::Constructor { ref tag, ref producers, ref consumers } =>
             if *tag == ConstructorTag::Unit && producers.is_empty() && consumers.is_empty() {
@@ -355,6 +356,10 @@ fn producer(
         return alloc::vec![text!("<dangling>")];
     };
     match *node {
+        | ProducerNode::Primitive {
+            primitive,
+            arguments,
+        } => applied(Token(primitive.name().into()), &arguments, &[], depth),
         | ProducerNode::Variable { zone, index } => {
             let prefix = match zone {
                 | Zone::Intuitionistic => 'x',

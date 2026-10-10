@@ -161,6 +161,13 @@ pub enum ArenaNode
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ContentNode
 {
+    /// A closed table-typed native thunk.
+    PrimitiveValue(gandr_core_term::primitive::Primitive),
+    /// A saturated runtime-native operation.
+    Primitive(
+        gandr_core_term::primitive::Primitive,
+        gandr_core_term::primitive::Arguments<NodeIndex>,
+    ),
     /// A native universe-path classifier over quoted codes.
     PathUniverse(NodeIndex, NodeIndex),
     /// A reflexivity certificate.
@@ -414,6 +421,7 @@ impl ContentNode
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
     #[spec(ensures: |ret| match *self {
         | Self::PathRefl(_)
+        | Self::PrimitiveValue(_)
         | Self::PathProduct(..)
         | Self::PathEquiv { .. }
         | Self::Variable { .. }
@@ -429,6 +437,7 @@ impl ContentNode
         | Self::StaticLambda(_)
         | Self::StaticApplication(..) => matches!(ret, Sort::Value),
         | Self::Transport(..)
+        | Self::Primitive(..)
         | Self::Lambda(_)
         | Self::Application(..)
         | Self::Return(_)
@@ -462,6 +471,7 @@ impl ContentNode
     {
         match *self {
             | Self::PathRefl(_)
+            | Self::PrimitiveValue(_)
             | Self::PathProduct(..)
             | Self::PathEquiv { .. }
             | Self::Variable { .. }
@@ -477,6 +487,7 @@ impl ContentNode
             | Self::StaticLambda(_)
             | Self::StaticApplication(..) => Sort::Value,
             | Self::Transport(..)
+            | Self::Primitive(..)
             | Self::Lambda(_)
             | Self::Application(..)
             | Self::Return(_)
@@ -524,7 +535,8 @@ impl ContentNode
         use Sort::ValueType as A;
         let actual = ret.slots.get(.. ret.count);
         match *self {
-            | Self::Variable { .. }
+            | Self::Primitive(_, arguments) => actual.is_some_and(|children| children.iter().copied().eq(arguments.iter().copied().map(|argument| (argument, V)))),
+            | Self::PrimitiveValue(_) | Self::Variable { .. }
             | Self::Constant(_)
             | Self::Unit
             | Self::Literal(_)
@@ -580,12 +592,21 @@ impl ContentNode
         use Sort::Value as V;
         use Sort::ValueType as A;
         match *self {
+            | Self::Primitive(_, arguments) => match arguments {
+                | gandr_core_term::primitive::Arguments::Unary(argument) => {
+                    Children::of(&[(argument, V)])
+                },
+                | gandr_core_term::primitive::Arguments::Binary([first, second]) => {
+                    Children::of(&[(first, V), (second, V)])
+                },
+            },
             | Self::PathEquiv {
                 path_type,
                 forward,
                 backward,
                 ..
             } => Children::of(&[(path_type, A), (forward, V), (backward, V)]),
+            | Self::PrimitiveValue(_)
             | Self::Variable { .. }
             | Self::Constant(_)
             | Self::Unit
@@ -657,6 +678,8 @@ impl ContentNode
                 Maybe::Present(reference)
             },
             | Self::PathUniverse(..)
+            | Self::PrimitiveValue(_)
+            | Self::Primitive(..)
             | Self::PathRefl(_)
             | Self::PathProduct(..)
             | Self::PathEquiv { .. }
@@ -1370,6 +1393,7 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *value {
+            | Value::Primitive { primitive, .. } => ContentNode::PrimitiveValue(primitive),
             | Value::PathRefl(code) => ContentNode::PathRefl(self.discover(ArenaNode::Value(code))),
             | Value::PathProduct(first, second) => {
                 let first = self.discover(ArenaNode::Value(first));
@@ -1440,6 +1464,22 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *computation {
+            | Computation::Primitive {
+                primitive,
+                arguments,
+            } => {
+                use gandr_core_term::primitive::Arguments;
+                let arguments = match arguments {
+                    | Arguments::Unary(argument) => {
+                        Arguments::Unary(self.discover(ArenaNode::Value(argument)))
+                    },
+                    | Arguments::Binary([first, second]) => {
+                        let first = self.discover(ArenaNode::Value(first));
+                        Arguments::Binary([first, self.discover(ArenaNode::Value(second))])
+                    },
+                };
+                ContentNode::Primitive(primitive, arguments)
+            },
             | Computation::Transport(path, value) => {
                 let path = self.discover(ArenaNode::Value(path));
                 ContentNode::Transport(path, self.discover(ArenaNode::Value(value)))
@@ -1673,6 +1713,13 @@ where
     Image: FnMut(NodeIndex) -> NodeIndex,
 {
     match *node {
+        | ContentNode::PrimitiveValue(primitive) => ContentNode::PrimitiveValue(primitive),
+        | ContentNode::Primitive(primitive, mut arguments) => {
+            for argument in arguments.iter_mut() {
+                *argument = image(*argument);
+            }
+            ContentNode::Primitive(primitive, arguments)
+        },
         | ContentNode::PathUniverse(source, target) => {
             let source = image(source);
             ContentNode::PathUniverse(source, image(target))
@@ -2122,6 +2169,8 @@ fn mint_node(
         },
         | ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
         | ContentNode::PathUniverse(..)
+        | ContentNode::PrimitiveValue(_)
+        | ContentNode::Primitive(..)
         | ContentNode::PathRefl(_)
         | ContentNode::PathProduct(..)
         | ContentNode::PathEquiv { .. }

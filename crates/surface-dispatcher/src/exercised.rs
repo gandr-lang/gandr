@@ -706,7 +706,8 @@ fn formers(
                 // application build one, whose codes are values that hold no
                 // computation former, so they mark no row.
                 | Some(
-                    &(Value::Variable { .. }
+                    &Value::Primitive { .. }
+                    | &(Value::Variable { .. }
                     | Value::Constant(_)
                     | Value::Unit
                     | Value::Literal(_)
@@ -718,6 +719,9 @@ fn formers(
                 | None => {},
             },
             | Node::Computation(id) => match arena.computation(id) {
+                | Some(&Computation::Primitive { ref arguments, .. }) => {
+                    worklist.extend(arguments.iter().copied().map(Node::Value));
+                },
                 | Some(&Computation::Transport(path, value)) => {
                     worklist.extend([Node::Value(path), Node::Value(value)]);
                 },

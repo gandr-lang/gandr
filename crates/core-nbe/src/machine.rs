@@ -4403,9 +4403,10 @@ mod tests
           Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [CoreTerm::Value(a),CoreTerm::Value(b)],
           Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} => ret.as_slice() == [CoreTerm::Value(body)],
           Value::Thunk(body) => ret.as_slice() == [CoreTerm::Computation(body)],
-          Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) => ret.is_empty(),
+          Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) => ret.is_empty(),
          }),
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
+          Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(CoreTerm::Value)),
           Computation::Transport(path, value) => ret.as_slice() == [CoreTerm::Value(path), CoreTerm::Value(value)],
           Computation::Lambda(body) => ret.as_slice() == [CoreTerm::Computation(body)],
           Computation::Application(head,arg) => ret.as_slice() == [CoreTerm::Computation(head),CoreTerm::Value(arg)],
@@ -4422,6 +4423,7 @@ mod tests
     {
         match node {
             | CoreTerm::Value(id) => match *core.value(id).expect("a reached value resolves") {
+                | Value::Primitive { .. }
                 | Value::Variable { .. }
                 | Value::Constant(_)
                 | Value::Unit
@@ -4448,6 +4450,9 @@ mod tests
                     .computation(id)
                     .expect("a reached computation resolves")
                 {
+                    | Computation::Primitive { arguments, .. } => {
+                        arguments.iter().copied().map(CoreTerm::Value).collect()
+                    },
                     | Computation::Transport(path, value) => {
                         Vec::from([CoreTerm::Value(path), CoreTerm::Value(value)])
                     },
@@ -4541,6 +4546,7 @@ mod tests
                         | CoreTerm::Value(id) => {
                             let key =
                                 match core.value(id).expect("a reached value resolves").clone() {
+                                    | value @ Value::Primitive { .. } => value,
                                     | Value::PathRefl(code) => Value::PathRefl(value(code)),
                                     | Value::PathProduct(first, second) => {
                                         Value::PathProduct(value(first), value(second))
@@ -4591,6 +4597,18 @@ mod tests
                                 .computation(id)
                                 .expect("a reached computation resolves")
                             {
+                                | Computation::Primitive {
+                                    primitive,
+                                    mut arguments,
+                                } => {
+                                    for argument in arguments.iter_mut() {
+                                        *argument = value(*argument);
+                                    }
+                                    Computation::Primitive {
+                                        primitive,
+                                        arguments,
+                                    }
+                                },
                                 | Computation::Transport(path, argument) => {
                                     Computation::Transport(value(path), value(argument))
                                 },
@@ -4658,9 +4676,10 @@ mod tests
           Value::Pair(a,b) | Value::StaticApplication(a,b) => ret.as_slice() == [canon[&CoreTerm::Value(a)],canon[&CoreTerm::Value(b)]],
           Value::StaticLambda(body) | Value::Injection(_,body) | Value::Lift{body,..} => ret.as_slice() == [canon[&CoreTerm::Value(body)]],
           Value::Thunk(body) => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
-          Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) => ret.is_empty(),
+          Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) | Value::Quote(_) | Value::QuoteComputation(_) => ret.is_empty(),
          }),
          CoreTerm::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
+          Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().map(|argument| canon[&CoreTerm::Value(*argument)])),
           Computation::Transport(path, value) => ret.as_slice() == [canon[&CoreTerm::Value(path)], canon[&CoreTerm::Value(value)]],
           Computation::Lambda(body) => ret.as_slice() == [canon[&CoreTerm::Computation(body)]],
           Computation::Application(head,arg) => ret.as_slice() == [canon[&CoreTerm::Computation(head)],canon[&CoreTerm::Value(arg)]],
@@ -4884,6 +4903,9 @@ mod tests
                     let made = match node {
                         | CoreTerm::Value(id) => {
                             let graft = match *core.value(id).expect("a reached value resolves") {
+                                | Value::Primitive { .. } => {
+                                    panic!("the duplication fixtures carry no native operation")
+                                },
                                 | Value::Variable { zone, index } => {
                                     ValueGraft::Variable { zone, index }
                                 },
@@ -4924,6 +4946,9 @@ mod tests
                                 .computation(id)
                                 .expect("a reached computation resolves")
                             {
+                                | Computation::Primitive { .. } => {
+                                    panic!("the duplication fixtures carry no native operation")
+                                },
                                 | Computation::Transport(..) => {
                                     panic!("the duplication fixtures carry no transport")
                                 },
@@ -5201,9 +5226,10 @@ mod tests
               Value::Thunk(body) => ret.as_slice() == [Node::Computation(body)],
              Value::Quote(id) => ret.as_slice() == [Node::ValueType(id)],
              Value::QuoteComputation(id) => ret.as_slice() == [Node::CompType(id)],
-              Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) => ret.is_empty(),
+              Value::Primitive { .. } | Value::Variable{..} | Value::Constant(_) | Value::Unit | Value::Literal(_) => ret.is_empty(),
              }),
              Node::Computation(id) => core.computation(id).is_some_and(|computation| match *computation {
+              Computation::Primitive { arguments, .. } => ret.iter().copied().eq(arguments.iter().copied().map(Node::Value)),
               Computation::Transport(path, value) => ret.as_slice() == [Node::Value(path), Node::Value(value)],
               Computation::Lambda(body) => ret.as_slice() == [Node::Computation(body)],
               Computation::Application(head,arg) => ret.as_slice() == [Node::Computation(head),Node::Value(arg)],
@@ -5261,6 +5287,7 @@ mod tests
                         | &Value::Thunk(body) => Vec::from([Node::Computation(body)]),
                         | &Value::Quote(quoted) => Vec::from([Node::ValueType(quoted)]),
                         | &Value::QuoteComputation(quoted) => Vec::from([Node::CompType(quoted)]),
+                        | &Value::Primitive { .. }
                         | &(Value::Variable { .. }
                         | Value::Constant(_)
                         | Value::Unit
@@ -5272,6 +5299,9 @@ mod tests
                         .computation(computation)
                         .expect("a fixture computation resolves")
                     {
+                        | &Computation::Primitive { ref arguments, .. } => {
+                            arguments.iter().copied().map(Node::Value).collect()
+                        },
                         | &Computation::Transport(path, value) => {
                             Vec::from([Node::Value(path), Node::Value(value)])
                         },
@@ -5383,6 +5413,7 @@ mod tests
             match node {
                 | Node::Value(id) => {
                     let copy = match core.value(id).expect("a fixture value resolves") {
+                        | &Value::Primitive { .. } => panic!("the kernel has no native operation"),
                         | &Value::Variable {
                             zone: Zone::Intuitionistic,
                             index,
@@ -5458,6 +5489,9 @@ mod tests
                         .computation(id)
                         .expect("a fixture computation resolves")
                     {
+                        | Computation::Primitive { .. } => {
+                            panic!("the kernel has no native operation")
+                        },
                         | Computation::Transport(path, argument) => {
                             let (path, argument) = (value(self, path), value(self, argument));
                             self.arena.computation_transport(path, argument)

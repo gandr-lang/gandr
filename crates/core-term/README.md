@@ -9,6 +9,8 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 - [Expected features](#expected-features)
 - [Examples](#examples)
 - [Kernel alphabet and core grammar](#kernel-alphabet-and-core-grammar)
+- [Native prelude](#native-prelude)
+- [Native runtime assumptions](#native-runtime-assumptions)
 - [Native universe paths](#native-universe-paths)
 - [Universe families](#universe-families)
 - [Quotes and decode-on-mint](#quotes-and-decode-on-mint)
@@ -26,7 +28,7 @@ The core call-by-push-value language: its syntax in a flat arena, the one unifie
 
 ## Synopsis
 
-**What.** The core language between the surface syntax and the kernel, and the one context its typing rules read. Values and computations on the term side, value types and computation types on the type side, are nodes of an append-only `CoreArena` addressed by four typed `u32` ids. `Context` is the two-zone typing context `Γ; Σ`: flat, de Bruijn, id-addressed and name-free. `DefinitionChain` records each definition's body and unfolding height; `DefinitionalEnvironment` decides, scope by scope, whether a definition is manifest. `FailureClass` is the four-class vocabulary every refusal of the core pipeline is classified into. The crate holds syntax and contexts; evaluation and readback live in `gandr-core-nbe`. It is `no_std` over `core` and `alloc`.
+**What.** The core language between the surface syntax and the kernel, and the one context its typing rules read. Values and computations on the term side, value types and computation types on the type side, are nodes of an append-only `CoreArena` addressed by four typed `u32` ids. `Context` is the two-zone typing context `Γ; Σ`: flat, de Bruijn, id-addressed and name-free. `DefinitionChain` records each definition's body and unfolding height; `DefinitionalEnvironment` decides, scope by scope, whether a definition is manifest. `FailureClass` is the four-class vocabulary every refusal of the core pipeline is classified into. The crate holds syntax, contexts and native scalar operations; conversion lives in `gandr-core-nbe` and execution in `gandr-core-sequent`. It is `no_std` over `core` and `alloc`.
 
 **Why.** An elaborator, a normalizer and a checker each go under binders, type occurrences and unfold definitions, and separate spellings of the context drift. One flat representation gives every rule one place to read a binder, and cloning it copies two flat vectors, so a conversion or a normalizer takes one by value. The core language needs formers the kernel does not represent, so its node enums are its own; its leaf vocabulary is the kernel's, so a core term erases to a kernel term by remapping ids.
 
@@ -120,6 +122,33 @@ RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest
 ## Kernel alphabet and core grammar
 
 Levels, base types, literals, sum sides, de Bruijn indices, admission positions and subterm-table entry indices come from `gandr-kernel-strata` and `gandr-kernel-term`. The two languages therefore agree on what a literal or a level is, and erasing a core term to a kernel term remaps ids without translating payloads; the erasure itself is not in this crate. The node enums, the arena and the context are this crate's own, so an elaboration-only former enters the core grammar without widening the closed vocabulary the kernel represents.
+
+## Native prelude
+
+`primitive::PRELUDE` is the single table of native names, operator spellings, ordered argument classifiers, result classifiers and evaluation instructions. Recognition seeds these rows; the checker reads their signatures; the sequent machine calls their evaluator. Native function values are closed, typed thunks of ordinary curried lambdas, so partial application uses the existing closure machine rather than a second calling convention.
+
+| Family | Names | Types |
+| ------ | ----- | ----- |
+| Integer arithmetic | `add`, `sub`, `mul`, `int.div`, `int.mod`, `neg` | Integer operands and result |
+| Integer comparison | `eq`, `ne`, `lt`, `le`, `gt`, `ge` | Integer operands, boolean result |
+| Boolean logic | `and`, `or`, `bool.not` | Boolean operands and result |
+| Integer combinators | `prim.id`, `prim.const` | Integer operands and result |
+
+Booleans are `Unit + Unit`, with the left injection true. Division truncates toward zero; remainder has the dividend's sign. Division and remainder by zero return `PrimitiveError::DivisionByZero`, not a host panic. Arity and classifier errors stay distinct. Integer arithmetic preserves the literal vocabulary's unbounded magnitude, including values wider than a machine integer.
+
+**Choice.** [num-bigint](https://github.com/rust-num/num-bigint), with defaults off, supplies exact arithmetic in `no_std + alloc`. The maintained pure-Rust implementation avoids hand-written arithmetic and a native build dependency. Fixed-width `bnum` cannot implement the literal contract; `rug` brings GMP; `malachite` brings a larger arithmetic surface and LGPL licensing. Revisit if measured arithmetic workloads justify a different backend without changing integer semantics. Native operands borrow decimal payloads until arithmetic requires conversion.
+
+Native execution belongs to the sequent runtime. The pure normalizer reports `EvalFault::NativePrimitive` rather than inventing a native reduction rule. Persistence records the table name and ordered operands, never a function pointer or process-local address.
+
+Witnesses: `primitive::tests::exact_arithmetic_and_errors`, `primitive::tests::comparisons_and_booleans` and `primitive::tests::table_signatures_and_currying_agree`.
+
+## Native runtime assumptions
+
+Native values synthesize their thunked curried signatures from [the native table](#native-prelude). Saturated operations check each argument against that same row and synthesize its result returner.
+
+The kernel remains pure: it gains neither primitive syntax nor an arithmetic evaluator. The checker bridge admits each distinct native row present in the core arena as a named opaque axiom of its table signature, before the source module's declarations. Erasure turns a native value into that constant and a saturated operation into ordinary force and application nodes. Export retains these named assumptions, and a declaration's kernel audit reports the native constants it depends on. Kernel admission verifies types; it does not certify the host arithmetic implementation or introduce arithmetic equations into conversion. No unchecked admission is used.
+
+**Choice.** Explicit, auditable runtime assumptions rather than silently skipping kernel admission or adding host arithmetic to the trusted kernel. Revisit when a certified arithmetic implementation can replace an opaque signature while preserving the runtime contract. The checker witness `bridge::tests::native_operations_cross_as_audited_assumptions` checks the exported axiom, reference remapping and audit.
 
 ## Native universe paths
 

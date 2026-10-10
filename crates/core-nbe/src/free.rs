@@ -657,6 +657,7 @@ impl Children
                 let held = core.value(id).ok_or(FreeFault::Dangling)?;
                 match *held {
                     | Value::Variable { .. }
+                    | Value::Primitive { .. }
                     | Value::Constant(_)
                     | Value::Unit
                     | Value::Literal(_) => [None, None, None],
@@ -690,6 +691,14 @@ impl Children
             | Reached::Term(CoreTerm::Computation(id)) => {
                 let held = core.computation(id).ok_or(FreeFault::Dangling)?;
                 match *held {
+                    | Computation::Primitive { arguments, .. } => match arguments {
+                        | gandr_core_term::primitive::Arguments::Unary(argument) => {
+                            one(value(argument), Lowering::NONE)
+                        },
+                        | gandr_core_term::primitive::Arguments::Binary([first, second]) => {
+                            two(value(first), value(second), Lowering::NONE)
+                        },
+                    },
                     | Computation::Transport(path, operand) => {
                         two(value(path), value(operand), Lowering::NONE)
                     },

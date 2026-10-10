@@ -129,6 +129,7 @@ impl<'arena> CoreSource<'arena>
     /// - witness: `core_source::tests::names_use_admission_positions_and_refuse_the_exact_end`
     /// - witness: `goldens::tests::native_paths_preserve_ordered_endpoints_and_maps`
     #[spec(ensures: |ret| match (self.arena.value(id), ret) {
+        | (Some(&Value::Primitive { primitive, .. }), Former::Constant(name)) => name.as_ref() == primitive.name().as_ref(),
         | (Some(&Value::PathRefl(code)), Former::PathRefl(actual)) => actual == CoreNode::Value(code),
         | (Some(&Value::PathEquiv { forward, backward, .. }), Former::PathEquiv(actual_forward, actual_backward)) => actual_forward == CoreNode::Value(forward) && actual_backward == CoreNode::Value(backward),
         | (Some(&Value::Variable { zone, index }), Former::Variable { zone: actual_zone, index: actual_index }) =>
@@ -164,6 +165,9 @@ impl<'arena> CoreSource<'arena>
             return Former::Unreadable;
         };
         match *value {
+            | Value::Primitive { primitive, .. } => {
+                Former::Constant(Name::from(<&'static str>::from(primitive.name())))
+            },
             | Value::PathRefl(code) => Former::PathRefl(CoreNode::Value(code)),
             | Value::PathProduct(first, second) => {
                 Former::PathProduct(CoreNode::Value(first), CoreNode::Value(second))
@@ -373,6 +377,7 @@ impl Source for CoreSource<'_>
             | CoreNode::Computation(id) => match self.arena.computation(id) {
                 | Some(
                     &(Computation::Transport(..)
+                    | Computation::Primitive { .. }
                     | Computation::Lambda(_)
                     | Computation::Application(..)
                     | Computation::Return(_)
