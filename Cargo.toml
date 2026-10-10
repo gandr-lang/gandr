@@ -39,6 +39,7 @@ members = [
   "crates/theory-graphs",
   "crates/theory-levitation",
   "crates/theory-orders",
+  "crates/theory-shapes",
 ]
 
 [workspace.package]
@@ -109,6 +110,7 @@ default-features = false
 # - theory-graphs
 # - theory-levitation
 # - theory-orders
+# - theory-shapes
 [workspace.dependencies.anodized]
 git = "https://github.com/silvanshade/anodized"
 rev = "2ccb1b0ef982a064c0ac5681b7b32b074344dae3"

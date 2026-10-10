@@ -32,6 +32,7 @@ crates/
 ├── theory-graphs/                 gandr-theory-graphs                 the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-levitation/             gandr-theory-levitation             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
 ├── theory-orders/                 gandr-theory-orders                 order maintenance with constant-time comparison
+├── theory-shapes/                 gandr-theory-shapes                 decidable finite subshapes, affine bridge substitutions, and face entailment with evidence
 ├── kernel-strata/                 gandr-kernel-strata                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   gandr-kernel-term                   the term arena, the sharing format, the decode budgets
 ├── kernel-check-memo/             gandr-kernel-check-memo             the check-memo seam a checker consults

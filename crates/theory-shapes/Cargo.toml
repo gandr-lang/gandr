@@ -1,0 +1,27 @@
+[package]
+name = "gandr-theory-shapes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Finite decidable subshapes, affine bridge substitutions, and face entailment with checkable evidence"
+readme = "README.md"
+repository.workspace = true
+license.workspace = true
+keywords = ["affine", "face-theory", "gandr", "no-std"]
+categories = ["data-structures", "no-std"]
+publish.workspace = true
+autotests = false
+
+[[example]]
+name = "measure"
+test = true
+
+[[test]]
+name = "tests"
+path = "tests/lib.rs"
+
+[dependencies]
+anodized.workspace = true
+
+[lints]
+workspace = true
