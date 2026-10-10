@@ -1,8 +1,8 @@
-//! Certificate-producing normalization for the experimental stage universe.
+//! Certificate-producing strict staging for the experimental stage universe.
 //!
-//! The producer normalizes object syntax under quotations but leaves object
-//! multiplication residual. Every rebuilding and reduction contributes an
-//! equation for independent kernel replay. No producer verdict admits code.
+//! The producer evaluates meta syntax, including beneath quotations, while
+//! preserving object computations. Every rebuilding and reduction contributes
+//! an equation for independent kernel replay. No producer verdict admits code.
 
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -20,6 +20,7 @@ use gandr_kernel_term::stage::Step;
 use gandr_kernel_term::stage::Term;
 use gandr_kernel_term::stage::TermId;
 use gandr_kernel_term::stage::Type;
+use gandr_kernel_term::stage::TypeId;
 use gandr_kernel_term::stage::instantiate;
 
 /// A normalization continuation, represented as first-order data.
@@ -37,8 +38,9 @@ enum Task
 /// Normalize staging syntax, recording a replayable equation per step.
 ///
 /// # Specification
-/// - ensures: on success, the target contains no beta, quote/splice, numeral
-///   iterator or identity-elimination redex reachable in the source.
+/// - ensures: on success, meta beta, quote/splice, outer numeral iteration and
+///   outer identity elimination are reduced throughout the source; object beta,
+///   iteration, elimination and multiplication remain residual.
 /// - provides: an untrusted certificate; the kernel must form and replay it.
 /// - fails: malformed syntax, index overflow, or exhausted work allowance.
 /// - panics: none.
@@ -51,6 +53,8 @@ enum Task
 ///   compared with integer exponentiation; tampered certificates are refused.
 /// - witness: `stage::tests::power_residualizes`
 /// - witness: `stage::tests::round_trips_replay`
+/// - witness: `stage::tests::object_computations_remain_residual`
+/// - witness: `stage::tests::function_accumulator_retains_object_redexes`
 #[inline]
 pub fn normalize(
     arena: &mut Arena,
@@ -133,8 +137,8 @@ enum Reduction
 /// Select a head conversion and construct its proposed reduct.
 ///
 /// # Specification
-/// - ensures: object multiplication remains residual; static beta and natural
-///   iteration compute, and both quote/splice round trips cancel.
+/// - ensures: only meta beta, outer natural iteration, outer identity
+///   elimination and the two quote/splice round trips contract.
 /// - fails: syntax lookup, substitution or work errors.
 /// - panics: none.
 ///
@@ -146,6 +150,7 @@ enum Reduction
 ///   reduction selection and its reconstructed result.
 /// - witness: `stage::tests::power_residualizes`
 /// - witness: `stage::tests::round_trips_replay`
+/// - witness: `stage::tests::object_computations_remain_residual`
 fn contract(
     arena: &mut Arena,
     id: TermId,
@@ -154,7 +159,11 @@ fn contract(
 {
     let proposal = match arena.term(id)? {
         | Term::Apply(head, argument) => match arena.term(head)? {
-            | Term::Lambda(_, body) => {
+            | Term::Lambda(domain, body) => {
+                let stage = classifier_stage(arena, domain, budget)?;
+                if stage != Stage::Outer {
+                    return Ok(Reduction::Normal);
+                }
                 let target = instantiate(arena, body, argument, budget)?;
                 Reduction::Step(target, Rule::Beta)
             },
@@ -169,31 +178,72 @@ fn contract(
             | _ => Reduction::Normal,
         },
         | Term::Iterate(count, initial, step) => match arena.term(count)? {
-            | Term::Natural(_, Natural(0)) => Reduction::Step(initial, Rule::IterateZero),
-            | Term::Natural(stage, Natural(count)) => {
+            | Term::Natural(Stage::Outer, Natural(0)) => {
+                Reduction::Step(initial, Rule::IterateZero)
+            },
+            | Term::Natural(Stage::Outer, Natural(count)) => {
                 let count = count.checked_sub(1).ok_or(StageError::Overflow)?;
-                let predecessor = arena.alloc(Term::Natural(stage, Natural(count)))?;
+                let predecessor = arena.alloc(Term::Natural(Stage::Outer, Natural(count)))?;
                 let remaining = arena.alloc(Term::Iterate(predecessor, initial, step))?;
                 let target = arena.alloc(Term::Apply(step, remaining))?;
                 Reduction::Step(target, Rule::IterateSuccessor)
             },
             | _ => Reduction::Normal,
         },
-        | Term::Eliminate(body, _) => Reduction::Step(body, Rule::Eliminate),
+        | Term::Eliminate(body, target) => {
+            let stage = classifier_stage(arena, target, budget)?;
+            if stage != Stage::Outer {
+                return Ok(Reduction::Normal);
+            }
+            Reduction::Step(body, Rule::Eliminate)
+        },
         | _ => Reduction::Normal,
     };
     Ok(proposal)
 }
 
-/// Build `pow : Nat_outer -> Lift (Nat_inner -> Nat_inner)`.
+/// Read a classifier's stage for reduction selection, without forming it.
 ///
-/// The program is `λn. iter n <λx.1> (λp.<λx. x * (~p) x>)`.
-/// The iterator and higher-order accumulator are meta-level terms, not a
-/// host-language exponent loop or a special power reduction rule.
+/// # Specification
+/// - requires: the classifier is well formed; replay checks this independently.
+/// - ensures: follows arrow domains to distinguish outer from indexed inner
+///   classifiers; a lift is outer regardless of its inner payload.
+/// - fails: unknown classifier or exhausted work allowance.
+/// - panics: none.
+///
+/// # Errors
+/// Returns `UnknownType` or `Exhausted`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — inner and outer naturals, functions and lifts distinguish
+///   stage selection without relying on quotation nesting.
+/// - witness: `stage::tests::object_computations_remain_residual`
+fn classifier_stage(
+    arena: &Arena,
+    mut ty: TypeId,
+    budget: &mut Budget,
+) -> Result<Stage, StageError>
+{
+    loop {
+        budget.spend()?;
+        match arena.ty(ty)? {
+            | Type::In(_) | Type::Lift(_) => return Ok(Stage::Outer),
+            | Type::Universe(model) => return Ok(Stage::Inner(model)),
+            | Type::Nat(stage) => return Ok(stage),
+            | Type::Arrow(domain, _) => ty = domain,
+        }
+    }
+}
+
+/// Build `pow : Nat_outer -> Lift Nat_inner -> Lift Nat_inner`.
+///
+/// The program is `λn. λx. iter n <1> (λp.<~x * ~p>)`. Quoted object
+/// input is threaded at the meta level; the iterator carries quoted naturals.
+/// Specialization `<λx. ~(pow n <x>)>` creates no object redex.
 ///
 /// # Specification
 /// - ensures: constructs one exponent-independent program at the indexed model;
-///   applying a numeral leaves that many object multiplications.
+///   specializing a numeral and quoted input leaves that many multiplications.
 /// - fails: syntax allocation errors.
 /// - panics: none.
 ///
@@ -212,21 +262,19 @@ pub fn power(
 {
     let outer = arena.alloc_type(Type::Nat(Stage::Outer))?;
     let inner = arena.alloc_type(Type::Nat(Stage::Inner(model)))?;
-    let function = arena.alloc_type(Type::Arrow(inner, inner))?;
-    let lifted = arena.alloc_type(Type::Lift(function))?;
+    let lifted = arena.alloc_type(Type::Lift(inner))?;
     let one = arena.alloc(Term::Natural(Stage::Inner(model), Natural(1)))?;
-    let initial = arena.alloc(Term::Lambda(inner, one))?;
-    let initial = arena.alloc(Term::Quote(initial))?;
-    let input = arena.alloc(Term::Variable(Index(0)))?;
-    let previous = arena.alloc(Term::Variable(Index(1)))?;
+    let initial = arena.alloc(Term::Quote(one))?;
+    let input = arena.alloc(Term::Variable(Index(1)))?;
+    let input = arena.alloc(Term::Splice(input))?;
+    let previous = arena.alloc(Term::Variable(Index(0)))?;
     let previous = arena.alloc(Term::Splice(previous))?;
-    let applied = arena.alloc(Term::Apply(previous, input))?;
-    let product = arena.alloc(Term::Multiply(input, applied))?;
-    let body = arena.alloc(Term::Lambda(inner, product))?;
-    let body = arena.alloc(Term::Quote(body))?;
+    let product = arena.alloc(Term::Multiply(input, previous))?;
+    let body = arena.alloc(Term::Quote(product))?;
     let step = arena.alloc(Term::Lambda(lifted, body))?;
-    let exponent = arena.alloc(Term::Variable(Index(0)))?;
+    let exponent = arena.alloc(Term::Variable(Index(1)))?;
     let body = arena.alloc(Term::Iterate(exponent, initial, step))?;
+    let body = arena.alloc(Term::Lambda(lifted, body))?;
     arena.alloc(Term::Lambda(outer, body))
 }
 

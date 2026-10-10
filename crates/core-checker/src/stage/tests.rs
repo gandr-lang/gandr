@@ -89,11 +89,18 @@ fn power_is_admitted_and_executed()
     let model = Model(0);
     let token = arena.alloc_type(Type::In(model)).unwrap();
     let pow = power(&mut arena, model).unwrap();
+    let inner = arena.alloc_type(Type::Nat(Stage::Inner(model))).unwrap();
     for exponent in 0_usize ..= 8 {
         let count = arena
             .alloc(Term::Natural(Stage::Outer, Natural(exponent)))
             .unwrap();
         let source = arena.alloc(Term::Apply(pow, count)).unwrap();
+        let input = arena.alloc(Term::Variable(Index(0))).unwrap();
+        let input = arena.alloc(Term::Quote(input)).unwrap();
+        let source = arena.alloc(Term::Apply(source, input)).unwrap();
+        let source = arena.alloc(Term::Splice(source)).unwrap();
+        let source = arena.alloc(Term::Lambda(inner, source)).unwrap();
+        let source = arena.alloc(Term::Quote(source)).unwrap();
         let certificate = normalize(&mut arena, source, &mut Budget(1_000_000)).unwrap();
         let residual = compile(&mut arena, &[token], &certificate, &mut Budget(1_000_000)).unwrap();
         assert_eq!(
@@ -155,6 +162,12 @@ fn unreplayed_and_open_residuals_are_refused()
         .alloc(Term::Natural(Stage::Outer, Natural(2)))
         .unwrap();
     let source = arena.alloc(Term::Apply(pow, exponent)).unwrap();
+    let input = arena.alloc(Term::Variable(Index(0))).unwrap();
+    let input = arena.alloc(Term::Quote(input)).unwrap();
+    let source = arena.alloc(Term::Apply(source, input)).unwrap();
+    let source = arena.alloc(Term::Splice(source)).unwrap();
+    let source = arena.alloc(Term::Lambda(nat, source)).unwrap();
+    let source = arena.alloc(Term::Quote(source)).unwrap();
     let mut certificate = normalize(&mut arena, source, &mut Budget(100_000)).unwrap();
     certificate.steps.clear();
     assert_eq!(
