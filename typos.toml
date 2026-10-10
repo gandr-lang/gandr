@@ -20,3 +20,5 @@ unparseable = "unparseable"
 hom = "hom"
 # Crate name: the terminal face's renderer, `ratatui`.
 ratatui = "ratatui"
+# Author surname: Donald Yau, co-author of the graphical-map factorizations.
+yau = "yau"
