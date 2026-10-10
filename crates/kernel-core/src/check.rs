@@ -186,28 +186,40 @@ use crate::witness::value_type_witness;
 /// The memo an unsupplied check builds for itself: the default path.
 pub type DefaultMemo = OrderedMemo<NodeSupport, NodeOutcome>;
 
-/// Resolve a value id, or the fail-closed arena fault.
+/// Borrow a value node, or the fail-closed arena fault.
 ///
-/// The clone is shallow — a node's children are `Copy` ids — so it costs a
-/// constant and releases the arena borrow before synthesis mints into it.
+/// Child ids are copied; a lift frame owns the level its synthesized type
+/// needs. Literal payloads stay in the arena: the lookup does not clone their
+/// bytes.
 ///
 /// # Specification
 /// - requires: nothing; an id that resolves to nothing is admissible input and
 ///   is refused.
-/// - ensures: a shallow clone of the node at `id`, which releases the arena
-///   borrow before synthesis mints into it.
-/// - provides: the fail-closed read every value rule goes through.
+/// - ensures: a reference to exactly the arena node at `id`.
+/// - provides: the fail-closed borrow every value rule uses; callers retain
+///   only the data their later frames need before mutating the arena.
 /// - fails: `KernelError::ArenaFault` for an id that resolves to no node, so a
 ///   resolution defect rejects the declaration rather than proceeding on a
 ///   fabricated node.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a readable variable produces its context type; truncating
+///   value and computation roots instead produces the exact arena fault without
+///   fabricating a type or growing the arena.
+/// - witness: `check::tests::a_variable_synthesizes_its_context_type`
+/// - witness: `check::tests::unreadable_term_roots_fail_closed`
+#[spec(ensures: |ret| arena.value(id).map_or_else(
+    || matches!(&ret, Err(KernelError::ArenaFault)),
+    |expected| ret.as_ref().is_ok_and(|found| core::ptr::eq(core::ptr::from_ref(*found), core::ptr::from_ref(expected))),
+))]
 #[inline]
 fn read_value(
     arena: &TermArena,
     id: ValueId,
-) -> Result<Value, KernelError>
+) -> Result<&Value, KernelError>
 {
-    arena.value(id).cloned().ok_or(KernelError::ArenaFault)
+    arena.value(id).ok_or(KernelError::ArenaFault)
 }
 
 /// Resolve a computation id, or the fail-closed arena fault.
@@ -218,16 +230,24 @@ fn read_value(
 /// - provides: the fail-closed read every computation rule goes through.
 /// - fails: `KernelError::ArenaFault` for an id that resolves to no node.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an application produces its codomain and a return binds
+///   its value; an unreadable computation root instead gives the arena fault.
+/// - witness: `check::tests::an_application_produces_the_codomain`
+/// - witness: `check::tests::a_bind_binds_the_returned_value`
+/// - witness: `check::tests::unreadable_term_roots_fail_closed`
+#[spec(ensures: |ret| arena.computation(id).map_or_else(
+    || matches!(&ret, Err(KernelError::ArenaFault)),
+    |expected| ret.as_ref().is_ok_and(|found| core::ptr::eq(core::ptr::from_ref(*found), core::ptr::from_ref(expected))),
+))]
 #[inline]
 fn read_computation(
     arena: &TermArena,
     id: ComputationId,
-) -> Result<Computation, KernelError>
+) -> Result<&Computation, KernelError>
 {
-    arena
-        .computation(id)
-        .cloned()
-        .ok_or(KernelError::ArenaFault)
+    arena.computation(id).ok_or(KernelError::ArenaFault)
 }
 
 /// A value-type shape mismatch, with a content witness of the offending type.
@@ -1375,7 +1395,7 @@ where
         let mut produced: Produced = match recalled {
             | Some(outcome) => outcome,
             | None => match goal {
-                | Goal::SynthValue(id) => match read_value(arena, id)? {
+                | Goal::SynthValue(id) => match *read_value(arena, id)? {
                     | Value::Variable(index) => {
                         let synthesized = match lookup(arena, session, context.as_slice(), index) {
                             | Maybe::Present(synthesized) => synthesized,
@@ -1408,8 +1428,8 @@ where
                         goal = Goal::SynthComp(body);
                         continue 'expand;
                     },
-                    | Value::Lift { target, body } => {
-                        frames.push(Frame::SynthLift(target));
+                    | Value::Lift { ref target, body } => {
+                        frames.push(Frame::SynthLift(target.clone()));
                         goal = Goal::SynthValue(body);
                         continue 'expand;
                     },
@@ -1466,7 +1486,7 @@ where
                         continue 'expand;
                     },
                 },
-                | Goal::CheckValue(id, expected) => match read_value(arena, id)? {
+                | Goal::CheckValue(id, expected) => match *read_value(arena, id)? {
                     | Value::Injection(side, body) => match arena.value_type(expected) {
                         | Some(&ValueType::Sum(left, right)) => {
                             let summand = match side {
@@ -1524,7 +1544,7 @@ where
                         continue 'expand;
                     },
                 },
-                | Goal::SynthComp(id) => match read_computation(arena, id)? {
+                | Goal::SynthComp(id) => match *read_computation(arena, id)? {
                     | Computation::Application(head, argument) => {
                         frames.push(Frame::SynthApply(argument));
                         goal = Goal::SynthComp(head);
@@ -1560,7 +1580,7 @@ where
                         });
                     },
                 },
-                | Goal::CheckComp(id, expected) => match read_computation(arena, id)? {
+                | Goal::CheckComp(id, expected) => match *read_computation(arena, id)? {
                     // A lambda pushes the arrow's domain as the innermost
                     // context slot and checks its body against the codomain
                     // read from under that slot. The dependent arrow's codomain
@@ -2279,6 +2299,25 @@ mod tests
     use crate::error::ValueTypeHead;
     use crate::levels::LevelContext;
     use crate::support::SupportContext;
+
+    #[test]
+    fn unreadable_term_roots_fail_closed()
+    {
+        let mut arena = TermArena::new();
+        let before = arena.watermark();
+        let value = arena.value_unit();
+        let computation = arena.computation_return(value);
+        arena.truncate_to(before);
+        assert!(matches!(
+            synth_value(&mut arena, vec![], value),
+            Err(KernelError::ArenaFault)
+        ));
+        assert!(matches!(
+            synth_comp(&mut arena, vec![], computation),
+            Err(KernelError::ArenaFault)
+        ));
+        assert_eq!(before, arena.watermark());
+    }
 
     /// No prior declarations.
     ///
