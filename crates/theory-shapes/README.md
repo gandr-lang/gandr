@@ -44,6 +44,8 @@ Atomic-to-atomic queries mention at most two coordinates, so this implementation
 
 **General entailment is coNP-complete even without diagonals or `i = j`.** A nonentailment assignment is a polynomial certificate. For hardness, translate a Boolean CNF `C` into endpoint formulas, sending a positive literal to `i = 1` and a negative literal to `i = 0`. Conjoin the coverage assumptions `∧ᵢ ((i = 0) ∨ (i = 1))`. The resulting face entails `⊥` exactly when `C` is unsatisfiable. The coverage assumptions exclude generic observations; they are not added as global axioms. Thus deleting shape diagonals and variable equality does not lower this composite language below the coNP bar identified by Rose–Licata, unless P = NP. Positive derivations can be exponentially large.
 
+That bar is a property of the composite language, not a cost the kernel pays. gandr's transport is replay — structural recursion over a trace — and consults no entailment procedure; the questions a checker asks at a boundary mention one face or a conjunction of faces, the polynomial fragments above, and over finite carriers alone entailment is set inclusion. The composite oracle exists so that any formula a client does write receives evidence either way; the boundary-parity family in the measurements is the worst case of that service, not a workload the kernel generates.
+
 Run the reproducible measurement command:
 
 ```sh
