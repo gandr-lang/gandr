@@ -183,34 +183,34 @@ enum Screen
 ///   --capabilities` prints as [`lsp`] and [`capabilities`] state, `repl` runs
 ///   as [`repl`] states, and `tui` as [`tui`] states. Output the driver cannot
 ///   write is noted on standard error, when that is writable, and exits `2`.
-/// - provides: the exit code as the run's verdict. The postcondition stays
-///   prose: the exit code and the lines written are effects on the process, not
-///   a value this call returns to a caller that could observe them. With
-///   `tracing`, a thread-local subscriber reports dispatch spans to standard
-///   error after argument parsing.
+/// - provides: the exit code as the run's verdict. With `tracing`, a
+///   thread-local subscriber reports dispatch spans to standard error after
+///   argument parsing.
 /// - fails: never by panic or abort; every failure is an exit code.
 /// - panics: none. Output goes through locked handles and the fallible
 ///   `writeln!`, never `println!`, whose write-failure path panics. Clap's
 ///   command-definition assertions fire only under `debug_assertions`.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the binary is spawned on inputs triggering each exit
-///   code, the code and the lines asserted; output to a pipe with no reader is
-///   the unwritable case.
+/// - hypothesis: L2/L3 — finite settled, refused, owed, missing and malformed
+///   inputs exercise each process status and stream role. Closed output pipes
+///   distinguish swallowed writes; protocol sessions distinguish completion
+///   from abrupt termination. Misrouting, wrong severity and reordered output
+///   change these observations. Arbitrary terminal environments and tracing
+///   presentation are outside the subprocess domain.
 /// - witness: `cli::cli::a_settled_run_exits_zero`
 /// - witness: `cli::cli::an_unsettled_run_exits_one`
 /// - witness: `cli::cli::an_unreadable_path_exits_two`
 /// - witness: `cli::cli::a_malformed_invocation_exits_two`
 /// - witness: `cli::cli::unwritable_standard_output_exits_two`
-/// - witness: `cli::cli::a_bare_invocation_prints_the_status`
-/// - witness: `cli::cli::lsp_capabilities_print_one_line_of_json`
+/// - witness: `cli::cli::status_and_version_identify_the_same_build`
 /// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
 /// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
-/// - witness: `cli::cli::the_tui_smoke_face_prints_ready`
-/// - witness: `cli::cli::the_tui_needs_a_terminal`
+/// - witness: `cli::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
 /// - witness: `cli::cli::a_script_that_returns_a_value_leaves_successfully`
 /// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
 /// - witness: `cli::cli::an_ill_typed_script_is_refused_by_the_checker`
+#[anodized::spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(UNSETTLED) || ret == ExitCode::from(FAULTED))]
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
@@ -277,20 +277,22 @@ fn main() -> ExitCode
 ///
 /// # Specification
 /// - requires: nothing; the streams come from the process.
-/// - ensures: every frame the client writes to standard input is answered on
-///   standard output by `gandr-surface-lsp`, until `exit` or the input closes;
-///   the session exits `0` when it ends after `shutdown` and `1` before it. A
-///   stream that fails is noted on standard error, when that is writable, and
+/// - ensures: client frames are fed to `gandr-surface-lsp` and its protocol
+///   responses written to standard output until exit or EOF; notifications do
+///   not acquire request replies. A session exits `0` after shutdown and `1`
+///   before it. A failed stream is noted on standard error when writable and
 ///   exits `2`.
 /// - provides: the editor's entry point.
 /// - fails: never by panic; every failure is an exit code.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the binary is spawned with a whole session on standard
-///   input, and with one closed before `shutdown`, and the frames and exit code
-///   asserted.
+/// - hypothesis: L2/L3 — initialize/shutdown/exit, premature EOF and a
+///   truncated frame are observed as protocol output and exit codes. Wrong
+///   framing, lost replies and collapsed clean/abrupt/fault statuses change
+///   these traces. Arbitrary methods and live-editor timing are excluded.
 /// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
+#[anodized::spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
 fn lsp() -> ExitCode
 {
     let mut input = std::io::stdin().lock();
@@ -328,10 +330,13 @@ fn lsp() -> ExitCode
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the binary is spawned with a session piped on standard
-///   input, and its transcript and exit code asserted; the terminal face was
-///   exercised by hand on a pseudo-terminal.
+/// - hypothesis: L2/L3 — a piped load, type query, refused declaration and quit
+///   leave exact transcript rows and an unread suffix; explicit batch agrees
+///   with pipe selection. Wrong routing, failure classification or reads past
+///   quit change the observations. Interactive editing and terminal colour
+///   appearance are outside these finite pipe sessions.
 /// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
+#[anodized::spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn repl(face: Face) -> ExitCode
 {
     let input = std::io::stdin();
@@ -375,13 +380,14 @@ fn repl(face: Face) -> ExitCode
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the binary is spawned under `--smoke` and its line and
-///   exit code asserted, under `--smoke` into a closed pipe and its fault
-///   asserted, and without a terminal and its refusal asserted; the terminal
-///   face was exercised by hand on a pseudo-terminal.
-/// - witness: `cli::cli::the_tui_smoke_face_prints_ready`
-/// - witness: `cli::cli::the_tui_needs_a_terminal`
+/// - hypothesis: L2/L3 — headless launch into a closed pipe and terminal launch
+///   without an attached terminal expose failure status and stream routing.
+///   Success/failure confusion, swallowed output errors or terminal escape
+///   leakage change the observations. Real terminal restoration is outside
+///   these subprocess fixtures and is exercised by the smoke run.
+/// - witness: `cli::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
 /// - witness: `cli::cli::unwritable_standard_output_exits_two`
+#[anodized::spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn tui(screen: Screen) -> ExitCode
 {
     let attached = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
@@ -421,9 +427,12 @@ fn tui(screen: Screen) -> ExitCode
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — the binary is spawned and its whole output compared with
-///   the line the server crate displays.
-/// - witness: `cli::cli::lsp_capabilities_print_one_line_of_json`
+/// - hypothesis: L3 — a closed output pipe observes write refusal and exit
+///   status. A swallowed write failure or success status changes the result.
+///   The successful JSON surface is exercised by the command smoke; protocol
+///   capability contents belong to the server rather than this adapter.
+/// - witness: `cli::cli::unwritable_standard_output_exits_two`
+#[anodized::spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn capabilities() -> ExitCode
 {
     let mut stdout = std::io::stdout().lock();
@@ -450,10 +459,16 @@ fn capabilities() -> ExitCode
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — help, an unknown verb and a verb without paths, each
-///   spawned and its exit code asserted.
+/// - hypothesis: L3 — help, version, an unknown verb, missing paths and closed
+///   output pipes expose status and output-stream choice. Accepting malformed
+///   arguments, wrong destinations and swallowed writes change those finite
+///   observations. Localized usage wording is outside them.
 /// - witness: `cli::cli::a_malformed_invocation_exits_two`
 /// - witness: `cli::cli::help_exits_zero`
+/// - witness: `cli::cli::unwritable_standard_output_exits_two`
+/// - witness: `cli::cli::status_and_version_identify_the_same_build`
+#[anodized::spec(ensures: |ret| ret == ExitCode::from(FAULTED)
+    || (!error.use_stderr() && ret == ExitCode::SUCCESS))]
 fn usage(error: &clap::Error) -> ExitCode
 {
     match (error.print(), error.use_stderr()) {
@@ -474,7 +489,8 @@ fn usage(error: &clap::Error) -> ExitCode
 ///   source the lowering read — prefixed with its path. Each path the walk
 ///   cannot carry through the pipeline is a line on standard error. The run's
 ///   report and its verdict close standard output, and the exit code is the
-///   verdict's.
+///   verdict's. A script follows [`script`]: its value goes to standard output,
+///   its diagnostics to standard error and its run status chooses the exit.
 /// - provides: the one renderer every verb that reports through the dispatcher
 ///   shares.
 /// - fails: the first write error on either stream.
@@ -484,14 +500,20 @@ fn usage(error: &clap::Error) -> ExitCode
 /// The [`std::io::Error`] of the first write that failed.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the binary is spawned on a settled, an unsettled, a
-///   goal-only, a pending and an unreadable input under each verb, and the
-///   lines and exit code asserted.
+/// - hypothesis: L2/L3 — settled, refused, owed, pending and unreadable sources
+///   expose report selection and status precedence under both verbs. Missing
+///   diagnostics, ledger leakage or fault demotion changes the observations.
+///   Arbitrary source programs and output devices are excluded.
 /// - witness: `cli::cli::a_settled_run_exits_zero`
 /// - witness: `cli::cli::an_unsettled_run_exits_one`
 /// - witness: `cli::cli::goals_report_an_obligation_without_failing`
 /// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
 /// - witness: `cli::cli::an_unreadable_path_exits_two`
+/// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
+#[anodized::spec(captures: [status = matches!(outcome, Outcome::Status(_))],
+    ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+        (*exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED))
+            && (!status || *exit == ExitCode::SUCCESS)))]
 fn render(
     outcome: Outcome,
     stdout: &mut dyn std::io::Write,
@@ -512,10 +534,31 @@ fn render(
 /// verdict.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: consumes the walk, writing source reports and ledger entries to
+///   standard output and path faults to standard error, then the final report
+///   and verdict. The exit is zero for settled, one for unsettled and two for
+///   faulted, as the walk's final report decides under the offered verb.
+/// - provides: ordered rendering and severity aggregation for check and test.
+/// - fails: the first write error, without attempting subsequent entries.
+/// - panics: none.
 ///
 /// # Errors
 /// The [`std::io::Error`] of the first write that failed.
+///
+/// # Adequacy
+/// - hypothesis: L2/L3 — mixed settled, refused and unreadable paths and
+///   fixture/pending roots expose continuation, stream separation and fault
+///   precedence. Missing sources, reordered severity or wrong ledger selection
+///   changes exact counts and statuses. Arbitrary filesystems are excluded.
+/// - witness: `cli::cli::an_unreadable_path_exits_two`
+/// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
+/// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
+#[anodized::spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit| *exit == match walk.report().verdict(verb) {
+    RunVerdict::Settled => ExitCode::SUCCESS,
+    RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
+    RunVerdict::Faulted => ExitCode::from(FAULTED),
+}))]
 fn run(
     verb: Verb,
     mut walk: Walk,
@@ -576,10 +619,11 @@ fn run(
 /// The [`std::io::Error`] of the first write that failed.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the binary is spawned on a script of each status, an
-///   absent path, a path and a second operand, and the exact standard output
-///   and exit code asserted; the value's line is asserted to be the whole of
-///   standard output.
+/// - hypothesis: L3 — value, blame, type refusal, unrelated declaration
+///   refusal, absent source and empty program are observed through exact
+///   status, value multiplicity and separate diagnostic streams. Wrong status,
+///   repeated values or evaluation after refusal changes these observations.
+///   Arbitrary machine programs and interruption timing are outside them.
 /// - witness: `cli::cli::a_script_that_returns_a_value_leaves_successfully`
 /// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
 /// - witness: `cli::cli::an_ill_typed_script_is_refused_by_the_checker`
@@ -587,6 +631,9 @@ fn run(
 /// - witness: `cli::cli::an_absent_script_is_refused_by_path`
 /// - witness: `cli::cli::a_script_with_no_program_is_refused`
 /// - witness: `cli::cli::the_value_of_a_run_is_printed_once`
+/// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
+#[anodized::spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+    *exit == ExitCode::SUCCESS || *exit == ExitCode::from(STOPPED) || *exit == ExitCode::from(UNREACHED)))]
 fn script(
     runnable: &mut Script,
     stdout: &mut dyn std::io::Write,

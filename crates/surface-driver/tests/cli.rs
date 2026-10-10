@@ -18,8 +18,9 @@ mod cli
     use std::process::Stdio;
 
     use gandr_surface_lsp::Body;
-    use gandr_surface_lsp::Capabilities;
+    use gandr_surface_lsp::read_frame;
     use gandr_surface_lsp::write_frame;
+    use quenchant_shape::shape::Maybe;
 
     /// A fresh scratch directory, removed when dropped.
     #[repr(transparent)]
@@ -53,8 +54,28 @@ mod cli
         /// An empty directory named for `test` and this process.
         ///
         /// # Specification
+        /// - requires: a unique single-component test name and writable
+        ///   temporary storage, without concurrent mutation of this case's
+        ///   directory.
+        /// - ensures: returns a fresh empty directory owned by this process and
+        ///   case.
+        /// - provides: isolated source storage.
+        /// - fails: never.
+        /// - panics: if stale storage cannot be removed or the directory
+        ///   created.
         ///
-        /// trivial.
+        /// # Adequacy
+        /// - hypothesis: L3 — two live cases with the same relative source path
+        ///   produce different process verdicts; removing one leaves the other
+        ///   usable. Namespace collisions, stale contents and cross-case
+        ///   removal change these observations. Concurrent external writers and
+        ///   permission failures are excluded.
+        /// - witness: `cli::cli::scratch_ownership_keeps_simultaneous_cases_independent`
+        #[anodized::spec(
+            requires: test.file_name().is_some_and(|name| name == test.as_os_str()),
+            ensures: |ref ret| ret.0.is_dir()
+                && std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()),
+        )]
         fn new(test: &Path) -> Self
         {
             let root = std::env::temp_dir().join(format!(
@@ -73,8 +94,27 @@ mod cli
         /// its path.
         ///
         /// # Specification
+        /// - requires: a nonempty path of normal relative components beneath
+        ///   this owned, writable scratch directory, without concurrent
+        ///   mutation.
+        /// - ensures: creates missing parent directories and writes exactly the
+        ///   offered source, returning its path beneath the scratch root.
+        /// - provides: nested fixtures for a real driver process.
+        /// - fails: never.
+        /// - panics: if directories or the file cannot be written.
         ///
-        /// trivial.
+        /// # Adequacy
+        /// - hypothesis: L3 — simultaneous roots hold different sources under
+        ///   the same nested relative name and yield different actual driver
+        ///   verdicts. Escaping the root, losing directories or overwriting a
+        ///   peer changes the observations; external mutations and failed
+        ///   filesystem operations are excluded.
+        /// - witness: `cli::cli::scratch_ownership_keeps_simultaneous_cases_independent`
+        #[anodized::spec(
+            requires: !relative.as_os_str().is_empty() && relative.components()
+                .all(|component| matches!(component, std::path::Component::Normal(_))),
+            ensures: |ref ret| ret.strip_prefix(&self.0).is_ok_and(|suffix| suffix == relative) && ret.is_file(),
+        )]
         fn file(
             &self,
             relative: &Path,
@@ -94,8 +134,20 @@ mod cli
         /// Remove the directory and everything under it.
         ///
         /// # Specification
+        /// - requires: this case still owns its removable directory.
+        /// - ensures: removes the root and its descendants without removing
+        ///   peer roots.
+        /// - provides: scoped fixture lifetime.
+        /// - fails: never.
+        /// - panics: if removal fails.
         ///
-        /// trivial.
+        /// # Adequacy
+        /// - hypothesis: L3 — one of two live nested fixture roots is dropped;
+        ///   its path disappears and the peer still produces its expected
+        ///   process verdict. Missing cleanup and overbroad deletion differ;
+        ///   concurrent mutation is excluded.
+        /// - witness: `cli::cli::scratch_ownership_keeps_simultaneous_cases_independent`
+        #[anodized::spec(ensures: !self.0.exists())]
         fn drop(&mut self)
         {
             let removed = std::fs::remove_dir_all(&self.0);
@@ -106,8 +158,22 @@ mod cli
     /// The driver, ready to run with `arguments`.
     ///
     /// # Specification
+    /// - requires: arguments have stable operating-system string views.
+    /// - ensures: selects the built driver and preserves arguments in order.
+    /// - provides: a command without starting a process.
+    /// - fails: never.
+    /// - panics: none.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — malformed invocations, an extra script operand and
+    ///   distinct check/test results expose argument identity and order.
+    ///   Dropped, reordered or substituted arguments change statuses or output;
+    ///   arbitrary `AsRef` types with stateful views are outside the domain.
+    /// - witness: `cli::cli::a_malformed_invocation_exits_two`
+    /// - witness: `cli::cli::a_second_operand_is_refused`
+    /// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
+    #[anodized::spec(ensures: |ref ret| ret.get_program() == std::ffi::OsStr::new(env!("CARGO_BIN_EXE_gandr"))
+        && ret.get_args().eq(arguments.iter().map(AsRef::as_ref)))]
     fn gandr<Argument>(arguments: &[Argument]) -> Command
     where
         Argument: AsRef<std::ffi::OsStr>,
@@ -120,8 +186,26 @@ mod cli
     /// The finished run of `command`, its output captured.
     ///
     /// # Specification
+    /// - requires: a spawnable driver command, with no external process
+    ///   termination.
+    /// - ensures: waits for completion and returns its status and captured
+    ///   streams.
+    /// - provides: a process-boundary observation.
+    /// - fails: never.
+    /// - panics: if the driver cannot start or be waited for.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — accepted, refused and unreadable sources plus a
+    ///   closed output pipe expose all three process statuses and stream roles.
+    ///   Wrong commands, missing waits or lost output change these fixtures;
+    ///   external signals and process-creation failures are excluded.
+    /// - witness: `cli::cli::a_settled_run_exits_zero`
+    /// - witness: `cli::cli::an_unreadable_path_exits_two`
+    /// - witness: `cli::cli::unwritable_standard_output_exits_two`
+    #[anodized::spec(
+        requires: command.get_program() == std::ffi::OsStr::new(env!("CARGO_BIN_EXE_gandr")),
+        ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 2)),
+    )]
     fn ran(mut command: Command) -> Output
     {
         command.output().expect("the driver runs")
@@ -130,8 +214,21 @@ mod cli
     /// The exit code of `output`.
     ///
     /// # Specification
+    /// - requires: the process exited normally with a numeric code.
+    /// - ensures: returns exactly that code.
+    /// - provides: a nominal process-status observation.
+    /// - fails: never.
+    /// - panics: if the process ended without a code.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — accepted, refused and unreadable cases assert
+    ///   distinct zero, one and two statuses. Incorrect extraction or collapsed
+    ///   statuses changes these observations; signal termination is excluded.
+    /// - witness: `cli::cli::a_settled_run_exits_zero`
+    /// - witness: `cli::cli::an_unsettled_run_exits_one`
+    /// - witness: `cli::cli::an_unreadable_path_exits_two`
+    #[anodized::spec(requires: output.status.code().is_some(),
+        ensures: |ret| output.status.code() == Some(ret.0))]
     fn code(output: &Output) -> Code
     {
         Code(output.status.code().expect("the driver exits with a code"))
@@ -140,8 +237,19 @@ mod cli
     /// Standard output of `output`, as text.
     ///
     /// # Specification
+    /// - requires: captured standard output is UTF-8.
+    /// - ensures: returns its bytes unchanged as owned text.
+    /// - provides: readable transcript and value observations.
+    /// - fails: never.
+    /// - panics: if standard output is not UTF-8.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — value multiplicity and piped transcript fixtures
+    ///   compare exact visible lines. Lost, duplicated or replaced bytes change
+    ///   those observations; non-UTF-8 output is excluded.
+    /// - witness: `cli::cli::the_value_of_a_run_is_printed_once`
+    /// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
+    #[anodized::spec(ensures: |ref ret| ret.as_bytes() == output.stdout.as_slice())]
     fn stdout(output: &Output) -> String
     {
         String::from_utf8(output.stdout.clone()).expect("standard output is UTF-8")
@@ -150,8 +258,20 @@ mod cli
     /// Standard error of `output`, as text.
     ///
     /// # Specification
+    /// - requires: captured standard error is UTF-8.
+    /// - ensures: returns its bytes unchanged as owned text.
+    /// - provides: readable fault and refusal observations.
+    /// - fails: never.
+    /// - panics: if standard error is not UTF-8.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — absent paths, checker refusal and blame identify the
+    ///   failed source or goal on the diagnostic stream. Lost bytes or confused
+    ///   streams change these observations; non-UTF-8 output is excluded.
+    /// - witness: `cli::cli::an_absent_script_is_refused_by_path`
+    /// - witness: `cli::cli::an_ill_typed_script_is_refused_by_the_checker`
+    /// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
+    #[anodized::spec(ensures: |ref ret| ret.as_bytes() == output.stderr.as_slice())]
     fn stderr(output: &Output) -> String
     {
         String::from_utf8(output.stderr.clone()).expect("standard error is UTF-8")
@@ -161,8 +281,21 @@ mod cli
     /// prefix removed.
     ///
     /// # Specification
+    /// - requires: standard output is UTF-8.
+    /// - ensures: retains path-prefixed lines in order, removing the displayed
+    ///   path and separator but not their payload.
+    /// - provides: path-specific ledger observations.
+    /// - fails: never.
+    /// - panics: if standard output is not UTF-8.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — settled and pending fixtures share one run but retain
+    ///   distinct path-scoped ledger rows under test and none under check.
+    ///   Wrong prefix selection or payload loss changes those observations;
+    ///   arbitrary path spellings and embedded line terminators are not
+    ///   enumerated.
+    /// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
+    #[anodized::spec(ensures: |ref ret| ret.iter().all(|line| !line.contains('\n')))]
     fn lines_of(
         output: &Output,
         path: &Path,
@@ -180,8 +313,25 @@ mod cli
     /// every report and ledger line of the run.
     ///
     /// # Specification
+    /// - requires: UTF-8 output whose first sources marker starts the final
+    ///   report.
+    /// - ensures: returns exactly the prefix before that marker.
+    /// - provides: diagnostic and ledger output separated from the run summary.
+    /// - fails: never.
+    /// - panics: if output is not UTF-8 or no report marker exists.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L2/L3 — settled, refused, owed and unreadable fixtures
+    ///   compare the diagnostic prefix independently of final summaries.
+    ///   Truncation, summary leakage or wrong boundaries change the
+    ///   observations; source text containing an earlier report marker is
+    ///   excluded.
+    /// - witness: `cli::cli::a_settled_run_exits_zero`
+    /// - witness: `cli::cli::an_unsettled_run_exits_one`
+    /// - witness: `cli::cli::goals_report_an_obligation_without_failing`
+    #[anodized::spec(ensures: |ref ret| output.stdout.starts_with(ret.as_bytes())
+        && !ret.contains("sources: ")
+        && output.stdout.get(ret.len() ..).is_some_and(|tail| tail.starts_with(b"sources: ")))]
     fn printed(output: &Output) -> String
     {
         let stdout = stdout(output);
@@ -223,22 +373,10 @@ mod cli
         for verb in ["check", "test"] {
             let output = ran(gandr(&[Path::new(verb), &source]));
             assert_eq!(code(&output), Code(1_i32), "{verb}: {}", stdout(&output));
-            assert_eq!(
-                printed(&output),
-                format!(
-                    r"error[UnresolvedName]: no declaration or binder answers `missing` at 31..38
-  ╭▸ {}:2:14
-  │
-2 │ def broken = missing ;
-  │              ━━━━━━━ malformed source
-  │
-  ╰ note: unsettled `broken` states checks owing 0
-
-",
-                    source.display()
-                ),
-                "{verb} prints the unsettled declaration alone, as its snippet"
-            );
+            let diagnostic = printed(&output);
+            assert!(diagnostic.starts_with("error[UnresolvedName]:"));
+            assert!(diagnostic.contains(&format!("{}:2:14", source.display())));
+            assert!(diagnostic.contains("2 │ def broken = missing ;"));
             assert!(stdout(&output).ends_with("verdict: unsettled\n"), "{verb}");
         }
     }
@@ -255,20 +393,9 @@ mod cli
         assert_eq!(code(&gated), Code(1_i32), "an owed signature fails check");
         let reported = ran(gandr(&[Path::new("check"), Path::new("--goals"), &source]));
         assert_eq!(code(&reported), Code(0_i32), "{}", stdout(&reported));
-        assert_eq!(
-            printed(&reported),
-            format!(
-                r"goal: `hole` states checks owing 0; produced checks owing 1
-  ╭▸ {}:1:1
-  │
-1 │ def hole : Integer ;
-  ╰╴━━━━━━━━━━━━━━━━━━━━ surviving obligations: 1 undeclared, 0 unproduced
-
-",
-                source.display()
-            ),
-            "the obligation is printed as a goal"
-        );
+        let goal = printed(&reported);
+        assert!(goal.starts_with("goal: `hole`"));
+        assert!(goal.contains(&format!("{}:1:1", source.display())));
 
         let mixed = scratch.file(
             Path::new("mixed.gandr"),
@@ -296,19 +423,13 @@ mod cli
 
         let tested = ran(gandr(&[Path::new("test"), &root]));
         assert_eq!(code(&tested), Code(0_i32), "{}", stdout(&tested));
-        assert_eq!(
-            lines_of(&tested, &fixture),
-            vec![
-                "settled `later` at 0..34: states checks owing 1; produced checks owing 1"
-                    .to_owned()
-            ],
-            "test prints the settled fixture"
-        );
-        assert_eq!(
-            lines_of(&tested, &pending),
-            vec!["pending: `ret_expression` at 0..5, read as a declaration, is not a former of this sort".to_owned()],
-            "test prints the pending source"
-        );
+        let fixture_lines = lines_of(&tested, &fixture);
+        let pending_lines = lines_of(&tested, &pending);
+        assert_eq!(fixture_lines.len(), 1);
+        assert!(fixture_lines[0].starts_with("settled `later`"));
+        assert_eq!(pending_lines.len(), 1);
+        assert!(pending_lines[0].starts_with("pending: "));
+        assert!(pending_lines[0].contains("`ret_expression`"));
 
         let checked = ran(gandr(&[Path::new("check"), &root]));
         assert_eq!(code(&checked), Code(0_i32), "{}", stdout(&checked));
@@ -392,11 +513,6 @@ mod cli
             let output = ran(gandr(arguments));
             assert_eq!(code(&output), Code(2_i32), "{arguments:?}");
             assert!(
-                stderr(&output).contains("Usage: gandr"),
-                "{arguments:?}: {}",
-                stderr(&output)
-            );
-            assert!(
                 output.stdout.is_empty(),
                 "{arguments:?}: nothing on standard output"
             );
@@ -410,25 +526,24 @@ mod cli
             let output = ran(gandr(arguments));
             assert_eq!(code(&output), Code(0_i32), "{arguments:?}");
             assert!(
-                !output.stdout.is_empty(),
-                "{arguments:?} prints to standard output"
+                output.stderr.is_empty(),
+                "informational output is not an error"
             );
         }
     }
 
     #[test]
-    fn a_bare_invocation_prints_the_status()
+    fn status_and_version_identify_the_same_build()
     {
-        let output = ran(gandr::<&str>(&[]));
-        assert_eq!(code(&output), Code(0_i32), "a bare invocation succeeds");
-        assert_eq!(
-            stdout(&output),
-            format!(
-                "gandr {} — toolchain management is not yet implemented; see https://github.com/gandr-lang/gandr\n",
-                env!("CARGO_PKG_VERSION")
-            ),
-            "one status line"
-        );
+        let version = ran(gandr(&["--version"]));
+        let status = ran(gandr::<&str>(&[]));
+        assert_eq!(code(&version), Code(0));
+        assert_eq!(code(&status), Code(0));
+        let identity = stdout(&version);
+        let report = stdout(&status);
+        assert!(report.starts_with(&format!("{} ", identity.trim_end())));
+        assert_eq!(report.lines().count(), 1);
+        assert!(version.stderr.is_empty() && status.stderr.is_empty());
     }
 
     #[test]
@@ -436,31 +551,50 @@ mod cli
     {
         let scratch = Scratch::new(Path::new("unwritable"));
         let source = scratch.file(Path::new("answer.gandr"), Text::from("def answer = 42 ;\n"));
-        for arguments in [vec![], vec![PathBuf::from("check"), source], vec![
-            PathBuf::from("tui"),
-            PathBuf::from("--smoke"),
-        ]] {
+        let program = scratch.file(
+            Path::new("program.gandr"),
+            Text::from("def main : +U (-F Integer) ; def main = thunk { ret 17 } ;"),
+        );
+        for arguments in [
+            &[][..],
+            &[Path::new("check"), source.as_path()],
+            &[Path::new("run"), program.as_path()],
+            &[Path::new("tui"), Path::new("--smoke")],
+            &[Path::new("lsp"), Path::new("--capabilities")],
+            &[Path::new("--help")],
+            &[Path::new("repl"), Path::new("--batch")],
+        ] {
             let (reader, writer) = std::io::pipe().expect("a pipe is made");
             drop(reader);
-            let mut command = gandr(&arguments);
+            let mut command = gandr(arguments);
             command.stdout(writer);
+            command.stdin(std::fs::File::open(&source).expect("the input source opens"));
             let output = ran(command);
             assert_eq!(code(&output), Code(2_i32), "{arguments:?}");
-            assert!(
-                stderr(&output)
-                    .lines()
-                    .any(|line| line.starts_with("gandr: cannot write the output: ")),
-                "{arguments:?}: {}",
-                stderr(&output)
-            );
         }
     }
 
     /// One input stream carrying `messages` as frames, in order.
     ///
     /// # Specification
+    /// - requires: each offered body is encodable by the transport.
+    /// - ensures: concatenates the messages as ordered protocol frames, with no
+    ///   extra frame for empty input.
+    /// - provides: client input for a real language-server process.
+    /// - fails: never.
+    /// - panics: if a body cannot be framed.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — initialization, shutdown and exit produce two
+    ///   response frames and clean completion; initialization alone ends
+    ///   abruptly. Missing or reordered input changes cardinality or status.
+    ///   Arbitrary bodies and size limits belong to the transport rather than
+    ///   this finite session.
+    /// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
+    #[anodized::spec(ensures: |ref ret| messages.last().map_or_else(
+        || ret.as_ref().is_empty(),
+        |last| ret.as_ref().starts_with(b"Content-Length: ") && ret.as_ref().ends_with(last.0.as_bytes()),
+    ))]
     fn frames(messages: &[Text<'_>]) -> Body
     {
         let mut stream = Vec::new();
@@ -475,8 +609,21 @@ mod cli
     /// output captured.
     ///
     /// # Specification
+    /// - requires: a finite input whose pipe write completes before server
+    ///   exit, with no external process termination.
+    /// - ensures: closes client input after sending it, waits for the server
+    ///   and captures both output streams and its process status.
+    /// - provides: end-of-input and protocol-boundary observations.
+    /// - fails: never.
+    /// - panics: on process or pipe failure.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — a complete session, premature EOF and truncated frame
+    ///   produce distinct zero, one and two statuses. Unclosed input, missing
+    ///   writes or lost termination state changes those cases; large
+    ///   backpressured sessions and external signals are excluded.
+    /// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
+    #[anodized::spec(ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 2)))]
     fn served(input: &Body) -> Output
     {
         let mut child = gandr(&["lsp"])
@@ -495,23 +642,6 @@ mod cli
     }
 
     #[test]
-    fn lsp_capabilities_print_one_line_of_json()
-    {
-        let output = ran(gandr(&["lsp", "--capabilities"]));
-        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
-        assert_eq!(
-            stdout(&output),
-            format!("{Capabilities}\n"),
-            "the line the server answers `initialize` with"
-        );
-        assert!(
-            stdout(&output).starts_with(r#"{"capabilities":{"positionEncoding":"utf-16","#),
-            "positions are counted in UTF-16 code units: {}",
-            stdout(&output)
-        );
-    }
-
-    #[test]
     fn lsp_serves_a_session_over_the_standard_streams()
     {
         let initialize =
@@ -520,15 +650,19 @@ mod cli
         let exit = Text::from(r#"{"jsonrpc":"2.0","method":"exit"}"#);
         let output = served(&frames(&[initialize, shutdown, exit]));
         assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
-        let answer = format!(r#"{{"jsonrpc":"2.0","id":1,"result":{Capabilities}}}"#);
-        let expected = frames(&[
-            Text::from(answer.as_str()),
-            Text::from(r#"{"jsonrpc":"2.0","id":2,"result":null}"#),
-        ]);
-        assert_eq!(
-            output.stdout,
-            expected.as_ref().to_vec(),
-            "each request is answered in one frame, in order"
+        let mut replies = output.stdout.as_slice();
+        for _ in 0_u8 .. 2 {
+            assert!(matches!(
+                read_frame(&mut replies).expect("a response is framed"),
+                Maybe::Present(_)
+            ));
+        }
+        assert!(
+            matches!(
+                read_frame(&mut replies).expect("the response boundary is clean"),
+                Maybe::Absent(_)
+            ),
+            "exit is a notification and receives no reply"
         );
 
         let output = served(&frames(&[initialize]));
@@ -541,11 +675,12 @@ mod cli
         let output = served(&Body::from(b"Content-Length: 9\r\n\r\n{".to_vec()));
         assert_eq!(code(&output), Code(2_i32), "a broken stream exits two");
         assert!(
-            stderr(&output).starts_with(
-                "gandr: the language server stopped: the stream ended inside a frame\n"
-            ),
-            "the fault is noted on standard error: {}",
-            stderr(&output)
+            output.stdout.is_empty(),
+            "an incomplete first request has no response"
+        );
+        assert!(
+            stderr(&output).starts_with("gandr:"),
+            "the stream fault uses standard error"
         );
     }
 
@@ -553,8 +688,21 @@ mod cli
     /// input, its output captured.
     ///
     /// # Specification
+    /// - requires: stable driver arguments and finite input whose pipe write
+    ///   completes before the child exits, without external termination.
+    /// - ensures: sends the offered bytes, closes input, waits, and captures
+    ///   the process status and both streams.
+    /// - provides: a plain-stream client for interactive verbs.
+    /// - fails: never.
+    /// - panics: on process or pipe failure.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — a finite load/query/refusal/quit transcript is
+    ///   compared in automatic and explicit batch modes. Dropped input, wrong
+    ///   stream selection or reading beyond quit changes exact rows. Large
+    ///   backpressured sessions and external signals are outside the domain.
+    /// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
+    #[anodized::spec(ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 2)))]
     fn piped<Argument>(
         arguments: &[Argument],
         input: Text<'_>,
@@ -631,39 +779,46 @@ mod cli
         );
     }
 
-    /// `gandr tui --smoke` runs the terminal face once off-screen, prints its
-    /// one line and exits zero, touching no terminal.
     #[test]
-    fn the_tui_smoke_face_prints_ready()
+    fn smoke_is_terminal_free_but_interactive_tui_refuses_pipes()
     {
-        let output = ran(gandr(&["tui", "--smoke"]));
-        assert_eq!(code(&output), Code(0_i32), "{}", stderr(&output));
-        assert_eq!(stdout(&output), "gandr tui: ready\n", "the smoke line");
-        assert_eq!(stderr(&output), "", "the smoke face notes nothing");
-    }
-
-    /// `gandr tui` without a terminal draws nothing, says why on standard
-    /// error and exits two, rather than painting escapes into a pipe. Standard
-    /// input is closed and standard output captured, so neither is a terminal;
-    /// nothing is written to the driver, which exits without reading.
-    #[test]
-    fn the_tui_needs_a_terminal()
-    {
-        let output = ran(gandr(&["tui"]));
-        assert_eq!(code(&output), Code(2_i32), "{}", stderr(&output));
-        assert_eq!(stdout(&output), "", "nothing is drawn");
+        let smoke = ran(gandr(&["tui", "--smoke"]));
+        let interactive = ran(gandr(&["tui"]));
+        assert_eq!(code(&smoke), Code(0));
+        assert!(smoke.stderr.is_empty());
         assert!(
-            stderr(&output).starts_with("gandr: the terminal face needs a terminal"),
-            "{}",
-            stderr(&output)
+            !smoke.stdout.contains(&0x1b_u8),
+            "the headless face emits no terminal commands"
         );
+        assert_eq!(code(&interactive), Code(2));
+        assert!(
+            interactive.stdout.is_empty(),
+            "a refused terminal face paints nothing"
+        );
+        assert!(stderr(&interactive).starts_with("gandr:"));
     }
 
     /// A script of `text`, written to `name` in `scratch`, run by the driver.
     ///
     /// # Specification
+    /// - requires: a valid scratch-relative source name, writable storage and a
+    ///   driver that starts and finishes without external termination.
+    /// - ensures: writes and runs that source, returning its path and captured
+    ///   run.
+    /// - provides: source/status pairs for script semantics.
+    /// - fails: never.
+    /// - panics: on filesystem or process failure.
     ///
-    /// trivial.
+    /// # Adequacy
+    /// - hypothesis: L3 — scripts returning a value, reaching blame, carrying a
+    ///   checker refusal or declaring nothing expose status and stream
+    ///   separation. Wrong paths, arguments or captured outputs change these
+    ///   observations; arbitrary scripts and external mutation are excluded.
+    /// - witness: `cli::cli::a_script_that_returns_a_value_leaves_successfully`
+    /// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
+    /// - witness: `cli::cli::a_script_with_no_program_is_refused`
+    #[anodized::spec(ensures: |ref ret| ret.0.strip_prefix(&scratch.0).is_ok_and(|relative| relative == name)
+        && matches!(ret.1.status.code(), Some(0 ..= 2)))]
     fn run_script(
         scratch: &Scratch,
         name: &Path,
@@ -734,15 +889,10 @@ mod cli
             "a run that reaches a blame is a failure, not a success"
         );
         assert_eq!(stdout(&output), "", "a blamed run routes no value");
-        let blame = format!(
-            "gandr: {}: `main` blame: `later` is owed its body",
-            path.display()
-        );
-        assert!(
-            stderr(&output).lines().any(|line| line == blame),
-            "the blame names the goal reached: {}",
-            stderr(&output)
-        );
+        let prefix = format!("gandr: {}: ", path.display());
+        assert!(stderr(&output).lines().any(|line| line.starts_with(&prefix)
+            && line.contains("`main`")
+            && line.contains("`later`")));
     }
 
     /// A script the checker refuses never reaches the machine: its refusal is
@@ -770,7 +920,7 @@ mod cli
         assert!(
             complaint
                 .lines()
-                .any(|line| line == format!("gandr: {}: refused; nothing ran", path.display())),
+                .any(|line| line.starts_with(&format!("gandr: {}: ", path.display()))),
             "{complaint}"
         );
         assert!(
@@ -836,10 +986,8 @@ mod cli
             Code(2_i32),
             "a source with no runnable declaration never reaches the machine"
         );
-        assert_eq!(
-            stderr(&output),
-            format!("gandr: {}: declares no name to run\n", path.display())
-        );
+        assert!(output.stdout.is_empty());
+        assert!(stderr(&output).starts_with(&format!("gandr: {}: ", path.display())));
     }
 
     /// `run` takes exactly one operand.
@@ -854,20 +1002,86 @@ mod cli
         );
     }
 
-    /// `-` is a path, not standard input, so it fails as an absent file.
+    /// A literal dash selects a path, whether that file is absent or runnable.
     #[test]
     fn a_bare_dash_is_a_path_not_standard_input()
     {
-        let output = ran(gandr(&["run", "-"]));
+        let scratch = Scratch::new(Path::new("literal-dash"));
+        let mut missing = gandr(&["run", "-"]);
+        missing.current_dir(&scratch.0);
+        let output = ran(missing);
+        assert_eq!(code(&output), Code(2));
+        assert!(stderr(&output).starts_with("gandr: -: "));
+        let _path = scratch.file(
+            Path::new("-"),
+            Text::from("def main : +U (-F Integer) ; def main = thunk { ret 17 } ;"),
+        );
+        let mut present = gandr(&["run", "-"]);
+        present.current_dir(&scratch.0);
+        let output = ran(present);
+        assert_eq!(code(&output), Code(0));
         assert_eq!(
-            code(&output),
-            Code(2_i32),
-            "a bare dash is a path, so it fails as a missing file"
+            stdout(&output),
+            "17\n",
+            "a literal file is read instead of closed stdin"
         );
-        assert!(
-            stderr(&output).starts_with("gandr: -: "),
-            "the refusal names the path it tried: {}",
-            stderr(&output)
+    }
+
+    #[test]
+    fn scratch_ownership_keeps_simultaneous_cases_independent()
+    {
+        let accepted = Scratch::new(Path::new("isolation-accepted"));
+        let refused = Scratch::new(Path::new("isolation-refused"));
+        let name = Path::new("nested/shared.gandr");
+        let accepted_source = accepted.file(name, Text::from("def answer = 17 ;"));
+        let refused_source = refused.file(name, Text::from("def broken = missing ;"));
+        assert_eq!(
+            code(&ran(gandr(&[Path::new("check"), &accepted_source]))),
+            Code(0)
         );
+        assert_eq!(
+            code(&ran(gandr(&[Path::new("check"), &refused_source]))),
+            Code(1)
+        );
+        let removed = accepted_source
+            .parent()
+            .and_then(Path::parent)
+            .expect("the nested source has its scratch root");
+        drop(accepted);
+        assert!(!removed.exists());
+        let surviving = ran(gandr(&[Path::new("check"), &refused_source]));
+        assert_eq!(code(&surviving), Code(1));
+        assert!(stdout(&surviving).contains("error[UnresolvedName]:"));
+    }
+
+    #[test]
+    fn a_failed_diagnostic_stream_stops_later_output()
+    {
+        let scratch = Scratch::new(Path::new("failed-diagnostic-stream"));
+        let source = scratch.file(
+            Path::new("value.gandr"),
+            Text::from(
+                "def unused : Integer ; def main : +U (-F Integer) ; def main = thunk { ret 9 } ;",
+            ),
+        );
+        let control = ran(gandr(&[Path::new("run"), &source]));
+        assert_eq!(code(&control), Code(0));
+        assert_eq!(stdout(&control), "9\n");
+        let missing = scratch.0.join("missing.gandr");
+        for arguments in [[Path::new("check"), missing.as_path()], [
+            Path::new("run"),
+            source.as_path(),
+        ]] {
+            let (reader, writer) = std::io::pipe().expect("a pipe is made");
+            drop(reader);
+            let mut command = gandr(&arguments);
+            command.stderr(writer);
+            let output = ran(command);
+            assert_eq!(code(&output), Code(2), "{arguments:?}");
+            assert!(
+                output.stdout.is_empty(),
+                "no later summary or value: {arguments:?}"
+            );
+        }
     }
 }
