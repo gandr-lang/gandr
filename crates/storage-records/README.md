@@ -114,9 +114,28 @@ One backing object can implement both traits. Wrapping a value chunk as a record
 
 ## Specification attributes
 
-`# Specification` blocks state the admitted behavior. Executable `#[spec(...)]` predicates check refusal conditions, independent comparisons and derived results on executed calls. Statements relating separate calls or unavailable values remain prose obligations with their limits stated beside the implementation.
+`# Specification` states admitted behavior; each nontrivial item pairs it with a bounded `# Adequacy` hypothesis and same-crate test witnesses. Executable `#[spec(...)]` predicates check state transitions, decoded observations and refusal conditions on executed calls. Constant functions use predicates over their inner fields.
 
-The enforcing test lane uses `--cfg anodized_panic` across the dependency graph. `anodized` uses core-only helpers with default features disabled.
+Type predicates express scalar bounds, ordered ranges, domain separation and retained node or tree consistency. Operation postconditions and witnesses evaluate these refinements explicitly. Corruption witnesses alter cached counts, order, spans, payloads and decoded identities; canonical encoders supply the carried-node predicate rather than a second wire serializer.
+
+Evidence includes complete node and record wire images, independently calculated boundary residues, whole-corpus query comparisons and exact boundary errors. Owned carrier inputs pass through the wire and node witnesses rather than separate conversion-only tests. Each hypothesis names its exercised inputs and the deviations its observations distinguish; passing fixtures do not establish unbounded correctness or edit locality.
+
+The remaining executable exemptions have explicit limits beside their items:
+
+| Surface | Predicate boundary |
+| ------- | ------------------ |
+| Relations needing another value or discarded context | Equality and binding require the other value or original context; operations with those inputs carry the checks. |
+| Temporal data laws | Prior states and complete operation histories are not retained; mutating methods check each transition. A store's backing bytes remain untrusted. |
+| Formatters | The output sink cannot be read back inside a postcondition; rendering and sink refusal have external witnesses. |
+| Generic consuming constructors | The conversion consumes its input without exposing a borrowed comparison image. |
+| Owned optional records in a constant constructor | Moved inputs are unavailable afterward, and constant instrumentation does not support pre-state captures. |
+| Required store-trait methods | Instrumentation changes implementation hooks and object compatibility; concrete method bodies carry executable checks. |
+
+The enforcing lane supplies `--cfg anodized_panic` across the dependency graph. `anodized` defaults remain disabled; type predicates also require its data-predicate runtime. Run the crate under enforcement with:
+
+```sh
+CARGO_TARGET_DIR=target/enforcing RUSTFLAGS="--cfg anodized_panic" mise exec -- cargo test -p gandr-storage-records --all-targets
+```
 
 ## License
 

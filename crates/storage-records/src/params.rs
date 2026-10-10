@@ -40,8 +40,15 @@ impl TreeKind
     ///   reordering this enum cannot change a committed digest.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on one complete manifest preimage; its independent
+    ///   digest golden distinguishes a changed discriminator or ordinal-derived
+    ///   zero.
+    /// - witness: `params::tests::the_manifest_digest_is_pinned`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.0 == 0x01_u8)]
     const fn tag(self) -> WireTag
     {
         match self {
@@ -75,8 +82,16 @@ impl EncodingVersion
     ///   so reordering this enum cannot change either.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 exhausts all sixteen-bit admission inputs,
+    ///   distinguishing renumbering and a wrong unsupported-version payload; L2
+    ///   fixes the current version in the manifest digest.
+    /// - witness: `params::tests::version_admits_only_the_current_number`
+    /// - witness: `params::tests::the_manifest_digest_is_pinned`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.0 == match self { Self::V1 => 1, Self::V2 => 2 })]
     pub const fn number(self) -> WireVersion
     {
         match self {
@@ -100,12 +115,16 @@ impl EncodingVersion
     /// this build accepts.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the decision surface is the match, a finite
-    ///   class enumerated exhaustively over the accepted number and both
-    ///   adjacent rejected ones.
+    /// - hypothesis: L3 exhausts all sixteen-bit inputs against a literal
+    ///   version table, distinguishing missing admission, extra admissions,
+    ///   variant swaps and altered refusal payloads.
     /// - witness: `params::tests::version_admits_only_the_current_number`
     #[inline]
-    #[spec(ensures: |ret| ret.is_err() || ret.as_ref().is_ok_and(|version| version.number() == number))]
+    #[spec(ensures: |ret| ret == if number == Self::CURRENT.number() {
+        Ok(Self::CURRENT)
+    } else {
+        Err(RecordTreeError::UnsupportedVersion { version: number })
+    })]
     pub fn from_number(number: WireVersion) -> Result<Self, RecordTreeError>
     {
         if number == Self::CURRENT.number() {
@@ -138,8 +157,15 @@ impl HashAlgorithm
     /// - provides: the discriminator a manifest digest is folded over.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on one complete manifest preimage; its independent
+    ///   digest golden distinguishes a changed discriminator or ordinal-derived
+    ///   zero.
+    /// - witness: `params::tests::the_manifest_digest_is_pinned`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.0 == 0x01_u8)]
     const fn tag(self) -> WireTag
     {
         match self {
@@ -170,8 +196,15 @@ impl SeparatorConvention
     /// - provides: the discriminator a manifest digest is folded over.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on one complete manifest preimage; its independent
+    ///   digest golden distinguishes a changed discriminator or ordinal-derived
+    ///   zero.
+    /// - witness: `params::tests::the_manifest_digest_is_pinned`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.0 == 0x01_u8)]
     const fn tag(self) -> WireTag
     {
         match self {
@@ -189,12 +222,20 @@ impl SeparatorConvention
 /// - ensures: equality holds exactly when every committed field agrees, and the
 ///   boundary commitment is derived from the boundary parameters rather than
 ///   stored beside them, so the two cannot drift apart.
-/// - provides: the parameter half of a root manifest. The postcondition stays
-///   prose: it relates two parameter sets, and a data specification's
-///   `maintains` is not evaluated when a value is constructed, so a clause here
-///   would be inert.
+/// - provides: the parameter half of a root manifest.
 /// - fails: never, once constructed.
 /// - panics: none.
+/// - executable: none — all combinations of the admitted field types are
+///   representable, including unsupported encoding versions. Equality relates
+///   two parameter sets; admission and commitment methods check concrete uses.
+///
+/// # Adequacy
+/// - hypothesis: L2 on the current manifest golden and L3 on independent count,
+///   node and boundary changes distinguish omitted commitments; both encoding
+///   versions distinguish an unsupported parameter that becomes unreadable.
+/// - witness: `params::tests::the_manifest_digest_is_pinned`
+/// - witness: `params::tests::every_bound_field_moves_the_manifest_digest`
+/// - witness: `params::tests::the_current_parameters_are_supported`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TreeParams
 {
@@ -224,8 +265,17 @@ impl TreeParams
     ///   deliberate choice rather than a default.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on both encoding versions and independently changed
+    ///   mask widths and caps; sealing refusals and differing manifest
+    ///   identities distinguish substituted choices and prematurely rejected
+    ///   old versions.
+    /// - witness: `params::tests::the_current_parameters_are_supported`
+    /// - witness: `params::tests::every_bound_field_moves_the_manifest_digest`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.encoding_version.number().0 == encoding_version.number().0)]
     pub const fn new(
         kind: TreeKind,
         encoding_version: EncodingVersion,
@@ -253,8 +303,16 @@ impl TreeParams
     ///   [`TreeParams::ensure_supported`] checks against field by field.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on a fixed current-profile manifest and L3 against the
+    ///   unsupported encoding distinguish drift in the emitted profile or
+    ///   version. This does not establish the suitability of the chosen limits.
+    /// - witness: `params::tests::the_manifest_digest_is_pinned`
+    /// - witness: `params::tests::the_current_parameters_are_supported`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.encoding_version.number().0 == EncodingVersion::CURRENT.number().0)]
     pub const fn current() -> Self
     {
         Self::new(
@@ -331,8 +389,18 @@ impl TreeParams
     ///   parties disagreeing on the rule cannot agree on a root.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the manifest golden and L3 on independently changed
+    ///   mask widths and caps distinguish a default substituted for the carried
+    ///   rule, omitted fields and changed framing.
+    /// - witness: `params::tests::the_manifest_digest_is_pinned`
+    /// - witness: `params::tests::every_bound_field_moves_the_manifest_digest`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.as_ref().get(1) == Some(&u8::from(self.boundary.mask_bits()))
+        && ret.as_ref().get(2..)
+            == Some(u64::from(u32::from(self.boundary.record_cap())).to_le_bytes().as_slice()))]
     pub fn boundary_commitment(&self) -> ProfileCommitment
     {
         self.boundary.commitment()
@@ -363,9 +431,11 @@ impl TreeParams
     /// build does not implement.
     ///
     /// # Adequacy
-    /// - hypothesis: L0 types plus L3 — every field is a closed enumeration
-    ///   with one admissible variant, so a wrong variant is unrepresentable and
-    ///   the only live residue is that the accepted set is admitted.
+    /// - hypothesis: L3 over both representable encoding versions observes
+    ///   admission of the current version and the exact old-version refusal
+    ///   through sealing. It distinguishes always-accept and always-refuse
+    ///   gates; L0 excludes unsupported variants of the other closed
+    ///   enumerations.
     /// - witness: `params::tests::the_current_parameters_are_supported`
     #[inline]
     #[spec(ensures: |ret| ret.is_ok()
@@ -414,7 +484,14 @@ impl Default for TreeParams
     /// - provides: the default a caller reaches without naming five fields.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on a manifest sealed with default parameters; the
+    ///   independent digest golden distinguishes a default that drifts from the
+    ///   committed current profile.
+    /// - witness: `params::tests::the_manifest_digest_is_pinned`
     #[inline]
+    #[spec(ensures: |ret| ret == Self::current())]
     fn default() -> Self
     {
         Self::current()
@@ -437,12 +514,20 @@ impl Default for TreeParams
 /// # Specification
 /// - requires: nothing.
 /// - ensures: equality is byte identity of the manifest's fields.
-/// - provides: the context every proof is verified against. The postcondition
-///   stays prose: it relates two manifests, and a data specification's
-///   `maintains` is not evaluated when a value is constructed, so a clause here
-///   would be inert.
+/// - provides: the context every proof is verified against.
 /// - fails: never, once constructed.
 /// - panics: none.
+/// - executable: none — equality relates two manifests, not one constructed
+///   value; sealing and binding carry the executable predicates.
+///
+/// # Adequacy
+/// - hypothesis: L0 derives fieldwise equality; L2 fixes one sealed identity
+///   and L3 varies count, node bytes and boundary choices, observing differing
+///   digests and the exact refusal for a foreign node. These bounded witnesses
+///   do not prove collision resistance or record agreement.
+/// - witness: `params::tests::the_manifest_digest_is_pinned`
+/// - witness: `params::tests::every_bound_field_moves_the_manifest_digest`
+/// - witness: `params::tests::binding_refuses_a_foreign_root_node`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TreeRoot
 {
@@ -464,9 +549,9 @@ impl TreeRoot
     /// - ensures: the digest is a function of the domain tag, every parameter
     ///   field, the record count and the root node identity — so a root cannot
     ///   be replayed under different parameters or a different count.
-    /// - provides: the manifest a proof commits to. The postcondition stays
-    ///   prose: that the digest is a function of its inputs is a law over two
-    ///   seals, and one call carries one input tuple.
+    /// - provides: the manifest a proof commits to. The executable
+    ///   postcondition checks carried parameters and count; cross-input digest
+    ///   binding is observed by the adequacy witnesses.
     /// - fails: [`RecordTreeError::UnsupportedVersion`] or
     ///   [`RecordTreeError::IncompatibleParameters`] when the parameters are
     ///   not ones this build honours, and
@@ -481,12 +566,17 @@ impl TreeRoot
     /// exceeds the wire width.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 agreement against a pinned golden for one fixed input,
-    ///   plus L3 for the binding claim: one boundary pair per bound field
-    ///   asserting the digest moves.
+    /// - hypothesis: L2 on one independent digest golden distinguishes encoding
+    ///   drift; L3 varies count low and high bytes, node bytes, mask width and
+    ///   cap independently, distinguishing omitted inputs. The old encoding
+    ///   observes the exact admission failure; collision resistance is not
+    ///   established.
     /// - witness: `params::tests::the_manifest_digest_is_pinned`
     /// - witness: `params::tests::every_bound_field_moves_the_manifest_digest`
+    /// - witness: `params::tests::the_current_parameters_are_supported`
     #[inline]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |root|
+        root.params == params && root.record_count == record_count))]
     pub fn seal(
         params: TreeParams,
         record_count: RecordCount,
@@ -542,9 +632,10 @@ impl TreeRoot
     /// exceeds the wire width.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the decision surface is the digest comparison,
-    ///   separated by the matching node identity and by one differing in a
-    ///   single byte, with the exact variant and both payloads asserted.
+    /// - hypothesis: L3 on one fixed parameter/count tuple observes its
+    ///   matching node and a node differing in one byte, with the exact refusal
+    ///   and both hash payloads. It distinguishes inverted comparisons and lost
+    ///   mismatch identities, not every possible digest collision.
     /// - witness: `params::tests::binding_refuses_a_foreign_root_node`
     #[inline]
     #[spec(ensures: |ret| ret.is_ok()
@@ -615,7 +706,7 @@ mod tests
     use crate::error::WireVersion;
     use crate::record::RecordCount;
 
-    /// A seed byte for a node identity no tree produces.
+    /// A seed byte for a synthetic fixture identity.
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
     struct HashSeed(u8);
@@ -626,9 +717,17 @@ mod tests
     /// - requires: nothing; every seed is admissible.
     /// - ensures: an identity whose first byte is the seed and whose remaining
     ///   bytes are zero, so distinct seeds give distinct identities.
-    /// - provides: a digest no manifest seals to, which is what the binding and
-    ///   mismatch fixtures below need.
+    /// - provides: distinguishable fixture identities for digest and binding
+    ///   observations, without claiming they have no preimage.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the manifest golden for seed 17 and L3 against seed
+    ///   18 distinguish a changed first byte, nonzero tail or collapsed seeds.
+    /// - witness: `params::tests::the_manifest_digest_is_pinned`
+    /// - witness: `params::tests::binding_refuses_a_foreign_root_node`
+    #[anodized::spec(ensures: |ret| ret.as_ref().first() == Some(&seed.0)
+        && ret.as_ref().iter().skip(1).all(|byte| *byte == 0))]
     fn node_hash(seed: HashSeed) -> NodeHash
     {
         let mut bytes = [0_u8; 32_usize];
@@ -640,35 +739,43 @@ mod tests
     #[test]
     fn version_admits_only_the_current_number()
     {
-        assert_eq!(
-            EncodingVersion::from_number(WireVersion::from(2_u16)),
-            Ok(EncodingVersion::V2)
-        );
-        assert_eq!(
-            EncodingVersion::from_number(WireVersion::from(1_u16)),
-            Err(RecordTreeError::UnsupportedVersion {
-                version: WireVersion::from(1_u16),
-            })
-        );
-        assert_eq!(
-            EncodingVersion::from_number(WireVersion::from(3_u16)),
-            Err(RecordTreeError::UnsupportedVersion {
-                version: WireVersion::from(3_u16),
-            })
-        );
+        for raw in 0_u16 ..= u16::MAX {
+            let number = WireVersion::from(raw);
+            let expected = if raw == 2 {
+                Ok(EncodingVersion::V2)
+            }
+            else {
+                Err(RecordTreeError::UnsupportedVersion { version: number })
+            };
+            assert_eq!(EncodingVersion::from_number(number), expected);
+        }
     }
 
     #[test]
     fn the_current_parameters_are_supported()
     {
         assert_eq!(TreeParams::current().ensure_supported(), Ok(()));
+        let current = TreeParams::current();
+        let previous = TreeParams::new(
+            current.kind(),
+            EncodingVersion::V1,
+            current.hash_algorithm(),
+            current.separator_convention(),
+            current.boundary(),
+        );
+        assert_eq!(
+            TreeRoot::seal(previous, RecordCount::ZERO, node_hash(HashSeed(17))),
+            Err(RecordTreeError::UnsupportedVersion {
+                version: WireVersion::from(1_u16)
+            }),
+        );
     }
 
     #[test]
     fn the_manifest_digest_is_pinned()
     {
         let root = TreeRoot::seal(
-            TreeParams::current(),
+            TreeParams::default(),
             RecordCount::from(3_u64),
             node_hash(HashSeed(0x11_u8)),
         )
@@ -727,6 +834,38 @@ mod tests
         )
         .expect("the current parameters are supported");
         assert_ne!(base.identity(), other_boundary.identity());
+
+        let high_count = TreeRoot::seal(
+            TreeParams::current(),
+            RecordCount::from(0x0100_0000_0000_0003_u64),
+            node_hash(HashSeed(0x11)),
+        )
+        .expect("the current parameters are supported");
+        assert_ne!(base.identity(), high_count.identity());
+
+        let other_tail = TreeRoot::seal(
+            TreeParams::current(),
+            RecordCount::from(3_u64),
+            NodeHash::from([0x11_u8; 32]),
+        )
+        .expect("the current parameters are supported");
+        assert_ne!(base.identity(), other_tail.identity());
+
+        let current = TreeParams::current();
+        let capped = TreeParams::new(
+            current.kind(),
+            current.encoding_version(),
+            current.hash_algorithm(),
+            current.separator_convention(),
+            BoundaryParams::new(
+                current.boundary().profile(),
+                current.boundary().mask_bits(),
+                crate::boundary::BoundaryRecordCap::try_from(65_u32).expect("65 is admissible"),
+            ),
+        );
+        let other_cap = TreeRoot::seal(capped, RecordCount::from(3_u64), node_hash(HashSeed(0x11)))
+            .expect("the changed cap is supported");
+        assert_ne!(base.identity(), other_cap.identity());
     }
 
     #[test]
