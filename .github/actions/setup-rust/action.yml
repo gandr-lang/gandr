@@ -9,22 +9,16 @@ inputs:
   cache-save:
     description: "Save the rustup toolchain and the dependency cache in this job"
     default: "false"
-  # Keep the workspace crates' artifacts in the dependency cache; cargo's
-  # fingerprints then no-op the unchanged ones on the next restore.
-  # Off when the job runs inside the CI image, which carries the toolchain
-  # already; the dependency cache step still runs either way.
+  # Off inside the CI image, which already carries the toolchain.
   install-toolchain:
     description: "Restore, install, and save the rustup toolchain in this job"
     default: "true"
   cache-workspace-crates:
     description: "Keep the workspace crates in the Rust dependency cache"
     default: "false"
-outputs:
-  # Whether the dependency cache restored its exact key; a lane hands its
-  # build state to main only on a miss, when main's cache would rotate.
-  cache-hit:
-    description: "The dependency cache restored an exact key match"
-    value: ${{ steps.rust-cache.outputs.cache-hit }}
+  cache-targets:
+    description: "Include target artifacts in the dependency cache"
+    default: "true"
 runs:
   using: composite
   steps:
@@ -61,9 +55,8 @@ runs:
       id: rust-cache
       uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       with:
-        # Rotate when build profiles or artifact layout change. Both plain and
-        # enforcing tests use the checked, size-optimized test profile; the
-        # nested target/enforcing directory is retained with target/.
+        # Profile changes rotate dependency state. Test jobs cache their
+        # complete archive separately, without dependency-cache pruning.
         prefix-key: gandr-v2-rust-deps
         key: ${{ hashFiles('Cargo.toml') }}
         # One dependency cache across every Rust job; the gate lane's
@@ -71,6 +64,7 @@ runs:
         # workspace's artifacts under the single toolchain.
         shared-key: rust-deps
         cache-all-crates: false
+        cache-targets: ${{ inputs.cache-targets }}
         cache-workspace-crates: ${{ inputs.cache-workspace-crates }}
         cache-on-failure: false
         save-if: ${{ inputs.cache-save == 'true' }}
