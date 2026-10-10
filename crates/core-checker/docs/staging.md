@@ -1,0 +1,53 @@
+# Guarded staging families
+
+- [Production](#production)
+- [Measurements](#measurements)
+
+## Production
+
+`template::harvest` groups equations by producer identity, rule and shallow source shape. Joint anti-unification generalizes both sides together, so repeated points share one source-selected arm. A target-only point refuses production. The sole inferred relation is the predecessor of a positive outer-stage numeral; zero, inner-stage numerals and other offsets acquire no predecessor relation.
+
+`template::analyze` constructs an untrusted candidate. `Candidate::produce` applies the selected strict price before replaying inheritance obligations. Each distinct region/entry/body triple is checked once per run, with every other point rigid. Classifier content belongs to the cache key. A ground family owes one check. A failed or unfinished check never becomes a positive cached verdict.
+
+| Charge | Definition |
+| ------ | ---------- |
+| `F` | Every member's unfolded source and target nodes, plus one decision per member |
+| `s` | Generalized sides, one shared decision, every distinct arm's nodes and one guard per arm |
+| `T` | Distinct inheritance triples, or one for a ground family |
+| `c` | Per-check kernel-fuel allowance, conservatively set to `s` |
+
+`PriceGate::Unmemoized` requires `s < floor(F / s)`. `PriceGate::Memoized` requires representable `s + T*c < F` and enforces `c` on each cold check. Equality, overflow, a target-only point, failed inheritance or an exhausted check allowance leave the family plain. Caller-budget exhaustion remains a typed error. No warm-cache discount changes the cold price. These are abstract node/fuel charges; discovery, materialization and subsequent member admission are outside that bound.
+
+`Template::admit` selects guards from the source, materializes one equation and replays it through the existing kernel rules. A poisoned cache cannot bypass replay. `template::readmit` also compares projected targets and replays the complete original certificate with its endpoint typing, connectivity and congruence premises intact. The template retains no member list; the complete-readmission API still receives the enclosing plain certificate. There is no kernel-side admission judgment for guarded families here.
+
+The alternatives are independent member replay, which avoids discovery and projection costs; exact cross-member deduplication, which shares identical rather than near-identical equations; and a kernel-side judgment of the same equations, held for its trusted-surface cost. The producer retains ordinary replay as its authority. The selected guard refuses every family whose charge reaches its plain allowance. Revisit the price model only with a justified replacement bound; revisit kernel-side admission only when its additional trusted surface is justified. Neither a byte saving nor a warm cache licenses relaxing a refusal.
+
+## Measurements
+
+The `staging_templates` example measures strict powers at exponents zero through eight, a second iterator with step `p -> <~x * ~p * ~x>` at inputs two and three, and separately labeled repeated cancellation controls. Each gate gets a fresh cache. The following pooled families pay under the memoized gate; the unmemoized gate admits only the double-product zero family among these rows.
+
+| Pooled family | Members | `F` | `s + T*c` | Checks / hits | Template + substitutions B | Plain B |
+| ------------- | ------: | --: | --------: | ------------: | -------------------------: | ------: |
+| Power zero | 9 | 126 | 28 | 1 / 0 | 652 | 5,472 |
+| Power successor | 36 | 1,116 | 432 | 8 / 28 | 1,378 | 27,000 |
+| Double-product zero | 18 | 306 | 34 | 1 / 0 | 713 | 11,718 |
+| Double-product successor | 72 | 2,880 | 513 | 8 / 64 | 1,531 | 57,240 |
+| Double-product cancellation | 144 | 2,736 | 2,123 | 10 / 134 | 1,586 | 47,786 |
+
+The power cancellation family remains too expensive under `c = s`. The double-product beta family passes arithmetic pricing but exceeds its check allowance. Other candidates retain target-only or inheritance refusals. The fixed source-shape partition is a measured discovery strategy, not an exhaustive search for paying partitions.
+
+Compact JSON includes classifier tables, constructor payloads and edges, roots, decisions and all guarded arms; each member contributes a guard row, including an empty row for a ground member. Plain bytes sum independently serialized reachable equation DAGs. This is a format-specific comparison, not a bound against optimal cross-member sharing. Refused candidates' image sizes are descriptive, not admitted compression.
+
+Full readmission repeats ordinary replay after projection. In one sequential release observation, 25 pooled power readmissions take 4.64 ms plain and 13.88 ms guarded; double-product takes 10.46 ms plain and 46.81 ms guarded. The byte savings are not a replay speedup. Cloning and serialization lie outside the timed intervals; production has its own interval. Heap high-water observations count scoped ownership, not process RSS. Plain residency includes the input arena and certificates; template-only residency owns a template and one regenerated instance; admission residency borrows its input arena. Those scopes are not interchangeable.
+
+The byte observer uses default-off Serde and dev-only `serde_json`. Debug text and node counts do not measure encoded bytes; a binary codec answers a different size question. Revisit JSON when an interchange specification selects a format. Dev-only `allocation-counter 0.8.1` uses a synchronous thread-local System wrapper without runtime dependencies. DHAT adds backtrace and serialization machinery; `stats_alloc` lacks the required high-water observation. Revisit allocation counting for multithreaded workloads, an applicable advisory or maintenance loss. Measurement scopes are non-nested and fallible rather than unwinding.
+
+Reproduce the family rows, complete-replay differential, allocation observations and power residual values:
+
+```sh
+cargo run -p gandr-core-checker --example staging_templates --release
+cargo nextest run -p gandr-core-checker -p gandr-theory-deep-inference
+RUSTFLAGS="--cfg anodized_panic" CARGO_TARGET_DIR=target/enforcing cargo nextest run -p gandr-core-checker -p gandr-theory-deep-inference
+```
+
+The example emits 540 family rows across 26 workloads and both prices. Its witnesses cover strict prices, source correlation, refusal variants, cold/warm caches, poisoned-cache admission, independent image reconstruction and ownership-scope release. Finite witnesses establish neither universal soundness nor a wall-clock bound.
