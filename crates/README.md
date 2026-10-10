@@ -32,6 +32,7 @@ crates/
 ├── theory-graphs/                 gandr-theory-graphs                 the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-levitation/             gandr-theory-levitation             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
 ├── theory-orders/                 gandr-theory-orders                 order maintenance with constant-time comparison
+├── theory-sites/                  gandr-theory-sites                  the carrier's shapes as a site with stick-free objects: the morphism class over circuit wirings, its degree, the finite checks of its generalized Reedy structure
 ├── kernel-strata/                 gandr-kernel-strata                 the universe-level oracle with checkable order evidence
 ├── kernel-term/                   gandr-kernel-term                   the term arena, the sharing format, the decode budgets
 ├── kernel-check-memo/             gandr-kernel-check-memo             the check-memo seam a checker consults
@@ -42,6 +43,7 @@ crates/
 ├── core-checker/                  gandr-core-checker                  the checking judgement's four directed faces, the declaration input, the conversion boundary, the obligation ledger and the refusal vocabulary
 ├── core-incremental/              gandr-core-incremental              incremental checking: the item seam, the conservative footprint, validated resume, content-addressed checkpoints and the synthesis stream
 ├── core-sequent/                  gandr-core-sequent                  the command IL a core program is focused into and the two-region store its machine runs in
+├── core-session/                  gandr-core-session                  contractive binary session types, coinductive relations, and endpoint replay
 ├── storage-chunker/               gandr-storage-chunker               content-defined chunk boundaries and their committed parameters
 ├── storage-records/               gandr-storage-records               the authenticated ordered-record plane
 ├── storage-values/                gandr-storage-values                the content-addressed value plane: typed chunk DAG and content pointers

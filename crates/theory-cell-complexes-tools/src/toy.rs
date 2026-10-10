@@ -14,6 +14,7 @@ use alloc::collections::VecDeque;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellInvertibility;
@@ -44,6 +45,8 @@ use quenchant_shape::shape::Maybe;
 /// - provides: terms that nest commands, so every subterm is a command position
 ///   and a splice below the root is exercised.
 /// - panics: none.
+/// - executable: none — this stateless marker owns no terms or substitutions;
+///   its laws relate the operations exercised by the inhabitant witnesses.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — each law is asserted pointwise on terms that bind
@@ -65,7 +68,15 @@ impl ToyVar
     /// The name with one prime appended.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the original name followed by exactly one prime.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and already primed names are freshened through
+    ///   a collision chain. Missing or repeated suffixes change exact renamed
+    ///   terms.
+    /// - witness: `toy::tests::metadata_names_and_orders_observe_boundaries`
+    #[spec(ensures: |output| output.0.strip_suffix("'") == Some(self.0.as_ref()))]
     fn primed(&self) -> Self
     {
         let mut primed = String::with_capacity(self.0.len().saturating_add(1));
@@ -133,6 +144,14 @@ impl ToyCount
     /// - ensures: one more than `self`; a table held in memory never reaches
     ///   the saturation bound.
     /// - panics: none.
+    /// - executable: none — instrumentation calls non-const helpers; this
+    ///   method retains its const interface.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, ordinary, last-in-range and saturated indices
+    ///   have exact successors. Wrapping or skipping the increment changes the
+    ///   boundary observations.
+    /// - witness: `toy::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
     const fn next(self) -> Self
     {
         Self(self.0.saturating_add(1))
@@ -213,6 +232,14 @@ impl Toy
     /// - ensures: the index after the subterm rooted at `start`; the table's
     ///   length when the table is cut short.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — leaf, nested, truncated and exhausted ranges have
+    ///   exact ends. Incorrect pending arity, a skipped child or an off-by-one
+    ///   end changes the selected subterm.
+    /// - witness: `toy::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
+    #[spec(ensures: |output| output >= start && (start.0 > self.0.len() || output.0 <= self.0.len())
+        && (start.0 != 0 || output.0 == self.0.len()))]
     fn end_of(
         &self,
         start: ToyCount,
@@ -238,6 +265,18 @@ impl Toy
     /// - provides: [`command_subterm::Absent::OffTerm`] when a step indexes
     ///   past a node's children.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every node of a nested tree reads its exact subterm;
+    ///   out-of-arity and below-leaf paths refuse. Shifted offsets or a missed
+    ///   boundary changes those reads.
+    /// - witness: `toy::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
+    #[spec(ensures: |output| match output {
+        Maybe::Present((start, end)) => start <= end && end.0 <= self.0.len()
+            && (!steps.is_empty() || (start.0 == 0 && end.0 == self.0.len())),
+        Maybe::Absent(command_subterm::Absent::OffTerm) => !steps.is_empty(),
+        Maybe::Absent(command_subterm::Absent::NotACommand) => false,
+    })]
     fn range_at(
         &self,
         steps: &[PositionStep],
@@ -265,7 +304,16 @@ impl Toy
     /// The subterm occupying `[start, end)`, owned.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: ordered bounds within the node table.
+    /// - ensures: exactly the selected node range, in its original order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — valid leaf and nested ranges reconstruct exact
+    ///   subterms. Reversed bounds or an extra node changes read and splice
+    ///   round trips.
+    /// - witness: `toy::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
+    #[spec(requires: start <= end && end.0 <= self.0.len(), ensures: |output| self.0.get(start.0 .. end.0) == Some(output.0.as_slice()))]
     fn slice(
         &self,
         start: ToyCount,
@@ -278,7 +326,16 @@ impl Toy
     /// The term's metavariables, left to right with repeats.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: every metavariable occurrence in prefix order, with repeats.
+    /// - panics: none.
+    /// - executable: none — the wrapper closure receives an impl-Trait return
+    ///   type that Rust rejects for closures.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty occurrence lists and repeated names are
+    ///   observed through exact metadata and multiplicities. Dropped repeats,
+    ///   invented variables and reversal change those observations.
+    /// - witness: `toy::tests::metadata_names_and_orders_observe_boundaries`
     fn vars(&self) -> impl Iterator<Item = &ToyVar>
     {
         self.0.iter().filter_map(|head| match *head {
@@ -291,7 +348,18 @@ impl Toy
     /// every leaf a leaf.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the relabeller returns a leaf for every variable it sees.
+    /// - ensures: relabelled variables with all other heads and node arities
+    ///   kept.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — leaf-preserving freshening and skolemization keep
+    ///   exact constructor structure and repeated-name identity. Relabelling
+    ///   other heads or changing arity changes the terms.
+    /// - witness: `toy::tests::metadata_names_and_orders_observe_boundaries`
+    #[spec(ensures: |output| output.0.len() == self.0.len()
+        && output.0.iter().zip(&self.0).all(|(after, before)| after.arity() == before.arity()))]
     fn relabel<R>(
         &self,
         relabel: R,
@@ -342,7 +410,18 @@ impl ToySubst
     /// The term with every bound metavariable replaced by its image, once.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: each bound variable is replaced by its image once, without
+    ///   visiting that image; unbound variables and other heads are kept.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a triangular map separates one-pass replacement from
+    ///   full application; empty maps and absent names stay unchanged.
+    ///   Re-entering an image or dropping a binding changes the resulting term.
+    /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
+    #[spec(ensures: |output| output.0.len() == term.0.iter().fold(0_usize, |size, head| size.saturating_add(match *head {
+        ToyHead::Var(ref var) => self.0.get(var).map_or(1, |image| image.0.len()), _ => 1,
+    })) && (term.vars().any(|var| self.0.contains_key(var)) || output == *term))]
     fn apply_once(
         &self,
         term: &Toy,
@@ -367,6 +446,15 @@ impl ToySubst
     /// - ensures: no bound metavariable remains when the bindings are acyclic;
     ///   at most one pass per binding plus one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ground images, triangular chains and a self-cycle
+    ///   have exact final terms. Missing a triangular pass, substituting a
+    ///   wrong image or changing an unbound term changes the result.
+    /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
+    #[spec(ensures: |output| (term.vars().any(|var| self.0.contains_key(var)) || output == *term)
+        && (!self.0.values().all(|image| image.vars().all(|var| !self.0.contains_key(var)))
+            || output.vars().all(|var| !self.0.contains_key(var))))]
     fn apply_fully(
         &self,
         term: &Toy,
@@ -390,6 +478,13 @@ impl ToySubst
     /// - ensures: the first term on the binding chain that is not a bound
     ///   metavariable, or the term reached after one step per binding.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — bound and free leaves, compound terms and a
+    ///   self-cycle separate head walking from full substitution. Losing a
+    ///   chain link or descending into compound arguments changes the result.
+    /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
+    #[spec(captures: original = term.clone(), ensures: |output| output == original || self.0.values().any(|image| image == &output))]
     fn walk(
         &self,
         term: Toy,
@@ -450,7 +545,16 @@ struct Occurrences(usize);
 /// How often each metavariable occurs in a term.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: each occurring variable has its exact positive multiplicity.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, single and repeated variable sets have exact keyed
+///   counts. Deduplication, extra keys and a lost occurrence change the
+///   domination decision.
+/// - witness: `toy::tests::metadata_names_and_orders_observe_boundaries`
+#[spec(ensures: |output| output.values().fold(0_usize, |sum, count| sum.saturating_add(count.0)) == term.vars().count()
+    && output.iter().all(|(var, count)| count.0 > 0 && count.0 == term.vars().filter(|held| held == var).count()))]
 fn occurrences(term: &Toy) -> BTreeMap<&ToyVar, Occurrences>
 {
     let mut counts: BTreeMap<&ToyVar, Occurrences> = BTreeMap::new();
@@ -474,7 +578,16 @@ enum HoleDomination
 /// Whether `larger` dominates `smaller` hole by hole.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: domination exactly when every smaller-side count is present on
+///   the larger side with at least the same multiplicity.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, missing, equal and smaller multiplicities separate
+///   domination from refusal. Strict comparison at equality or a permissive
+///   missing-key default changes the result.
+/// - witness: `toy::tests::metadata_names_and_orders_observe_boundaries`
+#[spec(ensures: |output| (output == HoleDomination::Dominates) == smaller.iter().all(|(var, count)| larger.get(var).is_some_and(|held| held >= count)))]
 fn dominates(
     larger: &BTreeMap<&ToyVar, Occurrences>,
     smaller: &BTreeMap<&ToyVar, Occurrences>,
@@ -520,6 +633,15 @@ fn dominates(
 /// - witness: `tests::inhabitant::a_point_takes_a_name_no_member_wears`
 /// - witness: `tests::inhabitant::a_family_without_a_generalization_is_refused_by_name`
 #[inline]
+#[spec(ensures: |output| match output {
+    Maybe::Absent(anti_unification::Absent::EmptyFamily) => family.is_empty(),
+    Maybe::Absent(anti_unification::Absent::RaggedFamily) => family.first().is_some_and(|first| family.iter().any(|member| member.len() != first.len())),
+    Maybe::Absent(anti_unification::Absent::Ungeneralizable) => false,
+    Maybe::Present(ref generalized) => family.first().is_some_and(|first| generalized.patterns.len() == first.len())
+        && family.iter().all(|member| member.len() == generalized.patterns.len())
+        && generalized.points.iter().all(|point| point.arms.len() == family.len()
+            && family.iter().flat_map(|member| member.iter()).flat_map(Toy::vars).all(|var| var != &point.var)),
+})]
 pub fn anti_unify_toys<A>(family: &[&[Toy]]) -> Maybe<Generalization<A>, anti_unification::Absent>
 where
     A: CellAlphabet<Cmd = Toy, Var = ToyVar, Subst = ToySubst>,
@@ -630,7 +752,15 @@ impl CellAlphabet for ToyAlphabet
     ///   place, a bound one only an equal subterm; every other node must equal
     ///   the target's. `subst` is extended only on success.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ground and schematic matches reconstruct targets in
+    ///   one pass; incompatible heads and repeated-hole conflicts preserve an
+    ///   existing map. Wrong binding and partial commitment change the
+    ///   observations.
+    /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
     #[inline]
+    #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) { subst.apply_once(pattern) == *target } else { *subst == before })]
     fn match_cmd(
         pattern: &Self::Cmd,
         target: &Self::Cmd,
@@ -672,7 +802,14 @@ impl CellAlphabet for ToyAlphabet
     /// - ensures: a most general unifier extending `subst` on success, with the
     ///   occurs check; `subst` is extended only on success.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — compatible distinct holes and triangular images
+    ///   equate both faces; a head clash and an occurs cycle preserve prior
+    ///   bindings. Eager commits and skipped occurs checks change the result.
+    /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
     #[inline]
+    #[spec(captures: before = subst.clone(), ensures: |output| if bool::from(output) { subst.apply_fully(lhs) == subst.apply_fully(rhs) } else { *subst == before })]
     fn unify_cmd(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -724,7 +861,19 @@ impl CellAlphabet for ToyAlphabet
     /// - ensures: as [`anti_unify_toys`].
     /// - provides: as [`anti_unify_toys`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nesting families reconstruct every member under their
+    ///   arms, while empty and ragged families return distinct refusals. Lost
+    ///   components or wrong arms change the observations.
+    /// - witness: `tests::inhabitant::each_member_is_its_generalization_under_its_arms`
     #[inline]
+    #[spec(ensures: |output| match output {
+        Maybe::Present(ref generalized) => family.first().is_some_and(|first| generalized.patterns.len() == first.len()) && generalized.points.iter().all(|point| point.arms.len() == family.len()),
+        Maybe::Absent(anti_unification::Absent::EmptyFamily) => family.is_empty(),
+        Maybe::Absent(anti_unification::Absent::RaggedFamily) => family.first().is_some_and(|first| family.iter().any(|member| member.len() != first.len())),
+        Maybe::Absent(anti_unification::Absent::Ungeneralizable) => false,
+    })]
     fn anti_unify_cmd(
         family: &[&[Self::Cmd]]
     ) -> Maybe<Generalization<Self>, anti_unification::Absent>
@@ -748,8 +897,17 @@ impl CellAlphabet for ToyAlphabet
     /// The bindings of `vars` alone.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: exactly the existing bindings whose keys occur in vars.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — none, one, duplicate and absent requested keys expose
+    ///   exact restricted maps. Extra bindings and missing retained images
+    ///   change the result.
+    /// - witness: `toy::tests::substitution_walks_are_transactional_and_bounded`
     #[inline]
+    #[spec(ensures: |output| output.0.len() == subst.0.keys().filter(|var| vars.contains(var)).count()
+        && output.0.iter().all(|(var, image)| vars.contains(var) && subst.0.get(var) == Some(image)))]
     fn restrict_subst(
         subst: &Self::Subst,
         vars: &[Self::Var],
@@ -791,7 +949,16 @@ impl CellAlphabet for ToyAlphabet
     /// - ensures: one position per node, the root first and no position before
     ///   one enclosing it.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a leaf and a nested binary tree expose their complete
+    ///   breadth-first position list. Duplicates, omitted nodes and a child
+    ///   before its parent change the list.
+    /// - witness: `toy::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
     #[inline]
+    #[spec(ensures: |output| output.len() == cmd.0.len() && output.first().is_some_and(|pos| pos.0.is_empty())
+        && output.iter().enumerate().all(|(index, pos)| !output.iter().take(index).any(|earlier| earlier == pos)
+            && (pos.0.is_empty() || output.iter().take(index).any(|parent| pos.0.split_last().is_some_and(|(_, prefix)| parent.0.as_ref() == prefix)))))]
     fn command_positions(cmd: &Self::Cmd) -> Vec<Self::Pos>
     {
         let mut positions = Vec::with_capacity(cmd.0.len());
@@ -865,7 +1032,18 @@ impl CellAlphabet for ToyAlphabet
     /// - provides: [`command_subterm::Absent::OffTerm`] when a step of `pos`
     ///   indexes past a node's children.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — root and nested nodes return exact terms;
+    ///   out-of-arity and below-leaf paths return `OffTerm`. A wrong range or a
+    ///   merged absence changes the observation.
+    /// - witness: `toy::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
     #[inline]
+    #[spec(ensures: |output| match output {
+        Maybe::Present(ref subterm) => subterm.0.len() <= cmd.0.len() && (!pos.0.is_empty() || subterm == cmd),
+        Maybe::Absent(command_subterm::Absent::OffTerm) => matches!(cmd.range_at(&pos.0), Maybe::Absent(command_subterm::Absent::OffTerm)),
+        Maybe::Absent(command_subterm::Absent::NotACommand) => false,
+    })]
     fn subterm_cmd_at(
         cmd: &Self::Cmd,
         pos: &Self::Pos,
@@ -886,7 +1064,18 @@ impl CellAlphabet for ToyAlphabet
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — root, shrinking and growing replacements preserve
+    ///   exact siblings, and invalid paths refuse. Dropped context, shifted
+    ///   bounds and incorrect replacement change the term.
+    /// - witness: `toy::tests::positions_preserve_prefix_boundaries_and_splice_siblings`
     #[inline]
+    #[spec(captures: expected = replacement.clone(), ensures: |output| match output {
+        Ok(ref term) => matches!(Self::subterm_cmd_at(term, pos), Maybe::Present(ref found) if found == &expected),
+        Err(CommandSpliceRefusal::OffTerm) => matches!(cmd.range_at(&pos.0), Maybe::Absent(command_subterm::Absent::OffTerm)),
+        Err(CommandSpliceRefusal::NotACommand) => false,
+    })]
     fn splice_cmd_at(
         cmd: &Self::Cmd,
         pos: &Self::Pos,
@@ -922,7 +1111,21 @@ impl CellAlphabet for ToyAlphabet
     ///   smaller at least as often; every other pair is
     ///   [`core::cmp::Ordering::Equal`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — increasing sizes with adequate, missing or
+    ///   insufficient hole counts separate strict order from obstruction; equal
+    ///   sizes remain equal. Reversed signs and a skipped guard change the
+    ///   verdict.
+    /// - witness: `toy::tests::metadata_names_and_orders_observe_boundaries`
     #[inline]
+    #[spec(ensures: |output| match output {
+        core::cmp::Ordering::Greater => lhs.0.len() > rhs.0.len() && dominates(&occurrences(lhs), &occurrences(rhs)) == HoleDomination::Dominates,
+        core::cmp::Ordering::Less => lhs.0.len() < rhs.0.len() && dominates(&occurrences(rhs), &occurrences(lhs)) == HoleDomination::Dominates,
+        core::cmp::Ordering::Equal => lhs.0.len() == rhs.0.len() || if lhs.0.len() > rhs.0.len() {
+            dominates(&occurrences(lhs), &occurrences(rhs)) == HoleDomination::FallsShort
+        } else { dominates(&occurrences(rhs), &occurrences(lhs)) == HoleDomination::FallsShort },
+    })]
     fn reduction_cmp(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -951,7 +1154,16 @@ impl CellAlphabet for ToyAlphabet
     ///   until it is absent from `anchor` and from the other fresh names;
     ///   shapes kept, and a cell already apart returned unchanged.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — repeated names, colliding prime chains and
+    ///   already-disjoint terms reconstruct exact renamed faces. Splitting a
+    ///   shared name, reusing a taken name or changing a constructor changes
+    ///   the result.
+    /// - witness: `toy::tests::metadata_names_and_orders_observe_boundaries`
     #[inline]
+    #[spec(ensures: |output| output.0.0.len() == renamed.0.0.len() && output.1.0.len() == renamed.1.0.len()
+        && output.0.vars().chain(output.1.vars()).all(|var| anchor.0.vars().chain(anchor.1.vars()).all(|held| held != var)))]
     fn rename_apart(
         anchor: (&Self::Cmd, &Self::Cmd),
         renamed: (&Self::Cmd, &Self::Cmd),
@@ -980,8 +1192,18 @@ impl CellAlphabet for ToyAlphabet
     /// Every metavariable replaced by its constant.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: every variable becomes the constant with the same name; all
+    ///   other heads and the node count are unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — repeated variables become name-stable constants while
+    ///   a ground term is unchanged. Missed grounding, merged names or changed
+    ///   constructors alters the exact term.
+    /// - witness: `toy::tests::metadata_names_and_orders_observe_boundaries`
     #[inline]
+    #[spec(ensures: |output| output.vars().next().is_none() && output.0.len() == cmd.0.len()
+        && output.0.iter().zip(&cmd.0).all(|(after, before)| match *before { ToyHead::Var(ref var) => matches!(*after, ToyHead::Konst(ref constant) if constant == var), _ => after == before }))]
     fn skolemize(cmd: &Self::Cmd) -> Self::Cmd
     {
         cmd.relabel(|var| ToyHead::Konst(var.clone()))
@@ -1010,8 +1232,19 @@ impl CellAlphabet for ToyAlphabet
     /// The distinct metavariables of both faces.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: one variable per distinct name, in first-occurrence order
+    ///   over lhs then rhs, with the supplied invertibility flag.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, repeated and right-only names expose ordered
+    ///   unique entries with both invertibility values. Deduplication by the
+    ///   wrong key, reordering and a lost flag change the metadata.
+    /// - witness: `toy::tests::metadata_names_and_orders_observe_boundaries`
     #[inline]
+    #[spec(ensures: |output| output.invertible == invertible
+        && lhs.vars().chain(rhs.vars()).all(|var| output.vars.iter().filter(|held| *held == var).count() == 1)
+        && output.vars.iter().all(|var| lhs.vars().chain(rhs.vars()).any(|held| held == var)))]
     fn derive_meta(
         lhs: &Self::Cmd,
         rhs: &Self::Cmd,
@@ -1031,8 +1264,18 @@ impl CellAlphabet for ToyAlphabet
     /// language has no backward flow.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: a forward endpoint for each matching metadata variable, and
+    ///   no endpoint when the requested hole is absent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — present and absent holes expose one forward endpoint
+    ///   or none. Wrong filtering, extra endpoints and a backward role change
+    ///   the observation.
+    /// - witness: `toy::tests::metadata_names_and_orders_observe_boundaries`
     #[inline]
+    #[spec(ensures: |output| output.len() == meta.vars.iter().filter(|var| *var == hole).count()
+        && output.iter().all(|endpoint| endpoint.0 == *hole && endpoint.1 == SeamRole::Forward))]
     fn hole_flow(
         meta: &Self::Meta,
         hole: &Self::Hole,
@@ -1091,4 +1334,307 @@ pub fn toy_cell(
 ) -> Cell<ToyAlphabet>
 {
     Cell::new(lhs, rhs, ToyOrient::Given, ToyProv::Rule)
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn positions_preserve_prefix_boundaries_and_splice_siblings()
+    {
+        for (before, after) in [
+            (0, 1),
+            (7, 8),
+            (usize::MAX - 1, usize::MAX),
+            (usize::MAX, usize::MAX),
+        ] {
+            assert_eq!(ToyCount(after), ToyCount(before).next());
+        }
+        let x = Toy::var("x");
+        let right = Toy::add(Toy::zero(), x.clone());
+        let term = Toy::add(Toy::succ(x.clone()), right.clone());
+        let paths = [
+            alloc::vec![],
+            alloc::vec![0],
+            alloc::vec![1],
+            alloc::vec![0, 0],
+            alloc::vec![1, 0],
+            alloc::vec![1, 1],
+        ];
+        let positions: Vec<_> = paths
+            .iter()
+            .map(|path| {
+                ToyAlphabet::position_at_path(
+                    &path
+                        .iter()
+                        .copied()
+                        .map(PositionStep::from)
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        assert_eq!(positions, ToyAlphabet::command_positions(&term));
+        assert_eq!(
+            alloc::vec![ToyAlphabet::root_position()],
+            ToyAlphabet::command_positions(&Toy::zero())
+        );
+        let subterms = [
+            term.clone(),
+            Toy::succ(x.clone()),
+            right,
+            x.clone(),
+            Toy::zero(),
+            x.clone(),
+        ];
+        for (pos, expected) in positions.iter().zip(subterms) {
+            assert_eq!(
+                Maybe::Present(expected.clone()),
+                ToyAlphabet::subterm_cmd_at(&term, pos)
+            );
+            assert_eq!(
+                Ok(term.clone()),
+                ToyAlphabet::splice_cmd_at(&term, pos, expected)
+            );
+        }
+        for (start, end) in [(0, 6), (1, 3), (2, 3), (3, 6), (4, 5), (5, 6), (6, 6)] {
+            assert_eq!(ToyCount(end), term.end_of(ToyCount(start)));
+        }
+        assert_eq!(
+            ToyCount(2),
+            Toy(alloc::vec![ToyHead::Add, ToyHead::Zero]).end_of(ToyCount(0))
+        );
+        assert_eq!(ToyCount(0), Toy(alloc::vec![]).end_of(ToyCount(0)));
+        let first = ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]);
+        let inner = ToyAlphabet::position_at_path(&[
+            PositionStep::from(1_usize),
+            PositionStep::from(1_usize),
+        ]);
+        assert_eq!(
+            Ok(Toy::add(Toy::zero(), Toy::add(Toy::zero(), x))),
+            ToyAlphabet::splice_cmd_at(&term, &first, Toy::zero())
+        );
+        assert_eq!(
+            Ok(Toy::add(
+                Toy::succ(Toy::var("x")),
+                Toy::add(Toy::zero(), term.clone())
+            )),
+            ToyAlphabet::splice_cmd_at(&term, &inner, term.clone())
+        );
+        assert_eq!(
+            Ok(Toy::zero()),
+            ToyAlphabet::splice_cmd_at(&term, &ToyAlphabet::root_position(), Toy::zero())
+        );
+        for path in [alloc::vec![2], alloc::vec![0, 1], alloc::vec![1, 1, 0]] {
+            let pos = ToyAlphabet::position_at_path(
+                &path.into_iter().map(PositionStep::from).collect::<Vec<_>>(),
+            );
+            assert_eq!(
+                Maybe::Absent(command_subterm::Absent::OffTerm),
+                ToyAlphabet::subterm_cmd_at(&term, &pos)
+            );
+            assert_eq!(
+                Err(CommandSpliceRefusal::OffTerm),
+                ToyAlphabet::splice_cmd_at(&term, &pos, Toy::zero())
+            );
+        }
+    }
+
+    #[test]
+    fn substitution_walks_are_transactional_and_bounded()
+    {
+        let x = ToyVar::from("x");
+        let y = ToyVar::from("y");
+        let subst = ToySubst(BTreeMap::from([
+            (x.clone(), Toy::var("y")),
+            (y.clone(), Toy::zero()),
+        ]));
+        let term = Toy::add(Toy::var("x"), Toy::var("y"));
+        assert_eq!(
+            Toy::add(Toy::var("y"), Toy::zero()),
+            subst.apply_once(&term)
+        );
+        assert_eq!(Toy::add(Toy::zero(), Toy::zero()), subst.apply_fully(&term));
+        assert_eq!(Toy::zero(), subst.walk(Toy::var("x")));
+        assert_eq!(term, subst.walk(term.clone()));
+        assert_eq!(Toy::var("free"), subst.walk(Toy::var("free")));
+        assert_eq!(Toy::var("free"), subst.apply_fully(&Toy::var("free")));
+        assert_eq!(term, ToySubst::default().apply_fully(&term));
+        assert_eq!(
+            ToySubst::default(),
+            ToyAlphabet::restrict_subst(&subst, &[])
+        );
+        assert_eq!(
+            ToySubst::default(),
+            ToyAlphabet::restrict_subst(&subst, &[ToyVar::from("missing")])
+        );
+        assert_eq!(
+            ToySubst(BTreeMap::from([(x.clone(), Toy::var("y"))])),
+            ToyAlphabet::restrict_subst(&subst, &[x.clone(), x.clone()])
+        );
+        assert_eq!(subst, ToyAlphabet::restrict_subst(&subst, &[x, y]));
+        let self_cycle = ToySubst(BTreeMap::from([(ToyVar::from("self"), Toy::var("self"))]));
+        assert_eq!(Toy::var("self"), self_cycle.walk(Toy::var("self")));
+        assert_eq!(Toy::var("self"), self_cycle.apply_fully(&Toy::var("self")));
+        let seed = ToySubst(BTreeMap::from([(
+            ToyVar::from("held"),
+            Toy::succ(Toy::zero()),
+        )]));
+        let pattern = Toy::add(Toy::var("p"), Toy::var("p"));
+        let target = Toy::add(Toy::zero(), Toy::zero());
+        let mut matched = seed.clone();
+        assert!(bool::from(ToyAlphabet::match_cmd(
+            &pattern,
+            &target,
+            &mut matched
+        )));
+        assert_eq!(target, matched.apply_once(&pattern));
+        assert_eq!(
+            Some(&Toy::succ(Toy::zero())),
+            matched.0.get(&ToyVar::from("held"))
+        );
+        let saved = matched.clone();
+        for (left, right) in [
+            (
+                pattern.clone(),
+                Toy::add(Toy::zero(), Toy::succ(Toy::zero())),
+            ),
+            (Toy::succ(Toy::var("p")), Toy::zero()),
+            (Toy::zero(), Toy::succ(Toy::zero())),
+        ] {
+            assert!(!bool::from(ToyAlphabet::match_cmd(
+                &left,
+                &right,
+                &mut matched
+            )));
+            assert_eq!(saved, matched);
+        }
+        let left = Toy::add(Toy::var("a"), Toy::var("b"));
+        let right = Toy::add(Toy::succ(Toy::var("b")), Toy::zero());
+        let mut unified = seed.clone();
+        assert!(bool::from(ToyAlphabet::unify_cmd(
+            &left,
+            &right,
+            &mut unified
+        )));
+        assert_eq!(
+            Toy::add(Toy::succ(Toy::zero()), Toy::zero()),
+            unified.apply_fully(&left)
+        );
+        assert_eq!(unified.apply_fully(&left), unified.apply_fully(&right));
+        for (left, right) in [
+            (Toy::var("cycle"), Toy::succ(Toy::var("cycle"))),
+            (
+                Toy::add(Toy::zero(), Toy::var("fresh")),
+                Toy::add(Toy::succ(Toy::zero()), Toy::zero()),
+            ),
+        ] {
+            let mut refused = seed.clone();
+            assert!(!bool::from(ToyAlphabet::unify_cmd(
+                &left,
+                &right,
+                &mut refused
+            )));
+            assert_eq!(seed, refused);
+        }
+    }
+
+    #[test]
+    fn metadata_names_and_orders_observe_boundaries()
+    {
+        use core::cmp::Ordering;
+
+        let x = ToyVar::from("x");
+        let term = Toy::add(Toy::var("x"), Toy::var("x"));
+        assert_eq!(BTreeMap::from([(&x, Occurrences(2))]), occurrences(&term));
+        assert!(occurrences(&Toy::zero()).is_empty());
+        let counts = occurrences(&term);
+        assert_eq!(
+            HoleDomination::Dominates,
+            dominates(&counts, &BTreeMap::new())
+        );
+        for (var, count, expected) in [
+            (&x, 1, HoleDomination::Dominates),
+            (&x, 2, HoleDomination::Dominates),
+            (&x, 3, HoleDomination::FallsShort),
+            (&ToyVar::from("missing"), 1, HoleDomination::FallsShort),
+        ] {
+            assert_eq!(
+                expected,
+                dominates(&counts, &BTreeMap::from([(var, Occurrences(count))]))
+            );
+        }
+        for (left, right, expected) in [
+            (Toy::succ(Toy::var("x")), Toy::var("x"), Ordering::Greater),
+            (Toy::succ(Toy::zero()), Toy::var("x"), Ordering::Equal),
+            (
+                Toy::succ(Toy::succ(Toy::var("x"))),
+                term.clone(),
+                Ordering::Equal,
+            ),
+            (
+                Toy::succ(Toy::succ(Toy::succ(Toy::var("x")))),
+                term.clone(),
+                Ordering::Equal,
+            ),
+        ] {
+            assert_eq!(expected, ToyAlphabet::reduction_cmp(&left, &right));
+            assert_eq!(
+                expected.reverse(),
+                ToyAlphabet::reduction_cmp(&right, &left)
+            );
+        }
+        for invertible in [false, true] {
+            let meta = ToyAlphabet::derive_meta(
+                &term,
+                &Toy::add(Toy::var("new"), Toy::var("x")),
+                CellInvertibility::from(invertible),
+            );
+            assert_eq!(alloc::vec![x.clone(), ToyVar::from("new")], meta.vars);
+            assert_eq!(invertible, bool::from(meta.invertible));
+            assert_eq!(
+                alloc::vec![(x.clone(), SeamRole::Forward)],
+                ToyAlphabet::hole_flow(&meta, &x)
+            );
+            assert!(ToyAlphabet::hole_flow(&meta, &ToyVar::from("missing")).is_empty());
+        }
+        assert!(
+            ToyAlphabet::derive_meta(&Toy::zero(), &Toy::zero(), CellInvertibility::from(false))
+                .vars
+                .is_empty()
+        );
+        let expected_constants = Toy(alloc::vec![
+            ToyHead::Add,
+            ToyHead::Konst(x.clone()),
+            ToyHead::Konst(x)
+        ]);
+        assert_eq!(expected_constants, ToyAlphabet::skolemize(&term));
+        assert_eq!(
+            expected_constants,
+            ToyAlphabet::skolemize(&expected_constants)
+        );
+        for name in ["", "r'"] {
+            let source = Toy::var(name);
+            let expected = Toy::var(ToyVar(alloc::format!("{name}'").into_boxed_str()));
+            assert_eq!(
+                (expected.clone(), expected),
+                ToyAlphabet::rename_apart((&source, &source), (&source, &source))
+            );
+        }
+        let anchor = Toy::add(Toy::var("r"), Toy::add(Toy::var("r'"), Toy::var("r''")));
+        let lhs = Toy::add(Toy::var("r"), Toy::var("r'"));
+        let rhs = Toy::add(Toy::var("r"), Toy::var("r"));
+        assert_eq!(
+            (
+                Toy::add(Toy::var("r'''"), Toy::var("r''''")),
+                Toy::add(Toy::var("r'''"), Toy::var("r'''"))
+            ),
+            ToyAlphabet::rename_apart((&anchor, &anchor), (&lhs, &rhs))
+        );
+        assert_eq!(
+            (lhs.clone(), rhs.clone()),
+            ToyAlphabet::rename_apart((&Toy::zero(), &Toy::zero()), (&lhs, &rhs))
+        );
+    }
 }

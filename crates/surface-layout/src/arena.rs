@@ -57,6 +57,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::num::NonZeroU32;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::error::BuildAllocationSite;
@@ -98,6 +99,17 @@ quenchant_shape::reason_enum! {
 /// - ensures: the identity never moves and is never recycled.
 /// - provides: the identity stored in every document edge.
 /// - panics: none.
+/// - executable: none — this data declaration has no executable invocation;
+///   ingestion, construction and checked projections carry the relevant
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+///   ordinals, foreign arenas and wrong node kinds are observed through exact
+///   payloads or typed absence. Dropping the arena check, shifting a bound,
+///   reading a different store and returning a different payload change these
+///   observations; borrowed private projections also expose storage identity.
+/// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub(crate) struct NodeId
@@ -113,6 +125,17 @@ pub(crate) struct NodeId
 /// - ensures: the identity never moves and is never recycled.
 /// - provides: the payload of a text node.
 /// - panics: none.
+/// - executable: none — this data declaration has no executable invocation;
+///   ingestion, construction and checked projections carry the relevant
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+///   ordinals, foreign arenas and wrong node kinds are observed through exact
+///   payloads or typed absence. Dropping the arena check, shifting a bound,
+///   reading a different store and returning a different payload change these
+///   observations; borrowed private projections also expose storage identity.
+/// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub(crate) struct TextId
@@ -128,6 +151,17 @@ pub(crate) struct TextId
 /// - ensures: the identity never moves and is never recycled.
 /// - provides: the payload of a verbatim node.
 /// - panics: none.
+/// - executable: none — this data declaration has no executable invocation;
+///   ingestion, construction and checked projections carry the relevant
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+///   ordinals, foreign arenas and wrong node kinds are observed through exact
+///   payloads or typed absence. Dropping the arena check, shifting a bound,
+///   reading a different store and returning a different payload change these
+///   observations; borrowed private projections also expose storage identity.
+/// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub(crate) struct VerbatimId
@@ -149,6 +183,17 @@ pub(crate) struct VerbatimId
 /// - fails: minting reports `BuildError::ArenaKeyExhausted` when the counter
 ///   has no value left.
 /// - panics: none.
+/// - executable: none — this data declaration has no executable invocation;
+///   ingestion, construction and checked projections carry the relevant
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct builder arenas reject each other's handles,
+///   while the final nonzero counter value is minted once and exhaustion never
+///   reuses it. Key omission, reuse and wraparound change handle validation or
+///   the typed exhaustion result.
+/// - witness: `algebra::tests::a_handle_from_another_arena_is_refused_before_lookup`
+/// - witness: `build::tests::an_exhausted_arena_key_counter_is_reported_rather_than_reused`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub(crate) struct ArenaKey
@@ -169,6 +214,17 @@ pub(crate) struct ArenaKey
 /// - fails: a mismatch surfaces as `BuildError::UnknownDoc` during
 ///   construction, and as the render-phase unknown-handle error afterwards.
 /// - panics: none.
+/// - executable: none — this data declaration has no executable invocation;
+///   ingestion, construction and checked projections carry the relevant
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+///   ordinals, foreign arenas and wrong node kinds are observed through exact
+///   payloads or typed absence. Dropping the arena check, shifting a bound,
+///   reading a different store and returning a different payload change these
+///   observations; borrowed private projections also expose storage identity.
+/// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct DocId
 {
@@ -186,6 +242,17 @@ pub struct DocId
 ///   `Absent` means at least one check failed.
 /// - provides: a nominal two-valued handle status without exposing `bool`.
 /// - panics: none.
+/// - executable: none — this data declaration has no executable invocation;
+///   ingestion, construction and checked projections carry the relevant
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+///   ordinals, foreign arenas and wrong node kinds are observed through exact
+///   payloads or typed absence. Dropping the arena check, shifting a bound,
+///   reading a different store and returning a different payload change these
+///   observations; borrowed private projections also expose storage identity.
+/// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum DocHandleStatus
 {
@@ -235,6 +302,23 @@ pub struct VerbatimOwned
 }
 
 /// A validated, owned newline-free text identity.
+///
+/// # Specification
+/// - requires: construction validates the complete UTF-8 input.
+/// - ensures: the bytes contain no CR, LF or tab and the width counts scalars.
+/// - provides: one owned text payload with coherent storage metrics.
+/// - panics: none.
+/// - executable: none — this stored record has no invocation boundary; both
+///   ingestion paths validate its bytes and width.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty text, multibyte scalars, NUL and each forbidden
+///   scalar at distinct positions expose exact bytes, scalar width, byte charge
+///   and typed rejection. Owned inputs also expose allocation identity.
+///   Byte-counted widths, normalization, skipped forbidden scalars and cloning
+///   the adopted buffer change these observations; allocation failure is not
+///   deterministically injected.
+/// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct CheckedText
 {
@@ -260,8 +344,18 @@ impl CheckedText
     /// Returns `ArithmeticOverflow` when the byte length cannot be represented.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — a reused text identity contributes one byte charge.
-    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+    /// - hypothesis: L3 — empty text, multibyte scalars, NUL and each forbidden
+    ///   scalar at distinct positions expose exact bytes, scalar width, byte
+    ///   charge and typed rejection. Owned inputs also expose allocation
+    ///   identity. Byte-counted widths, normalization, skipped forbidden
+    ///   scalars and cloning the adopted buffer change these observations;
+    ///   allocation failure is not deterministically injected.
+    /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
+    #[spec(
+        ensures: |ret| ret.as_ref().map_or_else(|error| u64::try_from(self.text.len()).is_err()
+                && *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::TextBytes },
+            |used| u64::try_from(self.text.len()) == Ok(u64::from(*used)))
+    )]
     #[inline]
     pub(crate) fn bytes_used(&self) -> Result<TextBytesUsed, BuildError>
     {
@@ -299,6 +393,18 @@ impl AsRef<str> for CheckedText
 /// - ensures: the recorded ending reproduces the original bytes exactly.
 /// - provides: the ending half of a verbatim fragment record.
 /// - panics: none.
+/// - executable: none — this data declaration has no executable invocation;
+///   ingestion, construction and checked projections carry the relevant
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all strings of up to four symbols over ASCII, a multibyte
+///   scalar, CR, LF and tab are checked against a split-based physical-fragment
+///   oracle. Exact bytes, widths, ending variants and final fragments
+///   distinguish normalization, byte-counted widths, missing trailing fragments
+///   and acceptance of bare CR. Allocation failure and widths beyond u32 are
+///   outside this bounded witness domain.
+/// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
 pub enum StoredLineEnding
@@ -318,6 +424,18 @@ pub enum StoredLineEnding
 /// - provides: the metrics the cost and taint rules read without re-scanning
 ///   the bytes.
 /// - panics: none.
+/// - executable: none — this data declaration has no executable invocation;
+///   ingestion, construction and checked projections carry the relevant
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all strings of up to four symbols over ASCII, a multibyte
+///   scalar, CR, LF and tab are checked against a split-based physical-fragment
+///   oracle. Exact bytes, widths, ending variants and final fragments
+///   distinguish normalization, byte-counted widths, missing trailing fragments
+///   and acceptance of bare CR. Allocation failure and widths beyond u32 are
+///   outside this bounded witness domain.
+/// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct VerbatimLine
 {
@@ -336,6 +454,18 @@ pub struct VerbatimLine
 /// - provides: the byte-identical carrier for comments and other protected
 ///   content.
 /// - panics: none.
+/// - executable: none — this data declaration has no executable invocation;
+///   ingestion, construction and checked projections carry the relevant
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all strings of up to four symbols over ASCII, a multibyte
+///   scalar, CR, LF and tab are checked against a split-based physical-fragment
+///   oracle. Exact bytes, widths, ending variants and final fragments
+///   distinguish normalization, byte-counted widths, missing trailing fragments
+///   and acceptance of bare CR. Allocation failure and widths beyond u32 are
+///   outside this bounded witness domain.
+/// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct VerbatimText
 {
@@ -368,10 +498,16 @@ impl VerbatimLine
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a mixed sequence keeps each fragment's own ending and
-    ///   a trailing ending leaves an empty final fragment with none.
-    /// - witness: `algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`
-    /// - witness: `algebra::tests::verbatim_with_a_trailing_ending_stores_an_empty_final_fragment`
+    /// - hypothesis: L3 — all strings of up to four symbols over ASCII, a
+    ///   multibyte scalar, CR, LF and tab are checked against a split-based
+    ///   physical-fragment oracle. Exact bytes, widths, ending variants and
+    ///   final fragments distinguish normalization, byte-counted widths,
+    ///   missing trailing fragments and acceptance of bare CR. Allocation
+    ///   failure and widths beyond u32 are outside this bounded witness domain.
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    #[spec(
+        ensures: |ret| matches!((self.ending, ret), (Maybe::Present(StoredLineEnding::Lf), Maybe::Present(StoredLineEnding::Lf)) | (Maybe::Present(StoredLineEnding::CrLf), Maybe::Present(StoredLineEnding::CrLf)) | (Maybe::Absent(ending::Absent::Final), Maybe::Absent(ending::Absent::Final)))
+    )]
     #[inline]
     pub const fn ending(&self) -> Maybe<StoredLineEnding, ending::Absent>
     {
@@ -395,9 +531,18 @@ impl VerbatimText
     /// Returns `ArithmeticOverflow` when the byte length cannot be represented.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — byte identity remains byte-for-byte stable through
-    ///   storage and projection.
-    /// - witness: `algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`
+    /// - hypothesis: L3 — all strings of up to four symbols over ASCII, a
+    ///   multibyte scalar, CR, LF and tab are checked against a split-based
+    ///   physical-fragment oracle. Exact bytes, widths, ending variants and
+    ///   final fragments distinguish normalization, byte-counted widths,
+    ///   missing trailing fragments and acceptance of bare CR. Allocation
+    ///   failure and widths beyond u32 are outside this bounded witness domain.
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    #[spec(
+        ensures: |ret| ret.as_ref().map_or_else(|error| u64::try_from(self.bytes.len()).is_err()
+                && *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::TextBytes },
+            |used| u64::try_from(self.bytes.len()) == Ok(u64::from(*used)))
+    )]
     #[inline]
     pub(crate) fn bytes_used(&self) -> Result<TextBytesUsed, BuildError>
     {
@@ -419,8 +564,18 @@ impl VerbatimText
     /// represented.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a trailing ending creates one empty final fragment.
-    /// - witness: `algebra::tests::verbatim_with_a_trailing_ending_stores_an_empty_final_fragment`
+    /// - hypothesis: L3 — all strings of up to four symbols over ASCII, a
+    ///   multibyte scalar, CR, LF and tab are checked against a split-based
+    ///   physical-fragment oracle. Exact bytes, widths, ending variants and
+    ///   final fragments distinguish normalization, byte-counted widths,
+    ///   missing trailing fragments and acceptance of bare CR. Allocation
+    ///   failure and widths beyond u32 are outside this bounded witness domain.
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    #[spec(
+        ensures: |ret| ret.as_ref().map_or_else(|error| u64::try_from(self.lines.len()).is_err()
+                && *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::VerbatimLines },
+            |used| u64::try_from(self.lines.len()) == Ok(u64::from(*used)))
+    )]
     #[inline]
     pub(crate) fn lines_used(&self) -> Result<VerbatimLinesUsed, BuildError>
     {
@@ -434,6 +589,18 @@ impl VerbatimText
     /// - ensures: the final empty fragment, when present, is retained.
     /// - provides: exact widths and endings for cost computation.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all strings of up to four symbols over ASCII, a
+    ///   multibyte scalar, CR, LF and tab are checked against a split-based
+    ///   physical-fragment oracle. Exact bytes, widths, ending variants and
+    ///   final fragments distinguish normalization, byte-counted widths,
+    ///   missing trailing fragments and acceptance of bare CR. Allocation
+    ///   failure and widths beyond u32 are outside this bounded witness domain.
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    #[spec(
+        ensures: |ret| core::ptr::eq(&raw const *ret, &raw const *self.lines.as_slice())
+    )]
     #[inline]
     pub(crate) fn lines(&self) -> &[VerbatimLine]
     {
@@ -525,10 +692,21 @@ impl<'source> TryFrom<TextSource<'source>> for CheckedText
     /// unrepresentable widths, or `AllocationFailed` for storage reservation.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — valid text preserves bytes and width while each
-    ///   forbidden scalar is rejected.
-    /// - witness: `algebra::tests::text_emits_at_the_current_column`
-    /// - witness: `algebra::tests::text_rejects_a_carriage_return_a_line_feed_and_a_tab`
+    /// - hypothesis: L3 — empty text, multibyte scalars, NUL and each forbidden
+    ///   scalar at distinct positions expose exact bytes, scalar width, byte
+    ///   charge and typed rejection. Owned inputs also expose allocation
+    ///   identity. Byte-counted widths, normalization, skipped forbidden
+    ///   scalars and cloning the adopted buffer change these observations;
+    ///   allocation failure is not deterministically injected.
+    /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
+    #[spec(
+        ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidText => source.text.contains(['\r', '\n', '\t']), BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => !source.text.contains(['\r', '\n', '\t'])
+                && u32::try_from(source.text.chars().count()).is_err(), BuildError::AllocationFailed { site: BuildAllocationSite::TextArena } => !source.text.contains(['\r', '\n', '\t'])
+                && u32::try_from(source.text.chars().count()).is_ok(), _ => false },
+            |text| text.text == source.text
+                && !source.text.contains(['\r', '\n', '\t'])
+                && usize::try_from(u32::from(text.width)) == Ok(source.text.chars().count()))
+    )]
     #[inline]
     fn try_from(source: TextSource<'source>) -> Result<Self, Self::Error>
     {
@@ -562,9 +740,23 @@ impl TryFrom<TextOwned> for CheckedText
     /// an unrepresentable width.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — owned text preserves bytes and checked width while
-    ///   rejecting each forbidden scalar through the shared validation path.
-    /// - witness: `algebra::tests::owned_text_preserves_bytes_width_and_rejects_forbidden_scalars`
+    /// - hypothesis: L3 — empty text, multibyte scalars, NUL and each forbidden
+    ///   scalar at distinct positions expose exact bytes, scalar width, byte
+    ///   charge and typed rejection. Owned inputs also expose allocation
+    ///   identity. Byte-counted widths, normalization, skipped forbidden
+    ///   scalars and cloning the adopted buffer change these observations;
+    ///   allocation failure is not deterministically injected.
+    /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
+    #[spec(
+        captures: before = (source.text.as_ptr(), source.text.len(), source.text.chars().count(), source.text.contains(['\r', '\n', '\t'])),
+        ensures: |ret| ret.as_ref().map_or_else(|error| if before.3 { *error == BuildError::InvalidText }
+            else { u32::try_from(before.2).is_err()
+                && *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } },
+            |text| !before.3
+                && text.text.as_ptr() == before.0
+                && text.text.len() == before.1
+                && usize::try_from(u32::from(text.width)) == Ok(before.2))
+    )]
     #[inline]
     fn try_from(source: TextOwned) -> Result<Self, Self::Error>
     {
@@ -581,7 +773,8 @@ impl<'source> TryFrom<VerbatimSource<'source>> for VerbatimText
     /// Scans and owns one borrowed opaque multiline text identity.
     ///
     /// # Specification
-    /// - requires: `source` contains only LF or CRLF line endings.
+    /// - requires: `source` is complete UTF-8 text; bare CR remains in the
+    ///   domain.
     /// - ensures: success preserves bytes and one record per physical fragment.
     /// - provides: the borrowed verbatim ingestion path.
     /// - fails: returns `InvalidVerbatimLineEnding`, `ArithmeticOverflow`, or
@@ -592,11 +785,28 @@ impl<'source> TryFrom<VerbatimSource<'source>> for VerbatimText
     /// Returns the typed scan or storage error that prevents ingestion.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — mixed endings, trailing endings, and bare carriage
-    ///   returns are distinguished before storage.
-    /// - witness: `algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`
-    /// - witness: `algebra::tests::verbatim_with_a_trailing_ending_stores_an_empty_final_fragment`
-    /// - witness: `algebra::tests::verbatim_rejects_a_bare_carriage_return`
+    /// - hypothesis: L3 — all strings of up to four symbols over ASCII, a
+    ///   multibyte scalar, CR, LF and tab are checked against a split-based
+    ///   physical-fragment oracle. Exact bytes, widths, ending variants and
+    ///   final fragments distinguish normalization, byte-counted widths,
+    ///   missing trailing fragments and acceptance of bare CR. Allocation
+    ///   failure and widths beyond u32 are outside this bounded witness domain.
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    #[spec(
+        ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')), BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => source.text.split('\n').any(|fragment| u32::try_from(fragment.strip_suffix('\r').unwrap_or(fragment).chars().count()).is_err()), BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena | BuildAllocationSite::TextArena } => true, _ => false },
+            |verbatim| verbatim.bytes == source.text
+                && !(source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')))
+                && verbatim.lines.len() == source.text.bytes().filter(|byte| *byte == b'\n').count().saturating_add(1)
+                && verbatim.lines.iter().zip(source.text.split('\n')).enumerate().all(|(index, (line, fragment))| { let last = index.saturating_add(1) == verbatim.lines.len();
+            let crlf = !last
+                && fragment.ends_with('\r');
+            let content = if crlf { fragment.strip_suffix('\r').unwrap_or(fragment) }
+            else { fragment };
+            u32::try_from(content.chars().count()).is_ok_and(|width| u32::from(line.scalar_width) == width)
+                && line.ending == if last { Maybe::Absent(ending::Absent::Final) }
+            else if crlf { Maybe::Present(StoredLineEnding::CrLf) }
+            else { Maybe::Present(StoredLineEnding::Lf) } }))
+    )]
     #[inline]
     fn try_from(source: VerbatimSource<'source>) -> Result<Self, Self::Error>
     {
@@ -619,20 +829,42 @@ impl TryFrom<VerbatimOwned> for VerbatimText
     /// Scans and adopts one owned opaque multiline text identity.
     ///
     /// # Specification
-    /// - requires: `source` owns text containing only LF or CRLF endings.
+    /// - requires: `source` owns complete UTF-8 text; bare CR remains in the
+    ///   domain.
     /// - ensures: success preserves ownership, bytes, and physical fragments.
     /// - provides: the owned verbatim ingestion path.
-    /// - fails: returns `InvalidVerbatimLineEnding` or `ArithmeticOverflow`
-    ///   without returning a partial identity.
+    /// - fails: returns `InvalidVerbatimLineEnding`, `ArithmeticOverflow` or
+    ///   `AllocationFailed` without returning a partial identity.
     /// - panics: none.
     ///
     /// # Errors
     /// Returns the typed scan error that prevents ingestion.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — owned verbatim preserves an ending shape and rejects
-    ///   a bare carriage return through the shared scanner.
-    /// - witness: `algebra::tests::owned_verbatim_preserves_an_ending_and_rejects_a_bare_carriage_return`
+    /// - hypothesis: L3 — all strings of up to four symbols over ASCII, a
+    ///   multibyte scalar, CR, LF and tab are checked against a split-based
+    ///   physical-fragment oracle. Exact bytes, widths, ending variants and
+    ///   final fragments distinguish normalization, byte-counted widths,
+    ///   missing trailing fragments and acceptance of bare CR. Allocation
+    ///   failure and widths beyond u32 are outside this bounded witness domain.
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    #[spec(
+        captures: before = (source.text.as_ptr(), source.text.len(), source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')), source.text.split('\n').any(|fragment| u32::try_from(fragment.strip_suffix('\r').unwrap_or(fragment).chars().count()).is_err())),
+        ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => before.2, BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => before.3, BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena } => true, _ => false },
+            |verbatim| verbatim.bytes.as_ptr() == before.0
+                && verbatim.bytes.len() == before.1
+                && !(verbatim.bytes.match_indices('\r').any(|(offset, _)| verbatim.bytes.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')))
+                && verbatim.lines.len() == verbatim.bytes.bytes().filter(|byte| *byte == b'\n').count().saturating_add(1)
+                && verbatim.lines.iter().zip(verbatim.bytes.split('\n')).enumerate().all(|(index, (line, fragment))| { let last = index.saturating_add(1) == verbatim.lines.len();
+            let crlf = !last
+                && fragment.ends_with('\r');
+            let content = if crlf { fragment.strip_suffix('\r').unwrap_or(fragment) }
+            else { fragment };
+            u32::try_from(content.chars().count()).is_ok_and(|width| u32::from(line.scalar_width) == width)
+                && line.ending == if last { Maybe::Absent(ending::Absent::Final) }
+            else if crlf { Maybe::Present(StoredLineEnding::CrLf) }
+            else { Maybe::Present(StoredLineEnding::Lf) } }))
+    )]
     #[inline]
     fn try_from(source: VerbatimOwned) -> Result<Self, Self::Error>
     {
@@ -656,10 +888,20 @@ impl TryFrom<VerbatimOwned> for VerbatimText
 /// Returns `InvalidText` or `ArithmeticOverflow`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — valid text retains its width and each forbidden scalar is
-///   rejected before storage.
-/// - witness: `algebra::tests::text_emits_at_the_current_column`
-/// - witness: `algebra::tests::text_rejects_a_carriage_return_a_line_feed_and_a_tab`
+/// - hypothesis: L3 — empty text, multibyte scalars, NUL and each forbidden
+///   scalar at distinct positions expose exact bytes, scalar width, byte charge
+///   and typed rejection. Owned inputs also expose allocation identity.
+///   Byte-counted widths, normalization, skipped forbidden scalars and cloning
+///   the adopted buffer change these observations; allocation failure is not
+///   deterministically injected.
+/// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
+#[spec(
+    ensures: |ret| ret.as_ref().map_or_else(|error| if source.text.contains(['\r', '\n', '\t']) { *error == BuildError::InvalidText }
+        else { u32::try_from(source.text.chars().count()).is_err()
+            && *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } },
+        |width| !source.text.contains(['\r', '\n', '\t'])
+            && usize::try_from(u32::from(*width)) == Ok(source.text.chars().count()))
+)]
 fn checked_text_width(source: TextSource<'_>) -> Result<ScalarWidth, BuildError>
 {
     if source
@@ -687,12 +929,27 @@ fn checked_text_width(source: TextSource<'_>) -> Result<ScalarWidth, BuildError>
 /// Returns the typed scan or allocation error that prevents a complete scan.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surfaces are the ending kinds and the fragment
-///   boundaries, separated by LF, CRLF, a mixed sequence, a trailing ending and
-///   a bare carriage return, each asserted at its exact records or error.
-/// - witness: `algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`
-/// - witness: `algebra::tests::verbatim_with_a_trailing_ending_stores_an_empty_final_fragment`
-/// - witness: `algebra::tests::verbatim_rejects_a_bare_carriage_return`
+/// - hypothesis: L3 — all strings of up to four symbols over ASCII, a multibyte
+///   scalar, CR, LF and tab are checked against a split-based physical-fragment
+///   oracle. Exact bytes, widths, ending variants and final fragments
+///   distinguish normalization, byte-counted widths, missing trailing fragments
+///   and acceptance of bare CR. Allocation failure and widths beyond u32 are
+///   outside this bounded witness domain.
+/// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+#[spec(
+    ensures: |ret| ret.as_ref().map_or_else(|error| match *error { BuildError::InvalidVerbatimLineEnding => source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')), BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth } => source.text.split('\n').any(|fragment| u32::try_from(fragment.strip_suffix('\r').unwrap_or(fragment).chars().count()).is_err()), BuildError::AllocationFailed { site: BuildAllocationSite::VerbatimArena } => true, _ => false },
+        |lines| !(source.text.match_indices('\r').any(|(offset, _)| source.text.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n')))
+            && lines.len() == source.text.bytes().filter(|byte| *byte == b'\n').count().saturating_add(1)
+            && lines.iter().zip(source.text.split('\n')).enumerate().all(|(index, (line, fragment))| { let last = index.saturating_add(1) == lines.len();
+        let crlf = !last
+            && fragment.ends_with('\r');
+        let content = if crlf { fragment.strip_suffix('\r').unwrap_or(fragment) }
+        else { fragment };
+        u32::try_from(content.chars().count()).is_ok_and(|width| u32::from(line.scalar_width) == width)
+            && line.ending == if last { Maybe::Absent(ending::Absent::Final) }
+        else if crlf { Maybe::Present(StoredLineEnding::CrLf) }
+        else { Maybe::Present(StoredLineEnding::Lf) } }))
+)]
 fn scan_verbatim(source: VerbatimSource<'_>) -> Result<Vec<VerbatimLine>, BuildError>
 {
     let mut lines = Vec::new();
@@ -748,6 +1005,16 @@ fn scan_verbatim(source: VerbatimSource<'_>) -> Result<Vec<VerbatimLine>, BuildE
 /// - provides: the complete document algebra, including arbitrary choice and
 ///   unaligned concatenation.
 /// - panics: none.
+/// - executable: none — this data declaration has no executable invocation;
+///   ingestion, construction and checked projections carry the relevant
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exhaustive small documents compare concatenation, choice,
+///   nesting, alignment, flattening and line behavior with a direct oracle.
+///   Reversing child order, changing flat images or mixing incoming column with
+///   indentation changes the selected cost or output.
+/// - witness: `algebra::tests::exhaustive_small_documents_match_the_direct_oracle`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum DocNode
 {
@@ -810,6 +1077,17 @@ pub(crate) enum DocNode
 ///   an entry in the flattened image table.
 /// - provides: the immutable input the resolver and the renderer read.
 /// - panics: none.
+/// - executable: none — this data declaration has no executable invocation;
+///   ingestion, construction and checked projections carry the relevant
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+///   ordinals, foreign arenas and wrong node kinds are observed through exact
+///   payloads or typed absence. Dropping the arena check, shifting a bound,
+///   reading a different store and returning a different payload change these
+///   observations; borrowed private projections also expose storage identity.
+/// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
 #[derive(Clone, Debug)]
 pub struct DocArena
 {
@@ -836,8 +1114,16 @@ impl DocArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — finalized storage reports the exact node cardinality.
+    /// - hypothesis: L3 — shared handles and finalized images expose exact node
+    ///   cardinality without charging each reference as a new identity.
+    ///   Counting edges, omitting appended images and changing dense insertion
+    ///   order alter the count or stored identities.
     /// - witness: `algebra::tests::finalization_appends_at_most_one_image_per_node`
+    /// - witness: `algebra::tests::identities_are_dense_insertion_ordinals_that_never_move`
+    #[spec(
+        ensures: |ret| u64::try_from(self.nodes.len()).map_or_else(|_error| u64::from(ret) == u64::MAX,
+            |count| u64::from(ret) == count)
+    )]
     #[inline]
     #[must_use]
     pub fn node_count(&self) -> DocNodesUsed
@@ -849,7 +1135,8 @@ impl DocArena
     /// Returns the stored newline-free text for a text handle.
     ///
     /// # Specification
-    /// - requires: `doc` names a stored `Text` node in this arena.
+    /// - requires: `doc` is any client handle, including a foreign,
+    ///   out-of-range or wrong-kind handle.
     /// - ensures: the returned nominal value contains the exact stored bytes.
     /// - provides: a read-only semantic projection for tests and renderers.
     /// - fails: returns `UnknownDoc` for foreign, invalid, or non-text handles,
@@ -861,10 +1148,20 @@ impl DocArena
     /// `ArithmeticOverflow` for an unrepresentable index conversion.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — text bytes survive ingestion and foreign handles
-    ///   cannot cross the arena boundary.
-    /// - witness: `algebra::tests::text_emits_at_the_current_column`
-    /// - witness: `algebra::tests::a_handle_from_another_arena_is_refused_before_lookup`
+    /// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+    ///   ordinals, foreign arenas and wrong node kinds are observed through
+    ///   exact payloads or typed absence. Dropping the arena check, shifting a
+    ///   bound, reading a different store and returning a different payload
+    ///   change these observations; borrowed private projections also expose
+    ///   storage identity.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| { let expected = (self.arena == doc.arena
+                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Text(identity) => self.texts.get(usize::try_from(identity.index).ok()?), _ => None });
+            ret.as_ref().map_or_else(|error| expected.is_none()
+                && matches!(*error, BuildError::UnknownDoc | BuildError::ArithmeticOverflow { operation: BuildArithmetic::IdConversion }),
+            |actual| expected.is_some_and(|expected| actual.text == expected.text)) }
+    )]
     #[inline]
     pub fn stored_text(
         &self,
@@ -893,7 +1190,8 @@ impl DocArena
     /// Returns the checked scalar width stored beside a text identity.
     ///
     /// # Specification
-    /// - requires: `doc` names a stored `Text` node in this arena.
+    /// - requires: `doc` is any client handle, including a foreign,
+    ///   out-of-range or wrong-kind handle.
     /// - ensures: the result is the width computed during ingestion.
     /// - provides: a nominal width projection without exposing raw bytes.
     /// - fails: returns `UnknownDoc` for foreign, invalid, or non-text handles,
@@ -905,8 +1203,20 @@ impl DocArena
     /// an unrepresentable index conversion.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the width projection agrees with accepted text.
-    /// - witness: `algebra::tests::text_emits_at_the_current_column`
+    /// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+    ///   ordinals, foreign arenas and wrong node kinds are observed through
+    ///   exact payloads or typed absence. Dropping the arena check, shifting a
+    ///   bound, reading a different store and returning a different payload
+    ///   change these observations; borrowed private projections also expose
+    ///   storage identity.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| { let expected = (self.arena == doc.arena
+                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Text(identity) => self.texts.get(usize::try_from(identity.index).ok()?), _ => None });
+            ret.as_ref().map_or_else(|error| expected.is_none()
+                && matches!(*error, BuildError::UnknownDoc | BuildError::ArithmeticOverflow { operation: BuildArithmetic::IdConversion }),
+            |actual| expected.is_some_and(|expected| *actual == expected.width)) }
+    )]
     #[inline]
     pub fn stored_text_width(
         &self,
@@ -935,7 +1245,8 @@ impl DocArena
     /// Returns the stored verbatim bytes for a verbatim handle.
     ///
     /// # Specification
-    /// - requires: `doc` names a stored `Verbatim` node in this arena.
+    /// - requires: `doc` is any client handle, including a foreign,
+    ///   out-of-range or wrong-kind handle.
     /// - ensures: the returned nominal value contains the exact stored bytes.
     /// - provides: a read-only byte-identity projection.
     /// - fails: returns `UnknownDoc` for foreign, invalid, or non-verbatim
@@ -947,9 +1258,20 @@ impl DocArena
     /// an unrepresentable index conversion.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — opaque bytes survive ingestion and projection without
-    ///   newline normalization.
-    /// - witness: `algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`
+    /// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+    ///   ordinals, foreign arenas and wrong node kinds are observed through
+    ///   exact payloads or typed absence. Dropping the arena check, shifting a
+    ///   bound, reading a different store and returning a different payload
+    ///   change these observations; borrowed private projections also expose
+    ///   storage identity.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| { let expected = (self.arena == doc.arena
+                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Verbatim(identity) => self.verbatim.get(usize::try_from(identity.index).ok()?), _ => None });
+            ret.as_ref().map_or_else(|error| expected.is_none()
+                && matches!(*error, BuildError::UnknownDoc | BuildError::ArithmeticOverflow { operation: BuildArithmetic::IdConversion }),
+            |actual| expected.is_some_and(|expected| actual.text == expected.bytes)) }
+    )]
     #[inline]
     pub fn stored_verbatim(
         &self,
@@ -979,7 +1301,8 @@ impl DocArena
     /// Returns the stored fragment records for a verbatim handle.
     ///
     /// # Specification
-    /// - requires: `doc` names a stored `Verbatim` node in this arena.
+    /// - requires: `doc` is any client handle, including a foreign,
+    ///   out-of-range or wrong-kind handle.
     /// - ensures: widths and endings are the records produced by ingestion.
     /// - provides: a read-only nominal metric projection.
     /// - fails: returns `UnknownDoc` for foreign, invalid, or non-verbatim
@@ -991,10 +1314,20 @@ impl DocArena
     /// an unrepresentable index conversion.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — physical widths and endings retain the complete
-    ///   mixed-ending scan, including the final fragment.
-    /// - witness: `algebra::tests::verbatim_preserves_a_mixed_ending_sequence_byte_for_byte`
-    /// - witness: `algebra::tests::verbatim_with_a_trailing_ending_stores_an_empty_final_fragment`
+    /// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+    ///   ordinals, foreign arenas and wrong node kinds are observed through
+    ///   exact payloads or typed absence. Dropping the arena check, shifting a
+    ///   bound, reading a different store and returning a different payload
+    ///   change these observations; borrowed private projections also expose
+    ///   storage identity.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| { let expected = (self.arena == doc.arena
+                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.nodes.get(index)).and_then(|node| match *node { DocNode::Verbatim(identity) => self.verbatim.get(usize::try_from(identity.index).ok()?), _ => None });
+            ret.as_ref().map_or_else(|error| expected.is_none()
+                && matches!(*error, BuildError::UnknownDoc | BuildError::ArithmeticOverflow { operation: BuildArithmetic::IdConversion }),
+            |actual| expected.is_some_and(|expected| actual.as_slice() == expected.lines.as_slice())) }
+    )]
     #[inline]
     pub fn verbatim_lines(
         &self,
@@ -1036,10 +1369,21 @@ impl DocArena
     /// an unrepresentable index conversion.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — finalization returns a stable image for every valid
-    ///   handle and rejects foreign handles.
-    /// - witness: `algebra::tests::flattening_is_idempotent`
-    /// - witness: `algebra::tests::a_handle_from_another_arena_is_refused_before_lookup`
+    /// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+    ///   ordinals, foreign arenas and wrong node kinds are observed through
+    ///   exact payloads or typed absence. Dropping the arena check, shifting a
+    ///   bound, reading a different store and returning a different payload
+    ///   change these observations; borrowed private projections also expose
+    ///   storage identity.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| { let expected = (self.arena == doc.arena
+                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count)).then_some(doc.node.index).and_then(|index| usize::try_from(index).ok()).and_then(|index| self.flattened.get(index));
+            ret.as_ref().map_or_else(|error| expected.is_none()
+                && matches!(*error, BuildError::UnknownDoc | BuildError::ArithmeticOverflow { operation: BuildArithmetic::IdConversion }),
+            |actual| actual.arena == self.arena
+                && expected == Some(&actual.node)) }
+    )]
     #[inline]
     pub fn flattened_image(
         &self,
@@ -1072,10 +1416,18 @@ impl DocArena
     /// Returns `UnknownDoc` when the handle is foreign or out of range.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — foreign and out-of-range handles are rejected before
-    ///   projection lookup.
-    /// - witness: `algebra::tests::a_handle_from_another_arena_is_refused_before_lookup`
-    /// - witness: `algebra::tests::an_out_of_range_handle_is_refused`
+    /// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+    ///   ordinals, foreign arenas and wrong node kinds are observed through
+    ///   exact payloads or typed absence. Dropping the arena check, shifting a
+    ///   bound, reading a different store and returning a different payload
+    ///   change these observations; borrowed private projections also expose
+    ///   storage identity.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| ret == if self.arena == doc.arena
+                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count) { Ok(doc.node) }
+            else { Err(BuildError::UnknownDoc) }
+    )]
     fn node_id_for(
         &self,
         doc: DocId,
@@ -1099,10 +1451,17 @@ impl DocArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — only handles with this arena key and an in-range node
-    ///   identity are present.
-    /// - witness: `algebra::tests::a_handle_from_another_arena_is_refused_before_lookup`
-    /// - witness: `algebra::tests::an_out_of_range_handle_is_refused`
+    /// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+    ///   ordinals, foreign arenas and wrong node kinds are observed through
+    ///   exact payloads or typed absence. Dropping the arena check, shifting a
+    ///   bound, reading a different store and returning a different payload
+    ///   change these observations; borrowed private projections also expose
+    ///   storage identity.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| matches!(ret, DocHandleStatus::Present) == (self.arena == doc.arena
+                && u32::try_from(self.nodes.len()).is_ok_and(|count| doc.node.index < count))
+    )]
     #[inline]
     #[must_use]
     pub fn contains(
@@ -1130,6 +1489,19 @@ impl DocArena
     /// - provides: the resolver's checked node projection;
     ///   [`stored::Absent::OutOfRange`] past the node store.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+    ///   ordinals, foreign arenas and wrong node kinds are observed through
+    ///   exact payloads or typed absence. Dropping the arena check, shifting a
+    ///   bound, reading a different store and returning a different payload
+    ///   change these observations; borrowed private projections also expose
+    ///   storage identity.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| { let expected = usize::try_from(node.index).ok().and_then(|index| self.nodes.get(index));
+            match (ret, expected) { (Maybe::Present(actual), Some(expected)) => actual == *expected, (Maybe::Absent(stored::Absent::OutOfRange), None) => true, _ => false } }
+    )]
     #[inline]
     pub(crate) fn node(
         &self,
@@ -1153,6 +1525,19 @@ impl DocArena
     /// - provides: flatten resolution without a second memo dimension;
     ///   [`stored::Absent::OutOfRange`] past the image table.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+    ///   ordinals, foreign arenas and wrong node kinds are observed through
+    ///   exact payloads or typed absence. Dropping the arena check, shifting a
+    ///   bound, reading a different store and returning a different payload
+    ///   change these observations; borrowed private projections also expose
+    ///   storage identity.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| { let expected = usize::try_from(node.index).ok().and_then(|index| self.flattened.get(index));
+            match (ret, expected) { (Maybe::Present(actual), Some(expected)) => actual == *expected, (Maybe::Absent(stored::Absent::OutOfRange), None) => true, _ => false } }
+    )]
     #[inline]
     pub(crate) fn flattened_node(
         &self,
@@ -1176,6 +1561,19 @@ impl DocArena
     /// - provides: byte and width metrics for resolution;
     ///   [`stored::Absent::OutOfRange`] past the text store.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+    ///   ordinals, foreign arenas and wrong node kinds are observed through
+    ///   exact payloads or typed absence. Dropping the arena check, shifting a
+    ///   bound, reading a different store and returning a different payload
+    ///   change these observations; borrowed private projections also expose
+    ///   storage identity.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| { let expected = usize::try_from(text.index).ok().and_then(|index| self.texts.get(index));
+            match (ret, expected) { (Maybe::Present(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (Maybe::Absent(stored::Absent::OutOfRange), None) => true, _ => false } }
+    )]
     #[inline]
     pub(crate) fn text_identity(
         &self,
@@ -1199,6 +1597,19 @@ impl DocArena
     /// - provides: exact bytes and physical fragment metrics;
     ///   [`stored::Absent::OutOfRange`] past the verbatim store.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — first and last identities, the next ordinal, maximal
+    ///   ordinals, foreign arenas and wrong node kinds are observed through
+    ///   exact payloads or typed absence. Dropping the arena check, shifting a
+    ///   bound, reading a different store and returning a different payload
+    ///   change these observations; borrowed private projections also expose
+    ///   storage identity.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| { let expected = usize::try_from(verbatim.index).ok().and_then(|index| self.verbatim.get(index));
+            match (ret, expected) { (Maybe::Present(actual), Some(expected)) => core::ptr::eq(&raw const *actual, &raw const *expected), (Maybe::Absent(stored::Absent::OutOfRange), None) => true, _ => false } }
+    )]
     #[inline]
     pub(crate) fn verbatim_identity(
         &self,
@@ -1315,6 +1726,17 @@ impl DocId
     /// - ensures: the resulting public handle carries both identity components.
     /// - provides: the builder's only internal handle assembly operation.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — first, last, foreign and out-of-range handles are
+    ///   observed through exact payloads and typed refusal. Changing the
+    ///   namespace or insertion identity changes those observations; assembling
+    ///   a handle does not validate its store bounds.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    #[spec(
+        ensures: |ret| ret.arena == arena
+                && ret.node == node
+    )]
     #[inline]
     pub(crate) fn from_parts(
         arena: ArenaKey,
@@ -1354,6 +1776,28 @@ impl DocArena
     /// - ensures: all finalized stores move into one immutable arena.
     /// - provides: the builder-to-arena ownership boundary.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sealed arenas expose preserved payloads, namespace
+    ///   checks and idempotent flattened images. Substituting a store, changing
+    ///   a namespace or losing an image changes these observations. The
+    ///   predicate observes allocation identity and lengths without cloning
+    ///   owned stores; the builder owns structural validation.
+    /// - witness: `arena::tests::arena_projections_separate_namespaces_kinds_and_store_bounds`
+    /// - witness: `algebra::tests::flattening_is_idempotent`
+    /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
+    #[spec(
+        captures: before = (nodes.as_ptr(), nodes.len(), texts.as_ptr(), texts.len(), verbatim.as_ptr(), verbatim.len(), flattened.as_ptr(), flattened.len()),
+        ensures: |ret| ret.arena == arena
+                && ret.nodes.as_ptr() == before.0
+                && ret.nodes.len() == before.1
+                && ret.texts.as_ptr() == before.2
+                && ret.texts.len() == before.3
+                && ret.verbatim.as_ptr() == before.4
+                && ret.verbatim.len() == before.5
+                && ret.flattened.as_ptr() == before.6
+                && ret.flattened.len() == before.7
+    )]
     #[inline]
     pub(crate) fn from_parts(
         arena: ArenaKey,
@@ -1370,5 +1814,255 @@ impl DocArena
             verbatim,
             flattened,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+    use crate::build::DocBuilder;
+    use crate::limits::BuildLimits;
+    use crate::limits::BuildMeter;
+
+    /// Scalar widths, exact bytes and ownership remain distinct observations.
+    #[test]
+    fn text_ingestion_preserves_unicode_counts_and_owned_allocations() -> Result<(), BuildError>
+    {
+        for source in ["", "a\0β𐐀", "e\u{301}"] {
+            let borrowed = CheckedText::try_from(TextSource::from(source))?;
+            assert_eq!(borrowed.as_ref(), source);
+            assert_eq!(
+                usize::try_from(u32::from(borrowed.width())),
+                Ok(source.chars().count())
+            );
+            assert_eq!(
+                borrowed.bytes_used().map(u64::from),
+                u64::try_from(source.len()).map_err(|_error| BuildError::ArithmeticOverflow {
+                    operation: BuildArithmetic::TextBytes
+                })
+            );
+            let mut owned = String::with_capacity(64);
+            owned.push_str(source);
+            let pointer = owned.as_ptr();
+            let adopted = CheckedText::try_from(TextOwned::from(owned))?;
+            assert_eq!(adopted, borrowed);
+            assert_eq!(adopted.text.as_ptr(), pointer);
+        }
+        // workflow-gates: allow-escaped-newline
+        for source in ["\r", "\n", "\t", "prefix\r𐐀", "𐐀\nend", "\tend"] {
+            assert_eq!(
+                CheckedText::try_from(TextSource::from(source)),
+                Err(BuildError::InvalidText)
+            );
+            assert_eq!(
+                CheckedText::try_from(TextOwned::from(String::from(source))),
+                Err(BuildError::InvalidText)
+            );
+        }
+        Ok(())
+    }
+
+    /// Exhaustive short inputs distinguish physical endings from scalar width
+    /// and final fragments.
+    #[test]
+    fn short_verbatim_inputs_match_an_independent_fragment_oracle()
+    {
+        let alphabet = ['a', '𐐀', '\r', '\n', '\t'];
+        for length in 0_u32 ..= 4 {
+            for encoded in 0_u32 .. 5_u32.saturating_pow(length) {
+                let mut source = String::new();
+                let mut rest = encoded;
+                for _ in 0 .. length {
+                    let digit = rest.checked_rem(5).expect("nonzero radix");
+                    source.push(
+                        *alphabet
+                            .get(usize::try_from(digit).expect("small digit"))
+                            .expect("digit in alphabet"),
+                    );
+                    rest = rest.checked_div(5).expect("nonzero radix");
+                }
+                let expected = (|| {
+                    let mut fragments = source.split('\n').peekable();
+                    let mut lines = Vec::new();
+                    while let Some(fragment) = fragments.next() {
+                        let (content, ending) = if fragments.peek().is_none() {
+                            (fragment, Maybe::Absent(ending::Absent::Final))
+                        }
+                        else if let Some(content) = fragment.strip_suffix('\r') {
+                            (content, Maybe::Present(StoredLineEnding::CrLf))
+                        }
+                        else {
+                            (fragment, Maybe::Present(StoredLineEnding::Lf))
+                        };
+                        if content.contains('\r') {
+                            return Err(BuildError::InvalidVerbatimLineEnding);
+                        }
+                        lines.push(VerbatimLine {
+                            scalar_width: ScalarWidth::from(
+                                u32::try_from(content.chars().count()).expect("bounded fragment"),
+                            ),
+                            ending,
+                        });
+                    }
+                    Ok(lines)
+                })();
+                assert_eq!(
+                    scan_verbatim(VerbatimSource::from(source.as_str())),
+                    expected
+                );
+                let borrowed = VerbatimText::try_from(VerbatimSource::from(source.as_str()));
+                assert_eq!(
+                    borrowed.as_ref().map(VerbatimText::lines),
+                    expected.as_ref().map(Vec::as_slice)
+                );
+                if let Ok(value) = borrowed.as_ref() {
+                    assert_eq!(value.as_ref(), source);
+                    assert_eq!(
+                        value.bytes_used().map(u64::from),
+                        Ok(u64::try_from(source.len()).expect("bounded source"))
+                    );
+                    assert_eq!(
+                        value.lines_used().map(u64::from),
+                        Ok(
+                            u64::try_from(expected.as_ref().expect("successful scan").len())
+                                .expect("bounded lines")
+                        )
+                    );
+                    for (line, expected_line) in value
+                        .lines()
+                        .iter()
+                        .zip(expected.as_ref().expect("successful scan"))
+                    {
+                        assert_eq!(line.scalar_width(), expected_line.scalar_width);
+                        assert_eq!(line.ending(), expected_line.ending);
+                    }
+                }
+                let pointer = source.as_ptr();
+                let owned = VerbatimText::try_from(VerbatimOwned::from(source));
+                assert_eq!(owned, borrowed);
+                if let Ok(value) = owned {
+                    assert_eq!(value.bytes.as_ptr(), pointer);
+                }
+            }
+        }
+    }
+
+    /// Arena namespaces, node kinds and dense store boundaries reject distinct
+    /// invalid handles.
+    #[test]
+    fn arena_projections_separate_namespaces_kinds_and_store_bounds() -> Result<(), BuildError>
+    {
+        let mut meter = BuildMeter::new(BuildLimits::default());
+        let mut builder = DocBuilder::try_new(&mut meter)?;
+        let text_doc = builder.text(TextSource::from("β𐐀"))?;
+        // workflow-gates: allow-escaped-newline
+        let verbatim_doc = builder.verbatim(VerbatimSource::from("a\r\n𐐀\n"))?;
+        let arena = builder.finish()?;
+        let mut foreign_meter = BuildMeter::new(BuildLimits::default());
+        let mut foreign_builder = DocBuilder::try_new(&mut foreign_meter)?;
+        let foreign_doc = foreign_builder.text(TextSource::from("different"))?;
+        let _foreign_arena = foreign_builder.finish()?;
+        let count =
+            u32::try_from(arena.nodes.len()).map_err(|_error| BuildError::ArithmeticOverflow {
+                operation: BuildArithmetic::IdConversion,
+            })?;
+        for index in [0_u32, count.saturating_sub(1)] {
+            let doc = DocId::from_parts(arena.arena, NodeId::from(index));
+            assert_eq!(arena.contains(doc), DocHandleStatus::Present);
+            assert_eq!(arena.node_id_for(doc), Ok(NodeId::from(index)));
+        }
+        for doc in [
+            foreign_doc,
+            DocId::from_parts(arena.arena, NodeId::from(count)),
+            DocId::from_parts(arena.arena, NodeId::from(u32::MAX)),
+        ] {
+            assert_eq!(arena.contains(doc), DocHandleStatus::Absent);
+            assert_eq!(arena.node_id_for(doc), Err(BuildError::UnknownDoc));
+            assert_eq!(arena.stored_text(doc), Err(BuildError::UnknownDoc));
+            assert_eq!(arena.stored_text_width(doc), Err(BuildError::UnknownDoc));
+            assert_eq!(arena.stored_verbatim(doc), Err(BuildError::UnknownDoc));
+            assert_eq!(arena.verbatim_lines(doc), Err(BuildError::UnknownDoc));
+            assert_eq!(arena.flattened_image(doc), Err(BuildError::UnknownDoc));
+        }
+        assert_eq!(arena.stored_text(verbatim_doc), Err(BuildError::UnknownDoc));
+        assert_eq!(
+            arena.stored_text_width(verbatim_doc),
+            Err(BuildError::UnknownDoc)
+        );
+        assert_eq!(arena.stored_verbatim(text_doc), Err(BuildError::UnknownDoc));
+        assert_eq!(arena.verbatim_lines(text_doc), Err(BuildError::UnknownDoc));
+        assert_eq!(
+            arena.stored_text(text_doc)?,
+            TextOwned::from(String::from("β𐐀"))
+        );
+        assert_eq!(arena.stored_text_width(text_doc)?, ScalarWidth::from(2_u32));
+        assert_eq!(arena.flattened_image(text_doc)?, text_doc);
+        let Maybe::Present(DocNode::Text(text_id)) = arena.node(text_doc.node)
+        else {
+            panic!("text node retained")
+        };
+        let Maybe::Present(text) = arena.text_identity(text_id)
+        else {
+            panic!("text identity retained")
+        };
+        assert_eq!(text.as_ref(), "β𐐀");
+        let Maybe::Present(DocNode::Verbatim(verbatim_id)) = arena.node(verbatim_doc.node)
+        else {
+            panic!("verbatim node retained")
+        };
+        let Maybe::Present(verbatim) = arena.verbatim_identity(verbatim_id)
+        else {
+            panic!("verbatim identity retained")
+        };
+        // workflow-gates: allow-escaped-newline
+        assert_eq!(verbatim.as_ref(), "a\r\n𐐀\n");
+        assert_eq!(
+            arena.verbatim_lines(verbatim_doc)?.as_slice(),
+            verbatim.lines()
+        );
+        assert_eq!(
+            arena.stored_verbatim(verbatim_doc)?,
+            VerbatimOwned::from(String::from(verbatim.as_ref()))
+        );
+        assert_eq!(
+            arena.flattened_node(text_doc.node),
+            Maybe::Present(text_doc.node)
+        );
+        for index in [count, u32::MAX] {
+            assert_eq!(
+                arena.node(NodeId::from(index)),
+                Maybe::Absent(stored::Absent::OutOfRange)
+            );
+            assert_eq!(
+                arena.flattened_node(NodeId::from(index)),
+                Maybe::Absent(stored::Absent::OutOfRange)
+            );
+        }
+        for index in [
+            u32::try_from(arena.texts.len()).map_err(|_error| BuildError::ArithmeticOverflow {
+                operation: BuildArithmetic::IdConversion,
+            })?,
+            u32::MAX,
+        ] {
+            assert_eq!(
+                arena.text_identity(TextId::from(index)),
+                Maybe::Absent(stored::Absent::OutOfRange)
+            );
+        }
+        for index in [
+            u32::try_from(arena.verbatim.len()).map_err(|_error| {
+                BuildError::ArithmeticOverflow {
+                    operation: BuildArithmetic::IdConversion,
+                }
+            })?,
+            u32::MAX,
+        ] {
+            assert_eq!(
+                arena.verbatim_identity(VerbatimId::from(index)),
+                Maybe::Absent(stored::Absent::OutOfRange)
+            );
+        }
+        Ok(())
     }
 }

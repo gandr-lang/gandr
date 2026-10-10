@@ -16,6 +16,7 @@ use core::fmt::Display;
 use core::fmt::Formatter;
 use core::fmt::Result as FmtResult;
 
+use anodized::spec;
 use petgraph::algo::condensation as petgraph_condensation;
 use petgraph::graph::DefaultIx;
 use petgraph::graph::DiGraph;
@@ -49,6 +50,17 @@ pub trait EdgeSource
     /// - ensures: the graph's nodes are exactly `0..node_count()`, and the
     ///   bound is the same on every call while the graph is unchanged.
     /// - panics: none.
+    /// - executable: none — the bound's cross-call stability has no independent
+    ///   representation observer on this required method; trait-wide checks
+    ///   change the protocol every implementor must satisfy.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For stable dense-graph adapters, L3 named rows and L2
+    ///   generated closure observations distinguish a wrong bound or omitted
+    ///   node. These witnesses cover the in-crate adapter, not compliance of
+    ///   arbitrary external implementations.
+    /// - witness: `tests::algorithms::reachability_rows_on_a_named_graph`
+    /// - witness: `tests::algorithms::reachability_agrees_with_the_closure_matrix`
     #[must_use]
     fn node_count(&self) -> NodeCount;
 
@@ -60,6 +72,18 @@ pub trait EdgeSource
     ///   any repetition; a target outside the node bound is reported by the
     ///   algorithm that reads it as [`GraphValidationError::EdgeOutOfBounds`].
     /// - panics: none.
+    /// - executable: none — a predicate on this declaration requires enclosing
+    ///   trait instrumentation, which changes required methods in every
+    ///   implementor; concrete adapters and algorithm observers are checked.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For valid sources in a stable adapter, L3 named graphs
+    ///   observe direction, successor membership and malformed-target refusal;
+    ///   L2 generated comparisons cover complete rows. Third-party iterator
+    ///   stability and trait-protocol migration are outside these witnesses.
+    /// - witness: `tests::algorithms::reachability_rows_on_a_named_graph`
+    /// - witness: `tests::algorithms::out_of_bounds_edges_are_refused_by_name`
+    /// - witness: `tests::algorithms::reachability_agrees_with_the_closure_matrix`
     fn successors(
         &self,
         node: NodeId,
@@ -199,14 +223,31 @@ pub struct Condensation
 /// the address space.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise plus L1 evidence — a back edge inside a longer
-///   path yields exactly the two-node closed walk; a 20 000-node chain yields
-///   none without native recursion; generated graphs agree with a
-///   closure-matrix oracle on whether a cycle exists, and every witness is
-///   checked as a closed walk over input edges.
+/// - hypothesis: For stable dense graphs, the predicate checks positive cycle
+///   incidence and rejects a negative answer to a self-loop. L3 named
+///   back-edge, self-loop and converging-path witnesses distinguish wrong
+///   closure and false cycles; the deep chain observes iterative depth. L2
+///   closure-matrix comparison supplies complete absence evidence, which the
+///   bounded negative predicate deliberately does not recompute. Resource
+///   exhaustion is outside those samples.
 /// - witness: `tests::algorithms::cycle_witness_names_the_back_edge`
 /// - witness: `tests::algorithms::deep_chain_runs_without_recursion`
 /// - witness: `tests::algorithms::witness_exists_exactly_when_the_closure_has_a_loop`
+#[spec(ensures: |ref result| match *result {
+    Ok(Some(ref witness)) => witness.nodes.len() >= 2 && witness.nodes.first() == witness.nodes.last()
+            && witness.edges.len().checked_add(1) == Some(witness.nodes.len())
+            && witness.edges.iter().zip(witness.nodes.windows(2)).all(|(edge, pair)|
+                matches!(*pair, [source, target] if edge.source == source && edge.target == target))
+        && witness.edges.iter().all(|edge| u32::from(edge.source) < u32::from(graph.node_count())
+            && graph.successors(edge.source).any(|target| target == edge.target)),
+    Ok(None) => graph.node_count().ids().all(|source| !graph.successors(source).any(|target| target == source)),
+    Err(GraphValidationError::EdgeOutOfBounds { source, target, node_count }) =>
+            node_count == graph.node_count() && u32::from(source) < u32::from(node_count)
+                && u32::from(target) >= u32::from(node_count)
+                && graph.successors(source).any(|node| node == target),
+        Err(GraphValidationError::NodeCountTooLarge { node_count }) => node_count == graph.node_count(),
+    Err(_) => false,
+})]
 #[inline]
 pub fn cycle_witness<G>(graph: &G) -> Result<Option<CycleWitness>, GraphValidationError>
 where
@@ -237,12 +278,30 @@ where
 /// the address space.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise plus L2 generative — a named diamond-and-tail
-///   graph pins every row, an out-of-bounds edge pins the refusal, and
-///   generated graphs agree row for row with a closure-matrix oracle.
+/// - hypothesis: For stable dense graphs, the predicate observes dense sorted
+///   rows, direct-edge inclusion and closure under another edge. L3 named rows
+///   and refusal payloads distinguish omission, reversal and wrong bounds; L2
+///   comparison with an independent matrix detects unreachable extras as well.
+///   The predicate does not recompute leastness, and allocation failure is not
+///   forced by the witnesses.
 /// - witness: `tests::algorithms::reachability_rows_on_a_named_graph`
 /// - witness: `tests::algorithms::out_of_bounds_edges_are_refused_by_name`
 /// - witness: `tests::algorithms::reachability_agrees_with_the_closure_matrix`
+#[spec(ensures: |ref result| match *result {
+    Ok(ref reach) => usize::try_from(u32::from(graph.node_count())).is_ok_and(|count| reach.rows.len() == count)
+        && reach.rows.iter().zip(graph.node_count().ids()).all(|(row, source)| row.source == source
+            && row.targets.iter().all(|&target| u32::from(target) < u32::from(graph.node_count()))
+            && row.targets.windows(2).all(|pair| matches!(*pair, [left, right] if left < right))
+            && graph.successors(source).all(|target| row.targets.binary_search(&target).is_ok())
+            && row.targets.iter().all(|&middle| graph.successors(middle)
+                .all(|target| row.targets.binary_search(&target).is_ok()))),
+    Err(GraphValidationError::EdgeOutOfBounds { source, target, node_count }) =>
+            node_count == graph.node_count() && u32::from(source) < u32::from(node_count)
+                && u32::from(target) >= u32::from(node_count)
+                && graph.successors(source).any(|node| node == target),
+        Err(GraphValidationError::NodeCountTooLarge { node_count }) => node_count == graph.node_count(),
+    Err(_) => false,
+})]
 #[inline]
 pub fn reachability<G>(graph: &G) -> Result<Reachability, GraphValidationError>
 where
@@ -304,12 +363,38 @@ where
 /// 32-bit edge indices.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise plus L2 generative — a named graph of two
-///   two-node cycles, a tail and an isolated node pins the components and the
-///   deduplicated edges; generated graphs agree with a closure-matrix oracle on
-///   the partition and on the component edges.
+/// - hypothesis: For stable dense graphs, the predicate observes canonical
+///   component rows, total membership, and input incidence of each reported
+///   non-reflexive component edge. L3 named components and L2
+///   mutual-reachability comparison distinguish merging, splitting, duplicate
+///   membership and missing quotient edges. Exact partition and mutual
+///   reachability remain oracle observations rather than a second SCC
+///   computation; resource limits are not reached by these public-graph
+///   samples.
 /// - witness: `tests::algorithms::condensation_on_a_named_graph`
 /// - witness: `tests::algorithms::condensation_agrees_with_mutual_reachability`
+#[spec(ensures: |ref result| match *result {
+    Ok(ref folded) => folded.components.iter().all(|members| !members.is_empty()
+        && members.iter().all(|&node| u32::from(node) < u32::from(graph.node_count()))
+        && members.windows(2).all(|pair| matches!(*pair, [left, right] if left < right)))
+        && folded.components.iter().try_fold(0_usize, |total, members| total.checked_add(members.len()))
+            .is_some_and(|total| u64::try_from(total).is_ok_and(|total| total == u64::from(u32::from(graph.node_count()))))
+        && folded.components.iter().zip(folded.components.iter().skip(1))
+            .all(|(left, right)| left.first() < right.first())
+        && folded.edges.windows(2).all(|pair| matches!(*pair, [left, right] if left < right))
+        && folded.edges.iter().all(|edge| edge.source != edge.target
+            && usize::try_from(u32::from(edge.source)).ok().and_then(|index| folded.components.get(index))
+                .zip(usize::try_from(u32::from(edge.target)).ok().and_then(|index| folded.components.get(index)))
+                .is_some_and(|(sources, targets)| sources.iter().any(|&source| graph.successors(source)
+                    .any(|target| targets.binary_search(&target).is_ok())))),
+    Err(GraphValidationError::EdgeOutOfBounds { source, target, node_count }) =>
+            node_count == graph.node_count() && u32::from(source) < u32::from(node_count)
+                && u32::from(target) >= u32::from(node_count)
+                && graph.successors(source).any(|node| node == target),
+        Err(GraphValidationError::NodeCountTooLarge { node_count }) => node_count == graph.node_count(),
+    Err(GraphValidationError::EdgeCountTooLarge) => true,
+    Err(_) => false,
+})]
 #[inline]
 pub fn condensation<G>(graph: &G) -> Result<Condensation, GraphValidationError>
 where
@@ -372,6 +457,32 @@ where
 /// [`GraphValidationError::EdgeOutOfBounds`] for a successor outside the node
 /// bound, [`GraphValidationError::NodeCountTooLarge`] when the rows do not fit
 /// the address space.
+///
+/// # Adequacy
+/// - hypothesis: For stable dense adapters, the predicate compares both
+///   directions of successor membership, canonical order and edge-refusal
+///   provenance. L3 disorder, repetition and malformed-target witnesses
+///   distinguish added or omitted edges and wrong source order. Allocation
+///   refusal carries the requested bound but allocator behavior is not
+///   reproduced.
+/// - witness: `tests::algorithms::successor_permutations_preserve_all_observers`
+/// - witness: `tests::algorithms::out_of_bounds_edges_are_refused_by_name`
+#[spec(ensures: |ref result| match *result {
+    Ok(ref rows) => usize::try_from(u32::from(graph.node_count())).is_ok_and(|count| rows.len() == count)
+        && rows.iter().zip(graph.node_count().ids()).all(|(row, source)|
+            row.windows(2).all(|pair| matches!(*pair, [left, right] if left < right))
+            && row.iter().all(|&target| u32::from(target) < u32::from(graph.node_count())
+                && graph.successors(source).any(|given| given == target))
+            && graph.successors(source).all(|target| row.binary_search(&target).is_ok())),
+    Err(GraphValidationError::EdgeOutOfBounds { source, target, node_count }) =>
+        node_count == graph.node_count() && u32::from(source) < u32::from(node_count)
+        && u32::from(target) >= u32::from(node_count)
+        && graph.successors(source).any(|given| given == target)
+        && node_count.ids().take_while(|&earlier| earlier < source)
+            .all(|earlier| graph.successors(earlier).all(|given| u32::from(given) < u32::from(node_count))),
+    Err(GraphValidationError::NodeCountTooLarge { node_count }) => node_count == graph.node_count(),
+    Err(_) => false,
+})]
 fn adjacency_rows<G>(graph: &G) -> Result<Vec<Vec<NodeId>>, GraphValidationError>
 where
     G: EdgeSource,
@@ -449,6 +560,32 @@ struct Frame
 /// # Errors
 /// [`GraphValidationError::ArithmeticOverflow`] on an inconsistent stack,
 /// [`GraphValidationError::NodeOutOfBounds`] for a missing row.
+///
+/// # Adequacy
+/// - hypothesis: For complete canonical adjacency rows, preconditions reject
+///   missing rows, disorder and foreign targets; the positive observer checks
+///   the returned closed walk against those rows. L3 back-edge and deep-chain
+///   witnesses and L2 independent cycle-existence comparison distinguish
+///   fabricated cycles and missed loops. Absence beyond self-loops is an oracle
+///   boundary, not a duplicate traversal.
+/// - witness: `tests::algorithms::cycle_witness_names_the_back_edge`
+/// - witness: `tests::algorithms::deep_chain_runs_without_recursion`
+/// - witness: `tests::algorithms::witness_exists_exactly_when_the_closure_has_a_loop`
+#[spec(
+    requires: usize::try_from(u32::from(node_count)).is_ok_and(|count| count == adjacency.len())
+        && adjacency.iter().all(|row| row.iter().all(|&node| u32::from(node) < u32::from(node_count))
+            && row.windows(2).all(|pair| matches!(*pair, [left, right] if left < right))),
+    ensures: |ref result| match *result {
+        Ok(Some(ref witness)) => witness.nodes.len() >= 2 && witness.nodes.first() == witness.nodes.last()
+            && witness.edges.len().checked_add(1) == Some(witness.nodes.len())
+            && witness.edges.iter().zip(witness.nodes.windows(2)).all(|(edge, pair)|
+                matches!(*pair, [source, target] if edge.source == source && edge.target == target))
+            && witness.edges.iter().all(|edge| usize::try_from(u32::from(edge.source)).ok()
+                .and_then(|source| adjacency.get(source)).is_some_and(|row| row.contains(&edge.target))),
+        Ok(None) => adjacency.iter().zip(node_count.ids()).all(|(row, source)| !row.contains(&source)),
+        Err(_) => false,
+    },
+)]
 fn cycle_witness_from_rows(
     adjacency: &[Vec<NodeId>],
     node_count: NodeCount,
@@ -511,6 +648,24 @@ fn cycle_witness_from_rows(
 /// - ensures: the walk runs from `target` along `path` to `source` and back to
 ///   `target`; its edges are the consecutive pairs.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For a path containing the target and ending at the source, the
+///   observer compares the returned suffix, closing node and every edge. L3
+///   named back-edge and self-loop witnesses distinguish retaining an
+///   irrelevant prefix, dropping the source or closing at another node. This
+///   helper does not establish that the supplied path belongs to a graph.
+/// - witness: `tests::algorithms::cycle_witness_names_the_back_edge`
+#[spec(
+    requires: path.contains(&target) && path.last() == Some(&source),
+    ensures: |ref witness| witness.nodes.len() >= 2 && witness.nodes.first() == witness.nodes.last()
+            && witness.edges.len().checked_add(1) == Some(witness.nodes.len())
+            && witness.edges.iter().zip(witness.nodes.windows(2)).all(|(edge, pair)|
+                matches!(*pair, [source, target] if edge.source == source && edge.target == target))
+        && witness.nodes.last() == Some(&target)
+        && witness.nodes.iter().take(witness.nodes.len().saturating_sub(1))
+            .eq(path.iter().skip_while(|&&node| node != target)),
+)]
 fn closed_walk(
     path: &[NodeId],
     source: NodeId,
@@ -549,6 +704,28 @@ fn closed_walk(
 /// # Errors
 /// [`GraphValidationError::NodeCountTooLarge`] for too many nodes,
 /// [`GraphValidationError::EdgeCountTooLarge`] for too many edges.
+///
+/// # Adequacy
+/// - hypothesis: For canonical complete rows, the predicate observes dense node
+///   weights and the edge count; L3 named and L2 oracle condensations detect
+///   incidence changes that counts alone miss. A small index representation
+///   reaches both node and edge capacity refusals without exhausting memory.
+///   Allocator failure is outside this evidence.
+/// - witness: `tests::algorithms::condensation_on_a_named_graph`
+/// - witness: `tests::algorithms::condensation_agrees_with_mutual_reachability`
+/// - witness: `algorithms::tests::small_index_limits_remain_typed`
+#[spec(
+    requires: usize::try_from(u32::from(node_count)).is_ok_and(|count| count == adjacency.len())
+        && adjacency.iter().all(|row| row.iter().all(|&node| u32::from(node) < u32::from(node_count))
+            && row.windows(2).all(|pair| matches!(*pair, [left, right] if left < right))),
+    ensures: |ref result| match *result {
+        Ok(ref owned) => owned.node_weights().copied().eq(node_count.ids())
+            && adjacency.iter().try_fold(0_usize, |total, row| total.checked_add(row.len())) == Some(owned.edge_count()),
+        Err(GraphValidationError::NodeCountTooLarge { node_count: refused }) => refused == node_count,
+        Err(GraphValidationError::EdgeCountTooLarge) => true,
+        Err(_) => false,
+    },
+)]
 fn owned_graph<Ix>(
     adjacency: &[Vec<NodeId>],
     node_count: NodeCount,
@@ -577,13 +754,26 @@ where
 /// Looks up the public index of a condensed petgraph node.
 ///
 /// # Specification
-/// - requires: `public` maps every condensed index to its canonical index.
+/// - requires: `public` names the canonical indices of known condensed nodes.
 /// - ensures: returns the canonical index of `node`.
 /// - fails: `node` is outside the map, which a condensation never produces.
 /// - panics: none.
 ///
 /// # Errors
 /// [`GraphValidationError::ArithmeticOverflow`] for an unmapped index.
+///
+/// # Adequacy
+/// - hypothesis: For an index map and any requested node, the result observer
+///   distinguishes the mapped identity from a positional or zero fallback and
+///   an absent entry from a successful lookup. L3 nonidentity and first-missing
+///   witnesses pin both paths; constructing a globally correct permutation is
+///   the caller boundary.
+/// - witness: `algorithms::tests::canonical_indices_refuse_missing_positions`
+#[spec(ensures: |ref result| match *result {
+    Ok(index) => public.get(node.index()) == Some(&index),
+    Err(GraphValidationError::ArithmeticOverflow) => public.get(node.index()).is_none(),
+    Err(_) => false,
+})]
 fn public_index<Ix>(
     public: &[ComponentIndex],
     node: NodeIndex<Ix>,
@@ -607,6 +797,18 @@ where
 ///
 /// # Errors
 /// [`GraphValidationError::NodeCountTooLarge`] when the bound does not fit.
+///
+/// # Adequacy
+/// - hypothesis: For every node bound, L3 zero and largest-bound observations
+///   distinguish a changed capacity or a wrong refusal payload. Refusal depends
+///   on host address width; allocating that many rows is a separate operation
+///   and is not claimed by this witness.
+/// - witness: `algorithms::tests::bounds_and_slots_preserve_the_locus`
+#[spec(ensures: |ref result| match *result {
+    Ok(capacity) => u64::try_from(usize::from(capacity)).is_ok_and(|raw| raw == u64::from(u32::from(node_count))),
+    Err(GraphValidationError::NodeCountTooLarge { node_count: refused }) => refused == node_count && usize::try_from(u32::from(node_count)).is_err(),
+    Err(_) => false,
+})]
 fn node_capacity(node_count: NodeCount) -> Result<NodeCapacity, GraphValidationError>
 {
     NodeCapacity::try_from(node_count)
@@ -623,6 +825,23 @@ fn node_capacity(node_count: NodeCount) -> Result<NodeCapacity, GraphValidationE
 ///
 /// # Errors
 /// [`GraphValidationError::NodeOutOfBounds`] for a node at or past the bound.
+///
+/// # Adequacy
+/// - hypothesis: For any node and bound, the observer separates membership
+///   refusal from host-width refusal and preserves the requested locus. L3
+///   last-valid and first-invalid probes distinguish shifted bounds, truncation
+///   and swapped payloads; narrow-host refusal remains conditional on the
+///   target width.
+/// - witness: `algorithms::tests::bounds_and_slots_preserve_the_locus`
+#[spec(ensures: |ref result| match *result {
+    Ok(position) => u32::from(node) < u32::from(node_count)
+        && u64::try_from(usize::from(position)).is_ok_and(|raw| raw == u64::from(u32::from(node))),
+    Err(GraphValidationError::NodeOutOfBounds { node: refused, node_count: bound }) =>
+        refused == node && bound == node_count && u32::from(node) >= u32::from(node_count),
+    Err(GraphValidationError::NodeCountTooLarge { node_count: bound }) =>
+        bound == node_count && u32::from(node) < u32::from(node_count) && usize::try_from(u32::from(node)).is_err(),
+    Err(_) => false,
+})]
 fn position_of(
     node: NodeId,
     node_count: NodeCount,
@@ -645,6 +864,25 @@ fn position_of(
 ///
 /// # Errors
 /// [`GraphValidationError::NodeOutOfBounds`] for a node without a row.
+///
+/// # Adequacy
+/// - hypothesis: For any rows, node and declared bound, the result observer
+///   identifies the borrowed row and the exact refusal locus. L3 last-valid,
+///   undeclared and declared-but-missing probes distinguish wrong indexing and
+///   conflating the two bounds. The row contents themselves need not form a
+///   validated graph.
+/// - witness: `algorithms::tests::bounds_and_slots_preserve_the_locus`
+#[spec(ensures: |ref result| match *result {
+    Ok(row) => u32::from(node) < u32::from(node_count)
+        && usize::try_from(u32::from(node)).ok().and_then(|position| adjacency.get(position))
+            .is_some_and(|given| core::ptr::eq(core::ptr::from_ref(row), core::ptr::from_ref(given.as_slice()))),
+    Err(GraphValidationError::NodeOutOfBounds { node: refused, node_count: bound }) =>
+        refused == node && bound == node_count && (u32::from(node) >= u32::from(node_count)
+            || usize::try_from(u32::from(node)).is_ok_and(|position| position >= adjacency.len())),
+    Err(GraphValidationError::NodeCountTooLarge { node_count: bound }) => bound == node_count
+        && u32::from(node) < u32::from(node_count) && usize::try_from(u32::from(node)).is_err(),
+    Err(_) => false,
+})]
 fn row_of(
     adjacency: &[Vec<NodeId>],
     node: NodeId,
@@ -668,6 +906,27 @@ fn row_of(
 ///
 /// # Errors
 /// [`GraphValidationError::NodeOutOfBounds`] for a node without a slot.
+///
+/// # Adequacy
+/// - hypothesis: For any slot slice, node and declared bound, the pointer
+///   observer identifies the returned mutable slot, not merely an equal value.
+///   L3 mutation of one slot and both bound refusals distinguish aliasing a
+///   neighbour and changing the refusal locus. This does not validate the
+///   values stored in the slice.
+/// - witness: `algorithms::tests::bounds_and_slots_preserve_the_locus`
+#[spec(
+    captures: [length = slots.len(), expected = usize::try_from(u32::from(node)).ok()
+        .and_then(|position| slots.get(position)).map(core::ptr::from_ref)],
+    ensures: |ref result| match *result {
+        Ok(ref slot) => u32::from(node) < u32::from(node_count) && expected == Some(core::ptr::from_ref(*slot)),
+        Err(GraphValidationError::NodeOutOfBounds { node: refused, node_count: bound }) =>
+            refused == node && bound == node_count && (u32::from(node) >= u32::from(node_count)
+                || usize::try_from(u32::from(node)).is_ok_and(|position| position >= length)),
+        Err(GraphValidationError::NodeCountTooLarge { node_count: bound }) => bound == node_count
+            && u32::from(node) < u32::from(node_count) && usize::try_from(u32::from(node)).is_err(),
+        Err(_) => false,
+    },
+)]
 fn slot_of<T>(
     slots: &mut [T],
     node: NodeId,
@@ -678,4 +937,109 @@ fn slot_of<T>(
     slots
         .get_mut(usize::from(position))
         .ok_or(GraphValidationError::NodeOutOfBounds { node, node_count })
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn bounds_and_slots_preserve_the_locus()
+    {
+        let bound = NodeCount::from(2);
+        let last = NodeId::from(1);
+        assert_eq!(position_of(last, bound), Ok(NodePosition::from(1)));
+        assert_eq!(
+            position_of(NodeId::from(2), bound),
+            Err(GraphValidationError::NodeOutOfBounds {
+                node: NodeId::from(2),
+                node_count: bound
+            })
+        );
+        let rows = vec![vec![NodeId::from(0)], vec![last]];
+        assert_eq!(row_of(&rows, last, bound), Ok([last].as_slice()));
+        assert_eq!(
+            row_of(&rows[.. 1], last, bound),
+            Err(GraphValidationError::NodeOutOfBounds {
+                node: last,
+                node_count: bound
+            })
+        );
+        let mut slots = [10_u8, 20];
+        *slot_of(&mut slots, last, bound).expect("last slot") = 23;
+        assert_eq!(slots, [10, 23]);
+        assert_eq!(
+            slot_of(&mut slots, NodeId::from(2), bound),
+            Err(GraphValidationError::NodeOutOfBounds {
+                node: NodeId::from(2),
+                node_count: bound
+            })
+        );
+        assert_eq!(
+            slot_of(&mut slots[.. 1], last, bound),
+            Err(GraphValidationError::NodeOutOfBounds {
+                node: last,
+                node_count: bound
+            })
+        );
+        assert_eq!(
+            usize::from(node_capacity(NodeCount::from(0)).expect("zero capacity")),
+            0
+        );
+        let maximum = NodeCount::from(u32::MAX);
+        if let Ok(expected) = usize::try_from(u32::MAX) {
+            assert_eq!(
+                usize::from(node_capacity(maximum).expect("host capacity")),
+                expected
+            );
+        }
+        else {
+            assert_eq!(
+                node_capacity(maximum),
+                Err(GraphValidationError::NodeCountTooLarge {
+                    node_count: maximum
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_indices_refuse_missing_positions()
+    {
+        let public = [
+            ComponentIndex::from(2),
+            ComponentIndex::from(0),
+            ComponentIndex::from(1),
+        ];
+        assert_eq!(
+            public_index(&public, NodeIndex::<u32>::new(1)),
+            Ok(ComponentIndex::from(0))
+        );
+        assert_eq!(
+            public_index(&public, NodeIndex::<u32>::new(3)),
+            Err(GraphValidationError::ArithmeticOverflow)
+        );
+    }
+
+    #[test]
+    fn small_index_limits_remain_typed()
+    {
+        let fitting = vec![Vec::new(); 255];
+        assert_eq!(
+            owned_graph::<u8>(&fitting, NodeCount::from(255))
+                .expect("last representable node count")
+                .node_count(),
+            255
+        );
+        let overflowing = vec![Vec::new(); 256];
+        assert!(
+            matches!(owned_graph::<u8>(&overflowing, NodeCount::from(256)), Err(GraphValidationError::NodeCountTooLarge { node_count }) if node_count == NodeCount::from(256))
+        );
+        let complete = vec![NodeCount::from(16).ids().collect::<Vec<_>>(); 16];
+        assert!(matches!(
+            owned_graph::<u8>(&complete, NodeCount::from(16)),
+            Err(GraphValidationError::EdgeCountTooLarge)
+        ));
+    }
 }

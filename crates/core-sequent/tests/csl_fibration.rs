@@ -30,6 +30,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_sequent::CellId;
 use gandr_core_sequent::ForceEntry;
 use gandr_core_sequent::HeapValue;
@@ -170,7 +171,26 @@ fn literal(seed: Seed) -> HeapValue
 /// The heap image over the tracked cells.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one view per tracked cell, with its address and every handle
+///   observed independently through the store in their recorded order.
+/// - provides: a state image without assuming alias coherence.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — bounded operation traces compare untouched cells and
+///   alias observations, including fresh, active and memoized states. The
+///   pointwise predicate challenges a fabricated or reordered image; the trace
+///   laws challenge lost cells and diverging aliases. Neither observation
+///   asserts an unbounded concurrency result.
+/// - witness: `tests::csl_fibration::frame_preservation_under_forcing`
+/// - witness: `tests::csl_fibration::nominal_identity_freshness_and_alias_coherence`
+/// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
+#[spec(ensures: |ref ret| ret.len() == cells.len()
+    && ret.iter().zip(cells).all(|(view, cell)| view.at_address == store.cell(cell.id)
+        && view.through_handles.len() == cell.handles.len()
+        && view.through_handles.iter().zip(&cell.handles).all(|(&state, &handle)| state == store.cell(handle)))
+)]
 fn image(
     store: &Store,
     cells: &[Tracked],
@@ -196,6 +216,35 @@ fn image(
 ///   it; the store is driven only through its public operations.
 /// - panics: when the store refuses an allocation, which a trace of at most 64
 ///   steps cannot reach.
+///
+/// # Adequacy
+/// - hypothesis: L3 — traces of fewer than 64 operations over the generated
+///   slot and value choices observe frame preservation, nominal identity, alias
+///   coherence and legal memo transitions. Consecutive images and operation
+///   alignment challenge a dropped or reordered step; direct final-store
+///   observations constrain the model. No concurrency or beyond-ceiling
+///   allocation behavior is covered.
+/// - witness: `tests::csl_fibration::frame_preservation_under_forcing`
+/// - witness: `tests::csl_fibration::nominal_identity_freshness_and_alias_coherence`
+/// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
+#[spec(ensures: |ref ret| ret.steps.len() == ops.len()
+    && ret.steps.iter().zip(ops).all(|(step, &op)| match (step.op, op) {
+        | (Op::Allocate, Op::Allocate) => true,
+        | (Op::Share(CellSlot(first)), Op::Share(CellSlot(second)))
+        | (Op::Force(CellSlot(first)), Op::Force(CellSlot(second)))
+        | (Op::Decline(CellSlot(first)), Op::Decline(CellSlot(second)))
+        | (Op::Observe(CellSlot(first)), Op::Observe(CellSlot(second))) => first == second,
+        | (Op::WriteBack(CellSlot(first), value), Op::WriteBack(CellSlot(second), other)) =>
+            first == second && core::mem::discriminant(&value) == core::mem::discriminant(&other),
+        | _ => false,
+    })
+    && ret.steps.first().is_none_or(|first| first.before.is_empty())
+    && ret.steps.windows(2).all(|pair| pair.first().zip(pair.get(1)).is_some_and(|(first, second)| first.after == second.before))
+    && ret.cells.len() == usize::from(ret.store.cell_count())
+    && ret.cells.iter().all(|cell| cell.handles.first() == Some(&cell.id) && cell.handles.iter().all(|&handle| handle == cell.id))
+    && ret.steps.last().is_none_or(|last| last.after.len() == ret.cells.len()
+        && last.after.iter().zip(&ret.cells).all(|(view, cell)| view.at_address == ret.store.cell(cell.id)))
+)]
 fn run(ops: &[Op]) -> Trace
 {
     let mut store = Store::new();
@@ -334,7 +383,24 @@ fn arb_ops() -> impl Strategy<Value = Vec<Op>>
 /// The state a step's subject read before and after it.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: the addressed before and after states in that order, or none if
+///   the subject, either view or either state is absent.
+/// - provides: the transition pair without treating missing data as a state.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — skipped and allocating operations have no subject pair;
+///   targeted operations expose the legal memo transitions. The pointwise
+///   predicate and protocol law distinguish a missing or exchanged endpoint
+///   within generated traces; arbitrary damaged trace records are outside the
+///   fixture domain.
+/// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
+/// - witness: `tests::csl_fibration::frame_preservation_under_forcing`
+#[spec(ensures: |ret| ret == step.subject.and_then(|index|
+    step.before.get(index).and_then(|view| view.at_address)
+        .zip(step.after.get(index).and_then(|view| view.at_address))
+))]
 fn subject_states(step: &Step) -> Option<(MemoState, MemoState)>
 {
     let index = step.subject?;

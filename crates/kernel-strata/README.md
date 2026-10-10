@@ -81,7 +81,7 @@ A derivation records only clause index and shift for each step; a validator reco
 
 The firing log behind a derivation carries, at each step, the atom its instance concluded. Truncating the log to the prefix that covers the goals therefore needs neither a clause lookup nor arithmetic, and its one `None` means exactly that the log does not cover the goals.
 
-`EvidenceSubject` names what a seed or goal refers to: a declared level variable, or the pinned bottom generator that carries constants. The crate's `Option` returns — `Level::offset_of`, `ModelValue::as_finite` and the model lookups — are genuine absence, and each contract says so. A violated constraint is reported by `ConstraintIndex`.
+`EvidenceSubject` names what a seed or goal refers to: a declared level variable, or the pinned bottom generator that carries constants. The crate's `Option` returns — `Level::offset_of`, `ModelValue::as_finite` and the model lookups — are genuine absence, and each specification says so. A violated constraint is reported by `ConstraintIndex`.
 
 Order shifts and counter-valuation spikes use checked addition, never saturation: truncating a natural-number successor would change the relation in the [level algebra](#references). An unrepresentable shift routes to refusal; a validator rejects an insufficient atom or constant bound. The comparison's zero-valuation overflow branch is unreachable because its components are u64-wide and its arithmetic is u128-wide. Widening components requires a distinct overflow carrier before that exclusion changes: a zero valuation does not refute every unrepresentable-spike case. The alternative, saturating the widened sums, hides that obligation. Ceiling witnesses check strict irreflexivity, a spike exactly one past u64::MAX and rejection of a forged strict bound; they do not claim to exercise an unreachable u128 overflow.
 
@@ -93,17 +93,13 @@ The stratification design excludes level inference and unification, generalizati
 
 ## Specification attributes
 
-The `# Specification` prose is the statement of record; a combined `#[spec(...)]` attribute mirrors it where the clause is a cheap runtime predicate.
+The `# Specification` prose states each obligation. Executable `#[spec(...)]` predicates check canonical constructors, exact arithmetic and refusal boundaries, comparison modes, evidence validity, compilation inputs and replay conclusions. Private algorithm helpers and the differential suites' generators, evaluators and assertion helpers carry the same discipline as public entry points.
 
-- The checked-arithmetic faces — `LevelOffset::succ`, `LevelConstant::succ`, `LevelValue::checked_add_offset`, `HornOffset::checked_add` and `HornOffset::checked_add_shift` — state their refusal boundary as an `is_ok()` equivalence against the complementary operation, so a guard moved off the ceiling is caught.
-- `Level::canonicalized` states the canonical-constant invariant on its result. The predicate repeats the body's `max` scan, so under enforcement the function costs twice its atom walk, over a map the size of a declaration's level arity.
-- `LandmarkConstraint::leq` and `LandmarkConstraint::equal` pin the relation each declares, which separates the two adjacent constructors.
-- `compile` requires the variable-only guard the constraint constructor establishes, and `push_family` a nonempty body.
-- `HornClause::new` returns `Some` exactly when the body is nonempty.
+Each nontrivial item has a `# Adequacy` hypothesis naming its input domain, observer and defect classes, with links to runnable witnesses. The evidence includes independent semantic and entailment differentials, adversarial certificates, numeric ceilings, empty domains, exact derivation limits and the first covering log prefix. Replay establishes coverage; the shortest-prefix witness separately establishes minimality.
 
-`Level::succ`, `Level::eval`, `LandmarkPoset::admit`, `consistency_certificate` and `horn::saturate` keep prose-only postconditions. The free-order faces carry executable predicates: `leq_with_evidence` validates returned evidence, while `lt_with_evidence` and the shared comparison mirror checked domination. These re-walk the atoms only in the enforcing lane; the ordinary comparison performs no duplicate traversal.
+The predicates run under `--cfg anodized_panic`; normal builds do not repeat their checking traversals. Admission and replay check the portions of their postconditions available from retained data rather than taking owned snapshots of consumed inputs. Least-model identity and termination remain mathematical obligations, with termination stated in `- intension:` clauses.
 
-Termination of the saturation and derivation engines is argued in their `- intension:` clauses.
+Const-compatible predicates check cross-domain shifts, finite-model projection and strictness without removing compile-time availability. Explicit `- executable: none` clauses explain the remaining boundaries: opaque iterators cannot be consumed by a postcondition; a strategy's full support concerns future draws; and data-item invariants are not checked at construction or relate the value to external operands. Their adequacy witnesses still apply.
 
 ## Differential suites
 

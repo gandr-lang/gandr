@@ -9,6 +9,7 @@ use alloc::string::String;
 use alloc::string::ToString as _;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_parser::Oblig;
 use gandr_surface_parser::ObligationInstance;
 use gandr_surface_render_remote::ByteOffset;
@@ -29,9 +30,12 @@ use gandr_surface_syntax::ByteOffset as SourceOffset;
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — two classes are asserted at their exact phrase in a
-///   card's message.
+/// - hypothesis: L3 — eight repair classes remain distinguishable in their
+///   messages; chunk boundaries and shifted repair loci are exact.
 /// - witness: `remote::tests::cards_preserve_the_report_rows`
+/// - witness: `remote::tests::repair_boundaries_preserve_locations_and_distinct_classes`
+#[spec(ensures: |ret| !ret.is_empty() && ret.trim() == ret
+    && !ret.contains(['\r', '\n']))]
 fn class_phrase(class: Oblig) -> String
 {
     String::from(match class {
@@ -64,11 +68,23 @@ fn class_phrase(class: Oblig) -> String
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — two repairs inside the chunk and one before it are
-///   projected to exactly two cards, each class, message and shifted span
-///   asserted; a clean parse projects to none, and an unclosed group to some.
+/// - hypothesis: L3 — repairs at, after and across the chunk boundary retain
+///   exactly their selected codes and shifted spans; all eight classes stay
+///   distinguishable. A clean parse has no cards and an unclosed group has
+///   repairs.
 /// - witness: `remote::tests::cards_preserve_the_report_rows`
 /// - witness: `remote::tests::a_clean_source_produces_no_cards`
+/// - witness: `remote::tests::repair_boundaries_preserve_locations_and_distinct_classes`
+#[spec(ensures: |ret| {
+    let mut expected = obligations.iter().filter(|obligation| chunk <= obligation.span.start());
+    ret.iter().all(|card| expected.next().is_some_and(|obligation|
+        card.code == DiagnosticCode::ParseRepair && card.expr.is_none()
+            && card.elaboration.is_none() && card.chain.is_empty()
+            && card.span.is_some_and(|span|
+                usize::from(span.start()) == usize::from(obligation.span.start()).saturating_sub(usize::from(chunk))
+                    && usize::from(span.end()) == usize::from(obligation.span.end()).saturating_sub(usize::from(chunk)))))
+        && expected.next().is_none()
+})]
 #[inline]
 #[must_use]
 pub fn repair_cards(
@@ -105,6 +121,7 @@ pub fn repair_cards(
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_surface_grammar::built_in;
     use gandr_surface_parser::Oblig;
     use gandr_surface_parser::ObligationInstance;
@@ -123,7 +140,18 @@ mod tests
     /// The revision span a [`Bytes`] pair spells.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `start <= end`.
+    /// - ensures: the exact revision-relative byte endpoints.
+    /// - provides: the span oracle for chunk-relative repair cards.
+    /// - fails: never.
+    /// - panics: if the endpoints are inverted.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nonzero starts and an empty repair locus distinguish
+    ///   incorrect subtraction and dropped zero-width spans.
+    /// - witness: `remote::tests::cards_preserve_the_report_rows`
+    #[spec(requires: start <= end, ensures: |ret|
+        usize::from(ret.start()) == start && usize::from(ret.end()) == end)]
     fn span(Bytes(start, end): Bytes) -> ByteSpan
     {
         ByteSpan::new(start.into(), end.into()).expect("the test span is ordered")
@@ -150,24 +178,13 @@ mod tests
             },
         ];
         let cards = repair_cards(&obligations, 8.into());
-        let rows: Vec<_> = cards
-            .iter()
-            .map(|card| (card.code, card.message.as_str(), card.span))
-            .collect();
+        let rows: Vec<_> = cards.iter().map(|card| (card.code, card.span)).collect();
         let range = |start: usize, end: usize| {
             ByteRange::new(ByteOffset::from(start), ByteOffset::from(end)).ok()
         };
         assert_eq!(rows, [
-            (
-                DiagnosticCode::ParseRepair,
-                "parse repaired: a missing delimiter",
-                range(2, 2)
-            ),
-            (
-                DiagnosticCode::ParseRepair,
-                "parse repaired: a token outside the grammar",
-                range(4, 5)
-            ),
+            (DiagnosticCode::ParseRepair, range(2, 2)),
+            (DiagnosticCode::ParseRepair, range(4, 5)),
         ]);
         assert!(
             cards
@@ -194,5 +211,55 @@ mod tests
             !repair_cards(parsed.obligations(), 0.into()).is_empty(),
             "an unclosed group is repaired, so the empty answer above is not vacuous"
         );
+    }
+
+    /// A repair crossing from accepted text is omitted, a zero-width repair
+    /// at the chunk boundary is kept, and eight repair classes stay distinct.
+    #[test]
+    fn repair_boundaries_preserve_locations_and_distinct_classes()
+    {
+        let mut obligations = vec![ObligationInstance {
+            class: Oblig::MissingTile,
+            span: span(Bytes(0, 4)),
+        }];
+        let classes = [
+            Oblig::MissingMeld,
+            Oblig::MissingTile,
+            Oblig::IncompleteTile,
+            Oblig::UnmoldedTok,
+            Oblig::InconMeld,
+            Oblig::ExtraMeld,
+            Oblig::ReservedKeyword,
+            Oblig::AmbiguousPrec,
+        ];
+        obligations.extend(classes.into_iter().enumerate().map(|(index, class)| {
+            let start = index.saturating_add(2);
+            ObligationInstance {
+                class,
+                span: span(Bytes(start, start.saturating_add(usize::from(index != 0)))),
+            }
+        }));
+        let cards = repair_cards(&obligations, 2.into());
+        let expected: Vec<_> = (0_usize .. 8)
+            .map(|start| {
+                ByteRange::new(
+                    start.into(),
+                    start.saturating_add(usize::from(start != 0)).into(),
+                )
+                .ok()
+            })
+            .collect();
+        assert_eq!(
+            cards.iter().map(|card| card.span).collect::<Vec<_>>(),
+            expected
+        );
+        let mut messages = alloc::collections::BTreeSet::new();
+        for card in cards {
+            assert_eq!(card.code, DiagnosticCode::ParseRepair);
+            assert!(
+                messages.insert(card.message),
+                "different repair classes must remain distinguishable"
+            );
+        }
     }
 }

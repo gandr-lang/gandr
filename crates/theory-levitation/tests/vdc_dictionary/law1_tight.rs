@@ -81,10 +81,7 @@ fn check_morphism_rejects_code_and_arity_violations()
         }],
     };
     let errors = check_morphism(&bad);
-    assert!(
-        errors.len() >= 2,
-        "the code violation and the arity violation are both reported: {errors:?}"
-    );
+    assert_eq!(errors.len(), 2);
 }
 
 #[test]

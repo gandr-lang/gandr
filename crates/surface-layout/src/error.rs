@@ -1,9 +1,8 @@
 //! Build- and render-phase error vocabulary.
 //!
-//! Construction and finalization fail in exactly the ways enumerated here, and
-//! every one of them surfaces as a value. Nothing on a production path panics,
-//! and a failure never leaves partial state behind: a builder that exceeds a
-//! limit stays unfinalized and yields no arena.
+//! Checked construction and finalization failures surface as the values
+//! enumerated here. A failed finalization yields no partial arena; counters
+//! may retain work completed before a refusal.
 //!
 //! The classification enums are deliberately closed. A caller switching on a
 //! kind, a site, an operation, or an invariant is reading the whole space, so
@@ -25,6 +24,18 @@ use crate::units::LimitBound;
 ///   silently.
 /// - provides: the machine-readable half of a limit-exceeded build error.
 /// - panics: none.
+/// - executable: none — this closed classification is a data carrier; the
+///   operations returning it carry executable failure predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the closed vocabulary is observed through distinct
+///   diagnostics and exact payloads; the linked refusal witnesses additionally
+///   exercise reachable operation boundaries. Misclassified tested refusals,
+///   collapsed causes and lost bounds change these observations. Allocator
+///   exhaustion and physically unattainable store sizes are not injected, so
+///   causal coverage is limited to those linked boundaries.
+/// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+/// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum BuildLimitKind
 {
@@ -50,6 +61,17 @@ pub enum BuildLimitKind
 /// - ensures: the set is exactly the five build-phase stores.
 /// - provides: the machine-readable half of an allocation-failure build error.
 /// - panics: none.
+/// - executable: none — this closed classification is a data carrier; the
+///   operations returning it carry executable failure predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the closed vocabulary is observed through distinct
+///   diagnostics and exact payloads; the linked refusal witnesses additionally
+///   exercise reachable operation boundaries. Misclassified tested refusals,
+///   collapsed causes and lost bounds change these observations. Allocator
+///   exhaustion and physically unattainable store sizes are not injected, so
+///   causal coverage is limited to those linked boundaries.
+/// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum BuildAllocationSite
 {
@@ -73,6 +95,18 @@ pub enum BuildAllocationSite
 /// - ensures: the set is exactly the six build-phase arithmetic sites.
 /// - provides: the machine-readable half of an arithmetic-overflow build error.
 /// - panics: none.
+/// - executable: none — this closed classification is a data carrier; the
+///   operations returning it carry executable failure predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the closed vocabulary is observed through distinct
+///   diagnostics and exact payloads; the linked refusal witnesses additionally
+///   exercise reachable operation boundaries. Misclassified tested refusals,
+///   collapsed causes and lost bounds change these observations. Allocator
+///   exhaustion and physically unattainable store sizes are not injected, so
+///   causal coverage is limited to those linked boundaries.
+/// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
+/// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum BuildArithmetic
 {
@@ -97,6 +131,19 @@ pub enum BuildArithmetic
 /// - ensures: every resolution budget has one closed machine-readable kind.
 /// - provides: the limit classification in [`RenderError`].
 /// - panics: none.
+/// - executable: none — this closed classification is a data carrier; the
+///   operations returning it carry executable failure predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the closed vocabulary is observed through distinct
+///   diagnostics and exact payloads; the linked refusal witnesses additionally
+///   exercise reachable operation boundaries. Misclassified tested refusals,
+///   collapsed causes and lost bounds change these observations. Allocator
+///   exhaustion and physically unattainable store sizes are not injected, so
+///   causal coverage is limited to those linked boundaries.
+/// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
+/// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+/// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RenderLimitKind
 {
@@ -132,6 +179,18 @@ pub enum RenderLimitKind
 /// - ensures: no unmetered render allocation is reported generically.
 /// - provides: the allocation classification in [`RenderError`].
 /// - panics: none.
+/// - executable: none — this closed classification is a data carrier; the
+///   operations returning it carry executable failure predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the closed vocabulary is observed through distinct
+///   diagnostics and exact payloads; the linked refusal witnesses additionally
+///   exercise reachable operation boundaries. Misclassified tested refusals,
+///   collapsed causes and lost bounds change these observations. Allocator
+///   exhaustion and physically unattainable store sizes are not injected, so
+///   causal coverage is limited to those linked boundaries.
+/// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
+/// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RenderAllocationSite
 {
@@ -154,6 +213,19 @@ pub enum RenderAllocationSite
 /// - ensures: arithmetic failures remain distinguishable from limits.
 /// - provides: the arithmetic classification in [`RenderError`].
 /// - panics: none.
+/// - executable: none — this closed classification is a data carrier; the
+///   operations returning it carry executable failure predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the closed vocabulary is observed through distinct
+///   diagnostics and exact payloads; the linked refusal witnesses additionally
+///   exercise reachable operation boundaries. Misclassified tested refusals,
+///   collapsed causes and lost bounds change these observations. Allocator
+///   exhaustion and physically unattainable store sizes are not injected, so
+///   causal coverage is limited to those linked boundaries.
+/// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
+/// - witness: `measure::tests::cost_and_byte_addition_preserve_components_and_error_priority`
+/// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RenderArithmetic
 {
@@ -188,6 +260,19 @@ pub enum RenderArithmetic
 /// - ensures: resolution returns a typed failure without partial output.
 /// - provides: the closed render-phase error space.
 /// - panics: none.
+/// - executable: none — this closed classification is a data carrier; the
+///   operations returning it carry executable failure predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the closed vocabulary is observed through distinct
+///   diagnostics and exact payloads; the linked refusal witnesses additionally
+///   exercise reachable operation boundaries. Misclassified tested refusals,
+///   collapsed causes and lost bounds change these observations. Allocator
+///   exhaustion and physically unattainable store sizes are not injected, so
+///   causal coverage is limited to those linked boundaries.
+/// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
+/// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
+/// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
 #[derive(Debug, Eq, PartialEq)]
 pub enum RenderError
 {
@@ -235,6 +320,18 @@ pub enum RenderError
 /// - ensures: the set is exactly the engine's internal render invariants.
 /// - provides: the machine-readable half of an invariant render error.
 /// - panics: none.
+/// - executable: none — this closed classification is a data carrier; the
+///   operations returning it carry executable failure predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the closed vocabulary is observed through distinct
+///   diagnostics and exact payloads; the linked refusal witnesses additionally
+///   exercise reachable operation boundaries. Misclassified tested refusals,
+///   collapsed causes and lost bounds change these observations. Allocator
+///   exhaustion and physically unattainable store sizes are not injected, so
+///   causal coverage is limited to those linked boundaries.
+/// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
+/// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RenderInvariant
 {
@@ -260,6 +357,18 @@ pub enum RenderInvariant
 /// - ensures: the builder is left unfinalized and no partial arena escapes.
 /// - provides: the closed failure space of the build phase.
 /// - panics: none.
+/// - executable: none — this closed classification is a data carrier; the
+///   operations returning it carry executable failure predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the closed vocabulary is observed through distinct
+///   diagnostics and exact payloads; the linked refusal witnesses additionally
+///   exercise reachable operation boundaries. Misclassified tested refusals,
+///   collapsed causes and lost bounds change these observations. Allocator
+///   exhaustion and physically unattainable store sizes are not injected, so
+///   causal coverage is limited to those linked boundaries.
+/// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+/// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BuildError
 {
@@ -300,7 +409,25 @@ impl fmt::Display for BuildLimitKind
     /// Writes the limit as the quantity it bounds.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the caller supplies a formatter, including sinks that refuse
+    ///   writes.
+    /// - ensures: each named classification has a distinct descriptive
+    ///   diagnostic.
+    /// - provides: human-readable failure information without fixing its
+    ///   wording.
+    /// - fails: propagates the formatter sink refusal.
+    /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   emitted bytes nor its refusal state; observing those effects here
+    ///   would require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every named cause and ceilings at zero, one and the
+    ///   integer maximum expose distinct diagnostics and exact numeric
+    ///   payloads. A real exhausted output sink must retain its I/O refusal.
+    ///   Collapsed causes, truncated bounds or swallowed writes change these
+    ///   observations; wording and field position are not pinned.
+    /// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
     #[inline]
     fn fmt(
         &self,
@@ -321,7 +448,25 @@ impl fmt::Display for BuildAllocationSite
     /// Writes the store as the arena or stack it names.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the caller supplies a formatter, including sinks that refuse
+    ///   writes.
+    /// - ensures: each named classification has a distinct descriptive
+    ///   diagnostic.
+    /// - provides: human-readable failure information without fixing its
+    ///   wording.
+    /// - fails: propagates the formatter sink refusal.
+    /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   emitted bytes nor its refusal state; observing those effects here
+    ///   would require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every named cause and ceilings at zero, one and the
+    ///   integer maximum expose distinct diagnostics and exact numeric
+    ///   payloads. A real exhausted output sink must retain its I/O refusal.
+    ///   Collapsed causes, truncated bounds or swallowed writes change these
+    ///   observations; wording and field position are not pinned.
+    /// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
     #[inline]
     fn fmt(
         &self,
@@ -343,7 +488,25 @@ impl fmt::Display for BuildArithmetic
     /// Writes the operation as the quantity it advanced.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the caller supplies a formatter, including sinks that refuse
+    ///   writes.
+    /// - ensures: each named classification has a distinct descriptive
+    ///   diagnostic.
+    /// - provides: human-readable failure information without fixing its
+    ///   wording.
+    /// - fails: propagates the formatter sink refusal.
+    /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   emitted bytes nor its refusal state; observing those effects here
+    ///   would require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every named cause and ceilings at zero, one and the
+    ///   integer maximum expose distinct diagnostics and exact numeric
+    ///   payloads. A real exhausted output sink must retain its I/O refusal.
+    ///   Collapsed causes, truncated bounds or swallowed writes change these
+    ///   observations; wording and field position are not pinned.
+    /// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
     #[inline]
     fn fmt(
         &self,
@@ -366,7 +529,25 @@ impl fmt::Display for RenderLimitKind
     /// Writes the limit as the quantity it bounds.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the caller supplies a formatter, including sinks that refuse
+    ///   writes.
+    /// - ensures: each named classification has a distinct descriptive
+    ///   diagnostic.
+    /// - provides: human-readable failure information without fixing its
+    ///   wording.
+    /// - fails: propagates the formatter sink refusal.
+    /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   emitted bytes nor its refusal state; observing those effects here
+    ///   would require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every named cause and ceilings at zero, one and the
+    ///   integer maximum expose distinct diagnostics and exact numeric
+    ///   payloads. A real exhausted output sink must retain its I/O refusal.
+    ///   Collapsed causes, truncated bounds or swallowed writes change these
+    ///   observations; wording and field position are not pinned.
+    /// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
     #[inline]
     fn fmt(
         &self,
@@ -393,7 +574,25 @@ impl fmt::Display for RenderAllocationSite
     /// Writes the store as the table or stack it names.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the caller supplies a formatter, including sinks that refuse
+    ///   writes.
+    /// - ensures: each named classification has a distinct descriptive
+    ///   diagnostic.
+    /// - provides: human-readable failure information without fixing its
+    ///   wording.
+    /// - fails: propagates the formatter sink refusal.
+    /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   emitted bytes nor its refusal state; observing those effects here
+    ///   would require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every named cause and ceilings at zero, one and the
+    ///   integer maximum expose distinct diagnostics and exact numeric
+    ///   payloads. A real exhausted output sink must retain its I/O refusal.
+    ///   Collapsed causes, truncated bounds or swallowed writes change these
+    ///   observations; wording and field position are not pinned.
+    /// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
     #[inline]
     fn fmt(
         &self,
@@ -415,7 +614,25 @@ impl fmt::Display for RenderArithmetic
     /// Writes the operation as the quantity it advanced.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the caller supplies a formatter, including sinks that refuse
+    ///   writes.
+    /// - ensures: each named classification has a distinct descriptive
+    ///   diagnostic.
+    /// - provides: human-readable failure information without fixing its
+    ///   wording.
+    /// - fails: propagates the formatter sink refusal.
+    /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   emitted bytes nor its refusal state; observing those effects here
+    ///   would require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every named cause and ceilings at zero, one and the
+    ///   integer maximum expose distinct diagnostics and exact numeric
+    ///   payloads. A real exhausted output sink must retain its I/O refusal.
+    ///   Collapsed causes, truncated bounds or swallowed writes change these
+    ///   observations; wording and field position are not pinned.
+    /// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
     #[inline]
     fn fmt(
         &self,
@@ -443,7 +660,25 @@ impl fmt::Display for RenderInvariant
     /// Writes the invariant as the property that failed.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the caller supplies a formatter, including sinks that refuse
+    ///   writes.
+    /// - ensures: each named classification has a distinct descriptive
+    ///   diagnostic.
+    /// - provides: human-readable failure information without fixing its
+    ///   wording.
+    /// - fails: propagates the formatter sink refusal.
+    /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   emitted bytes nor its refusal state; observing those effects here
+    ///   would require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every named cause and ceilings at zero, one and the
+    ///   integer maximum expose distinct diagnostics and exact numeric
+    ///   payloads. A real exhausted output sink must retain its I/O refusal.
+    ///   Collapsed causes, truncated bounds or swallowed writes change these
+    ///   observations; wording and field position are not pinned.
+    /// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
     #[inline]
     fn fmt(
         &self,
@@ -468,7 +703,25 @@ impl fmt::Display for RenderError
     /// Writes the failure as one sentence naming what refused.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the caller supplies a formatter, including sinks that refuse
+    ///   writes.
+    /// - ensures: the diagnostic identifies the cause and preserves every
+    ///   numeric ceiling; distinct causes remain distinguishable.
+    /// - provides: human-readable failure information without fixing its
+    ///   wording.
+    /// - fails: propagates the formatter sink refusal.
+    /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   emitted bytes nor its refusal state; observing those effects here
+    ///   would require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every named cause and ceilings at zero, one and the
+    ///   integer maximum expose distinct diagnostics and exact numeric
+    ///   payloads. A real exhausted output sink must retain its I/O refusal.
+    ///   Collapsed causes, truncated bounds or swallowed writes change these
+    ///   observations; wording and field position are not pinned.
+    /// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
     #[inline]
     fn fmt(
         &self,
@@ -513,7 +766,25 @@ impl fmt::Display for BuildError
     /// Writes the failure as one sentence naming what refused.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the caller supplies a formatter, including sinks that refuse
+    ///   writes.
+    /// - ensures: the diagnostic identifies the cause and preserves every
+    ///   numeric ceiling; distinct causes remain distinguishable.
+    /// - provides: human-readable failure information without fixing its
+    ///   wording.
+    /// - fails: propagates the formatter sink refusal.
+    /// - panics: none.
+    /// - executable: none — Formatter has a write-only sink and exposes neither
+    ///   emitted bytes nor its refusal state; observing those effects here
+    ///   would require wrapping or replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every named cause and ceilings at zero, one and the
+    ///   integer maximum expose distinct diagnostics and exact numeric
+    ///   payloads. A real exhausted output sink must retain its I/O refusal.
+    ///   Collapsed causes, truncated bounds or swallowed writes change these
+    ///   observations; wording and field position are not pinned.
+    /// - witness: `error::tests::diagnostics_preserve_distinct_causes_bounds_and_sink_failures`
     #[inline]
     fn fmt(
         &self,
@@ -552,4 +823,146 @@ impl fmt::Display for BuildError
 
 impl core::error::Error for BuildError
 {
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::string::ToString as _;
+
+    use super::*;
+
+    /// Diagnostics distinguish causes, retain full bounds and do not hide a
+    /// real sink refusal.
+    #[test]
+    fn diagnostics_preserve_distinct_causes_bounds_and_sink_failures()
+    {
+        let mut build = alloc::vec![
+            BuildError::ArenaKeyExhausted,
+            BuildError::NodeIdExhausted,
+            BuildError::UnknownDoc,
+            BuildError::InvalidText,
+            BuildError::InvalidVerbatimLineEnding
+        ];
+        for operation in [
+            BuildArithmetic::NodeCount,
+            BuildArithmetic::TextBytes,
+            BuildArithmetic::VerbatimLines,
+            BuildArithmetic::BuildSteps,
+            BuildArithmetic::IdConversion,
+            BuildArithmetic::ScalarWidth,
+        ] {
+            build.push(BuildError::ArithmeticOverflow { operation });
+        }
+        for site in [
+            BuildAllocationSite::NodeArena,
+            BuildAllocationSite::TextArena,
+            BuildAllocationSite::VerbatimArena,
+            BuildAllocationSite::FlattenImages,
+            BuildAllocationSite::FinalizeStack,
+        ] {
+            build.push(BuildError::AllocationFailed { site });
+        }
+        for kind in [
+            BuildLimitKind::DocNodes,
+            BuildLimitKind::TextBytes,
+            BuildLimitKind::VerbatimLines,
+            BuildLimitKind::BuildSteps,
+        ] {
+            for limit in [0_u64, 1, u64::MAX] {
+                build.push(BuildError::LimitExceeded {
+                    kind,
+                    limit: LimitBound::from(limit),
+                });
+            }
+        }
+        let direct = std::io::Write::write_all(&mut [0_u8; 0].as_mut_slice(), b"x")
+            .expect_err("exhausted sink");
+        let mut messages = alloc::collections::BTreeSet::new();
+        for error in build {
+            let message = error.to_string();
+            if let BuildError::LimitExceeded { limit, .. } = error {
+                assert!(message.contains(&u64::from(limit).to_string()));
+            }
+            let mut storage = [0_u8; 1];
+            let refusal =
+                std::io::Write::write_fmt(&mut storage.as_mut_slice(), format_args!("{error}"))
+                    .expect_err("diagnostic sink must refuse");
+            assert_eq!(refusal.kind(), direct.kind());
+            assert!(
+                messages.insert(message),
+                "distinct build causes and bounds must not collapse"
+            );
+        }
+        let mut render = alloc::vec![RenderError::UnknownDoc, RenderError::InvalidWidth];
+        for operation in [
+            RenderArithmetic::Column,
+            RenderArithmetic::Indentation,
+            RenderArithmetic::SquaredOverflow,
+            RenderArithmetic::LineBreaks,
+            RenderArithmetic::OutputBytes,
+            RenderArithmetic::StepCounter,
+            RenderArithmetic::ResolverWorkCounter,
+            RenderArithmetic::StackDepth,
+            RenderArithmetic::PlanRefcount,
+            RenderArithmetic::PlanGeneration,
+            RenderArithmetic::PlanSlot,
+        ] {
+            render.push(RenderError::ArithmeticOverflow { operation });
+        }
+        for site in [
+            RenderAllocationSite::Frontier,
+            RenderAllocationSite::PlanArena,
+            RenderAllocationSite::ResolverStack,
+            RenderAllocationSite::VmStack,
+            RenderAllocationSite::Output,
+        ] {
+            render.push(RenderError::AllocationFailed { site });
+        }
+        for invariant in [
+            RenderInvariant::PlanIdentity,
+            RenderInvariant::DocumentIdentity,
+            RenderInvariant::Continuation,
+            RenderInvariant::MissingMeasure,
+            RenderInvariant::OutputReconciliation,
+            RenderInvariant::VerbatimFragments,
+        ] {
+            render.push(RenderError::Invariant { invariant });
+        }
+        for kind in [
+            RenderLimitKind::MemoStates,
+            RenderLimitKind::FrontierEntries,
+            RenderLimitKind::PlanNodesCreated,
+            RenderLimitKind::LivePlanNodes,
+            RenderLimitKind::OutputBytes,
+            RenderLimitKind::LayoutSteps,
+            RenderLimitKind::ResolverWorkEntries,
+            RenderLimitKind::ResolverStack,
+            RenderLimitKind::VmSteps,
+            RenderLimitKind::VmStack,
+        ] {
+            for limit in [0_u64, 1, u64::MAX] {
+                render.push(RenderError::LimitExceeded {
+                    kind,
+                    limit: LimitBound::from(limit),
+                });
+            }
+        }
+        let mut messages = alloc::collections::BTreeSet::new();
+        for error in render {
+            let message = error.to_string();
+            if let RenderError::LimitExceeded { limit, .. } = error {
+                assert!(message.contains(&u64::from(limit).to_string()));
+            }
+            let mut storage = [0_u8; 1];
+            let refusal =
+                std::io::Write::write_fmt(&mut storage.as_mut_slice(), format_args!("{error}"))
+                    .expect_err("diagnostic sink must refuse");
+            assert_eq!(refusal.kind(), direct.kind());
+            assert!(
+                messages.insert(message),
+                "distinct render causes and bounds must not collapse"
+            );
+        }
+    }
 }

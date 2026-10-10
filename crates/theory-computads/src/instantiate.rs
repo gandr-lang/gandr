@@ -59,6 +59,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
@@ -79,6 +80,20 @@ use quenchant_shape::shape::Maybe;
 use crate::boundary::RedexOccurrenceCount;
 
 /// Why a stored cell could not be instantiated.
+///
+/// # Specification
+/// - provides: an unissued identifier is reported against the supplied store;
+///   identifiers carry no cross-store provenance.
+/// - executable: none — the identifier alone lacks the supplied store needed to
+///   determine whether it was issued there.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes an unissued identifier against empty and nonempty
+///   stores. Exact identifier payload and unchanged store distinguish
+///   fabricated successful identities and destructive refusal; cross-store
+///   provenance is not encoded.
+/// - witness: `instantiate::tests::instantiating_an_unknown_cell_returns_typed_error`
+/// - witness: `instantiate::tests::instantiation_reuses_an_existing_image_and_preserves_a_refused_store`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CellInstantiationError
 {
@@ -95,7 +110,20 @@ impl fmt::Display for CellInstantiationError
     /// Names the identifier that resolved to nothing.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: renders the unresolved identifier and propagates the
+    ///   formatting sink’s refusal.
+    /// - panics: none.
+    /// - executable: none — Formatter exposes neither emitted text nor the sink
+    ///   state; a postcondition cannot inspect the output or predict its write
+    ///   refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes discriminating hole, identifier and
+    ///   constructor-count payloads through a string sink and error propagation
+    ///   through a refusing sink. The two eta reasons are exercised separately;
+    ///   punctuation and explanatory wording are intentionally unconstrained by
+    ///   tests.
+    /// - witness: `elaborate::tests::diagnostics_retain_payloads_and_propagate_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -137,11 +165,34 @@ impl core::error::Error for CellInstantiationError
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the exact substituted faces, identity reuse under the
-///   empty substitution, preserved orientation and provenance, and the typed
-///   unknown-identifier failure separate the observable branches.
+/// - hypothesis: L3 over issued, stale and already-instantiated identifiers
+///   observes exact substituted faces, retained source, orientation,
+///   provenance, store size and identity reuse. Empty and nonempty
+///   substitutions separate wrong-face, destructive-update and
+///   duplicate-insertion mutations; a nonempty store checks refusal atomicity.
+///   The predicate observes metadata and size, while concrete sequent witnesses
+///   check substitution semantics.
 /// - witness: `instantiate::tests::instantiating_a_cell_preserves_store_identity`
 /// - witness: `instantiate::tests::instantiating_an_unknown_cell_returns_typed_error`
+/// - witness: `instantiate::tests::instantiation_reuses_an_existing_image_and_preserves_a_refused_store`
+#[spec(
+    captures: before = usize::from(store.len()),
+    ensures: |ret| match ret.as_ref() {
+    Ok(id) => {
+        matches!(
+            (store.get(cell), store.get(* id)), (Maybe::Present(source),
+            Maybe::Present(instance)) if source.orient() == instance.orient() && source
+            .provenance() == instance.provenance()
+        )
+            && (usize::from(store.len()) == before
+                || usize::from(store.len()) == before.saturating_add(1))
+    }
+    Err(&CellInstantiationError::UnknownCell { cell: missing }) => {
+        missing == cell && matches!(store.get(cell), Maybe::Absent(_))
+            && usize::from(store.len()) == before
+    }
+},
+)]
 #[inline]
 pub fn instantiate_cell<A>(
     store: &mut CellStore<A>,
@@ -209,6 +260,22 @@ impl RewriteBinding
 /// reading of the peak. That reading lives above this crate, so the sweep is
 /// supplied rather than built here, and its evidence is the supplier's own
 /// type in both directions.
+///
+/// # Specification
+/// - provides: a caller-owned convexity decision for a guarded pair; evidence
+///   types retain its warrant or refusal.
+/// - executable: none — the interface supplies no diagram reachability
+///   representation; only an implementing reader can validate the convexity
+///   evidence.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes discharged, withheld, overlapping and
+///   comparable-position pairs. Exact warrant/refusal payloads and the selected
+///   outcome distinguish skipped or premature supplier calls. The caller-owned
+///   diagram proof is outside this protocol evidence.
+/// - witness: `tests::convexity_supply::a_withheld_discharge_is_rechecked_by_the_supply_point`
+/// - witness: `tests::convexity_supply::a_refused_recheck_refuses_the_instantiation_with_its_evidence`
+/// - witness: `tests::convexity_supply::the_supply_point_is_asked_only_after_the_positions_and_overlap_conjuncts`
 pub trait ConvexitySupply<A>
 where
     A: CellAlphabet,
@@ -222,17 +289,32 @@ where
     /// Re-check the convexity conjunct for `first` and `second` in `peak`.
     ///
     /// # Specification
-    /// - requires: an implementor answers the conjunct itself — the warrant
-    ///   only when neither application's reduct makes the other's match image
-    ///   non-convex — and refuses whatever it cannot decide.
-    /// - ensures: called only for a pair whose cells resolve in `store`, whose
-    ///   positions are incomparable, and whose cells have no overlap, on a
-    ///   store whose discharge is withheld.
+    /// - requires: both cells resolve, their positions are incomparable, the
+    ///   cells have no overlap, and the store withholds its convexity
+    ///   discharge.
+    /// - ensures: the implementor returns a warrant only when neither reduct
+    ///   makes the other match image non-convex; undecidable or false conjuncts
+    ///   return its refusal.
     /// - panics: none.
+    /// - executable: none — the direct method has no body. Trait-level
+    ///   instrumentation adds a required implementation method, a coordinated
+    ///   interface change; graph-convexity evidence also remains external to
+    ///   these arguments.
     ///
     /// # Errors
     /// [`ConvexitySupply::Refusal`] when the conjunct does not hold or cannot
     /// be decided.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes caller routing through discharged, withheld,
+    ///   overlapping and comparable-position stores. Warrant and refusal
+    ///   payloads distinguish bypassed rechecks and swallowed refusals. These
+    ///   witnesses validate the supply protocol, not a graph-convexity
+    ///   algorithm; that evidence belongs to each implementing diagram reader.
+    /// - witness: `tests::convexity_supply::a_withheld_discharge_is_rechecked_by_the_supply_point`
+    /// - witness: `tests::convexity_supply::a_refused_recheck_refuses_the_instantiation_with_its_evidence`
+    /// - witness: `tests::convexity_supply::the_supply_point_is_asked_only_after_the_positions_and_overlap_conjuncts`
+    /// - witness: `tests::circuit_instantiation::an_instantiated_cong2_rule_earns_its_shift_witness`
     fn recheck(
         &self,
         store: &CellStore<A>,
@@ -243,6 +325,20 @@ where
 }
 
 /// How an earned identification's convexity conjunct was met.
+///
+/// # Specification
+/// - provides: an instantiation result records either the store discharge or
+///   the exact supplier warrant.
+/// - executable: none — the tag and opaque warrant lack the store discharge and
+///   supplier call that earned them.
+///
+/// # Adequacy
+/// - hypothesis: L3 compares discharged and caller-rechecked instantiations.
+///   Exact tags and the requested pair carried by the warrant distinguish
+///   assumed discharge, lost evidence and replacing the store’s withheld
+///   status.
+/// - witness: `tests::convexity_supply::a_withheld_discharge_is_rechecked_by_the_supply_point`
+/// - witness: `tests::circuit_instantiation::an_instantiated_cong2_rule_earns_its_shift_witness`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ConvexityGrant<W>
 {
@@ -259,6 +355,21 @@ pub enum ConvexityGrant<W>
 /// Holding one is the record of which guard granted the identification, at
 /// which two applications, under which convexity grant, and that the composite
 /// replayed under both orders before the record was handed back.
+///
+/// # Specification
+/// - provides: successful instantiation retains the input peak,
+///   occurrence-derived applications, common composite and the earned convexity
+///   grant.
+/// - executable: none — the record lacks the source circuit, binding
+///   environment and store needed to validate occurrence provenance and replay.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes disjoint and rechecked pairs through the input
+///   peak, independent child-index positions and a hand-computed common
+///   composite. Reversed applications, fabricated positions and wrong grants
+///   change the record; arbitrary public construction is not certified.
+/// - witness: `tests::circuit_instantiation::the_instantiated_applications_carry_the_records_positions`
+/// - witness: `tests::convexity_supply::a_withheld_discharge_is_rechecked_by_the_supply_point`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CircuitShift<A, W>
 where
@@ -278,6 +389,24 @@ where
 /// pair to ask about; the last three are about the pair: the guard's own
 /// refusal, the supply point's refusal, and a witness whose composite did not
 /// re-execute.
+///
+/// # Specification
+/// - provides: instantiation refuses the earliest failed stage and retains its
+///   discriminating payload; no caller callback is repeated to classify that
+///   payload.
+/// - executable: none — the refusal lacks the complete instantiation inputs and
+///   prior-stage results needed to validate failure precedence.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes duplicate bindings combined with cyclic wiring,
+///   non-two occurrence counts before missing bindings, both missing ports, and
+///   supplied convexity refusal. Exact stage and payload distinguish reordered
+///   checks and swallowed refusal evidence; stateful replay disagreement is not
+///   exercised.
+/// - witness: `instantiate::tests::duplicate_bindings_precede_cyclic_wiring`
+/// - witness: `instantiate::tests::zero_and_three_occurrences_precede_missing_bindings`
+/// - witness: `instantiate::tests::missing_first_binding_precedes_the_second`
+/// - witness: `tests::convexity_supply::a_refused_recheck_refuses_the_instantiation_with_its_evidence`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CircuitShiftObstruction<A, R>
 where
@@ -360,16 +489,14 @@ where
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the shape declines are separated by a port bound twice, a
-///   single-redex body, a missing binding and a cyclic body; the pair's
-///   outcomes by the `cong2` instantiation that earns and replays, an
-///   overlapping instantiation refused by the guard, a sequential body refused
-///   its positions, and a peak with no redex at the record's positions refused
-///   by the instance check; the environment is kept off the body by a
-///   reconvergent block; the supply point by a withheld store whose re-check
-///   grants, one whose re-check refuses, a withheld store whose pair fails
-///   positions before the supply point is asked, and a discharged store whose
-///   refusing supply point is never asked.
+/// - hypothesis: L3 over functional and malformed instantiations observes exact
+///   occurrence positions, cells, peak, composites, grants and refusal
+///   payloads. Empty, one-, two- and three-occurrence bodies; competing
+///   repeats; missing bindings; cycles; overlap; comparable positions; and
+///   absent redexes separate count, precedence, fabricated-position and
+///   false-grant mutations. Withheld and discharged stores observe supply
+///   routing without re-calling it in predicates. Stateful-alphabet replay
+///   disagreement remains outside these deterministic witnesses.
 /// - witness: `tests::circuit_instantiation::an_instantiated_cong2_rule_earns_its_shift_witness`
 /// - witness: `tests::circuit_instantiation::the_instantiated_applications_carry_the_records_positions`
 /// - witness: `tests::circuit_instantiation::a_genuinely_overlapping_instantiation_is_refused_at_the_application_site`
@@ -383,6 +510,43 @@ where
 /// - witness: `instantiate::tests::a_port_bound_twice_is_not_a_functional_environment`
 /// - witness: `instantiate::tests::a_cyclic_body_declines_before_any_pair_is_read`
 /// - witness: `instantiate::tests::a_peak_carrying_no_redex_at_the_records_positions_is_refused`
+/// - witness: `instantiate::tests::zero_and_three_occurrences_precede_missing_bindings`
+/// - witness: `instantiate::tests::duplicate_bindings_precede_cyclic_wiring`
+/// - witness: `instantiate::tests::missing_first_binding_precedes_the_second`
+#[spec(
+    ensures: |ret| match ret {
+    Ok(ref shift) => {
+        shift.witness.peak == *peak
+            && bindings.iter().any(|binding| binding.cell == shift.witness.first.cell)
+            && bindings.iter().any(|binding| binding.cell == shift.witness.second.cell)
+            && match shift.convexity {
+                ConvexityGrant::Discharged => {
+                    shift.witness.convexity
+                        != gandr_theory_cell_complexes::ConvexityDischarge::ReCheckRequired
+                }
+                ConvexityGrant::Rechecked(_) => {
+                    shift.witness.convexity
+                        == gandr_theory_cell_complexes::ConvexityDischarge::ReCheckRequired
+                }
+            }
+    }
+    Err(CircuitShiftObstruction::DuplicateBinding { ref port }) => {
+        bindings.iter().filter(|binding| binding.port == *port).count() > 1
+    }
+    Err(CircuitShiftObstruction::NotTwoOccurrences { occurrences }) => {
+        usize::from(occurrences) != 2
+    }
+    Err(CircuitShiftObstruction::UnboundRewrite { ref rewrite }) => {
+        bindings.iter().all(|binding| binding.port != *rewrite)
+    }
+    Err(
+        CircuitShiftObstruction::Wiring(_)
+        | CircuitShiftObstruction::Refused(_)
+        | CircuitShiftObstruction::NotConvex(_)
+        | CircuitShiftObstruction::CompositeDoesNotReplay { .. },
+    ) => true,
+},
+)]
 #[inline]
 pub fn instantiate_two_redex_rule<A, C>(
     store: &CellStore<A>,
@@ -451,6 +615,31 @@ where
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 over empty, unique and repeated environments observes the
+///   exact earliest repeated port. Equal-cell duplicates still fail; competing
+///   repeats distinguish earliest repeated occurrence from earliest first
+///   occurrence and precedence-based lookup.
+/// - witness: `instantiate::tests::environment_refuses_the_earliest_repeat_even_for_identical_cells`
+/// - witness: `instantiate::tests::a_port_bound_twice_is_not_a_functional_environment`
+#[spec(
+    ensures: |ret| match bindings
+    .iter()
+    .enumerate()
+    .find(|&(index, binding)| {
+        bindings.iter().take(index).any(|earlier| earlier.port == binding.port)
+    })
+{
+    None => ret.is_ok(),
+    Some((_, binding)) => {
+        matches!(
+            ret, Err(CircuitShiftObstruction::DuplicateBinding { ref port }) if * port ==
+            binding.port
+        )
+    }
+},
+)]
 fn functional_environment<A, R>(
     bindings: &[RewriteBinding]
 ) -> Result<(), CircuitShiftObstruction<A, R>>
@@ -484,6 +673,42 @@ where
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 over functional environments observes the resolved cell and
+///   exact missing rewrite; occurrence-derived positions are compared with
+///   independent child-index positions in the integration suite. Missing first
+///   and second ports and reconvergent occurrences separate binding omission,
+///   order reversal and fabricated positions. Generic position construction is
+///   not replayed by the predicate.
+/// - witness: `instantiate::tests::an_unbound_rewrite_port_declines_the_instantiation`
+/// - witness: `tests::circuit_instantiation::the_instantiated_applications_carry_the_records_positions`
+/// - witness: `tests::circuit_instantiation::a_reconvergent_body_resolves_both_occurrences_through_one_binding`
+/// - witness: `instantiate::tests::missing_first_binding_precedes_the_second`
+#[spec(
+    requires: bindings
+    .iter()
+    .enumerate()
+    .all(|(index, binding)| {
+        bindings.iter().take(index).all(|earlier| earlier.port != binding.port)
+    }),
+    ensures: |ret| {
+    bindings
+        .iter()
+        .find(|binding| binding.port == occurrence.rewrite)
+        .map_or_else(
+            || {
+                matches!(
+                    ret, Err(CircuitShiftObstruction::UnboundRewrite { ref rewrite }) if
+                    * rewrite == occurrence.rewrite
+                )
+            },
+            |binding| {
+                matches!(ret, Ok(ref application) if application.cell == binding.cell)
+            },
+        )
+},
+)]
 fn application<A, R>(
     occurrence: &RedexOccurrence,
     bindings: &[RewriteBinding],
@@ -528,9 +753,37 @@ where
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a re-checked `cong2` pair reaches its composite through
-///   both orders.
+/// - hypothesis: L3 over recorded schedules observes the common composite, the
+///   first failing application and both distinct composites on disagreement.
+///   Commuting, stale, nonmatching and order-sensitive pairs separate skipped
+///   steps, reversed precedence and false joins. The predicate checks the
+///   refusal relation without re-executing alphabet callbacks; fixed toy
+///   reductions supply independent expected terms.
 /// - witness: `tests::convexity_supply::a_withheld_discharge_is_rechecked_by_the_supply_point`
+/// - witness: `instantiate::tests::firing_distinguishes_stale_cells_from_nonmatching_steps`
+/// - witness: `instantiate::tests::exercise_reports_both_distinct_sequentializations`
+#[spec(
+    ensures: |ret| match ret {
+    Ok(_) => {
+        matches!(store.get(first.cell), Maybe::Present(_))
+            && matches!(store.get(second.cell), Maybe::Present(_))
+    }
+    Err(ShiftObstruction::UnknownCell { cell }) => {
+        (cell == first.cell || cell == second.cell)
+            && matches!(store.get(cell), Maybe::Absent(_))
+    }
+    Err(ShiftObstruction::StepDoesNotFire { ref step }) => {
+        **step == *first || **step == *second
+    }
+    Err(
+        ShiftObstruction::SequentializationsDiffer {
+            ref first_then_second,
+            ref second_then_first,
+        },
+    ) => first_then_second != second_then_first,
+    _ => false,
+},
+)]
 fn exercise<A>(
     store: &CellStore<A>,
     peak: &A::Cmd,
@@ -563,6 +816,32 @@ where
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 over live and stale applications observes exact reducts,
+///   stale identifiers and rejected positions. Root success, mismatching peak
+///   and missing cell separate lookup, matching and payload mutations. The
+///   generic predicate checks refusal shape and payload; concrete toy terms
+///   witness the rewrite relation without calling the rewrite engine again
+///   inside a predicate.
+/// - witness: `instantiate::tests::firing_distinguishes_stale_cells_from_nonmatching_steps`
+/// - witness: `instantiate::tests::a_peak_carrying_no_redex_at_the_records_positions_is_refused`
+#[spec(
+    ensures: |ret| match store.get(step.cell) {
+    Maybe::Absent(_) => {
+        matches!(ret, Err(ShiftObstruction::UnknownCell { cell }) if cell == step.cell)
+    }
+    Maybe::Present(_) => {
+        match ret {
+            Ok(_) => true,
+            Err(ShiftObstruction::StepDoesNotFire { step: ref refused }) => {
+                **refused == *step
+            }
+            _ => false,
+        }
+    }
+},
+)]
 fn fire<A>(
     store: &CellStore<A>,
     term: &A::Cmd,
@@ -848,6 +1127,230 @@ mod tests
         );
     }
 
+    #[test]
+    fn instantiation_reuses_an_existing_image_and_preserves_a_refused_store()
+    {
+        let mut store: CellStore<SequentAlphabet> = CellStore::new();
+        let source = sequent_cell(ProdPat::meta("x"), ProdPat::meta("x"));
+        let source_id = store.insert(source.clone());
+        let image_id = store.insert(sequent_cell(
+            ProdPat::ctor("Zero", []),
+            ProdPat::ctor("Zero", []),
+        ));
+        let mut substitution = Subst::new();
+        substitution
+            .bind_prod(MetaVar::producer("x"), ProdPat::ctor("Zero", []))
+            .expect("fresh binding");
+        let before = store.clone();
+        assert_eq!(
+            Ok(image_id),
+            instantiate_cell(&mut store, source_id, &substitution)
+        );
+        assert_eq!(before, store);
+        assert!(matches!(store.get(source_id), Maybe::Present(original) if *original == source));
+        let missing = CellId::from(usize::MAX);
+        assert_eq!(
+            Err(CellInstantiationError::UnknownCell { cell: missing }),
+            instantiate_cell(&mut store, missing, &substitution)
+        );
+        assert_eq!(before, store);
+    }
+
+    #[test]
+    fn environment_refuses_the_earliest_repeat_even_for_identical_cells()
+    {
+        let id = CellId::from(0_usize);
+        assert_eq!(
+            Ok(()),
+            functional_environment::<SequentAlphabet, Asked>(&[])
+        );
+        assert_eq!(
+            Ok(()),
+            functional_environment::<SequentAlphabet, Asked>(&[
+                RewriteBinding::new("z", id),
+                RewriteBinding::new("a", id)
+            ])
+        );
+        assert_eq!(
+            Err(CircuitShiftObstruction::DuplicateBinding { port: "a".into() }),
+            functional_environment::<SequentAlphabet, Asked>(&[
+                RewriteBinding::new("z", id),
+                RewriteBinding::new("a", id),
+                RewriteBinding::new("a", id),
+                RewriteBinding::new("z", id),
+            ])
+        );
+    }
+
+    #[test]
+    fn firing_distinguishes_stale_cells_from_nonmatching_steps()
+    {
+        use gandr_theory_cell_complexes_tools::Toy;
+        use gandr_theory_cell_complexes_tools::ToyAlphabet;
+        use gandr_theory_cell_complexes_tools::toy_cell;
+
+        let mut store = CellStore::new();
+        let id = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
+        let step = CellApp {
+            cell: id,
+            at: ToyAlphabet::root_position(),
+        };
+        assert_eq!(
+            Ok(Toy::zero()),
+            fire(&store, &Toy::succ(Toy::zero()), &step)
+        );
+        let no_redex = ShiftObstruction::StepDoesNotFire {
+            step: Box::new(step.clone()),
+        };
+        assert_eq!(Err(no_redex.clone()), fire(&store, &Toy::zero(), &step));
+        assert_eq!(Err(no_redex), exercise(&store, &Toy::zero(), &step, &step));
+        let missing = CellApp {
+            cell: CellId::from(usize::MAX),
+            at: ToyAlphabet::root_position(),
+        };
+        let unknown = ShiftObstruction::UnknownCell { cell: missing.cell };
+        assert_eq!(Err(unknown.clone()), fire(&store, &Toy::zero(), &missing));
+        assert_eq!(
+            Err(unknown.clone()),
+            exercise(&store, &Toy::succ(Toy::zero()), &step, &missing)
+        );
+        assert_eq!(
+            Err(unknown),
+            exercise(&store, &Toy::zero(), &missing, &step)
+        );
+    }
+
+    #[test]
+    fn exercise_reports_both_distinct_sequentializations()
+    {
+        use gandr_theory_cell_complexes_tools::Toy;
+        use gandr_theory_cell_complexes_tools::ToyAlphabet;
+        use gandr_theory_cell_complexes_tools::toy_cell;
+
+        let mut store = CellStore::new();
+        let grow = store.insert(toy_cell(Toy::var("x"), Toy::succ(Toy::var("x"))));
+        let erase = store.insert(toy_cell(Toy::var("x"), Toy::zero()));
+        let first = CellApp {
+            cell: grow,
+            at: ToyAlphabet::root_position(),
+        };
+        let second = CellApp {
+            cell: erase,
+            at: ToyAlphabet::root_position(),
+        };
+        assert_eq!(
+            Err(ShiftObstruction::SequentializationsDiffer {
+                first_then_second: Box::new(Toy::zero()),
+                second_then_first: Box::new(Toy::succ(Toy::zero())),
+            }),
+            exercise(&store, &Toy::zero(), &first, &second)
+        );
+    }
+
+    #[test]
+    fn missing_first_binding_precedes_the_second()
+    {
+        let q = [RewriteBinding::new("q", CellId::from(0_usize))];
+        for bindings in [&[][..], q.as_slice()] {
+            assert_eq!(
+                Err(CircuitShiftObstruction::UnboundRewrite {
+                    rewrite: "p".into()
+                }),
+                instantiate_two_redex_rule(
+                    &CellStore::<SequentAlphabet>::new(),
+                    &rule_over(cong2_body()),
+                    bindings,
+                    &zero_at_top(),
+                    &RefusingSupply
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn zero_and_three_occurrences_precede_missing_bindings()
+    {
+        let zero = CircuitBody::new(
+            [CircuitNode::Frame(CircuitFrame::new(
+                FrameHead::Op("f".into()),
+                [],
+                "out",
+            ))],
+            "out",
+        );
+        let three = CircuitBody::new(
+            [
+                CircuitNode::Redex(CircuitRedex::new(
+                    "p",
+                    FreeTerm::var("x"),
+                    FreeTerm::var("a"),
+                    "a",
+                )),
+                CircuitNode::Redex(CircuitRedex::new(
+                    "q",
+                    FreeTerm::var("y"),
+                    FreeTerm::var("b"),
+                    "b",
+                )),
+                CircuitNode::Redex(CircuitRedex::new(
+                    "r",
+                    FreeTerm::var("z"),
+                    FreeTerm::var("c"),
+                    "c",
+                )),
+                CircuitNode::Frame(CircuitFrame::new(
+                    FrameHead::Op("f".into()),
+                    [FreeTerm::var("a"), FreeTerm::var("b"), FreeTerm::var("c")],
+                    "out",
+                )),
+            ],
+            "out",
+        );
+        for (body, count) in [(zero, 0_usize), (three, 3_usize)] {
+            assert_eq!(
+                Err(CircuitShiftObstruction::NotTwoOccurrences {
+                    occurrences: RedexOccurrenceCount::from(count)
+                }),
+                instantiate_two_redex_rule(
+                    &CellStore::<SequentAlphabet>::new(),
+                    &rule_over(body),
+                    &[],
+                    &zero_at_top(),
+                    &RefusingSupply
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn duplicate_bindings_precede_cyclic_wiring()
+    {
+        let body = CircuitBody::new(
+            [CircuitNode::Frame(CircuitFrame::new(
+                FrameHead::Op("f".into()),
+                [FreeTerm::var("out")],
+                "out",
+            ))],
+            "out",
+        );
+        let rule = CircuitRule::new(
+            "cycle",
+            face(FreeTerm::var("out"), FreeTerm::var("out")),
+            body,
+        );
+        let id = CellId::from(0_usize);
+        assert_eq!(
+            Err(CircuitShiftObstruction::DuplicateBinding { port: "p".into() }),
+            instantiate_two_redex_rule(
+                &CellStore::<SequentAlphabet>::new(),
+                &rule,
+                &[RewriteBinding::new("p", id), RewriteBinding::new("p", id)],
+                &zero_at_top(),
+                &RefusingSupply
+            )
+        );
+    }
+
     /// A positive sequent cell `⟨lhs | ★⟩ ~> ⟨rhs | ★⟩` from a surface rule.
     ///
     /// # Specification
@@ -943,8 +1446,27 @@ mod tests
     /// A rule over `body`, declared at the sphere its wiring derives.
     ///
     /// # Specification
+    /// - ensures: the rule sphere equals the boundary pair derived from its
+    ///   retained body.
     /// - panics: when the body derives no boundary pair, which is a fixture
     ///   defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over one- and two-redex fixture bodies observes the
+    ///   resulting occurrence count and recorded positions through
+    ///   instantiation. The predicate additionally ties the stored sphere to
+    ///   its retained body; malformed fixture construction is not a
+    ///   public-input contract.
+    /// - witness: `instantiate::tests::a_single_redex_rule_has_no_pair_to_identify`
+    /// - witness: `instantiate::tests::an_unbound_rewrite_port_declines_the_instantiation`
+    #[spec(
+        ensures: |ret| {
+    derive_boundaries(&ret.body)
+        .is_ok_and(|derived| {
+            ret.sphere.lhs == derived.source && ret.sphere.rhs == derived.target
+        })
+},
+    )]
     fn rule_over(body: CircuitBody) -> CircuitRule
     {
         let derived = derive_boundaries(&body).expect("the fixture bodies derive their boundaries");

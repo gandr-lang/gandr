@@ -53,8 +53,10 @@ fn zero_constants_are_refused_by_reason()
             reason: InvalidParameterReason::ZeroTokenCap,
         })
     );
-    assert!(Kappa::try_from(1_u64).is_ok());
-    assert!(TokenCap::try_from(1_u64).is_ok());
+    for raw in [1_u64, 7, u64::MAX] {
+        assert_eq!(Kappa::try_from(raw).map(u64::from), Ok(raw));
+        assert_eq!(TokenCap::try_from(raw).map(u64::from), Ok(raw));
+    }
 }
 
 #[test]
@@ -126,6 +128,7 @@ fn a_saturated_count_still_cuts()
         CutDecision::Cut(BoundaryReason::MaxTokenCap),
         "a pending count that would wrap saturates at the cap and cuts"
     );
+    assert_eq!(chunker.pending(), TokenCount::ZERO);
 }
 
 #[test]
@@ -162,4 +165,24 @@ fn one_event_per_record_is_the_record_safe_degenerate_instance()
         .collect();
     assert_eq!(record_safe_ends, typed_ends);
     assert_eq!(typed_ends.len(), records.len());
+}
+
+#[test]
+fn zero_token_events_still_observe_the_residue()
+{
+    let mut chunker = scanner!(4_u64, 10_u64);
+    assert_eq!(
+        chunker.on_boundary(event!(0_u64, 1_u64)),
+        CutDecision::Continue
+    );
+    assert_eq!(chunker.pending(), TokenCount::ZERO);
+    assert_eq!(
+        chunker.on_boundary(event!(3_u64, 1_u64)),
+        CutDecision::Continue
+    );
+    assert_eq!(
+        chunker.on_boundary(event!(0_u64, 0_u64)),
+        CutDecision::Cut(BoundaryReason::HashPredicate)
+    );
+    assert_eq!(chunker.pending(), TokenCount::ZERO);
 }

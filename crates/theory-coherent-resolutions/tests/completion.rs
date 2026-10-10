@@ -1,6 +1,7 @@
 //! Budgeted completion: its ceilings, decline and resume, and the typed
 //! declines of the supplied-overlap seam.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::ConsPat;
@@ -68,6 +69,14 @@ fn vast() -> CompletionBudget
 ///
 /// # Specification
 /// - panics: when the fixture schedules none, which is a fixture defect.
+/// - ensures: the first scheduled confluence entry, not a later member.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the overlapping fixture rebuilds a valid supplied
+///   overlap; a missing schedule panics. Wrong selection, kind or acceptance of
+///   an empty schedule changes the witness.
+/// - witness: `tests::completion::fixture_boundaries_reject_missing_schedules`
+#[spec(ensures: |output| output.kind == OverlapKind::Confluence && scheduled_confluence_batches(store).into_iter().flatten().next().as_ref() == Some(&output))]
 fn first_scheduled(store: &CellStore) -> Overlap
 {
     scheduled_confluence_batches(store)
@@ -82,6 +91,15 @@ fn first_scheduled(store: &CellStore) -> Overlap
 ///
 /// # Specification
 /// - panics: when the fixture's cells are missing, which is a fixture defect.
+/// - ensures: the supplied unifier is retained and both confluence identifiers
+///   belong to the store.
+///
+/// # Adequacy
+/// - hypothesis: L3 — supplied valid and non-unifying substitutions produce
+///   different acceptance outcomes. Replacing the substitution, wrong
+///   identities or changing kind changes the typed validation result.
+/// - witness: `tests::completion::supplied_overlap_validation_returns_typed_declines`
+#[spec(captures: supplied = unifier.clone(), ensures: |output| output.kind == OverlapKind::Confluence && output.unifier == supplied && matches!(store.get(output.left), Maybe::Present(_)) && matches!(store.get(output.right), Maybe::Present(_)))]
 fn rebuilt(
     store: &CellStore,
     unifier: Subst,
@@ -106,6 +124,14 @@ fn rebuilt(
 ///
 /// # Specification
 /// - panics: when the fixture's cells are missing, which is a fixture defect.
+/// - ensures: a confluence overlap carrying the empty substitution.
+///
+/// # Adequacy
+/// - hypothesis: L3 — in the overlapping fixture, the empty substitution leaves
+///   one leg short of the peak and validation declines. Replacing it with the
+///   actual unifier changes the result.
+/// - witness: `tests::completion::supplied_non_unifying_decline_is_typed`
+#[spec(ensures: |output| output.kind == OverlapKind::Confluence && output.unifier == Subst::new())]
 fn non_unifying(store: &CellStore) -> Overlap
 {
     rebuilt(store, Subst::new())
@@ -116,6 +142,15 @@ fn non_unifying(store: &CellStore) -> Overlap
 ///
 /// # Specification
 /// - panics: when the schedule is empty, which is a fixture defect.
+/// - ensures: the first batch loses only its first entry; every later batch,
+///   including empty batches, keeps its position.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a partial leading batch and resumed run expose loss or
+///   reordering of pending work. A singleton leading batch retains its empty
+///   residue; an absent schedule panics.
+/// - witness: `tests::completion::fixture_boundaries_reject_missing_schedules`
+#[spec(ensures: |output| output.len() == scheduled.len() && output.first().zip(scheduled.first()).is_some_and(|(actual, original)| actual.iter().eq(original.iter().skip(1))) && output.iter().skip(1).eq(scheduled.iter().skip(1)))]
 fn residue_after_leading_step(scheduled: &[Vec<Overlap>]) -> Vec<Vec<Overlap>>
 {
     let (leading, later) = scheduled
@@ -521,5 +556,22 @@ fn a_starved_budget_declines_with_pending()
     assert_eq!(
         expected, pending,
         "the decline carries the schedule in batch and first-appearance order"
+    );
+}
+
+#[test]
+fn fixture_boundaries_reject_missing_schedules()
+{
+    assert!(std::panic::catch_unwind(|| first_scheduled(&CellStore::new())).is_err());
+    assert!(std::panic::catch_unwind(|| residue_after_leading_step(&[])).is_err());
+    let first = first_scheduled(&overlapping_rules());
+    assert_eq!(
+        (CellId::from(0_usize), CellId::from(1_usize)),
+        (first.left, first.right)
+    );
+    let schedule = vec![vec![first.clone()], Vec::new(), vec![first.clone()]];
+    assert_eq!(
+        vec![Vec::new(), Vec::new(), vec![first]],
+        residue_after_leading_step(&schedule)
     );
 }

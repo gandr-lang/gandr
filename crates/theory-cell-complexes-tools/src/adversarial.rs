@@ -20,6 +20,7 @@
 use alloc::vec::Vec;
 use core::marker::PhantomData;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellInvertibility;
@@ -58,8 +59,15 @@ pub trait AlphabetLie: Copy + Default + Eq + Ord + core::fmt::Debug + core::hash
     /// # Specification
     /// - ensures: by default, the toy alphabet's path order.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal positions, both nesting directions and disjoint
+    ///   children have exact default answers. Swapped enclosure or broken
+    ///   reflexivity changes the relation.
+    /// - witness: `tests::adversary::default_answers_and_adversarial_boundaries_stay_distinct`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output == ToyAlphabet::position_order(left, right))]
     fn position_order(
         left: &ToyPos,
         right: &ToyPos,
@@ -78,7 +86,18 @@ pub trait AlphabetLie: Copy + Default + Eq + Ord + core::fmt::Debug + core::hash
     ///
     /// # Errors
     /// [`CommandSpliceRefusal::OffTerm`] when a step of `pos` leaves the term.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a below-root replacement changes the selected subtree
+    ///   and preserves its sibling; an off-term path refuses. A non-local
+    ///   change or wrong refusal alters the result.
+    /// - witness: `tests::adversary::default_answers_and_adversarial_boundaries_stay_distinct`
     #[inline]
+    #[spec(captures: expected = replacement.clone(), ensures: |output| match output {
+        Ok(ref result) => matches!(ToyAlphabet::subterm_cmd_at(result, pos), Maybe::Present(ref held) if held == &expected),
+        Err(CommandSpliceRefusal::OffTerm) => matches!(ToyAlphabet::subterm_cmd_at(cmd, pos), Maybe::Absent(command_subterm::Absent::OffTerm)),
+        Err(CommandSpliceRefusal::NotACommand) => false,
+    })]
     fn splice_cmd_at(
         cmd: &Toy,
         pos: &ToyPos,
@@ -101,8 +120,15 @@ pub trait AlphabetLie: Copy + Default + Eq + Ord + core::fmt::Debug + core::hash
     ///   [`ConvexityDischarge::StronglyConnectedOverAcyclicTarget`], the toy
     ///   alphabet's answer.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a non-withholding strategy retains the structural
+    ///   warrant while the withholding strategy refuses it. Reversing or
+    ///   merging the answers changes the discharge.
+    /// - witness: `tests::adversary::default_answers_and_adversarial_boundaries_stay_distinct`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output == ConvexityDischarge::StronglyConnectedOverAcyclicTarget)]
     fn convexity_discharge() -> ConvexityDischarge
     {
         ConvexityDischarge::StronglyConnectedOverAcyclicTarget
@@ -115,6 +141,15 @@ pub trait AlphabetLie: Copy + Default + Eq + Ord + core::fmt::Debug + core::hash
     ///   [`core::hash::Hash`] makes, so a cell over a [`Lying`] alphabet hashes
     ///   as the toy cell with the same fields.
     /// - panics: none.
+    /// - executable: none — a generic hasher exposes its digest, not the
+    ///   sequence of writes or an independent copy of its state; the byte trace
+    ///   is a witness observation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — cells differing only in orientation write distinct
+    ///   byte streams under the default hash strategy and retain the toy hash
+    ///   protocol. Suppressed or altered tag writes change that observation.
+    /// - witness: `tests::adversary::the_colliding_addresses_wrapper_hides_the_orientation_and_keeps_the_cell`
     #[inline]
     fn hash_orientation<H>(
         orient: ToyOrient,
@@ -137,6 +172,15 @@ pub trait AlphabetLie: Copy + Default + Eq + Ord + core::fmt::Debug + core::hash
 /// - ensures: [`Eq`] is the toy tag's equality; [`core::hash::Hash`] is
 ///   [`AlphabetLie::hash_orientation`] of the toy tag, which may identify
 ///   unequal tags, as the trait permits.
+/// - panics: none.
+/// - executable: none — this type relates structural equality to a strategy's
+///   hash writes; only its hashing operation owns the output state.
+///
+/// # Adequacy
+/// - hypothesis: L3 — equal tags compare equal and distinct orientation tags
+///   remain distinct even when their hash streams collide. Conflating equality
+///   with hashing changes store identity.
+/// - witness: `tests::adversary::the_colliding_addresses_wrapper_hides_the_orientation_and_keeps_the_cell`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LyingOrient<L>
@@ -187,6 +231,8 @@ where
     /// - ensures: the writes [`AlphabetLie::hash_orientation`] makes for the
     ///   toy tag.
     /// - panics: none.
+    /// - executable: none — the strategy controls writes to an opaque generic
+    ///   hasher; its digest cannot reconstruct the required write history.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — under [`CollidingAddresses`] two cells differing only
@@ -227,7 +273,9 @@ impl AlphabetLie for IncomparablePositions
     ///   incomparable, while a match decided through the same wrapper is the
     ///   honest one.
     /// - witness: `tests::adversary::the_incomparable_wrapper_breaks_the_position_order_and_keeps_the_match`
+    /// - witness: `tests::adversary::default_answers_and_adversarial_boundaries_stay_distinct`
     #[inline]
+    #[spec(ensures: |output| output == PositionOrder::Incomparable)]
     fn position_order(
         _left: &ToyPos,
         _right: &ToyPos,
@@ -270,7 +318,13 @@ impl AlphabetLie for NonLocalSplice
     ///   the sibling, a splice at the only child of a unary root does not, and
     ///   the read at the spliced position is the honest one.
     /// - witness: `tests::adversary::the_non_local_splice_wrapper_breaks_the_splice_and_keeps_the_read`
+    /// - witness: `tests::adversary::default_answers_and_adversarial_boundaries_stay_distinct`
     #[inline]
+    #[spec(captures: expected = replacement.clone(), ensures: |output| match output {
+        Ok(ref result) => matches!(ToyAlphabet::subterm_cmd_at(result, pos), Maybe::Present(ref held) if held == &expected),
+        Err(CommandSpliceRefusal::OffTerm) => matches!(ToyAlphabet::subterm_cmd_at(cmd, pos), Maybe::Absent(command_subterm::Absent::OffTerm)),
+        Err(CommandSpliceRefusal::NotACommand) => false,
+    })]
     fn splice_cmd_at(
         cmd: &Toy,
         pos: &ToyPos,
@@ -323,7 +377,9 @@ impl AlphabetLie for WithheldConvexity
     ///   wrapper's withholds it, while a match decided through the wrapper is
     ///   the honest one.
     /// - witness: `tests::adversary::the_withheld_convexity_wrapper_withholds_the_warrant_and_keeps_the_match`
+    /// - witness: `tests::adversary::default_answers_and_adversarial_boundaries_stay_distinct`
     #[inline]
+    #[spec(ensures: |output| output == ConvexityDischarge::ReCheckRequired)]
     fn convexity_discharge() -> ConvexityDischarge
     {
         ConvexityDischarge::ReCheckRequired
@@ -355,10 +411,12 @@ impl AlphabetLie for CollidingAddresses
     ///   write one byte stream through the wrapper and two through an honest
     ///   hasher, while the store keeps both cells apart.
     /// - witness: `tests::adversary::the_colliding_addresses_wrapper_hides_the_orientation_and_keeps_the_cell`
+    /// - witness: `tests::adversary::default_answers_and_adversarial_boundaries_stay_distinct`
     #[inline]
+    #[spec(captures: before = state.finish(), ensures: state.finish() == before)]
     fn hash_orientation<H>(
         _orient: ToyOrient,
-        _state: &mut H,
+        state: &mut H,
     ) where
         H: core::hash::Hasher,
     {
@@ -547,9 +605,19 @@ where
     /// - ensures: as `L` answers it.
     /// - fails: as `L` fails it.
     /// - panics: none.
+    /// - executable: none — the arbitrary strategy owns the entire result;
+    ///   checking delegation requires another invocation, which need not be
+    ///   observationally inert.
     ///
     /// # Errors
     /// As `L`'s splice errs.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — honest and non-local strategies expose exact
+    ///   replacement contexts and refusals through the wrapper. Root and nested
+    ///   paths bound the sibling lie; substituting the wrong strategy changes
+    ///   those terms.
+    /// - witness: `tests::adversary::default_answers_and_adversarial_boundaries_stay_distinct`
     #[inline]
     fn splice_cmd_at(
         cmd: &Self::Cmd,

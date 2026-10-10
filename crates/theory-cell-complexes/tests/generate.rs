@@ -4,6 +4,7 @@
 //! Every generator builds the crate's own flat patterns through their public
 //! constructors: no fixture type routes ownership through itself.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CmdPat;
 use gandr_theory_cell_complexes::ConsPat;
 use gandr_theory_cell_complexes::MetaVar;
@@ -38,7 +39,18 @@ pub const RIGHT: Holes = Holes {
 /// Generated producer patterns over `Zero`, `Succ`, `Pair` and `holes`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: generated producer patterns range over nullary Zero, unary Succ,
+///   binary Pair and the supplied producer holes.
+/// - panics: none.
+/// - executable: none — instrumentation gives its wrapper closure this
+///   impl-Trait return type, which Rust rejects for closures.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated instances pass the reconstruction or order law
+///   across leaf and recursive shapes. Wrong sorts and malformed patterns
+///   violate those observations; the strategy itself is an opaque input-domain
+///   description.
+/// - witness: `tests::order::the_path_order_survives_a_uniform_hole_instantiation`
 pub fn prod(holes: Holes) -> impl Strategy<Value = ProdPat>
 {
     let [x, y] = holes.producers;
@@ -59,7 +71,18 @@ pub fn prod(holes: Holes) -> impl Strategy<Value = ProdPat>
 /// Generated consumer patterns over `★`, `Succ⁻`, `add` and `holes`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: generated consumer patterns range over the terminal, unary return
+///   frames, one-argument operations and the supplied holes.
+/// - panics: none.
+/// - executable: none — instrumentation gives its wrapper closure this
+///   impl-Trait return type, which Rust rejects for closures.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated instances pass the reconstruction or order law
+///   across leaf and recursive shapes. Wrong sorts and malformed patterns
+///   violate those observations; the strategy itself is an opaque input-domain
+///   description.
+/// - witness: `tests::generalize::every_member_is_its_generalization_under_its_arms`
 pub fn cons(holes: Holes) -> impl Strategy<Value = ConsPat>
 {
     let [a, b] = holes.consumers;
@@ -89,7 +112,19 @@ pub fn cmd(holes: Holes) -> impl Strategy<Value = CmdPat>
 /// `images`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the two bound names in each category are distinct.
+/// - ensures: each generated map binds every bound hole in its category to an
+///   image over the supplied image-hole sets.
+/// - panics: a generated binding fails only outside the distinct-name domain.
+/// - executable: none — instrumentation gives its wrapper closure the
+///   function's impl-Trait return type, which Rust rejects for closures.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated maps instantiate both categories before match
+///   and generalization reconstruction. Missing bindings or wrong-category
+///   images change those properties; output samples are observed by the
+///   property runner.
+/// - witness: `tests::subst::every_match_reproduces_its_target`
 pub fn instantiation(
     bound: Holes,
     images: Holes,
@@ -119,7 +154,18 @@ pub fn instantiation(
 /// same place.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the two source names in each category are distinct.
+/// - ensures: four bindings, each source hole mapped to the corresponding
+///   target hole without changing category.
+/// - panics: a source collision can refuse a conflicting rebind.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the generated unifier property first renames one side
+///   into a disjoint hole set, then instantiates it and checks both solved
+///   faces. A missing or cross-category binding changes the reconstruction.
+/// - witness: `tests::subst::every_unifier_equates_its_two_sides`
+#[spec(requires: from.producers[0] != from.producers[1] && from.consumers[0] != from.consumers[1],
+    ensures: |output| usize::from(output.len()) == from.producers.len().saturating_add(from.consumers.len()))]
 pub fn renaming(
     from: Holes,
     to: Holes,

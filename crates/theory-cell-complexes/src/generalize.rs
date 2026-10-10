@@ -21,6 +21,7 @@ use alloc::collections::BTreeSet;
 use alloc::format;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::alphabet::Generalization;
@@ -116,6 +117,21 @@ impl<'term> Points<'term>
     /// - ensures: one metavariable per distinct column, of the column's
     ///   category, its name worn by no member and by no other point.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — repeated and distinct disagreement columns share or
+    ///   separate points; producer and consumer differences have different
+    ///   categories. Exact points and reconstruction reject accidental merging,
+    ///   duplicate points and category confusion.
+    /// - witness: `generalize::tests::positions_agreeing_member_by_member_stand_one_point`
+    /// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+    #[spec(
+        captures: [entry_count = self.stood.len(), entry = self.stood.iter().position(|stood| stood.1 == disagreement),
+            category = match disagreement { Disagreement::Prod(_) => crate::pattern::Cat::Producer, Disagreement::Cons(_) => crate::pattern::Cat::Consumer }],
+        ensures: |output| output.cat() == category
+            && self.stood.get(entry.unwrap_or(entry_count)).is_some_and(|stood| stood.0 == output)
+            && self.stood.len() == entry_count.saturating_add(usize::from(entry.is_none())),
+    )]
     fn stand(
         &mut self,
         disagreement: Disagreement<'term>,
@@ -141,6 +157,15 @@ impl<'term> Points<'term>
     /// - panics: none.
     /// - intension: the taken set is finite, so the search ends; a counter held
     ///   in memory never reaches the saturation bound.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — occupied and available generated names distinguish
+    ///   collision skipping from fresh selection. Exact generated names and
+    ///   member reconstruction reject reuse and skipped free names.
+    /// - witness: `generalize::tests::a_point_takes_a_name_no_member_wears`
+    /// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+    #[spec(captures: [names = self.taken.len(), next = self.next],
+        ensures: |output| self.taken.contains(&output) && self.taken.len() == names.saturating_add(1) && self.next > next)]
     fn fresh(&mut self) -> HoleName
     {
         loop {
@@ -160,6 +185,20 @@ impl<'term> Points<'term>
     ///   arms bind it alone to each member's subterm, in family order, with
     ///   that subterm's node count.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — producer and consumer disagreements and repeated
+    ///   tuple components expose exact arms and their reconstructions. Missing
+    ///   members, swapped arms, extra bindings or wrong sizes change those
+    ///   observations.
+    /// - witness: `generalize::tests::a_spine_is_shared_from_the_cut_outward`
+    /// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+    #[spec(captures: count = self.stood.len(), ensures: |output| output.len() == count
+        && output.iter().all(|point| !point.arms.is_empty() && point.arms.iter().all(|arm|
+            usize::from(arm.binding.len()) == 1 && match point.var.cat() {
+                crate::pattern::Cat::Producer => matches!(arm.binding.get_prod(&point.var), Maybe::Present(image) if image.size() == arm.size),
+                crate::pattern::Cat::Consumer => matches!(arm.binding.get_cons(&point.var), Maybe::Present(image) if image.size() == arm.size),
+            })))]
     fn into_points(self) -> Vec<GeneralizationPoint<SequentAlphabet>>
     {
         self.stood
@@ -243,6 +282,14 @@ enum ConsShape<'term>
 /// - ensures: one column per child of `first`, left to right, holding each
 ///   member's child at that index in family order.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — equal-arity shared heads with different children produce
+///   one ordered column per argument. Reconstructed members reject a dropped
+///   argument, reversed column order or a missing family member.
+/// - witness: `generalize::tests::positions_agreeing_member_by_member_stand_one_point`
+/// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+#[spec(captures: members = rest.len(), ensures: |output| output.iter().all(|column| column.rest.len() == members))]
 fn child_columns<'term, I>(
     first: I,
     rest: Vec<I>,
@@ -266,6 +313,15 @@ where
 ///   arity or metavariable; otherwise the shared metavariable or the shared
 ///   constructor with its argument columns.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — matching or differing producer symbols, arities and
+///   metavariables separate shared heads from disagreement. Exact generalized
+///   shapes and arms reject over-generalization or a lost disagreement.
+/// - witness: `generalize::tests::a_shared_constructor_is_kept_above_the_point`
+/// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+#[spec(ensures: |output| matches!(output, ProdShape::Differ)
+    == column.rest.iter().any(|member| member.head() != column.first.head()))]
 fn prod_shape<'term>(column: &Column<ProdRef<'term>>) -> ProdShape<'term>
 {
     let head = column.first.head();
@@ -292,6 +348,21 @@ fn prod_shape<'term>(column: &Column<ProdRef<'term>>) -> ProdShape<'term>
 ///   [`ConsShape::Differ`] otherwise, including when one member's spine ends
 ///   where another's carries a frame.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — terminal, variable, operation and frame spines share only
+///   their common outer prefix. Rebuilt members and exact retained frames
+///   reject sharing past a mismatch or losing a shared frame.
+/// - witness: `generalize::tests::a_spine_is_shared_from_the_cut_outward`
+/// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+#[spec(ensures: |output| matches!(output, ConsShape::Differ) == column.rest.iter().any(|member|
+    match (column.first.view(), member.view()) {
+        (ConsView::Top, ConsView::Top) => false,
+        (ConsView::Meta(left), ConsView::Meta(right)) => left != right,
+        (ConsView::Frame { ctor: left, .. }, ConsView::Frame { ctor: right, .. }) => left != right,
+        (ConsView::Op { op: left, args: left_args, .. }, ConsView::Op { op: right, args: right_args, .. }) => left != right || left_args.len() != right_args.len(),
+        _ => true,
+    }))]
 fn cons_shape<'term>(column: &Column<ConsRef<'term>>) -> ConsShape<'term>
 {
     match column.first.view() {
@@ -398,6 +469,16 @@ enum ProdTask<'term>
 /// - intension: one task per column and one build per shared constructor below
 ///   the root, on a heap worklist; argument columns are visited left to right,
 ///   so points are stood in the members' pre-order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — uniform, shared-constructor and differing producer
+///   columns have exact shapes and arms. Missing constructors, merged
+///   disagreements and lost member images change reconstruction.
+/// - witness: `generalize::tests::a_shared_constructor_is_kept_above_the_point`
+/// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+#[spec(captures: [first = column.first, uniform = column.rest.iter().all(|member| *member == column.first),
+    smallest = column.iter().map(|member| usize::from(member.size())).min().unwrap_or(1)],
+    ensures: |output| usize::from(output.size()) <= smallest && (!uniform || output.to_ref() == first))]
 fn generalize_prod<'term>(
     column: Column<ProdRef<'term>>,
     points: &mut Points<'term>,
@@ -446,6 +527,16 @@ fn generalize_prod<'term>(
 /// - panics: none.
 /// - intension: one step per shared frame; each step strips one frame from
 ///   every member, so the walk ends within the shortest spine.
+///
+/// # Adequacy
+/// - hypothesis: L3 — consumer columns agree through an operation or frame and
+///   then disagree at their ends. Exact prefix and arms reject reversed spines
+///   and premature generalization.
+/// - witness: `generalize::tests::a_spine_is_shared_from_the_cut_outward`
+/// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
+#[spec(captures: [first = column.first, uniform = column.rest.iter().all(|member| *member == column.first),
+    smallest = column.iter().map(|member| usize::from(member.size())).min().unwrap_or(1)],
+    ensures: |output| usize::from(output.size()) <= smallest && (!uniform || output.to_ref() == first))]
 fn generalize_cons<'term>(
     column: Column<ConsRef<'term>>,
     points: &mut Points<'term>,
@@ -521,7 +612,20 @@ fn generalize_cons<'term>(
 /// - witness: `generalize::tests::a_family_without_a_generalization_is_refused_by_name`
 /// - witness: `tests::generalize::every_member_is_its_generalization_under_its_arms`
 /// - witness: `tests::generalize::a_shared_pattern_matches_the_generalization`
+/// - witness: `generalize::tests::shape_disagreements_are_distinguished_in_both_categories`
 #[inline]
+#[spec(ensures: |output| match output {
+    Maybe::Absent(anti_unification::Absent::EmptyFamily) => family.is_empty(),
+    Maybe::Absent(anti_unification::Absent::RaggedFamily) => family.first().is_some_and(|first| family.iter().any(|member| member.len() != first.len())),
+    Maybe::Absent(anti_unification::Absent::Ungeneralizable) => family.first().is_some_and(|first|
+        family.iter().all(|member| member.len() == first.len()) && family.iter().any(|member|
+            member.iter().zip(first.iter()).any(|(left, right)| left.polarity() != right.polarity()))),
+    Maybe::Present(ref generalization) => family.first().is_some_and(|first| generalization.patterns.len() == first.len())
+        && family.iter().all(|member| member.len() == generalization.patterns.len()
+            && member.iter().zip(&generalization.patterns).all(|(term, pattern)| term.polarity() == pattern.polarity()))
+        && generalization.points.iter().all(|point| point.arms.len() == family.len()
+            && family.iter().flat_map(|member| member.iter()).flat_map(CmdPat::metavars).all(|var| var.hole() != point.var.hole())),
+})]
 pub fn anti_unify_cmd(
     family: &[&[CmdPat]]
 ) -> Maybe<Generalization<SequentAlphabet>, anti_unification::Absent>
@@ -576,6 +680,69 @@ mod tests
     use crate::alphabet::CellAlphabet as _;
     use crate::polarity::Polarity;
 
+    #[test]
+    fn shape_disagreements_are_distinguished_in_both_categories()
+    {
+        let zero = ProdPat::ctor("Zero", []);
+        for (left, right) in [
+            (ProdPat::ctor("F", []), ProdPat::ctor("G", [])),
+            (ProdPat::ctor("F", []), ProdPat::ctor("F", [zero.clone()])),
+            (ProdPat::meta("left"), ProdPat::meta("right")),
+        ] {
+            let members = [[cut(left, ConsPat::top())], [cut(right, ConsPat::top())]];
+            let generalization = generalized(&[&members[0], &members[1]]);
+            assert_eq!(
+                alloc::vec![cut(ProdPat::meta("$g$0"), ConsPat::top())],
+                generalization.patterns
+            );
+            assert_eq!(1, generalization.points.len());
+            for (index, member) in members.iter().enumerate() {
+                assert_eq!(member.as_slice(), rebuilt(&generalization, Member(index)));
+            }
+        }
+        for (left, right) in [
+            (ConsPat::top(), ConsPat::meta("alpha")),
+            (ConsPat::meta("alpha"), ConsPat::meta("beta")),
+            (
+                ConsPat::frame("F", ConsPat::top()),
+                ConsPat::frame("G", ConsPat::top()),
+            ),
+            (
+                ConsPat::op("f", [], ConsPat::top()),
+                ConsPat::op("g", [], ConsPat::top()),
+            ),
+            (
+                ConsPat::op("f", [], ConsPat::top()),
+                ConsPat::op("f", [zero.clone()], ConsPat::top()),
+            ),
+            (
+                ConsPat::op("f", [], ConsPat::top()),
+                ConsPat::frame("F", ConsPat::top()),
+            ),
+        ] {
+            let members = [[cut(zero.clone(), left)], [cut(zero.clone(), right)]];
+            let generalization = generalized(&[&members[0], &members[1]]);
+            assert_eq!(
+                alloc::vec![cut(zero.clone(), ConsPat::meta("$g$0"))],
+                generalization.patterns
+            );
+            assert_eq!(1, generalization.points.len());
+            for (index, member) in members.iter().enumerate() {
+                assert_eq!(member.as_slice(), rebuilt(&generalization, Member(index)));
+            }
+        }
+        let uniform = [cut(
+            ProdPat::meta("x"),
+            ConsPat::frame("F", ConsPat::meta("alpha")),
+        )];
+        let generalization = generalized(&[&uniform, &uniform]);
+        assert_eq!(uniform.as_slice(), generalization.patterns.as_slice());
+        assert!(generalization.points.is_empty());
+        let empty = generalized(&[&[], &[]]);
+        assert!(empty.patterns.is_empty());
+        assert!(empty.points.is_empty());
+    }
+
     /// A count of `Succ` constructors.
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug)]
@@ -589,7 +756,16 @@ mod tests
     /// `n` successors of `Zero`.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: a ground producer with one node per successor plus Zero.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one and two successors build a family with one
+    ///   shared constructor and arms of sizes one and two. A missing root,
+    ///   wrong count or retained hole changes the observed generalization and
+    ///   reconstruction.
+    /// - witness: `generalize::tests::a_shared_constructor_is_kept_above_the_point`
+    #[spec(ensures: |output| usize::from(output.size()) == n.0.saturating_add(1) && output.to_ref().metavars().next().is_none())]
     fn numeral(n: Successors) -> ProdPat
     {
         (0 .. n.0).fold(ProdPat::ctor("Zero", []), |inner, _| {
@@ -614,6 +790,14 @@ mod tests
     /// # Specification
     /// - panics: when the family has no generalization, which the calling test
     ///   rules out.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nonempty compatible families used by these witnesses
+    ///   return their component tuple; exact generalized patterns and
+    ///   reconstruction reject discarded components. Invalid fixture families
+    ///   deliberately panic.
+    /// - witness: `generalize::tests::a_tuple_shares_its_points_across_components`
+    #[spec(ensures: |output| family.first().is_some_and(|member| output.patterns.len() == member.len()))]
     fn generalized(family: &[&[CmdPat]]) -> Generalization<SequentAlphabet>
     {
         let Maybe::Present(generalization) = anti_unify_cmd(family)
@@ -628,6 +812,14 @@ mod tests
     ///
     /// # Specification
     /// - panics: when the member index is out of range, a test defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — valid member indices of a two-member tuple family
+    ///   rebuild exact component lists. Swapped arm indices and missing
+    ///   components change the observed member.
+    /// - witness: `generalize::tests::a_tuple_shares_its_points_across_components`
+    #[spec(requires: generalization.points.iter().all(|point| member.0 < point.arms.len()),
+        ensures: |output| output.len() == generalization.patterns.len())]
     fn rebuilt(
         generalization: &Generalization<SequentAlphabet>,
         member: Member,

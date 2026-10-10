@@ -21,8 +21,9 @@
 //! **Membership is location.** Under the [strict root](CorpusRoot::Strict) an
 //! `owes` or `refuses` attribute is itself the refusal
 //! [`ExpectationOutsideFixtureRoot`](CorpusRefusal::ExpectationOutsideFixtureRoot),
-//! and every declaration is held to *checks, owing nothing* whatever it
-//! states, so a red declaration cannot describe itself green. Under the
+//! and a declaration must check owing nothing; an admitted `runs` additionally
+//! requires its stated run outcome. A red declaration cannot describe itself
+//! green. Under the
 //! [fixture root](CorpusRoot::Fixture) the four schemas assert what the
 //! checker refuses, what it owes and what a run produces.
 //!

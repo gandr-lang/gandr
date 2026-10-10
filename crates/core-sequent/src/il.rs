@@ -38,6 +38,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
@@ -47,6 +48,7 @@ use gandr_kernel_term::Side;
 use gandr_theory_cell_complexes::Polarity;
 
 use crate::boundary::ConsumerArity;
+use crate::boundary::FamilyAddress as _;
 use crate::boundary::NodeCount;
 use crate::boundary::ProducerArity;
 use crate::boundary::address_wrapper;
@@ -106,10 +108,18 @@ impl ConstructorTag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every head is pinned to its exact count.
+    /// - hypothesis: L3 — all constructor and destructor heads are observed by
+    ///   exact arity and polarity. Replaced counts, swapped heads and polarity
+    ///   inversions are distinguished; level payloads do not affect arity and
+    ///   the witness uses level zero.
     /// - witness: `il::tests::tag_arities_are_stable`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| match *self {
+        | Self::Unit => matches!(ret, ProducerArity::ZERO),
+        | Self::Pair => matches!(ret, ProducerArity::TWO),
+        | Self::Injection(_) | Self::Lift(_) => matches!(ret, ProducerArity::ONE),
+    })]
     pub const fn producer_arity(&self) -> ProducerArity
     {
         match *self {
@@ -130,10 +140,14 @@ impl ConstructorTag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every head is pinned to its exact count.
+    /// - hypothesis: L3 — all constructor and destructor heads are observed by
+    ///   exact arity and polarity. Replaced counts, swapped heads and polarity
+    ///   inversions are distinguished; level payloads do not affect arity and
+    ///   the witness uses level zero.
     /// - witness: `il::tests::tag_consumer_arities_are_declared`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| matches!(ret, ConsumerArity::ZERO))]
     pub const fn consumer_arity(&self) -> ConsumerArity
     {
         match *self {
@@ -168,10 +182,16 @@ impl DestructorTag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every head is pinned to its exact count.
+    /// - hypothesis: L3 — all constructor and destructor heads are observed by
+    ///   exact arity and polarity. Replaced counts, swapped heads and polarity
+    ///   inversions are distinguished; level payloads do not affect arity and
+    ///   the witness uses level zero.
     /// - witness: `il::tests::tag_arities_are_stable`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| matches!((self, ret),
+        (Self::Apply, ProducerArity::ONE) | (Self::Force, ProducerArity::ZERO)
+    ))]
     pub const fn producer_arity(self) -> ProducerArity
     {
         match self {
@@ -191,10 +211,14 @@ impl DestructorTag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every head is pinned to its exact count.
+    /// - hypothesis: L3 — all constructor and destructor heads are observed by
+    ///   exact arity and polarity. Replaced counts, swapped heads and polarity
+    ///   inversions are distinguished; level payloads do not affect arity and
+    ///   the witness uses level zero.
     /// - witness: `il::tests::tag_consumer_arities_are_declared`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| matches!(ret, ConsumerArity::ONE))]
     pub const fn consumer_arity(self) -> ConsumerArity
     {
         match self {
@@ -212,10 +236,16 @@ impl DestructorTag
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — both heads are pinned.
+    /// - hypothesis: L3 — all constructor and destructor heads are observed by
+    ///   exact arity and polarity. Replaced counts, swapped heads and polarity
+    ///   inversions are distinguished; level payloads do not affect arity and
+    ///   the witness uses level zero.
     /// - witness: `il::tests::tag_arities_are_stable`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| matches!((self, ret),
+        (Self::Apply, Polarity::Negative) | (Self::Force, Polarity::Positive)
+    ))]
     pub const fn polarity(self) -> Polarity
     {
         match self {
@@ -477,11 +507,19 @@ impl CommandArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a mark below the current lengths and a lookup of a
-    ///   dropped address, asserted absent, separate the truncation from a
-    ///   no-op.
+    /// - hypothesis: L3 — distinct populations and two successive marks
+    ///   distinguish a skipped family, an off-by-one truncation and growth to a
+    ///   future mark. Reads of retained and dropped nodes observe both
+    ///   preservation and removal; an empty mark closes the lower boundary.
     /// - witness: `il::tests::truncation_drops_exactly_the_later_nodes`
+    /// - witness: `il::tests::truncation_keeps_future_marks_and_drops_each_family`
     #[inline]
+    #[spec(
+        captures: [entry = self.watermark()],
+        ensures: self.producers.len() == usize::from(watermark.producers).min(usize::from(entry.producers))
+            && self.consumers.len() == usize::from(watermark.consumers).min(usize::from(entry.consumers))
+            && self.commands.len() == usize::from(watermark.commands).min(usize::from(entry.commands)),
+    )]
     pub fn truncate_to(
         &mut self,
         watermark: SequentWatermark,
@@ -501,8 +539,21 @@ impl CommandArena
     ///   reason, a dangling address.
     /// - fails: `None` on a dangling address.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact producer nodes at the first and last live
+    ///   offsets, the first missing offset and truncation distinguish shifted
+    ///   lookup, a wrong family and stale membership.
+    /// - witness: `il::tests::lookup_boundaries_follow_each_family`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| match ret {
+        | Some(node) => usize::try_from(u32::from(id)).ok()
+            .and_then(|offset| self.producers.get(offset))
+            .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(node))),
+        | None => usize::try_from(u32::from(id))
+            .map_or(true, |offset| offset >= self.producers.len()),
+    })]
     pub fn producer(
         &self,
         id: ProducerId,
@@ -519,8 +570,21 @@ impl CommandArena
     /// - provides: the read side of the consumer family.
     /// - fails: `None` on a dangling address.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact consumer nodes at the first and last live
+    ///   offsets, the first missing offset and truncation distinguish shifted
+    ///   lookup, a wrong family and stale membership.
+    /// - witness: `il::tests::lookup_boundaries_follow_each_family`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| match ret {
+        | Some(node) => usize::try_from(u32::from(id)).ok()
+            .and_then(|offset| self.consumers.get(offset))
+            .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(node))),
+        | None => usize::try_from(u32::from(id))
+            .map_or(true, |offset| offset >= self.consumers.len()),
+    })]
     pub fn consumer(
         &self,
         id: ConsumerId,
@@ -537,8 +601,21 @@ impl CommandArena
     /// - provides: the read side of the command family.
     /// - fails: `None` on a dangling address.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact command nodes at the first and last live
+    ///   offsets, the first missing offset and truncation distinguish shifted
+    ///   lookup, a wrong family and stale membership.
+    /// - witness: `il::tests::lookup_boundaries_follow_each_family`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| match ret {
+        | Some(node) => usize::try_from(u32::from(id)).ok()
+            .and_then(|offset| self.commands.get(offset))
+            .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(node))),
+        | None => usize::try_from(u32::from(id))
+            .map_or(true, |offset| offset >= self.commands.len()),
+    })]
     pub fn command(
         &self,
         id: CommandId,
@@ -598,12 +675,27 @@ impl CommandArena
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a node over resolving children and a node over a
-    ///   dangling child separate the two outcomes, the refusal asserted by
-    ///   variant and the population asserted unchanged.
+    /// - hypothesis: L3 — every node form is minted over live children and
+    ///   refused at a dangling child, observing the exact refusal and unchanged
+    ///   watermark. Multiple bad children distinguish field-order precedence.
+    ///   The shared address helper covers the excluded ceiling using zero-sized
+    ///   slices; the arena tests do not allocate a ceiling-sized node family.
     /// - witness: `il::tests::arena_allocates_and_reads_back`
     /// - witness: `il::tests::minting_refuses_a_dangling_child`
+    /// - witness: `il::tests::every_node_form_checks_its_child_families`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
+    #[spec(
+        captures: [entry = self.watermark()],
+        ensures: |ret| match ret {
+            | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.producers))
+                && usize::from(entry.producers).checked_add(1) == Some(self.producers.len())
+                && self.consumer_count() == entry.consumers
+                && self.command_count() == entry.commands,
+            | Err(_) => self.watermark() == entry,
+        },
+    )]
     pub fn mint_producer(
         &mut self,
         node: ProducerNode,
@@ -630,10 +722,26 @@ impl CommandArena
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_producer`].
+    /// - hypothesis: L3 — live and dangling children of every node form
+    ///   distinguish omitted validation, reordered failures and partial appends
+    ///   by exact node, refusal and watermark. The shared helper witnesses the
+    ///   address ceiling; a full-sized arena is outside the test domain.
     /// - witness: `il::tests::arena_allocates_and_reads_back`
     /// - witness: `il::tests::minting_refuses_a_dangling_child`
+    /// - witness: `il::tests::every_node_form_checks_its_child_families`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
+    #[spec(
+        captures: [entry = self.watermark()],
+        ensures: |ret| match ret {
+            | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.consumers))
+                && usize::from(entry.consumers).checked_add(1) == Some(self.consumers.len())
+                && self.producer_count() == entry.producers
+                && self.command_count() == entry.commands,
+            | Err(_) => self.watermark() == entry,
+        },
+    )]
     pub fn mint_consumer(
         &mut self,
         node: ConsumerNode,
@@ -660,10 +768,26 @@ impl CommandArena
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`Self::mint_producer`].
+    /// - hypothesis: L3 — live and dangling children of every node form
+    ///   distinguish omitted validation, reordered failures and partial appends
+    ///   by exact node, refusal and watermark. The shared helper witnesses the
+    ///   address ceiling; a full-sized arena is outside the test domain.
     /// - witness: `il::tests::arena_allocates_and_reads_back`
     /// - witness: `il::tests::minting_refuses_a_dangling_child`
+    /// - witness: `il::tests::every_node_form_checks_its_child_families`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
+    /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
+    #[spec(
+        captures: [entry = self.watermark()],
+        ensures: |ret| match ret {
+            | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.commands))
+                && usize::from(entry.commands).checked_add(1) == Some(self.commands.len())
+                && self.producer_count() == entry.producers
+                && self.consumer_count() == entry.consumers,
+            | Err(_) => self.watermark() == entry,
+        },
+    )]
     pub fn mint_command(
         &mut self,
         node: CommandNode,
@@ -691,7 +815,21 @@ impl CommandArena
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — cuts with live and missing children observe polarity,
+    ///   both endpoints and exact producer-before-consumer refusal. The
+    ///   watermark distinguishes refusal from a partial append.
+    /// - witness: `il::tests::arena_allocates_and_reads_back`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
     #[inline]
+    #[spec(
+        captures: [entry = self.watermark()],
+        ensures: |ret| match ret {
+            | Ok(id) => self.command(id) == Some(&CommandNode::Cut { polarity, producer, consumer }),
+            | Err(_) => self.watermark() == entry,
+        },
+    )]
     pub fn mint_cut(
         &mut self,
         polarity: Polarity,
@@ -717,6 +855,17 @@ impl CommandArena
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the exact last live and first missing producer
+    ///   addresses distinguish wrong-family lookup and endpoint acceptance. The
+    ///   refusal must retain the missing address.
+    /// - witness: `il::tests::every_node_form_checks_its_child_families`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
+    #[spec(ensures: |ret| match ret {
+        | Ok(()) => self.producer(id).is_some(),
+        | Err(error) => error == MintRefusal::DanglingProducer(id) && self.producer(id).is_none(),
+    })]
     fn producer_resolves(
         &self,
         id: ProducerId,
@@ -738,6 +887,17 @@ impl CommandArena
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the exact last live and first missing consumer
+    ///   addresses distinguish wrong-family lookup and endpoint acceptance. The
+    ///   refusal must retain the missing address.
+    /// - witness: `il::tests::every_node_form_checks_its_child_families`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
+    #[spec(ensures: |ret| match ret {
+        | Ok(()) => self.consumer(id).is_some(),
+        | Err(error) => error == MintRefusal::DanglingConsumer(id) && self.consumer(id).is_none(),
+    })]
     fn consumer_resolves(
         &self,
         id: ConsumerId,
@@ -759,6 +919,17 @@ impl CommandArena
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the exact last live and first missing command
+    ///   addresses distinguish wrong-family lookup and endpoint acceptance. The
+    ///   refusal must retain the missing address.
+    /// - witness: `il::tests::every_node_form_checks_its_child_families`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
+    #[spec(ensures: |ret| match ret {
+        | Ok(()) => self.command(id).is_some(),
+        | Err(error) => error == MintRefusal::DanglingCommand(id) && self.command(id).is_none(),
+    })]
     fn command_resolves(
         &self,
         id: CommandId,
@@ -780,6 +951,21 @@ impl CommandArena
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each producer form is supplied live children and one
+    ///   dangling child per referenced family. Exact errors and multiple
+    ///   missing children expose omitted arms and changed failure precedence.
+    /// - witness: `il::tests::every_node_form_checks_its_child_families`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
+    #[spec(ensures: |ref ret| ret.is_ok() == match *node {
+        | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => true,
+        | ProducerNode::Constructor { ref producers, ref consumers, .. } =>
+            producers.iter().all(|id| self.producer(*id).is_some())
+                && consumers.iter().all(|id| self.consumer(*id).is_some()),
+        | ProducerNode::Thunk { body } | ProducerNode::Mu { body } => self.command(body).is_some(),
+        | ProducerNode::Cocase { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
+    })]
     fn producer_children_resolve(
         &self,
         node: &ProducerNode,
@@ -817,6 +1003,21 @@ impl CommandArena
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each consumer form is supplied live children and one
+    ///   dangling child per referenced family. Exact errors and multiple
+    ///   missing children expose omitted arms and changed failure precedence.
+    /// - witness: `il::tests::every_node_form_checks_its_child_families`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
+    #[spec(ensures: |ref ret| ret.is_ok() == match *node {
+        | ConsumerNode::Covariable(_) | ConsumerNode::Top => true,
+        | ConsumerNode::MuTilde { body } => self.command(body).is_some(),
+        | ConsumerNode::Destructor { ref producers, ref consumers, .. } =>
+            producers.iter().all(|id| self.producer(*id).is_some())
+                && consumers.iter().all(|id| self.consumer(*id).is_some()),
+        | ConsumerNode::Case { ref arms } => arms.iter().all(|arm| self.command(arm.body).is_some()),
+    })]
     fn consumer_children_resolve(
         &self,
         node: &ConsumerNode,
@@ -851,6 +1052,20 @@ impl CommandArena
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty lists, each dangling family and several bad
+    ///   addresses distinguish omitted validation, wrong payloads and failure
+    ///   precedence. The observer is the exact first refusal.
+    /// - witness: `il::tests::every_node_form_checks_its_child_families`
+    /// - witness: `il::tests::the_first_dangling_child_wins`
+    #[spec(ensures: |ref ret| *ret == producers.iter()
+        .find(|id| self.producer(**id).is_none())
+        .map(|id| MintRefusal::DanglingProducer(*id))
+        .or_else(|| consumers.iter().find(|id| self.consumer(**id).is_none())
+            .map(|id| MintRefusal::DanglingConsumer(*id)))
+        .map_or(Ok(()), Err)
+    )]
     fn children_resolve(
         &self,
         producers: &[ProducerId],
@@ -948,6 +1163,7 @@ mod tests
             ConstructorTag::Unit,
             ConstructorTag::Pair,
             ConstructorTag::Injection(Side::Left),
+            ConstructorTag::Injection(Side::Right),
             ConstructorTag::Lift(Level::zero()),
         ] {
             assert_eq!(
@@ -1077,5 +1293,267 @@ mod tests
             arena.consumer(kept),
             "the earlier node is kept"
         );
+    }
+
+    /// Each family's offsets select its own exact nodes, including empty and
+    /// end boundaries.
+    #[test]
+    fn lookup_boundaries_follow_each_family()
+    {
+        let mut arena = CommandArena::new();
+        assert_eq!(None, arena.producer(ProducerId::from(0_u32)));
+        assert_eq!(None, arena.consumer(ConsumerId::from(0_u32)));
+        assert_eq!(None, arena.command(CommandId::from(0_u32)));
+        let first = arena
+            .mint_producer(ProducerNode::Constant(0_usize.into()))
+            .expect("leaf");
+        let last = arena
+            .mint_producer(ProducerNode::Constant(7_usize.into()))
+            .expect("leaf");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let covariable = ConsumerNode::Covariable(CovariableIndex::from(3_u32));
+        let back = arena.mint_consumer(covariable.clone()).expect("leaf");
+        let first_cut = CommandNode::Cut {
+            polarity: Polarity::Positive,
+            producer: first,
+            consumer: top,
+        };
+        let last_cut = CommandNode::Cut {
+            polarity: Polarity::Negative,
+            producer: last,
+            consumer: back,
+        };
+        let before = arena.mint_command(first_cut).expect("live children");
+        let after = arena.mint_command(last_cut).expect("live children");
+        assert_eq!(
+            Some(&ProducerNode::Constant(0_usize.into())),
+            arena.producer(first)
+        );
+        assert_eq!(
+            Some(&ProducerNode::Constant(7_usize.into())),
+            arena.producer(last)
+        );
+        assert_eq!(Some(&ConsumerNode::Top), arena.consumer(top));
+        assert_eq!(Some(&covariable), arena.consumer(back));
+        assert_eq!(Some(&first_cut), arena.command(before));
+        assert_eq!(Some(&last_cut), arena.command(after));
+        assert_eq!(None, arena.producer(ProducerId::from(2_u32)));
+        assert_eq!(None, arena.consumer(ConsumerId::from(2_u32)));
+        assert_eq!(None, arena.command(CommandId::from(2_u32)));
+    }
+
+    /// Future marks never grow truncated families, and the empty mark clears
+    /// all three.
+    #[test]
+    fn truncation_keeps_future_marks_and_drops_each_family()
+    {
+        let mut arena = CommandArena::new();
+        let empty = arena.watermark();
+        let kept = arena
+            .mint_producer(ProducerNode::Constant(0_usize.into()))
+            .expect("leaf");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let cut = arena
+            .mint_cut(Polarity::Positive, kept, top)
+            .expect("live children");
+        let mark = arena.watermark();
+        let later = arena
+            .mint_producer(ProducerNode::Constant(1_usize.into()))
+            .expect("leaf");
+        let back = arena
+            .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+            .expect("leaf");
+        let dropped = arena
+            .mint_cut(Polarity::Negative, later, back)
+            .expect("live children");
+        arena
+            .mint_producer(ProducerNode::Constant(2_usize.into()))
+            .expect("leaf");
+        let future = arena.watermark();
+        arena.truncate_to(mark);
+        assert_eq!(mark, arena.watermark());
+        assert_eq!(None, arena.producer(later));
+        assert_eq!(None, arena.consumer(back));
+        assert_eq!(None, arena.command(dropped));
+        arena.truncate_to(future);
+        assert_eq!(mark, arena.watermark());
+        assert_eq!(
+            Some(&ProducerNode::Constant(0_usize.into())),
+            arena.producer(kept)
+        );
+        assert_eq!(Some(&ConsumerNode::Top), arena.consumer(top));
+        assert_eq!(
+            Some(&CommandNode::Cut {
+                polarity: Polarity::Positive,
+                producer: kept,
+                consumer: top
+            }),
+            arena.command(cut)
+        );
+        arena.truncate_to(empty);
+        assert_eq!(empty, arena.watermark());
+        assert_eq!(None, arena.producer(kept));
+        assert_eq!(None, arena.consumer(top));
+        assert_eq!(None, arena.command(cut));
+    }
+
+    /// Every node form checks its distinct child positions before appending.
+    #[test]
+    fn every_node_form_checks_its_child_families()
+    {
+        let mut arena = CommandArena::new();
+        let leaf = arena
+            .mint_producer(ProducerNode::Constant(0_usize.into()))
+            .expect("leaf");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let body = arena
+            .mint_cut(Polarity::Positive, leaf, top)
+            .expect("live children");
+        for node in [
+            ProducerNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: DeBruijnIndex::from(0_u32),
+            },
+            ProducerNode::Constant(1_usize.into()),
+            ProducerNode::Literal(integer(Digits("17"))),
+            ProducerNode::Constructor {
+                tag: ConstructorTag::Pair,
+                producers: Box::from([leaf]),
+                consumers: Box::from([top]),
+            },
+            ProducerNode::Thunk { body },
+            ProducerNode::Mu { body },
+            ProducerNode::Cocase {
+                arms: Box::from([CopatternArm {
+                    destructor: DestructorTag::Apply,
+                    body,
+                }]),
+            },
+        ] {
+            let id = arena
+                .mint_producer(node.clone())
+                .expect("all references live");
+            assert_eq!(Some(&node), arena.producer(id));
+        }
+        for node in [
+            ConsumerNode::Top,
+            ConsumerNode::Covariable(CovariableIndex::from(4_u32)),
+            ConsumerNode::MuTilde { body },
+            ConsumerNode::Destructor {
+                tag: DestructorTag::Apply,
+                producers: Box::from([leaf]),
+                consumers: Box::from([top]),
+            },
+            ConsumerNode::Case {
+                arms: Box::from([PatternArm {
+                    constructor: ConstructorTag::Unit,
+                    body,
+                }]),
+            },
+        ] {
+            let id = arena
+                .mint_consumer(node.clone())
+                .expect("all references live");
+            assert_eq!(Some(&node), arena.consumer(id));
+        }
+        let missing = CommandId::from(1_u32);
+        let entry = arena.watermark();
+        for node in [
+            ProducerNode::Thunk { body: missing },
+            ProducerNode::Mu { body: missing },
+            ProducerNode::Cocase {
+                arms: Box::from([
+                    CopatternArm {
+                        destructor: DestructorTag::Apply,
+                        body,
+                    },
+                    CopatternArm {
+                        destructor: DestructorTag::Force,
+                        body: missing,
+                    },
+                ]),
+            },
+        ] {
+            assert_eq!(
+                Err(MintRefusal::DanglingCommand(missing)),
+                arena.mint_producer(node)
+            );
+            assert_eq!(entry, arena.watermark());
+        }
+        for node in [
+            ConsumerNode::MuTilde { body: missing },
+            ConsumerNode::Case {
+                arms: Box::from([
+                    PatternArm {
+                        constructor: ConstructorTag::Unit,
+                        body,
+                    },
+                    PatternArm {
+                        constructor: ConstructorTag::Pair,
+                        body: missing,
+                    },
+                ]),
+            },
+        ] {
+            assert_eq!(
+                Err(MintRefusal::DanglingCommand(missing)),
+                arena.mint_consumer(node)
+            );
+            assert_eq!(entry, arena.watermark());
+        }
+    }
+
+    /// Missing producer fields precede consumer fields, and each list keeps
+    /// field order.
+    #[test]
+    fn the_first_dangling_child_wins()
+    {
+        let mut arena = CommandArena::new();
+        let leaf = arena
+            .mint_producer(ProducerNode::Constant(0_usize.into()))
+            .expect("leaf");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let missing_producer = ProducerId::from(1_u32);
+        let missing_consumer = ConsumerId::from(1_u32);
+        let entry = arena.watermark();
+        for (producers, consumers, expected) in [
+            (
+                &[leaf, missing_producer, ProducerId::from(2_u32)][..],
+                &[missing_consumer][..],
+                MintRefusal::DanglingProducer(missing_producer),
+            ),
+            (
+                &[leaf][..],
+                &[top, missing_consumer, ConsumerId::from(2_u32)][..],
+                MintRefusal::DanglingConsumer(missing_consumer),
+            ),
+        ] {
+            assert_eq!(
+                Err(expected),
+                arena.mint_producer(ProducerNode::Constructor {
+                    tag: ConstructorTag::Pair,
+                    producers: Box::from(producers),
+                    consumers: Box::from(consumers),
+                })
+            );
+            assert_eq!(
+                Err(expected),
+                arena.mint_consumer(ConsumerNode::Destructor {
+                    tag: DestructorTag::Apply,
+                    producers: Box::from(producers),
+                    consumers: Box::from(consumers),
+                })
+            );
+            assert_eq!(entry, arena.watermark());
+        }
+        assert_eq!(
+            Err(MintRefusal::DanglingProducer(missing_producer)),
+            arena.mint_cut(Polarity::Positive, missing_producer, missing_consumer)
+        );
+        assert_eq!(
+            Err(MintRefusal::DanglingConsumer(missing_consumer)),
+            arena.mint_cut(Polarity::Negative, leaf, missing_consumer)
+        );
+        assert_eq!(entry, arena.watermark());
     }
 }

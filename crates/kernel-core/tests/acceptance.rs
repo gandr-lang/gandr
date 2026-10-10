@@ -1,3 +1,14 @@
+// Specification backfill pending (gandr-lang/gandr#9): the executable-
+// specification lints are allowed until this crate's own backfill lands.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        spec_attribute_present,
+        adequacy_present,
+        maybe_shape,
+        erased_error_signature
+    )
+)]
 //! The kernel's acceptance suite: the collapse law, anti-vacuity on both sides,
 //! edit locality, the memoized-against-memoless differential, and the
 //! poisoned-entry cases that prove the differential bites.

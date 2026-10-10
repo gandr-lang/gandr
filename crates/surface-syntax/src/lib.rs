@@ -66,3 +66,39 @@ pub use crate::tree::NodeCount;
 pub use crate::tree::NodeIndex;
 pub use crate::tree::NodeIndices;
 pub use crate::tree::SyntaxTree;
+
+/// Equality observed without invoking a non-const trait method.
+///
+/// # Specification
+/// trivial.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ConstEquality
+{
+    /// Both represented values agree.
+    Equal,
+    /// The represented values differ.
+    Unequal,
+}
+
+#[cfg(test)]
+mod test_support
+{
+    /// A formatter destination that rejects every write.
+    pub struct RefusingSink;
+
+    impl core::fmt::Write for RefusingSink
+    {
+        /// Refuse the supplied fragment.
+        ///
+        /// # Specification
+        /// trivial.
+        #[inline]
+        fn write_str(
+            &mut self,
+            _text: &str,
+        ) -> core::fmt::Result
+        {
+            Err(core::fmt::Error)
+        }
+    }
+}

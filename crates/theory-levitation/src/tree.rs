@@ -13,6 +13,7 @@
 use alloc::vec::Vec;
 use core::iter;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 quenchant_shape::reason_enum! {
@@ -75,6 +76,14 @@ impl Extent
     ///   `usize::MAX`. A count of nodes held in memory never reaches that
     ///   bound, so every sum the crate forms is exact.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact results at zero, below the ceiling, at the
+    ///   ceiling and beyond it distinguish wrapping, truncation and an early
+    ///   saturation boundary on representable extent pairs, in both const
+    ///   evaluation and runtime calls.
+    /// - witness: `tree::tests::extent_addition_saturates_at_usize_boundary`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(rhs.0))]
     #[inline]
     const fn saturating_add(
         self,
@@ -158,7 +167,20 @@ impl<H> Tree<H>
     ///   `children` in order; the last child's table is reused as the new
     ///   table's buffer, so wrapping one child costs one appended node.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one and two children, including asymmetric
+    ///   nesting, are observed through exact child and preorder sequences;
+    ///   reversal, omission and incorrect subtree extents change those reads.
+    /// - witness: `tree::tests::tree_children_and_preorder_preserve_asymmetric_structure`
     #[inline]
+    #[spec(
+        captures: descendants = children.iter().fold(0_usize, |count, child| {
+            count.saturating_add(child.below.len()).saturating_add(1)
+        }),
+        ensures: |ref tree| tree.below.len() == descendants
+            && tree.root.extent.0 == descendants.saturating_add(1),
+    )]
     pub(crate) fn node(
         head: H,
         children: Vec<Self>,
@@ -250,7 +272,16 @@ where
     ///   equal entry for entry, which for canonical tables is structural
     ///   equality.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal separately built subtrees, changed roots,
+    ///   changed descendants and swapped children distinguish omitted fields
+    ///   and head-only comparison by the equality verdict.
+    /// - witness: `tree::tests::subtree_equality_observes_heads_and_descendants`
     #[inline]
+    #[spec(ensures: |equal| equal == (self.root == other.root
+        && self.below.len() == other.below.len()
+        && self.below.iter().zip(other.below).all(|(left, right)| left == right)))]
     fn eq(
         &self,
         other: &Self,
@@ -292,6 +323,15 @@ impl<'tree, H> TreeRef<'tree, H>
     /// - ensures: one item per node, in pre-order: the root, then each child's
     ///   subtree in pre-order, left to right; so leaves are met left to right.
     /// - panics: none.
+    /// - executable: none — the returned opaque iterator has no non-consuming
+    ///   sequence observer; the backend also copies its opaque return type into
+    ///   a closure signature, where Rust rejects it.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an asymmetric tree and a leaf are collected into
+    ///   exact head sequences, separating reversal, omission and a misplaced
+    ///   root while preserving left-to-right leaf order.
+    /// - witness: `tree::tests::tree_children_and_preorder_preserve_asymmetric_structure`
     #[inline]
     pub(crate) fn preorder(self) -> impl Iterator<Item = &'tree H>
     {
@@ -343,7 +383,15 @@ where
     /// - panics: none.
     /// - intension: one output table; the pending child extents are a stack,
     ///   claimed by their parent as it is reached.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — root and nested leaves with present and absent images
+    ///   are observed as exact child/preorder sequences. Images that themselves
+    ///   contain replaceable leaves separate one-pass insertion from repeated
+    ///   substitution; unequal arities expose stale extents.
+    /// - witness: `tree::tests::leaf_images_are_inserted_once_and_keep_unanswered_leaves`
     #[inline]
+    #[spec(ensures: |ref tree| tree.root.extent.0 == tree.below.len().saturating_add(1))]
     pub(crate) fn replace_leaves<'image, I>(
         self,
         mut image: I,
@@ -438,7 +486,22 @@ impl<'tree, H> Iterator for Children<'tree, H>
     ///   `extent` nodes ending there. A range shorter than the extents it
     ///   records ends the iteration.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one and two children pin order and exhaustion;
+    ///   zero and oversized extents pin malformed-range refusal. Exact heads,
+    ///   subtree sizes and remaining counts expose skip or decrement faults.
+    /// - witness: `tree::tests::tree_children_and_preorder_preserve_asymmetric_structure`
+    /// - witness: `tree::tests::child_cursor_declines_malformed_extents`
     #[inline]
+    #[spec(
+        captures: remaining = self.remaining.0,
+        ensures: |ref child| match *child {
+            | Some(child) => self.remaining.0.checked_add(1) == Some(remaining)
+                && child.root.extent.0 == child.below.len().saturating_add(1),
+            | None => self.remaining.0 == remaining,
+        },
+    )]
     fn next(&mut self) -> Option<Self::Item>
     {
         if self.remaining.0 == 0 {
@@ -466,4 +529,240 @@ impl<'tree, H> Iterator for Children<'tree, H>
 
 impl<H> ExactSizeIterator for Children<'_, H>
 {
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec;
+
+    use super::*;
+
+    /// A labelled test head with an explicit child count.
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    struct TestHead
+    {
+        /// The semantic label observed by a traversal.
+        label: u8,
+        /// The number of immediate children.
+        arity: ArgumentCount,
+    }
+
+    impl Head for TestHead
+    {
+        /// The declared child count.
+        ///
+        /// # Specification
+        /// trivial.
+        fn arity(&self) -> ArgumentCount
+        {
+            self.arity
+        }
+    }
+
+    #[test]
+    fn extent_addition_saturates_at_usize_boundary()
+    {
+        const EXACT: Extent = Extent(3).saturating_add(Extent(4));
+        const CAPPED: Extent = Extent(usize::MAX).saturating_add(Extent::ONE);
+        assert_eq!(EXACT, Extent(7));
+        assert_eq!(CAPPED, Extent(usize::MAX));
+        for (left, right, expected) in [
+            (0, 0, 0),
+            (3, 4, 7),
+            (usize::MAX.saturating_sub(1), 1, usize::MAX),
+            (usize::MAX.saturating_sub(1), 2, usize::MAX),
+            (usize::MAX, usize::MAX, usize::MAX),
+        ] {
+            assert_eq!(Extent(left).saturating_add(Extent(right)), Extent(expected));
+        }
+    }
+
+    #[test]
+    fn tree_children_and_preorder_preserve_asymmetric_structure()
+    {
+        let leaf = Tree::leaf(TestHead {
+            label: 1,
+            arity: ArgumentCount(0),
+        });
+        let nullary = Tree::node(
+            TestHead {
+                label: 2,
+                arity: ArgumentCount(0),
+            },
+            vec![],
+        );
+        let unary = Tree::node(
+            TestHead {
+                label: 3,
+                arity: ArgumentCount(1),
+            },
+            vec![leaf.clone()],
+        );
+        let tree = Tree::node(
+            TestHead {
+                label: 4,
+                arity: ArgumentCount(2),
+            },
+            vec![unary.clone(), nullary.clone()],
+        );
+        assert_eq!(
+            leaf.to_ref()
+                .preorder()
+                .map(|head| head.label)
+                .collect::<Vec<_>>(),
+            [1]
+        );
+        assert_eq!(nullary.to_ref().children().next(), None);
+        assert_eq!(unary.to_ref().size(), Extent(2));
+        assert_eq!(tree.to_ref().size(), Extent(4));
+        assert_eq!(
+            tree.to_ref()
+                .preorder()
+                .map(|head| head.label)
+                .collect::<Vec<_>>(),
+            [4, 3, 1, 2]
+        );
+        let mut children = tree.to_ref().children();
+        assert_eq!(children.len(), 2);
+        assert_eq!(children.next(), Some(unary.to_ref()));
+        assert_eq!(children.len(), 1);
+        assert_eq!(children.next(), Some(nullary.to_ref()));
+        assert_eq!(children.len(), 0);
+        assert_eq!(children.next(), None);
+        assert_eq!(children.next(), None);
+    }
+
+    #[test]
+    fn subtree_equality_observes_heads_and_descendants()
+    {
+        let left = Tree::leaf(TestHead {
+            label: 1,
+            arity: ArgumentCount(0),
+        });
+        let right = Tree::leaf(TestHead {
+            label: 2,
+            arity: ArgumentCount(0),
+        });
+        let tree = Tree::node(
+            TestHead {
+                label: 3,
+                arity: ArgumentCount(2),
+            },
+            vec![left.clone(), right.clone()],
+        );
+        let equal = tree.clone();
+        let swapped = Tree::node(
+            TestHead {
+                label: 3,
+                arity: ArgumentCount(2),
+            },
+            vec![right.clone(), left.clone()],
+        );
+        let changed_root = Tree::node(
+            TestHead {
+                label: 4,
+                arity: ArgumentCount(2),
+            },
+            vec![left.clone(), right],
+        );
+        let shortened = Tree::node(
+            TestHead {
+                label: 3,
+                arity: ArgumentCount(1),
+            },
+            vec![left],
+        );
+        assert_eq!(tree.to_ref(), equal.to_ref());
+        assert_ne!(tree.to_ref(), swapped.to_ref());
+        assert_ne!(tree.to_ref(), changed_root.to_ref());
+        assert_ne!(tree.to_ref(), shortened.to_ref());
+    }
+
+    #[test]
+    fn leaf_images_are_inserted_once_and_keep_unanswered_leaves()
+    {
+        let leaf = Tree::leaf(TestHead {
+            label: 1,
+            arity: ArgumentCount(0),
+        });
+        let kept = Tree::leaf(TestHead {
+            label: 2,
+            arity: ArgumentCount(0),
+        });
+        let image = Tree::node(
+            TestHead {
+                label: 3,
+                arity: ArgumentCount(2),
+            },
+            vec![leaf.clone(), kept.clone()],
+        );
+        let tree = Tree::node(
+            TestHead {
+                label: 4,
+                arity: ArgumentCount(2),
+            },
+            vec![leaf.clone(), kept.clone()],
+        );
+        let mut visits = Vec::new();
+        let rebuilt = tree.to_ref().replace_leaves(|head| {
+            visits.push(head.label);
+            if head.label == 1 {
+                Maybe::Present(image.to_ref())
+            }
+            else {
+                Maybe::Absent(leaf_image::Absent::Kept)
+            }
+        });
+        visits.sort_unstable();
+        assert_eq!(visits, [1, 2]);
+        assert_eq!(
+            rebuilt
+                .to_ref()
+                .preorder()
+                .map(|head| head.label)
+                .collect::<Vec<_>>(),
+            [4, 3, 1, 2, 2]
+        );
+        assert_eq!(rebuilt.to_ref().size(), Extent(5));
+        let mut children = rebuilt.to_ref().children();
+        assert_eq!(children.next(), Some(image.to_ref()));
+        assert_eq!(children.next(), Some(kept.to_ref()));
+        assert_eq!(children.next(), None);
+        assert_eq!(
+            leaf.to_ref()
+                .replace_leaves(|_| Maybe::Present(image.to_ref())),
+            image
+        );
+        assert_eq!(
+            leaf.to_ref()
+                .replace_leaves(|_| Maybe::Absent(leaf_image::Absent::Kept)),
+            leaf
+        );
+    }
+
+    #[test]
+    fn child_cursor_declines_malformed_extents()
+    {
+        for extent in [Extent(0), Extent(2), Extent(usize::MAX)] {
+            let entries = [Entry {
+                head: TestHead {
+                    label: 1,
+                    arity: ArgumentCount(0),
+                },
+                extent,
+            }];
+            let mut children = Children {
+                rest: &entries,
+                remaining: ArgumentCount(1),
+            };
+            assert_eq!(children.next(), None);
+            assert_eq!(children.remaining, ArgumentCount(1));
+        }
+        let mut empty = Children::<TestHead> {
+            rest: &[],
+            remaining: ArgumentCount(1),
+        };
+        assert_eq!(empty.next(), None);
+    }
 }

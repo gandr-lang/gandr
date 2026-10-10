@@ -11,6 +11,7 @@
 #[cfg(test)]
 mod sharing_format
 {
+    use anodized::spec;
     use gandr_kernel_term::AdmissionMark;
     use gandr_kernel_term::ArtifactImage;
     use gandr_kernel_term::BaseType;
@@ -64,6 +65,28 @@ mod sharing_format
     // ---------------------------------------------------------------------------
 
     /// A hand-built byte image.
+    ///
+    /// # Specification
+    /// - requires: nothing; fields may deliberately describe invalid input.
+    /// - ensures: the exact bytes of a hand-built image, including malformed
+    ///   framing.
+    /// - provides: nominal separation for a raw image distinct from a decoded
+    ///   artifact.
+    /// - panics: none.
+    /// - executable: none — data declaration, not a callable boundary; the
+    ///   fixture writers and decoder refusals observe its represented fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+    /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+    /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
     #[repr(transparent)]
     #[derive(Clone, Debug, Default, Eq, PartialEq)]
     struct Bytes(Vec<u8>);
@@ -81,31 +104,162 @@ mod sharing_format
     }
 
     /// One literal byte written into a hand-built image.
+    ///
+    /// # Specification
+    /// - requires: nothing; fields may deliberately describe invalid input.
+    /// - ensures: one unvalidated literal byte, kept distinct from a
+    ///   variable-length integer.
+    /// - provides: nominal separation for one unvalidated literal byte, kept
+    ///   distinct from a variable-length integer.
+    /// - panics: none.
+    /// - executable: none — data declaration, not a callable boundary; the
+    ///   fixture writers and decoder refusals observe its represented fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+    /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+    /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     struct RawByte(u8);
 
     /// One wire integer, written as a minimal unsigned LEB128 varint.
+    ///
+    /// # Specification
+    /// - requires: nothing; fields may deliberately describe invalid input.
+    /// - ensures: an unsigned scalar to be written with minimal variable-length
+    ///   framing.
+    /// - provides: nominal separation for an unsigned scalar to be written with
+    ///   minimal variable-length framing.
+    /// - panics: none.
+    /// - executable: none — data declaration, not a callable boundary; the
+    ///   fixture writers and decoder refusals observe its represented fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+    /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+    /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     struct WireValue(u64);
 
     /// A subterm-table index, as a hand-built artifact spells one.
+    ///
+    /// # Specification
+    /// - requires: nothing; fields may deliberately describe invalid input.
+    /// - ensures: an unvalidated global table ordinal, not a declaration-local
+    ///   offset.
+    /// - provides: nominal separation for an unvalidated global table ordinal,
+    ///   not a declaration-local offset.
+    /// - panics: none.
+    /// - executable: none — data declaration, not a callable boundary; the
+    ///   fixture writers and decoder refusals observe its represented fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+    /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+    /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     struct TableIndex(u32);
 
     /// A declared format version, as a hand-built header spells one.
+    ///
+    /// # Specification
+    /// - requires: nothing; fields may deliberately describe invalid input.
+    /// - ensures: an unvalidated little-endian format-version word.
+    /// - provides: nominal separation for an unvalidated little-endian
+    ///   format-version word.
+    /// - panics: none.
+    /// - executable: none — data declaration, not a callable boundary; the
+    ///   fixture writers and decoder refusals observe its represented fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+    /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+    /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     struct Version(u16);
 
     /// A position in a decoded declaration sequence, or in a byte image.
+    ///
+    /// # Specification
+    /// - requires: nothing; fields may deliberately describe invalid input.
+    /// - ensures: a host-sized sequence or byte position; callers choose which
+    ///   domain they address.
+    /// - provides: nominal separation for a host-sized sequence or byte
+    ///   position; callers choose which domain they address.
+    /// - panics: none.
+    /// - executable: none — data declaration, not a callable boundary; the
+    ///   fixture writers and decoder refusals observe its represented fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+    /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+    /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     struct Position(usize);
 
     /// A repeated-diamond depth.
+    ///
+    /// # Specification
+    /// - requires: nothing; fields may deliberately describe invalid input.
+    /// - ensures: the number of repeated pair layers, distinct from its
+    ///   expanded tree size.
+    /// - provides: nominal separation for the number of repeated pair layers,
+    ///   distinct from its expanded tree size.
+    /// - panics: none.
+    /// - executable: none — data declaration, not a callable boundary; the
+    ///   fixture writers and decoder refusals observe its represented fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+    /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+    /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     struct Depth(u32);
@@ -118,9 +272,21 @@ mod sharing_format
         /// - requires: nothing.
         /// - ensures: returns the depth one greater, or this depth at the
         ///   representable ceiling.
-        /// - provides: the total step the depth search takes, so the search
-        ///   terminates rather than wrapping past its bound.
+        /// - provides: a total increment for depth-boundary fixtures;
+        ///   saturation alone does not establish termination of a search.
         /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L2 compares powers and expanded-tree sizes with
+        ///   widened arithmetic, and finds admissible depths by enumerating the
+        ///   finite mathematical candidates. L3 includes the exact u64
+        ///   tree-size boundary, its neighbors, the u32 exponent ceiling and
+        ///   the largest u64 cap, distinguishing premature saturation and a
+        ///   nonterminating saturated search.
+        /// - witness: `sharing_format::sharing_format::diamond_arithmetic_saturates_at_the_tree_size_boundary`
+        #[spec(
+            ensures: |ret| u64::from(ret.0) == u64::from(self.0).saturating_add(1).min(u64::from(u32::MAX)),
+        )]
         fn next(self) -> Self
         {
             Self(self.0.saturating_add(1))
@@ -128,6 +294,28 @@ mod sharing_format
     }
 
     /// A count of links in a value-type chain.
+    ///
+    /// # Specification
+    /// - requires: nothing; fields may deliberately describe invalid input.
+    /// - ensures: the number of thunk-over-returner steps, each contributing
+    ///   two entries.
+    /// - provides: nominal separation for the number of thunk-over-returner
+    ///   steps, each contributing two entries.
+    /// - panics: none.
+    /// - executable: none — data declaration, not a callable boundary; the
+    ///   fixture writers and decoder refusals observe its represented fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+    /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+    /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     struct LinkCount(usize);
@@ -165,6 +353,27 @@ mod sharing_format
         ///   the crate's, so a fixture's bytes do not inherit the encoder's
         ///   idea of minimality.
         /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 accepted and malformed artifacts use this
+        ///   independent fixture writer to isolate header, field-order,
+        ///   reference and canonical-form decisions. Literal encoder and
+        ///   decoder fixtures separately pin the frozen bytes; shared round
+        ///   trips alone are not an independent oracle. The refusal witnesses
+        ///   vary one field while retaining the surrounding record.
+        /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+        /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+        /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+        /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
+        #[spec(
+            captures: start = self.0.len(),
+            ensures: |ret| self.0.len() == start.saturating_add(usize::try_from(64_u32.saturating_sub((value.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))
+                    && ({ let scalar = value.0;
+                let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+                self.0.as_slice().get((start) .. (start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+                u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                    && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }),
+        )]
         fn varint(
             &mut self,
             value: WireValue,
@@ -203,6 +412,24 @@ mod sharing_format
         ///   the crate, so a change to the constant shows up as a refused
         ///   fixture instead of silently agreeing with itself.
         /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 accepted and malformed artifacts use this
+        ///   independent fixture writer to isolate header, field-order,
+        ///   reference and canonical-form decisions. Literal encoder and
+        ///   decoder fixtures separately pin the frozen bytes; shared round
+        ///   trips alone are not an independent oracle. The refusal witnesses
+        ///   vary one field while retaining the surrounding record.
+        /// - witness: `sharing_format::sharing_format::a_foreign_magic_is_refused_at_the_header`
+        /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+        /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+        /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+        /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
+        #[spec(
+            captures: start = self.0.len(),
+            ensures: |ret| self.0.len() == start.saturating_add(4)
+                    && self.0.get(start ..) == Some(b"GKX1".as_slice()),
+        )]
         fn magic(&mut self)
         {
             self.0.extend_from_slice(b"GKX1");
@@ -217,6 +444,23 @@ mod sharing_format
         /// - provides: the header's version field, written at the fixed width
         ///   the format gives it.
         /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 accepted and malformed artifacts use this
+        ///   independent fixture writer to isolate header, field-order,
+        ///   reference and canonical-form decisions. Literal encoder and
+        ///   decoder fixtures separately pin the frozen bytes; shared round
+        ///   trips alone are not an independent oracle. The refusal witnesses
+        ///   vary one field while retaining the surrounding record.
+        /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+        /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+        /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+        /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
+        #[spec(
+            captures: start = self.0.len(),
+            ensures: |ret| self.0.len() == start.saturating_add(2)
+                    && self.0.get(start ..) == Some(version.0.to_le_bytes().as_slice()),
+        )]
         fn version(
             &mut self,
             version: Version,
@@ -235,6 +479,21 @@ mod sharing_format
         ///   over an unchanged tail, so a header-only variant shares the rest
         ///   of the bytes with the artifact it came from.
         /// - panics: panics when `offset` is past `other`'s length.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 accepted and malformed artifacts use this
+        ///   independent fixture writer to isolate header, field-order,
+        ///   reference and canonical-form decisions. Literal encoder and
+        ///   decoder fixtures separately pin the frozen bytes; shared round
+        ///   trips alone are not an independent oracle. The refusal witnesses
+        ///   vary one field while retaining the surrounding record.
+        /// - witness: `sharing_format::sharing_format::a_minted_atom_table_with_a_repeat_is_refused`
+        /// - witness: `sharing_format::sharing_format::a_minted_atom_table_omitting_an_atom_is_refused`
+        /// - witness: `sharing_format::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
+        #[spec(
+            requires: offset.0 <= other.0.len(), captures: start = self.0.len(),
+            ensures: |ret| self.0.get(start ..) == other.0.get(offset.0 ..),
+        )]
         fn append_tail(
             &mut self,
             other: &Self,
@@ -254,6 +513,27 @@ mod sharing_format
     // ---------------------------------------------------------------------------
 
     /// A hand-built declaration segment.
+    ///
+    /// # Specification
+    /// - requires: nothing; fields may deliberately describe invalid input.
+    /// - ensures: raw declaration fields whose consistency is deliberately not
+    ///   enforced by the fixture type.
+    /// - provides: nominal separation for raw declaration framing.
+    /// - panics: none.
+    /// - executable: none — data declaration, not a callable boundary; the
+    ///   fixture writers and decoder refusals observe its represented fields.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+    /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+    /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
     struct RawDeclaration
     {
         /// The admission mark byte.
@@ -278,13 +558,40 @@ mod sharing_format
         /// A definition segment with every reserved slot empty.
         ///
         /// # Specification
-        /// - requires: `root_declared` and `root_body` name entries in
-        ///   `entries`.
-        /// - ensures: returns a segment with the checked mark, the definition
-        ///   kind, and every reserved slot at zero.
-        /// - provides: the accepted-shape baseline every refusal fixture varies
-        ///   one field of.
+        /// - requires: nothing; entries and global roots may be deliberately
+        ///   inconsistent for refusal fixtures.
+        /// - ensures: retains supplied entries and roots, with a checked mark,
+        ///   definition kind and present body. The name and reserved fields
+        ///   start empty.
+        /// - provides: a raw baseline whose roots address the cross-segment
+        ///   global index space, not necessarily this segment’s own entries. No
+        ///   validation is performed.
         /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 accepted and malformed artifacts use this
+        ///   independent fixture writer to isolate header, field-order,
+        ///   reference and canonical-form decisions. Literal encoder and
+        ///   decoder fixtures separately pin the frozen bytes; shared round
+        ///   trips alone are not an independent oracle. The refusal witnesses
+        ///   vary one field while retaining the surrounding record.
+        /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+        /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+        /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+        /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
+        #[spec(
+            captures: entry = (entries.len(), entries.iter().fold(0_usize,
+                |total, bytes| total.saturating_add(bytes.0.len()))),
+            ensures: |ret| ret.mark.0 == 0
+                    && ret.kind.0 == 0
+                    && ret.name.is_empty()
+                    && ret.root_declared == root_declared
+                    && ret.root_body == Some(root_body)
+                    && ret.erasure.0 == 0
+                    && ret.entries.len() == entry.0
+                    && ret.entries.iter().fold(0_usize,
+                |total, bytes| total.saturating_add(bytes.0.len())) == entry.1,
+        )]
         fn definition(
             entries: Vec<Bytes>,
             root_declared: TableIndex,
@@ -305,13 +612,39 @@ mod sharing_format
         /// An axiom segment, which carries a declared root and no body.
         ///
         /// # Specification
-        /// - requires: `root_declared` names an entry in `entries`.
-        /// - ensures: returns a segment with the checked mark, the axiom kind,
-        ///   no body root, and every reserved slot at zero.
-        /// - provides: the accepted shape for a declaration whose kind carries
-        ///   one root, which is where the axiom and abstract-type distinction
-        ///   is exercised.
+        /// - requires: nothing; entries and global roots may be deliberately
+        ///   inconsistent for refusal fixtures.
+        /// - ensures: retains supplied entries and roots, with a checked mark,
+        ///   axiom kind and no body. The name and reserved fields start empty.
+        /// - provides: a raw baseline whose roots address the cross-segment
+        ///   global index space, not necessarily this segment’s own entries. No
+        ///   validation is performed.
         /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 accepted and malformed artifacts use this
+        ///   independent fixture writer to isolate header, field-order,
+        ///   reference and canonical-form decisions. Literal encoder and
+        ///   decoder fixtures separately pin the frozen bytes; shared round
+        ///   trips alone are not an independent oracle. The refusal witnesses
+        ///   vary one field while retaining the surrounding record.
+        /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+        /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+        /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+        /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
+        #[spec(
+            captures: entry = (entries.len(), entries.iter().fold(0_usize,
+                |total, bytes| total.saturating_add(bytes.0.len()))),
+            ensures: |ret| ret.mark.0 == 0
+                    && ret.kind.0 == 1
+                    && ret.name.is_empty()
+                    && ret.root_declared == root_declared
+                    && ret.root_body.is_none()
+                    && ret.erasure.0 == 0
+                    && ret.entries.len() == entry.0
+                    && ret.entries.iter().fold(0_usize,
+                |total, bytes| total.saturating_add(bytes.0.len())) == entry.1,
+        )]
         fn axiom(
             entries: Vec<Bytes>,
             root_declared: TableIndex,
@@ -331,15 +664,82 @@ mod sharing_format
         /// This segment's bytes.
         ///
         /// # Specification
-        /// - requires: nothing.
-        /// - ensures: appends the mark and kind bytes, the name record — its
-        ///   segment count, then each segment's length and bytes — the two
-        ///   level counts, the entry count and the entries, the declared root,
-        ///   and — for a definition only — the body root followed by the four
-        ///   annotation slots.
-        /// - provides: the segment field order written out by hand, so the
-        ///   suite pins the order rather than deriving it from the encoder.
+        /// - requires: nothing; fields may deliberately disagree.
+        /// - ensures: returns the mark, kind, counted names, zero level counts,
+        ///   counted raw entries and declared root. A present body field adds
+        ///   its root, erasure count and three empty slots, regardless of the
+        ///   kind byte.
+        /// - provides: independent raw field framing for both valid and
+        ///   deliberately inconsistent records. Presence of the optional body,
+        ///   not validation of the kind, controls the trailing fields.
         /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 accepted and malformed artifacts use this
+        ///   independent fixture writer to isolate header, field-order,
+        ///   reference and canonical-form decisions. Literal encoder and
+        ///   decoder fixtures separately pin the frozen bytes; shared round
+        ///   trips alone are not an independent oracle. The refusal witnesses
+        ///   vary one field while retaining the surrounding record.
+        /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+        /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+        /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+        /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
+        /// - witness: `sharing_format::sharing_format::a_reserved_declaration_kind_is_refused_distinctly`
+        /// - witness: `sharing_format::sharing_format::an_occupied_reserved_slot_is_refused_by_name`
+        #[spec(
+            ensures: |ret| ret.0.get(0 .. 2).and_then(|header| { let segment_start = 0_usize;
+                 let names_count = u64::try_from(self.name.len()).unwrap_or(u64::MAX);
+                if header != [self.mark.0, self.kind.0].as_slice() || !({ let scalar = names_count;
+                let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+                ret.0.as_slice().get((segment_start.saturating_add(2)) .. (segment_start.saturating_add(2)).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+                u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                    && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }) { return None;
+                } let names_end = self.name.iter().try_fold(segment_start.saturating_add(2).saturating_add(usize::try_from(64_u32.saturating_sub((names_count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+                |position, name| { let length = u64::try_from(name.0.len()).unwrap_or(u64::MAX);
+                let payload = position.saturating_add(usize::try_from(64_u32.saturating_sub((length).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+                let end = payload.saturating_add(name.0.len());
+                (({ let scalar = length;
+                let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+                ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+                u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                    && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                    && ret.0.as_slice().get(payload .. end) == Some(name.0.as_slice())).then_some(end) })?;
+                let entries_count = u64::try_from(self.entries.len()).unwrap_or(u64::MAX);
+                let count_start = names_end.saturating_add(2);
+                if ret.0.as_slice().get(names_end .. count_start) != Some([0_u8, 0].as_slice()) || !({ let scalar = entries_count;
+                let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+                ret.0.as_slice().get((count_start) .. (count_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+                u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                    && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }) { return None;
+                } let roots_start = self.entries.iter().try_fold(count_start.saturating_add(usize::try_from(64_u32.saturating_sub((entries_count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+                |position, entry| { let end = position.saturating_add(entry.0.len());
+                (ret.0.as_slice().get(position .. end) == Some(entry.0.as_slice())).then_some(end) })?;
+                let declared = u64::from(self.root_declared.0);
+                let body_start = roots_start.saturating_add(usize::try_from(64_u32.saturating_sub((declared).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+                let valid_root = { let scalar = declared;
+                let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+                ret.0.as_slice().get((roots_start) .. (roots_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+                u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                    && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
+                if valid_root { self.root_body.map_or(Some(body_start),
+                |body| { let body_word = u64::from(body.0);
+                let erasure_start = body_start.saturating_add(usize::try_from(64_u32.saturating_sub((body_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+                let empty_start = erasure_start.saturating_add(usize::try_from(64_u32.saturating_sub((self.erasure.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+                let end = empty_start.saturating_add(3);
+                (({ let scalar = body_word;
+                let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+                ret.0.as_slice().get((body_start) .. (body_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+                u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                    && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                    && ({ let scalar = self.erasure.0;
+                let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+                ret.0.as_slice().get((erasure_start) .. (erasure_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+                u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                    && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                    && ret.0.as_slice().get(empty_start .. end) == Some([0_u8, 0, 0].as_slice())).then_some(end) }) }
+                else { None } }) == Some(ret.0.len()),
+        )]
         fn bytes(&self) -> Bytes
         {
             let mut out = Bytes::new();
@@ -385,6 +785,94 @@ mod sharing_format
     ///   cannot produce, so a refusal can be provoked without weakening the
     ///   encoder.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::the_empty_sequence_encodes_to_a_bare_header`
+    /// - witness: `sharing_format::sharing_format::a_predecessor_version_is_refused_by_name`
+    /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
+    #[spec(
+        ensures: |ret| ret.0.starts_with(b"GKX1")
+                && ret.0.get(4 .. 6) == Some(version.0.to_le_bytes().as_slice())
+                && { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
+            let valid_count = { let scalar = count;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get(6_usize .. (6_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
+            if valid_count { atoms.iter().try_fold((6_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+            |position, atom| { ({ let scalar = atom.0;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }).then_some(position.saturating_add(usize::try_from(64_u32.saturating_sub((atom.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }) }
+            else { None } }.and_then(|position| { let count = u64::try_from(declarations.len()).unwrap_or(u64::MAX);
+            let valid_count = { let scalar = count;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
+            if valid_count { declarations.iter().try_fold(position.saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+            |offset, declaration| { let segment_start = offset;
+            let header = ret.0.as_slice().get(segment_start .. segment_start.saturating_add(2))?;
+            let names_count = u64::try_from(declaration.name.len()).unwrap_or(u64::MAX);
+            if header != [declaration.mark.0, declaration.kind.0].as_slice() || !({ let scalar = names_count;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((segment_start.saturating_add(2)) .. (segment_start.saturating_add(2)).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }) { return None;
+            } let names_end = declaration.name.iter().try_fold(segment_start.saturating_add(2).saturating_add(usize::try_from(64_u32.saturating_sub((names_count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+            |position, name| { let length = u64::try_from(name.0.len()).unwrap_or(u64::MAX);
+            let payload = position.saturating_add(usize::try_from(64_u32.saturating_sub((length).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+            let end = payload.saturating_add(name.0.len());
+            (({ let scalar = length;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && ret.0.as_slice().get(payload .. end) == Some(name.0.as_slice())).then_some(end) })?;
+            let entries_count = u64::try_from(declaration.entries.len()).unwrap_or(u64::MAX);
+            let count_start = names_end.saturating_add(2);
+            if ret.0.as_slice().get(names_end .. count_start) != Some([0_u8, 0].as_slice()) || !({ let scalar = entries_count;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((count_start) .. (count_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }) { return None;
+            } let roots_start = declaration.entries.iter().try_fold(count_start.saturating_add(usize::try_from(64_u32.saturating_sub((entries_count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+            |position, entry| { let end = position.saturating_add(entry.0.len());
+            (ret.0.as_slice().get(position .. end) == Some(entry.0.as_slice())).then_some(end) })?;
+            let declared = u64::from(declaration.root_declared.0);
+            let body_start = roots_start.saturating_add(usize::try_from(64_u32.saturating_sub((declared).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+            let valid_root = { let scalar = declared;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((roots_start) .. (roots_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
+            if valid_root { declaration.root_body.map_or(Some(body_start),
+            |body| { let body_word = u64::from(body.0);
+            let erasure_start = body_start.saturating_add(usize::try_from(64_u32.saturating_sub((body_word).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+            let empty_start = erasure_start.saturating_add(usize::try_from(64_u32.saturating_sub((declaration.erasure.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX));
+            let end = empty_start.saturating_add(3);
+            (({ let scalar = body_word;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((body_start) .. (body_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && ({ let scalar = declaration.erasure.0;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((erasure_start) .. (erasure_start).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && ret.0.as_slice().get(empty_start .. end) == Some([0_u8, 0, 0].as_slice())).then_some(end) }) }
+            else { None } }) }
+            else { None } }) == Some(ret.0.len()),
+    )]
     fn raw_artifact(
         version: Version,
         atoms: &[WireValue],
@@ -425,6 +913,18 @@ mod sharing_format
     /// - provides: the smallest accepted entry, used wherever a fixture needs
     ///   one well-formed value type.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::a_duplicate_entry_is_refused_as_non_canonical`
+    #[spec(
+        ensures: |ret| ret.0.as_slice() == [0x01_u8].as_slice(),
+    )]
     fn entry_unit_type() -> Bytes
     {
         let mut out = Bytes::new();
@@ -441,6 +941,24 @@ mod sharing_format
     /// - provides: the universe entry at a closed level, which is what an
     ///   abstract type's kind needs.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::a_universe_artifact_round_trips_byte_identically`
+    #[spec(
+        ensures: |ret| ret.0.starts_with(&[0x02_u8])
+                && ({ let scalar = constant.0;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get(1_usize .. (1_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && ret.0.get(1_usize .saturating_add(usize::try_from(64_u32.saturating_sub((constant.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)) ..) == Some([0_u8].as_slice()),
+    )]
     fn entry_universe(constant: WireValue) -> Bytes
     {
         let mut out = Bytes::new();
@@ -459,6 +977,29 @@ mod sharing_format
     /// - provides: the universe entry carrying one variable atom, which is
     ///   where the level plane's offset cap is exercised.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::the_level_offset_boundary_accepts_under_and_refuses_over`
+    #[spec(
+        ensures: |ret| ret.0.starts_with(&[0x02_u8, 0, 1])
+                && ({ let scalar = variable.0;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get(3_usize .. (3_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && ({ let scalar = offset.0;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((3_usize .saturating_add(usize::try_from(64_u32.saturating_sub((variable.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) .. (3_usize .saturating_add(usize::try_from(64_u32.saturating_sub((variable.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && ret.0.len() == 3_usize .saturating_add(usize::try_from(64_u32.saturating_sub((variable.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)) .saturating_add(usize::try_from(64_u32.saturating_sub((offset.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+    )]
     fn entry_universe_atom(
         variable: WireValue,
         offset: WireValue,
@@ -482,6 +1023,18 @@ mod sharing_format
     /// - provides: the entry no canonical level encodes, so the level plane's
     ///   refusal of a repeated atom is reachable from bytes.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::a_non_canonical_inline_level_is_refused`
+    #[spec(
+        ensures: |ret| ret.0.as_slice() == [0x02_u8, 0, 2, 0, 1, 0, 1].as_slice(),
+    )]
     fn entry_universe_repeated_atom() -> Bytes
     {
         let mut out = Bytes::new();
@@ -504,6 +1057,18 @@ mod sharing_format
     /// - provides: the overlong varint the writer cannot produce, so the
     ///   reader's minimality refusal is reachable from bytes.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::an_overlong_varint_inside_an_entry_is_refused`
+    #[spec(
+        ensures: |ret| ret.0.as_slice() == [0x02_u8, 0x80, 0, 0].as_slice(),
+    )]
     fn entry_universe_overlong_constant() -> Bytes
     {
         let mut out = Bytes::new();
@@ -523,6 +1088,18 @@ mod sharing_format
     /// - provides: the smallest accepted value entry, used as a leaf wherever a
     ///   fixture needs one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
+    #[spec(
+        ensures: |ret| ret.0.as_slice() == [0x0b_u8].as_slice(),
+    )]
     fn entry_unit() -> Bytes
     {
         let mut out = Bytes::new();
@@ -540,6 +1117,29 @@ mod sharing_format
     /// - provides: the two-child entry the sharing and child-order cases are
     ///   built from.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::a_self_or_forward_child_reference_is_refused`
+    #[spec(
+        ensures: |ret| ret.0.starts_with(&[0x0d_u8])
+                && ({ let scalar = u64::from(first.0);
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get(1_usize .. (1_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && ({ let scalar = u64::from(second.0);
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((1_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(first.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) .. (1_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(first.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && ret.0.len() == 1_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(first.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)) .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(second.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+    )]
     fn entry_pair(
         first: TableIndex,
         second: TableIndex,
@@ -560,6 +1160,24 @@ mod sharing_format
     /// - provides: the leaf entry with an inline payload, distinguishing a
     ///   payload from a child reference in the entry shape.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::a_mis_ordered_table_is_refused_as_non_canonical`
+    #[spec(
+        ensures: |ret| ret.0.starts_with(&[0x09_u8])
+                && ({ let scalar = index.0;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get(1_usize .. (1_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && ret.0.len() == 1_usize .saturating_add(usize::try_from(64_u32.saturating_sub((index.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+    )]
     fn entry_variable(index: WireValue) -> Bytes
     {
         let mut out = Bytes::new();
@@ -576,6 +1194,19 @@ mod sharing_format
     /// - provides: the unassigned-tag entry, so the node alphabet's refusal is
     ///   reachable at a byte of the caller's choosing.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::an_unassigned_node_tag_is_refused_by_name`
+    #[spec(
+        requires: tag.0 >= 0x20,
+        ensures: |ret| ret.0.as_slice() == [tag.0].as_slice(),
+    )]
     fn entry_unassigned_tag(tag: RawByte) -> Bytes
     {
         let mut out = Bytes::new();
@@ -594,6 +1225,29 @@ mod sharing_format
     /// - provides: the entry whose two children are of different families,
     ///   which is where the child-polarity check is exercised.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::a_dependent_arrow_refuses_a_mis_polarized_codomain`
+    #[spec(
+        ensures: |ret| ret.0.starts_with(&[0x18_u8])
+                && ({ let scalar = u64::from(domain.0);
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get(1_usize .. (1_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && ({ let scalar = u64::from(codomain.0);
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((1_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(domain.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) .. (1_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(domain.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) })
+                && ret.0.len() == 1_usize .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(domain.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)) .saturating_add(usize::try_from(64_u32.saturating_sub((u64::from(codomain.0)).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+    )]
     fn entry_pi(
         domain: TableIndex,
         codomain: TableIndex,
@@ -620,35 +1274,55 @@ mod sharing_format
     ///   by, saturating so a large exponent bounds the search instead of
     ///   wrapping.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 compares powers and expanded-tree sizes with widened
+    ///   arithmetic, and finds admissible depths by enumerating the finite
+    ///   mathematical candidates. L3 includes the exact u64 tree-size boundary,
+    ///   its neighbors, the u32 exponent ceiling and the largest u64 cap,
+    ///   distinguishing premature saturation and a nonterminating saturated
+    ///   search.
+    /// - witness: `sharing_format::sharing_format::diamond_arithmetic_saturates_at_the_tree_size_boundary`
+    #[spec(
+        ensures: |ret| u64::from(ret) == u64::try_from(1_u128.checked_shl(exponent.0).unwrap_or(u128::MAX)).unwrap_or(u64::MAX),
+    )]
     fn power_of_two(exponent: Depth) -> ExpandedWork
     {
-        let mut value = 1_u64;
-        let mut remaining = exponent.0;
-        while remaining > 0 {
-            value = value.saturating_mul(2);
-            remaining = remaining.saturating_sub(1);
-        }
-        ExpandedWork::from(value)
+        ExpandedWork::from(1_u64.checked_shl(exponent.0).unwrap_or(u64::MAX))
     }
 
     /// The largest diamond depth whose expanded size, plus the one node a
     /// declared type costs beside it, still fits `cap`.
     ///
     /// # Specification
-    /// - requires: `cap` is the per-declaration expanded-work cap the fixture
-    ///   must stay under.
-    /// - ensures: returns the greatest depth whose diamond, plus the one node a
-    ///   declared type costs beside it, still fits `cap`.
-    /// - provides: the largest accepted diamond, so the accepted and refused
-    ///   cases sit on either side of one cap rather than at arbitrary depths.
-    /// - panics: none.
+    /// - requires: cap is at least two, so a unit diamond and its declared type
+    ///   fit.
+    /// - ensures: returns the greatest depth whose mathematical expanded size
+    ///   plus one is at most cap, including when cap is the u64 ceiling.
+    /// - provides: a constant-time boundary calculation; it does not compare a
+    ///   saturated power against the ceiling and enter a nonterminating search.
+    /// - panics: none within the stated domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 compares powers and expanded-tree sizes with widened
+    ///   arithmetic, and finds admissible depths by enumerating the finite
+    ///   mathematical candidates. L3 includes the exact u64 tree-size boundary,
+    ///   its neighbors, the u32 exponent ceiling and the largest u64 cap,
+    ///   distinguishing premature saturation and a nonterminating saturated
+    ///   search.
+    /// - witness: `sharing_format::sharing_format::diamond_arithmetic_saturates_at_the_tree_size_boundary`
+    #[spec(
+        requires: u64::from(cap) >= 2,
+        ensures: |ret| 1_u128.checked_shl(ret.0.saturating_add(1)).is_some_and(|size| size <= u128::from(u64::from(cap))
+                && size.saturating_mul(2) > u128::from(u64::from(cap))),
+    )]
     fn diamond_depth_within(cap: ExpandedWork) -> Depth
     {
-        let mut depth = Depth(0);
-        while power_of_two(depth.next().next()) <= cap {
-            depth = depth.next();
-        }
-        depth
+        Depth(
+            u64::BITS
+                .saturating_sub(u64::from(cap).leading_zeros())
+                .saturating_sub(2),
+        )
     }
 
     /// A repeated-diamond value of the given depth: each level pairs the level
@@ -663,6 +1337,28 @@ mod sharing_format
     ///   node count grows by one, which is what makes the expanded-work budget
     ///   different from a node count.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes shared child identity, independent
+    ///   declarations with equal content, exact chain entry counts and both
+    ///   sides of the work and table caps. The predicates walk the constructed
+    ///   shapes without encoding or allocating a comparison arena; bounded
+    ///   walks distinguish a repeated edge from a different child and stop on a
+    ///   wrong former.
+    /// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+    /// - witness: `sharing_format::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
+    /// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+    /// - witness: `sharing_format::sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over`
+    #[spec(
+        ensures: |ret| { let mut node = ret;
+            let mut remaining = depth.0;
+            let mut valid = true;
+            while remaining > 0 { match arena.value(node) { Some(&Value::Pair(left, right)) if left == right => node = left, _ => { valid = false;
+            break;
+            } } remaining = remaining.saturating_sub(1);
+            } valid
+                && arena.value(node) == Some(&Value::Unit) },
+    )]
     fn diamond(
         arena: &mut TermArena,
         depth: Depth,
@@ -681,14 +1377,33 @@ mod sharing_format
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: returns two to the power of `depth` plus one, less one, which
-    ///   is the node count of the fully expanded tree.
-    /// - provides: the expected expanded size a decode's metrics are asserted
-    ///   against, computed here rather than read back from the decoder.
+    /// - ensures: returns 2 raised to depth plus one, minus one, saturating
+    ///   only the final mathematical tree size at the u64 ceiling.
+    /// - provides: an expected expanded size independent of the decoder’s
+    ///   memoized graph scan; depth 63 yields the exact u64 ceiling rather than
+    ///   one less.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 compares powers and expanded-tree sizes with widened
+    ///   arithmetic, and finds admissible depths by enumerating the finite
+    ///   mathematical candidates. L3 includes the exact u64 tree-size boundary,
+    ///   its neighbors, the u32 exponent ceiling and the largest u64 cap,
+    ///   distinguishing premature saturation and a nonterminating saturated
+    ///   search.
+    /// - witness: `sharing_format::sharing_format::diamond_arithmetic_saturates_at_the_tree_size_boundary`
+    #[spec(
+        ensures: |ret| u64::from(ret) == u64::try_from(depth.0.checked_add(1).and_then(|shift| 1_u128.checked_shl(shift)).map_or(u128::MAX,
+            |power| power.saturating_sub(1))).unwrap_or(u64::MAX),
+    )]
     fn diamond_expanded(depth: Depth) -> ExpandedWork
     {
-        ExpandedWork::from(u64::from(power_of_two(depth.next())).saturating_sub(1))
+        ExpandedWork::from(
+            u64::from(power_of_two(depth))
+                .saturating_sub(1)
+                .saturating_mul(2)
+                .saturating_add(1),
+        )
     }
 
     /// A value-type chain of `links` thunk-over-returner steps above the unit
@@ -702,6 +1417,31 @@ mod sharing_format
     /// - provides: the shape whose entry count and expanded size are equal, so
     ///   a table-entry cap and a work cap can be exercised apart.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes shared child identity, independent
+    ///   declarations with equal content, exact chain entry counts and both
+    ///   sides of the work and table caps. The predicates walk the constructed
+    ///   shapes without encoding or allocating a comparison arena; bounded
+    ///   walks distinguish a repeated edge from a different child and stop on a
+    ///   wrong former.
+    /// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+    /// - witness: `sharing_format::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
+    /// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+    /// - witness: `sharing_format::sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over`
+    #[spec(
+        ensures: |ret| { let mut node = ret;
+            let mut remaining = links.0;
+            let mut valid = true;
+            while remaining > 0 { if let Some(&ValueType::Thunk(returner)) = arena.value_type(node)
+                && let Some(&CompType::Returner(inner)) = arena.comp_type(returner) { node = inner;
+            }
+            else { valid = false;
+            break;
+            } remaining = remaining.saturating_sub(1);
+            } valid
+                && arena.value_type(node) == Some(&ValueType::Unit) },
+    )]
     fn type_chain(
         arena: &mut TermArena,
         links: LinkCount,
@@ -725,6 +1465,29 @@ mod sharing_format
     /// - provides: the one declaration wrapper the encoder-driven fixtures use,
     ///   so the mark and the level signature are stated once.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes shared child identity, independent
+    ///   declarations with equal content, exact chain entry counts and both
+    ///   sides of the work and table caps. The predicates walk the constructed
+    ///   shapes without encoding or allocating a comparison arena; bounded
+    ///   walks distinguish a repeated edge from a different child and stop on a
+    ///   wrong former.
+    /// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+    /// - witness: `sharing_format::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
+    /// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+    /// - witness: `sharing_format::sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over`
+    #[spec(
+        requires: arena.value_type(declared).is_some()
+                && arena.value(body).is_some(), captures: before = arena.watermark(),
+        ensures: |ret| ret.mark() == AdmissionMark::Checked
+                && u32::from(ret.declaration().levels().params()) == 0
+                && ret.declaration().levels().constraints().is_empty()
+                && ret.declaration().name().segments().is_empty()
+                && ret.declaration().provenance().is_empty()
+                && ret.declaration().content() == &DeclarationContent::Def { declared, body }
+                && arena.watermark() == before,
+    )]
     fn definition_over(
         arena: &mut TermArena,
         declared: ValueTypeId,
@@ -747,6 +1510,21 @@ mod sharing_format
     /// - provides: the projection the round-trip assertions read, keeping the
     ///   two absences from being confused with a decoded root.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes shared child identity, independent
+    ///   declarations with equal content, exact chain entry counts and both
+    ///   sides of the work and table caps. The predicates walk the constructed
+    ///   shapes without encoding or allocating a comparison arena; bounded
+    ///   walks distinguish a repeated edge from a different child and stop on a
+    ///   wrong former.
+    /// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+    /// - witness: `sharing_format::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
+    /// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+    /// - witness: `sharing_format::sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over`
+    #[spec(
+        ensures: |ret| ret == artifact.declarations().get(position.0).and_then(|marked| match *marked.declaration().content() { DeclarationContent::Def { body, .. } => Some(body), DeclarationContent::Axiom { .. } | DeclarationContent::AbstractType { .. } => None }),
+    )]
     fn decoded_body(
         artifact: &DecodedArtifact,
         position: Position,
@@ -769,6 +1547,21 @@ mod sharing_format
     /// - provides: the projection that reads the root every declaration kind
     ///   carries.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes shared child identity, independent
+    ///   declarations with equal content, exact chain entry counts and both
+    ///   sides of the work and table caps. The predicates walk the constructed
+    ///   shapes without encoding or allocating a comparison arena; bounded
+    ///   walks distinguish a repeated edge from a different child and stop on a
+    ///   wrong former.
+    /// - witness: `sharing_format::sharing_format::sharing_round_trips_with_sharing_at_the_shared_nodes`
+    /// - witness: `sharing_format::sharing_format::differently_shared_equal_inputs_write_identical_bytes`
+    /// - witness: `sharing_format::sharing_format::the_declaration_work_boundary_accepts_under_and_refuses_over`
+    /// - witness: `sharing_format::sharing_format::the_table_entry_boundary_accepts_under_and_refuses_over`
+    #[spec(
+        ensures: |ret| ret == artifact.declarations().get(position.0).map(|marked| marked.declaration().declared_id()),
+    )]
     fn decoded_declared(
         artifact: &DecodedArtifact,
         position: Position,
@@ -781,6 +1574,44 @@ mod sharing_format
     // ---------------------------------------------------------------------------
     // Sharing: the round trip and the determinism
     // ---------------------------------------------------------------------------
+
+    #[test]
+    fn diamond_arithmetic_saturates_at_the_tree_size_boundary()
+    {
+        for depth in [0_u32, 1, 7, 31, 62, 63, 64, 127, 128, u32::MAX] {
+            let power = 1_u128.checked_shl(depth).unwrap_or(u128::MAX);
+            assert_eq!(
+                u64::from(power_of_two(Depth(depth))),
+                u64::try_from(power).unwrap_or(u64::MAX)
+            );
+            let tree = depth
+                .checked_add(1)
+                .and_then(|shift| 1_u128.checked_shl(shift))
+                .map_or(u128::MAX, |power| power.saturating_sub(1));
+            assert_eq!(
+                u64::from(diamond_expanded(Depth(depth))),
+                u64::try_from(tree).unwrap_or(u64::MAX)
+            );
+            assert_eq!(
+                Depth(depth).next().0,
+                u32::try_from(u64::from(depth).saturating_add(1)).unwrap_or(u32::MAX)
+            );
+        }
+        for cap in [2_u64, 3, 4, 7, 8, u64::MAX.saturating_sub(1), u64::MAX] {
+            let expected = (0_u32 .. 64)
+                .filter(|&depth| {
+                    1_u128
+                        .checked_shl(depth.saturating_add(1))
+                        .is_some_and(|size| size <= u128::from(cap))
+                })
+                .max()
+                .expect("a unit diamond plus its declared type fits");
+            assert_eq!(
+                diamond_depth_within(ExpandedWork::from(cap)),
+                Depth(expected)
+            );
+        }
+    }
 
     #[test]
     fn sharing_round_trips_with_sharing_at_the_shared_nodes()
@@ -1760,7 +2591,27 @@ mod sharing_format
     /// separator, from an alphabet narrow enough that generated names collide.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the returned strategy generates zero to three Unicode scalar
+    ///   values excluding the ASCII name separator; empty text and repeated
+    ///   segments are permitted.
+    /// - provides: short, collision-prone segment inputs while retaining the
+    ///   full Unicode scalar alphabet as a choice.
+    /// - panics: none during construction.
+    /// - executable: none — the returned opaque strategy has no pure observer
+    ///   for all future generated or shrunk values; running a value tree
+    ///   requires a mutable random runner. The property consumes the strategy
+    ///   and checks its semantic consequences instead of sampling inside a
+    ///   postcondition.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 varies Unicode segment lists, including empty segments
+    ///   and collisions, while comparing names as lists and each declaration’s
+    ///   content, mark, levels and provenance with the unnamed baseline.
+    ///   Structural predicates separately pin the baseline’s cycling kinds and
+    ///   the predecessor reference in each later definition; the round trip is
+    ///   an agreement check, not independent evidence for every wire byte.
+    /// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
     fn segment_text() -> impl Strategy<Value = String>
     {
         proptest::collection::vec(
@@ -1773,18 +2624,41 @@ mod sharing_format
         .prop_map(|characters| characters.into_iter().collect())
     }
 
-    /// A sequence of one to six declarations over one arena, each reading the
-    /// one admitted before it, cycling through a definition, an axiom and an
-    /// abstract type.
+    /// A count-driven sequence over one arena, cycling through a definition,
+    /// an axiom and an abstract type; later definitions read their predecessor.
     ///
     /// # Specification
-    /// - requires: `count` is at least one.
-    /// - ensures: `count` unnamed declarations in admission order; every
-    ///   declaration past the first has a declared type or body referencing the
-    ///   admission position before it.
-    /// - provides: the content the name round trip holds fixed while it varies
-    ///   the names, so a reference changing with a name would show.
-    /// - panics: none.
+    /// - requires: successful allocation within the arena’s index capacity.
+    ///   Count may be zero.
+    /// - ensures: returns count unnamed, monomorphic, checked-mark declarations
+    ///   in definition, axiom, abstract-type order, each declared at the unit
+    ///   type. The first definition has a unit body; each later definition
+    ///   refers to the immediately preceding admission position.
+    /// - provides: a name-independent baseline containing predecessor
+    ///   references. Axioms and abstract types themselves do not reference
+    ///   their predecessors; the generator is not a well-typed admission proof.
+    /// - panics: if the arena exhausts its representable index space.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 varies Unicode segment lists, including empty segments
+    ///   and collisions, while comparing names as lists and each declaration’s
+    ///   content, mark, levels and provenance with the unnamed baseline.
+    ///   Structural predicates separately pin the baseline’s cycling kinds and
+    ///   the predecessor reference in each later definition; the round trip is
+    ///   an agreement check, not independent evidence for every wire byte.
+    /// - witness: `sharing_format::sharing_format::a_structured_name_round_trips_as_segments`
+    #[spec(
+        ensures: |ret| ret.len() == count.0
+                && ret.iter().enumerate().all(|(position, marked)| marked.mark() == AdmissionMark::Checked
+                && u32::from(marked.declaration().levels().params()) == 0
+                && marked.declaration().levels().constraints().is_empty()
+                && marked.declaration().name().segments().is_empty()
+                && marked.declaration().provenance().is_empty()
+                && arena.value_type(marked.declaration().declared_id()) == Some(&ValueType::Unit)
+                && match *marked.declaration().content() { DeclarationContent::Def { body, .. } => position.rem_euclid(3) == 0
+                && arena.value(body).is_some_and(|value| position.checked_sub(1).map_or(value == &Value::Unit,
+            |previous| value == &Value::Constant(ConstantIndex::from(previous)))), DeclarationContent::Axiom { .. } => position.rem_euclid(3) == 1, DeclarationContent::AbstractType { .. } => position.rem_euclid(3) == 2 }),
+    )]
     fn referencing_sequence(
         arena: &mut TermArena,
         count: Position,
@@ -1963,13 +2837,24 @@ mod sharing_format
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: returns the canonical bytes of an artifact whose first
-    ///   declaration is a sealed abstract type and whose second is a
-    ///   definition.
-    /// - provides: the only accepted artifact with a non-empty minted-atom
-    ///   table, which is what makes the table's refutation testable.
-    /// - panics: panics only through the arena and builder calls it makes, none
-    ///   of which is fallible.
+    /// - ensures: returns the fixed canonical artifact with an abstract type at
+    ///   position zero and a checked definition after it, with one minted-atom
+    ///   position.
+    /// - provides: a baseline with a nonempty atom table, pinned by literal
+    ///   bytes rather than a second encoder invocation.
+    /// - panics: none under successful allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::a_sealed_artifact_round_trips_with_its_atom_table`
+    #[spec(
+        ensures: |ret| ret.as_image().as_ref() == [b'G', b'K', b'X', b'1', 2, 0, 1, 0, 2, 0, 2, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0x0b, 1, 2, 0, 0, 0, 0].as_slice(),
+    )]
     fn sealed_artifact() -> EncodedArtifact
     {
         let mut arena = TermArena::new();
@@ -2003,6 +2888,34 @@ mod sharing_format
     ///   surrounding shape.
     /// - panics: panics when the sealed artifact is shorter than eight bytes,
     ///   which its own header precludes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 accepted and malformed artifacts use this independent
+    ///   fixture writer to isolate header, field-order, reference and
+    ///   canonical-form decisions. Literal encoder and decoder fixtures
+    ///   separately pin the frozen bytes; shared round trips alone are not an
+    ///   independent oracle. The refusal witnesses vary one field while
+    ///   retaining the surrounding record.
+    /// - witness: `sharing_format::sharing_format::a_minted_atom_table_with_a_repeat_is_refused`
+    /// - witness: `sharing_format::sharing_format::a_minted_atom_table_omitting_an_atom_is_refused`
+    /// - witness: `sharing_format::sharing_format::a_minted_atom_table_naming_a_definition_is_refused`
+    #[spec(
+        ensures: |ret| ret.0.starts_with(b"GKX1")
+                && ret.0.get(4 .. 6) == Some([2_u8, 0].as_slice())
+                && { let count = u64::try_from(atoms.len()).unwrap_or(u64::MAX);
+            let valid_count = { let scalar = count;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get(6_usize .. (6_usize).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) };
+            if valid_count { atoms.iter().try_fold((6_usize).saturating_add(usize::try_from(64_u32.saturating_sub((count).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX)),
+            |position, atom| { ({ let scalar = atom.0;
+            let width = usize::try_from(64_u32.saturating_sub((scalar).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX);
+            ret.0.as_slice().get((position) .. (position).saturating_add(width)).is_some_and(|digits| digits.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (scalar.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < width) })) }).then_some(position.saturating_add(usize::try_from(64_u32.saturating_sub((atom.0).leading_zeros()).max(1).div_ceil(7)).unwrap_or(usize::MAX))) }) }
+            else { None } }.is_some_and(|position| ret.0.get(position ..) == Some([2_u8, 0, 2, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0x0b, 1, 2, 0, 0, 0, 0].as_slice())),
+    )]
     fn sealed_with_atom_table(atoms: &[WireValue]) -> Bytes
     {
         let original = Bytes(Vec::from(sealed_artifact()));

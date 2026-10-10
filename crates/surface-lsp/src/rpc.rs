@@ -6,6 +6,7 @@
 //! rather than a batch to unpack. An outgoing message is a typed value until
 //! the transport encodes it, so the one fallible encoding sits at the stream.
 
+use anodized::spec;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -137,7 +138,7 @@ pub enum Incoming
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Malformed
 {
-    /// The body is not JSON.
+    /// The JSON decoder rejected the body, including its resource limits.
     Parse,
     /// The body is JSON, but no request, notification or response: a batch,
     /// a value other than an object, a version other than `2.0`, an
@@ -154,15 +155,22 @@ impl Malformed
     /// - requires: nothing.
     /// - ensures: a parse failure is [`ErrorCode::PARSE_ERROR`] under a null
     ///   identifier; an invalid message is [`ErrorCode::INVALID_REQUEST`] under
-    ///   its own identifier when that could be read, a null one otherwise.
+    ///   its supplied identifier. [`classify()`] supplies null when the input
+    ///   identifier could not be read.
     /// - provides: the answer the protocol owes a body the server cannot read.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a body that is not JSON and a batch, each asserted at
-    ///   its exact response.
+    /// - hypothesis: L3 — parse and invalid-message failures, with null,
+    ///   numeric and string identifiers, distinguish wrong codes or lost
+    ///   identifiers through their exact response envelope.
     /// - witness: `rpc::tests::a_batch_is_rejected`
+    #[spec(
+        captures: code = match self { Self::Parse => ErrorCode::PARSE_ERROR, Self::Invalid(_) => ErrorCode::INVALID_REQUEST },
+        ensures: |ret| matches!(ret, Outgoing::Failure { jsonrpc: VERSION, ref id, ref error }
+            if error.code == code && (code != ErrorCode::PARSE_ERROR || id.0.is_null())),
+    )]
     #[inline]
     #[must_use]
     pub fn response(self) -> Outgoing
@@ -233,15 +241,17 @@ pub struct Refusal
 ///
 /// # Specification
 /// - requires: nothing; any body is admissible input.
-/// - ensures: an object naming version `2.0` and a string `method` is a request
-///   when it carries an `id` and a notification when it does not; an object
-///   naming version `2.0`, an `id` and a `result` or an `error` is a response.
-///   A request's `id` is a number or a string, and `params`, when present, an
-///   object or an array; an explicit `null`, which some clients send for a
-///   method without parameters, reads as absent.
+/// - ensures: within the JSON decoder's supported fragment, an object naming
+///   version `2.0` and a string `method` is a request when it carries an `id`
+///   and a notification when it does not; an object naming version `2.0`, an
+///   `id` and a `result` or an `error` is a response. A request's `id` is a
+///   number or a string, and `params`, when present, an object or an array; an
+///   explicit `null`, which some clients send for a method without parameters,
+///   reads as absent.
 /// - provides: the one reader of a body's envelope; nothing past it reads the
 ///   raw body.
-/// - fails: [`Malformed::Parse`] for a body that is not JSON;
+/// - fails: [`Malformed::Parse`] when JSON decoding rejects the body, including
+///   invalid UTF-8, malformed syntax or unsupported nesting/numbers;
 ///   [`Malformed::Invalid`] for every other body, carrying the message's `id`
 ///   when it is a number or a string.
 /// - panics: none.
@@ -253,9 +263,20 @@ pub struct Refusal
 /// - hypothesis: L3 — the decision surfaces are a request, a notification, a
 ///   response, a body that is not JSON, a batch, a scalar, a wrong version, an
 ///   object identifier, scalar parameters and a method that is not a string;
-///   each separated by its exact classification.
+///   each separated by its exact classification. Decoder rejection is sampled
+///   with invalid UTF-8, an unrepresentable number and 512 nested arrays.
 /// - witness: `rpc::tests::a_request_is_classified`
 /// - witness: `rpc::tests::a_batch_is_rejected`
+/// - witness: `rpc::tests::decoder_rejections_keep_the_parse_error_class`
+#[spec(ensures: |ret| match ret {
+    Ok(Incoming::Request { ref id, ref params, .. }) =>
+        (id.0.is_number() || id.0.is_string())
+            && (params.is_null() || params.is_object() || params.is_array()),
+    Ok(Incoming::Notification { ref params, .. }) =>
+        params.is_null() || params.is_object() || params.is_array(),
+    Err(Malformed::Invalid(ref id)) => id.0.is_null() || id.0.is_number() || id.0.is_string(),
+    Ok(Incoming::Response) | Err(Malformed::Parse) => true,
+})]
 #[inline]
 pub fn classify(body: &Body) -> Result<Incoming, Malformed>
 {
@@ -450,29 +471,47 @@ mod tests
             Err(Malformed::Invalid(RequestId::unread())),
             "the protocol sends no batches"
         );
-        let answer = batch
-            .map_err(Malformed::response)
-            .expect_err("a batch is refused");
+        for (malformed, expected_id, expected_code) in [
+            (Malformed::Parse, Value::Null, super::ErrorCode::PARSE_ERROR),
+            (
+                Malformed::Invalid(RequestId::unread()),
+                Value::Null,
+                super::ErrorCode::INVALID_REQUEST,
+            ),
+            (
+                Malformed::Invalid(RequestId(json!(17_i32))),
+                json!(17_i32),
+                super::ErrorCode::INVALID_REQUEST,
+            ),
+            (
+                Malformed::Invalid(RequestId(json!("correlation"))),
+                json!("correlation"),
+                super::ErrorCode::INVALID_REQUEST,
+            ),
+        ] {
+            let super::Outgoing::Failure { jsonrpc, id, error } = malformed.response()
+            else {
+                panic!("malformed messages require an error envelope");
+            };
+            assert_eq!(jsonrpc, "2.0");
+            assert_eq!(id.0, expected_id);
+            assert_eq!(error.code, expected_code);
+        }
+    }
+    #[test]
+    fn decoder_rejections_keep_the_parse_error_class()
+    {
+        for bytes in [b"\xff".as_slice(), b"1e9999".as_slice()] {
+            assert_eq!(classify(&Body::from(bytes.to_vec())), Err(Malformed::Parse));
+        }
+        let nested = format!("{}0{}", "[".repeat(512), "]".repeat(512));
         assert_eq!(
-            serde_json::to_value(answer).expect("a response encodes"),
-            json!({
-                "jsonrpc": "2.0",
-                "id": null,
-                "error": {
-                    "code": -32_600_i32,
-                    "message": "the message is not a JSON-RPC 2.0 request, notification or response",
-                },
-            }),
-            "a batch is answered as an invalid request under a null id"
+            classify(&Body::from(nested.into_bytes())),
+            Err(Malformed::Parse)
         );
         assert_eq!(
-            serde_json::to_value(Malformed::Parse.response()).expect("a response encodes"),
-            json!({
-                "jsonrpc": "2.0",
-                "id": null,
-                "error": {"code": -32_700_i32, "message": "the body is not JSON"},
-            }),
-            "a body that is not JSON is a parse error under a null id"
+            classified(Json("[0]")),
+            Err(Malformed::Invalid(RequestId::unread()))
         );
     }
 }

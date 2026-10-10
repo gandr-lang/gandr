@@ -9,6 +9,7 @@
 
 use core::borrow::Borrow;
 
+use anodized::spec;
 use gandr_core_term::Sort;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
@@ -61,6 +62,13 @@ impl Borrow<str> for Name<'_>
     ///   spells.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a generated binder skips the single mentioned name
+    ///   through heterogeneous set lookup. Returning altered text changes that
+    ///   spelling; arbitrary key sets and Unicode ordering are not enumerated.
+    /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
+    #[spec(ensures: |ret| ret == self.0)]
     #[inline]
     fn borrow(&self) -> &str
     {
@@ -81,6 +89,18 @@ impl Borrow<str> for Name<'_>
 ///   handle can have that is no printable former.
 /// - provides: the closed input space of the printer.
 /// - panics: none.
+/// - executable: none — a former holds opaque child handles, not their source
+///   or provenance. Their association with the answering source cannot be
+///   observed from this value alone; concrete readers check their conversion.
+///
+/// # Adequacy
+/// - hypothesis: L3 — finite core-backed type and value fixtures distinguish
+///   variant selection and child order, while malformed table fixtures expose
+///   misplaced and dangling children. Provenance across arbitrary source
+///   instances is outside the observations available on a former.
+/// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+/// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+/// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 #[derive(Clone, Copy, Debug)]
 pub enum Former<'source, Node>
 {
@@ -196,6 +216,18 @@ pub trait Source
     /// - provides: the one question the printer asks of its input.
     /// - fails: never; an unreadable node is a variant.
     /// - panics: none.
+    /// - executable: none — the trait exposes neither membership nor a
+    ///   denotation observer independent of `read`. Repeating `read` cannot
+    ///   establish whether the returned former represents the stored node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — core-backed and table-backed readers expose exact
+    ///   constructor spellings, dangling handles and misplaced children. These
+    ///   distinguish wrong node classification and absence handling for the
+    ///   supplied readers, not arbitrary trait implementations.
+    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
     fn read(
         &self,
         node: Self::Node,

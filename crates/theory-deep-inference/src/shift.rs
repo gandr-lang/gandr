@@ -59,6 +59,7 @@
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
 use gandr_theory_cell_complexes::CellStore;
@@ -143,11 +144,17 @@ impl<A: CellAlphabet> ShiftEquivalence<A>
     /// - hypothesis: L3 — the decision is the conjunction of two path replays
     ///   against one boundary, separated by a derived witness that replays and
     ///   by the same witness with its composite retargeted to a term neither
-    ///   order reaches.
+    ///   order reaches. A candidate with exactly one firing order is rejected
+    ///   in either orientation, even when its declared join is the successful
+    ///   order’s actual result. Dropping either replay conjunct changes that
+    ///   boundary.
     /// - witness: `tests::shift::the_cong2_composite_replays_under_both_sequentializations`
     /// - witness: `tests::shift::a_retargeted_composite_no_longer_replays`
+    /// - witness: `shift::tests::paired_firing_and_one_sided_replay_preserve_boundaries`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| bool::from(output) == bool::from(replay_from_peak(store, &self.peak, &self.joins_at,
+    &[self.first.clone(), self.second.clone()], &[self.second.clone(), self.first.clone()])))]
     pub fn replay(
         &self,
         store: &CellStore<A>,
@@ -254,14 +261,32 @@ pub enum ShiftObstruction<A: CellAlphabet = SequentAlphabet>
 ///   cong2 pair clears all three; a nested pair whose cells also overlap fails
 ///   positions first; an overlapping pair at incomparable positions fails the
 ///   overlap conjunct; a withheld discharge fails the third; and an unknown
-///   identifier and a non-firing step separate the two instance checks.
+///   identifier and a non-firing step separate the two instance checks. Both
+///   overlap directions and the two lookup positions are independently
+///   exercised before later refusals. Wrong failure precedence changes the
+///   variant or its attached identity.
 /// - witness: `tests::shift::the_cong2_pair_earns_its_shift_equivalence_witness`
 /// - witness: `shift::tests::a_nested_pair_is_refused_before_the_overlap_conjunct`
 /// - witness: `shift::tests::a_genuinely_overlapping_pair_is_refused_the_witness`
 /// - witness: `shift::tests::an_undischarged_convexity_conjunct_refuses_the_pair`
 /// - witness: `shift::tests::an_unknown_cell_identifier_is_refused`
 /// - witness: `shift::tests::a_step_that_does_not_fire_is_refused`
+/// - witness: `shift::tests::guard_lookup_and_reverse_overlap_precedence_are_exact`
 #[inline]
+#[spec(ensures: |output| {
+    let convexity = A::convexity_discharge(store);
+    check_shift_guard(store, first, second, convexity).map_or_else(|reason| output == Err(reason), |()| {
+        run_pair(store, peak, first, second).map_or_else(|reason| output == Err(reason), |forward| {
+            run_pair(store, peak, second, first).map_or_else(|reason| output == Err(reason), |backward| {
+                if forward == backward {
+                    output.as_ref().is_ok_and(|witness| witness.peak == *peak && witness.first == *first && witness.second == *second && witness.joins_at == forward && witness.convexity == convexity)
+                } else {
+                    matches!(output, Err(ShiftObstruction::SequentializationsDiffer { ref first_then_second, ref second_then_first }) if **first_then_second == forward && **second_then_first == backward)
+                }
+            })
+        })
+    })
+})]
 pub fn derive_shift_equivalence<A>(
     store: &CellStore<A>,
     peak: &A::Cmd,
@@ -315,10 +340,32 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — the conjunct order is a decision surface, separated by a
 ///   nested pair whose cells also overlap and by an identical pair under a
-///   withheld discharge.
+///   withheld discharge. An overlap found only in the reverse query still
+///   precedes convexity; each missing identifier precedes position comparison
+///   and two missing identifiers report the first.
 /// - witness: `shift::tests::a_nested_pair_is_refused_before_the_overlap_conjunct`
 /// - witness: `shift::tests::an_undischarged_convexity_conjunct_refuses_the_pair`
+/// - witness: `shift::tests::guard_lookup_and_reverse_overlap_precedence_are_exact`
 #[inline]
+#[spec(ensures: |output| match store.get(first.cell) {
+    Maybe::Absent(_) => matches!(output, Err(ShiftObstruction::UnknownCell { cell }) if cell == first.cell),
+    Maybe::Present(first_cell) => match store.get(second.cell) {
+        Maybe::Absent(_) => matches!(output, Err(ShiftObstruction::UnknownCell { cell }) if cell == second.cell),
+        Maybe::Present(second_cell) => {
+            let order = A::position_order(&first.at, &second.at);
+            if order == PositionOrder::Incomparable {
+                let overlap = if bool::from(support.independent(first.cell, second.cell)) { None } else {
+                    overlaps_between((first.cell, first_cell), (second.cell, second_cell)).into_iter()
+                        .chain(overlaps_between((second.cell, second_cell), (first.cell, first_cell))).next()
+                };
+                overlap.as_ref().map_or_else(
+                    || output == if convexity == ConvexityDischarge::StronglyConnectedOverAcyclicTarget { Ok(()) } else { Err(ShiftObstruction::ConvexityNotDischarged) },
+                    |expected| matches!(output, Err(ShiftObstruction::GenuineOverlap { ref overlap }) if **overlap == *expected),
+                )
+            } else { output == Err(ShiftObstruction::ComparablePositions { order }) }
+        },
+    },
+})]
 pub fn check_shift_guard_with_support<A>(
     store: &CellStore<A>,
     first: &CellApp<A>,
@@ -369,7 +416,15 @@ where
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — with support built from the same store, missing
+///   identifiers precede comparable positions, and either overlap direction
+///   precedes a withheld discharge. A reversed lookup order or omitted overlap
+///   direction changes the typed refusal.
+/// - witness: `shift::tests::guard_lookup_and_reverse_overlap_precedence_are_exact`
 #[inline]
+#[spec(ensures: |output| output == check_shift_guard_with_support(store, first, second, convexity, &OverlapSupport::from_store(store)))]
 pub fn check_shift_guard<A>(
     store: &CellStore<A>,
     first: &CellApp<A>,
@@ -395,6 +450,14 @@ where
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — concrete root rules reach a distinct composite only in
+///   the specified order; a failed lead precedes an unknown trail, and a
+///   successful lead exposes the trail refusal. Reversing, skipping or
+///   misreporting a step changes the term or error.
+/// - witness: `shift::tests::paired_firing_and_one_sided_replay_preserve_boundaries`
+#[spec(ensures: |output| output == fire_step(store, term, lead).and_then(|after| fire_step(store, &after, trail)))]
 fn run_pair<A>(
     store: &CellStore<A>,
     term: &A::Cmd,
@@ -418,6 +481,19 @@ where
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L3 — issued firing, issued non-firing and unissued steps
+///   produce distinct outcomes on concrete terms. Omitting lookup, accepting a
+///   failed match or returning the wrong step changes the pair observer.
+/// - witness: `shift::tests::paired_firing_and_one_sided_replay_preserve_boundaries`
+#[spec(ensures: |output| match store.get(step.cell) {
+    Maybe::Absent(_) => matches!(output, Err(ShiftObstruction::UnknownCell { cell }) if cell == step.cell),
+    Maybe::Present(cell) => match rewrite_at(cell, term, &step.at) {
+        Maybe::Present(ref result) => matches!(output, Ok(ref actual) if actual == result),
+        Maybe::Absent(_) => matches!(output, Err(ShiftObstruction::StepDoesNotFire { step: ref refused }) if **refused == *step),
+    },
+})]
 fn fire_step<A>(
     store: &CellStore<A>,
     term: &A::Cmd,
@@ -453,6 +529,9 @@ mod tests
     use gandr_theory_cell_complexes::Sym;
     use gandr_theory_cell_complexes::frame_defining_cell;
     use gandr_theory_cell_complexes::path_order;
+    use gandr_theory_cell_complexes_tools::Toy;
+    use gandr_theory_cell_complexes_tools::ToyAlphabet;
+    use gandr_theory_cell_complexes_tools::toy_cell;
 
     use super::*;
 
@@ -547,7 +626,16 @@ mod tests
     /// The single-cell store whose only cell overlaps nothing.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: exactly one issued cell and no confluence or composition
+    ///   overlap.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the same fixture passes the position and overlap
+    ///   guards with a discharge and refuses when that warrant is withheld. A
+    ///   self-overlapping replacement would refuse earlier.
+    /// - witness: `shift::tests::an_undischarged_convexity_conjunct_refuses_the_pair`
+    #[spec(ensures: |output| usize::from(output.0.len()) == 1 && matches!(output.0.get(output.1), Maybe::Present(_)) && gandr_theory_coherent_resolutions::enumerate_overlaps(&output.0).is_empty())]
     fn trivial_overlap_store() -> (CellStore, CellId)
     {
         let mut store = CellStore::new();
@@ -807,6 +895,129 @@ mod tests
             ShiftObstruction::UnknownCell { cell: missing },
             refusal,
             "the refusal names the identifier that resolved to nothing"
+        );
+    }
+
+    #[test]
+    fn paired_firing_and_one_sided_replay_preserve_boundaries()
+    {
+        let mut store = CellStore::new();
+        let lead_id = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
+        let trail_id = store.insert(toy_cell(Toy::zero(), Toy::add(Toy::zero(), Toy::zero())));
+        let lead = CellApp {
+            cell: lead_id,
+            at: ToyAlphabet::root_position(),
+        };
+        let trail = CellApp {
+            cell: trail_id,
+            at: ToyAlphabet::root_position(),
+        };
+        let peak = Toy::succ(Toy::zero());
+        let joined = Toy::add(Toy::zero(), Toy::zero());
+        assert_eq!(Ok(joined.clone()), run_pair(&store, &peak, &lead, &trail));
+        assert_eq!(
+            Err(ShiftObstruction::StepDoesNotFire {
+                step: Box::new(trail.clone())
+            }),
+            run_pair(&store, &peak, &trail, &lead)
+        );
+        assert_eq!(
+            Err(ShiftObstruction::StepDoesNotFire {
+                step: Box::new(lead.clone())
+            }),
+            run_pair(&store, &peak, &lead, &lead)
+        );
+        let missing = CellApp {
+            cell: CellId::from(99_usize),
+            at: ToyAlphabet::root_position(),
+        };
+        assert_eq!(
+            Err(ShiftObstruction::UnknownCell { cell: missing.cell }),
+            run_pair(&store, &peak, &lead, &missing)
+        );
+        assert_eq!(
+            Err(ShiftObstruction::StepDoesNotFire {
+                step: Box::new(lead.clone())
+            }),
+            run_pair(&store, &Toy::zero(), &lead, &missing)
+        );
+        assert_eq!(
+            Err(ShiftObstruction::UnknownCell { cell: missing.cell }),
+            run_pair(&store, &peak, &missing, &trail)
+        );
+        let mut candidate = ShiftEquivalence {
+            peak,
+            first: lead,
+            second: trail,
+            joins_at: joined,
+            convexity: ConvexityDischarge::StronglyConnectedOverAcyclicTarget,
+        };
+        assert!(!bool::from(candidate.replay(&store)));
+        core::mem::swap(&mut candidate.first, &mut candidate.second);
+        assert!(!bool::from(candidate.replay(&store)));
+    }
+
+    #[test]
+    fn guard_lookup_and_reverse_overlap_precedence_are_exact()
+    {
+        let mut store = CellStore::new();
+        let lead_id = store.insert(toy_cell(Toy::succ(Toy::zero()), Toy::zero()));
+        let trail_id = store.insert(toy_cell(Toy::zero(), Toy::add(Toy::zero(), Toy::zero())));
+        let lead = CellApp {
+            cell: lead_id,
+            at: ToyAlphabet::root_position(),
+        };
+        let trail = CellApp {
+            cell: trail_id,
+            at: ToyAlphabet::root_position(),
+        };
+        let first_missing = CellApp {
+            cell: CellId::from(99_usize),
+            at: ToyAlphabet::root_position(),
+        };
+        let second_missing = CellApp {
+            cell: CellId::from(100_usize),
+            at: ToyAlphabet::root_position(),
+        };
+        let support = OverlapSupport::from_store(&store);
+        for (first, second, expected) in [
+            (&first_missing, &trail, first_missing.cell),
+            (&lead, &second_missing, second_missing.cell),
+            (&first_missing, &second_missing, first_missing.cell),
+        ] {
+            assert_eq!(
+                Err(ShiftObstruction::UnknownCell { cell: expected }),
+                check_shift_guard_with_support(
+                    &store,
+                    first,
+                    second,
+                    ConvexityDischarge::ReCheckRequired,
+                    &support
+                )
+            );
+        }
+        let reverse_first = CellApp {
+            cell: trail_id,
+            at: ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
+        };
+        let reverse_second = CellApp {
+            cell: lead_id,
+            at: ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]),
+        };
+        let refusal = check_shift_guard(
+            &store,
+            &reverse_first,
+            &reverse_second,
+            ConvexityDischarge::ReCheckRequired,
+        );
+        let Err(ShiftObstruction::GenuineOverlap { overlap }) = refusal
+        else {
+            panic!("the reverse composition precedes the withheld discharge");
+        };
+        assert_eq!((lead_id, trail_id), (overlap.left, overlap.right));
+        assert_eq!(
+            gandr_theory_coherent_resolutions::OverlapKind::Composition,
+            overlap.kind
         );
     }
 }

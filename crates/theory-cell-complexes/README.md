@@ -54,7 +54,7 @@ The cell-shape substrate of gandr's rewriting stack: flat command patterns, matc
 - `CellAlphabet`, `SeamRole`, `PositionOrder`, `path_order`, `ConvexityDischarge`, `CommandSpliceRefusal`: the 24-method alphabet interface and the shared path order on child-index positions. Witnesses: `sequent::tests::renaming_apart_keeps_a_seam_one_hole`, `sequent::tests::skolemization_is_name_stable`, `sequent::tests::each_eta_kind_requires_its_own_polarity`, `alphabet::tests::the_path_order_separates_its_four_outcomes`; the inhabitant laws are witnessed over this inhabitant and a second one by `gandr-theory-cell-complexes-tools` (see [Second inhabitant](#second-inhabitant)).
 - `SequentAlphabet`, `Orientation`, `CellProvenance`, `EtaKind`, `CellMeta`, `CellVarMeta`, `CellVariance`, `CellContractumUse`, `StepGrowth`, `frame_defining_cell`: the sequent inhabitant, its tags, its derived per-hole metadata and the η-polarity discipline. Witnesses: `sequent::tests::metadata_tracks_variance_and_linearity`, `sequent::tests::a_repeated_metavariable_is_nonlinear`, `sequent::tests::a_hole_at_both_polarities_is_a_linear_seam`, `sequent::tests::the_contractum_use_reports_erased_once_and_repeated`, `sequent::tests::the_step_growth_join_names_duplication_erasure_and_strict_linearity`, `sequent::tests::completion_cells_are_invertible_certificates`, `sequent::tests::skolemization_is_name_stable`, `sequent::tests::each_eta_kind_requires_its_own_polarity`, `sequent::tests::renaming_apart_keeps_a_seam_one_hole`.
 - `Cell`, `CellStore`, `CellId`: cells with derived metadata, deduplicated on structure, addressed in insertion order. Witness: `sequent::tests::the_store_dedups_on_structural_identity`.
-- `admit_linear_cell`, `copied_hole`, `NonLinearPattern`: the left-linearity admission and its alphabet-neutral copy search. Witnesses: `linearity::tests::a_repeated_producer_hole_is_the_copy`, `linearity::tests::a_hole_at_both_polarities_is_not_a_copy`, `linearity::tests::a_repeat_on_the_right_hand_side_is_not_a_copy`, `linearity::tests::the_diagnostic_names_the_copy_and_the_respelling`, `linearity::tests::a_hole_at_both_polarities_is_admitted`, `linearity::tests::a_linear_cell_is_admitted`.
+- `admit_linear_cell`, `copied_hole`, `NonLinearPattern`: the left-linearity admission and its alphabet-neutral copy search. Witnesses: `linearity::tests::a_repeated_producer_hole_is_the_copy`, `linearity::tests::a_hole_at_both_polarities_is_not_a_copy`, `linearity::tests::a_repeat_on_the_right_hand_side_is_not_a_copy`, `linearity::tests::refusal_payloads_and_rendering_preserve_hole_identity`, `linearity::tests::admission_chooses_the_first_copied_occurrence_and_accepts_ground_terms`, `linearity::tests::a_hole_at_both_polarities_is_admitted`, `linearity::tests::a_linear_cell_is_admitted`.
 - `Polarity` and the boundary wrappers (`PatternSize`, `PositionStep`, `SubstitutionDecision`, `CellInvertibility`, …): the cut's orientation and every count and verdict a signature here crosses.
 
 ## Expected features
@@ -128,11 +128,14 @@ fn example() -> Result<(), Box<dyn core::error::Error>> {
 }
 ```
 
-Run the tests:
+Nontrivial operations carry executable `#[spec]` predicates and `# Adequacy` hypotheses with crate-local witnesses. The witnesses cover category boundaries, empty inputs, transactional refusals, substitution cycles, splice growth and shrinkage, metadata joins, and ordering obstructions. Run them normally and with predicate enforcement:
 
 ```sh
 cargo nextest run -p gandr-theory-cell-complexes
+RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-theory-cell-complexes
 ```
+
+Const-compatible predicates check node-count arithmetic, polarity, variance and η requirements without removing compile-time availability. Items that cannot be instrumented without changing their interface state an `executable: none` reason beside the specification: abstract alphabet declarations, opaque iterator or strategy returns, and consumed one-shot paths. Renaming checks colliding images against the captured reserved-name set even though its input iterator is consumed. Formatting and the assertion-driven depth witness expose no readable result state for an exit predicate. These items retain explicit adequacy witnesses rather than weakening their contracts to satisfy instrumentation.
 
 ## Polarity
 

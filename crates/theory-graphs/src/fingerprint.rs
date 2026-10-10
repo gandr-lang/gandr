@@ -22,11 +22,14 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 /// the hash of everything absorbed.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise — the empty stream and the published `"a"` test
-///   vector pin both parameters, and each word width is pinned against the same
-///   bytes absorbed one at a time in little-endian order.
+/// - hypothesis: For byte streams and little-endian words, L3 published vectors
+///   distinguish changed mixing parameters, asymmetric high-bit words
+///   distinguish byte order and truncation, and segmented streams distinguish
+///   reset or order dependence. These finite observations do not claim
+///   collision freedom or prove arbitrary user-defined consuming conversions.
 /// - witness: `fingerprint::tests::published_vectors_pin_the_parameters`
 /// - witness: `fingerprint::tests::words_absorb_little_endian`
+/// - witness: `fingerprint::tests::byte_streams_preserve_order_and_segmentation`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Fnv64
@@ -68,6 +71,18 @@ impl Fnv64
     /// - ensures: the state becomes `(state ^ byte) * prime`, wrapping.
     /// - provides: the one mixing step every other write is built from.
     /// - panics: none.
+    /// - executable: none — the generic conversion consumes its input and
+    ///   exposes no borrowed byte observer; capturing that conversion would
+    ///   move the value away from the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For byte conversions and accumulated states, L3 published
+    ///   digests and asymmetric word streams observe the mixing result,
+    ///   distinguishing a changed offset, prime, mixing operator or dropped
+    ///   byte. The finite vectors do not establish collision freedom or inspect
+    ///   arbitrary consuming conversions.
+    /// - witness: `fingerprint::tests::published_vectors_pin_the_parameters`
+    /// - witness: `fingerprint::tests::words_absorb_little_endian`
     #[inline]
     pub fn write_byte<B>(
         &mut self,
@@ -85,6 +100,19 @@ impl Fnv64
     /// - requires: nothing.
     /// - ensures: equals absorbing the word's two little-endian bytes in order.
     /// - panics: none.
+    /// - executable: none — the generic conversion consumes its input and
+    ///   exposes no borrowed word observer; capturing that conversion would
+    ///   move the value away from the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For 2-byte word conversions and accumulated states, L3
+    ///   asymmetric words with their high bits set are compared with an
+    ///   explicit little-endian byte stream. This distinguishes reversed order,
+    ///   truncation and lost continuation across widths. Mixing parameters have
+    ///   independent published-vector witnesses; arbitrary user-defined
+    ///   conversions and collision freedom remain outside these finite samples.
+    /// - witness: `fingerprint::tests::words_absorb_little_endian`
+    /// - witness: `fingerprint::tests::published_vectors_pin_the_parameters`
     #[inline]
     pub fn write_u16<W>(
         &mut self,
@@ -104,6 +132,19 @@ impl Fnv64
     /// - ensures: equals absorbing the word's four little-endian bytes in
     ///   order.
     /// - panics: none.
+    /// - executable: none — the generic conversion consumes its input and
+    ///   exposes no borrowed word observer; capturing that conversion would
+    ///   move the value away from the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For 4-byte word conversions and accumulated states, L3
+    ///   asymmetric words with their high bits set are compared with an
+    ///   explicit little-endian byte stream. This distinguishes reversed order,
+    ///   truncation and lost continuation across widths. Mixing parameters have
+    ///   independent published-vector witnesses; arbitrary user-defined
+    ///   conversions and collision freedom remain outside these finite samples.
+    /// - witness: `fingerprint::tests::words_absorb_little_endian`
+    /// - witness: `fingerprint::tests::published_vectors_pin_the_parameters`
     #[inline]
     pub fn write_u32<W>(
         &mut self,
@@ -123,6 +164,19 @@ impl Fnv64
     /// - ensures: equals absorbing the word's eight little-endian bytes in
     ///   order.
     /// - panics: none.
+    /// - executable: none — the generic conversion consumes its input and
+    ///   exposes no borrowed word observer; capturing that conversion would
+    ///   move the value away from the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For 8-byte word conversions and accumulated states, L3
+    ///   asymmetric words with their high bits set are compared with an
+    ///   explicit little-endian byte stream. This distinguishes reversed order,
+    ///   truncation and lost continuation across widths. Mixing parameters have
+    ///   independent published-vector witnesses; arbitrary user-defined
+    ///   conversions and collision freedom remain outside these finite samples.
+    /// - witness: `fingerprint::tests::words_absorb_little_endian`
+    /// - witness: `fingerprint::tests::published_vectors_pin_the_parameters`
     #[inline]
     pub fn write_u64<W>(
         &mut self,
@@ -142,6 +196,18 @@ impl Fnv64
     ///   length first.
     /// - ensures: equals absorbing each byte in order.
     /// - panics: none.
+    /// - executable: none — the generic conversion consumes its input and
+    ///   exposes no borrowed byte-stream observer; capturing that conversion
+    ///   would move the value away from the body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For byte streams, L3 published digests and segmented,
+    ///   empty and reversed streams observe continuation of the accumulated
+    ///   hash, distinguishing resets, omissions and order loss. Delimiting
+    ///   separate fields remains the caller boundary; collision freedom and
+    ///   arbitrary conversion side effects are not claimed.
+    /// - witness: `fingerprint::tests::published_vectors_pin_the_parameters`
+    /// - witness: `fingerprint::tests::byte_streams_preserve_order_and_segmentation`
     #[inline]
     pub fn write_bytes<'bytes, B>(
         &mut self,
@@ -187,11 +253,27 @@ mod tests
     fn words_absorb_little_endian()
     {
         let mut words = Fnv64::new();
-        words.write_u16(0x0201_u16);
-        words.write_u32(0x0605_0403_u32);
-        words.write_u64(0x0e0d_0c0b_0a09_0807_u64);
+        words.write_u16(0x8201_u16);
+        words.write_u32(0x8605_0403_u32);
+        words.write_u64(0x8e0d_0c0b_0a09_0807_u64);
         let mut bytes = Fnv64::new();
-        bytes.write_bytes(&[1_u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+        bytes.write_bytes(&[1_u8, 0x82, 3, 4, 5, 0x86, 7, 8, 9, 10, 11, 12, 13, 0x8e]);
         assert_eq!(words.finish(), bytes.finish());
+    }
+
+    #[test]
+    fn byte_streams_preserve_order_and_segmentation()
+    {
+        let mut whole = Fnv64::new();
+        whole.write_bytes(b"alphabeta");
+        let mut segments = Fnv64::new();
+        segments.write_bytes(b"alpha");
+        segments.write_bytes(b"beta");
+        assert_eq!(whole.finish(), segments.finish());
+        segments.write_bytes(b"");
+        assert_eq!(whole.finish(), segments.finish());
+        let mut reversed = Fnv64::new();
+        reversed.write_bytes(b"betaalpha");
+        assert_ne!(whole.finish(), reversed.finish());
     }
 }

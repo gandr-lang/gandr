@@ -21,6 +21,7 @@ The gandr surface parser: source text in, a molded syntax tree and its completio
 - [No recursion over input](#no-recursion-over-input)
 - [The corpus every molding is checked against](#the-corpus-every-molding-is-checked-against)
 - [Grammar contracts witnessed by a parse](#grammar-contracts-witnessed-by-a-parse)
+- [Specification evidence](#specification-evidence)
 - [License](#license)
 <!-- tocstop -->
 
@@ -154,6 +155,14 @@ The language's sources live in `gandr-surface-corpus` (`crates/surface-corpus/`)
 ## Grammar contracts witnessed by a parse
 
 Five of the grammar's contracts can only be witnessed by parsing: that each type operator the precedence table declares right-associative chains cleanly, the value function space `=>` among them, that every recursion-marker instantiation parses cleanly, that a chain mixing incomparable set operators is refused a clean reading, that every spelling of the universe reads cleanly wherever a type stands, and that every spelling of a type operator — the static abstraction, its application, the unary and n-ary `=>` — reads cleanly as a declared type, a definition's value and an operator's argument, beside a case arm's `=>`. They live here, in `tests::grammar`, because the dependency runs from this crate to the grammar; the grammar's own suite keeps the contracts it can state without a parser.
+
+## Specification evidence
+
+Executable predicates cover constant constructors and class rankings, scanner decisions, candidate ordering, slope and cache transitions, rollback, completion queries, source agreement and checkpoint fields. Each nontrivial item states its adequacy domain and names local witnesses. Closed wire-tag vocabularies and byte classes have exhaustive finite witnesses; scanner modes, precedence and repair transitions use discriminating examples; generated source and stream properties remain sampled evidence. Run the predicates with `RUSTFLAGS="--cfg anodized_panic" cargo test -p gandr-surface-parser --all-targets`.
+
+Grammar predicates preserve logarithmic successor and adjacency lookups: successor minimality is checked by edge membership and the immediately preceding adjacency. They do not scan the whole grammar on each speculative completion.
+
+The witnesses do not establish universal malformed-input totality. A trailing escape in a quoted shell assignment can advance past the source, and a non-ASCII byte sequence inside a braced shell substitution can be split at a non-character boundary; batch parsing then refuses source agreement. Checkpoint counts also lack allocation bounds, so a maximal encoded count can panic before a typed decoder refusal. These are runtime limits, not exemptions from the intended losslessness and decoder contracts.
 
 ## License
 

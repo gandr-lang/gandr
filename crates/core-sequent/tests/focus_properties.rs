@@ -10,6 +10,7 @@ use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::ConsumerId;
 use gandr_core_sequent::ConsumerNode;
@@ -44,7 +45,24 @@ use crate::generate::values;
 /// Every covariable node of an arena is the innermost one.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: Same exactly when no recorded consumer is a covariable other than
+///   the innermost one, including consumers unreachable from any command.
+/// - provides: the covariable part of the focused-image observation.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and terminal-only arenas, the innermost covariable
+///   and an unreachable outer covariable distinguish vacuous rejection,
+///   wrong-family scanning and an ignored unused node. Generated focusing
+///   additionally observes the invariant over bounded closed terms; no claim is
+///   made about arbitrary transformation passes.
+/// - witness: `tests::focus_properties::covariable_observation_includes_unreachable_nodes`
+/// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
+#[spec(ensures: |ret| (ret == Agreement::Same) ==
+    (0_usize .. usize::from(arena.consumer_count())).all(|offset|
+        u32::try_from(offset).is_ok_and(|at| arena.consumer(ConsumerId::from(at))
+            .is_none_or(|node| !matches!(*node, ConsumerNode::Covariable(index) if index != CovariableIndex::from(0_u32))))))]
 fn every_covariable_is_innermost(arena: &CommandArena) -> Agreement
 {
     let count = usize::from(arena.consumer_count());
@@ -347,4 +365,23 @@ fn top_level_value_focuses_against_top()
         check_command(&arena, command),
         "well formed and closed"
     );
+}
+
+/// Every consumer counts, not only the consumers reached from a selected
+/// command.
+#[test]
+fn covariable_observation_includes_unreachable_nodes()
+{
+    let mut arena = CommandArena::new();
+    assert_eq!(Agreement::Same, every_covariable_is_innermost(&arena));
+    arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+    assert_eq!(Agreement::Same, every_covariable_is_innermost(&arena));
+    arena
+        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+        .expect("leaf");
+    assert_eq!(Agreement::Same, every_covariable_is_innermost(&arena));
+    arena
+        .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(1_u32)))
+        .expect("leaf");
+    assert_eq!(Agreement::Differ, every_covariable_is_innermost(&arena));
 }

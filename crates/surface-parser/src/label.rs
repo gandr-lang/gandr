@@ -25,6 +25,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_syntax::SourceFragment;
 
 /// The lexical class of one maximal lexeme.
@@ -38,10 +39,14 @@ use gandr_surface_syntax::SourceFragment;
 /// - provides: the closed labeler output vocabulary the molder consumes.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — this carrier has no entry or return boundary; the
+///   labeler and token-text observer carry its executable obligations.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — each class is produced by a distinct lexeme shape in the
-///   labeler tests.
+/// - hypothesis: L3 — host and shell contexts cover the complete lexical
+///   vocabulary with exact class streams and source spans. Wrong modes, missing
+///   classes and shifted spans change these observations.
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
 /// - witness: `label::tests::labels_a_definition_losslessly`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Lexeme
@@ -248,9 +253,18 @@ impl ByteOffset
     /// Advance this cursor by a checked byte width, saturating at host maximum.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the cursor advances by the width, saturating at the host
+    ///   ceiling.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, ordinary and host-ceiling operands expose exact
+    ///   cursors; arithmetic wrap, wrong direction and an off-by-one saturation
+    ///   boundary change the observed offsets.
+    /// - witness: `label::tests::cursor_arithmetic_saturates_at_both_boundaries`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(width.0))]
     fn advance(
         self,
         width: ByteWidth,
@@ -262,9 +276,17 @@ impl ByteOffset
     /// Move this cursor backwards by a byte width, saturating at zero.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the cursor moves back by the width, saturating at zero.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, ordinary and host-ceiling operands expose exact
+    ///   cursors; arithmetic wrap, wrong direction and an off-by-one saturation
+    ///   boundary change the observed offsets.
+    /// - witness: `label::tests::cursor_arithmetic_saturates_at_both_boundaries`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_sub(width.0))]
     fn retreat(
         self,
         width: ByteWidth,
@@ -364,9 +386,18 @@ impl SourceByte
     /// Return whether this byte can start a shell variable name (`[A-Za-z_]`).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: accepts ASCII letters and underscore.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
+    ///   lexical alphabet, including both neighbors of every ASCII class
+    ///   boundary. Missing members and accidental additions flip an observed
+    ///   classification.
+    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'_'))]
     fn is_var_name_start(self) -> BytePredicate
     {
         let byte = u8::from(self);
@@ -376,9 +407,18 @@ impl SourceByte
     /// Return whether this byte continues a word `[A-Za-z0-9_]`.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: accepts ASCII letters, digits and underscore.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
+    ///   lexical alphabet, including both neighbors of every ASCII class
+    ///   boundary. Missing members and accidental additions flip an observed
+    ///   classification.
+    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'0' ..= b'9' | b'_'))]
     fn is_word_continue(self) -> BytePredicate
     {
         let byte = u8::from(self);
@@ -388,9 +428,18 @@ impl SourceByte
     /// Return whether this byte continues a shell word.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: accepts every byte except shell separators and delimiters.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
+    ///   lexical alphabet, including both neighbors of every ASCII class
+    ///   boundary. Missing members and accidental additions flip an observed
+    ///   classification.
+    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) != b" \t\r\n\x0c\x0b;|&<>{}[]()`\"'$#".contains(&self.0))]
     fn is_shell_word(self) -> BytePredicate
     {
         BytePredicate::from(!matches!(
@@ -422,9 +471,18 @@ impl SourceByte
     /// Return whether this byte can appear in a shell dialect word.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: accepts ASCII letters, digits, underscore and hyphen.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
+    ///   lexical alphabet, including both neighbors of every ASCII class
+    ///   boundary. Missing members and accidental additions flip an observed
+    ///   classification.
+    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == matches!(self.0, b'A' ..= b'Z' | b'a' ..= b'z' | b'0' ..= b'9' | b'_' | b'-'))]
     fn is_dialect(self) -> BytePredicate
     {
         let byte = u8::from(self);
@@ -457,9 +515,18 @@ impl SourceByte
     /// tile.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: accepts exactly the single-byte operator vocabulary.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — all 256 byte values are compared with the explicit
+    ///   lexical alphabet, including both neighbors of every ASCII class
+    ///   boundary. Missing members and accidental additions flip an observed
+    ///   classification.
+    /// - witness: `label::tests::byte_classes_match_the_complete_byte_domain`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| bool::from(ret) == b"!&()*+,-:;<=>?@[]{}|$".contains(&self.0))]
     fn is_single_punct(self) -> BytePredicate
     {
         BytePredicate::from(matches!(
@@ -584,10 +651,14 @@ impl ScanResult
 /// - provides: the unit of the labeler's output stream and the molder's input.
 /// - fails: never.
 /// - panics: none.
+/// - executable: none — this carrier has no entry or return boundary; the
+///   labeler and token-text observer carry its executable obligations.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — a plain record; span retention is witnessed by the
-///   labeler round-trip test.
+/// - hypothesis: L3 — host and shell contexts cover the complete lexical
+///   vocabulary with exact class streams and source spans. Wrong modes, missing
+///   classes and shifted spans change these observations.
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
 /// - witness: `label::tests::labels_a_definition_losslessly`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Token
@@ -613,10 +684,13 @@ impl Token
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — a checked slice; witnessed by the round-trip test.
-    /// - witness: `label::tests::labels_a_definition_losslessly`
+    /// - hypothesis: L3 — whole multibyte text, a tail token, empty ranges,
+    ///   inverted bounds, split characters and one-past-source ends expose
+    ///   exact fragments; clamping or partial UTF-8 changes those answers.
+    /// - witness: `label::tests::token_text_checks_ranges_and_character_boundaries`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.as_ref() == src.as_ref().get(usize::try_from(self.start).unwrap_or(usize::MAX) .. usize::try_from(self.end).unwrap_or(usize::MAX)).unwrap_or(""))]
     pub fn text<'src>(
         &self,
         src: &'src SourceFragment<'src>,
@@ -711,13 +785,22 @@ const PRIME_UTF8: [u8; 3] = [0xe2, 0x80, 0xb2];
 ///   `Unknown` token.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — words, numbers, strings, operators, comments, and stray
-///   bytes each drive a distinct scan branch, and the span tiling is observed.
+/// - hypothesis: L2/L3 — exact token classes and spans for every lexical mode
+///   distinguish wrong dispatch, premature consumption, overconsumption and
+///   lost layout; sampled sources additionally observe full reconstruction. The
+///   green witnesses do not cover a dangling shell-assignment escape or a
+///   non-ASCII braced shell name, whose spans violate the intended boundary
+///   contract. Source sizes above the wire ceiling are not exercised.
 /// - witness: `label::tests::labels_a_definition_losslessly`
 /// - witness: `label::tests::span_tiling_is_total_and_gapless`
-/// - witness: `label::tests::remolding_hinges_on_spacing`
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `parse::tests::arbitrary_source_parses_totally`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| ret.first().map_or_else(|| src.as_ref().is_empty(), |first| first.start == 0)
+    && ret.last().is_none_or(|last| usize::try_from(last.end).ok() == Some(src.as_ref().len()))
+    && ret.iter().all(|token| token.start < token.end && usize::try_from(token.start).ok().zip(usize::try_from(token.end).ok()).is_some_and(|(start, end)| src.as_ref().get(start .. end).is_some()))
+    && ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left.end == right.start))]
 pub fn label(src: SourceFragment<'_>) -> Vec<Token>
 {
     let source = AsRef::<str>::as_ref(&src);
@@ -895,7 +978,18 @@ pub fn label(src: SourceFragment<'_>) -> Vec<Token>
 /// `${`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; string mode distinguishes quotes, escapes,
+///   interpolation and raw fragments.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — quotes, escapes, interpolation openers and raw fragments
+///   at zero and nonzero offsets expose exact class and end positions. A
+///   mode-insensitive classifier or premature stop changes the token stream.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Quote | Lexeme::EscapeSequence | Lexeme::Punct | Lexeme::StringFragment | Lexeme::Unknown)))]
 fn scan_string_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -931,7 +1025,18 @@ fn scan_string_interior(
 /// `token.immediate(/[^']*/)` `'` — the interior is verbatim, no escapes).
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a closing quote is punctuation; all interior
+///   bytes remain verbatim.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — closing quotes and verbatim runs containing
+///   escape-looking bytes expose exact class and end positions at two offsets.
+///   Interpreting an escape or swallowing the closing quote changes shell text.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::SingleQuotedContent)))]
 fn scan_single_quoted_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -953,7 +1058,19 @@ fn scan_single_quoted_interior(
 /// `variable_name`).
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a nonempty word-byte run is a variable name;
+///   other starts advance as unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — names, digit continuations and non-name starts at two
+///   offsets expose exact variable width and unknown fallback. Accepting
+///   punctuation into a name or failing to advance changes the shell token
+///   stream.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::VariableName | Lexeme::Unknown)))]
 fn scan_variable_name(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -983,7 +1100,19 @@ fn scan_variable_name(
 /// word so the scan stays total on malformed input.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; the closing brace is punctuation, names are
+///   variable runs and stray bytes are shell words.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — closing braces, parameter-name runs and stray ASCII bytes
+///   at two offsets expose exact class and width. Treating a closer as content
+///   or stopping a name early changes the parameter subtree; multibyte stray
+///   content is outside this witness matrix.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `label::tests::every_lexical_class_has_a_contextual_witness`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::VariableName | Lexeme::ShellWord)))]
 fn scan_braced_shell_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1020,7 +1149,19 @@ fn scan_braced_shell_interior(
 /// interior spaces, so a quoted argument is one string.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; double-quoted shell mode preserves spaces and
+///   recognizes escapes and dollar expansions.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; double-quoted shell mode preserves
+///   spaces and recognizes escapes and dollar expansions.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::EscapeSequence | Lexeme::Unknown | Lexeme::StringFragment)))]
 fn scan_shell_double_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1047,7 +1188,19 @@ fn scan_shell_double_interior(
 /// punctuation, quoted strings, and otherwise a run of shell-word bytes.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; shell brackets are subshell delimiters, not
+///   host punctuation.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; shell brackets are subshell
+///   delimiters, not host punctuation.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'[') => ret.lexeme == Lexeme::SubshellOpen, Some(b']') => ret.lexeme == Lexeme::SubshellClose, _ => true }))]
 fn scan_shell_interior(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1096,7 +1249,19 @@ fn scan_shell_interior(
 /// Scan one lexeme starting at `pos`, returning its class and the next cursor.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; host word classification preserves the case of
+///   its leading letter.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; host word classification preserves
+///   the case of its leading letter.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (match bytes.0.get(pos.0).copied() { Some(b'a' ..= b'z') => ret.lexeme == Lexeme::LowerWord, Some(b'A' ..= b'Z') => ret.lexeme == Lexeme::UpperWord, _ => true }))]
 fn scan_one(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1135,7 +1300,16 @@ fn scan_one(
 /// `$!…{`).
 ///
 /// # Specification
-/// trivial.
+/// - ensures: recognizes exactly hash-bang or dollar-bang prefixes whose final
+///   byte is an opening brace.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, truncated, complete and wrong-sigil forms expose
+///   the decision; dropping either the prefix or final-brace condition accepts
+///   a negative neighbor.
+/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
+#[spec(ensures: |ret| bool::from(ret) == ((text.0.starts_with(b"#!") || text.0.starts_with(b"$!")) && text.0.ends_with(b"{")))]
 fn is_shell_open(text: SourceBytes<'_>) -> BytePredicate
 {
     BytePredicate::from(
@@ -1149,7 +1323,19 @@ fn is_shell_open(text: SourceBytes<'_>) -> BytePredicate
 /// blank code points the grammar treats as layout.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor is a character boundary within the UTF-8 source or at
+///   its end.
+/// - ensures: consumes exactly the maximal ASCII or Unicode horizontal-blank
+///   run, never a newline.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and nonblank input, every admitted Unicode blank, a
+///   mixed run and an immediately following newline expose the exact endpoint.
+///   Adding newlines, dropping a Unicode blank or splitting its bytes changes
+///   it.
+/// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
+#[spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| core::str::from_utf8(run).is_ok_and(|text| text.chars().all(|ch| matches!(ch, ' ' | '\t' | '\u{c}' | '\u{b}' | '\u{a0}' | '\u{200b}' | '\u{2060}' | '\u{feff}')))))]
 fn scan_horizontal_space(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1177,7 +1363,18 @@ fn scan_horizontal_space(
 /// `_newline`).
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor is within the source or at its end.
+/// - ensures: returns the maximal run of carriage returns and line feeds,
+///   including an empty run.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty input, an immediate delimiter, a mixed run, end of
+///   input and a nonzero origin expose the first excluded byte. Skipping a
+///   delimiter, accepting the neighboring class or consuming too little changes
+///   the pinned end offset.
+/// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
+#[spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| matches!(byte, b'\r' | b'\n'))) && bytes.0.get(ret.0).copied().is_none_or(|byte| !(matches!(byte, b'\r' | b'\n'))))]
 fn scan_newlines(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1198,7 +1395,16 @@ fn scan_newlines(
 /// Return the UTF-8 width of a Unicode layout blank at `pos`, if any.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns the complete width of one of the four admitted Unicode
+///   blanks, otherwise none.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every admitted blank, each incomplete byte prefix, an
+///   ordinary space and a neighboring nonblank scalar expose the optional
+///   width. Prefix-only matching or a shifted Unicode code point changes it.
+/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
+#[spec(ensures: |ret| ret.map(usize::from) == bytes.0.get(pos.0 ..).and_then(|tail| ["\u{a0}", "\u{200b}", "\u{2060}", "\u{feff}"].into_iter().find(|blank| tail.starts_with(blank.as_bytes())).map(str::len)))]
 fn unicode_blank_len(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1236,7 +1442,19 @@ fn unicode_blank_len(
 /// `/\` intersection operator.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; line and nested block comments are layout;
+///   intersection is punctuation and a lone slash is unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; line and nested block comments are
+///   layout; intersection is punctuation and a lone slash is unknown.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'/'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
 fn scan_slash(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1255,7 +1473,19 @@ fn scan_slash(
 /// Scan a lexeme led by `#`: shebang, shell/record start, or a stray byte.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; shebangs are layout, record and valid shell
+///   openers are punctuation, other hashes are unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; shebangs are layout, record and valid
+///   shell openers are punctuation, other hashes are unknown.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'#'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Space | Lexeme::Punct | Lexeme::Unknown)))]
 fn scan_hash(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1280,7 +1510,18 @@ fn scan_hash(
 /// Scan to end of line from `from` (line comments and shebangs).
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor is within the source or at its end.
+/// - ensures: returns the maximal run of bytes before the next carriage return
+///   or line feed, including an empty run.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty input, an immediate delimiter, a mixed run, end of
+///   input and a nonzero origin expose the first excluded byte. Skipping a
+///   delimiter, accepting the neighboring class or consuming too little changes
+///   the pinned end offset.
+/// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
+#[spec(requires: from <= bytes.len(), ensures: |ret| ret >= from && ret <= bytes.len() && bytes.0.get(from.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| !matches!(byte, b'\r' | b'\n'))) && bytes.0.get(ret.0).copied().is_none_or(|byte| matches!(byte, b'\r' | b'\n')))]
 fn scan_line_comment_from(
     bytes: SourceBytes<'_>,
     from: ByteOffset,
@@ -1299,7 +1540,17 @@ fn scan_line_comment_from(
 /// Scan a nested `/* … */` block comment.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor points to an opening block-comment pair.
+/// - ensures: stops just after the matching outer close, or at the source end
+///   if unclosed.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested and unterminated comments plus following live
+///   source expose the consumed endpoint. Ignoring depth, swallowing following
+///   source or failing to consume the opener changes the boundary.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"/*")), ensures: |ret| ret.0 >= pos.0.saturating_add(2) && ret <= bytes.len() && (ret == bytes.len() || bytes.0.get(ret.0.saturating_sub(2) .. ret.0) == Some(b"*/")))]
 fn scan_block_comment(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1331,7 +1582,19 @@ fn scan_block_comment(
 /// unterminated tail as a stray quote.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a complete character consumes both quotes;
+///   empty and truncated literals leave a punctuation quote.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; a complete character consumes both
+///   quotes; empty and truncated literals leave a punctuation quote.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'\''), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Character | Lexeme::Punct)))]
 fn scan_character(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1367,7 +1630,19 @@ fn scan_character(
 /// Scan a `\x` escape sequence (backslash and one following byte).
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; an escape consumes its following scalar; a
+///   terminal backslash remains unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; an escape consumes its following
+///   scalar; a terminal backslash remains unknown.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'\\'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::EscapeSequence | Lexeme::Unknown)))]
 fn scan_escape(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1385,7 +1660,19 @@ fn scan_escape(
 /// parameter expansion, `$(` host escape, `$name` variable, or a bare `$`).
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a braced parameter or valid command opener is
+///   punctuation; an incomplete command start is unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; a braced parameter or valid command
+///   opener is punctuation; an incomplete command start is unknown.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'$'), ensures: |ret| ret.next > pos && matches!(ret.lexeme, Lexeme::Punct | Lexeme::Unknown))]
 fn scan_dollar(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1404,7 +1691,19 @@ fn scan_dollar(
 /// Scan a shell list/pipe/logical operator (`;`, `&`, `&&`, `|`, `||`, `|&`).
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; shell logical and pipe pairs take precedence
+///   over their single-byte prefixes.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; shell logical and pipe pairs take
+///   precedence over their single-byte prefixes.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0).is_some_and(|byte| b";&|".contains(byte)), ensures: |ret| ret.next > pos && (ret.lexeme == Lexeme::Punct && ret.next.0 == pos.0.saturating_add(if bytes.0.get(pos.0 ..).is_some_and(|tail| [b"&&", b"||", b"|&"].iter().any(|op| tail.starts_with(*op))) { 2 } else { 1 })))]
 fn scan_shell_operator(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1424,7 +1723,19 @@ fn scan_shell_operator(
 /// Scan a shell redirection operator (`<`, `>`, `<>`, `<&`, `>&`, `>>`).
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; redirection pairs consume two bytes; other
+///   redirection prefixes consume one.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; redirection pairs consume two bytes;
+///   other redirection prefixes consume one.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0).is_some_and(|byte| b"<>".contains(byte)), ensures: |ret| ret.next > pos && (ret.lexeme == Lexeme::Punct && ret.next.0 == pos.0.saturating_add(if bytes.0.get(pos.0 ..).is_some_and(|tail| [b"<>", b"<&", b">&", b">>"].iter().any(|op| tail.starts_with(*op))) { 2 } else { 1 })))]
 fn scan_shell_redirection(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1452,7 +1763,19 @@ fn scan_shell_redirection(
 /// `file_descriptor` (tree-sitter `file_descriptor`).
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; only a digit run immediately followed by
+///   redirection is a file descriptor.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; only a digit run immediately followed
+///   by redirection is a file descriptor.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::FileDescriptor | Lexeme::ShellWord)))]
 fn scan_shell_fd_or_word(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1476,7 +1799,18 @@ fn scan_shell_fd_or_word(
 /// is resolved by the molder from the opener text.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor points to a hash-bang or dollar-bang prefix.
+/// - ensures: a complete optional dialect and opener is punctuation; otherwise
+///   only the leading byte is unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and named dialects, absent openers and trailing
+///   source expose the exact class/end pair. Accepting a missing brace or
+///   keeping the dialect after a rejected prefix changes the observation.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
+#[spec(requires: bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"#!") || tail.starts_with(b"$!")), ensures: |ret| match ret.lexeme { Lexeme::Punct => ret.next.0 >= pos.0.saturating_add(3) && ret.next <= bytes.len() && bytes.0.get(ret.next.0.saturating_sub(1)) == Some(&open.0), Lexeme::Unknown => ret.next.0 == pos.0.saturating_add(1), _ => false })]
 fn scan_shell_start(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1506,7 +1840,19 @@ fn scan_shell_start(
 /// `typed_number`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a number commits fractions and exponents only
+///   with a digit and promotes only a bounded primitive suffix.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; a number commits fractions and
+///   exponents only with a digit and promotes only a bounded primitive suffix.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0).is_some_and(u8::is_ascii_digit) || (bytes.0.get(pos.0) == Some(&b'.') && bytes.0.get(pos.0.saturating_add(1)).is_some_and(u8::is_ascii_digit)), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Number | Lexeme::TypedNumber)))]
 fn scan_number(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1547,7 +1893,18 @@ fn scan_number(
 /// Advance over a run of ASCII digits.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor is within the source or at its end.
+/// - ensures: returns the maximal run of ASCII decimal digits, including an
+///   empty run.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty input, an immediate delimiter, a mixed run, end of
+///   input and a nonzero origin expose the first excluded byte. Skipping a
+///   delimiter, accepting the neighboring class or consuming too little changes
+///   the pinned end offset.
+/// - witness: `label::tests::run_scanners_stop_at_the_first_excluded_byte`
+#[spec(requires: pos <= bytes.len(), ensures: |ret| ret >= pos && ret <= bytes.len() && bytes.0.get(pos.0 .. ret.0).is_some_and(|run| run.iter().copied().all(|byte| byte.is_ascii_digit())) && bytes.0.get(ret.0).copied().is_none_or(|byte| !byte.is_ascii_digit()))]
 fn scan_digits(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1578,7 +1935,18 @@ fn scan_digits(
 /// `FOO="a b"` is one assignment rather than an assignment plus a string.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies an existing byte.
+/// - ensures: advances over a shell word, whole assignment or one unknown byte.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; identifier-led assignment prefixes
+///   stay whole, while flags containing equals remain ordinary words.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::ShellWord | Lexeme::EnvAssign | Lexeme::Unknown)))]
 fn scan_shell_word(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1619,7 +1987,17 @@ fn scan_shell_word(
 /// words rather than assignments.
 ///
 /// # Specification
-/// trivial.
+/// - requires: start and end bound a source run.
+/// - ensures: recognizes a nonempty ASCII variable name immediately followed by
+///   equals, irrespective of its value.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty runs, empty values, digit-led names and flags
+///   containing equals are compared with assignment classification. Moving the
+///   name-start boundary or accepting a separator inside the name changes it.
+/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
+#[spec(requires: start <= end && end <= bytes.len(), ensures: |ret| bool::from(ret) == bytes.0.get(start.0 .. end.0).is_some_and(|run| run.iter().position(|byte| *byte == b'=').is_some_and(|equal| equal > 0 && run.first().is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_') && run.get(1 .. equal).is_some_and(|name| name.iter().all(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')))))]
 fn is_env_assign_run(
     bytes: SourceBytes<'_>,
     start: ByteOffset,
@@ -1650,7 +2028,17 @@ fn is_env_assign_run(
 /// obligation).
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor points to a double quote.
+/// - ensures: an unescaped closing quote ends the value; otherwise scanning
+///   continues through the tail.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, spaced and escaped-quote values, with a following
+///   delimiter or an ordinary unclosed tail, expose the end offset. Stopping at
+///   an escaped quote or consuming past a real closing quote changes it.
+/// - witness: `label::tests::quoted_values_stop_only_at_an_unescaped_quote`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'"'), ensures: |ret| ret > pos && ret <= bytes.len() && (ret == bytes.len() || bytes.0.get(ret.0.saturating_sub(1)) == Some(&b'"')))]
 fn scan_shell_quoted_value(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1670,7 +2058,17 @@ fn scan_shell_quoted_value(
 /// Return the width of a primitive-numeric suffix at `pos` (`u32`, `f64`, …).
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns three bytes exactly for a primitive numeric suffix not
+///   followed by a word byte; otherwise none.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all six suffixes at end and before punctuation, every
+///   truncated prefix and an added word byte expose the optional width.
+///   Omitting a suffix, accepting a partial suffix or ignoring the word
+///   boundary changes that width.
+/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
+#[spec(ensures: |ret| ret.map(usize::from) == (bytes.0.get(pos.0 .. pos.0.saturating_add(3)).is_some_and(|word| [b"u32".as_slice(), b"u64".as_slice(), b"i32".as_slice(), b"i64".as_slice(), b"f32".as_slice(), b"f64".as_slice()].contains(&word)) && bytes.0.get(pos.0.saturating_add(3)).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_')).then_some(3))]
 fn suffix_len(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1704,7 +2102,19 @@ fn suffix_len(
 /// bare `.` projection.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a dot before a digit starts a fraction; a pair
+///   is rest punctuation and other dots stand alone.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; a dot before a digit starts a
+///   fraction; a pair is rest punctuation and other dots stand alone.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'.'), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::Number | Lexeme::TypedNumber)))]
 fn scan_dot(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1728,7 +2138,19 @@ fn scan_dot(
 /// Scan `_` as the wildcard tile or the head of a `_`-led identifier.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; a lone underscore is wildcard punctuation; a
+///   continued underscore begins a lower word.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; a lone underscore is wildcard
+///   punctuation; a continued underscore begins a lower word.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0) == Some(&b'_'), ensures: |ret| ret.next > pos && (ret.lexeme == if ret.next.0 == pos.0.saturating_add(1) { Lexeme::Punct } else { Lexeme::LowerWord }))]
 fn scan_word_or_underscore(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1760,7 +2182,18 @@ fn scan_word_or_underscore(
 /// on whether a word precedes it.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor starts an ASCII letter or underscore.
+/// - ensures: consumes the maximal word-byte and Unicode-prime continuation,
+///   leaving punctuation untouched.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — single-letter words, repeated and interior primes, a lone
+///   prime and a following ASCII quote expose word boundaries. Treating prime
+///   as a separator or a valid word start changes the class/text stream.
+/// - witness: `label::tests::a_primed_word_is_one_word_and_a_lone_prime_is_not`
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: bytes.0.get(pos.0).is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_'), ensures: |ret| ret > pos && ret <= bytes.len() && bytes.0.get(ret.0).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_') && bytes.0.get(ret.0 ..).is_none_or(|tail| !tail.starts_with("′".as_bytes())))]
 fn scan_word(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1787,7 +2220,19 @@ fn scan_word(
 /// Scan an operator/punctuation tile, or a stray byte as `Unknown`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor identifies a byte in this scanner's lexical domain.
+/// - ensures: scanning advances; maximal operators, grade omega and bounded
+///   bridges are punctuation; a stray scalar is unknown.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid scanner leads at zero and a nonzero offset,
+///   complete tokens, adjacent delimiters and truncated tails are compared with
+///   exact class/end pairs. Wrong mode, premature consumption, overconsumption
+///   and failure to advance change a row; maximal operators, grade omega and
+///   bounded bridges are punctuation; a stray scalar is unknown.
+/// - witness: `label::tests::scanner_decisions_preserve_class_and_end`
+#[spec(requires: pos < bytes.len(), ensures: |ret| ret.next > pos && (matches!(ret.lexeme, Lexeme::Punct | Lexeme::Unknown)))]
 fn scan_punct_or_unknown(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1839,6 +2284,7 @@ const BRIDGES: [&[u8]; 2] = [b"+U", b"-F"];
 ///   prime, the sum and difference signs before a name, a spaced sign, and a
 ///   bridge before punctuation and at the end of input separate the decision.
 /// - witness: `label::tests::bridge_tiles_end_where_their_letter_does`
+#[spec(ensures: |ret| ret.map(usize::from) == (bytes.0.get(pos.0 ..).is_some_and(|tail| tail.starts_with(b"+U") || tail.starts_with(b"-F")) && bytes.0.get(pos.0.saturating_add(2)).is_none_or(|byte| !byte.is_ascii_alphanumeric() && *byte != b'_') && bytes.0.get(pos.0.saturating_add(2) ..).is_none_or(|tail| !tail.starts_with("′".as_bytes()))).then_some(pos.0.saturating_add(2)))]
 fn bridge_end(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1862,7 +2308,16 @@ fn bridge_end(
 /// Return the byte length of an operator/punctuation tile at `pos`, if any.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: returns the longest supported operator width, or one for single
+///   punctuation, or none.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every multi-byte spelling and every strict prefix, plus a
+///   stray scalar and absent input, expose the maximal width. A shorter
+///   operator shadowing a longer one or an overlong match changes the result.
+/// - witness: `label::tests::prefix_recognizers_respect_truncation_and_word_boundaries`
+#[spec(ensures: |ret| ret.map(usize::from) == bytes.0.get(pos.0 ..).and_then(|tail| MULTI_PUNCT.iter().filter(|operator| tail.starts_with(operator.as_bytes())).map(|operator| operator.len()).max().or_else(|| tail.first().filter(|byte| b"!&()*+,-:;<=>?@[]{}|$".contains(byte)).map(|_| 1))))]
 fn punct_len(
     bytes: SourceBytes<'_>,
     pos: ByteOffset,
@@ -1882,7 +2337,16 @@ fn punct_len(
 /// Return the UTF-8 byte width implied by a leading byte (1 on ASCII).
 ///
 /// # Specification
-/// trivial.
+/// - ensures: C0–DF lead a two-byte step, E0–EF three bytes, F0–F7 four; every
+///   other byte advances one, including continuation and invalid leads.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the entire byte domain is partitioned into pinned width
+///   intervals; every boundary and its neighbor distinguishes shifted
+///   thresholds, wrong widths and nonprogress on invalid leading bytes.
+/// - witness: `label::tests::utf8_step_widths_cover_every_leading_byte`
+#[spec(ensures: |ret| ret.0 == match lead.0 { 0xc0 ..= 0xdf => 2, 0xe0 ..= 0xef => 3, 0xf0 ..= 0xf7 => 4, _ => 1 })]
 fn utf8_width(lead: SourceByte) -> ByteWidth
 {
     match u8::from(lead) {
@@ -1903,11 +2367,532 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_surface_syntax::SourceFragment;
 
     use super::Lexeme;
     use super::Token;
     use super::label;
+
+    #[test]
+    fn token_observers_preserve_supplied_order()
+    {
+        let source = SourceFragment::from("a b");
+        let tokens = [
+            Token {
+                lexeme: Lexeme::LowerWord,
+                start: 2,
+                end: 3,
+            },
+            Token {
+                lexeme: Lexeme::Space,
+                start: 1,
+                end: 2,
+            },
+            Token {
+                lexeme: Lexeme::LowerWord,
+                start: 0,
+                end: 1,
+            },
+            Token {
+                lexeme: Lexeme::Unknown,
+                start: 3,
+                end: 3,
+            },
+        ];
+        assert_eq!(tiles(source, &tokens), vec![
+            (Lexeme::LowerWord, "b".to_owned()),
+            (Lexeme::LowerWord, "a".to_owned()),
+            (Lexeme::Unknown, String::new())
+        ]);
+        assert_eq!(reconstruct(source, &tokens), "b a");
+    }
+
+    #[test]
+    fn run_scanners_stop_at_the_first_excluded_byte()
+    {
+        type Run =
+            for<'source> fn(super::SourceBytes<'source>, super::ByteOffset) -> super::ByteOffset;
+        type Row<'source> = (&'source str, usize);
+        let cases: &[(Run, &[Row<'_>])] = &[
+            (super::scan_digits, &[
+                ("", 0),
+                ("x", 0),
+                ("123x", 3),
+                ("123", 3),
+            ]),
+            (super::scan_newlines, &[
+                ("", 0),
+                ("x", 0),
+                ("\r\n\nx", 3),
+                ("\r\n", 2),
+            ]),
+            (super::scan_line_comment_from, &[
+                ("", 0),
+                ("\n", 0),
+                ("éx\r\n", 3),
+                ("éx", 3),
+            ]),
+            (super::scan_horizontal_space, &[
+                ("", 0),
+                ("\n", 0),
+                ("x", 0),
+                (" \t\u{c}\u{b}\u{a0}\u{200b}\u{2060}\u{feff}\nx", 15),
+            ]),
+        ];
+        for &(scan, rows) in cases {
+            for &(source, end) in rows {
+                for prefix in ["", "?"] {
+                    let input = alloc::format!("{prefix}{source}");
+                    assert_eq!(
+                        usize::from(scan(
+                            super::SourceBytes::from(input.as_bytes()),
+                            super::ByteOffset::from(prefix.len())
+                        )),
+                        prefix.len().saturating_add(end),
+                        "{input:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn quoted_values_stop_only_at_an_unescaped_quote()
+    {
+        for (source, end) in [
+            ("\"\";", 2_usize),
+            ("\"a b\";", 5),
+            ("\"a\\\"b\";", 6),
+            ("\"tail", 5),
+        ] {
+            assert_eq!(
+                usize::from(super::scan_shell_quoted_value(
+                    super::SourceBytes::from(source.as_bytes()),
+                    super::ByteOffset::from(0_usize)
+                )),
+                end
+            );
+        }
+    }
+
+    #[test]
+    fn prefix_recognizers_respect_truncation_and_word_boundaries()
+    {
+        let zero = super::ByteOffset::from(0_usize);
+        for (source, expected) in [
+            ("", false),
+            ("#!", false),
+            ("#!{", true),
+            ("$!sh{", true),
+            ("#sh{", false),
+            ("#!sh}", false),
+        ] {
+            assert_eq!(
+                bool::from(super::is_shell_open(super::SourceBytes::from(
+                    source.as_bytes()
+                ))),
+                expected,
+                "{source}"
+            );
+        }
+        for (source, expected) in [
+            ("", false),
+            ("A=", true),
+            ("_a9=x", true),
+            ("9a=x", false),
+            ("--x=y", false),
+            ("a-b=x", false),
+            ("=x", false),
+        ] {
+            assert_eq!(
+                bool::from(super::is_env_assign_run(
+                    super::SourceBytes::from(source.as_bytes()),
+                    zero,
+                    super::ByteOffset::from(source.len())
+                )),
+                expected,
+                "{source}"
+            );
+        }
+        for suffix in ["u32", "u64", "i32", "i64", "f32", "f64"] {
+            for (tail, expected) in [
+                ("", Some(3_usize)),
+                ("!", Some(3)),
+                ("x", None),
+                ("_", None),
+                ("9", None),
+            ] {
+                let source = alloc::format!("{suffix}{tail}");
+                assert_eq!(
+                    super::suffix_len(super::SourceBytes::from(source.as_bytes()), zero)
+                        .map(usize::from),
+                    expected,
+                    "{source}"
+                );
+            }
+            for length in 0 .. suffix.len() {
+                let source = suffix.as_bytes().get(.. length).unwrap();
+                assert_eq!(
+                    super::suffix_len(super::SourceBytes::from(source), zero),
+                    None
+                );
+            }
+        }
+        for blank in ["\u{a0}", "\u{200b}", "\u{2060}", "\u{feff}"] {
+            assert_eq!(
+                super::unicode_blank_len(super::SourceBytes::from(blank.as_bytes()), zero)
+                    .map(usize::from),
+                Some(blank.len())
+            );
+            for length in 0 .. blank.len() {
+                assert_eq!(
+                    super::unicode_blank_len(
+                        super::SourceBytes::from(blank.as_bytes().get(.. length).unwrap()),
+                        zero
+                    ),
+                    None
+                );
+            }
+        }
+        for source in [" ", "é", "\u{200a}"] {
+            assert_eq!(
+                super::unicode_blank_len(super::SourceBytes::from(source.as_bytes()), zero),
+                None
+            );
+        }
+        for operator in [
+            "-->", "<->", "==>", "<=>", "/\\", "~>", "->", "<-", "=>", "==", "!=", "<=", ">=",
+            "++", "&&", "||", "|&", "<>", "<&", ">&", ">>", "@[", ":>",
+        ] {
+            assert_eq!(
+                super::punct_len(super::SourceBytes::from(operator.as_bytes()), zero)
+                    .map(usize::from),
+                Some(operator.len()),
+                "{operator}"
+            );
+        }
+        for (source, expected) in [
+            ("", None),
+            ("~", None),
+            ("/", None),
+            ("é", None),
+            ("-", Some(1_usize)),
+            ("--", Some(1)),
+            ("<", Some(1)),
+            ("<=", Some(2)),
+            ("==", Some(2)),
+        ] {
+            assert_eq!(
+                super::punct_len(super::SourceBytes::from(source.as_bytes()), zero)
+                    .map(usize::from),
+                expected,
+                "{source}"
+            );
+        }
+        for source in ["#!{", "$!{"] {
+            let result = super::scan_shell_start(
+                super::SourceBytes::from(source.as_bytes()),
+                zero,
+                super::SourceByte::from(b'{'),
+            );
+            assert_eq!(result.lexeme, Lexeme::Punct);
+            assert_eq!(usize::from(result.next), 3);
+        }
+    }
+
+    #[test]
+    fn scanner_decisions_preserve_class_and_end()
+    {
+        type Scanner =
+            for<'source> fn(super::SourceBytes<'source>, super::ByteOffset) -> super::ScanResult;
+        type Row<'source> = (&'source str, Lexeme, usize);
+        let cases: &[(Scanner, &[Row<'_>])] = &[
+            (super::scan_string_interior, &[
+                ("\"x", Lexeme::Quote, 1),
+                ("\\n", Lexeme::EscapeSequence, 2),
+                ("\\", Lexeme::Unknown, 1),
+                ("${x", Lexeme::Punct, 2),
+                ("a$b\"", Lexeme::StringFragment, 3),
+            ]),
+            (super::scan_single_quoted_interior, &[
+                ("'x", Lexeme::Punct, 1),
+                ("a\\n'", Lexeme::SingleQuotedContent, 3),
+                ("a\"b", Lexeme::SingleQuotedContent, 3),
+            ]),
+            (super::scan_variable_name, &[
+                ("_a9!", Lexeme::VariableName, 3),
+                ("9x", Lexeme::VariableName, 2),
+                ("!", Lexeme::Unknown, 1),
+            ]),
+            (super::scan_braced_shell_interior, &[
+                ("}x", Lexeme::Punct, 1),
+                ("a9_}", Lexeme::VariableName, 3),
+                (":x", Lexeme::ShellWord, 1),
+            ]),
+            (super::scan_shell_double_interior, &[
+                ("\"x", Lexeme::Punct, 1),
+                ("\\n", Lexeme::EscapeSequence, 2),
+                ("\\", Lexeme::Unknown, 1),
+                ("${x", Lexeme::Punct, 2),
+                ("a b$", Lexeme::StringFragment, 3),
+            ]),
+            (super::scan_shell_interior, &[
+                ("[x", Lexeme::SubshellOpen, 1),
+                ("]x", Lexeme::SubshellClose, 1),
+                ("word=ok;", Lexeme::EnvAssign, 7),
+                (" \t", Lexeme::Space, 2),
+                ("2>x", Lexeme::FileDescriptor, 1),
+            ]),
+            (super::scan_one, &[
+                ("a9;", Lexeme::LowerWord, 2),
+                ("A9;", Lexeme::UpperWord, 2),
+                ("[", Lexeme::Punct, 1),
+                ("é", Lexeme::Unknown, 2),
+                ("\r\nx", Lexeme::Space, 2),
+            ]),
+            (super::scan_slash, &[
+                ("//a\nx", Lexeme::Space, 3),
+                ("/*a/*b*/c*/x", Lexeme::Space, 11),
+                ("/*", Lexeme::Space, 2),
+                ("/\\x", Lexeme::Punct, 2),
+                ("/", Lexeme::Unknown, 1),
+            ]),
+            (super::scan_hash, &[
+                ("#!/x\n", Lexeme::Space, 4),
+                ("#!sh{x", Lexeme::Punct, 5),
+                ("#{x", Lexeme::Punct, 2),
+                ("#!bad", Lexeme::Unknown, 1),
+                ("#", Lexeme::Unknown, 1),
+            ]),
+            (super::scan_character, &[
+                ("'é'x", Lexeme::Character, 4),
+                ("'\\n'x", Lexeme::Character, 4),
+                ("''", Lexeme::Punct, 1),
+                ("'a", Lexeme::Punct, 1),
+                ("'", Lexeme::Punct, 1),
+            ]),
+            (super::scan_escape, &[
+                ("\\éx", Lexeme::EscapeSequence, 3),
+                ("\\n", Lexeme::EscapeSequence, 2),
+                ("\\", Lexeme::Unknown, 1),
+            ]),
+            (super::scan_dollar, &[
+                ("${x", Lexeme::Punct, 2),
+                ("$!sh{x", Lexeme::Punct, 5),
+                ("$!bad", Lexeme::Unknown, 1),
+                ("$x", Lexeme::Punct, 1),
+                ("$", Lexeme::Punct, 1),
+            ]),
+            (super::scan_shell_operator, &[
+                ("&&x", Lexeme::Punct, 2),
+                ("||x", Lexeme::Punct, 2),
+                ("|&x", Lexeme::Punct, 2),
+                ("&|", Lexeme::Punct, 1),
+                (";", Lexeme::Punct, 1),
+            ]),
+            (super::scan_shell_redirection, &[
+                ("<>x", Lexeme::Punct, 2),
+                ("<&x", Lexeme::Punct, 2),
+                (">&x", Lexeme::Punct, 2),
+                (">>x", Lexeme::Punct, 2),
+                ("><", Lexeme::Punct, 1),
+                (">", Lexeme::Punct, 1),
+            ]),
+            (super::scan_shell_fd_or_word, &[
+                ("12>x", Lexeme::FileDescriptor, 2),
+                ("12nd", Lexeme::ShellWord, 4),
+                ("12 ", Lexeme::ShellWord, 2),
+                ("2", Lexeme::ShellWord, 1),
+            ]),
+            (super::scan_number, &[
+                ("1", Lexeme::Number, 1),
+                ("1.", Lexeme::Number, 1),
+                ("1.5e-2!", Lexeme::Number, 6),
+                ("1e+", Lexeme::Number, 1),
+                (".5u32!", Lexeme::TypedNumber, 5),
+                ("1u32x", Lexeme::Number, 1),
+            ]),
+            (super::scan_shell_word, &[
+                ("a=b;", Lexeme::EnvAssign, 3),
+                ("A=\"a b\";", Lexeme::EnvAssign, 7),
+                ("--x=y;", Lexeme::ShellWord, 5),
+                ("=", Lexeme::ShellWord, 1),
+                (";", Lexeme::Unknown, 1),
+            ]),
+            (super::scan_dot, &[
+                (".5!", Lexeme::Number, 2),
+                (".5f64", Lexeme::TypedNumber, 5),
+                ("..x", Lexeme::Punct, 2),
+                (".x", Lexeme::Punct, 1),
+                (".", Lexeme::Punct, 1),
+            ]),
+            (super::scan_word_or_underscore, &[
+                ("_", Lexeme::Punct, 1),
+                ("_a!", Lexeme::LowerWord, 2),
+                ("_′!", Lexeme::LowerWord, 4),
+            ]),
+            (super::scan_punct_or_unknown, &[
+                ("ωx", Lexeme::Punct, 2),
+                ("+U!", Lexeme::Punct, 2),
+                ("+Unit", Lexeme::Punct, 1),
+                ("<=>x", Lexeme::Punct, 3),
+                ("éx", Lexeme::Unknown, 2),
+                ("~", Lexeme::Unknown, 1),
+            ]),
+        ];
+        for &(scan, rows) in cases {
+            for &(source, class, end) in rows {
+                for prefix in ["", "?"] {
+                    let input = alloc::format!("{prefix}{source}");
+                    let result = scan(
+                        super::SourceBytes::from(input.as_bytes()),
+                        super::ByteOffset::from(prefix.len()),
+                    );
+                    assert_eq!(result.lexeme, class, "{input:?}");
+                    assert_eq!(
+                        usize::from(result.next),
+                        prefix.len().saturating_add(end),
+                        "{input:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cursor_arithmetic_saturates_at_both_boundaries()
+    {
+        for (start, width, forward, backward) in [
+            (0_usize, 0_usize, 0_usize, 0_usize),
+            (1, 2, 3, 0),
+            (0, usize::MAX, usize::MAX, 0),
+            (usize::MAX, 1, usize::MAX, usize::MAX.saturating_sub(1)),
+            (
+                usize::MAX.saturating_sub(1),
+                1,
+                usize::MAX,
+                usize::MAX.saturating_sub(2),
+            ),
+        ] {
+            let start = super::ByteOffset::from(start);
+            let width = super::ByteWidth::from(width);
+            assert_eq!(usize::from(start.advance(width)), forward);
+            assert_eq!(usize::from(start.retreat(width)), backward);
+        }
+    }
+
+    #[test]
+    fn byte_classes_match_the_complete_byte_domain()
+    {
+        for value in u8::MIN ..= u8::MAX {
+            let byte = super::SourceByte::from(value);
+            let letter = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".contains(&value);
+            let digit = b"0123456789".contains(&value);
+            assert_eq!(
+                bool::from(byte.is_var_name_start()),
+                letter || value == b'_'
+            );
+            assert_eq!(
+                bool::from(byte.is_word_continue()),
+                letter || digit || value == b'_'
+            );
+            assert_eq!(
+                bool::from(byte.is_dialect()),
+                letter || digit || b"_-".contains(&value)
+            );
+            assert_eq!(
+                bool::from(byte.is_shell_word()),
+                !b" \t\r\n\x0c\x0b;|&<>{}[]()`\"'$#".contains(&value)
+            );
+            assert_eq!(
+                bool::from(byte.is_single_punct()),
+                b"!&()*+,-:;<=>?@[]{}|$".contains(&value)
+            );
+        }
+    }
+
+    #[test]
+    fn utf8_step_widths_cover_every_leading_byte()
+    {
+        for (first, last, width) in [
+            (0_u8, 0xbf_u8, 1_usize),
+            (0xc0, 0xdf, 2),
+            (0xe0, 0xef, 3),
+            (0xf0, 0xf7, 4),
+            (0xf8, 0xff, 1),
+        ] {
+            for byte in first ..= last {
+                assert_eq!(
+                    usize::from(super::utf8_width(super::SourceByte::from(byte))),
+                    width
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn token_text_checks_ranges_and_character_boundaries()
+    {
+        let source = SourceFragment::from("éx");
+        for (start, end, expected) in [
+            (0_u32, 2_u32, "é"),
+            (2, 3, "x"),
+            (3, 3, ""),
+            (0, 0, ""),
+            (1, 2, ""),
+            (2, 1, ""),
+            (0, 4, ""),
+        ] {
+            let token = Token {
+                lexeme: Lexeme::Unknown,
+                start,
+                end,
+            };
+            assert_eq!(token.text(&source).as_ref(), expected);
+        }
+    }
+
+    #[test]
+    fn every_lexical_class_has_a_contextual_witness()
+    {
+        use Lexeme::*;
+        let cases: &[(&str, &[Lexeme])] = &[
+            ("a", &[LowerWord]),
+            ("A", &[UpperWord]),
+            ("1", &[Number]),
+            ("1u32", &[TypedNumber]),
+            ("'a'", &[Character]),
+            ("\"a\"", &[Quote, StringFragment, Quote]),
+            ("\"\\n\"", &[Quote, EscapeSequence, Quote]),
+            ("+", &[Punct]),
+            ("#!{hi}", &[Punct, ShellWord, Punct]),
+            ("#!{A=b}", &[Punct, EnvAssign, Punct]),
+            ("#!{'hi'}", &[
+                Punct,
+                Punct,
+                SingleQuotedContent,
+                Punct,
+                Punct,
+            ]),
+            ("#!{$A}", &[Punct, Punct, VariableName, Punct]),
+            ("#!{[]}", &[Punct, SubshellOpen, SubshellClose, Punct]),
+            ("#!{2>f}", &[Punct, FileDescriptor, Punct, ShellWord, Punct]),
+            (" ", &[Space]),
+            ("~", &[Unknown]),
+        ];
+        for &(source, expected) in cases {
+            let tokens = label(SourceFragment::from(source));
+            assert!(
+                tokens
+                    .iter()
+                    .map(|token| token.lexeme)
+                    .eq(expected.iter().copied()),
+                "{source:?}: {tokens:?}"
+            );
+            assert_eq!(reconstruct(SourceFragment::from(source), &tokens), source);
+        }
+    }
 
     #[test]
     fn span_tiling_is_total_and_gapless()
@@ -2549,25 +3534,7 @@ mod tests
             ]
         );
     }
-    #[test]
-    fn the_operator_table_never_lets_a_prefix_shadow_a_longer_tile()
-    {
-        // `punct_len` returns the FIRST table match, not the longest, so the
-        // table's declaration order *is* the maximal-munch rule. A new operator
-        // appended after one of its own prefixes would silently never match,
-        // and no other test would notice — the prefix would keep winning and
-        // the longer tile would look like two tokens. This pins the invariant
-        // that makes the doc's "longest first" claim true.
-        for (later, entry) in super::MULTI_PUNCT.iter().enumerate() {
-            for earlier in super::MULTI_PUNCT.iter().take(later) {
-                assert!(
-                    !entry.starts_with(earlier),
-                    "{entry:?} is shadowed by its prefix {earlier:?} declared earlier in \
-                     MULTI_PUNCT; move the longer tile ahead of it"
-                );
-            }
-        }
-    }
+
     #[test]
     fn a_primed_word_is_one_word_and_a_lone_prime_is_not()
     {
@@ -2746,7 +3713,17 @@ mod tests
     /// The non-space classes and their texts, in order.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: returns each non-space token and its text in input order,
+    ///   including unknown and empty fragments.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reversed spans, a space token and an empty unknown
+    ///   fragment expose filtering and order independently of the labeler.
+    ///   Sorting by source offset, dropping unknowns or retaining spaces
+    ///   changes the sequence.
+    /// - witness: `label::tests::token_observers_preserve_supplied_order`
+    #[spec(ensures: |ret| ret.len() == tokens.iter().filter(|token| token.lexeme != Lexeme::Space).count() && ret.iter().zip(tokens.iter().filter(|token| token.lexeme != Lexeme::Space)).all(|(observed, token)| observed.0 == token.lexeme && observed.1.as_str() == token.text(&src).as_ref()))]
     fn tiles(
         src: SourceFragment<'_>,
         tokens: &[Token],
@@ -2767,7 +3744,17 @@ mod tests
     /// Reconstruct the source from the token spans (the losslessness check).
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: concatenates the text of every supplied token in supplied
+    ///   order, retaining spaces.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — reversed spans, a space and an empty fragment expose
+    ///   ordered reconstruction independently of tokenization. Reordering,
+    ///   omitting space or copying the whole source instead changes the
+    ///   reconstructed text.
+    /// - witness: `label::tests::token_observers_preserve_supplied_order`
+    #[spec(ensures: |ret| tokens.iter().try_fold(ret.as_str(), |remaining, token| remaining.strip_prefix(token.text(&src).as_ref())) == Some(""))]
     fn reconstruct(
         src: SourceFragment<'_>,
         tokens: &[Token],

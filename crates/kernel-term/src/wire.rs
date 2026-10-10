@@ -19,6 +19,26 @@ use alloc::vec::Vec;
 use anodized::spec;
 
 /// One byte read from or written to the artifact image.
+///
+/// # Specification
+/// - requires: the payload is interpreted in the named wire coordinate or
+///   framing role.
+/// - ensures: retains raw bytes or the carried quantity without claiming that a
+///   decoder will admit it; canonicality is established by complete encoding or
+///   validated decoding.
+/// - panics: none.
+/// - executable: none — this wire carrier has no invocation boundary; byte
+///   projection, framing and reader validation carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes byte/range boundaries and complete mixed-field
+///   images; L2 compares varint bytes with an independent arithmetic reference.
+///   Nominal role separation is L0. The carrier alone does not prove
+///   canonicality or node admission.
+/// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+/// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+/// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WireByte(pub u8);
@@ -59,6 +79,26 @@ impl From<WireByte> for u8
 /// identifies a byte, and that pair is exactly what a refusal reports.
 ///
 /// [`TagSite`]: crate::TagSite
+///
+/// # Specification
+/// - requires: the payload is interpreted in the named wire coordinate or
+///   framing role.
+/// - ensures: retains raw bytes or the carried quantity without claiming that a
+///   decoder will admit it; canonicality is established by complete encoding or
+///   validated decoding.
+/// - panics: none.
+/// - executable: none — this wire carrier has no invocation boundary; byte
+///   projection, framing and reader validation carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes byte/range boundaries and complete mixed-field
+///   images; L2 compares varint bytes with an independent arithmetic reference.
+///   Nominal role separation is L0. The carrier alone does not prove
+///   canonicality or node admission.
+/// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+/// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+/// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WireTag(pub u8);
@@ -128,6 +168,16 @@ impl core::fmt::Display for WireTag
     ///   number.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — Formatter exposes no readable output or
+    ///   sink-refusal state; checking either here would require wrapping or
+    ///   replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all byte-valued tag spellings, version
+    ///   boundaries and a real exhausted byte sink. The assertions separate
+    ///   radix, width, case, numeric truncation and swallowed refusal;
+    ///   unrelated diagnostic prose is not pinned.
+    /// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -139,6 +189,26 @@ impl core::fmt::Display for WireTag
 }
 
 /// The declared format version of an artifact.
+///
+/// # Specification
+/// - requires: the payload is interpreted in the named wire coordinate or
+///   framing role.
+/// - ensures: retains raw bytes or the carried quantity without claiming that a
+///   decoder will admit it; canonicality is established by complete encoding or
+///   validated decoding.
+/// - panics: none.
+/// - executable: none — this wire carrier has no invocation boundary; byte
+///   projection, framing and reader validation carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes byte/range boundaries and complete mixed-field
+///   images; L2 compares varint bytes with an independent arithmetic reference.
+///   Nominal role separation is L0. The carrier alone does not prove
+///   canonicality or node admission.
+/// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+/// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+/// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct FormatVersion(pub u16);
@@ -174,7 +244,21 @@ impl core::fmt::Display for FormatVersion
     /// Writes the version as a decimal number.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a formatter accepting or refusing writes.
+    /// - ensures: writes the version as a decimal integer.
+    /// - provides: the version value carried by an unsupported-version refusal.
+    /// - fails: propagates the formatter write failure.
+    /// - panics: none.
+    /// - executable: none — Formatter exposes no readable output or
+    ///   sink-refusal state; checking either here would require wrapping or
+    ///   replaying the write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes all byte-valued tag spellings, version
+    ///   boundaries and a real exhausted byte sink. The assertions separate
+    ///   radix, width, case, numeric truncation and swallowed refusal;
+    ///   unrelated diagnostic prose is not pinned.
+    /// - witness: `error::tests::diagnostics_preserve_semantic_distinctions_and_sink_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -186,6 +270,26 @@ impl core::fmt::Display for FormatVersion
 }
 
 /// A decoded or encoded 32-bit wire integer.
+///
+/// # Specification
+/// - requires: the payload is interpreted in the named wire coordinate or
+///   framing role.
+/// - ensures: retains raw bytes or the carried quantity without claiming that a
+///   decoder will admit it; canonicality is established by complete encoding or
+///   validated decoding.
+/// - panics: none.
+/// - executable: none — this wire carrier has no invocation boundary; byte
+///   projection, framing and reader validation carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes byte/range boundaries and complete mixed-field
+///   images; L2 compares varint bytes with an independent arithmetic reference.
+///   Nominal role separation is L0. The carrier alone does not prove
+///   canonicality or node admission.
+/// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+/// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+/// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WireU32(pub u32);
@@ -217,6 +321,26 @@ impl From<WireU32> for u32
 }
 
 /// A decoded or encoded 64-bit wire integer.
+///
+/// # Specification
+/// - requires: the payload is interpreted in the named wire coordinate or
+///   framing role.
+/// - ensures: retains raw bytes or the carried quantity without claiming that a
+///   decoder will admit it; canonicality is established by complete encoding or
+///   validated decoding.
+/// - panics: none.
+/// - executable: none — this wire carrier has no invocation boundary; byte
+///   projection, framing and reader validation carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes byte/range boundaries and complete mixed-field
+///   images; L2 compares varint bytes with an independent arithmetic reference.
+///   Nominal role separation is L0. The carrier alone does not prove
+///   canonicality or node admission.
+/// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+/// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+/// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WireU64(pub u64);
@@ -248,6 +372,26 @@ impl From<WireU64> for u64
 }
 
 /// A decoded or encoded host-sized wire count.
+///
+/// # Specification
+/// - requires: the payload is interpreted in the named wire coordinate or
+///   framing role.
+/// - ensures: retains raw bytes or the carried quantity without claiming that a
+///   decoder will admit it; canonicality is established by complete encoding or
+///   validated decoding.
+/// - panics: none.
+/// - executable: none — this wire carrier has no invocation boundary; byte
+///   projection, framing and reader validation carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes byte/range boundaries and complete mixed-field
+///   images; L2 compares varint bytes with an independent arithmetic reference.
+///   Nominal role separation is L0. The carrier alone does not prove
+///   canonicality or node admission.
+/// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+/// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+/// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct WireUsize(pub usize);
@@ -295,6 +439,16 @@ impl From<WireUsize> for WireU64
     ///   wire's integer; the saturation is a documented ceiling rather than a
     ///   reachable path on any supported platform.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes zero, a small count and the executing target
+    ///   ceiling through the numeric projection. These distinguish truncation
+    ///   and offset substitution; saturation on pointers wider than 64 bits is
+    ///   outside the tested platform.
+    /// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+    #[spec(
+        ensures: |ret| ret.0 == u64::try_from(value.0).unwrap_or(u64::MAX),
+    )]
     #[inline]
     fn from(value: WireUsize) -> Self
     {
@@ -303,6 +457,26 @@ impl From<WireUsize> for WireU64
 }
 
 /// An offset into an artifact image, and the length of one.
+///
+/// # Specification
+/// - requires: the payload is interpreted in the named wire coordinate or
+///   framing role.
+/// - ensures: retains raw bytes or the carried quantity without claiming that a
+///   decoder will admit it; canonicality is established by complete encoding or
+///   validated decoding.
+/// - panics: none.
+/// - executable: none — this wire carrier has no invocation boundary; byte
+///   projection, framing and reader validation carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes byte/range boundaries and complete mixed-field
+///   images; L2 compares varint bytes with an independent arithmetic reference.
+///   Nominal role separation is L0. The carrier alone does not prove
+///   canonicality or node admission.
+/// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+/// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+/// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ByteOffset(pub usize);
@@ -334,6 +508,26 @@ impl From<ByteOffset> for usize
 }
 
 /// A count of bytes requested from an artifact image.
+///
+/// # Specification
+/// - requires: the payload is interpreted in the named wire coordinate or
+///   framing role.
+/// - ensures: retains raw bytes or the carried quantity without claiming that a
+///   decoder will admit it; canonicality is established by complete encoding or
+///   validated decoding.
+/// - panics: none.
+/// - executable: none — this wire carrier has no invocation boundary; byte
+///   projection, framing and reader validation carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes byte/range boundaries and complete mixed-field
+///   images; L2 compares varint bytes with an independent arithmetic reference.
+///   Nominal role separation is L0. The carrier alone does not prove
+///   canonicality or node admission.
+/// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+/// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+/// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ByteCount(pub usize);
@@ -365,6 +559,26 @@ impl From<ByteCount> for usize
 }
 
 /// Borrowed UTF-8 text offered to the wire encoder.
+///
+/// # Specification
+/// - requires: the payload is interpreted in the named wire coordinate or
+///   framing role.
+/// - ensures: retains raw bytes or the carried quantity without claiming that a
+///   decoder will admit it; canonicality is established by complete encoding or
+///   validated decoding.
+/// - panics: none.
+/// - executable: none — this wire carrier has no invocation boundary; byte
+///   projection, framing and reader validation carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes byte/range boundaries and complete mixed-field
+///   images; L2 compares varint bytes with an independent arithmetic reference.
+///   Nominal role separation is L0. The carrier alone does not prove
+///   canonicality or node admission.
+/// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+/// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+/// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArtifactText<'text>(pub &'text str);
@@ -395,7 +609,27 @@ impl AsRef<str> for ArtifactText<'_>
     }
 }
 
-/// Borrowed canonical artifact bytes offered to the validating decoder.
+/// Borrowed candidate artifact bytes offered to the validating decoder.
+///
+/// # Specification
+/// - requires: the payload is interpreted in the named wire coordinate or
+///   framing role.
+/// - ensures: retains raw bytes or the carried quantity without claiming that a
+///   decoder will admit it; canonicality is established by complete encoding or
+///   validated decoding.
+/// - panics: none.
+/// - executable: none — this wire carrier has no invocation boundary; byte
+///   projection, framing and reader validation carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes byte/range boundaries and complete mixed-field
+///   images; L2 compares varint bytes with an independent arithmetic reference.
+///   Nominal role separation is L0. The carrier alone does not prove
+///   canonicality or node admission.
+/// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+/// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+/// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ArtifactImage<'artifact>(&'artifact [u8]);
@@ -426,7 +660,7 @@ impl AsRef<[u8]> for ArtifactImage<'_>
     }
 }
 
-impl<'artifact> ArtifactImage<'artifact>
+impl ArtifactImage<'_>
 {
     /// The number of bytes in this image.
     ///
@@ -450,13 +684,23 @@ impl<'artifact> ArtifactImage<'artifact>
     ///   no read is ever an index.
     /// - fails: returns `None` on any span the image does not contain.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 enumerates all ordered and reversed endpoint pairs
+    ///   through one past a four-byte image, plus the usize ceiling and empty
+    ///   input. Exact byte sequences distinguish shifted ranges, inclusive
+    ///   ends, lost high bits and inverted-range acceptance; the independent
+    ///   iterator projection does not call the production slicing method.
+    /// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+    #[spec(
+        ensures: |ret| ret.as_ref().map(|image| image.0) == self.0.get(range.start.0 .. range.end.0),
+    )]
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.is_some() == (range.start.0 <= range.end.0 && range.end.0 <= self.0.len()))]
     pub(crate) fn span(
         self,
         range: core::ops::Range<ByteOffset>,
-    ) -> Option<ArtifactImage<'artifact>>
+    ) -> Option<Self>
     {
         self.0.get(range.start.0 .. range.end.0).map(Self)
     }
@@ -471,6 +715,17 @@ impl<'artifact> ArtifactImage<'artifact>
     /// - provides: the bounds-checked single-byte read the cursor advances
     ///   through, so no read is ever an index.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 enumerates all ordered and reversed endpoint pairs
+    ///   through one past a four-byte image, plus the usize ceiling and empty
+    ///   input. Exact byte sequences distinguish shifted ranges, inclusive
+    ///   ends, lost high bits and inverted-range acceptance; the independent
+    ///   iterator projection does not call the production slicing method.
+    /// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+    #[spec(
+        ensures: |ret| ret.map(|byte| byte.0) == self.0.get(offset.0).copied(),
+    )]
     #[inline]
     #[must_use]
     pub(crate) fn byte_at(
@@ -482,11 +737,31 @@ impl<'artifact> ArtifactImage<'artifact>
     }
 }
 
-/// An owned canonical artifact byte image.
+/// An owned encoder byte image, possibly incomplete during construction.
 ///
 /// It is the encoder's only output type and the unit the canonical-form
 /// comparison is stated over: an artifact is canonical exactly when re-encoding
 /// what it decoded reproduces the same [`EncodedArtifact`].
+///
+/// # Specification
+/// - requires: the payload is interpreted in the named wire coordinate or
+///   framing role.
+/// - ensures: retains raw bytes or the carried quantity without claiming that a
+///   decoder will admit it; canonicality is established by complete encoding or
+///   validated decoding.
+/// - panics: none.
+/// - executable: none — this wire carrier has no invocation boundary; byte
+///   projection, framing and reader validation carry its executable
+///   obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes byte/range boundaries and complete mixed-field
+///   images; L2 compares varint bytes with an independent arithmetic reference.
+///   Nominal role separation is L0. The carrier alone does not prove
+///   canonicality or node admission.
+/// - witness: `wire::tests::image_ranges_and_bytes_match_independent_projections`
+/// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+/// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct EncodedArtifact(Vec<u8>);
@@ -575,6 +850,18 @@ impl EncodedArtifact
     /// - provides: the header's version framing, fixed at two bytes so the
     ///   field's width does not depend on the value written.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 compares mixed-field output with a literal byte
+    ///   sequence for empty and nonempty prefixes, a version with unequal bytes
+    ///   and zero/maximal versions. L3 observes unchanged prior bytes and exact
+    ///   suffixes, separating endian reversal, width changes and prefix damage.
+    /// - witness: `wire::tests::wire_fields_preserve_prefixes_and_little_endian_order`
+    #[spec(
+        captures: prefix = self.0.len(),
+        ensures: |ret| self.0.len() == prefix.saturating_add(2)
+                && self.0.get(prefix ..) == Some(version.0.to_le_bytes().as_slice()),
+    )]
     #[inline]
     pub(crate) fn put_version(
         &mut self,
@@ -597,19 +884,27 @@ impl EncodedArtifact
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the round-trip differential over the encoder and the
-    ///   decoder pins minimality on every artifact; the L3 residues are the
-    ///   single-byte value, the exact group boundary at 128, and the `u64`
-    ///   ceiling, asserted as exact byte images.
+    /// - hypothesis: L2 compares every value from zero through 16384 and the
+    ///   adjacent values at each seven-bit boundary with an independent
+    ///   base-128 quotient/remainder reference, observing complete bytes after
+    ///   a nonempty prefix. L3 pinned images include zero, 127, 128 and the u64
+    ///   ceiling. Round trips are supplementary self-agreement, not the
+    ///   minimality oracle.
     /// - witness: `wire::tests::uvarint_images_are_minimal_at_the_boundaries`
+    /// - witness: `wire::tests::varints_match_a_quotient_reference_at_every_group_boundary`
     /// - witness: `wire::tests::uvarint_round_trips_through_the_reader`
     ///
     /// [`decode`]: mod@crate::decode
-    // The predicate covers the terminator half of minimality: at least one byte
-    // is appended, and the last one clears the continuation bit. The
-    // no-redundant-group half is the reader's overlong rejection, which is where
-    // the round-trip differential states it.
-    #[spec(captures: [entry_len = self.0.len()], ensures: self.0.len() > entry_len && self.0.last().is_some_and(|&byte| byte < 0x80))]
+    #[spec(
+        captures: prefix = self.0.len(),
+        ensures: |ret| self.0.get(prefix ..).is_some_and(|bytes| { let width = if value.0 == 0 { 1 }
+            else { 64u32.saturating_sub(value.0.leading_zeros()).div_ceil(7) };
+            bytes.len() == usize::try_from(width).unwrap_or(usize::MAX)
+                && bytes.iter().enumerate().all(|(index, &byte)| { let shift = u32::try_from(index).unwrap_or(u32::MAX).saturating_mul(7);
+            u64::from(byte & 0x7f) == (value.0.checked_shr(shift).unwrap_or(0) & 0x7f)
+                && (byte & 0x80 != 0) == (index.saturating_add(1) < bytes.len()) }) }),
+    )]
+
     pub(crate) fn put_uvarint(
         &mut self,
         value: WireU64,
@@ -667,5 +962,108 @@ mod tests
             let read = reader.read_uvarint().expect("a written varint reads back");
             assert_eq!(value, u64::from(read), "varint {value} round-trips");
         }
+    }
+
+    #[test]
+    fn image_ranges_and_bytes_match_independent_projections()
+    {
+        let payload = [0u8, 127, 128, 255];
+        for bytes in [payload.as_slice(), &[]] {
+            let image = super::ArtifactImage::from(bytes);
+            for start in [0usize, 1, 2, 3, 4, 5, usize::MAX] {
+                assert_eq!(
+                    bytes
+                        .iter()
+                        .enumerate()
+                        .find(|&(index, _)| index == start)
+                        .map(|(_, &byte)| byte),
+                    image.byte_at(super::ByteOffset(start)).map(|byte| byte.0)
+                );
+                for end in [0usize, 1, 2, 3, 4, 5, usize::MAX] {
+                    let expected = (start <= end && end <= bytes.len()).then(|| {
+                        bytes
+                            .iter()
+                            .skip(start)
+                            .take(end.saturating_sub(start))
+                            .copied()
+                            .collect::<Vec<_>>()
+                    });
+                    let actual = image
+                        .span(super::ByteOffset(start) .. super::ByteOffset(end))
+                        .map(|part| part.as_ref().to_vec());
+                    assert_eq!(expected, actual, "range {start}..{end}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn wire_fields_preserve_prefixes_and_little_endian_order()
+    {
+        let mut out = EncodedArtifact::new();
+        out.put_image(super::ArtifactImage::from([0xdeu8, 0xad].as_slice()));
+        out.put_version(super::FormatVersion(0x1234));
+        out.put_tag(super::WireTag(0xa5));
+        out.put_image(super::ArtifactImage::from([0u8, 255].as_slice()));
+        out.put_uvarint(WireU64(128));
+        assert_eq!(
+            [0xde, 0xad, 0x34, 0x12, 0xa5, 0, 255, 0x80, 1].as_slice(),
+            out.as_ref()
+        );
+        let mut limits = EncodedArtifact::new();
+        limits.put_version(super::FormatVersion(0));
+        limits.put_version(super::FormatVersion(u16::MAX));
+        assert_eq!([0u8, 0, 255, 255].as_slice(), limits.as_ref());
+        for value in [0usize, 1, usize::MAX] {
+            let expected = u128::try_from(value)
+                .expect("pointer width fits u128")
+                .min(u128::from(u64::MAX));
+            assert_eq!(
+                expected,
+                u128::from(super::WireU64::from(super::WireUsize(value)).0)
+            );
+        }
+    }
+
+    #[test]
+    fn varints_match_a_quotient_reference_at_every_group_boundary()
+    {
+        let check = |value: u64| {
+            let mut expected = vec![0xa5u8];
+            let mut quotient = value;
+            loop {
+                let digit = u8::try_from(quotient.rem_euclid(128)).expect("base-128 digit");
+                quotient = quotient.div_euclid(128);
+                expected.push(if quotient == 0 {
+                    digit
+                }
+                else {
+                    digit.saturating_add(128)
+                });
+                if quotient == 0 {
+                    break;
+                }
+            }
+            let mut actual = EncodedArtifact::new();
+            actual.put_tag(super::WireTag(0xa5));
+            actual.put_uvarint(WireU64(value));
+            assert_eq!(expected.as_slice(), actual.as_ref(), "value {value}");
+        };
+        for value in 0u64 ..= 0x4000 {
+            check(value);
+        }
+        for shift in [14u32, 21, 28, 35, 42, 49, 56, 63] {
+            let boundary = 1u64.checked_shl(shift).expect("shift below 64");
+            for value in [
+                boundary.saturating_sub(1),
+                boundary,
+                boundary.saturating_add(1),
+            ] {
+                if value > 0x4000 {
+                    check(value);
+                }
+            }
+        }
+        check(u64::MAX);
     }
 }

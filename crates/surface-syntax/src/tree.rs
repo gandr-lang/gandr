@@ -93,6 +93,16 @@ impl core::fmt::Display for NodeIndex
     /// - provides: the arena position a diagnostic or a test message names.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes a write-only sink; neither
+    ///   emitted bytes nor the sink's failure state can be read back by a
+    ///   predicate, and replaying writes changes the observed sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, an ordinary index and the maximum host index
+    ///   retain their exact decimal value and requested fill, width and sign. A
+    ///   rejecting sink separates propagation from swallowed errors.
+    /// - witness: `tree::tests::formatters_preserve_numeric_options`
+    /// - witness: `tree::tests::formatters_propagate_sink_failure`
     #[inline]
     fn fmt(
         &self,
@@ -247,6 +257,18 @@ impl Node
     /// - panics: none.
     ///
     /// [`TreeBuilder`]: crate::TreeBuilder
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a depth-four layout supplies interior nodes and
+    ///   leaves; exact labels, fragments, child ranges and subtree digests
+    ///   detect dropped or substituted constructor parts.
+    /// - witness: `build::tests::children_are_contiguous_and_in_source_order`
+    /// - witness: `build::tests::a_node_names_the_fragment_it_spans`
+    /// - witness: `build::tests::the_same_subtree_in_two_sources_shares_its_digest`
+    #[spec(ensures: |ret| ret.first_child.0 == first_child.0 && ret.child_count.0 == child_count.0
+        && matches!(ret.label.const_eq(label), crate::ConstEquality::Equal)
+        && matches!(ret.span.const_eq(span), crate::ConstEquality::Equal)
+        && matches!(ret.digest.const_eq(digest), crate::ConstEquality::Equal))]
     #[inline]
     pub(crate) const fn new(
         label: NodeLabel,
@@ -270,6 +292,18 @@ impl Node
 ///
 /// One type serves both walks the arena offers — a node's children and a whole
 /// tree — because in a level-order arena both are ranges.
+///
+/// # Specification
+/// - ensures: the walk yields a contiguous ascending range and remains
+///   exhausted after its end.
+/// - executable: none — this type has no entry or return boundary; the
+///   construction and observation methods state its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, nonzero and maximum-ended ranges are observed
+///   through exact indices and remaining sizes, separating endpoint shifts,
+///   gaps and resumed exhaustion.
+/// - witness: `tree::tests::index_ranges_advance_exactly_and_stay_exhausted`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NodeIndices
 {
@@ -292,6 +326,13 @@ impl NodeIndices
     ///   rather than as a panic.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty range yields no positions and has exact zero
+    ///   size before and after repeated polls; a spurious element or nonzero
+    ///   hint changes those observations.
+    /// - witness: `tree::tests::index_ranges_advance_exactly_and_stay_exhausted`
+    #[spec(ensures: |ret| ret.next == ret.end)]
     #[inline]
     const fn empty() -> Self
     {
@@ -320,7 +361,19 @@ impl Iterator for NodeIndices
     ///   failure.
     /// - panics: none. The advance saturates, so a range ending at `usize::MAX`
     ///   stops rather than overflowing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, nonzero-origin and maximum-ended ranges are
+    ///   observed by exact yielded indices and remaining sizes before and after
+    ///   each step; repeated exhaustion detects restarting, skipped endpoints,
+    ///   double advancement and arithmetic overflow.
+    /// - witness: `tree::tests::index_ranges_advance_exactly_and_stay_exhausted`
     #[inline]
+    #[spec(
+        captures: cursor = self.next,
+        ensures: |ret| ret == (cursor < self.end).then_some(NodeIndex(cursor))
+            && self.next == if cursor < self.end { cursor.saturating_add(1) } else { cursor },
+    )]
     fn next(&mut self) -> Option<Self::Item>
     {
         if self.next >= self.end {
@@ -343,7 +396,14 @@ impl Iterator for NodeIndices
     /// - fails: never.
     /// - panics: none. The remaining count saturates, so an exhausted walk
     ///   reports zero rather than underflowing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact remaining cardinality is checked at each step
+    ///   of empty, ordinary and maximum-ended ranges. Both hint endpoints and
+    ///   `ExactSizeIterator::len` detect loose bounds and premature exhaustion.
+    /// - witness: `tree::tests::index_ranges_advance_exactly_and_stay_exhausted`
     #[inline]
+    #[spec(ensures: |ret| ret == (self.end.saturating_sub(self.next), Some(self.end.saturating_sub(self.next))))]
     fn size_hint(&self) -> (usize, Option<usize>)
     {
         let remaining = self.end.saturating_sub(self.next);
@@ -359,6 +419,21 @@ impl ExactSizeIterator for NodeIndices
 /// A concrete syntax tree: the source it was parsed from, the grammar whose
 /// molds its labels name, and its nodes, laid out in level order with the root
 /// at position zero.
+///
+/// # Specification
+/// - ensures: every stored child range is contiguous and strictly above its
+///   parent; source and grammar describe the same immutable layout.
+/// - executable: none — this type has no entry or return boundary; the
+///   construction and observation methods state its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a depth-four tree and an empty layout are observed
+///   through root resolution, exact child lists, fragments and grammar; shifts,
+///   reordered siblings and dropped provenance change the answers.
+/// - witness: `build::tests::every_child_sits_above_its_parent`
+/// - witness: `build::tests::children_are_contiguous_and_in_source_order`
+/// - witness: `build::tests::a_tree_records_its_grammar`
+/// - witness: `tree::tests::an_empty_layout_has_no_resolvable_positions`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyntaxTree<'source>
 {
@@ -377,26 +452,49 @@ impl<'source> SyntaxTree<'source>
     /// in level order.
     ///
     /// # Specification
-    /// - requires: `nodes` is a level-order layout — the root first, every
-    ///   node's children occupying the contiguous range its `first_child` and
-    ///   `child_count` name, and every such range strictly above the node's own
-    ///   position; every span in `nodes` was validated against `source`. The
-    ///   only producer that establishes all of this is [`TreeBuilder::finish`],
-    ///   which is why the constructor is crate-private rather than public.
+    /// - requires: `nodes` is empty or a level-order layout — the root first,
+    ///   every node's children occupying the contiguous range its `first_child`
+    ///   and `child_count` name, and every such range strictly above the node's
+    ///   own position; every span in `nodes` was validated against `source`.
+    ///   The only producer that establishes all of this is
+    ///   [`TreeBuilder::finish`], which is why the constructor is crate-private
+    ///   rather than public.
     /// - ensures: the tree holds exactly `nodes`, in the order given, over
     ///   `source` and under `grammar`; the layout is adopted rather than
     ///   checked or re-derived.
     /// - provides: the seam between the builder's layout walk and the finished
-    ///   tree. This stays a `const fn` without `#[spec]`: the pinned `anodized`
-    ///   expansion calls a non-const evaluator (`E0015`). The precondition is a
-    ///   provenance claim about `nodes`, which no predicate over one call
-    ///   states.
+    ///   tree.
     /// - fails: never — a layout violating the precondition yields a tree whose
     ///   walks are wrong rather than a refusal, which is what confines the
     ///   constructor to one caller.
     /// - panics: none.
     ///
     /// [`TreeBuilder::finish`]: crate::TreeBuilder::finish
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and populated layouts preserve source, grammar
+    ///   and exact node order. Root lookup, child ranges and fragment observers
+    ///   separate dropped fields, reordering and a spurious empty root.
+    /// - witness: `tree::tests::an_empty_layout_has_no_resolvable_positions`
+    /// - witness: `build::tests::the_root_is_the_first_position`
+    /// - witness: `build::tests::children_are_contiguous_and_in_source_order`
+    /// - witness: `build::tests::a_node_names_the_fragment_it_spans`
+    #[spec(ensures: |ref ret| {
+        let mut nodes = ret.nodes.as_slice();
+        let count = nodes.len();
+        let mut position = 0_usize;
+        let mut valid = matches!(ret.source.const_eq(source), crate::ConstEquality::Equal)
+            && matches!(ret.grammar.const_eq(grammar), crate::ConstEquality::Equal);
+        while let Some((node, tail)) = nodes.split_first() {
+            let first = node.first_child.0;
+            let children = node.child_count.0;
+            valid = valid && (children == 0_usize
+                || (first > position && first <= count && children <= count.saturating_sub(first)));
+            position = position.saturating_add(1_usize);
+            nodes = tail;
+        }
+        valid
+    })]
     #[inline]
     pub(crate) const fn from_layout(
         source: SourceText<'source>,
@@ -447,6 +545,14 @@ impl<'source> SyntaxTree<'source>
     ///   non-empty tree would have to discharge.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — populated and empty layouts both designate zero; the
+    ///   former resolves its root while the latter does not. A shifted root or
+    ///   fabricated empty node changes these observations.
+    /// - witness: `build::tests::the_root_is_the_first_position`
+    /// - witness: `tree::tests::an_empty_layout_has_no_resolvable_positions`
+    #[spec(ensures: |ret| ret.0 == 0_usize)]
     #[inline]
     #[must_use]
     pub const fn root(&self) -> NodeIndex
@@ -510,8 +616,16 @@ impl<'source> SyntaxTree<'source>
     /// - provides: the stackless whole-tree walk the layout is chosen for.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and seven-node layouts expose the entire
+    ///   ordered index sequence and exact remaining size. Omitted zero, a
+    ///   skipped position and an inclusive end differ from these observations.
+    /// - witness: `tree::tests::an_empty_layout_has_no_resolvable_positions`
+    /// - witness: `build::tests::the_root_is_the_first_position`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.next == 0 && ret.end == self.nodes.len())]
     pub fn positions(&self) -> NodeIndices
     {
         NodeIndices {
@@ -529,12 +643,7 @@ impl<'source> SyntaxTree<'source>
     ///   each strictly above `position` under the level-order layout; the empty
     ///   walk for a leaf and for a position the tree does not hold, which is
     ///   the fail-closed reading.
-    /// - provides: the edge relation every walk over the tree follows. The
-    ///   postcondition's strictly-above half holds only under the layout
-    ///   precondition [`SyntaxTree::from_layout`] adopts without checking, so
-    ///   asserting it would turn that documented wrong walk into a panic; the
-    ///   range half alone is the body restated, so the line stays prose and the
-    ///   witnesses below carry it.
+    /// - provides: the edge relation every walk over the tree follows.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -551,6 +660,10 @@ impl<'source> SyntaxTree<'source>
     /// - witness: `build::tests::every_child_sits_above_its_parent`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| self.node(position).map_or_else(
+        || ret.next == ret.end,
+        |node| ret.next == node.first_child.0 && ret.end == node.first_child.0.saturating_add(node.child_count.0),
+    ))]
     pub fn children(
         &self,
         position: NodeIndex,
@@ -600,5 +713,81 @@ impl<'source> SyntaxTree<'source>
         let node = self.node(position)?;
 
         self.source.fragment(node.span).ok()
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+
+    use super::NodeIndex;
+    use super::NodeIndices;
+    use super::SyntaxTree;
+    use crate::GrammarFingerprint;
+    use crate::SourceText;
+
+    #[test]
+    fn index_ranges_advance_exactly_and_stay_exhausted()
+    {
+        for (start, end) in [
+            (0_usize, 0_usize),
+            (3, 3),
+            (3, 6),
+            (usize::MAX.saturating_sub(1), usize::MAX),
+        ] {
+            let mut range = NodeIndices { next: start, end };
+            for index in start .. end {
+                let remaining = end.saturating_sub(index);
+                assert_eq!(range.size_hint(), (remaining, Some(remaining)));
+                assert_eq!(range.len(), remaining);
+                assert_eq!(range.next(), Some(NodeIndex(index)));
+            }
+            for _ in 0_u8 .. 2_u8 {
+                assert_eq!(range.next(), None);
+                assert_eq!(range.size_hint(), (0, Some(0)));
+                assert_eq!(range.len(), 0);
+            }
+        }
+        let mut empty = NodeIndices::empty();
+        assert_eq!(empty.next(), None);
+        assert_eq!(empty.size_hint(), (0, Some(0)));
+    }
+
+    #[test]
+    fn an_empty_layout_has_no_resolvable_positions()
+    {
+        let source = SourceText::from("");
+        let grammar = GrammarFingerprint::from(7_u64);
+        let tree = SyntaxTree::from_layout(source, grammar, Vec::new());
+        assert_eq!(tree.source(), source);
+        assert_eq!(tree.grammar(), grammar);
+        assert_eq!(tree.root(), NodeIndex(0));
+        assert_eq!(tree.node(tree.root()), None);
+        assert_eq!(tree.positions().next(), None);
+        assert_eq!(tree.children(tree.root()).next(), None);
+        assert_eq!(tree.fragment(tree.root()), None);
+    }
+
+    #[test]
+    fn formatters_preserve_numeric_options()
+    {
+        for count in [0_usize, 17, usize::MAX] {
+            assert_eq!(
+                alloc::format!("{:*>+24}", NodeIndex(count)),
+                alloc::format!("{count:*>+24}")
+            );
+        }
+    }
+
+    #[test]
+    fn formatters_propagate_sink_failure()
+    {
+        use core::fmt::Write as _;
+        assert!(
+            crate::test_support::RefusingSink
+                .write_fmt(format_args!("{}", NodeIndex(0)))
+                .is_err()
+        );
     }
 }

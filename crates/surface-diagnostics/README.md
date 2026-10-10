@@ -14,6 +14,7 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 - [Context is causal](#context-is-causal)
 - [The layout backend](#the-layout-backend)
 - [Colour is the caller's choice](#colour-is-the-callers-choice)
+- [Specification discipline](#specification-discipline)
 - [License](#license)
 
 <!-- tocstop -->
@@ -28,16 +29,19 @@ The renderer for what one step of the dispatcher's walk prints: each refusal, ea
 
 ## Provided features
 
-- `entries`, `Entries`, `Entry` and `Line`: what a step prints under a verb, in order; a ledger line is one line, `<path>: <report>`, and a fault step has no entry. Witnesses: `diagnostics::diagnostics::each_verb_prints_its_entries`, `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`.
-- `Report`, `Class`, `Unsettlement` and `report_span::Absent`: one report, its class — a refusal's failure class, the way a declaration is unsettled, or a goal — and its primary span or the reason it has none. Witnesses: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`, `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`, `diagnostics::diagnostics::a_span_outside_the_text_is_unlocated`.
-- `Report::render` and `Rendered`: the snippet, compared byte for byte against a golden for each kind. Witnesses: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`, `diagnostics::diagnostics::an_unsettled_declaration_renders_as_its_golden`, `diagnostics::diagnostics::a_goal_renders_as_its_golden`, `diagnostics::diagnostics::a_pathless_report_names_input_and_renders_causal_context`, `diagnostics::diagnostics::a_labeled_context_retains_its_locus_and_cause`, `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`.
-- `Report::identifier`, `Report::title`, `Report::context`, `Title`, `Annotation`, `Label`, `report_identifier::Absent` and `report_context::Absent`: the parts a snippet lays out — the refusal's vocabulary name, the message, each context locus with its label — for a face that shows them apart, as an editor shows a code, a message and related locations. Witnesses: `diagnostics::diagnostics::a_report_names_and_titles_what_it_renders`, `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`.
-- `RenderStyle` and `TerminalCapability`: plain or styled, chosen from what the caller knows of its output. Witness: `diagnostics::diagnostics::render_style_follows_terminal_capability`.
+| Surface | Behavior and evidence |
+| ------- | --------------------- |
+| Entry streams | Declaration order, verb filtering and persistent exhaustion. Witnesses: `diagnostics::diagnostics::each_verb_prints_its_entries`, `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`. |
+| Ledger entries | Borrow the source path and add no framing terminator; literal path controls remain. The verb witness checks prefixes and semantic payloads through real walks. |
+| Classification and loci | Producer classes and origin families remain distinct. Witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`. |
+| Metadata | Refusal identifiers, title payloads and labelled context are available independently. Witnesses: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`, `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`. |
+| Rendering | Refusal, unsettled and goal layouts have consumer-visible golden witnesses; pathless sources and duplicate-signature context have location assertions. |
+| Styling | Both terminal capabilities have exact style observations; forced styling preserves plain glyphs after removing backend SGR controls. Witness: `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`. |
 
 ## Expected features
 
 - **A step whose text is the text it composed.** `Step::Source` carries both; a span the text cannot answer leaves its report unlocated rather than quoting the wrong line.
-- **A writer.** `Rendered` is a `String` without a trailing line terminator; the caller writes it and chooses the separator.
+- **A writer.** Rendering adds no framing terminator; the caller chooses the separator. Literal path controls can include a final line feed or carriage return. `Rendered::from(String)` preserves supplied bytes.
 - **Terminal detection, if colour is wanted.** The caller states whether its output is a terminal; the crate reads no environment.
 
 ## Examples
@@ -88,13 +92,13 @@ error[TypeMismatch]: the type this term synthesises does not convert to the type
   ╰ note: unsettled `wrong` states checks owing 0
 ```
 
-The checker's refusals are worded here, beside the one consumer that writes them; the lowering's and the corpus root's are their own `Display`. A mismatch label names the role of the type it marks — checked against, synthesised — rather than the type: the workspace has no printer for core types yet, and a label that printed a node id would read worse than one that names the role. A source with an empty path is named `<input>`.
+The checker's refusals are worded here; the lowering's and the corpus root's use their own `Display`. Mismatch labels name causal roles, such as checked-against or synthesised type, while origins locate those roles in source. Labels expose no core node addresses. An empty path renders as `<input>`.
 
 ## The one input is the step
 
 `entries` reads the whole `Step` under its verb. A declaration and the refusal it produced are one `DeclarationReport`, so every refusal the walk carries reaches the renderer with its declaration; a face reading refusals from a list kept beside the declarations could drop one. The step carries the two things rendering needs and the composition already had: the source's text, borrowed, and the lowering's origin table, moved out of the lowered module once checking is done.
 
-The alternative was the driver passing the text and the dispatcher exposing the module beside the step. That splits one fact across two calls that must agree. The choice reverses if a consumer renders reports for a source it never walked, at which point a report constructor taking text and origins directly joins `entries`.
+Passing text separately while exposing the composed module would split one fact across calls that must agree. The choice reverses if a consumer needs to render a source it never walked; such a consumer needs a constructor taking text and origins together.
 
 ## Every span is the producer's
 
@@ -118,7 +122,15 @@ The choice reverses on a security advisory or an unmaintained notice against `an
 
 ## Colour is the caller's choice
 
-`RenderStyle::Plain` writes no escape sequence; `RenderStyle::Styled` writes the same text coloured with the backend's default palette. `RenderStyle::for_terminal` maps what the caller knows of its output — a terminal or not — to a style, and the crate reads no environment variable and probes no stream. The driver prints plain text, so a pipe, a file and a test all see the same bytes.
+`RenderStyle::Plain` adds no escape sequences. `RenderStyle::Styled` adds the backend's palette. `RenderStyle::for_terminal` maps the supplied terminal capability to a style; it reads no environment variable and probes no stream.
+
+Paths retain literal control characters in both styles. This preserves source identity without introducing a path-escaping policy; style selection offers no terminal-sanitization guarantee. An unlocated report whose path ends in a line feed or carriage return retains that final control. Witness: `report::tests::literal_path_controls_are_not_styling_or_framing`.
+
+## Specification discipline
+
+Nontrivial items carry executable predicates and bounded `# Adequacy` claims. Borrowed identity checks avoid copying or scanning source text. Enforcing tests exercise span validity and causal labels alongside iterator progress and numeric payload roles. The nontrivial `Display` methods state an exemption: `fmt::Formatter` exposes neither its output buffer nor an independent destination-failure observer.
+
+The finite witnesses include UTF-8 splits and end-of-file spans. Invalid primary and context loci retain their distinct absence reasons; no span is clamped. The rendering goldens are layout examples, not exhaustive backend coverage. Each item's Rustdoc states its domain and links its own-crate witnesses.
 
 ## License
 

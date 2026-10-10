@@ -52,6 +52,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::ConvexityDischarge;
@@ -352,10 +353,28 @@ impl ExchangeWitness
     /// - hypothesis: L3 — the result is checked against an independent answer
     ///   rather than a predicted one: the witness is applied to the recorded
     ///   order and compared with the canonical order the same [`EventOrder`]
-    ///   computed separately.
+    ///   computed separately. An empty witness preserves an empty order; a real
+    ///   transposition applied to a shorter order produces the declared absence
+    ///   rather than a partial schedule.
     /// - witness: `causal::tests::the_exchange_witness_carries_the_recorded_order_to_the_canonical_one`
     /// - witness: `tests::normal_form::an_exchange_witness_replays_to_its_target_order`
+    /// - witness: `causal::tests::a_real_exchange_refuses_a_shortened_source`
     #[inline]
+    #[spec(ensures: |output| {
+    let valid = self.transpositions.iter().all(|swap| usize::from(swap.position).saturating_add(1_usize) < order.len());
+    match output {
+        Maybe::Absent(exchange_application::Absent::PositionOutOfRange) => !valid,
+        Maybe::Present(ref result) => valid && result.len() == order.len() && result.iter().enumerate().all(|(index, event)| {
+            let mut source = index;
+            for swap in self.transpositions.iter().rev() {
+                let below = usize::from(swap.position);
+                let above = below.saturating_add(1_usize);
+                if source == below { source = above; } else if source == above { source = below; }
+            }
+            order.get(source) == Some(event)
+        }),
+    }
+})]
     pub fn apply(
         &self,
         order: &[EventIndex],
@@ -397,14 +416,29 @@ impl<A: CellAlphabet> EventOrder<A>
     ///   separated by a two-layer derivation. A depth read off the earlier
     ///   step's position index instead of its depth is still a valid layering
     ///   and survives every single-chain fixture; two interleaved chains
-    ///   recorded in two orders separate it.
+    ///   recorded in two orders separate it. The empty derivation has no
+    ///   events, keys, edges or layers; adding a phantom event changes the
+    ///   empty-boundary observer.
     /// - witness: `tests::normal_form::the_dependence_edges_are_the_pairs_the_guard_refuses`
     /// - witness: `tests::normal_form::a_three_layer_derivation_gives_three_layers`
     /// - witness: `tests::normal_form::a_layered_derivation_keeps_its_dependent_step_last`
     /// - witness: `tests::normal_form::a_three_layer_derivation_orders_each_layer_by_content_address`
     /// - witness: `tests::normal_form::two_interleaved_dependence_chains_layer_by_depth_and_not_by_position`
+    /// - witness: `causal::tests::empty_orders_have_no_events_layers_or_exchanges`
     #[inline]
     #[must_use]
+    #[spec(captures: original_events = events.clone(), ensures: |output| {
+    let support = OverlapSupport::from_store(store);
+    output.events == original_events && output.convexity == convexity
+        && output.dependences.len() == original_events.len() && output.depths.len() == original_events.len() && output.keys.len() == original_events.len()
+        && output.dependences.iter().zip(&output.depths).zip(&output.keys).zip(&original_events).enumerate().all(|(index, (((edges, depth), key), event))| {
+            let expected = original_events.iter().enumerate().take(index).filter(|prior| !bool::from(step_independence_with_support(store, &prior.1.step, &event.step, convexity, &support))).map(|(earlier, _)| EventIndex::from(earlier));
+            let inherited: Vec<CausalPast> = edges.iter().map(|earlier| output.keys.get(usize::from(*earlier)).map(EventKey::past).unwrap_or_default()).collect();
+            edges.iter().copied().eq(expected)
+                && usize::from(*depth) == edges.iter().filter_map(|earlier| output.depths.get(usize::from(*earlier))).map(|prior| usize::from(*prior).saturating_add(1_usize)).max().unwrap_or_default()
+                && key.address == event.address && key.past == causal_past_address(event.address, &inherited)
+        })
+})]
     pub fn of_events(
         store: &CellStore<A>,
         events: Vec<DerivationEvent<A>>,
@@ -486,7 +520,16 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - provides: [`event_lookup::Absent::OutOfRange`] when the index names no
     ///   event.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an issued index returns that stored event; the first
+    ///   absent index returns the typed absence. Shifting the lookup or
+    ///   treating absence as an event changes the normal-form schedule
+    ///   observer.
+    /// - witness: `causal::tests::an_out_of_range_index_depends_on_nothing`
+    /// - witness: `causal::tests::empty_orders_have_no_events_layers_or_exchanges`
     #[inline]
+    #[spec(ensures: |output| self.events.get(usize::from(at)).map_or_else(|| output == Maybe::Absent(event_lookup::Absent::OutOfRange), |event| output == Maybe::Present(event)))]
     pub fn event(
         &self,
         at: EventIndex,
@@ -505,7 +548,16 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - provides: [`event_lookup::Absent::OutOfRange`] when the index names no
     ///   event.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — issued interleaved-chain indices expose their causal
+    ///   depths, not arrival indices; the first absent index is a typed
+    ///   refusal. A shifted lookup or arrival-based depth changes the layered
+    ///   observer.
+    /// - witness: `tests::normal_form::two_interleaved_dependence_chains_layer_by_depth_and_not_by_position`
+    /// - witness: `causal::tests::empty_orders_have_no_events_layers_or_exchanges`
     #[inline]
+    #[spec(ensures: |output| self.depths.get(usize::from(at)).map_or_else(|| output == Maybe::Absent(event_lookup::Absent::OutOfRange), |depth| output == Maybe::Present(*depth)))]
     pub fn depth(
         &self,
         at: EventIndex,
@@ -524,7 +576,16 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - provides: [`event_lookup::Absent::OutOfRange`] when the index names no
     ///   event.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — issued indices preserve both primitive address and
+    ///   causal-past key, while an absent index has no key. Dropping either
+    ///   component or shifting the lookup changes the collision and
+    ///   canonical-order observers.
+    /// - witness: `causal::tests::the_causal_past_separates_two_events_sharing_an_address`
+    /// - witness: `causal::tests::empty_orders_have_no_events_layers_or_exchanges`
     #[inline]
+    #[spec(ensures: |output| self.keys.get(usize::from(at)).map_or_else(|| output == Maybe::Absent(event_lookup::Absent::OutOfRange), |key| output == Maybe::Present(*key)))]
     pub fn key(
         &self,
         at: EventIndex,
@@ -562,11 +623,20 @@ impl<A: CellAlphabet> EventOrder<A>
     ///   The tying inputs are assembled directly: over both shipped alphabets a
     ///   shared address forces a shared position and so distinct depths, which
     ///   is a fact about those alphabets rather than evidence the check is
-    ///   redundant.
+    ///   redundant. Equal ranks separated in the recording still form a
+    ///   collision, whose original indices must be reported after sorting.
+    ///   Checking recorded neighbours instead misses this boundary.
     /// - witness: `causal::tests::an_order_whose_keys_are_distinct_is_accepted`
     /// - witness: `causal::tests::two_events_tying_on_depth_and_key_are_refused`
     /// - witness: `causal::tests::a_repeated_primitive_at_two_depths_is_not_a_tie`
+    /// - witness: `causal::tests::a_collision_separated_in_recorded_order_keeps_original_indices`
     #[inline]
+    #[spec(ensures: |output| output.as_ref().map_or_else(
+    |collision| collision.earlier < collision.later
+        && self.depths.get(usize::from(collision.earlier)) == Some(&collision.depth) && self.depths.get(usize::from(collision.later)) == Some(&collision.depth)
+        && self.keys.get(usize::from(collision.earlier)) == Some(&collision.key) && self.keys.get(usize::from(collision.later)) == Some(&collision.key),
+    |&()| { let order = self.canonical_order(); order.iter().zip(order.iter().skip(1)).all(|(left, right)| (self.depths.get(usize::from(*left)), self.keys.get(usize::from(*left))) != (self.depths.get(usize::from(*right)), self.keys.get(usize::from(*right)))) },
+))]
     pub(crate) fn refuse_key_collisions(&self) -> Result<(), KeyCollision>
     {
         let mut held: Option<(EventIndex, CausalDepth, EventKey)> = None;
@@ -622,6 +692,7 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - witness: `causal::tests::an_out_of_range_index_depends_on_nothing`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| bool::from(output) == self.dependences.get(usize::from(later)).is_some_and(|edges| edges.contains(&earlier)))]
     pub fn depends_directly(
         &self,
         later: EventIndex,
@@ -650,6 +721,7 @@ impl<A: CellAlphabet> EventOrder<A>
     ///   a missing or extra edge fails.
     /// - witness: `causal_web::tests::a_tracelet_fixture_builds_the_two_colour_web`
     /// - witness: `tests::causal_web::a_precedence_reached_only_through_an_intermediate_event_is_green`
+    #[spec(ensures: |output| output == self.dependences.get(usize::from(later)).map_or(&[][..], Vec::as_slice) && output.iter().zip(output.iter().skip(1)).all(|(left, right)| left < right))]
     pub(crate) fn direct_dependences(
         &self,
         later: EventIndex,
@@ -685,6 +757,7 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - witness: `tests::normal_form::independence_is_symmetric_and_irreflexive`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| bool::from(output) == (left != right && usize::from(left) < self.events.len() && usize::from(right) < self.events.len() && !bool::from(self.depends_directly(left.max(right), left.min(right)))))]
     pub fn independent(
         &self,
         left: EventIndex,
@@ -722,11 +795,27 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - hypothesis: L3 — reachability rather than adjacency is separated by a
     ///   chain asked forwards and backwards; L2 — the order laws are asserted
     ///   over generated derivations, because a relation wrong on a shape no
-    ///   fixture has passes every pointwise test.
+    ///   fixture has passes every pointwise test. A three-event derivation
+    ///   whose first and last events have no direct edge separates transitive
+    ///   reachability from a direct-edge lookup.
     /// - witness: `causal::tests::precedence_is_the_transitive_closure_of_dependence`
     /// - witness: `tests::normal_form::causal_precedence_is_a_strict_partial_order`
+    /// - witness: `tests::causal_web::a_precedence_reached_only_through_an_intermediate_event_is_green`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| {
+    let expected = if earlier >= later || usize::from(later) >= self.events.len() { false } else {
+        let end = usize::from(later).saturating_add(1_usize);
+        let mut reachable = alloc::vec![false; end];
+        if let Some(seed) = reachable.get_mut(usize::from(earlier)) { *seed = true; }
+        for (index, edges) in self.dependences.iter().enumerate().take(end).skip(usize::from(earlier).saturating_add(1_usize)) {
+            let reached = edges.iter().any(|prior| reachable.get(usize::from(*prior)).copied().unwrap_or(false));
+            if let Some(slot) = reachable.get_mut(index) { *slot = reached; }
+        }
+        reachable.get(usize::from(later)).copied().unwrap_or(false)
+    };
+    bool::from(output) == expected
+})]
     pub fn precedes(
         &self,
         earlier: EventIndex,
@@ -764,9 +853,9 @@ impl<A: CellAlphabet> EventOrder<A>
     /// Whether two distinct events are causally unordered: neither precedes
     /// the other.
     ///
-    /// Concurrency is coarser than independence: two independent events are
-    /// always concurrent, but two events can be concurrent while one depends
-    /// on something the other does not touch.
+    /// Concurrency is finer than independence: independent events can
+    /// still be ordered through an intermediate dependence. Concurrent
+    /// events have no such path in either direction.
     ///
     /// # Specification
     /// - ensures: positive exactly when the two indices name distinct events
@@ -786,6 +875,7 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - witness: `tests::normal_form::events_sharing_a_layer_are_pairwise_concurrent`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| bool::from(output) == (left != right && usize::from(left) < self.events.len() && usize::from(right) < self.events.len() && !bool::from(self.precedes(left, right)) && !bool::from(self.precedes(right, left))))]
     pub fn concurrent(
         &self,
         left: EventIndex,
@@ -858,6 +948,9 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - witness: `causal::tests::the_causal_past_separates_two_events_sharing_an_address`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output.len() == self.events.len() && output.iter().all(|index| usize::from(*index) < self.events.len())
+    && output.iter().zip(output.iter().skip(1)).all(|(left, right)|
+        (self.depths.get(usize::from(*left)), self.keys.get(usize::from(*left)), left) < (self.depths.get(usize::from(*right)), self.keys.get(usize::from(*right)), right)))]
     pub fn canonical_order(&self) -> Vec<EventIndex>
     {
         let mut order = self.recorded_order();
@@ -894,12 +987,17 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - hypothesis: L3 — the group boundary is separated by a three-layer
     ///   derivation with a two-occupant first layer and singleton layers after
     ///   it; L2 — the concatenation and the antichain property over generated
-    ///   derivations.
+    ///   derivations. The empty order yields no empty layer, so inserting a
+    ///   synthetic batch changes its critical-path boundary.
     /// - witness: `tests::normal_form::a_three_layer_derivation_gives_three_layers`
     /// - witness: `tests::normal_form::the_layers_concatenate_to_the_canonical_order`
     /// - witness: `tests::normal_form::events_sharing_a_layer_are_pairwise_concurrent`
+    /// - witness: `causal::tests::empty_orders_have_no_events_layers_or_exchanges`
     #[inline]
     #[must_use]
+    #[spec(ensures: |output| output.iter().flatten().copied().eq(self.canonical_order())
+    && output.iter().all(|layer| layer.first().is_some_and(|first| layer.iter().all(|index| self.depths.get(usize::from(*index)) == self.depths.get(usize::from(*first)))))
+    && output.iter().zip(output.iter().skip(1)).all(|(left, right)| left.first().zip(right.first()).is_some_and(|(first, second)| self.depths.get(usize::from(*first)) < self.depths.get(usize::from(*second)))))]
     pub fn layers(&self) -> Vec<Vec<EventIndex>>
     {
         let mut layers: Vec<Vec<EventIndex>> = Vec::new();
@@ -964,6 +1062,20 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - witness: `tests::normal_form::a_containment_dependent_pair_refuses_its_transposition`
     /// - witness: `tests::normal_form::the_canonical_order_is_always_reachable_by_licensed_transpositions`
     #[inline]
+    #[spec(ensures: |output| match output {
+    Ok(ref witness) => {
+        let mut current = from.to_vec();
+        witness.transpositions.iter().all(|swap| {
+            let below = usize::from(swap.position);
+            let above = below.saturating_add(1_usize);
+            let licensed = current.get(below).zip(current.get(above)).is_some_and(|(lower, upper)| bool::from(self.independent(*lower, *upper)));
+            if licensed { current.swap(below, above); }
+            licensed
+        }) && current == to
+    },
+    Err(ExchangeObstruction::NotARearrangement) => from.len() != to.len() || from.iter().any(|event| from.iter().filter(|candidate| *candidate == event).count() != to.iter().filter(|candidate| *candidate == event).count()),
+    Err(ExchangeObstruction::DependentTransposition { earlier, later }) => earlier != later && from.contains(&earlier) && from.contains(&later) && to.contains(&later) && !bool::from(self.independent(earlier, later)),
+})]
     pub fn exchange_between(
         &self,
         from: &[EventIndex],
@@ -1028,6 +1140,7 @@ impl<A: CellAlphabet> EventOrder<A>
     /// - witness: `causal::tests::the_exchange_witness_carries_the_recorded_order_to_the_canonical_one`
     /// - witness: `tests::normal_form::the_canonical_order_is_always_reachable_by_licensed_transpositions`
     #[inline]
+    #[spec(ensures: |output| output == self.exchange_between(&self.recorded_order(), &self.canonical_order()))]
     pub fn exchange_to_canonical(&self) -> Result<ExchangeWitness, ExchangeObstruction>
     {
         self.exchange_between(&self.recorded_order(), &self.canonical_order())
@@ -1058,6 +1171,7 @@ impl<A: CellAlphabet> EventOrder<A>
 /// - witness: `tests::normal_form::a_layered_derivation_keeps_its_dependent_step_last`
 /// - witness: `tests::normal_form::a_withheld_convexity_warrant_empties_the_shift_quotient`
 /// - witness: `tests::normal_form::a_non_local_term_algebra_trips_the_kill_signal_at_the_join`
+#[spec(ensures: |output| bool::from(output) == check_shift_guard_with_support(store, left, right, convexity, support).is_ok())]
 fn step_independence_with_support<A>(
     store: &CellStore<A>,
     left: &CellApp<A>,
@@ -1084,7 +1198,11 @@ mod tests
     use gandr_theory_cell_complexes::Orientation;
     use gandr_theory_cell_complexes::Polarity;
     use gandr_theory_cell_complexes::Pos;
+    use gandr_theory_cell_complexes::PositionStep;
     use gandr_theory_cell_complexes::ProdPat;
+    use gandr_theory_cell_complexes_tools::Toy;
+    use gandr_theory_cell_complexes_tools::ToyAlphabet;
+    use gandr_theory_cell_complexes_tools::toy_cell;
 
     use super::*;
     use crate::normal_form::event_order;
@@ -1126,7 +1244,15 @@ mod tests
     /// same position and dependent: a two-event chain.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the two supplied steps replay as a dependent two-event chain.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — this concrete two-step fixture is replayed before its
+    ///   direct edge, depths and canonical schedule are observed. A non-firing
+    ///   step, identity step or broken dependency changes those observations.
+    /// - witness: `causal::tests::a_dependent_chain_is_its_own_canonical_order`
+    #[spec(ensures: |output| event_order(&output.0, &output.1, &output.2).is_ok_and(|order| usize::from(order.event_count()) == 2 && bool::from(order.depends_directly(EventIndex::from(1_usize), EventIndex::from(0_usize)))))]
     fn chain_fixture() -> (CellStore, CmdPat, [CellApp; 2])
     {
         let mut store = CellStore::new();
@@ -1152,7 +1278,17 @@ mod tests
     /// The chain fixture's event order.
     ///
     /// # Specification
+    /// - ensures: two recorded events, with depths zero and one and the second
+    ///   directly dependent on the first.
     /// - panics: when the chain does not replay, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the replayed chain has exactly two events at depths
+    ///   zero and one, with one forward dependency. Dropping an event,
+    ///   flattening depth or reversing the edge changes its canonical order and
+    ///   precedence.
+    /// - witness: `causal::tests::a_dependent_chain_is_its_own_canonical_order`
+    #[spec(ensures: |output| output.events.len() == 2 && output.depths == [CausalDepth::from(0_usize), CausalDepth::from(1_usize)] && output.dependences.first().is_some_and(Vec::is_empty) && output.dependences.get(1).is_some_and(|edges| edges == &[EventIndex::from(0_usize)]))]
     fn chain_order() -> EventOrder
     {
         let (store, peak, steps) = chain_fixture();
@@ -1329,7 +1465,16 @@ mod tests
     /// Two distinct content addresses, taken over two distinct cells.
     ///
     /// # Specification
+    /// - ensures: the two primitive content addresses are distinct.
     /// - panics: when the two addresses coincide, which is a fixture defect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two concrete cells at the root produce distinct
+    ///   identities used in one-depth and mixed-depth collision fixtures.
+    ///   Returning a duplicate address destroys the intended distinct-key
+    ///   boundary.
+    /// - witness: `causal::tests::an_order_whose_keys_are_distinct_is_accepted`
+    #[spec(ensures: |output| output.0 != output.1)]
     fn two_addresses() -> (PrimId, PrimId)
     {
         let left = add_s();
@@ -1496,6 +1641,111 @@ mod tests
             }),
             reversed,
             "reaching the reversed order needs a transposition of a dependent pair"
+        );
+    }
+
+    #[test]
+    fn empty_orders_have_no_events_layers_or_exchanges()
+    {
+        let store = CellStore::<SequentAlphabet>::new();
+        let order = EventOrder::of_events(
+            &store,
+            Vec::new(),
+            ConvexityDischarge::StronglyConnectedOverAcyclicTarget,
+        );
+        assert!(order.events().is_empty());
+        assert!(order.canonical_order().is_empty());
+        assert!(order.layers().is_empty());
+        assert_eq!(Ok(()), order.refuse_key_collisions());
+        let absent = EventIndex::from(0_usize);
+        assert_eq!(
+            Maybe::Absent(event_lookup::Absent::OutOfRange),
+            order.event(absent)
+        );
+        assert_eq!(
+            Maybe::Absent(event_lookup::Absent::OutOfRange),
+            order.depth(absent)
+        );
+        assert_eq!(
+            Maybe::Absent(event_lookup::Absent::OutOfRange),
+            order.key(absent)
+        );
+        assert!(order.direct_dependences(absent).is_empty());
+        let witness = order
+            .exchange_to_canonical()
+            .expect("the empty order is already canonical");
+        assert_eq!(0_usize, usize::from(witness.transposition_count()));
+        assert_eq!(Maybe::Present(Vec::new()), witness.apply(&[]));
+    }
+
+    #[test]
+    fn a_real_exchange_refuses_a_shortened_source()
+    {
+        let a = ToyAlphabet::skolemize(&Toy::var("a"));
+        let b = ToyAlphabet::skolemize(&Toy::var("b"));
+        let c = ToyAlphabet::skolemize(&Toy::var("c"));
+        let d = ToyAlphabet::skolemize(&Toy::var("d"));
+        let mut store = CellStore::new();
+        let first = store.insert(toy_cell(a.clone(), b));
+        let second = store.insert(toy_cell(c.clone(), d));
+        let peak = Toy::add(a, c);
+        let steps = [
+            CellApp {
+                cell: first,
+                at: ToyAlphabet::position_at_path(&[PositionStep::from(0_usize)]),
+            },
+            CellApp {
+                cell: second,
+                at: ToyAlphabet::position_at_path(&[PositionStep::from(1_usize)]),
+            },
+        ];
+        let order =
+            event_order(&store, &peak, &steps).expect("the independent ground steps replay");
+        let first = EventIndex::from(0_usize);
+        let second = EventIndex::from(1_usize);
+        let witness = order
+            .exchange_between(&[first, second], &[second, first])
+            .expect("the pair is independent");
+        assert_eq!(
+            Maybe::Present(alloc::vec![second, first]),
+            witness.apply(&[first, second])
+        );
+        assert_eq!(
+            Maybe::Absent(exchange_application::Absent::PositionOutOfRange),
+            witness.apply(&[first])
+        );
+        assert_eq!(
+            Maybe::Absent(exchange_application::Absent::PositionOutOfRange),
+            witness.apply(&[])
+        );
+    }
+
+    #[test]
+    fn a_collision_separated_in_recorded_order_keeps_original_indices()
+    {
+        let (left, right) = two_addresses();
+        let repeated = EventKey {
+            address: left,
+            past: causal_past_address(left, &[]),
+        };
+        let distinct = EventKey {
+            address: right,
+            past: causal_past_address(right, &[]),
+        };
+        let depth = CausalDepth::from(0_usize);
+        let order = assembled_order(&[
+            (root_step(), depth, repeated),
+            (root_step(), depth, distinct),
+            (root_step(), depth, repeated),
+        ]);
+        assert_eq!(
+            Err(KeyCollision {
+                earlier: EventIndex::from(0_usize),
+                later: EventIndex::from(2_usize),
+                depth,
+                key: repeated
+            }),
+            order.refuse_key_collisions()
         );
     }
 }

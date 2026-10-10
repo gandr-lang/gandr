@@ -23,6 +23,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::ArgumentPosition;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::ConversionCount;
@@ -80,11 +81,21 @@ const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x01";
 /// The decoder's cap on a level atom's offset.
 ///
 /// A level holds `x + o` only as `o` successors of `x`, so decoding an offset
-/// costs `o` steps; the cap keeps a corrupted offset from costing more than a
-/// bounded loop. No type the checker forms comes near it.
+/// costs `o` steps; the cap bounds reconstruction work. Checkpoint encoding
+/// rejects offsets at the same cap before a store can publish unreadable bytes.
 pub const MAX_DECODED_LEVEL_OFFSET: u64 = 4096;
 
 /// A form the persistent encoding has no spelling for.
+///
+/// # Specification
+/// - executable: none — the enum names an encoding refusal; the rejecting
+///   writers establish its cause.
+///
+/// # Adequacy
+/// - hypothesis: L3 — unresolved nodes of all four sorts are rejected with the
+///   corresponding sort. This is a finite semantic-form corpus, not evidence
+///   about every possible arena.
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum UnsupportedPersistence
 {
@@ -94,6 +105,19 @@ pub enum UnsupportedPersistence
 }
 
 /// Why bytes are not a canonical encoding, or a value has none.
+///
+/// # Specification
+/// - executable: none — error variants describe outcomes; the operations
+///   returning them establish the classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — truncated framing, noncanonical payloads, oversized
+///   offsets and unresolved nodes exercise distinct refusals; a length wider
+///   than 64 bits has no witness.
+/// - witness: `codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum CodecError
 {
@@ -144,7 +168,19 @@ impl fmt::Display for UnsupportedPersistence
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Bytes<'data>(pub &'data [u8]);
 
-/// The canonical bytes of a checkpoint set.
+/// Owned checkpoint bytes, canonical only after encoding or successful
+/// decoding.
+///
+/// # Specification
+/// - executable: none — the wrapper also accepts unchecked bytes from storage;
+///   canonicality is a decoder result, not a type invariant.
+///
+/// # Adequacy
+/// - hypothesis: L3 — malformed, truncated and trailing bytes can inhabit the
+///   wrapper and are rejected by decoding; successful finite checkpoint corpora
+///   have stable canonical encodings.
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct CheckpointBytes(Vec<u8>);
@@ -204,12 +240,29 @@ struct Word(u64);
 struct Count(usize);
 
 /// Where encoded bytes go.
+///
+/// # Specification
+/// - executable: none — the trait exposes writes but no byte or length
+///   observer; each implementation owns the append law.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the buffer and hash implementations consume the same
+///   fixed framing bytes. This does not quantify over third-party
+///   implementations.
+/// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
 pub trait Sink
 {
     /// Append `bytes`.
     ///
     /// # Specification
-    /// trivial.
+    /// - executable: none — the required method has no body and the trait
+    ///   exposes no sink-state observer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — concrete buffer and hash sinks preserve the fixed
+    ///   framing byte sequence. The law remains an implementor obligation for
+    ///   other sinks.
+    /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
     fn put(
         &mut self,
         bytes: Bytes<'_>,
@@ -221,7 +274,19 @@ impl Sink for CheckpointBytes
     /// Append to the buffer.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the length grows by the input length and the new suffix
+    ///   equals the input.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonempty prefix survives tag, word and
+    ///   length-framed payload appends. The predicate observes length and
+    ///   suffix; the byte golden also checks prefix preservation.
+    /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
+    #[spec(
+        captures: [before = self.0.len()],
+        ensures: self.0.len().checked_sub(before) == Some(bytes.0.len())
+            && self.0.get(before ..) == Some(bytes.0),
+    )]
     #[inline]
     fn put(
         &mut self,
@@ -237,7 +302,22 @@ impl Sink for blake3::Hasher
     /// Feed the hasher.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: a representable byte-count increment equals the number of
+    ///   supplied bytes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixed frame has the independently hashed expected
+    ///   bytes and the expected count. The predicate uses the public count
+    ///   observer, not a cloned hash state; counter overflow and arbitrary
+    ///   chunk histories are not witnessed.
+    /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
+    #[spec(
+        captures: [before = self.count()],
+        ensures: u64::try_from(bytes.0.len())
+            .ok()
+            .and_then(|added| before.checked_add(added))
+            .is_none_or(|after| self.count() == after),
+    )]
     #[inline]
     fn put(
         &mut self,
@@ -249,6 +329,15 @@ impl Sink for blake3::Hasher
 }
 
 /// The primitive writes, over one sink.
+///
+/// # Specification
+/// - executable: none — the writer holds an abstract sink without an output
+///   observer; individual writes state framing and failure laws.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fixed tag, word and framed payload bytes are checked in
+///   buffer and hash sinks.
+/// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
 #[repr(transparent)]
 struct Writer<'sink, Out>
 {
@@ -263,7 +352,14 @@ where
     /// Write one tag byte.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: one tag byte is appended.
+    /// - executable: none — `Sink` exposes no observation of the bytes written.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — independent fixed bytes check tag width, word
+    ///   endianness and prefix preservation. The hash sink is checked against
+    ///   the digest of those fixed bytes.
+    /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
     fn tag(
         &mut self,
         tag: Tag,
@@ -275,7 +371,14 @@ where
     /// Write one word.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: exactly eight bytes are appended in little-endian order.
+    /// - executable: none — `Sink` exposes no observation of the bytes written.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — independent fixed bytes check tag width, word
+    ///   endianness and prefix preservation. The hash sink is checked against
+    ///   the digest of those fixed bytes.
+    /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
     fn word(
         &mut self,
         word: Word,
@@ -289,6 +392,19 @@ where
     /// # Specification
     /// - fails: [`CodecError::Unrepresentable`] when the count passes 64 bits.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a framed payload contributes an eight-byte length
+    ///   prefix. The predicate states the width refusal exactly; a count wider
+    ///   than 64 bits is unwitnessed.
+    /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
+    #[spec(
+        ensures: |ret| {
+            ret == u64::try_from(count.0)
+                .map(|_| ())
+                .map_err(|_overflow| CodecError::Unrepresentable)
+        },
+    )]
     fn count(
         &mut self,
         count: Count,
@@ -304,6 +420,19 @@ where
     /// # Specification
     /// - fails: as [`Self::count`].
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a binary payload containing zero and non-ASCII bytes
+    ///   follows its exact length prefix. Output bytes are witnessed because
+    ///   the generic sink has no observer.
+    /// - witness: `codec::tests::primitive_frames_have_known_bytes_and_digest`
+    #[spec(
+        ensures: |ret| {
+            ret == u64::try_from(bytes.0.len())
+                .map(|_| ())
+                .map_err(|_overflow| CodecError::Unrepresentable)
+        },
+    )]
     fn bytes(
         &mut self,
         bytes: Bytes<'_>,
@@ -316,6 +445,17 @@ where
 }
 
 /// The primitive reads, over one input.
+///
+/// # Specification
+/// - executable: none — the cursor is raw state and may lie outside the input;
+///   checked operations, rather than construction, establish valid extents.
+///
+/// # Adequacy
+/// - hypothesis: L3 — end-of-input, truncated fields, an overflowing cursor and
+///   partially consumed frames exercise cursor transitions without assuming a
+///   valid initial extent.
+/// - witness: `codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
+/// - witness: `codec::tests::framed_failures_retain_consumed_prefixes`
 struct Reader<'data>
 {
     /// The input.
@@ -331,6 +471,22 @@ impl<'data> Reader<'data>
     /// # Specification
     /// - fails: [`CodecError::Corrupt`] past the end of the input.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — successful fixed-width reads and zero-length end
+    ///   reads coexist with truncation and cursor-addition overflow; failures
+    ///   leave the initial cursor unchanged.
+    /// - witness: `codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
+    #[spec(
+        captures: [before = self.cursor],
+        ensures: |ret| match before
+            .checked_add(count.0)
+            .and_then(|end| self.bytes.get(before .. end).map(|bytes| (end, bytes)))
+        {
+            | Some((end, bytes)) => self.cursor == end && ret == Ok(Bytes(bytes)),
+            | None => self.cursor == before && ret == Err(CodecError::Corrupt),
+        },
+    )]
     fn take(
         &mut self,
         count: Count,
@@ -351,7 +507,20 @@ impl<'data> Reader<'data>
     /// Read one tag byte.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: one available byte is returned and consumed; absence leaves
+    ///   the cursor unchanged.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the byte following a known word is read exactly; a
+    ///   read past the end is refused.
+    /// - witness: `codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
+    #[spec(
+        captures: [before = self.cursor],
+        ensures: |ret| match self.bytes.get(before) {
+            | Some(&tag) => before.checked_add(1) == Some(self.cursor) && ret == Ok(Tag(tag)),
+            | None => self.cursor == before && ret == Err(CodecError::Corrupt),
+        },
+    )]
     fn tag(&mut self) -> Result<Tag, CodecError>
     {
         let taken = self.take(Count(1))?;
@@ -364,7 +533,30 @@ impl<'data> Reader<'data>
     /// Read one word.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: a complete eight-byte little-endian word is consumed; a short
+    ///   field is not.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — eight distinct bytes have their independent
+    ///   little-endian value; a seven-byte field and overflowing cursor are
+    ///   rejected without advancing.
+    /// - witness: `codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
+    #[spec(
+        captures: [before = self.cursor],
+        ensures: |ret| match before
+            .checked_add(8)
+            .and_then(|end| self.bytes.get(before .. end).map(|bytes| (end, bytes)))
+        {
+            | Some((end, &[byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7])) => {
+                self.cursor == end
+                    && ret
+                        == Ok(Word(u64::from_le_bytes([
+                            byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7,
+                        ])))
+            },
+            | _ => self.cursor == before && ret == Err(CodecError::Corrupt),
+        },
+    )]
     fn word(&mut self) -> Result<Word, CodecError>
     {
         let taken = self.take(Count(8))?;
@@ -375,7 +567,32 @@ impl<'data> Reader<'data>
     /// Read one count.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the complete word is consumed even if it cannot be narrowed
+    ///   to the host count width.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — framed lengths are decoded before payload extent
+    ///   checks. Narrowing failure on targets with `usize` narrower than 64
+    ///   bits is unwitnessed.
+    /// - witness: `codec::tests::framed_failures_retain_consumed_prefixes`
+    #[spec(
+        captures: [before = self.cursor],
+        ensures: |ret| match before
+            .checked_add(8)
+            .and_then(|end| self.bytes.get(before .. end).map(|bytes| (end, bytes)))
+        {
+            | Some((end, &[byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7])) => {
+                self.cursor == end
+                    && ret
+                        == usize::try_from(u64::from_le_bytes([
+                            byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7,
+                        ]))
+                        .map(Count)
+                        .map_err(|_overflow| CodecError::Corrupt)
+            },
+            | _ => self.cursor == before && ret == Err(CodecError::Corrupt),
+        },
+    )]
     fn count(&mut self) -> Result<Count, CodecError>
     {
         let word = self.word()?;
@@ -386,7 +603,35 @@ impl<'data> Reader<'data>
     /// Read a length-prefixed run of bytes.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: the length prefix is consumed before checking the payload
+    ///   extent; a short payload remains unread.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a truncated payload retains its consumed prefix, and
+    ///   its first byte remains readable. Zero-length frames and exact-end
+    ///   payloads are exercised without a rollback assumption.
+    /// - witness: `codec::tests::framed_failures_retain_consumed_prefixes`
+    #[spec(
+        captures: [before = self.cursor],
+        ensures: |ret| match before
+            .checked_add(8)
+            .and_then(|end| self.bytes.get(before .. end).map(|bytes| (end, bytes)))
+        {
+            | Some((end, &[byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7])) => {
+                let payload = usize::try_from(u64::from_le_bytes([
+                    byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7,
+                ]))
+                .ok()
+                .and_then(|count| end.checked_add(count))
+                .and_then(|after| self.bytes.get(end .. after).map(|bytes| (after, bytes)));
+                match payload {
+                    | Some((after, bytes)) => self.cursor == after && ret == Ok(Bytes(bytes)),
+                    | None => self.cursor == end && ret == Err(CodecError::Corrupt),
+                }
+            },
+            | _ => self.cursor == before && ret == Err(CodecError::Corrupt),
+        },
+    )]
     fn bytes(&mut self) -> Result<Bytes<'data>, CodecError>
     {
         let count = self.count()?;
@@ -396,7 +641,40 @@ impl<'data> Reader<'data>
     /// Read a length-prefixed run of UTF-8 text.
     ///
     /// # Specification
-    /// trivial.
+    /// - ensures: valid UTF-8 is returned; invalid UTF-8 consumes its entire
+    ///   frame before refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — multibyte UTF-8, an empty string and an invalid byte
+    ///   followed by another tag distinguish framing failure from text failure.
+    /// - witness: `codec::tests::framed_failures_retain_consumed_prefixes`
+    #[spec(
+        captures: [before = self.cursor],
+        ensures: |ret| match before
+            .checked_add(8)
+            .and_then(|end| self.bytes.get(before .. end).map(|bytes| (end, bytes)))
+        {
+            | Some((end, &[byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7])) => {
+                let payload = usize::try_from(u64::from_le_bytes([
+                    byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7,
+                ]))
+                .ok()
+                .and_then(|count| end.checked_add(count))
+                .and_then(|after| self.bytes.get(end .. after).map(|bytes| (after, bytes)));
+                match payload {
+                    | Some((after, bytes)) => {
+                        self.cursor == after
+                            && core::str::from_utf8(bytes).map_or_else(
+                                |_invalid| ret == Err(CodecError::Corrupt),
+                                |text| ret.as_deref() == Ok(text),
+                            )
+                    },
+                    | None => self.cursor == end && ret == Err(CodecError::Corrupt),
+                }
+            },
+            | _ => self.cursor == before && ret == Err(CodecError::Corrupt),
+        },
+    )]
     fn text(&mut self) -> Result<String, CodecError>
     {
         let bytes = self.bytes()?;
@@ -408,6 +686,22 @@ impl<'data> Reader<'data>
     /// # Specification
     /// - fails: [`CodecError::Corrupt`] when bytes remain.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact exhaustion succeeds and trailing bytes are
+    ///   refused without being consumed.
+    /// - witness: `codec::tests::primitive_reads_preserve_cursor_on_extent_failure`
+    /// - witness: `codec::tests::framed_failures_retain_consumed_prefixes`
+    #[spec(
+        ensures: |ret| {
+            ret == if self.cursor == self.bytes.len() {
+                Ok(())
+            }
+            else {
+                Err(CodecError::Corrupt)
+            }
+        },
+    )]
     fn finish(&self) -> Result<(), CodecError>
     {
         if self.cursor == self.bytes.len() {
@@ -422,7 +716,20 @@ impl<'data> Reader<'data>
 /// A count as a word, for fields the vocabulary types as `usize`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the count is preserved when it fits a 64-bit word, otherwise it
+///   is unrepresentable.
+///
+/// # Adequacy
+/// - hypothesis: L3 — persisted checkpoint budgets round-trip through the word
+///   field. A count wider than 64 bits has no witness.
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+#[spec(
+    ensures: |ret| {
+        ret == u64::try_from(count.0)
+            .map(Word)
+            .map_err(|_overflow| CodecError::Unrepresentable)
+    },
+)]
 fn word_of(count: Count) -> Result<Word, CodecError>
 {
     let word = u64::try_from(count.0).map_err(|_overflow| CodecError::Unrepresentable)?;
@@ -432,7 +739,33 @@ fn word_of(count: Count) -> Result<Word, CodecError>
 /// Write a reference.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: unoccupied references always encode; item keys and occurrences
+///   must fit word widths.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fixed frames distinguish the empty reference from an item
+///   with binary key bytes and a nonzero occurrence. The predicate observes
+///   representability, not the generic sink.
+/// - witness: `codec::tests::reference_frames_preserve_binary_keys_and_occurrences`
+#[spec(
+    ensures: |ret| {
+        ret == if match *reference {
+            | Reference::Unoccupied => true,
+            | Reference::Item {
+                ref key,
+                occurrence,
+            } => {
+                u64::try_from(key.as_ref().len()).is_ok()
+                    && u64::try_from(usize::from(occurrence)).is_ok()
+            },
+        } {
+            Ok(())
+        }
+        else {
+            Err(CodecError::Unrepresentable)
+        }
+    },
+)]
 fn write_reference<Out>(
     writer: &mut Writer<'_, Out>,
     reference: &Reference,
@@ -457,20 +790,90 @@ where
 /// The canonical bytes of one reference, for tests that rewrite a payload.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the returned bytes contain the exact tag, framed key and
+///   occurrence of the reference.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a binary key containing zero and a non-UTF-8 byte has
+///   independently specified bytes; the unoccupied reference has its distinct
+///   one-byte frame.
+/// - witness: `codec::tests::reference_frames_preserve_binary_keys_and_occurrences`
 #[cfg(test)]
+#[spec(
+    ensures: |ret| {
+        let bytes = ret.as_ref();
+        match *reference {
+            | Reference::Unoccupied => bytes == [0],
+            | Reference::Item {
+                ref key,
+                occurrence,
+            } => {
+                bytes.first() == Some(&1)
+                    && u64::try_from(key.as_ref().len()).is_ok_and(|count| {
+                        bytes.get(1 .. 9) == Some(count.to_le_bytes().as_slice())
+                    })
+                    && bytes
+                        .get(9 ..)
+                        .and_then(|tail| tail.strip_prefix(key.as_ref()))
+                        .is_some_and(|tail| {
+                            u64::try_from(usize::from(occurrence))
+                                .is_ok_and(|word| tail == word.to_le_bytes())
+                        })
+            },
+        }
+    },
+)]
 pub fn reference_bytes(reference: &Reference) -> CheckpointBytes
 {
     let mut bytes = CheckpointBytes::default();
     let mut writer = Writer { sink: &mut bytes };
-    write_reference(&mut writer, reference).expect("a reference always encodes");
+    assert_eq!(
+        write_reference(&mut writer, reference),
+        Ok(()),
+        "a reference always encodes"
+    );
     bytes
 }
 
 /// Read a reference.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: a successful reference is exactly the consumed frame; only
+///   corrupt input is refused.
+///
+/// # Adequacy
+/// - hypothesis: L3 — binary keys and nonzero occurrences survive known frames,
+///   while unknown tags are refused. The predicate checks successful payloads
+///   without constructing a second owned key.
+/// - witness: `codec::tests::reference_frames_preserve_binary_keys_and_occurrences`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref reference) => reader
+            .bytes
+            .get(before .. reader.cursor)
+            .is_some_and(|bytes| match *reference {
+                | Reference::Unoccupied => bytes == [0],
+                | Reference::Item {
+                    ref key,
+                    occurrence,
+                } => {
+                    bytes.first() == Some(&1)
+                        && u64::try_from(key.as_ref().len()).is_ok_and(|count| {
+                            bytes.get(1 .. 9) == Some(count.to_le_bytes().as_slice())
+                        })
+                        && bytes
+                            .get(9 ..)
+                            .and_then(|tail| tail.strip_prefix(key.as_ref()))
+                            .is_some_and(|tail| {
+                                u64::try_from(usize::from(occurrence))
+                                    .is_ok_and(|word| tail == word.to_le_bytes())
+                            })
+                },
+            }),
+        | Err(error) => error == CodecError::Corrupt && reader.cursor >= before,
+    },
+)]
 fn read_reference(reader: &mut Reader<'_>) -> Result<Reference, CodecError>
 {
     let tag = reader.tag()?;
@@ -491,7 +894,22 @@ fn read_reference(reader: &mut Reader<'_>) -> Result<Reference, CodecError>
 /// Write a level: its constant, then its atoms ascending.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: encoding succeeds exactly when the atom count fits a word;
+///   offsets are not capped here.
+///
+/// # Adequacy
+/// - hypothesis: L3 — universe sorts and levels round-trip, including an offset
+///   immediately below the decoder cap. Raw frames can represent a capped
+///   offset for decoder fixtures; validated checkpoint encoding refuses it.
+/// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+#[spec(
+    ensures: |ret| {
+        ret == u64::try_from(level.atoms().count())
+            .map(|_| ())
+            .map_err(|_overflow| CodecError::Unrepresentable)
+    },
+)]
 fn write_level<Out>(
     writer: &mut Writer<'_, Out>,
     level: &Level,
@@ -521,10 +939,28 @@ where
 ///   cap.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surface is the cap, separated by an atom whose offset
-///   sits exactly at the cap, refused with exactly that offset, beside one just
-///   under it that round trips.
+/// - hypothesis: L3 — the cap boundary separates a round-tripping offset from
+///   the exact refused offset. The predicate checks the successful offset bound
+///   and the offending input word; it does not rebuild the level or
+///   independently prove normalization of every atom sequence.
 /// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+/// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref level) => level
+            .atoms()
+            .all(|(_, offset)| u64::from(offset) < MAX_DECODED_LEVEL_OFFSET),
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+                && reader
+                    .cursor
+                    .checked_sub(8)
+                    .and_then(|start| reader.bytes.get(start .. reader.cursor))
+                    == Some(u64::from(offset).to_le_bytes().as_slice())
+        },
+        | Err(error) => error == CodecError::Corrupt,
+    },
+)]
 fn read_level(reader: &mut Reader<'_>) -> Result<Level, CodecError>
 {
     let constant = reader.word()?;
@@ -551,7 +987,22 @@ fn read_level(reader: &mut Reader<'_>) -> Result<Level, CodecError>
 /// The tag of a sign.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: negative is tag zero and nonnegative is tag one.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite persisted semantic corpus exercises signed
+///   literal encodings. The const predicate compares the primitive tag field
+///   directly.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    ensures: |ret| {
+        ret.0
+            == match sign {
+                | Sign::Negative => 0,
+                | Sign::NonNegative => 1,
+            }
+    },
+)]
 const fn sign_tag(sign: Sign) -> Tag
 {
     match sign {
@@ -563,7 +1014,30 @@ const fn sign_tag(sign: Sign) -> Tag
 /// Read a sign.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: only tags zero and one denote signs; an available tag is consumed
+///   even when unknown.
+///
+/// # Adequacy
+/// - hypothesis: L3 — signed integer and numeric literals cross the persistent
+///   boundary. An unknown tag with available payload bytes is rejected before
+///   that payload is consumed; the finite corpus does not enumerate magnitudes.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match reader.bytes.get(before) {
+        | Some(&tag) => {
+            before.checked_add(1) == Some(reader.cursor)
+                && ret
+                    == match tag {
+                        | 0 => Ok(Sign::Negative),
+                        | 1 => Ok(Sign::NonNegative),
+                        | _ => Err(CodecError::Corrupt),
+                    }
+        },
+        | None => reader.cursor == before && ret == Err(CodecError::Corrupt),
+    },
+)]
 fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
 {
     let tag = reader.tag()?;
@@ -577,7 +1051,34 @@ fn read_sign(reader: &mut Reader<'_>) -> Result<Sign, CodecError>
 /// Write a literal.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: encoding succeeds exactly when every decimal or text byte length
+///   fits a word.
+///
+/// # Adequacy
+/// - hypothesis: L3 — integer, text and numeric values in the finite semantic
+///   corpus cross persistence. The predicate states field representability; the
+///   corpus, rather than a generic sink observer, witnesses payload
+///   preservation.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    ensures: |ret| {
+        ret == if match *literal {
+            | Literal::Integer(ref integer) => {
+                u64::try_from(integer.magnitude().as_ref().len()).is_ok()
+            },
+            | Literal::Text(ref text) => u64::try_from(text.as_ref().len()).is_ok(),
+            | Literal::Numeric(ref numeric) => {
+                u64::try_from(numeric.integer_part().as_ref().len()).is_ok()
+                    && u64::try_from(numeric.fraction().as_ref().len()).is_ok()
+            },
+        } {
+            Ok(())
+        }
+        else {
+            Err(CodecError::Unrepresentable)
+        }
+    },
+)]
 fn write_literal<Out>(
     writer: &mut Writer<'_, Out>,
     literal: &Literal,
@@ -608,7 +1109,31 @@ where
 /// Read a literal.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: successful literals retain the input variant tag; decimal fields
+///   may be normalized.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite semantic corpus preserves the three literal
+///   classes through persistence. The predicate checks tag classification, not
+///   a second construction of normalized decimal text. Unknown tags reject
+///   before consuming available payload bytes.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref literal) => {
+            reader.bytes.get(before)
+                == Some(&match *literal {
+                    | Literal::Integer(_) => 0,
+                    | Literal::Text(_) => 1,
+                    | Literal::Numeric(_) => 2,
+                })
+                && reader.cursor > before
+        },
+        | Err(error) => error == CodecError::Corrupt && reader.cursor >= before,
+    },
+)]
 fn read_literal(reader: &mut Reader<'_>) -> Result<Literal, CodecError>
 {
     let tag = reader.tag()?;
@@ -668,6 +1193,24 @@ fn read_index(reader: &mut Reader<'_>) -> Result<NodeIndex, CodecError>
 /// # Specification
 /// - fails: [`CodecError::Unsupported`] for an unresolved node.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite semantic corpus encodes supported nodes and
+///   all four unresolved sorts are rejected with their exact sort. The
+///   predicate classifies failures; a generic sink does not expose the emitted
+///   fields.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+#[spec(
+    ensures: |ret| match *node {
+        | ContentNode::Unresolved(sort) => {
+            ret == Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(
+                sort,
+            )))
+        },
+        | _ => matches!(ret, Ok(()) | Err(CodecError::Unrepresentable)),
+    },
+)]
 fn write_node<Out>(
     writer: &mut Writer<'_, Out>,
     node: &ContentNode,
@@ -865,6 +1408,76 @@ where
 /// - fails: [`CodecError::Corrupt`] for an unknown tag or a malformed field; no
 ///   tag spells an unresolved node.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite semantic and universe corpora exercise tag
+///   classes across all four sorts. The predicate relates the consumed tag to
+///   the resulting class, not every payload field; unresolved nodes have no
+///   accepted tag. Unknown node tags and invalid zone, side and base fields
+///   stop at the tag.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+/// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref node) => {
+            reader.cursor > before
+                && reader.cursor <= reader.bytes.len()
+                && reader.bytes.get(before).is_some_and(|&tag| match *node {
+                    | ContentNode::Variable { .. } => tag == 0x01,
+                    | ContentNode::Constant(_) => tag == 0x02,
+                    | ContentNode::Unit => tag == 0x03,
+                    | ContentNode::Literal(_) => tag == 0x04,
+                    | ContentNode::Pair(..) => tag == 0x05,
+                    | ContentNode::Injection(..) => tag == 0x06,
+                    | ContentNode::Thunk(_) => tag == 0x07,
+                    | ContentNode::ValueLift { .. } => tag == 0x08,
+                    | ContentNode::Quote(_) => tag == 0x09,
+                    | ContentNode::QuoteComputation(_) => tag == 0x0A,
+                    | ContentNode::StaticLambda(_) => tag == 0x0B,
+                    | ContentNode::StaticApplication(..) => tag == 0x0C,
+                    | ContentNode::Lambda(_) => tag == 0x10,
+                    | ContentNode::Application(..) => tag == 0x11,
+                    | ContentNode::Return(_) => tag == 0x12,
+                    | ContentNode::Bind(..) => tag == 0x13,
+                    | ContentNode::Force(_) => tag == 0x14,
+                    | ContentNode::Case { .. } => tag == 0x15,
+                    | ContentNode::Base(_) => tag == 0x20,
+                    | ContentNode::UnitType => tag == 0x21,
+                    | ContentNode::Product(..) => tag == 0x22,
+                    | ContentNode::Sum(..) => tag == 0x23,
+                    | ContentNode::ThunkType(_) => tag == 0x24,
+                    | ContentNode::Universe {
+                        sort: TypeSort::Ground(GroundSort::Value),
+                        ..
+                    } => tag == 0x25,
+                    | ContentNode::TypeLift { .. } => tag == 0x26,
+                    | ContentNode::Element { .. } => tag == 0x27,
+                    | ContentNode::Abstract(_) => tag == 0x28,
+                    | ContentNode::Universe {
+                        sort: TypeSort::Ground(GroundSort::Computation),
+                        ..
+                    } => tag == 0x29,
+                    | ContentNode::Universe {
+                        sort: TypeSort::Parameter(_),
+                        ..
+                    } => tag == 0x2A,
+                    | ContentNode::StaticPi { .. } => tag == 0x2B,
+                    | ContentNode::Returner(_) => tag == 0x30,
+                    | ContentNode::Arrow { .. } => tag == 0x31,
+                    | ContentNode::Pi { .. } => tag == 0x32,
+                    | ContentNode::ComputationElement { .. } => tag == 0x33,
+                    | ContentNode::Unresolved(_) => false,
+                })
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(error) => error == CodecError::Corrupt,
+    },
+)]
 fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
 {
     let tag = reader.tag()?;
@@ -1058,7 +1671,31 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
 /// Write a table.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: successful tables contain no unresolved node; an unsupported
+///   refusal names the first one.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested unresolved nodes in all four sorts retain the
+///   precise refusal. Structural validation is a reader responsibility:
+///   encoding a raw table does not certify its child extents, child sorts or
+///   discovery order.
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+/// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(()) => nodes
+            .iter()
+            .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
+            nodes.iter().find_map(|node| match *node {
+                | ContentNode::Unresolved(found) => Some(found),
+                | _ => None,
+            }) == Some(sort)
+        },
+        | Err(CodecError::Unrepresentable) => true,
+        | _ => false,
+    },
+)]
 fn write_nodes<Out>(
     writer: &mut Writer<'_, Out>,
     nodes: &[ContentNode],
@@ -1073,17 +1710,45 @@ where
     Ok(())
 }
 
-/// Read a table and check it is numbered by discovery from `roots`, every
-/// child in range and of the sort its former requires.
+/// Read a table and check every child is in range and has its required sort.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: on success a table every index of which is reached, in discovery
-///   order, from the roots the caller then reads.
-/// - fails: [`CodecError::Corrupt`] for a child out of range or of the wrong
-///   sort; [`CodecError::NonCanonical`] for a table not numbered by discovery,
-///   or holding a node no root reaches.
+/// - ensures: successful nodes are resolved and every child index names its
+///   required sort. Discovery order and reachability are checked by the caller.
+/// - fails: [`CodecError::Corrupt`] for malformed nodes or invalid children,
+///   and [`CodecError::LevelOffsetTooLarge`] for an offset at the decoder cap.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — out-of-range and wrong-sort children are refused
+///   independently of root validation; the predicate also checks table length.
+/// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref nodes) => {
+            nodes.iter().all(|node| {
+                !matches!(*node, ContentNode::Unresolved(_))
+                    && node.children().iter().all(|(child, sort)| {
+                        nodes
+                            .get(usize::from(child))
+                            .is_some_and(|found| found.sort() == sort)
+                    })
+            }) && u64::try_from(nodes.len()).is_ok_and(|count| {
+                before
+                    .checked_add(8)
+                    .and_then(|end| reader.bytes.get(before .. end))
+                    == Some(count.to_le_bytes().as_slice())
+            })
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(error) => error == CodecError::Corrupt,
+    },
+)]
 fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
 {
     let count = reader.count()?;
@@ -1115,10 +1780,51 @@ fn read_nodes(reader: &mut Reader<'_>) -> Result<Vec<ContentNode>, CodecError>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surfaces are the order and the reach, separated by a
-///   table whose two entries are swapped and a table carrying an entry no root
-///   reaches.
+/// - hypothesis: L3 — swapped and unreachable entries are refused; empty
+///   tables, repeated roots and a reachable cycle are accepted. The predicate
+///   uses a scalar contiguous-frontier oracle, not a second allocated queue or
+///   visited set.
 /// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `codec::tests::discovery_accepts_cycles_repeated_roots_and_empty_tables`
+#[spec(
+    requires: nodes.iter().all(|node| {
+        node.children()
+            .iter()
+            .all(|(child, _)| usize::from(child) < nodes.len())
+    }),
+    ensures: |ret| {
+        ret == 'discovery: {
+            let mut next = 0_usize;
+            for root in roots.iter().copied() {
+                let index = usize::from(root);
+                if index >= nodes.len() {
+                    break 'discovery Err(CodecError::Corrupt);
+                }
+                if index > next {
+                    break 'discovery Err(CodecError::NonCanonical);
+                }
+                if index == next {
+                    next = next.saturating_add(1);
+                }
+            }
+            for (index, node) in nodes.iter().enumerate() {
+                if index >= next {
+                    break 'discovery Err(CodecError::NonCanonical);
+                }
+                for (child, _) in node.children().iter() {
+                    let child = usize::from(child);
+                    if child > next {
+                        break 'discovery Err(CodecError::NonCanonical);
+                    }
+                    if child == next {
+                        next = next.saturating_add(1);
+                    }
+                }
+            }
+            Ok(())
+        }
+    },
+)]
 fn check_discovery(
     nodes: &[ContentNode],
     roots: &[NodeIndex],
@@ -1178,7 +1884,31 @@ where
 /// Write an item's content.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: an unsupported refusal names the first unresolved table node;
+///   metadata precedes the table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — independently built programs have identical content
+///   encodings, while unresolved nodes are refused. The predicate classifies
+///   table failures without duplicating serialization.
+/// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(()) => content
+            .nodes()
+            .iter()
+            .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
+            content.nodes().iter().find_map(|node| match *node {
+                | ContentNode::Unresolved(found) => Some(found),
+                | _ => None,
+            }) == Some(sort)
+        },
+        | Err(CodecError::Unrepresentable) => true,
+        | _ => false,
+    },
+)]
 fn write_item_content_with<Out>(
     writer: &mut Writer<'_, Out>,
     content: &ItemContent,
@@ -1211,6 +1941,78 @@ where
 ///   [`CodecError::Corrupt`] for a signature root that is no value type or a
 ///   body root that is no value.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — ordinary and signed contents round-trip; swapped
+///   discovery order and unreachable entries are refused. The predicate checks
+///   root sorts and canonical reach without allocating a second graph. This is
+///   structural validity, not a typing certificate.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref content) => {
+            let nodes = content.nodes();
+            let roots = [
+                match content.signature() {
+                    | Maybe::Present(root) => Some((root, Sort::ValueType)),
+                    | Maybe::Absent(_) => None,
+                },
+                match content.body() {
+                    | Maybe::Present(root) => Some((root, Sort::Value)),
+                    | Maybe::Absent(_) => None,
+                },
+            ];
+            nodes.iter().all(|node| {
+                !matches!(*node, ContentNode::Unresolved(_))
+                    && node.children().iter().all(|(child, sort)| {
+                        nodes
+                            .get(usize::from(child))
+                            .is_some_and(|found| found.sort() == sort)
+                    })
+            }) && roots.iter().flatten().all(|&(root, sort)| {
+                nodes
+                    .get(usize::from(root))
+                    .is_some_and(|node| node.sort() == sort)
+            }) && 'discovery: {
+                let mut next = 0_usize;
+                for root in roots.into_iter().flatten().map(|(root, _)| root) {
+                    let index = usize::from(root);
+                    if index >= nodes.len() {
+                        break 'discovery Err(CodecError::Corrupt);
+                    }
+                    if index > next {
+                        break 'discovery Err(CodecError::NonCanonical);
+                    }
+                    if index == next {
+                        next = next.saturating_add(1);
+                    }
+                }
+                for (index, node) in nodes.iter().enumerate() {
+                    if index >= next {
+                        break 'discovery Err(CodecError::NonCanonical);
+                    }
+                    for (child, _) in node.children().iter() {
+                        let child = usize::from(child);
+                        if child > next {
+                            break 'discovery Err(CodecError::NonCanonical);
+                        }
+                        if child == next {
+                            next = next.saturating_add(1);
+                        }
+                    }
+                }
+                Ok(())
+            } == Ok(())
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
 fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
 {
     let reference = read_reference(reader)?;
@@ -1249,7 +2051,26 @@ fn read_item_content(reader: &mut Reader<'_>) -> Result<ItemContent, CodecError>
 /// Require that the root `root` of `nodes` has sort `sort`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: success means the named root exists and has exactly the requested
+///   sort.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a value-type root succeeds only for its own sort, and a
+///   missing root is refused.
+/// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
+#[spec(
+    ensures: |ret| {
+        ret == if nodes
+            .get(usize::from(root))
+            .is_some_and(|node| node.sort() == sort)
+        {
+            Ok(())
+        }
+        else {
+            Err(CodecError::Corrupt)
+        }
+    },
+)]
 fn root_of_sort(
     nodes: &[ContentNode],
     root: NodeIndex,
@@ -1282,6 +2103,66 @@ where
 /// - fails: as [`read_nodes`] and [`check_discovery`], and
 ///   [`CodecError::Corrupt`] for an empty table or a root that is no type.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, non-type, out-of-range and wrong-sort tables are
+///   refused; a computation-type root is accepted. The predicate checks closed
+///   children and canonical discovery from root zero, without re-encoding or
+///   allocating another traversal state.
+/// - witness: `codec::tests::type_tables_validate_roots_child_extents_and_sorts`
+/// - witness: `persistence::tests::universe_sorts_and_levels_round_trip`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref content) => {
+            let nodes = content.nodes();
+            matches!(
+                nodes.first().map(ContentNode::sort),
+                Some(Sort::ValueType | Sort::CompType)
+            ) && nodes.iter().all(|node| {
+                !matches!(*node, ContentNode::Unresolved(_))
+                    && node.children().iter().all(|(child, sort)| {
+                        nodes
+                            .get(usize::from(child))
+                            .is_some_and(|found| found.sort() == sort)
+                    })
+            }) && 'discovery: {
+                let mut next = 0_usize;
+                for root in core::iter::once(NodeIndex::from(0_usize)) {
+                    let index = usize::from(root);
+                    if index >= nodes.len() {
+                        break 'discovery Err(CodecError::Corrupt);
+                    }
+                    if index > next {
+                        break 'discovery Err(CodecError::NonCanonical);
+                    }
+                    if index == next {
+                        next = next.saturating_add(1);
+                    }
+                }
+                for (index, node) in nodes.iter().enumerate() {
+                    if index >= next {
+                        break 'discovery Err(CodecError::NonCanonical);
+                    }
+                    for (child, _) in node.children().iter() {
+                        let child = usize::from(child);
+                        if child > next {
+                            break 'discovery Err(CodecError::NonCanonical);
+                        }
+                        if child == next {
+                            next = next.saturating_add(1);
+                        }
+                    }
+                }
+                Ok(())
+            } == Ok(())
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
 fn read_type(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
 {
     let nodes = read_nodes(reader)?;
@@ -1296,7 +2177,25 @@ fn read_type(reader: &mut Reader<'_>) -> Result<TypeContent, CodecError>
 /// Write a set of references, ascending.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the caller supplies ascending set iteration; this writer does
+///   not sort it.
+/// - ensures: an unrepresentable declared count is refused; later failures can
+///   only be field-width refusals.
+///
+/// # Adequacy
+/// - hypothesis: L3 — persisted footprint sets preserve their members and
+///   canonical ordering. Only the declared count and error alphabet are
+///   observed here: the owned iterator is not consumed a second time by the
+///   predicate.
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    captures: [count = references.len()],
+    ensures: |ret| {
+        matches!(ret, Ok(()) | Err(CodecError::Unrepresentable))
+            && (u64::try_from(count).is_ok() || ret == Err(CodecError::Unrepresentable))
+    },
+)]
 fn write_references<'set, Out, References>(
     writer: &mut Writer<'_, Out>,
     references: References,
@@ -1315,7 +2214,34 @@ where
 /// Read a set of references.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: duplicates collapse into a set no larger than the encoded count;
+///   only a zero count yields an empty set.
+///
+/// # Adequacy
+/// - hypothesis: L3 — reordered reference entries decode into a set and are
+///   rejected by the outer canonical-byte check. The predicate bounds
+///   cardinality rather than allocating a second decoded set.
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref references) => match before
+            .checked_add(8)
+            .and_then(|end| reader.bytes.get(before .. end))
+        {
+            | Some(&[byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7]) => {
+                usize::try_from(u64::from_le_bytes([
+                    byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7,
+                ]))
+                .is_ok_and(|count| {
+                    references.len() <= count && references.is_empty() == (count == 0)
+                })
+            },
+            | _ => false,
+        },
+        | Err(error) => error == CodecError::Corrupt,
+    },
+)]
 fn read_references(reader: &mut Reader<'_>) -> Result<BTreeSet<Reference>, CodecError>
 {
     let count = reader.count()?;
@@ -1330,7 +2256,47 @@ fn read_references(reader: &mut Reader<'_>) -> Result<BTreeSet<Reference>, Codec
 /// Write a footprint.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: encoding succeeds exactly when both set counts and every
+///   reference field fit word widths.
+///
+/// # Adequacy
+/// - hypothesis: L3 — stored footprints preserve finite reference sets and
+///   their flags through persistence. The predicate checks representability,
+///   not whether stored metadata describes the content.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
+#[spec(
+    ensures: |ret| {
+        let fits = u64::try_from(footprint.reads().len()).is_ok()
+            && u64::try_from(footprint.type_reads().len()).is_ok()
+            && footprint.reads().all(|reference| match *reference {
+                | Reference::Unoccupied => true,
+                | Reference::Item {
+                    ref key,
+                    occurrence,
+                } => {
+                    u64::try_from(key.as_ref().len()).is_ok()
+                        && u64::try_from(usize::from(occurrence)).is_ok()
+                },
+            })
+            && footprint.type_reads().all(|reference| match *reference {
+                | Reference::Unoccupied => true,
+                | Reference::Item {
+                    ref key,
+                    occurrence,
+                } => {
+                    u64::try_from(key.as_ref().len()).is_ok()
+                        && u64::try_from(usize::from(occurrence)).is_ok()
+                },
+            });
+        ret == if fits {
+            Ok(())
+        }
+        else {
+            Err(CodecError::Unrepresentable)
+        }
+    },
+)]
 fn write_footprint<Out>(
     writer: &mut Writer<'_, Out>,
     footprint: &Footprint,
@@ -1354,7 +2320,40 @@ where
 /// Read a footprint.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the trailing flag bytes determine opacity and hole status;
+///   malformed flags are corrupt.
+///
+/// # Adequacy
+/// - hypothesis: L3 — finite persisted footprints retain their metadata and
+///   reordered sets fail outer canonicality. The flag predicate does not
+///   certify read provenance or the type-read subset relation; all four flag
+///   combinations are not separately witnessed. Out-of-domain opacity and hole
+///   flags stop at their respective bytes.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref footprint) => {
+            let flags = [
+                match footprint.opacity() {
+                    | Opacity::Transparent => 0,
+                    | Opacity::Opaque => 1,
+                },
+                match footprint.hole() {
+                    | HoleMark::Filled => 0,
+                    | HoleMark::Hole => 1,
+                },
+            ];
+            reader
+                .cursor
+                .checked_sub(2)
+                .and_then(|start| reader.bytes.get(start .. reader.cursor))
+                == Some(flags.as_slice())
+        },
+        | Err(error) => error == CodecError::Corrupt,
+    },
+)]
 fn read_footprint(reader: &mut Reader<'_>) -> Result<Footprint, CodecError>
 {
     let reads = read_references(reader)?;
@@ -1377,7 +2376,25 @@ fn read_footprint(reader: &mut Reader<'_>) -> Result<Footprint, CodecError>
 /// Write a site.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: unreached sites always encode; a node site must fit the word
+///   width.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite refusal corpus preserves projected sites; an
+///   independent one-byte frame witnesses the unreached form. The generic sink
+///   has no byte observer; the predicate states the width outcome.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+#[spec(
+    ensures: |ret| {
+        ret == match site {
+            | Site::Unreached => Ok(()),
+            | Site::Node(index) => u64::try_from(usize::from(index))
+                .map(|_| ())
+                .map_err(|_overflow| CodecError::Unrepresentable),
+        }
+    },
+)]
 fn write_site<Out>(
     writer: &mut Writer<'_, Out>,
     site: Site,
@@ -1398,7 +2415,34 @@ where
 /// Read a site.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: successful sites retain their tag and exact node-index word,
+///   consuming only their own frame.
+///
+/// # Adequacy
+/// - hypothesis: L3 — projected sites in the finite refusal corpus round-trip.
+///   A fixed unreached frame consumes only its tag; an unknown tag rejects
+///   before available payload bytes.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(Site::Unreached) => {
+            reader.bytes.get(before) == Some(&1) && before.checked_add(1) == Some(reader.cursor)
+        },
+        | Ok(Site::Node(index)) => {
+            reader.bytes.get(before) == Some(&0)
+                && before.checked_add(9) == Some(reader.cursor)
+                && u64::try_from(usize::from(index)).is_ok_and(|word| {
+                    before
+                        .checked_add(1)
+                        .and_then(|start| reader.bytes.get(start .. reader.cursor))
+                        == Some(word.to_le_bytes().as_slice())
+                })
+        },
+        | Err(error) => error == CodecError::Corrupt && reader.cursor >= before,
+    },
+)]
 fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 {
     let tag = reader.tag()?;
@@ -1439,9 +2483,26 @@ const SHAPES: [ExpectedShape; 5] = [
 /// Write the position of `wanted` in `table` as a tag.
 ///
 /// # Specification
-/// - fails: [`CodecError::Unrepresentable`] when `wanted` is not in `table`,
-///   which the exhaustive tables rule out.
+/// - fails: [`CodecError::Unrepresentable`] when `wanted` is absent or its
+///   first matching position does not fit in one byte.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — repeated values use the first position, index 255
+///   encodes, index 256 is refused, and an absent value writes no tag. The
+///   current callers use stable equality on enums.
+/// - witness: `codec::tests::enumeration_tags_use_first_matches_and_enforce_byte_width`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    ensures: |ret| {
+        ret == table
+            .iter()
+            .position(|entry| entry == wanted)
+            .and_then(|position| u8::try_from(position).ok())
+            .map(|_| ())
+            .ok_or(CodecError::Unrepresentable)
+    },
+)]
 fn write_listed<Out, Entry>(
     writer: &mut Writer<'_, Out>,
     table: &[Entry],
@@ -1463,7 +2524,30 @@ where
 /// Read a tag naming an entry of `table`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: an available tag is consumed; success is exactly membership of
+///   its index in the table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the byte-width boundary selects the expected entry, while
+///   an out-of-range tag is refused. The generic entry bound has no equality
+///   observer, so the predicate checks selection bounds and cursor movement;
+///   concrete witnesses check the selected value.
+/// - witness: `codec::tests::enumeration_tags_use_first_matches_and_enforce_byte_width`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match reader.bytes.get(before) {
+        | Some(&tag) => {
+            before.checked_add(1) == Some(reader.cursor)
+                && ret.as_ref().map(|_| ()).map_err(|&error| error)
+                    == table
+                        .get(usize::from(tag))
+                        .map(|_| ())
+                        .ok_or(CodecError::Corrupt)
+        },
+        | None => reader.cursor == before && matches!(ret, Err(CodecError::Corrupt)),
+    },
+)]
 fn read_listed<Entry>(
     reader: &mut Reader<'_>,
     table: &[Entry],
@@ -1481,7 +2565,62 @@ where
 /// Write a refusal.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: an unsupported refusal names the first unresolved node in
+///   serialized type-field order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite corpus preserves selected refusal payloads;
+///   independently malformed type fields distinguish the first and second
+///   mismatch payloads. Not every refusal class is generated by the corpus. The
+///   predicate does not re-serialize site or enum fields.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+#[spec(
+    ensures: |ret| {
+        let tables: [&[ContentNode]; 2] = match *refusal {
+            | Refusal::TypeMismatch {
+                ref synthesised,
+                ref expected,
+                ..
+            }
+            | Refusal::SortMismatch {
+                ref synthesised,
+                ref expected,
+                ..
+            }
+            | Refusal::LevelMismatch {
+                ref synthesised,
+                ref expected,
+                ..
+            }
+            | Refusal::FamilyArgumentClassifier {
+                ref synthesised,
+                ref expected,
+                ..
+            } => [synthesised.nodes(), expected.nodes()],
+            | Refusal::ShapeMismatch { ref found, .. }
+            | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
+            | Refusal::DependentBind {
+                ref synthesised, ..
+            } => [synthesised.nodes(), &[]],
+            | _ => [&[], &[]],
+        };
+        match ret {
+            | Ok(()) => tables
+                .into_iter()
+                .flatten()
+                .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
+                tables.into_iter().flatten().find_map(|node| match *node {
+                    | ContentNode::Unresolved(found) => Some(found),
+                    | _ => None,
+                }) == Some(sort)
+            },
+            | Err(CodecError::Unrepresentable) => true,
+            | _ => false,
+        }
+    },
+)]
 fn write_refusal<Out>(
     writer: &mut Writer<'_, Out>,
     refusal: &Refusal,
@@ -1639,9 +2778,9 @@ where
 /// Read a count a refusal names in 32 bits: an arity or a position.
 ///
 /// # Specification
-/// - ensures: the word the writer wrote, narrowed to 32 bits; the crate takes
-///   no specification facade, so the round-trip witness holds this clause
-///   rather than an executable predicate.
+/// - ensures: a complete word is consumed; it succeeds exactly when it fits in
+///   32 bits. The generic `From<u32>` conversion supplies the returned
+///   vocabulary value.
 /// - fails: [`CodecError::Corrupt`] when the word exceeds `u32::MAX`, which no
 ///   write produces.
 /// - panics: none.
@@ -1650,9 +2789,30 @@ where
 /// - [`CodecError`] — as above, or the reader's own refusal.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an arity and a position, each written and read back
-///   through a checkpoint set.
+/// - hypothesis: L3 — the largest 32-bit value succeeds and the next word is
+///   refused after consumption. Persisted arities and positions witness
+///   concrete vocabulary conversions; the generic output has no equality
+///   observer, so the predicate checks width, errors and cursor movement.
+/// - witness: `codec::tests::narrow_fields_refuse_out_of_range_words_after_consuming_them`
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match before
+        .checked_add(8)
+        .and_then(|end| reader.bytes.get(before .. end))
+    {
+        | Some(&[byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7]) => {
+            before.checked_add(8) == Some(reader.cursor)
+                && ret.as_ref().map(|_| ()).map_err(|&error| error)
+                    == u32::try_from(u64::from_le_bytes([
+                        byte0, byte1, byte2, byte3, byte4, byte5, byte6, byte7,
+                    ]))
+                    .map(|_| ())
+                    .map_err(|_overflow| CodecError::Corrupt)
+        },
+        | _ => reader.cursor == before && matches!(ret, Err(CodecError::Corrupt)),
+    },
+)]
 fn read_narrow<Count32>(reader: &mut Reader<'_>) -> Result<Count32, CodecError>
 where
     Count32: From<u32>,
@@ -1665,7 +2825,51 @@ where
 /// Read a refusal.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: a successful refusal retains its variant tag and only decoder
+///   failures are returned.
+///
+/// # Adequacy
+/// - hypothesis: L3 — selected refusal classes and their payloads survive the
+///   finite semantic corpus. The predicate checks all tag classes without
+///   reconstructing their owned type payloads; the corpus is not an exhaustive
+///   refusal generator. Unknown outer tags, invalid non-synthesisable forms and
+///   invalid unbound zones reject at their field before the following payload.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::narrow_fields_refuse_out_of_range_words_after_consuming_them`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref refusal) => {
+            reader.bytes.get(before)
+                == Some(&match *refusal {
+                    | Refusal::TypeMismatch { .. } => 0,
+                    | Refusal::ShapeMismatch { .. } => 1,
+                    | Refusal::NotSynthesisable { .. } => 2,
+                    | Refusal::UnknownConstant { .. } => 3,
+                    | Refusal::OutOfFragment { .. } => 4,
+                    | Refusal::UnboundIndex { .. } => 5,
+                    | Refusal::BudgetExceeded { .. } => 6,
+                    | Refusal::DanglingNode { .. } => 7,
+                    | Refusal::AdmissionOrder => 8,
+                    | Refusal::MachineInvariant => 9,
+                    | Refusal::SortMismatch { .. } => 10,
+                    | Refusal::LevelMismatch { .. } => 11,
+                    | Refusal::DependentBind { .. } => 12,
+                    | Refusal::Undecided { .. } => 13,
+                    | Refusal::FamilyArity { .. } => 14,
+                    | Refusal::FamilyArgumentClassifier { .. } => 15,
+                    | Refusal::StaticLambdaArgument { .. } => 16,
+                    | Refusal::StaticClassifierExpected { .. } => 17,
+                })
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
 fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
 {
     let tag = reader.tag()?;
@@ -1818,7 +3022,76 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
 /// Write a typing.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: owed and checked verdicts have no unresolved type payload; other
+///   verdicts refuse the first unresolved type node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — checked, synthesised, owed and selected refused verdicts
+///   round-trip. Malformed synthesised and refused payloads distinguish their
+///   failure paths; the predicate classifies type-plane failures rather than
+///   reproducing the byte encoding.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+#[spec(
+    ensures: |ret| match *typing {
+        | Typing::Owed => ret == Ok(()),
+        | Typing::Checked { conversions } => {
+            ret == u64::try_from(usize::from(conversions))
+                .map(|_| ())
+                .map_err(|_overflow| CodecError::Unrepresentable)
+        },
+        | _ => {
+            let tables: [&[ContentNode]; 2] = match *typing {
+                | Typing::Synthesised { ref produced, .. } => [produced.nodes(), &[]],
+                | Typing::Refused(ref refusal) => match *refusal {
+                    | Refusal::TypeMismatch {
+                        ref synthesised,
+                        ref expected,
+                        ..
+                    }
+                    | Refusal::SortMismatch {
+                        ref synthesised,
+                        ref expected,
+                        ..
+                    }
+                    | Refusal::LevelMismatch {
+                        ref synthesised,
+                        ref expected,
+                        ..
+                    }
+                    | Refusal::FamilyArgumentClassifier {
+                        ref synthesised,
+                        ref expected,
+                        ..
+                    } => [synthesised.nodes(), expected.nodes()],
+                    | Refusal::ShapeMismatch { ref found, .. }
+                    | Refusal::StaticClassifierExpected { ref found, .. } => {
+                        [found.nodes(), &[]]
+                    },
+                    | Refusal::DependentBind {
+                        ref synthesised, ..
+                    } => [synthesised.nodes(), &[]],
+                    | _ => [&[], &[]],
+                },
+                | Typing::Checked { .. } | Typing::Owed => [&[], &[]],
+            };
+            match ret {
+                | Ok(()) => tables
+                    .into_iter()
+                    .flatten()
+                    .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+                | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
+                    tables.into_iter().flatten().find_map(|node| match *node {
+                        | ContentNode::Unresolved(found) => Some(found),
+                        | _ => None,
+                    }) == Some(sort)
+                },
+                | Err(CodecError::Unrepresentable) => true,
+                | _ => false,
+            }
+        },
+    },
+)]
 fn write_typing<Out>(
     writer: &mut Writer<'_, Out>,
     typing: &Typing,
@@ -1851,7 +3124,36 @@ where
 /// Read a typing.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: successful verdicts retain the input tag; failures belong to the
+///   decoder error alphabet.
+///
+/// # Adequacy
+/// - hypothesis: L3 — checked, synthesised, owed and selected refused verdicts
+///   preserve their payloads. Tag classification is executable; this finite
+///   corpus does not witness every malformed field. An unknown outer tag stops
+///   before the available payload.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref typing) => {
+            reader.bytes.get(before)
+                == Some(&match *typing {
+                    | Typing::Checked { .. } => 0,
+                    | Typing::Synthesised { .. } => 1,
+                    | Typing::Owed => 2,
+                    | Typing::Refused(_) => 3,
+                })
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
 fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
 {
     let tag = reader.tag()?;
@@ -1882,7 +3184,33 @@ fn read_typing(reader: &mut Reader<'_>) -> Result<Typing, CodecError>
 /// Write an answer.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: untyped answers always encode; typed answers refuse their first
+///   unresolved node.
+///
+/// # Adequacy
+/// - hypothesis: L3 — structured support answers survive persistence, and a
+///   malformed support type is refused before a later malformed verdict.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+#[spec(
+    ensures: |ret| match *answer {
+        | Answer::Untyped => ret == Ok(()),
+        | Answer::Typed(ref ty) => match ret {
+            | Ok(()) => ty
+                .nodes()
+                .iter()
+                .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
+                ty.nodes().iter().find_map(|node| match *node {
+                    | ContentNode::Unresolved(found) => Some(found),
+                    | _ => None,
+                }) == Some(sort)
+            },
+            | Err(CodecError::Unrepresentable) => true,
+            | _ => false,
+        },
+    },
+)]
 fn write_answer<Out>(
     writer: &mut Writer<'_, Out>,
     answer: &Answer,
@@ -1903,7 +3231,34 @@ where
 /// Read an answer.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: tag zero yields an untyped answer; tag one yields a value- or
+///   computation-type table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — persisted support contains structured typed answers and
+///   preserves them on decoding. The predicate checks tag and root class, not
+///   provenance from a checker. An unknown outer tag stops before the available
+///   payload.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::decoders_reject_unknown_tags_before_payloads`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(Answer::Untyped) => reader.bytes.get(before) == Some(&0),
+        | Ok(Answer::Typed(ref ty)) => {
+            reader.bytes.get(before) == Some(&1)
+                && matches!(
+                    ty.nodes().first().map(ContentNode::sort),
+                    Some(Sort::ValueType | Sort::CompType)
+                )
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
 fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
 {
     let tag = reader.tag()?;
@@ -1920,7 +3275,78 @@ fn read_answer(reader: &mut Reader<'_>) -> Result<Answer, CodecError>
 /// Write one item's checkpoint.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the first unresolved node is sought in content, then support,
+///   then verdict field order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — separate malformed content, support, synthesised and
+///   two-field refused payloads identify the first failing plane. Successful
+///   finite checkpoints preserve every stored field. The predicate scans
+///   borrowed tables; it neither clones payloads nor serializes them again.
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+#[spec(
+    ensures: |ret| {
+        let typing = checkpoint.typing();
+        let tables: [&[ContentNode]; 2] = match *typing {
+            | Typing::Synthesised { ref produced, .. } => [produced.nodes(), &[]],
+            | Typing::Refused(ref refusal) => match *refusal {
+                | Refusal::TypeMismatch {
+                    ref synthesised,
+                    ref expected,
+                    ..
+                }
+                | Refusal::SortMismatch {
+                    ref synthesised,
+                    ref expected,
+                    ..
+                }
+                | Refusal::LevelMismatch {
+                    ref synthesised,
+                    ref expected,
+                    ..
+                }
+                | Refusal::FamilyArgumentClassifier {
+                    ref synthesised,
+                    ref expected,
+                    ..
+                } => [synthesised.nodes(), expected.nodes()],
+                | Refusal::ShapeMismatch { ref found, .. }
+                | Refusal::StaticClassifierExpected { ref found, .. } => [found.nodes(), &[]],
+                | Refusal::DependentBind {
+                    ref synthesised, ..
+                } => [synthesised.nodes(), &[]],
+                | _ => [&[], &[]],
+            },
+            | Typing::Checked { .. } | Typing::Owed => [&[], &[]],
+        };
+        let support =
+            checkpoint
+                .support()
+                .iter()
+                .flat_map(|answered| match *answered.answer() {
+                    | Answer::Typed(ref ty) => ty.nodes(),
+                    | Answer::Untyped => &[],
+                });
+        let mut nodes = checkpoint
+            .content()
+            .nodes()
+            .iter()
+            .chain(support)
+            .chain(tables.into_iter().flatten());
+        match ret {
+            | Ok(()) => nodes.all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+            | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
+                nodes.find_map(|node| match *node {
+                    | ContentNode::Unresolved(found) => Some(found),
+                    | _ => None,
+                }) == Some(sort)
+            },
+            | Err(CodecError::Unrepresentable) => true,
+            | _ => false,
+        }
+    },
+)]
 fn write_checkpoint<Out>(
     writer: &mut Writer<'_, Out>,
     checkpoint: &ItemCheckpoint,
@@ -1941,7 +3367,60 @@ where
 /// Read one item's checkpoint.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the checkpoint retains its source reference and its support is
+///   sorted with unique references.
+///
+/// # Adequacy
+/// - hypothesis: L3 — persisted finite checkpoints preserve content, footprint,
+///   support and verdict. The predicate checks the source identity and
+///   canonical support order; it does not assert that stored metadata is a
+///   checker certificate or decode a second copy.
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+#[spec(
+    captures: [before = reader.cursor],
+    ensures: |ret| match ret {
+        | Ok(ref checkpoint) => {
+            let reference = checkpoint.content().reference();
+            let length = match *reference {
+                | Reference::Unoccupied => Some(1),
+                | Reference::Item { ref key, .. } => key.as_ref().len().checked_add(17),
+            };
+            let support = checkpoint.support();
+            length
+                .and_then(|length| before.checked_add(length))
+                .and_then(|end| reader.bytes.get(before .. end))
+                .is_some_and(|bytes| match *reference {
+                    | Reference::Unoccupied => bytes == [0],
+                    | Reference::Item {
+                        ref key,
+                        occurrence,
+                    } => {
+                        bytes.first() == Some(&1)
+                            && u64::try_from(key.as_ref().len()).is_ok_and(|count| {
+                                bytes.get(1 .. 9) == Some(count.to_le_bytes().as_slice())
+                            })
+                            && bytes
+                                .get(9 ..)
+                                .and_then(|tail| tail.strip_prefix(key.as_ref()))
+                                .is_some_and(|tail| {
+                                    u64::try_from(usize::from(occurrence))
+                                        .is_ok_and(|word| tail == word.to_le_bytes())
+                                })
+                    },
+                })
+                && support
+                    .iter()
+                    .zip(support.iter().skip(1))
+                    .all(|(first, second)| first.reference() < second.reference())
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
 fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError>
 {
     let content = read_item_content(reader)?;
@@ -1957,15 +3436,185 @@ fn read_checkpoint(reader: &mut Reader<'_>) -> Result<ItemCheckpoint, CodecError
     Ok(ItemCheckpoint::new(content, footprint, support, typing))
 }
 
-/// The canonical bytes of a checkpoint set.
+/// Check the decoder work bound in every checkpoint plane without copying it.
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the magic, the budget, then each item's content, footprint,
-///   support and typing, in order.
-/// - fails: [`CodecError::Unsupported`] naming the first unresolved node met.
+/// - ensures: success exactly when every level atom is below the decoder cap.
+/// - fails: the first capped offset in content, support, then typing order.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — checker-produced capped levels leave memory and file
+///   records intact. Five node families and every auxiliary type slot are
+///   exercised; the predicate bounds reported offsets and checks item levels on
+///   success, without cloning the checkpoint.
+/// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
+/// - witness: `codec::tests::encoding_bounds_levels_in_every_node_family_and_plane`
+/// - witness: `codec::tests::encoding_bounds_levels_in_every_auxiliary_type_table`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(()) => checkpoint.content().nodes().iter().all(|node| match *node {
+            | ContentNode::ValueLift { ref target, .. }
+            | ContentNode::TypeLift { ref target, .. }
+            | ContentNode::Element { ref target, .. }
+            | ContentNode::ComputationElement { ref target, .. }
+            | ContentNode::Universe {
+                level: ref target, ..
+            } => target
+                .atoms()
+                .all(|(_, offset)| u64::from(offset) < MAX_DECODED_LEVEL_OFFSET),
+            | _ => true,
+        }),
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(_) => false,
+    },
+)]
+fn check_checkpoint_levels(checkpoint: &ItemCheckpoint) -> Result<(), CodecError>
+{
+    let types = match *checkpoint.typing() {
+        | Typing::Synthesised { ref produced, .. } => [Some(produced), None],
+        | Typing::Refused(ref refusal) => match *refusal {
+            | Refusal::TypeMismatch {
+                ref synthesised,
+                ref expected,
+                ..
+            }
+            | Refusal::SortMismatch {
+                ref synthesised,
+                ref expected,
+                ..
+            }
+            | Refusal::LevelMismatch {
+                ref synthesised,
+                ref expected,
+                ..
+            }
+            | Refusal::FamilyArgumentClassifier {
+                ref synthesised,
+                ref expected,
+                ..
+            } => [Some(synthesised), Some(expected)],
+            | Refusal::ShapeMismatch { ref found, .. }
+            | Refusal::StaticClassifierExpected { ref found, .. } => [Some(found), None],
+            | Refusal::DependentBind {
+                ref synthesised, ..
+            } => [Some(synthesised), None],
+            | _ => [None, None],
+        },
+        | Typing::Checked { .. } | Typing::Owed => [None, None],
+    };
+    let support = checkpoint
+        .support()
+        .iter()
+        .filter_map(|answered| match *answered.answer() {
+            | Answer::Typed(ref content) => Some(content.nodes()),
+            | Answer::Untyped => None,
+        });
+    let nodes = core::iter::once(checkpoint.content().nodes())
+        .chain(support)
+        .chain(types.into_iter().flatten().map(TypeContent::nodes))
+        .flatten();
+    for node in nodes {
+        let (ContentNode::ValueLift { ref target, .. }
+        | ContentNode::TypeLift { ref target, .. }
+        | ContentNode::Element { ref target, .. }
+        | ContentNode::ComputationElement { ref target, .. }
+        | ContentNode::Universe {
+            level: ref target, ..
+        }) = *node
+        else {
+            continue;
+        };
+        for (_, offset) in target.atoms() {
+            if u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET {
+                return Err(CodecError::LevelOffsetTooLarge { offset });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The canonical bytes of a checkpoint set.
+///
+/// # Specification
+/// - requires: tables retain the canonical numbering and sorts established by
+///   their producers or validated decoding; unresolved nodes remain admissible.
+/// - ensures: the returned frame decodes to the supplied checkpoint set.
+/// - fails: capped level offsets before framing, or an unsupported node or
+///   unrepresentable count while framing.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fixed empty-envelope bytes preserve budget and version;
+///   finite nonempty corpora preserve their fields. Capped levels are refused
+///   before a store can replace a readable record. The predicate checks the
+///   envelope and cap payload without decoding a copy.
+/// - witness: `codec::tests::empty_envelopes_preserve_budget_and_separate_formats`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+/// - witness: `persistence::tests::stores_refuse_capped_levels_without_replacing_records`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref bytes) => {
+            let bytes = bytes.as_ref();
+            bytes.get(.. 8) == Some(CHECKPOINTS_MAGIC.as_slice())
+                && u64::try_from(usize::from(checkpoints.budget())).is_ok_and(|budget| {
+                    bytes.get(8 .. 16) == Some(budget.to_le_bytes().as_slice())
+                })
+                && u64::try_from(checkpoints.items().len()).is_ok_and(|count| {
+                    bytes.get(16 .. 24) == Some(count.to_le_bytes().as_slice())
+                })
+                && (!checkpoints.items().is_empty() || bytes.len() == 24)
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Unsupported(_) | CodecError::Unrepresentable) => true,
+        | Err(_) => false,
+    },
+)]
 pub fn encode_checkpoints(checkpoints: &Checkpoints) -> Result<CheckpointBytes, CodecError>
+{
+    for checkpoint in checkpoints.items() {
+        check_checkpoint_levels(checkpoint)?;
+    }
+    checkpoint_frame(checkpoints)
+}
+
+/// Frame checkpoint fields without checking graph canonicality or the decode
+/// cap.
+///
+/// # Specification
+/// - requires: nothing; invalid tables are admissible for wire-level fixtures.
+/// - ensures: magic, budget and each checkpoint's fields are written in order.
+/// - fails: the first unresolved plane or an unrepresentable count.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fixed envelopes distinguish the format and preserve
+///   budget; deliberately invalid tables and capped levels remain representable
+///   as wire fixtures. This is also the decoder’s canonical comparison, after
+///   validation.
+/// - witness: `codec::tests::empty_envelopes_preserve_budget_and_separate_formats`
+/// - witness: `codec::tests::checkpoint_encoding_reports_the_first_unresolved_plane`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref bytes) => {
+            bytes.as_ref().get(.. 8) == Some(CHECKPOINTS_MAGIC.as_slice())
+                && u64::try_from(usize::from(checkpoints.budget())).is_ok_and(|budget| {
+                    bytes.as_ref().get(8 .. 16) == Some(budget.to_le_bytes().as_slice())
+                })
+        },
+        | Err(CodecError::Unsupported(_) | CodecError::Unrepresentable) => true,
+        | Err(_) => false,
+    },
+)]
+pub fn checkpoint_frame(checkpoints: &Checkpoints) -> Result<CheckpointBytes, CodecError>
 {
     let mut bytes = CheckpointBytes::default();
     let mut writer = Writer { sink: &mut bytes };
@@ -1990,6 +3639,38 @@ pub fn encode_checkpoints(checkpoints: &Checkpoints) -> Result<CheckpointBytes, 
 ///   [`CodecError::NonCanonical`] for a payload that parses but is not the
 ///   canonical spelling of what it parses to.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fixed empty-envelope bytes and finite semantic corpora
+///   decode exactly, while every proper prefix of a populated checkpoint, wrong
+///   magic, trailing bytes, noncanonical tables and the level cap are refused.
+///   The predicate checks the envelope and failure classes; the decoder already
+///   performs the full canonical re-encoding comparison.
+/// - witness: `codec::tests::empty_envelopes_preserve_budget_and_separate_formats`
+/// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_truncation_corruption_and_trailing_bytes`
+/// - witness: `persistence::tests::checkpoint_decoder_rejects_parseable_noncanonical_payload`
+/// - witness: `persistence::tests::oversized_level_offset_is_refused_with_exact_error`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(ref checkpoints) => {
+            let bytes = bytes.0;
+            bytes.get(.. 8) == Some(CHECKPOINTS_MAGIC.as_slice())
+                && u64::try_from(usize::from(checkpoints.budget())).is_ok_and(|budget| {
+                    bytes.get(8 .. 16) == Some(budget.to_le_bytes().as_slice())
+                })
+                && u64::try_from(checkpoints.items().len()).is_ok_and(|count| {
+                    bytes.get(16 .. 24) == Some(count.to_le_bytes().as_slice())
+                })
+                && (!checkpoints.items().is_empty() || bytes.len() == 24)
+        },
+        | Err(CodecError::LevelOffsetTooLarge { offset }) => {
+            u64::from(offset) >= MAX_DECODED_LEVEL_OFFSET
+        },
+        | Err(CodecError::Corrupt | CodecError::NonCanonical) => true,
+        | Err(_) => false,
+    },
+)]
 pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
 {
     let mut reader = Reader {
@@ -2009,7 +3690,7 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
     }
     reader.finish()?;
     let checkpoints = Checkpoints::new(CheckBudget::from(budget.0), items);
-    let canonical = encode_checkpoints(&checkpoints)?;
+    let canonical = checkpoint_frame(&checkpoints)?;
     if canonical.0.as_slice() == bytes.0 {
         Ok(checkpoints)
     }
@@ -2025,6 +3706,35 @@ pub fn decode_checkpoints(bytes: Bytes<'_>) -> Result<Checkpoints, CodecError>
 /// - ensures: the magic, the count, then each item's content.
 /// - fails: [`CodecError::Unsupported`] naming the first unresolved node met.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fixed empty program bytes have a distinct format prefix;
+///   changed source order changes program identity, and unresolved content is
+///   refused with its exact sort. The predicate checks the unresolved-node
+///   order because the generic sink has no byte observer.
+/// - witness: `codec::tests::empty_envelopes_preserve_budget_and_separate_formats`
+/// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
+/// - witness: `persistence::tests::nested_process_local_and_opaque_forms_report_exact_errors`
+#[spec(
+    ensures: |ret| match ret {
+        | Ok(()) => contents
+            .iter()
+            .flat_map(ItemContent::nodes)
+            .all(|node| !matches!(*node, ContentNode::Unresolved(_))),
+        | Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(sort))) => {
+            contents
+                .iter()
+                .flat_map(ItemContent::nodes)
+                .find_map(|node| match *node {
+                    | ContentNode::Unresolved(found) => Some(found),
+                    | _ => None,
+                })
+                == Some(sort)
+        },
+        | Err(CodecError::Unrepresentable) => true,
+        | _ => false,
+    },
+)]
 pub fn write_program<Out>(
     sink: &mut Out,
     contents: &[ItemContent],
@@ -2039,4 +3749,705 @@ where
         write_item_content_with(&mut writer, content)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::Answer;
+    use super::Answered;
+    use super::BTreeSet;
+    use super::Bytes;
+    use super::CheckBudget;
+    use super::CheckpointBytes;
+    use super::Checkpoints;
+    use super::CodecError;
+    use super::ContentNode;
+    use super::ConversionCount;
+    use super::Count;
+    use super::Footprint;
+    use super::HoleMark;
+    use super::ItemCheckpoint;
+    use super::ItemContent;
+    use super::ItemKey;
+    use super::Maybe;
+    use super::NodeIndex;
+    use super::Occurrence;
+    use super::Opacity;
+    use super::Reader;
+    use super::Reference;
+    use super::Refusal;
+    use super::Sink;
+    use super::Site;
+    use super::Sort;
+    use super::Tag;
+    use super::TypeContent;
+    use super::Typing;
+    use super::UnsupportedPersistence;
+    use super::Word;
+    use super::Writer;
+    use super::check_discovery;
+    use super::decode_checkpoints;
+    use super::encode_checkpoints;
+    use super::read_listed;
+    use super::read_narrow;
+    use super::read_reference;
+    use super::read_type;
+    use super::reference_bytes;
+    use super::root_of_sort;
+    use super::signature;
+    use super::write_listed;
+    use super::write_nodes;
+    use super::write_program;
+
+    #[test]
+    fn primitive_frames_have_known_bytes_and_digest()
+    {
+        let expected = [
+            0xaa, 0x7f, 8, 7, 6, 5, 4, 3, 2, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0x80,
+        ];
+        let mut bytes = CheckpointBytes::from(vec![0xaa]);
+        let mut writer = Writer { sink: &mut bytes };
+        writer.tag(Tag(0x7f));
+        writer.word(Word(0x0102_0304_0506_0708));
+        writer
+            .bytes(Bytes(&[0, 0xff, 0x80]))
+            .expect("representable payload");
+        assert_eq!(bytes.as_ref(), expected);
+
+        let mut hasher = blake3::Hasher::new();
+        Sink::put(&mut hasher, Bytes(&[0xaa]));
+        let mut writer = Writer { sink: &mut hasher };
+        writer.tag(Tag(0x7f));
+        writer.word(Word(0x0102_0304_0506_0708));
+        writer
+            .bytes(Bytes(&[0, 0xff, 0x80]))
+            .expect("representable payload");
+        assert_eq!(hasher.count(), 21);
+        assert_eq!(hasher.finalize(), blake3::hash(&expected));
+    }
+
+    #[test]
+    fn primitive_reads_preserve_cursor_on_extent_failure()
+    {
+        let bytes = [1, 2, 3, 4, 5, 6, 7, 8, 0x7f];
+        let mut reader = Reader {
+            bytes: &bytes,
+            cursor: 0,
+        };
+        assert_eq!(reader.finish(), Err(CodecError::Corrupt));
+        assert_eq!(reader.cursor, 0);
+        assert_eq!(reader.word(), Ok(Word(0x0807_0605_0403_0201)));
+        assert_eq!(reader.cursor, 8);
+        assert_eq!(reader.tag(), Ok(Tag(0x7f)));
+        assert_eq!(reader.finish(), Ok(()));
+        assert_eq!(reader.take(Count(0)), Ok(Bytes(&[])));
+        assert_eq!(reader.cursor, 9);
+        assert_eq!(reader.tag(), Err(CodecError::Corrupt));
+        assert_eq!(reader.cursor, 9);
+
+        let mut short = Reader {
+            bytes: &[1, 2, 3, 4, 5, 6, 7],
+            cursor: 0,
+        };
+        assert_eq!(short.word(), Err(CodecError::Corrupt));
+        assert_eq!(short.cursor, 0);
+        let mut overflow = Reader {
+            bytes: &[],
+            cursor: usize::MAX,
+        };
+        assert_eq!(overflow.take(Count(1)), Err(CodecError::Corrupt));
+        assert_eq!(overflow.cursor, usize::MAX);
+    }
+
+    #[test]
+    fn framed_failures_retain_consumed_prefixes()
+    {
+        let mut short = Reader {
+            bytes: &[3, 0, 0, 0, 0, 0, 0, 0, 0xab, 0xcd],
+            cursor: 0,
+        };
+        assert_eq!(short.bytes(), Err(CodecError::Corrupt));
+        assert_eq!(short.cursor, 8);
+        assert_eq!(short.tag(), Ok(Tag(0xab)));
+
+        let mut invalid = Reader {
+            bytes: &[1, 0, 0, 0, 0, 0, 0, 0, 0xff, 0x7f],
+            cursor: 0,
+        };
+        assert_eq!(invalid.text(), Err(CodecError::Corrupt));
+        assert_eq!(invalid.cursor, 9);
+        assert_eq!(invalid.tag(), Ok(Tag(0x7f)));
+        assert_eq!(invalid.finish(), Ok(()));
+
+        let mut text = Reader {
+            bytes: &[2, 0, 0, 0, 0, 0, 0, 0, 0xc3, 0xa9, 0, 0, 0, 0, 0, 0, 0, 0],
+            cursor: 0,
+        };
+        assert_eq!(text.text().as_deref(), Ok("é"));
+        assert_eq!(text.cursor, 10);
+        assert_eq!(text.text().as_deref(), Ok(""));
+        assert_eq!(text.finish(), Ok(()));
+    }
+
+    #[test]
+    fn reference_frames_preserve_binary_keys_and_occurrences()
+    {
+        let occupied = Reference::Item {
+            key: ItemKey::from([0, 0xff].as_slice()),
+            occurrence: Occurrence::from(2_usize),
+        };
+        let expected = [1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 2, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(reference_bytes(&occupied).as_ref(), expected);
+        let mut reader = Reader {
+            bytes: &expected,
+            cursor: 0,
+        };
+        assert_eq!(read_reference(&mut reader), Ok(occupied));
+        assert_eq!(reader.finish(), Ok(()));
+        assert_eq!(reference_bytes(&Reference::Unoccupied).as_ref(), [0]);
+        let mut empty = Reader {
+            bytes: &[0],
+            cursor: 0,
+        };
+        assert_eq!(read_reference(&mut empty), Ok(Reference::Unoccupied));
+        assert_eq!(empty.finish(), Ok(()));
+        let mut unknown = Reader {
+            bytes: &[2],
+            cursor: 0,
+        };
+        assert_eq!(read_reference(&mut unknown), Err(CodecError::Corrupt));
+        assert_eq!(unknown.cursor, 1);
+    }
+
+    #[test]
+    fn discovery_accepts_cycles_repeated_roots_and_empty_tables()
+    {
+        assert_eq!(check_discovery(&[], &[]), Ok(()));
+        let nodes = [
+            ContentNode::Product(NodeIndex::from(0_usize), NodeIndex::from(1_usize)),
+            ContentNode::UnitType,
+        ];
+        assert_eq!(
+            check_discovery(&nodes, &[
+                NodeIndex::from(0_usize),
+                NodeIndex::from(0_usize)
+            ]),
+            Ok(())
+        );
+        assert_eq!(
+            check_discovery(&nodes, &[NodeIndex::from(usize::MAX)]),
+            Err(CodecError::Corrupt)
+        );
+    }
+
+    #[test]
+    fn type_tables_validate_roots_child_extents_and_sorts()
+    {
+        let nodes = [ContentNode::UnitType];
+        assert_eq!(
+            root_of_sort(&nodes, NodeIndex::from(0_usize), Sort::ValueType),
+            Ok(())
+        );
+        assert_eq!(
+            root_of_sort(&nodes, NodeIndex::from(0_usize), Sort::Value),
+            Err(CodecError::Corrupt)
+        );
+        assert_eq!(
+            root_of_sort(&nodes, NodeIndex::from(usize::MAX), Sort::ValueType),
+            Err(CodecError::Corrupt)
+        );
+        let decode = |nodes: Vec<ContentNode>| {
+            let mut bytes = CheckpointBytes::default();
+            write_nodes(&mut Writer { sink: &mut bytes }, &nodes).expect("raw table encodes");
+            read_type(&mut Reader {
+                bytes: bytes.as_ref(),
+                cursor: 0,
+            })
+        };
+        assert_eq!(decode(vec![]), Err(CodecError::Corrupt));
+        assert_eq!(decode(vec![ContentNode::Unit]), Err(CodecError::Corrupt));
+        assert_eq!(
+            decode(vec![ContentNode::Product(
+                NodeIndex::from(1_usize),
+                NodeIndex::from(0_usize)
+            ),]),
+            Err(CodecError::Corrupt)
+        );
+        assert_eq!(
+            decode(vec![
+                ContentNode::Product(NodeIndex::from(1_usize), NodeIndex::from(1_usize)),
+                ContentNode::Unit,
+            ]),
+            Err(CodecError::Corrupt)
+        );
+        let computation = decode(vec![
+            ContentNode::Returner(NodeIndex::from(1_usize)),
+            ContentNode::UnitType,
+        ])
+        .expect("closed computation type");
+        assert_eq!(
+            computation.nodes().first().map(ContentNode::sort),
+            Some(Sort::CompType)
+        );
+    }
+
+    #[test]
+    fn enumeration_tags_use_first_matches_and_enforce_byte_width()
+    {
+        let mut bytes = CheckpointBytes::default();
+        write_listed(&mut Writer { sink: &mut bytes }, &[3_u16, 8, 3], &3)
+            .expect("first match fits");
+        let table: Vec<u16> = (0 ..= 256).collect();
+        write_listed(&mut Writer { sink: &mut bytes }, &table, &255).expect("last byte index");
+        assert_eq!(
+            write_listed(&mut Writer { sink: &mut bytes }, &table, &256),
+            Err(CodecError::Unrepresentable)
+        );
+        assert_eq!(
+            write_listed(&mut Writer { sink: &mut bytes }, &[3_u16, 8], &9),
+            Err(CodecError::Unrepresentable)
+        );
+        assert_eq!(bytes.as_ref(), [0, 0xff]);
+        let mut last = Reader {
+            bytes: &[0xff],
+            cursor: 0,
+        };
+        assert_eq!(read_listed(&mut last, &table), Ok(255));
+        assert_eq!(last.cursor, 1);
+        let mut invalid = Reader {
+            bytes: &[2],
+            cursor: 0,
+        };
+        assert_eq!(
+            read_listed(&mut invalid, &[3_u16, 8]),
+            Err(CodecError::Corrupt)
+        );
+        assert_eq!(invalid.cursor, 1);
+    }
+
+    #[test]
+    fn narrow_fields_refuse_out_of_range_words_after_consuming_them()
+    {
+        let mut reader = Reader {
+            bytes: &[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+            cursor: 0,
+        };
+        assert_eq!(read_narrow::<u32>(&mut reader), Ok(u32::MAX));
+        assert_eq!(reader.cursor, 8);
+        assert_eq!(read_narrow::<u32>(&mut reader), Err(CodecError::Corrupt));
+        assert_eq!(reader.cursor, 16);
+        assert_eq!(reader.finish(), Ok(()));
+    }
+
+    #[test]
+    fn empty_envelopes_preserve_budget_and_separate_formats()
+    {
+        let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
+        let expected = [
+            b'G', b'C', b'K', b'P', b'T', 0, 0, 3, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        assert_eq!(
+            encode_checkpoints(&checkpoints)
+                .expect("empty checkpoint")
+                .as_ref(),
+            expected
+        );
+        assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
+        let mut wrong_version = expected;
+        *wrong_version.get_mut(7).expect("version byte") = 2;
+        assert_eq!(
+            decode_checkpoints(Bytes(&wrong_version)),
+            Err(CodecError::Corrupt)
+        );
+        let mut program = CheckpointBytes::default();
+        write_program(&mut program, &[]).expect("empty program");
+        assert_eq!(program.as_ref(), b"GPROG\0\0\x01\0\0\0\0\0\0\0\0");
+        assert_eq!(
+            decode_checkpoints(Bytes(program.as_ref())),
+            Err(CodecError::Corrupt)
+        );
+    }
+
+    #[test]
+    fn checkpoint_encoding_reports_the_first_unresolved_plane()
+    {
+        let unresolved = |sort| TypeContent::from_nodes(vec![ContentNode::Unresolved(sort)]);
+        let mismatch = |synthesised, expected| {
+            Typing::Refused(Refusal::TypeMismatch {
+                at: Site::Unreached,
+                synthesised,
+                expected,
+            })
+        };
+        let encode = |nodes: Vec<ContentNode>, answer, typing| {
+            let content = ItemContent::from_parts(
+                Reference::Unoccupied,
+                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Present(NodeIndex::from(0_usize)),
+                nodes,
+            );
+            let footprint = Footprint::from_parts(
+                BTreeSet::new(),
+                BTreeSet::new(),
+                Opacity::Transparent,
+                HoleMark::Filled,
+            );
+            let item = ItemCheckpoint::new(
+                content,
+                footprint,
+                vec![Answered::new(Reference::Unoccupied, answer)],
+                typing,
+            );
+            let checkpoints = Checkpoints::new(CheckBudget::DEFAULT, vec![item]);
+            let validated = encode_checkpoints(&checkpoints).map(|_bytes| ());
+            let raw = super::checkpoint_frame(&checkpoints).map(|_bytes| ());
+            assert_eq!(validated, raw);
+            validated
+        };
+        let unsupported = |sort| {
+            Err(CodecError::Unsupported(UnsupportedPersistence::Dangling(
+                sort,
+            )))
+        };
+        assert_eq!(
+            encode(
+                vec![ContentNode::Unresolved(Sort::Value)],
+                Answer::Typed(unresolved(Sort::ValueType)),
+                Typing::Synthesised {
+                    produced: unresolved(Sort::CompType),
+                    conversions: ConversionCount::from(0_usize)
+                },
+            ),
+            unsupported(Sort::Value),
+        );
+        assert_eq!(
+            encode(
+                vec![ContentNode::Unit],
+                Answer::Typed(unresolved(Sort::ValueType)),
+                Typing::Synthesised {
+                    produced: unresolved(Sort::CompType),
+                    conversions: ConversionCount::from(0_usize)
+                },
+            ),
+            unsupported(Sort::ValueType),
+        );
+        assert_eq!(
+            encode(
+                vec![ContentNode::Unit],
+                Answer::Untyped,
+                Typing::Synthesised {
+                    produced: unresolved(Sort::CompType),
+                    conversions: ConversionCount::from(0_usize)
+                },
+            ),
+            unsupported(Sort::CompType),
+        );
+        assert_eq!(
+            encode(
+                vec![ContentNode::Unit],
+                Answer::Untyped,
+                mismatch(unresolved(Sort::CompType), unresolved(Sort::Computation)),
+            ),
+            unsupported(Sort::CompType),
+        );
+        assert_eq!(
+            encode(
+                vec![ContentNode::Unit],
+                Answer::Untyped,
+                mismatch(
+                    TypeContent::from_nodes(vec![ContentNode::UnitType]),
+                    unresolved(Sort::Computation)
+                ),
+            ),
+            unsupported(Sort::Computation),
+        );
+    }
+
+    #[test]
+    fn decoders_reject_unknown_tags_before_payloads()
+    {
+        type TagDecoder = for<'bytes> fn(&mut Reader<'bytes>) -> Result<(), CodecError>;
+        let mut malformed = [0_u8; 65];
+        *malformed.first_mut().expect("tag") = u8::MAX;
+        let decoders: [TagDecoder; 7] = [
+            |reader| super::read_sign(reader).map(|_value| ()),
+            |reader| super::read_literal(reader).map(|_value| ()),
+            |reader| super::read_node(reader).map(|_value| ()),
+            |reader| super::read_site(reader).map(|_value| ()),
+            |reader| super::read_refusal(reader).map(|_value| ()),
+            |reader| super::read_typing(reader).map(|_value| ()),
+            |reader| super::read_answer(reader).map(|_value| ()),
+        ];
+        for decode in decoders {
+            let mut reader = Reader {
+                bytes: &malformed,
+                cursor: 0,
+            };
+            assert_eq!(decode(&mut reader), Err(CodecError::Corrupt));
+            assert_eq!(reader.cursor, 1, "unknown tags stop before any payload");
+        }
+
+        for (tag, invalid_field) in [(0x01, 2), (0x06, 2), (0x20, 3)] {
+            let mut bytes = [0_u8; 10];
+            *bytes.first_mut().expect("node tag") = tag;
+            *bytes.get_mut(1).expect("field tag") = invalid_field;
+            let mut reader = Reader {
+                bytes: &bytes,
+                cursor: 0,
+            };
+            assert_eq!(super::read_node(&mut reader), Err(CodecError::Corrupt));
+            assert_eq!(
+                reader.cursor, 2,
+                "zone, side and base tags reject at their field"
+            );
+        }
+
+        for (prefix, consumed) in [(&[2, 5][..], 2), (&[5, 1, 2][..], 3)] {
+            let mut bytes = prefix.to_vec();
+            bytes.extend_from_slice(&[0; 16]);
+            let mut reader = Reader {
+                bytes: &bytes,
+                cursor: 0,
+            };
+            assert_eq!(super::read_refusal(&mut reader), Err(CodecError::Corrupt));
+            assert_eq!(
+                reader.cursor, consumed,
+                "form and zone tags stop at their field"
+            );
+        }
+
+        for (opacity, hole, consumed) in [(2, 0, 17), (0, 2, 18)] {
+            let mut bytes = [0_u8; 18];
+            *bytes.get_mut(16).expect("opacity flag") = opacity;
+            *bytes.get_mut(17).expect("hole flag") = hole;
+            let mut reader = Reader {
+                bytes: &bytes,
+                cursor: 0,
+            };
+            assert_eq!(super::read_footprint(&mut reader), Err(CodecError::Corrupt));
+            assert_eq!(
+                reader.cursor, consumed,
+                "each footprint flag has its own boundary"
+            );
+        }
+
+        let mut bytes = CheckpointBytes::from(Vec::new());
+        assert_eq!(
+            super::write_site(&mut Writer { sink: &mut bytes }, Site::Unreached),
+            Ok(())
+        );
+        assert_eq!(bytes.as_ref(), &[1]);
+        let mut reader = Reader {
+            bytes: &[1, 0xff],
+            cursor: 0,
+        };
+        assert_eq!(super::read_site(&mut reader), Ok(Site::Unreached));
+        assert_eq!(reader.cursor, 1);
+    }
+
+    #[test]
+    fn encoding_bounds_levels_in_every_node_family_and_plane()
+    {
+        let mut level = super::Level::var(super::LevelVar::new(super::LevelVarIndex::from(0_u32)));
+        for _ in 0 .. super::MAX_DECODED_LEVEL_OFFSET {
+            level = level.succ().expect("representable offset");
+        }
+        let unit = || vec![ContentNode::Unit];
+        let valid_type = || TypeContent::from_nodes(vec![ContentNode::UnitType]);
+        let at = Site::Unreached;
+        let cases = [
+            (
+                vec![
+                    ContentNode::ValueLift {
+                        target: level.clone(),
+                        body: NodeIndex::from(1_usize),
+                    },
+                    ContentNode::Unit,
+                ],
+                Answer::Untyped,
+                Typing::Owed,
+            ),
+            (
+                unit(),
+                Answer::Typed(TypeContent::from_nodes(vec![
+                    ContentNode::TypeLift {
+                        inner: NodeIndex::from(1_usize),
+                        target: level.clone(),
+                    },
+                    ContentNode::UnitType,
+                ])),
+                Typing::Owed,
+            ),
+            (unit(), Answer::Untyped, Typing::Synthesised {
+                produced: TypeContent::from_nodes(vec![
+                    ContentNode::Element {
+                        code: NodeIndex::from(1_usize),
+                        target: level.clone(),
+                    },
+                    ContentNode::Unit,
+                ]),
+                conversions: ConversionCount::from(0_usize),
+            }),
+            (
+                unit(),
+                Answer::Untyped,
+                Typing::Refused(Refusal::TypeMismatch {
+                    at,
+                    synthesised: TypeContent::from_nodes(vec![ContentNode::Universe {
+                        sort: super::TypeSort::Ground(super::GroundSort::Value),
+                        level: level.clone(),
+                    }]),
+                    expected: valid_type(),
+                }),
+            ),
+            (
+                unit(),
+                Answer::Untyped,
+                Typing::Refused(Refusal::TypeMismatch {
+                    at,
+                    synthesised: valid_type(),
+                    expected: TypeContent::from_nodes(vec![
+                        ContentNode::ComputationElement {
+                            code: NodeIndex::from(1_usize),
+                            target: level,
+                        },
+                        ContentNode::Unit,
+                    ]),
+                }),
+            ),
+        ];
+        for (nodes, answer, typing) in cases {
+            let content = ItemContent::from_parts(
+                Reference::Unoccupied,
+                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Present(NodeIndex::from(0_usize)),
+                nodes,
+            );
+            let item = ItemCheckpoint::new(
+                content,
+                Footprint::from_parts(
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    Opacity::Transparent,
+                    HoleMark::Filled,
+                ),
+                vec![Answered::new(Reference::Unoccupied, answer)],
+                typing,
+            );
+            let checkpoints = Checkpoints::new(CheckBudget::DEFAULT, vec![item]);
+            assert_eq!(
+                encode_checkpoints(&checkpoints),
+                Err(CodecError::LevelOffsetTooLarge {
+                    offset: super::LevelOffset::from(super::MAX_DECODED_LEVEL_OFFSET)
+                })
+            );
+        }
+    }
+
+    #[test]
+    fn encoding_bounds_levels_in_every_auxiliary_type_table()
+    {
+        type Mismatch = fn(TypeContent, TypeContent) -> Refusal;
+        let mut level = super::Level::var(super::LevelVar::new(super::LevelVarIndex::from(0_u32)));
+        for _ in 0 .. super::MAX_DECODED_LEVEL_OFFSET {
+            level = level.succ().expect("representable offset");
+        }
+        let capped = || {
+            TypeContent::from_nodes(vec![ContentNode::Universe {
+                sort: super::TypeSort::Ground(super::GroundSort::Value),
+                level: level.clone(),
+            }])
+        };
+        let valid = || TypeContent::from_nodes(vec![ContentNode::UnitType]);
+        let at = Site::Unreached;
+        let mismatches: [Mismatch; 4] = [
+            |synthesised, expected| Refusal::TypeMismatch {
+                at: Site::Unreached,
+                synthesised,
+                expected,
+            },
+            |synthesised, expected| Refusal::SortMismatch {
+                at: Site::Unreached,
+                synthesised,
+                expected,
+            },
+            |synthesised, expected| Refusal::LevelMismatch {
+                at: Site::Unreached,
+                synthesised,
+                expected,
+            },
+            |synthesised, expected| Refusal::FamilyArgumentClassifier {
+                at: Site::Unreached,
+                position: super::ArgumentPosition::from(0_u32),
+                synthesised,
+                expected,
+            },
+        ];
+        let mut cases = vec![
+            (Answer::Typed(capped()), Typing::Owed),
+            (Answer::Untyped, Typing::Synthesised {
+                produced: capped(),
+                conversions: ConversionCount::from(0_usize),
+            }),
+            (
+                Answer::Untyped,
+                Typing::Refused(Refusal::ShapeMismatch {
+                    at,
+                    wanted: super::ExpectedShape::Product,
+                    found: capped(),
+                }),
+            ),
+            (
+                Answer::Untyped,
+                Typing::Refused(Refusal::DependentBind {
+                    at,
+                    synthesised: capped(),
+                }),
+            ),
+            (
+                Answer::Untyped,
+                Typing::Refused(Refusal::StaticClassifierExpected {
+                    at,
+                    found: capped(),
+                }),
+            ),
+        ];
+        for mismatch in mismatches {
+            cases.push((
+                Answer::Untyped,
+                Typing::Refused(mismatch(capped(), valid())),
+            ));
+            cases.push((
+                Answer::Untyped,
+                Typing::Refused(mismatch(valid(), capped())),
+            ));
+        }
+        for (answer, typing) in cases {
+            let content = ItemContent::from_parts(
+                Reference::Unoccupied,
+                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Present(NodeIndex::from(0_usize)),
+                vec![ContentNode::Unit],
+            );
+            let item = ItemCheckpoint::new(
+                content,
+                Footprint::from_parts(
+                    BTreeSet::new(),
+                    BTreeSet::new(),
+                    Opacity::Transparent,
+                    HoleMark::Filled,
+                ),
+                vec![Answered::new(Reference::Unoccupied, answer)],
+                typing,
+            );
+            let checkpoints = Checkpoints::new(CheckBudget::DEFAULT, vec![item]);
+            assert_eq!(
+                encode_checkpoints(&checkpoints),
+                Err(CodecError::LevelOffsetTooLarge {
+                    offset: super::LevelOffset::from(super::MAX_DECODED_LEVEL_OFFSET)
+                })
+            );
+        }
+    }
 }

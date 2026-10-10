@@ -36,6 +36,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
@@ -115,6 +116,11 @@ impl Definitions
     ///   run.
     /// - witness: `machine::tests::constants_unfold_once_and_opaque_ones_stay_opaque`
     #[inline]
+    #[spec(
+        captures: [entry = self.entries.len()],
+        ensures: |ret| usize::from(ret) == entry && entry.checked_add(1) == Some(self.entries.len())
+            && self.entries.get(entry) == Some(&definition),
+    )]
     pub fn push(
         &mut self,
         definition: Definition,
@@ -441,6 +447,14 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::a_thunk_reads_back_closed_over_its_environment`
     /// - witness: `machine::tests::a_suspended_capture_has_no_reading`
     #[inline]
+    #[spec(
+        requires: self.store.value(value).is_some(),
+        captures: [entry = core.watermark()],
+        ensures: |ret| match ret {
+            | Ok(read) => core.computation(read).is_some(),
+            | Err(_) => core.watermark() == entry,
+        },
+    )]
     pub fn read_back(
         &self,
         value: HeapValueId,
@@ -467,6 +481,14 @@ impl<'program> Machine<'program>
     /// - hypothesis: L3 — as [`Self::read_back`].
     /// - witness: `machine::tests::a_thunk_reads_back_closed_over_its_environment`
     #[inline]
+    #[spec(
+        requires: self.store.value(value).is_some(),
+        captures: [entry = core.watermark()],
+        ensures: |ret| match ret {
+            | Ok(read) => core.value(read).is_some(),
+            | Err(_) => core.watermark() == entry,
+        },
+    )]
     pub fn read_back_value(
         &self,
         value: HeapValueId,
@@ -498,10 +520,11 @@ impl<'program> Machine<'program>
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one hand-built case per core former, application at
-    ///   two binders, memoised forcing observed by address, constants unfolding
-    ///   once, cyclic and undefined, and the exact transition count of a
-    ///   return.
+    /// - hypothesis: L2 — generated closed pure terms and stuck outcomes are
+    ///   compared with the independent normaliser. L3 — hand-built formers, the
+    ///   polarity-sensitive critical pair, exact budget boundaries and nominal
+    ///   memo observations distinguish wrong reductions and ordering; this
+    ///   covers the bounded generator and named cases, not all programs.
     /// - witness: `machine::tests::ret_is_a_terminal_value`
     /// - witness: `machine::tests::bind_threads_a_value`
     /// - witness: `machine::tests::force_runs_a_thunk_body`
@@ -510,7 +533,17 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
     /// - witness: `machine::tests::constants_unfold_once_and_opaque_ones_stay_opaque`
     /// - witness: `machine::tests::the_step_budget_bounds_a_run`
+    /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    /// - witness: `machine::tests::polarity_decides_whether_a_capture_is_evaluated`
+    /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
+    /// - witness: `machine::tests::failed_unfolding_resets_every_active_constant`
     #[inline]
+    #[spec(ensures: |ref ret| match ret.as_ref() {
+        | Ok(&Outcome::Halted(value)) => usize::from(budget) > 0 && self.store.value(value).is_some()
+            && self.store.mark() == ContinuationMark::BASE,
+        | Ok(&Outcome::Stuck(_)) => usize::from(budget) > 0,
+        | Err(_) => true,
+    })]
     pub fn run(
         &mut self,
         command: CommandId,
@@ -542,6 +575,21 @@ impl<'program> Machine<'program>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the return path has an exact transition budget,
+    ///   reentrant forcing shares the update continuation, and a halted run has
+    ///   no frames. L2 — composed reductions compare with an independent
+    ///   normaliser, distinguishing swapped control states and skipped returns.
+    /// - witness: `machine::tests::the_step_budget_bounds_a_run`
+    /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
+    /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    #[spec(ensures: |ref ret| match (control, ret.as_ref().copied()) {
+        | (Control::Return(value, mark), Ok(next)) => next == Next::Continue(Control::Pop(value)) && self.store.mark() == mark,
+        | (Control::Pop(value), Ok(Next::Halt(held))) => held == value && self.store.mark() == ContinuationMark::BASE,
+        | (Control::Run(..) | Control::Deliver(..), Ok(Next::Halt(_))) => false,
+        | _ => true,
+    })]
     fn step(
         &mut self,
         control: Control,
@@ -573,6 +621,34 @@ impl<'program> Machine<'program>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one closed capture whose body would get stuck is cut
+    ///   against an ignoring binder at each polarity. The positive cut is stuck
+    ///   and the negative cut returns unit, distinguishing the critical pair,
+    ///   not merely the shape of the next control state. Missing commands have
+    ///   exact refusals. L2 — pure reductions compare with normalisation.
+    /// - witness: `machine::tests::polarity_decides_whether_a_capture_is_evaluated`
+    /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
+    /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    #[spec(ensures: |ref ret| match ret.as_ref().copied() {
+        | Err(_) => self.arena.command(id).is_some() || *ret == Err(Stop::Stuck(Stuck::IllFormedCommand(id))),
+        | Ok(next) => self.arena.command(id).is_some_and(|&CommandNode::Cut { polarity, producer, consumer }| {
+            let strict_capture = self.arena.producer(producer).and_then(|node| match *node {
+                | ProducerNode::Mu { body } if polarity != Polarity::Negative
+                    || !matches!(self.arena.consumer(consumer), Some(&ConsumerNode::MuTilde { .. })) => Some(body),
+                | _ => None,
+            });
+            match (strict_capture, next) {
+                | (Some(body), Next::Continue(Control::Run(found, inner))) => body == found
+                    && inner.values() == environment.values()
+                    && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.mark()),
+                | (None, Next::Continue(Control::Deliver(value, found, inner))) => consumer == found
+                    && inner == environment && self.store.value(value).is_some(),
+                | _ => false,
+            }
+        }),
+    })]
     fn cut(
         &mut self,
         id: CommandId,
@@ -617,6 +693,36 @@ impl<'program> Machine<'program>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — direct return, binding, matching, forcing and the
+    ///   polarity-sensitive capture have distinct terminal or stuck outcomes;
+    ///   unbound and missing consumers have exact refusals. L2 — generated pure
+    ///   spines compare with normalisation. These observe consumer dispatch,
+    ///   environment extension and continuation selection.
+    /// - witness: `machine::tests::polarity_decides_whether_a_capture_is_evaluated`
+    /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
+    /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
+    /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&next|
+        self.arena.consumer(consumer).is_some_and(|node| {
+            if let Some((body, captured)) = self.suspended_capture(value)
+                && !matches!(node, &ConsumerNode::MuTilde { .. }) {
+                return matches!(next, Next::Continue(Control::Run(found, inner)) if found == body
+                    && inner.values() == captured.values()
+                    && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.mark()));
+            }
+            match *node {
+                | ConsumerNode::Top => next == Next::Continue(Control::Return(value, ContinuationMark::BASE)),
+                | ConsumerNode::Covariable(index) => matches!(next, Next::Continue(Control::Return(found, mark))
+                    if found == value && self.store.lookup_covalue(environment, index) == Some(mark)),
+                | ConsumerNode::MuTilde { body } => matches!(next, Next::Continue(Control::Run(found, inner)) if found == body
+                    && inner.covalues() == environment.covalues()
+                    && self.store.lookup_value(inner, DeBruijnIndex::from(0_u32)) == Some(value)),
+                | ConsumerNode::Case { .. } => matches!(next, Next::Continue(Control::Run(..))),
+                | ConsumerNode::Destructor { .. } => matches!(next, Next::Continue(Control::Run(..) | Control::Return(..))),
+            }
+        })))]
     fn deliver(
         &mut self,
         value: HeapValueId,
@@ -671,7 +777,25 @@ impl<'program> Machine<'program>
     /// The body and environment of a suspended `μ`, when `value` is one.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the body and captured environment exactly when the held value
+    ///   is a closure of a present capture producer; otherwise none.
+    /// - provides: delayed capture recognition before ordinary delivery.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — delaying a capture at a negative cut and later
+    ///   delivering one to a non-binder distinguish eager capture dispatch from
+    ///   ordinary closures. Missing and non-capture values return none.
+    /// - witness: `machine::tests::polarity_decides_whether_a_capture_is_evaluated`
+    /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
+    #[spec(ensures: |ret| ret == match self.store.value(value) {
+        | Some(&HeapValue::Closure { producer, environment }) => match self.arena.producer(producer) {
+            | Some(&ProducerNode::Mu { body }) => Some((body, environment)),
+            | _ => None,
+        },
+        | _ => None,
+    })]
     fn suspended_capture(
         &self,
         value: HeapValueId,
@@ -705,6 +829,22 @@ impl<'program> Machine<'program>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — returning through bind, match, destructor and update
+    ///   frames is observed by the resulting value and memo cell; an empty
+    ///   region halts at the exact return budget. Reentrant forcing
+    ///   distinguishes duplicate updates and skipped write-back.
+    /// - witness: `machine::tests::the_step_budget_bounds_a_run`
+    /// - witness: `machine::tests::bind_threads_a_value`
+    /// - witness: `machine::tests::case_selects_the_matching_arm`
+    /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
+    /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
+    #[spec(
+        captures: [height = self.store.frame_height()],
+        ensures: |ref ret| if usize::from(height) == 0 { *ret == Ok(Next::Halt(value)) }
+            else { !matches!(ret, &Ok(Next::Halt(_))) },
+    )]
     fn pop(
         &mut self,
         value: HeapValueId,
@@ -745,6 +885,53 @@ impl<'program> Machine<'program>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — first force, reentry and a cached force distinguish
+    ///   the three cell states by continuation marks, the unique update frame
+    ///   and exact cached address. Abandonment declines the update before a new
+    ///   run. L2 — captured and curried functions compare with normal forms.
+    /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
+    /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
+    /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
+    /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
+    #[spec(
+        requires: self.store.mark() == mark,
+        captures: [forcing = match self.store.value(value) {
+            | Some(&HeapValue::Thunk { body, environment, cell }) if head == DestructorTag::Force =>
+                Some((body, environment, cell, self.store.cell(cell))),
+            | _ => None,
+        }],
+        ensures: |ref ret| match ret.as_ref().copied() {
+            | Err(_) => true,
+            | Ok(next) => if let Some((body, captured, cell, state)) = forcing {
+                match state {
+                    | Some(crate::store::MemoState::Forced(cached)) => next == Next::Continue(Control::Return(cached, mark))
+                        && self.store.cell(cell) == state && self.store.mark() == mark,
+                    | Some(crate::store::MemoState::Unforced | crate::store::MemoState::InProgress) =>
+                        matches!(next, Next::Continue(Control::Run(found, inner)) if found == body
+                            && inner.values() == captured.values()
+                            && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(self.store.mark()))
+                        && self.store.cell(cell) == Some(crate::store::MemoState::InProgress)
+                        && if state == Some(crate::store::MemoState::Unforced) {
+                            usize::from(mark.height()).checked_add(1) == Some(usize::from(self.store.frame_height()))
+                        } else { self.store.mark() == mark },
+                    | None => false,
+                }
+            } else {
+                self.store.value(value).is_some_and(|held| match *held {
+                    | HeapValue::Closure { producer, .. } => self.arena.producer(producer).is_some_and(|node|
+                        matches!(*node, ProducerNode::Cocase { ref arms } if arms.iter().find(|arm| arm.destructor == head)
+                            .is_some_and(|arm| matches!(next, Next::Continue(Control::Run(body, inner)) if body == arm.body
+                                && self.store.lookup_covalue(inner, CovariableIndex::from(0_u32)) == Some(mark)
+                                && arguments.iter().rev().enumerate().all(|(position, argument)|
+                                    u32::try_from(position).is_ok_and(|index|
+                                        self.store.lookup_value(inner, DeBruijnIndex::from(index)) == Some(*argument))))))),
+                    | _ => false,
+                })
+            },
+        },
+    )]
     fn observe(
         &mut self,
         value: HeapValueId,
@@ -814,6 +1001,28 @@ impl<'program> Machine<'program>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a pair match returns both unequal fields in source
+    ///   order after binding the last innermost, distinguishing omitted,
+    ///   duplicated and reversed fields. Missing and non-match consumers and
+    ///   unhandled heads have exact refusals; both sum injections are compared
+    ///   independently in the pure-spine cases.
+    /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
+    /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
+    /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&next|
+        self.arena.consumer(arms).zip(self.store.value(value)).is_some_and(|(node, held)|
+            match (node, held) {
+                | (&ConsumerNode::Case { arms: ref choices }, &HeapValue::Constructed { ref tag, ref fields }) =>
+                    choices.iter().find(|arm| arm.constructor == *tag).is_some_and(|arm|
+                        matches!(next, Next::Continue(Control::Run(body, inner)) if body == arm.body
+                            && inner.covalues() == environment.covalues()
+                            && fields.iter().rev().enumerate().all(|(position, field)|
+                                u32::try_from(position).is_ok_and(|index|
+                                    self.store.lookup_value(inner, DeBruijnIndex::from(index)) == Some(*field))))),
+                | _ => false,
+            })))]
     fn select(
         &mut self,
         value: HeapValueId,
@@ -884,6 +1093,27 @@ impl<'program> Machine<'program>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the critical pair loads a binder continuation;
+    ///   reentry and abandonment observe exact frame marks, and malformed
+    ///   continuations and unbound covariables have exact refusals. L2 —
+    ///   composed application and forcing spines compare with normalisation,
+    ///   distinguishing reversed frames and the wrong base continuation.
+    /// - witness: `machine::tests::polarity_decides_whether_a_capture_is_evaluated`
+    /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
+    /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
+    /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+    #[spec(
+        captures: [height = self.store.frame_height()],
+        ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&mark| self.store.mark() == mark
+            && self.arena.consumer(consumer).is_some_and(|node| match *node {
+                | ConsumerNode::Top => mark == ContinuationMark::BASE,
+                | ConsumerNode::Covariable(index) => self.store.lookup_covalue(environment, index) == Some(mark),
+                | ConsumerNode::MuTilde { .. } | ConsumerNode::Case { .. } => usize::from(height).checked_add(1) == Some(usize::from(mark.height())),
+                | ConsumerNode::Destructor { .. } => true,
+            })),
+    )]
     fn load(
         &mut self,
         consumer: ConsumerId,
@@ -952,6 +1182,16 @@ impl<'program> Machine<'program>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two unequal literal producers are evaluated as an
+    ///   argument list and observed in order; the same payloads pass through a
+    ///   two-field match. L2 — application spines compare with the normaliser.
+    ///   These distinguish reordering, omission and duplicated results.
+    /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
+    /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|values|
+        values.len() == producers.len() && values.iter().all(|value| self.store.value(*value).is_some())))]
     fn evaluate_all(
         &mut self,
         producers: &[ProducerId],
@@ -968,7 +1208,7 @@ impl<'program> Machine<'program>
     /// Evaluate a producer to a heap value.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: no constant unfolding is currently running.
     /// - ensures: a variable reads its binding; a literal and a constructor
     ///   over its evaluated fields are allocated; a thunk is allocated with a
     ///   fresh cell; a copattern object or a `μ` closes over `environment`; a
@@ -983,6 +1223,35 @@ impl<'program> Machine<'program>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact constant identities, a nested failed unfolding
+    ///   followed by a retry, both variable zones and malformed endpoints
+    ///   distinguish wrong lookup and poisoned memo state. Distinct constructor
+    ///   fields observe order. L2 — generated pure terms compare with the
+    ///   independent normaliser.
+    /// - witness: `machine::tests::constants_unfold_once_and_opaque_ones_stay_opaque`
+    /// - witness: `machine::tests::failed_unfolding_resets_every_active_constant`
+    /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
+    /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
+    /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    #[spec(
+        requires: !self.unfoldings.contains(&Unfolding::Running),
+        ensures: |ref ret| !self.unfoldings.contains(&Unfolding::Running)
+            && (ret.is_err() || ret.as_ref().is_ok_and(|&value|
+                self.arena.producer(root).zip(self.store.value(value)).is_some_and(|(node, held)| match *node {
+                    | ProducerNode::Variable { zone, index } => zone == Zone::Intuitionistic
+                        && self.store.lookup_value(environment, index) == Some(value),
+                    | ProducerNode::Constant(constant) => self.unfolding(constant) == Ok(Unfolding::Done(value)),
+                    | ProducerNode::Literal(ref literal) => matches!(*held, HeapValue::Literal(ref found) if literal == found),
+                    | ProducerNode::Constructor { ref tag, ref producers, ref consumers } => consumers.is_empty()
+                        && matches!(*held, HeapValue::Constructed { tag: ref found, ref fields } if tag == found && fields.len() == producers.len()),
+                    | ProducerNode::Thunk { body } => matches!(*held, HeapValue::Thunk { body: found, environment: captured, cell }
+                        if found == body && captured == environment && self.store.cell(cell) == Some(crate::store::MemoState::Unforced)),
+                    | ProducerNode::Cocase { .. } | ProducerNode::Mu { .. } => matches!(*held,
+                        HeapValue::Closure { producer, environment: captured } if producer == root && captured == environment),
+                }))),
+    )]
     fn evaluate(
         &mut self,
         root: ProducerId,
@@ -1008,7 +1277,7 @@ impl<'program> Machine<'program>
     /// Run producer evaluation tasks to completion.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: any results already on the stack resolve in the store.
     /// - ensures: on success every task has run and left its value.
     /// - provides: [`Self::evaluate`]'s loop.
     /// - fails: as [`Self::evaluate`], leaving the unrun tasks in `tasks`.
@@ -1016,6 +1285,21 @@ impl<'program> Machine<'program>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested constants recover from a failed unfolding;
+    ///   distinct constructor fields retain order and fresh thunks share their
+    ///   nominal cell on repeat force. L2 — generated pure computations compare
+    ///   with the normaliser, distinguishing missing tasks, wrong result-stack
+    ///   order and incorrect constructor or constant completion.
+    /// - witness: `machine::tests::failed_unfolding_resets_every_active_constant`
+    /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
+    /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
+    /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
+    #[spec(
+        requires: results.iter().all(|value| self.store.value(*value).is_some()),
+        ensures: |ref ret| ret.is_err() || (tasks.is_empty() && results.iter().all(|value| self.store.value(*value).is_some())),
+    )]
     fn drive(
         &mut self,
         tasks: &mut Vec<Evaluation>,
@@ -1135,6 +1419,15 @@ impl<'program> Machine<'program>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — transparent, opaque, cyclic and undefined
+    ///   declarations have distinct outcomes; a two-level failed unfolding is
+    ///   retried and both records are pending, distinguishing wrong admission
+    ///   indexing and retained running states.
+    /// - witness: `machine::tests::constants_unfold_once_and_opaque_ones_stay_opaque`
+    /// - witness: `machine::tests::failed_unfolding_resets_every_active_constant`
+    #[spec(ensures: |ref ret| *ret == self.unfoldings.get(usize::from(constant)).copied().ok_or(Stuck::UndefinedConstant(constant)))]
     fn unfolding(
         &self,
         constant: ConstantIndex,
@@ -1199,7 +1492,33 @@ mod tests
     /// The non-negative integer literal `digits` in `core`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: digits is a nonempty unsigned decimal spelling.
+    /// - ensures: a core literal containing that nonnegative integer, in
+    ///   canonical decimal form.
+    /// - provides: numeric input for the machine's semantic fixtures.
+    /// - panics: on a malformed decimal spelling.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nonnegative literals pass through return, binding and
+    ///   application with their expected numeric readings. Under enforcement
+    ///   the canonical payload is checked at construction, distinguishing the
+    ///   wrong sign, value or node kind. Invalid decimal spellings are outside
+    ///   these fixtures.
+    /// - witness: `machine::tests::ret_is_a_terminal_value`
+    /// - witness: `machine::tests::bind_threads_a_value`
+    /// - witness: `machine::tests::application_binds_the_argument`
+    #[spec(
+        requires: !digits.0.is_empty() && digits.0.bytes().all(|byte| byte.is_ascii_digit()),
+        ensures: |ret| match core.value(ret) {
+            | Some(&gandr_core_term::Value::Literal(Literal::Integer(ref integer))) => {
+                let significant = digits.0.trim_start_matches('0');
+                let expected = if significant.is_empty() { "0" } else { significant };
+                let actual: &str = integer.magnitude().as_ref();
+                integer.sign() == Sign::NonNegative && actual == expected
+            },
+            | _ => false,
+        },
+    )]
     fn integer(
         core: &mut CoreArena,
         digits: Digits,
@@ -1216,7 +1535,20 @@ mod tests
     /// A core computation as the IL renders its focusing.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: computation is in the pure focusing domain.
+    /// - ensures: the bounded IL rendering of its focused command.
+    /// - provides: a semantic observation shared by machine fixtures.
+    /// - panics: when focusing refuses the supplied term.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact return, binding and application readings
+    ///   distinguish omitted values, wrong binding and an incorrect focused
+    ///   command. Only supported finite fixture computations are rendered; this
+    ///   helper does not claim a lossless textual encoding.
+    /// - witness: `machine::tests::ret_is_a_terminal_value`
+    /// - witness: `machine::tests::bind_threads_a_value`
+    /// - witness: `machine::tests::application_binds_the_argument`
+    #[spec(requires: core.computation(computation).is_some(), ensures: |ref ret| ret.starts_with('⟨') && ret.ends_with('⟩'))]
     fn shown(
         core: &CoreArena,
         computation: ComputationId,
@@ -1233,7 +1565,27 @@ mod tests
     /// terminal's readback.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a closed pure computation that halts within the fixture
+    ///   budget and whose terminal can be read back.
+    /// - ensures: the bounded rendering of that terminal's core reading,
+    ///   retaining the source computation in the extended core arena.
+    /// - provides: a full focus, execution, readback and display observation.
+    /// - panics: on focusing, execution or readback failure, or a stuck run.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — return, binding, force, both case arms and
+    ///   application have exact terminal readings. These distinguish the wrong
+    ///   environment, branch and delivered value; captured function readings
+    ///   additionally observe closure. Only terminating pure fixtures within
+    ///   the fixed budget are covered.
+    /// - witness: `machine::tests::ret_is_a_terminal_value`
+    /// - witness: `machine::tests::bind_threads_a_value`
+    /// - witness: `machine::tests::force_runs_a_thunk_body`
+    /// - witness: `machine::tests::case_selects_the_matching_arm`
+    /// - witness: `machine::tests::application_binds_the_argument`
+    /// - witness: `machine::tests::a_function_terminal_reads_back_closed_over_its_environment`
+    #[spec(requires: core.computation(computation).is_some(), ensures: |ref ret|
+        core.computation(computation).is_some() && ret.starts_with('⟨') && ret.ends_with('⟩'))]
     fn evaluated(
         core: &mut CoreArena,
         computation: ComputationId,
@@ -1603,5 +1955,477 @@ mod tests
         );
         assert_eq!(mark, core.watermark(), "the core arena is back at its mark");
         assert!(core.value(kept).is_some(), "earlier nodes are kept");
+    }
+
+    /// Polarity delays a capture only against a binder, and later use resumes
+    /// it.
+    #[test]
+    fn polarity_decides_whether_a_capture_is_evaluated()
+    {
+        let mut arena = CommandArena::new();
+        let unit = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: crate::il::ConstructorTag::Unit,
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            })
+            .expect("leaf");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let back = arena
+            .mint_consumer(ConsumerNode::Covariable(0_u32.into()))
+            .expect("leaf");
+        let force = arena
+            .mint_consumer(ConsumerNode::Destructor {
+                tag: DestructorTag::Force,
+                producers: Box::from([]),
+                consumers: Box::from([back]),
+            })
+            .expect("continuation resolves");
+        let body = arena
+            .mint_cut(Polarity::Positive, unit, force)
+            .expect("children resolve");
+        let capture = arena
+            .mint_producer(ProducerNode::Mu { body })
+            .expect("body resolves");
+        let ignored_body = arena
+            .mint_cut(Polarity::Positive, unit, top)
+            .expect("children resolve");
+        let ignoring = arena
+            .mint_consumer(ConsumerNode::MuTilde { body: ignored_body })
+            .expect("body resolves");
+        let variable = arena
+            .mint_producer(ProducerNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: 0_u32.into(),
+            })
+            .expect("leaf");
+        let used_body = arena
+            .mint_cut(Polarity::Positive, variable, top)
+            .expect("children resolve");
+        let using = arena
+            .mint_consumer(ConsumerNode::MuTilde { body: used_body })
+            .expect("body resolves");
+        let positive = arena
+            .mint_cut(Polarity::Positive, capture, ignoring)
+            .expect("children resolve");
+        let negative = arena
+            .mint_cut(Polarity::Negative, capture, ignoring)
+            .expect("children resolve");
+        let resumed = arena
+            .mint_cut(Polarity::Negative, capture, using)
+            .expect("children resolve");
+        let definitions = Definitions::new();
+        let mut machine = Machine::new(&arena, &definitions);
+        let Ok(Outcome::Stuck(Stuck::Unobservable {
+            value: strict,
+            head: DestructorTag::Force,
+        })) = machine.run(positive, budget())
+        else {
+            panic!("positive cut runs the capture");
+        };
+        assert_eq!(
+            Some(&HeapValue::Constructed {
+                tag: crate::il::ConstructorTag::Unit,
+                fields: Box::from([])
+            }),
+            machine.store.value(strict)
+        );
+        let Ok(Outcome::Halted(delayed)) = machine.run(negative, budget())
+        else {
+            panic!("negative cut leaves an ignored capture suspended");
+        };
+        assert_eq!(
+            Some(&HeapValue::Constructed {
+                tag: crate::il::ConstructorTag::Unit,
+                fields: Box::from([])
+            }),
+            machine.store.value(delayed)
+        );
+        assert_eq!(ContinuationMark::BASE, machine.store.mark());
+        let Ok(Outcome::Stuck(Stuck::Unobservable {
+            value: forced,
+            head: DestructorTag::Force,
+        })) = machine.run(resumed, budget())
+        else {
+            panic!("using the suspended capture resumes its body");
+        };
+        assert_eq!(
+            Some(&HeapValue::Constructed {
+                tag: crate::il::ConstructorTag::Unit,
+                fields: Box::from([])
+            }),
+            machine.store.value(forced)
+        );
+    }
+
+    /// Invalid endpoints, zones and eliminators retain their exact refusal
+    /// identity.
+    #[test]
+    fn transition_refusals_name_the_first_invalid_endpoint()
+    {
+        let mut arena = CommandArena::new();
+        let unit = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: crate::il::ConstructorTag::Unit,
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            })
+            .expect("leaf");
+        let intuitionistic = arena
+            .mint_producer(ProducerNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: 0_u32.into(),
+            })
+            .expect("leaf");
+        let linear = arena
+            .mint_producer(ProducerNode::Variable {
+                zone: Zone::Linear,
+                index: 0_u32.into(),
+            })
+            .expect("leaf");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let unbound = arena
+            .mint_consumer(ConsumerNode::Covariable(0_u32.into()))
+            .expect("leaf");
+        let malformed = arena
+            .mint_consumer(ConsumerNode::Destructor {
+                tag: DestructorTag::Force,
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            })
+            .expect("empty children");
+        let choices = arena
+            .mint_consumer(ConsumerNode::Case {
+                arms: Box::from([]),
+            })
+            .expect("empty arms");
+        let non_value = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: crate::il::ConstructorTag::Unit,
+                producers: Box::from([]),
+                consumers: Box::from([top]),
+            })
+            .expect("children resolve");
+        let definitions = Definitions::new();
+        let mut machine = Machine::new(&arena, &definitions);
+        let value = machine.evaluate(unit, Environment::EMPTY).expect("unit");
+        let missing_command = CommandId::from(u32::MAX);
+        let missing_producer = ProducerId::from(u32::MAX);
+        let missing_consumer = ConsumerId::from(u32::MAX);
+        let missing_value = HeapValueId::from(u32::MAX);
+        assert_eq!(
+            Err(Stop::Stuck(Stuck::IllFormedCommand(missing_command))),
+            machine.cut(missing_command, Environment::EMPTY)
+        );
+        assert_eq!(
+            Err(Stop::Stuck(Stuck::IllFormedProducer(missing_producer))),
+            machine.evaluate(missing_producer, Environment::EMPTY)
+        );
+        assert_eq!(
+            Err(Stop::Stuck(Stuck::IllFormedProducer(non_value))),
+            machine.evaluate(non_value, Environment::EMPTY)
+        );
+        assert_eq!(
+            Err(Stop::Stuck(Stuck::UnboundVariable {
+                zone: Zone::Intuitionistic,
+                index: 0_u32.into()
+            })),
+            machine.evaluate(intuitionistic, Environment::EMPTY)
+        );
+        let bound = machine
+            .store
+            .bind_value(Environment::EMPTY, value)
+            .expect("room");
+        assert_eq!(Ok(value), machine.evaluate(intuitionistic, bound));
+        assert_eq!(
+            Err(Stop::Stuck(Stuck::UnboundVariable {
+                zone: Zone::Linear,
+                index: 0_u32.into()
+            })),
+            machine.evaluate(linear, bound)
+        );
+        for consumer in [missing_consumer, malformed] {
+            assert_eq!(
+                Err(Stop::Stuck(Stuck::IllFormedConsumer(consumer))),
+                machine.deliver(value, consumer, Environment::EMPTY)
+            );
+            assert_eq!(
+                Err(Stop::Stuck(Stuck::IllFormedConsumer(consumer))),
+                machine.load(consumer, Environment::EMPTY)
+            );
+        }
+        assert_eq!(
+            Err(Stop::Stuck(Stuck::UnboundCovariable(0_u32.into()))),
+            machine.deliver(value, unbound, Environment::EMPTY)
+        );
+        assert_eq!(
+            Err(Stop::Stuck(Stuck::UnboundCovariable(0_u32.into()))),
+            machine.load(unbound, Environment::EMPTY)
+        );
+        for consumer in [missing_consumer, top] {
+            assert_eq!(
+                Err(Stop::Stuck(Stuck::IllFormedConsumer(consumer))),
+                machine.select(value, consumer, Environment::EMPTY)
+            );
+        }
+        for value in [value, missing_value] {
+            assert_eq!(
+                Err(Stop::Stuck(Stuck::Unmatched {
+                    value,
+                    arms: choices
+                })),
+                machine.select(value, choices, Environment::EMPTY)
+            );
+            assert_eq!(None, machine.suspended_capture(value));
+        }
+        let non_capture = machine
+            .store
+            .allocate(HeapValue::Closure {
+                producer: unit,
+                environment: Environment::EMPTY,
+            })
+            .expect("room");
+        assert_eq!(None, machine.suspended_capture(non_capture));
+        for value in [value, non_capture] {
+            assert_eq!(
+                Err(Stop::Stuck(Stuck::Unobservable {
+                    value,
+                    head: DestructorTag::Force
+                })),
+                machine.observe(value, DestructorTag::Force, &[], ContinuationMark::BASE)
+            );
+        }
+    }
+
+    /// A two-field pattern binds the last field innermost without losing source
+    /// order.
+    #[test]
+    fn pattern_fields_bind_last_innermost()
+    {
+        let mut core = CoreArena::new();
+        let first_source = integer(&mut core, Digits("2"));
+        let last_source = integer(&mut core, Digits("3"));
+        let mut arena = CommandArena::new();
+        let mut provenance = Provenance::new();
+        let first = focus_value(&core, first_source, &mut arena, &mut provenance).expect("literal");
+        let last = focus_value(&core, last_source, &mut arena, &mut provenance).expect("literal");
+        let outer = arena
+            .mint_producer(ProducerNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: 1_u32.into(),
+            })
+            .expect("leaf");
+        let inner = arena
+            .mint_producer(ProducerNode::Variable {
+                zone: Zone::Intuitionistic,
+                index: 0_u32.into(),
+            })
+            .expect("leaf");
+        let result = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: crate::il::ConstructorTag::Pair,
+                producers: Box::from([outer, inner]),
+                consumers: Box::from([]),
+            })
+            .expect("fields resolve");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let body = arena
+            .mint_cut(Polarity::Positive, result, top)
+            .expect("children resolve");
+        let matched = arena
+            .mint_consumer(ConsumerNode::Case {
+                arms: Box::from([crate::il::PatternArm {
+                    constructor: crate::il::ConstructorTag::Pair,
+                    body,
+                }]),
+            })
+            .expect("body resolves");
+        let pair = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: crate::il::ConstructorTag::Pair,
+                producers: Box::from([first, last]),
+                consumers: Box::from([]),
+            })
+            .expect("fields resolve");
+        let root = arena
+            .mint_cut(Polarity::Positive, pair, matched)
+            .expect("children resolve");
+        let definitions = Definitions::new();
+        let mut machine = Machine::new(&arena, &definitions);
+        let arguments = machine
+            .evaluate_all(&[first, last], Environment::EMPTY)
+            .expect("literal arguments");
+        let &[first_argument, last_argument] = arguments.as_ref()
+        else {
+            panic!("one result per producer");
+        };
+        for (source, argument) in [(first_source, first_argument), (last_source, last_argument)] {
+            let gandr_core_term::Value::Literal(ref expected) =
+                *core.value(source).expect("source resolves")
+            else {
+                panic!("literal source");
+            };
+            assert_eq!(
+                Some(&HeapValue::Literal(expected.clone())),
+                machine.store.value(argument)
+            );
+        }
+        let Ok(Outcome::Halted(value)) = machine.run(root, budget())
+        else {
+            panic!("pair pattern returns");
+        };
+        let read = machine
+            .read_back_value(value, &mut core)
+            .expect("positive pair");
+        let Some(&gandr_core_term::Value::Pair(first_read, last_read)) = core.value(read)
+        else {
+            panic!("pair reading");
+        };
+        assert_eq!(core.value(first_source), core.value(first_read));
+        assert_eq!(core.value(last_source), core.value(last_read));
+    }
+
+    /// Reentry shares one update, cache returns its value, and even a
+    /// zero-budget run declines abandonment.
+    #[test]
+    fn forcing_reentry_shares_updates_and_abandonment_declines_them()
+    {
+        let mut arena = CommandArena::new();
+        let unit = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: crate::il::ConstructorTag::Unit,
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            })
+            .expect("leaf");
+        let back = arena
+            .mint_consumer(ConsumerNode::Covariable(0_u32.into()))
+            .expect("leaf");
+        let body = arena
+            .mint_cut(Polarity::Positive, unit, back)
+            .expect("children resolve");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let plain = arena
+            .mint_cut(Polarity::Positive, unit, top)
+            .expect("children resolve");
+        let definitions = Definitions::new();
+        let mut machine = Machine::new(&arena, &definitions);
+        let cell = machine.store.allocate_cell().expect("room");
+        let thunk = machine
+            .store
+            .allocate(HeapValue::Thunk {
+                body,
+                environment: Environment::EMPTY,
+                cell,
+            })
+            .expect("room");
+        let first = machine
+            .observe(thunk, DestructorTag::Force, &[], ContinuationMark::BASE)
+            .expect("first force opens");
+        let update = machine.store.mark();
+        assert!(
+            matches!(first, Next::Continue(Control::Run(found, inner)) if found == body && machine.store.lookup_covalue(inner, 0_u32.into()) == Some(update))
+        );
+        assert_eq!(Some(MemoState::InProgress), machine.store.cell(cell));
+        assert_eq!(1_usize, usize::from(machine.store.frame_height()));
+        assert!(
+            matches!(machine.store.frames().next(), Some(&Frame::Update { cell: found }) if found == cell)
+        );
+        let mut next = machine
+            .observe(thunk, DestructorTag::Force, &[], update)
+            .expect("reentry runs without another update");
+        assert_eq!(update, machine.store.mark());
+        let mut halted = None;
+        for _ in 0_usize .. 16 {
+            match next {
+                | Next::Halt(value) => {
+                    halted = Some(value);
+                    break;
+                },
+                | Next::Continue(control) => {
+                    next = machine
+                        .step(control)
+                        .expect("unit body returns through its update");
+                },
+            }
+        }
+        let value = halted.expect("the bounded return path halts");
+        assert_eq!(Some(MemoState::Forced(value)), machine.store.cell(cell));
+        assert_eq!(
+            Some(&HeapValue::Constructed {
+                tag: crate::il::ConstructorTag::Unit,
+                fields: Box::from([])
+            }),
+            machine.store.value(value)
+        );
+        assert_eq!(
+            Ok(Next::Continue(Control::Return(
+                value,
+                ContinuationMark::BASE
+            ))),
+            machine.observe(thunk, DestructorTag::Force, &[], ContinuationMark::BASE)
+        );
+        let abandoned = machine.store.allocate_cell().expect("room");
+        let unfinished = machine
+            .store
+            .allocate(HeapValue::Thunk {
+                body,
+                environment: Environment::EMPTY,
+                cell: abandoned,
+            })
+            .expect("room");
+        machine
+            .observe(
+                unfinished,
+                DestructorTag::Force,
+                &[],
+                ContinuationMark::BASE,
+            )
+            .expect("open another force");
+        assert_eq!(
+            Err(MachineFault::OutOfSteps),
+            machine.run(plain, StepCount::from(0_usize))
+        );
+        assert_eq!(Some(MemoState::Unforced), machine.store.cell(abandoned));
+        assert_eq!(Some(MemoState::Forced(value)), machine.store.cell(cell));
+        assert_eq!(ContinuationMark::BASE, machine.store.mark());
+    }
+
+    /// A failed nested unfolding may be retried without turning into a false
+    /// cycle.
+    #[test]
+    fn failed_unfolding_resets_every_active_constant()
+    {
+        let mut arena = CommandArena::new();
+        let root = arena
+            .mint_producer(ProducerNode::Constant(0_usize.into()))
+            .expect("leaf");
+        let first_body = arena
+            .mint_producer(ProducerNode::Constant(1_usize.into()))
+            .expect("leaf");
+        let second_body = arena
+            .mint_producer(ProducerNode::Constant(2_usize.into()))
+            .expect("leaf");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let command = arena
+            .mint_cut(Polarity::Positive, root, top)
+            .expect("children resolve");
+        let mut definitions = Definitions::new();
+        definitions.push(Definition::Transparent(first_body));
+        definitions.push(Definition::Transparent(second_body));
+        let mut machine = Machine::new(&arena, &definitions);
+        assert_eq!(
+            Ok(Outcome::Stuck(Stuck::UndefinedConstant(2_usize.into()))),
+            machine.run(command, budget())
+        );
+        assert_eq!(
+            Ok(Outcome::Stuck(Stuck::UndefinedConstant(2_usize.into()))),
+            machine.run(command, budget()),
+            "a retry encounters the same missing definition, not a poisoned memo"
+        );
+        assert_eq!(
+            [Unfolding::Pending, Unfolding::Pending],
+            machine.unfoldings.as_slice()
+        );
     }
 }

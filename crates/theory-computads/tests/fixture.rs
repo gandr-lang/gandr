@@ -5,6 +5,7 @@
 
 use core::convert::Infallible;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellStore;
@@ -94,7 +95,25 @@ where
 /// sphere, because a peak is exercised rather than matched.
 ///
 /// # Specification
+/// - ensures: the sphere is the boundary pair derived from the retained body.
 /// - panics: when the body derives no boundary pair, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L3 observes disjoint, sequential and reconvergent circuits
+///   through exact occurrence positions and shift outcomes. The predicate
+///   checks the sphere/body relation; the consumer witnesses independently fix
+///   the expected positions.
+/// - witness: `tests::circuit_instantiation::the_instantiated_applications_carry_the_records_positions`
+/// - witness: `tests::circuit_instantiation::a_sequential_two_redex_body_is_refused_comparable_positions`
+/// - witness: `tests::circuit_instantiation::a_reconvergent_body_resolves_both_occurrences_through_one_binding`
+#[spec(
+    ensures: |ret| {
+    derive_boundaries(&ret.body)
+        .is_ok_and(|derived| {
+            ret.sphere.lhs == derived.source && ret.sphere.rhs == derived.target
+        })
+},
+)]
 pub fn rule_over<N>(
     name: N,
     body: CircuitBody,
@@ -227,8 +246,24 @@ where
 /// Run a recorded schedule from `start`.
 ///
 /// # Specification
-/// - panics: at the first step that names no stored cell or does not fire,
-///   which is a fixture defect.
+/// - ensures: the scheduled applications fire in order; an empty schedule
+///   returns the original command.
+/// - panics: at the first application whose cell is missing or whose rewrite
+///   does not fire.
+///
+/// # Adequacy
+/// - hypothesis: L3 over empty and concrete commuting schedules observes the
+///   retained peak and exact composite. Missing cells and nonmatching steps
+///   panic at the defective fixture; normal-return predicates check empty-path
+///   identity and live applications without repeating alphabet callbacks.
+/// - witness: `tests::fixture::recorded_schedules_preserve_empty_paths_and_refuse_invalid_steps`
+/// - witness: `tests::convexity_supply::a_withheld_discharge_is_rechecked_by_the_supply_point`
+#[spec(
+    ensures: |ret| {
+    schedule.iter().all(|step| matches!(store.get(step.cell), Maybe::Present(_)))
+        && (!schedule.is_empty() || ret == *start)
+},
+)]
 pub fn run<A>(
     store: &CellStore<A>,
     start: &A::Cmd,
@@ -281,4 +316,22 @@ where
     {
         Err(Asked)
     }
+}
+#[test]
+fn recorded_schedules_preserve_empty_paths_and_refuse_invalid_steps()
+{
+    let mut store = CellStore::new();
+    let id = store.insert(toy(f_faces()));
+    let start = cong2_peak();
+    assert_eq!(start, run(&store, &start, &[]));
+    let missing = CellApp {
+        cell: gandr_theory_cell_complexes::CellId::from(usize::MAX),
+        at: ToyAlphabet::root_position(),
+    };
+    assert!(std::panic::catch_unwind(|| run(&store, &start, &[missing])).is_err());
+    let mismatch = CellApp {
+        cell: id,
+        at: ToyAlphabet::root_position(),
+    };
+    assert!(std::panic::catch_unwind(|| run(&store, &Toy::zero(), &[mismatch])).is_err());
 }

@@ -7,6 +7,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arena::TextId;
@@ -40,6 +41,18 @@ quenchant_shape::reason_enum! {
 /// - ensures: a recycled slot cannot be mistaken for its previous node.
 /// - provides: the winning-plan handle returned by resolution.
 /// - panics: none.
+/// - executable: none — the identity is a data declaration; allocation,
+///   retention, checked lookup and release carry its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+///   identities expose exact node, reference count and typed absence. Aliased
+///   children, failed second retention and a refused parent allocation expose
+///   rollback counts; u32 reference/generation ceilings distinguish overflow
+///   from reuse. Allocation failure is not deterministically injected.
+/// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+/// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+/// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct PlanId
 {
@@ -56,6 +69,18 @@ pub struct PlanId
 /// - ensures: the node contains no closure or recursive continuation.
 /// - provides: the data the render machine walks to emit bytes.
 /// - panics: none.
+/// - executable: none — the plan node is a data declaration; allocation,
+///   retention, checked lookup and release carry its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+///   identities expose exact node, reference count and typed absence. Aliased
+///   children, failed second retention and a refused parent allocation expose
+///   rollback counts; u32 reference/generation ceilings distinguish overflow
+///   from reuse. Allocation failure is not deterministically injected.
+/// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+/// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+/// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum PlanNode
 {
@@ -91,6 +116,18 @@ pub(crate) enum PlanNode
 ///   means another reference keeps the node live.
 /// - provides: the children a releasing caller must release in turn.
 /// - panics: none.
+/// - executable: none — the release result is a data declaration; allocation,
+///   retention, checked lookup and release carry its executable obligations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+///   identities expose exact node, reference count and typed absence. Aliased
+///   children, failed second retention and a refused parent allocation expose
+///   rollback counts; u32 reference/generation ceilings distinguish overflow
+///   from reuse. Allocation failure is not deterministically injected.
+/// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+/// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+/// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Released
 {
@@ -109,6 +146,25 @@ pub(crate) enum Released
 }
 
 /// One slot in the generational plan arena.
+///
+/// # Specification
+/// - requires: the slot is owned by one plan arena.
+/// - ensures: live references retain the current generation; released nodes
+///   have no references.
+/// - provides: one reusable plan identity with checked retention.
+/// - panics: none.
+/// - executable: none — this ownership record has no executable invocation;
+///   plan-arena transitions carry its predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+///   identities expose exact node, reference count and typed absence. Aliased
+///   children, failed second retention and a refused parent allocation expose
+///   rollback counts; u32 reference/generation ceilings distinguish overflow
+///   from reuse. Allocation failure is not deterministically injected.
+/// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+/// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+/// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct PlanSlot
 {
@@ -123,6 +179,25 @@ struct PlanSlot
 /// The private plan store held by one [`Resolved`] result.
 ///
 /// [`Resolved`]: crate::resolve::Resolved
+///
+/// # Specification
+/// - requires: operations use the owning resolution meter.
+/// - ensures: live identities match their slot generation and released slots
+///   may be reused only at a later generation.
+/// - provides: bounded first-order plan ownership for a resolved result.
+/// - panics: none.
+/// - executable: none — this ownership record has no executable invocation;
+///   plan-arena transitions carry its predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+///   identities expose exact node, reference count and typed absence. Aliased
+///   children, failed second retention and a refused parent allocation expose
+///   rollback counts; u32 reference/generation ceilings distinguish overflow
+///   from reuse. Allocation failure is not deterministically injected.
+/// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+/// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+/// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
 #[derive(Debug)]
 pub(crate) struct PlanArena
 {
@@ -141,6 +216,21 @@ impl PlanArena
     /// - ensures: the first allocation starts at slot zero.
     /// - provides: the retention store for one resolution.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+    ///   identities expose exact node, reference count and typed absence.
+    ///   Aliased children, failed second retention and a refused parent
+    ///   allocation expose rollback counts; u32 reference/generation ceilings
+    ///   distinguish overflow from reuse. Allocation failure is not
+    ///   deterministically injected.
+    /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+    /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+    /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
+    #[spec(
+        ensures: |ret| ret.slots.is_empty()
+                && ret.free.is_empty()
+    )]
     #[inline]
     pub(crate) const fn new() -> Self
     {
@@ -167,9 +257,28 @@ impl PlanArena
     /// advance.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a released slot is reused under a later generation,
-    ///   so the prior identity no longer resolves while the new one does.
+    /// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+    ///   identities expose exact node, reference count and typed absence.
+    ///   Aliased children, failed second retention and a refused parent
+    ///   allocation expose rollback counts; u32 reference/generation ceilings
+    ///   distinguish overflow from reuse. Allocation failure is not
+    ///   deterministically injected.
     /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+    /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+    /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
+    #[spec(
+        captures: before = (self.slots.len(), self.free.len(), self.free.last().copied(), self.free.last().and_then(|id| usize::try_from(id.slot).ok()).and_then(|index| self.slots.get(index)).map(|entry| entry.generation)),
+        ensures: |ret| ret.as_ref().map_or(true,
+            |id| usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)) == Some(&PlanSlot { generation: id.generation, references: 1, node: Maybe::Present(node) })
+                && before.2.map_or_else(|| usize::try_from(id.slot) == Ok(before.0)
+                && id.generation == 0
+                && self.slots.len() == before.0.saturating_add(1)
+                && self.free.len() == before.1,
+            |released| id.slot == released.slot
+                && before.3.and_then(|generation| generation.checked_add(1)) == Some(id.generation)
+                && self.slots.len() == before.0
+                && self.free.len().checked_add(1) == Some(before.1)))
+    )]
     pub(crate) fn alloc(
         &mut self,
         node: PlanNode,
@@ -216,7 +325,8 @@ impl PlanArena
     /// Allocates a sequence and retains its two child identities.
     ///
     /// # Specification
-    /// - requires: both children are live in this arena.
+    /// - requires: children are candidate identities; stale and out-of-range
+    ///   identities remain in the domain.
     /// - ensures: the sequence owns one reference to each child; on failure
     ///   both children keep exactly the references they had.
     /// - provides: the plan operation used by concatenation.
@@ -228,9 +338,25 @@ impl PlanArena
     /// every error [`Self::alloc`] returns.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a deep chain of sequences, each retaining the chain
-    ///   before it, is released down to an empty arena.
-    /// - witness: `plan::tests::plan_release_recycles_a_deep_sequence_iteratively`
+    /// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+    ///   identities expose exact node, reference count and typed absence.
+    ///   Aliased children, failed second retention and a refused parent
+    ///   allocation expose rollback counts; u32 reference/generation ceilings
+    ///   distinguish overflow from reuse. Allocation failure is not
+    ///   deterministically injected.
+    /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+    /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+    /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
+    #[spec(
+        captures: before = (usize::try_from(left.slot).ok().and_then(|index| self.slots.get(index)).copied(), usize::try_from(right.slot).ok().and_then(|index| self.slots.get(index)).copied()),
+        ensures: |ret| ret.as_ref().map_or_else(|_error| usize::try_from(left.slot).ok().and_then(|index| self.slots.get(index)).copied() == before.0
+                && usize::try_from(right.slot).ok().and_then(|index| self.slots.get(index)).copied() == before.1,
+            |id| self.get(*id) == Maybe::Present(PlanNode::Seq { left, right })
+                && before.0.is_some_and(|old| old.references.checked_add(if left == right { 2 }
+            else { 1 }).is_some_and(|references| usize::try_from(left.slot).ok().and_then(|index| self.slots.get(index)) == Some(&PlanSlot { references, ..old })))
+                && before.1.is_some_and(|old| old.references.checked_add(if left == right { 2 }
+            else { 1 }).is_some_and(|references| usize::try_from(right.slot).ok().and_then(|index| self.slots.get(index)) == Some(&PlanSlot { references, ..old }))))
+    )]
     pub(crate) fn alloc_seq(
         &mut self,
         left: PlanId,
@@ -264,9 +390,20 @@ impl PlanArena
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a recycled slot answers its new identity and refuses
-    ///   the old one.
+    /// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+    ///   identities expose exact node, reference count and typed absence.
+    ///   Aliased children, failed second retention and a refused parent
+    ///   allocation expose rollback counts; u32 reference/generation ceilings
+    ///   distinguish overflow from reuse. Allocation failure is not
+    ///   deterministically injected.
     /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+    /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+    /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
+    #[spec(
+        ensures: |ret| ret == usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).map_or(Maybe::Absent(lookup::Absent::OutOfRange),
+            |entry| if entry.generation == id.generation { entry.node }
+            else { Maybe::Absent(lookup::Absent::Released) })
+    )]
     #[inline]
     pub(crate) fn get(
         &self,
@@ -288,7 +425,7 @@ impl PlanArena
     /// Retains one live reference to a plan.
     ///
     /// # Specification
-    /// - requires: `id` is a current plan identity.
+    /// - requires: `id` is any candidate plan identity.
     /// - ensures: the reference count increases exactly once.
     /// - provides: memo and sequence retention.
     /// - fails: rejects stale identities or reference overflow.
@@ -297,6 +434,28 @@ impl PlanArena
     /// # Errors
     /// Returns [`RenderError::Invariant`] for an identity that is not live,
     /// and [`RenderError::ArithmeticOverflow`] when the count cannot advance.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+    ///   identities expose exact node, reference count and typed absence.
+    ///   Aliased children, failed second retention and a refused parent
+    ///   allocation expose rollback counts; u32 reference/generation ceilings
+    ///   distinguish overflow from reuse. Allocation failure is not
+    ///   deterministically injected.
+    /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+    /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+    /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
+    #[spec(
+        captures: before = (usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).copied(), self.slots.len(), self.free.len()),
+        ensures: |ret| self.slots.len() == before.1
+                && self.free.len() == before.2
+                && match before.0 { Some(old) if old.generation == id.generation
+                && matches!(old.node, Maybe::Present(_)) => old.references.checked_add(1).map_or_else(|| ret == Err(RenderError::ArithmeticOverflow { operation: RenderArithmetic::PlanRefcount })
+                && usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)) == Some(&old),
+            |references| ret.is_ok()
+                && usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)) == Some(&PlanSlot { references, ..old })), old => ret == Err(RenderError::Invariant { invariant: RenderInvariant::PlanIdentity })
+                && usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).copied() == old }
+    )]
     pub(crate) fn retain(
         &mut self,
         id: PlanId,
@@ -319,7 +478,7 @@ impl PlanArena
     /// returned children, so release records never need a second stack.
     ///
     /// # Specification
-    /// - requires: `id` is a current plan identity.
+    /// - requires: `id` is any candidate plan identity.
     /// - ensures: the count drops by one; at zero the slot is freed for reuse
     ///   and the live-plan gauge drops by one.
     /// - provides: one release step, its children returned rather than walked.
@@ -332,12 +491,32 @@ impl PlanArena
     /// [`RenderError::AllocationFailed`] when the free list cannot grow.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are the shared and freed outcomes and
-    ///   slot reuse: a recycled slot refuses its old identity, and a chain of a
-    ///   hundred thousand sequences, released step by step through the children
-    ///   each step returns, leaves every slot free.
+    /// - hypothesis: L3 — shared and final releases expose reference counts,
+    ///   returned child identities, stale lookup and reuse. An aliased sequence
+    ///   returns its child twice because it owns two references. Premature
+    ///   freeing, wrong child order, peak-counter decrement and recursive
+    ///   release change these observations; a hundred-thousand-sequence witness
+    ///   runs on a bounded native stack.
     /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+    /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+    /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
     /// - witness: `plan::tests::plan_release_recycles_a_deep_sequence_iteratively`
+    #[spec(
+        captures: before = (usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).copied(), self.slots.len(), self.free.len(), meter.usage()),
+        ensures: |ret| self.slots.len() == before.1
+                && meter.usage() == before.3
+                && ret.as_ref().map_or_else(|_error| self.free.len() == before.2
+                && usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).copied() == before.0,
+            |released| before.0.is_some_and(|old| old.generation == id.generation
+                && matches!(old.node, Maybe::Present(_))
+                && if old.references > 1 { *released == Released::Shared
+                && self.free.len() == before.2
+                && usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)) == Some(&PlanSlot { references: old.references.saturating_sub(1), ..old }) }
+            else { self.free.len() == before.2.saturating_add(1)
+                && self.free.last() == Some(&id)
+                && usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)) == Some(&PlanSlot { generation: old.generation, references: 0, node: Maybe::Absent(lookup::Absent::Released) })
+                && *released == match old.node { Maybe::Present(PlanNode::Seq { left, right }) => Released::FreedSequence { left, right }, _ => Released::Freed } }))
+    )]
     pub(crate) fn release_one(
         &mut self,
         id: PlanId,
@@ -383,6 +562,23 @@ impl PlanArena
     ///
     /// # Errors
     /// Returns [`RenderError::Invariant`] for a slot outside the arena.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+    ///   identities expose exact node, reference count and typed absence.
+    ///   Aliased children, failed second retention and a refused parent
+    ///   allocation expose rollback counts; u32 reference/generation ceilings
+    ///   distinguish overflow from reuse. Allocation failure is not
+    ///   deterministically injected.
+    /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+    /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+    /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
+    #[spec(
+        captures: before = usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).map(|entry| &raw const *entry),
+        ensures: |ret| ret.as_ref().map_or_else(|error| before.is_none()
+                && *error == RenderError::Invariant { invariant: RenderInvariant::PlanIdentity },
+            |entry| before.is_some_and(|expected| core::ptr::eq(&raw const **entry, expected)))
+    )]
     fn entry_mut(
         &mut self,
         id: PlanId,
@@ -408,6 +604,24 @@ impl PlanArena
     ///
     /// # Errors
     /// Returns [`RenderError::Invariant`] for an identity that is not live.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh, shared, released, recycled and out-of-range
+    ///   identities expose exact node, reference count and typed absence.
+    ///   Aliased children, failed second retention and a refused parent
+    ///   allocation expose rollback counts; u32 reference/generation ceilings
+    ///   distinguish overflow from reuse. Allocation failure is not
+    ///   deterministically injected.
+    /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
+    /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
+    /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
+    #[spec(
+        captures: before = usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).filter(|entry| entry.generation == id.generation
+                && matches!(entry.node, Maybe::Present(_))).map(|entry| &raw const *entry),
+        ensures: |ret| ret.as_ref().map_or_else(|error| before.is_none()
+                && *error == RenderError::Invariant { invariant: RenderInvariant::PlanIdentity },
+            |entry| before.is_some_and(|expected| core::ptr::eq(&raw const **entry, expected)))
+    )]
     fn live_mut(
         &mut self,
         id: PlanId,
@@ -499,5 +713,182 @@ mod tests
         assert_eq!(released.0, 200_001_usize, "every node took its own slot");
         assert_eq!(released.1, released.0, "every slot was freed");
         assert_eq!(released.2, Maybe::Absent(lookup::Absent::Released));
+    }
+
+    /// A sequence owns two references even when both edges alias, and failed
+    /// construction restores them.
+    #[test]
+    fn sequence_retention_preserves_aliases_and_rolls_back_refusals()
+    {
+        let mut arena = PlanArena::new();
+        let mut budget = meter();
+        let child = arena.alloc(PlanNode::Empty, &mut budget).expect("child");
+        let parent = arena
+            .alloc_seq(child, child, &mut budget)
+            .expect("aliased sequence");
+        assert_eq!(arena.slots.first().expect("child slot").references, 3);
+        assert_eq!(
+            arena.release_one(parent, &mut budget),
+            Ok(Released::FreedSequence {
+                left: child,
+                right: child
+            })
+        );
+        assert_eq!(arena.release_one(child, &mut budget), Ok(Released::Shared));
+        assert_eq!(arena.release_one(child, &mut budget), Ok(Released::Shared));
+        assert_eq!(arena.get(child), Maybe::Present(PlanNode::Empty));
+        assert_eq!(arena.release_one(child, &mut budget), Ok(Released::Freed));
+        assert_eq!(arena.get(child), Maybe::Absent(lookup::Absent::Released));
+
+        let mut arena = PlanArena::new();
+        let mut budget = meter();
+        let left = arena
+            .alloc(PlanNode::Empty, &mut budget)
+            .expect("left child");
+        let stale = arena
+            .alloc(PlanNode::Text(TextId::from(1_u32)), &mut budget)
+            .expect("second child");
+        assert_eq!(arena.release_one(stale, &mut budget), Ok(Released::Freed));
+        let before = *arena.slots.first().expect("left slot");
+        for right in [stale, PlanId {
+            slot: u32::MAX,
+            generation: 0,
+        }] {
+            assert_eq!(
+                arena.alloc_seq(left, right, &mut budget),
+                Err(RenderError::Invariant {
+                    invariant: RenderInvariant::PlanIdentity
+                })
+            );
+            assert_eq!(arena.slots.first(), Some(&before));
+            assert_eq!(arena.get(left), Maybe::Present(PlanNode::Empty));
+        }
+
+        let mut arena = PlanArena::new();
+        let mut budget = RenderMeter::new(RenderLimits {
+            max_plan_nodes_created: crate::units::MaxPlanNodesCreated::from(2_u64),
+            ..RenderLimits::default()
+        });
+        let left = arena
+            .alloc(PlanNode::Empty, &mut budget)
+            .expect("left child");
+        let right = arena
+            .alloc(PlanNode::Text(TextId::from(7_u32)), &mut budget)
+            .expect("right child");
+        let before = budget.usage();
+        assert_eq!(
+            arena.alloc_seq(left, right, &mut budget),
+            Err(RenderError::LimitExceeded {
+                kind: crate::error::RenderLimitKind::PlanNodesCreated,
+                limit: crate::units::LimitBound::from(2_u64)
+            })
+        );
+        assert_eq!(budget.usage(), before);
+        assert_eq!(
+            arena.slots.as_slice(),
+            [
+                PlanSlot {
+                    generation: left.generation,
+                    references: 1,
+                    node: Maybe::Present(PlanNode::Empty)
+                },
+                PlanSlot {
+                    generation: right.generation,
+                    references: 1,
+                    node: Maybe::Present(PlanNode::Text(TextId::from(7_u32)))
+                }
+            ]
+            .as_slice()
+        );
+    }
+
+    /// Reference overflow and generation exhaustion refuse without wrapping or
+    /// exposing stale nodes.
+    #[test]
+    fn reference_and_generation_ceilings_preserve_identity_boundaries()
+    {
+        let mut arena = PlanArena::new();
+        let mut budget = RenderMeter::new(RenderLimits {
+            max_live_plan_nodes: crate::units::MaxLivePlanNodes::from(1_u64),
+            ..RenderLimits::default()
+        });
+        let id = arena
+            .alloc(PlanNode::Empty, &mut budget)
+            .expect("first node");
+        let outside = PlanId {
+            slot: 1,
+            generation: 0,
+        };
+        assert_eq!(
+            arena.get(outside),
+            Maybe::Absent(lookup::Absent::OutOfRange)
+        );
+        assert_eq!(
+            arena.entry_mut(outside).map(|entry| entry.node),
+            Err(RenderError::Invariant {
+                invariant: RenderInvariant::PlanIdentity
+            })
+        );
+        assert_eq!(
+            arena.live_mut(outside).map(|entry| entry.node),
+            Err(RenderError::Invariant {
+                invariant: RenderInvariant::PlanIdentity
+            })
+        );
+        arena.slots.first_mut().expect("live slot").references = u32::MAX;
+        let before = *arena.slots.first().expect("live slot");
+        assert_eq!(
+            arena.retain(id),
+            Err(RenderError::ArithmeticOverflow {
+                operation: RenderArithmetic::PlanRefcount
+            })
+        );
+        assert_eq!(arena.slots.first(), Some(&before));
+        arena.slots.first_mut().expect("live slot").references = u32::MAX.saturating_sub(1);
+        let before = *arena.slots.first().expect("live slot");
+        assert_eq!(
+            arena.alloc_seq(id, id, &mut budget),
+            Err(RenderError::ArithmeticOverflow {
+                operation: RenderArithmetic::PlanRefcount
+            })
+        );
+        assert_eq!(arena.slots.first(), Some(&before));
+        arena.slots.first_mut().expect("live slot").references = 1;
+        assert_eq!(arena.release_one(id, &mut budget), Ok(Released::Freed));
+        let current = arena
+            .alloc(PlanNode::Text(TextId::from(3_u32)), &mut budget)
+            .expect("release returns live quota");
+        assert_eq!(arena.get(id), Maybe::Absent(lookup::Absent::Released));
+        assert_eq!(
+            arena.entry_mut(id).map(|entry| entry.node),
+            Ok(Maybe::Present(PlanNode::Text(TextId::from(3_u32))))
+        );
+        assert_eq!(
+            arena.live_mut(id).map(|entry| entry.node),
+            Err(RenderError::Invariant {
+                invariant: RenderInvariant::PlanIdentity
+            })
+        );
+        assert_eq!(arena.release_one(current, &mut budget), Ok(Released::Freed));
+        let exhausted = PlanId {
+            slot: current.slot,
+            generation: u32::MAX,
+        };
+        arena.slots.first_mut().expect("released slot").generation = u32::MAX;
+        *arena.free.last_mut().expect("released identity") = exhausted;
+        assert_eq!(
+            arena.alloc(PlanNode::Empty, &mut budget),
+            Err(RenderError::ArithmeticOverflow {
+                operation: RenderArithmetic::PlanGeneration
+            })
+        );
+        assert_eq!(
+            arena.slots.first().expect("exhausted slot").generation,
+            u32::MAX
+        );
+        assert_eq!(
+            arena.get(exhausted),
+            Maybe::Absent(lookup::Absent::Released)
+        );
     }
 }

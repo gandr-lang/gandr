@@ -5,6 +5,7 @@
 use alloc::collections::BTreeSet;
 use core::error::Error;
 
+use anodized::spec;
 use gandr_theory_graphs::Assoc;
 use gandr_theory_graphs::Bound;
 use gandr_theory_graphs::NodeCount;
@@ -27,6 +28,21 @@ use proptest::prelude::*;
 ///   right-mid, tight.
 /// - fails: never for this fixed relation.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For this fixed four-group fixture, the output observer checks
+///   dense identities, associations and every diamond edge. L3 pair, name and
+///   boundary observations distinguish a chain mistaken for a diamond or
+///   swapped middle groups. The witness is finite and does not establish
+///   behavior of arbitrary precedence relations.
+/// - witness: `tests::prec::prec_dag_contract`
+/// - witness: `tests::prec::prec_dag_size_and_boundary_contract`
+#[spec(ensures: |ref result| result.as_ref().is_ok_and(|&(ref dag, [loose, left_mid, right_mid, tight])|
+    usize::from(dag.len()) == 4
+    && [loose, left_mid, right_mid, tight].into_iter().map(|prec| u16::from(prec.index())).eq(0_u16..4)
+    && dag.assoc(loose) == Some(Assoc::Non) && dag.assoc(left_mid) == Some(Assoc::Left)
+    && dag.assoc(right_mid) == Some(Assoc::Right) && dag.assoc(tight) == Some(Assoc::Non)
+    && dag.edges().eq([(left_mid, loose), (right_mid, loose), (tight, left_mid), (tight, right_mid)])))]
 fn diamond() -> Result<(PrecDag, [Prec; 4]), Box<dyn Error>>
 {
     let mut spec = PrecSpec::new();
@@ -46,10 +62,30 @@ fn diamond() -> Result<(PrecDag, [Prec; 4]), Box<dyn Error>>
 /// tighter than the one before.
 ///
 /// # Specification
-/// - requires: nothing.
+/// - requires: the association count fits the group-identity capacity.
 /// - ensures: returns the DAG and its groups in insertion order.
-/// - fails: never for a chain.
+/// - fails: a builder refuses the fixture.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For association sequences within group capacity, the predicate
+///   observes dense identities, each association, the complete chain and
+///   reverse linear extension. L3 integer-chain and L2 generated association
+///   comparisons distinguish omitted links and an incorrect reflexive policy.
+///   Allocation refusal and sequences beyond the fixture domain are not
+///   generated.
+/// - witness: `tests::prec::prec_integer_chain_oracle`
+/// - witness: `tests::prec::lt_gt_duality_for_distinct_chain_nodes`
+/// - witness: `tests::prec::associativity_affects_reflexive_pairs_only`
+#[spec(
+    requires: assocs.len() <= usize::from(u16::MAX).saturating_add(1),
+    ensures: |ref result| result.as_ref().is_ok_and(|pair| pair.1.len() == assocs.len()
+        && usize::from(pair.0.len()) == assocs.len()
+        && pair.1.iter().enumerate().all(|(position, &prec)| usize::from(u16::from(prec.index())) == position
+            && pair.0.assoc(prec) == assocs.get(position).copied())
+        && pair.0.edges().eq(pair.1.iter().copied().zip(pair.1.iter().copied().skip(1)).map(|(looser, tighter)| (tighter, looser)))
+        && pair.0.linear_extension().iter().copied().eq(pair.1.iter().rev().copied())),
+)]
 fn integer_chain(assocs: &[Assoc]) -> Result<(PrecDag, Vec<Prec>), Box<dyn Error>>
 {
     let mut spec = PrecSpec::new();
@@ -72,6 +108,16 @@ fn integer_chain(assocs: &[Assoc]) -> Result<(PrecDag, Vec<Prec>), Box<dyn Error
 /// - ensures: returns the cycle the refusal carries.
 /// - panics: when the specification builds or is refused for another reason,
 ///   which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: For cyclic fixtures, L3 self and longer cycles observe closure
+///   and adjacency of the returned refusal evidence. An acyclic fixture is also
+///   checked to fail rather than fabricate a witness. This helper does not
+///   independently establish cycle absence or distinguish allocator failures.
+/// - witness: `tests::prec::prec_cycle_witness_contract`
+/// - witness: `tests::prec::cycle_observers_refuse_invalid_evidence`
+#[spec(ensures: |ref cycle| cycle.witness.len() >= 2 && cycle.witness.first() == cycle.witness.last()
+    && cycle.witness.windows(2).all(|pair| matches!(*pair, [source, target] if spec.edges().any(|edge| edge == (source, target)))))]
 fn expect_cycle(spec: &PrecSpec) -> PrecCycle
 {
     match PrecDag::build(spec) {
@@ -88,6 +134,17 @@ fn expect_cycle(spec: &PrecSpec) -> PrecCycle
 /// - ensures: returns only when the witness has two or more groups, closes, and
 ///   every consecutive pair is an edge.
 /// - panics: when any of those fails.
+///
+/// # Adequacy
+/// - hypothesis: For arbitrary claimed cycles and edge lists, the normal-return
+///   observer checks length, closure and every adjacency. L3 valid self and
+///   longer cycles plus empty, open and foreign-edge refusals distinguish a
+///   no-op checker and partial validation. It does not require a simple cycle
+///   or prove that the edge list is the whole graph.
+/// - witness: `tests::prec::prec_cycle_witness_contract`
+/// - witness: `tests::prec::cycle_observers_refuse_invalid_evidence`
+#[spec(ensures: |_| witness.len() >= 2 && witness.first() == witness.last()
+    && witness.windows(2).all(|pair| matches!(*pair, [source, target] if edges.contains(&(source, target)))))]
 fn assert_closed_adjacent_cycle(
     witness: &[Prec],
     edges: &[(Prec, Prec)],
@@ -441,6 +498,7 @@ fn duplicate_edge_canonicalization_and_invalid_edges() -> Result<(), Box<dyn Err
     spec.add_edge(tight, loose)?;
     spec.add_edge(tight, loose)?;
     assert_eq!(vec![(tight, loose)], spec.edges().collect::<Vec<_>>());
+    let before_refusal = spec.clone();
     assert_eq!(
         Err(PrecSpecError::InvalidEdge {
             tighter: Prec::new(PrecIndex::from(99)),
@@ -449,12 +507,14 @@ fn duplicate_edge_canonicalization_and_invalid_edges() -> Result<(), Box<dyn Err
         }),
         spec.add_edge(Prec::new(PrecIndex::from(99)), loose)
     );
+    assert_eq!(spec, before_refusal);
     assert_eq!(
         Err(PrecSpecError::DuplicateName {
             name: "tight".to_owned(),
         }),
         spec.insert("tight", Assoc::Left)
     );
+    assert_eq!(spec, before_refusal);
     assert_eq!(PrecGroupCount::from(2), spec.len());
     let dag = PrecDag::build(&spec)?;
     assert_eq!(vec![(tight, loose)], dag.edges().collect::<Vec<_>>());
@@ -473,6 +533,13 @@ fn capacity_beyond_u16_is_typed() -> Result<(), Box<dyn Error>>
         Err(PrecSpecError::CapacityExceeded),
         spec.insert("overflow", Assoc::Non)
     );
+    assert_eq!(
+        Err(PrecSpecError::DuplicateName {
+            name: "p0".to_owned()
+        }),
+        spec.insert("p0", Assoc::Right)
+    );
+    assert_eq!(spec.assoc(Prec::new(PrecIndex::from(0))), Some(Assoc::Non));
     assert_eq!(PrecGroupCount::from(0x1_0000_usize), spec.len());
     Ok(())
 }
@@ -674,4 +741,19 @@ proptest! {
             prop_assert_eq!(gt, dag.gt(alpha_node, omega_node, Assoc::Right));
         }
     }
+}
+
+#[test]
+fn cycle_observers_refuse_invalid_evidence()
+{
+    let a = Prec::new(PrecIndex::from(0));
+    let b = Prec::new(PrecIndex::from(1));
+    let c = Prec::new(PrecIndex::from(2));
+    let edges = [(a, b), (b, a)];
+    for witness in [vec![], vec![a, b], vec![a, c, a]] {
+        assert!(
+            std::panic::catch_unwind(|| assert_closed_adjacent_cycle(&witness, &edges)).is_err()
+        );
+    }
+    assert!(std::panic::catch_unwind(|| expect_cycle(&PrecSpec::new())).is_err());
 }

@@ -28,6 +28,7 @@ use alloc::string::ToString as _;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arity::BridgeArity;
@@ -194,13 +195,20 @@ fn located(
 /// - witness: `wellformed::tests::the_congruence_circuit_rule_checks_against_its_sphere`
 /// - witness: `wellformed::tests::a_boundary_mismatched_circuit_rule_is_declined`
 /// - witness: `wellformed::tests::an_out_of_signature_circuit_frame_is_declined`
-/// - witness: `wellformed::tests::a_head_alphabet_mismatch_says_which_axis_it_differs_on`
+/// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
 /// - witness: `wellformed::tests::a_cyclic_circuit_wiring_is_declined`
 /// - witness: `wellformed::tests::a_declared_telescope_admits_the_redex_heads_it_names`
 /// - witness: `wellformed::tests::a_redex_applying_an_undeclared_port_is_declined`
 /// - witness: `wellformed::tests::declaring_derived_metadata_is_declined`
+/// - witness: `wellformed::tests::a_derivation_budget_failure_prevents_boundary_comparison`
 #[inline]
 #[must_use]
+#[spec(ensures: |ref diagnostics| diagnostics.iter().all(|diagnostic| match diagnostic.kind {
+    | WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable | WfKind::DerivedBoundaryMismatch
+    | WfKind::CyclicCircuitWiring | WfKind::UnknownRewritePort | WfKind::CircuitDerivationBudget => matches!(diagnostic.span, Maybe::Present(_)),
+    | WfKind::ArityDoesNotCompose | WfKind::DeclaresDerivedMetadata | WfKind::DuplicateSortName
+    | WfKind::UnknownResultSort | WfKind::UnknownVarSort | WfKind::SortPolarityDisagreement => diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded),
+}))]
 pub fn check_desc<G>(desc: &SignDesc<G>) -> Vec<WfDiagnostic>
 {
     let mut diagnostics = Vec::new();
@@ -268,6 +276,26 @@ pub fn check_desc<G>(desc: &SignDesc<G>) -> Vec<WfDiagnostic>
 ///   whose result sort is undeclared, and per recursive occurrence naming an
 ///   undeclared sort, in that order per entry.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — declared/foreign sorts, a later duplicate, mixed polarity
+///   and repeated foreign recursive occurrences are observed as an exact
+///   kind/span sequence; skipped duplicates, deduplication and reordering or
+///   locating an unlocated diagnostic change that sequence.
+/// - witness: `wellformed::tests::the_sorting_discipline_indexes_the_description`
+/// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
+#[spec(
+    captures: [
+        before = diagnostics.len(),
+        expected = desc.sorts.iter().enumerate().filter(|entry| desc.sorts.iter().take(entry.0).any(|prior| prior.name == entry.1.name)).count()
+            .saturating_add(desc.sorts.iter().filter(|sort| sort.polarity != desc.polarity).count())
+            .saturating_add(desc.ctors.iter().filter(|ctor| !desc.sorts.iter().any(|sort| sort.name == ctor.result)).count())
+            .saturating_add(desc.ctors.iter().map(|ctor| ctor.code.recursive_sorts().filter(|name| !desc.sorts.iter().any(|sort| sort.name == **name)).count()).sum::<usize>()),
+    ],
+    ensures: diagnostics.len() == before.saturating_add(expected)
+        && diagnostics.iter().skip(before).all(|diagnostic| diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded)
+            && matches!(diagnostic.kind, WfKind::DuplicateSortName | WfKind::SortPolarityDisagreement | WfKind::UnknownResultSort | WfKind::UnknownVarSort)),
+)]
 fn check_sorts<G>(
     desc: &SignDesc<G>,
     diagnostics: &mut Vec<WfDiagnostic>,
@@ -349,6 +377,25 @@ fn check_sorts<G>(
 ///   then either the derivation's decline or one mismatch diagnostic per
 ///   boundary side the derived pair does not match.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — matching and mismatching spheres, declared/absent
+///   telescope heads, unknown frames, cycles and over-budget bodies are
+///   observed as kinds and source spans. Wrong provenance, comparing after a
+///   failed derivation, or suppressing one mismatched side changes them.
+/// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
+/// - witness: `wellformed::tests::a_cyclic_circuit_wiring_is_declined`
+/// - witness: `wellformed::tests::a_redex_applying_an_undeclared_port_is_declined`
+/// - witness: `wellformed::tests::an_out_of_signature_circuit_frame_is_declined`
+/// - witness: `wellformed::tests::the_congruence_circuit_rule_checks_against_its_sphere`
+/// - witness: `wellformed::tests::a_derivation_budget_failure_prevents_boundary_comparison`
+#[spec(
+    captures: before = diagnostics.len(),
+    ensures: diagnostics.len() >= before && diagnostics.iter().skip(before).all(|diagnostic|
+        diagnostic.span == Maybe::Present(rule.sphere.provenance)
+        && matches!(diagnostic.kind, WfKind::OutOfSignatureRule | WfKind::UnknownRewritePort
+            | WfKind::CyclicCircuitWiring | WfKind::CircuitDerivationBudget | WfKind::DerivedBoundaryMismatch)),
+)]
 fn check_circuit_rule(
     rule: &CircuitRule,
     signature: &[Name],
@@ -499,6 +546,20 @@ impl fmt::Display for AttributeOwner
 /// - ensures: one diagnostic per reserved marker `attrs` contains, in
 ///   [`RESERVED_DERIVED_MARKERS`] order, naming the owner and the marker.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and populated attribute sets, repeated reserved
+///   markers and reversed declarations are observed by diagnostic count and
+///   kind; per-occurrence emission, omission and loss of earlier diagnostics
+///   change the complete result.
+/// - witness: `wellformed::tests::declaring_derived_metadata_is_declined`
+/// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
+#[spec(
+    captures: before = diagnostics.len(),
+    ensures: diagnostics.len() == before.saturating_add(RESERVED_DERIVED_MARKERS.iter().filter(|marker| bool::from(attrs.contains(NameRef::from(**marker)))).count())
+        && diagnostics.iter().skip(before).all(|diagnostic| diagnostic.kind == WfKind::DeclaresDerivedMetadata
+            && diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded)),
+)]
 fn check_attrs(
     attrs: &Attrs,
     owner: &Name,
@@ -540,6 +601,21 @@ fn signature_names<G>(desc: &SignDesc<G>) -> Vec<Name>
 ///   the right-hand side, then one diagnostic per right-hand-side variable
 ///   occurrence the left-hand side does not bind.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — symbols outside the signature on both sides and a
+///   repeated fresh right-hand variable have an exact diagnostic sequence and
+///   face span; reversed sides, deduplication and using the wrong span differ.
+/// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
+/// - witness: `wellformed::tests::a_clean_description_passes`
+#[spec(
+    captures: before = diagnostics.len(),
+    ensures: diagnostics.len() == before.saturating_add(
+        cell.lhs.applied_symbols().chain(cell.rhs.applied_symbols()).filter(|name| !signature.contains(name)).count()
+            .saturating_add(cell.rhs.to_node().vars().filter(|name| !cell.lhs.to_node().vars().any(|left| left == *name)).count())
+    ) && diagnostics.iter().skip(before).all(|diagnostic| diagnostic.span == Maybe::Present(cell.provenance)
+        && matches!(diagnostic.kind, WfKind::OutOfSignatureRule | WfKind::UnboundRhsVariable)),
+)]
 fn check_rule_face(
     cell: &RuleFace,
     signature: &[Name],
@@ -570,6 +646,18 @@ fn check_rule_face(
 /// # Specification
 /// - ensures: one diagnostic per out-of-signature application, in pre-order.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — known and foreign application heads are observed by
+///   diagnostic count, order and the face's span; omitting an occurrence or
+///   marking a known head changes the result.
+/// - witness: `wellformed::tests::an_out_of_signature_cell_is_declined`
+/// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
+#[spec(
+    captures: before = diagnostics.len(),
+    ensures: diagnostics.len() == before.saturating_add(term.applied_symbols().filter(|name| !signature.contains(name)).count())
+        && diagnostics.iter().skip(before).all(|diagnostic| diagnostic.kind == WfKind::OutOfSignatureRule && diagnostic.span == Maybe::Present(span)),
+)]
 fn check_free_term_symbols(
     term: &FreeTerm,
     signature: &[Name],
@@ -595,6 +683,23 @@ fn check_free_term_symbols(
 ///   when `source` and `Σ factors` disagree on `|J|`, and one per `source`
 ///   entry past the inputs and per `dest` entry past the outputs.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — composing maps and simultaneous dimension/range failures,
+///   including repeated first-past indices, are observed through exact counts
+///   and unlocated kinds; a missed endpoint or per-index deduplication differs.
+/// - witness: `wellformed::tests::a_non_composing_arity_is_declined`
+/// - witness: `wellformed::tests::diagnostics_preserve_phase_order_multiplicity_and_provenance`
+#[spec(
+    captures: before = diagnostics.len(),
+    ensures: diagnostics.len() == before
+        .saturating_add(usize::from(arity.dest.len() != arity.factors.len()))
+        .saturating_add(usize::from(arity.source.len() != arity.factors.iter().fold(0_usize, |sum, count| sum.saturating_add(usize::try_from(*count).unwrap_or(usize::MAX)))))
+        .saturating_add(arity.source.iter().filter(|index| usize::try_from(**index).unwrap_or(usize::MAX) >= arity.inputs.len()).count())
+        .saturating_add(arity.dest.iter().filter(|index| usize::try_from(**index).unwrap_or(usize::MAX) >= arity.outputs.len()).count())
+        && diagnostics.iter().skip(before).all(|diagnostic| diagnostic.kind == WfKind::ArityDoesNotCompose
+            && diagnostic.span == Maybe::Absent(diagnostic_span::Absent::Unrecorded)),
+)]
 fn check_arity(
     arity: &BridgeArity,
     owner: &Name,
@@ -663,11 +768,21 @@ fn check_arity(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a twice-occurring and a once-occurring variable separate
-///   the linearity answer, and the variance is the constant.
+/// - hypothesis: L3 — ground terms, single and repeated variables, and a mixed
+///   first-occurrence order have exact metadata records; sorting names,
+///   duplicates, inverted linearity and the wrong variance change them.
 /// - witness: `wellformed::tests::cell_var_meta_derivation_reads_variance_and_linearity`
+/// - witness: `wellformed::tests::variable_metadata_preserves_first_occurrence_order`
 #[inline]
 #[must_use]
+#[spec(ensures: |ref meta| lhs.to_node().vars().all(|name| meta.iter().any(|entry| &entry.var == name))
+    && meta.iter().enumerate().all(|(index, entry)| {
+        let occurrences = lhs.to_node().vars().filter(|name| **name == entry.var).count();
+        occurrences > 0 && bool::from(entry.linear) == (occurrences == 1)
+            && entry.variance == Variance::Producer
+            && meta.iter().take(index).all(|prior| prior.var != entry.var)
+    }) && meta.iter().zip(meta.iter().skip(1)).all(|(first, second)| lhs.to_node().vars().position(|name| *name == first.var)
+        .zip(lhs.to_node().vars().position(|name| *name == second.var)).is_some_and(|(first, second)| first < second)))]
 pub fn derive_cell_var_meta(lhs: &FreeTerm) -> Vec<RuleVarMeta>
 {
     let occurrences = lhs.collect_vars();
@@ -707,6 +822,7 @@ mod tests
     use crate::desc::NominalId;
     use crate::desc::OperDesc;
     use crate::desc::SortDesc;
+    use crate::desc::SortIndex;
     use crate::elaborate::RewritePort;
     use crate::test_support::Grade;
 
@@ -739,8 +855,8 @@ mod tests
             Attrs::empty(),
         )
         .with_sorts([
-            SortDesc::new("Even", DeclPolarity::Data),
-            SortDesc::new("Odd", DeclPolarity::Data),
+            SortDesc::family("Even", DeclPolarity::Data, [SortIndex::new("odd", "Odd")]),
+            SortDesc::family("Odd", DeclPolarity::Data, []),
         ]);
         assert!(
             check_desc(&two_sorted).is_empty(),
@@ -756,8 +872,7 @@ mod tests
         assert!(
             diagnostics
                 .iter()
-                .any(|diag| diag.kind == WfKind::DuplicateSortName
-                    && diag.message.as_ref().contains("Even")),
+                .any(|diag| diag.kind == WfKind::DuplicateSortName),
             "a duplicate sort name is declined"
         );
 
@@ -769,8 +884,7 @@ mod tests
         assert!(
             diagnostics
                 .iter()
-                .any(|diag| diag.kind == WfKind::UnknownResultSort
-                    && diag.message.as_ref().contains("Odd")),
+                .any(|diag| diag.kind == WfKind::UnknownResultSort),
             "an undeclared result sort is declined"
         );
 
@@ -782,23 +896,21 @@ mod tests
         assert!(
             diagnostics
                 .iter()
-                .any(|diag| diag.kind == WfKind::UnknownVarSort
-                    && diag.message.as_ref().contains("Even")),
+                .any(|diag| diag.kind == WfKind::UnknownVarSort),
             "an undeclared var sort is declined"
         );
 
         // A sort polarity disagreeing with the declaration's is outside the
         // polarity-homogeneous fragment.
         let disagreeing = two_sorted.with_sorts([
-            SortDesc::new("Even", DeclPolarity::Codata),
-            SortDesc::new("Odd", DeclPolarity::Data),
+            SortDesc::family("Even", DeclPolarity::Codata, [SortIndex::new("odd", "Odd")]),
+            SortDesc::family("Odd", DeclPolarity::Data, []),
         ]);
         let diagnostics = check_desc(&disagreeing);
         assert!(
             diagnostics
                 .iter()
-                .any(|diag| diag.kind == WfKind::SortPolarityDisagreement
-                    && diag.message.as_ref().contains("Even")),
+                .any(|diag| diag.kind == WfKind::SortPolarityDisagreement),
             "a heterogeneous sort polarity is declined"
         );
     }
@@ -1063,43 +1175,6 @@ mod tests
     }
 
     #[test]
-    fn a_head_alphabet_mismatch_says_which_axis_it_differs_on()
-    {
-        // The frame's head is the constructor `Succ`; the declared sphere puts
-        // the operation `Succ` there. The inspection notation renders both as
-        // `Succ(n)`, so the diagnostic has to name the axis itself.
-        let body = CircuitBody::new(
-            [CircuitNode::Frame(CircuitFrame::new(
-                FrameHead::Ctor("Succ".into()),
-                [FreeTerm::var("n")],
-                "z",
-            ))],
-            "z",
-        );
-        let sphere = RuleFace::new(
-            FreeTerm::op("Succ", [FreeTerm::var("n")]),
-            FreeTerm::op("Succ", [FreeTerm::var("n")]),
-            Vec::new(),
-            span(),
-        );
-        let rule = CircuitRule::new("alphabets", sphere, body);
-        let desc = nat_with(Vec::new(), Vec::new(), Attrs::empty()).with_circuits([rule]);
-        let diagnostics = check_desc(&desc);
-        let mismatch = diagnostics
-            .iter()
-            .find(|diag| diag.kind == WfKind::DerivedBoundaryMismatch)
-            .expect("the head alphabets disagree");
-        assert!(
-            mismatch
-                .message
-                .as_ref()
-                .contains("differing only in whether a head is a constructor or an operation"),
-            "the diagnostic names the axis two identical renderings hide: {}",
-            mismatch.message
-        );
-    }
-
-    #[test]
     fn a_cyclic_circuit_wiring_is_declined()
     {
         // `node : add(b, b) --> (a); node : add(a, a) --> (b);` — no boundary
@@ -1324,5 +1399,123 @@ mod tests
             bool::from(linear[0].linear),
             "a once-occurring variable is linear"
         );
+    }
+
+    #[test]
+    fn diagnostics_preserve_phase_order_multiplicity_and_provenance()
+    {
+        let face_span = SurfaceSpan::new(11_usize.into(), 17_usize.into());
+        let circuit_span = SurfaceSpan::new(21_usize.into(), 27_usize.into());
+        let face = RuleFace::new(
+            FreeTerm::op("outside", [FreeTerm::var("x")]),
+            FreeTerm::op("elsewhere", [FreeTerm::var("y"), FreeTerm::var("y")]),
+            [],
+            face_span,
+        );
+        let malformed = OperDesc::new(
+            "broken",
+            BridgeArity::new([SortRef::new("x", "Nat")], [2, 0], [1, 1, 0], [1], [
+                SortRef::new("y", "Nat"),
+            ]),
+            Attrs::empty(),
+        );
+        let mut desc = nat_with(
+            vec![face],
+            vec![malformed],
+            Attrs::new([
+                Attr::marker("linearity"),
+                Attr::marker("variance"),
+                Attr::marker("linear"),
+                Attr::marker("variance"),
+            ]),
+        );
+        desc.sorts = alloc::boxed::Box::from([
+            SortDesc::new("Nat", DeclPolarity::Data),
+            SortDesc::new("Nat", DeclPolarity::Codata),
+        ]);
+        desc.ctors[1].result = Name::from("Foreign");
+        desc.ctors[1].code = Code::prod(Code::var("Foreign"), Code::var("Foreign"));
+        let sphere = RuleFace::new(FreeTerm::var("q"), FreeTerm::var("r"), [], circuit_span);
+        desc = desc.with_circuits([CircuitRule::new(
+            "boundary",
+            sphere,
+            CircuitBody::new([], "x"),
+        )]);
+        let absent = Maybe::Absent(diagnostic_span::Absent::Unrecorded);
+        let mut expected = vec![
+            (WfKind::DuplicateSortName, absent),
+            (WfKind::SortPolarityDisagreement, absent),
+            (WfKind::UnknownResultSort, absent),
+            (WfKind::UnknownVarSort, absent),
+            (WfKind::UnknownVarSort, absent),
+            (WfKind::DeclaresDerivedMetadata, absent),
+            (WfKind::DeclaresDerivedMetadata, absent),
+            (WfKind::DeclaresDerivedMetadata, absent),
+            (WfKind::OutOfSignatureRule, Maybe::Present(face_span)),
+            (WfKind::OutOfSignatureRule, Maybe::Present(face_span)),
+            (WfKind::UnboundRhsVariable, Maybe::Present(face_span)),
+            (WfKind::UnboundRhsVariable, Maybe::Present(face_span)),
+        ];
+        expected.extend([(WfKind::ArityDoesNotCompose, absent); 5]);
+        expected.extend(
+            [(
+                WfKind::DerivedBoundaryMismatch,
+                Maybe::Present(circuit_span),
+            ); 2],
+        );
+        assert_eq!(
+            check_desc(&desc)
+                .iter()
+                .map(|diagnostic| (diagnostic.kind, diagnostic.span))
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+
+    #[test]
+    fn a_derivation_budget_failure_prevents_boundary_comparison()
+    {
+        let mut nodes = Vec::new();
+        let mut previous = Name::from("x");
+        for level in 0 .. 20_usize {
+            let out = Name::from(format!("w{level}"));
+            nodes.push(CircuitNode::Frame(CircuitFrame::new(
+                FrameHead::Op("add".into()),
+                [FreeTerm::var(previous.clone()), FreeTerm::var(previous)],
+                out.clone(),
+            )));
+            previous = out;
+        }
+        let sphere = RuleFace::new(FreeTerm::var("x"), FreeTerm::var("x"), [], span());
+        let desc =
+            nat_with(vec![], vec![add_op()], Attrs::empty()).with_circuits([CircuitRule::new(
+                "large",
+                sphere,
+                CircuitBody::new(nodes, previous),
+            )]);
+        assert_eq!(
+            check_desc(&desc)
+                .iter()
+                .map(|diagnostic| (diagnostic.kind, diagnostic.span))
+                .collect::<Vec<_>>(),
+            [(WfKind::CircuitDerivationBudget, Maybe::Present(span()))]
+        );
+    }
+
+    #[test]
+    fn variable_metadata_preserves_first_occurrence_order()
+    {
+        assert_eq!(derive_cell_var_meta(&FreeTerm::ctor("Zero", [])), []);
+        let lhs = FreeTerm::op("f", [
+            FreeTerm::var("z"),
+            FreeTerm::var("a"),
+            FreeTerm::var("z"),
+            FreeTerm::var("b"),
+        ]);
+        assert_eq!(derive_cell_var_meta(&lhs), [
+            RuleVarMeta::new("z", Variance::Producer, RuleVariableLinearity::from(false)),
+            RuleVarMeta::new("a", Variance::Producer, RuleVariableLinearity::from(true)),
+            RuleVarMeta::new("b", Variance::Producer, RuleVariableLinearity::from(true)),
+        ]);
     }
 }

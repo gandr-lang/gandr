@@ -9,6 +9,7 @@
 
 use alloc::sync::Arc;
 
+use anodized::spec;
 use gandr_theory_levitation::Attrs;
 use gandr_theory_levitation::Code;
 use gandr_theory_levitation::ConstructorTag;
@@ -310,7 +311,19 @@ impl IntBoxLeaf
     /// The successor, representable for every sample.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the value is below the maximum signed 64-bit integer.
+    /// - ensures: the successor differs by exactly one.
+    /// - panics: on overflow.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, negative one and the last representable
+    ///   predecessor observe the exact successor; the maximum refuses. The
+    ///   observations reject identity, wrong direction and wrapping or
+    ///   saturating overflow, over this signed 64-bit fixture rather than
+    ///   arbitrary mathematical integers.
+    /// - witness: `tests::code_iso::fixtures::tests::integer_steps_respect_representability`
+    #[spec(requires: self.0 < i64::MAX,
+        ensures: |next| self.0.checked_add(1) == Some(next.0))]
     fn successor(self) -> Self
     {
         Self(
@@ -323,7 +336,19 @@ impl IntBoxLeaf
     /// The predecessor, representable for every sample.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the value is above the minimum signed 64-bit integer.
+    /// - ensures: the predecessor differs by exactly one.
+    /// - panics: on overflow.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, one and the first representable successor
+    ///   observe the exact predecessor; the minimum refuses. The observations
+    ///   reject wrong direction and wrapping or saturating overflow within the
+    ///   fixture's bounded signed domain, without claiming totality for integer
+    ///   translations.
+    /// - witness: `tests::code_iso::fixtures::tests::integer_steps_respect_representability`
+    #[spec(requires: self.0 > i64::MIN,
+        ensures: |previous| self.0.checked_sub(1) == Some(previous.0))]
     fn predecessor(self) -> Self
     {
         Self(
@@ -338,7 +363,19 @@ impl IntBoxLeaf
 /// decimal-ASCII spelling of `n`, unbounded in length as `Integer`'s leaf is.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: constructor zero carries the integer's decimal-ASCII leaf.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, negative one and both signed 64-bit bounds expose
+///   exact bytes and decoded integers. This detects lost signs, truncation, a
+///   wrong constructor and noncanonical formatting; the fixture is not an
+///   arbitrary-precision integer encoding.
+/// - witness: `tests::code_iso::fixtures::tests::integer_leaf_encoding_and_parser_boundaries`
+#[spec(ensures: |ref value| usize::from(value.ctor) == 0 && match value.payload.view() {
+    | PayloadView::Leaf(bytes) => core::str::from_utf8(bytes.as_ref()).ok().and_then(|text| text.parse::<i64>().ok()) == Some(n.0),
+    | _ => false,
+})]
 pub fn int_leaf(n: IntBoxLeaf) -> DescValue
 {
     DescValue::new(
@@ -350,8 +387,24 @@ pub fn int_leaf(n: IntBoxLeaf) -> DescValue
 /// The integer an [`int_box`] value carries: its decimal-ASCII leaf parsed.
 ///
 /// # Specification
-/// - requires: `value` was built by [`int_leaf`].
-/// - panics: on any other value, a fixture error.
+/// - requires: the payload is a UTF-8 leaf parsing as a signed 64-bit integer.
+/// - ensures: the parsed integer, including a permitted leading plus sign.
+/// - panics: on a non-leaf, malformed text or an out-of-range integer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — canonical signed bounds and an accepted plus sign expose
+///   exact integer results; a non-leaf, invalid UTF-8, invalid decimal and
+///   overflow expose refusal. These observations reject sign loss, truncation
+///   and silently defaulting malformed data; parsing is bounded by signed
+///   64-bit integers.
+/// - witness: `tests::code_iso::fixtures::tests::integer_leaf_encoding_and_parser_boundaries`
+#[spec(requires: match value.payload.view() {
+    | PayloadView::Leaf(bytes) => core::str::from_utf8(bytes.as_ref()).ok().and_then(|text| text.parse::<i64>().ok()).is_some(),
+    | _ => false,
+}, ensures: |leaf| match value.payload.view() {
+    | PayloadView::Leaf(bytes) => core::str::from_utf8(bytes.as_ref()).ok().and_then(|text| text.parse::<i64>().ok()) == Some(leaf.0),
+    | _ => false,
+})]
 fn read_int_leaf(value: &DescValue) -> IntBoxLeaf
 {
     let PayloadView::Leaf(bytes) = value.payload.view()
@@ -407,4 +460,54 @@ pub fn leaf_shift() -> CodeIso
     let backward: Translate =
         Arc::new(|value: &DescValue| int_leaf(read_int_leaf(value).predecessor()));
     CodeIso::new("leaf-shift", int_box(), int_box(), forward, backward)
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+
+    #[test]
+    fn integer_steps_respect_representability()
+    {
+        for (value, expected) in [(0_i64, 1_i64), (-1, 0), (0x7fff_ffff_ffff_fffe, i64::MAX)] {
+            assert_eq!(IntBoxLeaf(value).successor().0, expected);
+        }
+        for (value, expected) in [(0_i64, -1_i64), (1, 0), (-0x7fff_ffff_ffff_ffff, i64::MIN)] {
+            assert_eq!(IntBoxLeaf(value).predecessor().0, expected);
+        }
+        assert!(std::panic::catch_unwind(|| IntBoxLeaf(i64::MAX).successor()).is_err());
+        assert!(std::panic::catch_unwind(|| IntBoxLeaf(i64::MIN).predecessor()).is_err());
+    }
+
+    #[test]
+    fn integer_leaf_encoding_and_parser_boundaries()
+    {
+        for (integer, expected) in [
+            (0_i64, "0"),
+            (-1, "-1"),
+            (i64::MIN, "-9223372036854775808"),
+            (i64::MAX, "9223372036854775807"),
+        ] {
+            let value = int_leaf(IntBoxLeaf(integer));
+            assert_eq!(value.ctor, ConstructorTag::from(0_usize));
+            let PayloadView::Leaf(bytes) = value.payload.view()
+            else {
+                panic!("integer leaf");
+            };
+            assert_eq!(bytes.as_ref(), expected.as_bytes());
+            assert_eq!(read_int_leaf(&value).0, integer);
+        }
+        let plus = DescValue::new(ConstructorTag::from(0_usize), Payload::leaf(b"+7".to_vec()));
+        assert_eq!(read_int_leaf(&plus).0, 7);
+        for payload in [
+            Payload::unit(),
+            Payload::leaf(vec![0xff]),
+            Payload::leaf(b"not-an-integer".to_vec()),
+            Payload::leaf(b"9223372036854775808".to_vec()),
+        ] {
+            let malformed = DescValue::new(ConstructorTag::from(0_usize), payload);
+            assert!(std::panic::catch_unwind(|| read_int_leaf(&malformed)).is_err());
+        }
+    }
 }

@@ -34,7 +34,19 @@ where
 /// A fixture diagram, which the fragment's conditions accept.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the fixture satisfies the wiring assembly invariants.
+/// - ensures: every supplied generator and boundary port is retained.
+/// - panics: if assembly refuses the fixture.
+///
+/// # Adequacy
+/// - hypothesis: L3 — ordered-port, multi-root and disconnected fixtures expose
+///   retained incidence through actual matching verdicts. Dropping a generator
+///   or boundary role changes those verdicts; malformed fixtures are outside
+///   the domain.
+/// - witness: `matching::tests::a_multi_root_pattern_embeds`
+/// - witness: `matching::tests::port_order_is_preserved_so_a_swapped_target_is_not_a_match`
+#[spec(captures: [edges = generators.len(), inputs = boundary.inputs().len(), outputs = boundary.outputs().len()],
+ensures: |ref diagram| diagram.generators().len() == edges && diagram.boundary().inputs().len() == inputs && diagram.boundary().outputs().len() == outputs)]
 fn diagram<W>(
     wires: W,
     generators: Vec<Generator>,
@@ -82,7 +94,16 @@ fn images(matching: &Matching) -> Vec<Vec<Edge>>
 /// The first admitted embedding of a search that admits one.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the search admits at least one embedding.
+/// - ensures: borrows its first admission.
+/// - panics: when the admission list is empty.
+///
+/// # Adequacy
+/// - hypothesis: L3 — multi-admission searches observe the representative image
+///   and ordered divergences. Selecting a later certificate differs; an empty
+///   search is outside the observer domain.
+/// - witness: `matching::tests::a_multi_admission_reports_its_first_divergences_in_order`
+#[spec(requires: !matching.admitted.is_empty(), ensures: |result| matching.admitted.first().is_some_and(|first| core::ptr::eq(core::ptr::from_ref(result), core::ptr::from_ref(first))))]
 fn first(matching: &Matching) -> &Embedding
 {
     matching
@@ -313,7 +334,23 @@ fn empty() -> Wiring
 /// A claimed wire map from pairs, which must be injective.
 ///
 /// # Specification
-/// trivial.
+/// - requires: repeated sources agree and distinct sources have distinct
+///   images.
+/// - ensures: the map contains exactly the supplied pairs, duplicates
+///   collapsed.
+/// - panics: on conflicting pairs.
+///
+/// # Adequacy
+/// - hypothesis: L3 — deliberately shifted, overwide and incomplete certificate
+///   maps expose the supplied associations through exact checker refusals.
+///   Skipping or reversing a pair changes the refusal; contradictory input
+///   pairs are outside the fixture builder domain.
+/// - witness: `matching::tests::a_certificate_with_a_shifted_wire_map_is_refused`
+/// - witness: `matching::tests::a_certificate_mapping_wires_outside_the_pattern_is_refused`
+/// - witness: `matching::tests::a_certificate_leaving_a_wire_unmapped_is_refused`
+#[spec(requires: pairs.iter().all(|left| pairs.iter().all(|right| (left.0 == right.0) == (left.1 == right.1))),
+ensures: |ref map| pairs.iter().all(|pair| map.image_of(pair.0) == Maybe::Present(pair.1))
+    && map.pairs().all(|pair| pairs.contains(&pair)))]
 fn claimed_wires(pairs: &[(Wire, Wire)]) -> PartialBijection
 {
     let mut map = PartialBijection::new();
@@ -424,6 +461,18 @@ fn a_multi_output_pattern_embeds()
         &edges![1, 2, 3][..],
         embedding.image(),
         "covering the target's f, g and h, in pattern order"
+    );
+    assert_eq!(
+        embedding.image_of(Edge::from(0)),
+        Maybe::Present(Edge::from(1))
+    );
+    assert_eq!(
+        embedding.image_of(Edge::from(2)),
+        Maybe::Present(Edge::from(3))
+    );
+    assert_eq!(
+        embedding.image_of(Edge::from(3)),
+        Maybe::Absent(embedding_image::Absent::OutOfRange)
     );
     assert_eq!(
         Maybe::Present(Wire::from(1)),
@@ -989,7 +1038,20 @@ fn an_exhausted_budget_declines_rather_than_truncating()
 /// cut wire on the target's: the one-sided term match, read on diagrams.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the finite search fits the fixture budget.
+/// - ensures: accepts exactly when an embedding preserves the two cut wires.
+/// - panics: if the fixture search exhausts its budget.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the independent one-sided term matcher agrees on every
+///   spine fixture, including polarity-sensitive seams, with both verdicts
+///   represented. Ignoring the cut anchor or admitting a larger pattern
+///   differs. The predicate checks necessary embedding cardinalities without
+///   running a second allocating search; the differential witnesses establish
+///   the full decision.
+/// - witness: `matching::tests::the_embedding_matcher_agrees_with_the_one_sided_matcher_on_the_spine`
+#[spec(ensures: |result| result == SubstitutionDecision::from(false)
+    || (pattern.wiring().edge_count() <= target.wiring().edge_count() && pattern.wiring().wire_count() <= target.wiring().wire_count()))]
 fn anchored_decision(
     pattern: &SpineReading,
     target: &SpineReading,
@@ -1687,5 +1749,191 @@ fn two_orderings_of_port_free_generators_diverge_at_the_first_generator()
             .first()
             .map(|divergence| &divergence.discriminator),
         "the second reading swaps the two points, starting with the first"
+    );
+}
+
+#[test]
+fn budget_accounting_observes_each_step_and_exhaustion()
+{
+    let start = MatchBudget::from(2);
+    let mut remaining = start;
+    assert_eq!(remaining.spent_since(start), SearchSteps::from(0));
+    assert_eq!(remaining.spend(), Spend::Spent);
+    assert_eq!(remaining.spent_since(start), SearchSteps::from(1));
+    assert_eq!(remaining.spend(), Spend::Spent);
+    assert_eq!(remaining.spent_since(start), SearchSteps::from(2));
+    assert_eq!(remaining.spend(), Spend::Exhausted);
+    assert_eq!(remaining.spent_since(start), SearchSteps::from(2));
+}
+
+#[test]
+fn discriminators_skip_equal_prefixes_and_prioritize_generators()
+{
+    let representative = Embedding::claim(
+        edges![0, 2],
+        claimed_wires(&[
+            (Wire::from(0), Wire::from(0)),
+            (Wire::from(1), Wire::from(1)),
+        ]),
+        Seam::new(PartialBijection::new(), PartialBijection::new()),
+        ConvexityWarrant::SweptOverTheComplement,
+    );
+    assert_eq!(
+        first_discriminator(&representative, &representative),
+        Maybe::Absent(divergence::Absent::Identical)
+    );
+    let mut variant = representative.clone();
+    variant.image = Box::from(edges![0, 3]);
+    variant.wires = claimed_wires(&[
+        (Wire::from(0), Wire::from(0)),
+        (Wire::from(1), Wire::from(2)),
+    ]);
+    assert_eq!(
+        first_discriminator(&representative, &variant),
+        Maybe::Present(Discriminator::Generator {
+            at: Edge::from(1),
+            representative: Edge::from(2),
+            variant: Edge::from(3)
+        })
+    );
+    variant.image = representative.image.clone();
+    assert_eq!(
+        first_discriminator(&representative, &variant),
+        Maybe::Present(Discriminator::Wire {
+            wire: Wire::from(1),
+            representative: Wire::from(1),
+            variant: Wire::from(2)
+        })
+    );
+}
+
+#[test]
+fn reachability_keeps_branch_direction_and_reflexivity()
+{
+    let pattern = multi_output_pattern();
+    assert_eq!(
+        reachable_from(&pattern, Wire::from(0)),
+        wires![0, 1, 2, 3, 4].into_iter().collect()
+    );
+    assert_eq!(
+        reachable_from(&pattern, Wire::from(1)),
+        wires![1, 3].into_iter().collect()
+    );
+    assert_eq!(
+        reachable_from(&pattern, Wire::from(9)),
+        wires![9].into_iter().collect()
+    );
+}
+
+#[test]
+fn seeds_order_components_before_isolated_wires()
+{
+    let pattern = diagram(
+        5,
+        alloc::vec![
+            Generator::new(value("f"), wires![0], wires![1]),
+            Generator::new(value("point"), wires![], wires![]),
+            Generator::new(value("g"), wires![2], wires![3]),
+        ],
+        Interface::new(wires![0, 2, 4], wires![1, 3, 4]),
+    );
+    assert_eq!(seeds_of(&pattern), alloc::vec![
+        Seed::Generator(Edge::from(0)),
+        Seed::Generator(Edge::from(1)),
+        Seed::Generator(Edge::from(2)),
+        Seed::Wire(Wire::from(4))
+    ]);
+    assert_eq!(seeds_of(&multi_output_pattern()), alloc::vec![
+        Seed::Generator(Edge::from(0))
+    ]);
+}
+
+#[test]
+fn propagation_charges_replays_and_preserves_conflicting_bindings()
+{
+    let pattern = bare_wire_pattern();
+    let target = diagram(2, Vec::new(), Interface::new(wires![0, 1], wires![0, 1]));
+    let mut state = Assignment {
+        generators: Vec::new(),
+        claimed: BTreeSet::new(),
+        wires: PartialBijection::new(),
+    };
+    let mut remaining = MatchBudget::from(3);
+    let seed = Pending::Wire(Wire::from(0), Wire::from(0));
+    assert_eq!(
+        extend(&pattern, &target, &mut state, seed, &mut remaining),
+        Extension::Consistent
+    );
+    assert_eq!(
+        extend(&pattern, &target, &mut state, seed, &mut remaining),
+        Extension::Consistent
+    );
+    assert_eq!(remaining, MatchBudget::from(1));
+    assert_eq!(
+        extend(
+            &pattern,
+            &target,
+            &mut state,
+            Pending::Wire(Wire::from(0), Wire::from(1)),
+            &mut remaining
+        ),
+        Extension::Clash
+    );
+    assert_eq!(
+        state.wires.image_of(Wire::from(0)),
+        Maybe::Present(Wire::from(0))
+    );
+    assert_eq!(
+        extend(&pattern, &target, &mut state, seed, &mut remaining),
+        Extension::Exhausted
+    );
+    assert_eq!(remaining, MatchBudget::from(0));
+}
+
+#[test]
+fn admission_drops_incomplete_generator_maps()
+{
+    let pattern = multi_output_pattern();
+    let target = multi_output_target();
+    let matching = embeddings_by_sweep(&pattern, &target, budget()).expect("the search fits");
+    let embedding = first(&matching);
+    let complete = Assignment {
+        generators: embedding.image.iter().copied().map(Some).collect(),
+        claimed: embedding.image.iter().copied().collect(),
+        wires: embedding.wires.clone(),
+    };
+    let mut incomplete = complete.clone();
+    *incomplete
+        .generators
+        .last_mut()
+        .expect("the pattern has generators") = None;
+    let admitted = admit(
+        &pattern,
+        &target,
+        alloc::vec![incomplete, complete],
+        ConvexityWarrant::SweptOverTheComplement,
+        SearchSteps::from(7),
+    );
+    assert_eq!(admitted.admitted(), core::slice::from_ref(embedding));
+    assert!(admitted.refused().is_empty());
+    assert_eq!(admitted.steps(), SearchSteps::from(7));
+}
+
+#[test]
+fn seams_restrict_partial_maps_to_each_boundary()
+{
+    let map = claimed_wires(&[
+        (Wire::from(0), Wire::from(9)),
+        (Wire::from(3), Wire::from(10)),
+        (Wire::from(7), Wire::from(11)),
+    ]);
+    let seam = seam_of(&multi_output_pattern(), &map);
+    assert_eq!(
+        seam.inputs(),
+        &claimed_wires(&[(Wire::from(0), Wire::from(9))])
+    );
+    assert_eq!(
+        seam.outputs(),
+        &claimed_wires(&[(Wire::from(3), Wire::from(10))])
     );
 }

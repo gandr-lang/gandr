@@ -74,6 +74,7 @@ use core::num::NonZeroU32;
 use core::sync::atomic::AtomicU32;
 use core::sync::atomic::Ordering;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arena::ArenaKey;
@@ -108,10 +109,45 @@ quenchant_shape::reason_enum! {
 }
 
 /// The next process-local arena key, with zero reserved as the exhausted state.
+///
+/// # Specification
+/// - requires: updates use the checked atomic minting operation without resets.
+/// - ensures: each nonzero key is consumed once and zero remains exhausted.
+/// - provides: the shared namespace authority for every builder.
+/// - panics: none.
+/// - executable: none — the static is shared state, not a callable boundary;
+///   atomic minting carries the executable ordering predicate.
+///
+/// # Adequacy
+/// - hypothesis: L3 — local transitions at one, u32 maximum and exhausted zero
+///   expose exact token/next-state pairs; concurrent minting exposes duplicate
+///   arena keys without assuming a global starting value. Wraparound, token
+///   reuse, skipped advancement and a non-atomic update change these
+///   observations.
+/// - witness: `build::tests::an_exhausted_arena_key_counter_is_reported_rather_than_reused`
+/// - witness: `build::tests::concurrent_minting_never_reuses_an_arena_namespace`
 static NEXT_ARENA_KEY: AtomicU32 = AtomicU32::new(1u32);
 
 /// The value of the process-local arena-key counter: the token the next
 /// builder takes, or zero once every token has been taken.
+///
+/// # Specification
+/// - requires: the counter contains the next nonzero token or exhausted zero.
+/// - ensures: exhaustion is terminal and a successful transition consumes one
+///   token.
+/// - provides: the pure transition applied by the atomic arena-key allocator.
+/// - panics: none.
+/// - executable: none — this counter record has no invocation boundary; `mint`
+///   carries the executable transition predicate.
+///
+/// # Adequacy
+/// - hypothesis: L3 — local transitions at one, u32 maximum and exhausted zero
+///   expose exact token/next-state pairs; concurrent minting exposes duplicate
+///   arena keys without assuming a global starting value. Wraparound, token
+///   reuse, skipped advancement and a non-atomic update change these
+///   observations.
+/// - witness: `build::tests::an_exhausted_arena_key_counter_is_reported_rather_than_reused`
+/// - witness: `build::tests::concurrent_minting_never_reuses_an_arena_namespace`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct KeyCounter
@@ -132,6 +168,19 @@ struct KeyCounter
 /// - provides: the only insertion path into a document arena.
 /// - fails: every constructor returns a build error rather than panicking.
 /// - panics: none.
+/// - executable: none — the builder is a state carrier; constructors, edge
+///   checks, storage transitions and finalization are its executable
+///   boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct ordered children, foreign handles, the next
+///   ordinal and an exhausted step budget expose exact graph edges, rendered
+///   order and usage snapshots. Reversing edges, accepting another namespace,
+///   charging before validation and changing an unrelated counter alter those
+///   observations.
+/// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+/// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
+/// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
 #[derive(Debug)]
 pub struct DocBuilder<'meter>
 {
@@ -177,9 +226,29 @@ impl<'meter> DocBuilder<'meter>
     /// insertion.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the three singleton inserts and the lower node
-    ///   boundary are separated by the exact `2`/`3` limit pair.
+    /// - hypothesis: L3 — the exact two/three-node ceiling distinguishes
+    ///   refusal from the complete singleton basis; an existing shared meter
+    ///   distinguishes incrementing its node usage from resetting it. Missing
+    ///   or aliased singleton nodes and a shifted admission boundary change
+    ///   graph identity, usage or refusal.
     /// - witness: `algebra::tests::a_builder_with_a_node_ceiling_below_three_refuses_immediately`
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    #[spec(
+        captures: before = meter.usage(),
+        ensures: |ret| ret.as_ref().map_or(true,
+            |builder| { let usage = builder.meter.usage();
+            builder.nodes.as_slice() == [DocNode::Empty, DocNode::Line, DocNode::HardLine].as_slice()
+                && u32::from(builder.empty) == 0
+                && u32::from(builder.line) == 1
+                && u32::from(builder.hard_line) == 2
+                && builder.texts.is_empty()
+                && builder.verbatim.is_empty()
+                && builder.flattened.is_empty()
+                && builder.flatten_memo.is_empty()
+                && builder.space_text.is_none()
+                && u64::from(before.doc_nodes).checked_add(3) == Some(u64::from(usage.doc_nodes))
+                && usage == crate::limits::BuildUsage { doc_nodes: usage.doc_nodes, ..before } })
+    )]
     #[inline]
     #[must_use = "the builder owns the document under construction"]
     pub fn try_new(meter: &'meter mut BuildMeter) -> Result<Self, BuildError>
@@ -221,7 +290,8 @@ impl<'meter> DocBuilder<'meter>
     /// Stores newline-free borrowed text as a document node.
     ///
     /// # Specification
-    /// - requires: `text` contains no carriage return, line feed, or tab.
+    /// - requires: `text` is complete UTF-8; forbidden scalars remain in the
+    ///   domain.
     /// - ensures: one text identity and one document node are stored on
     ///   success.
     /// - provides: a checked text leaf for the document algebra.
@@ -233,9 +303,27 @@ impl<'meter> DocBuilder<'meter>
     /// `LimitExceeded` as applicable.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — each forbidden scalar is distinguished from ordinary
-    ///   newline-free text and the exact byte/node boundaries are checked.
-    /// - witness: `algebra::tests::text_rejects_a_carriage_return_a_line_feed_and_a_tab`
+    /// - hypothesis: L3 — empty and multibyte text, physical fragments, shared
+    ///   handles and exact byte/node ceilings expose stored payloads, nominal
+    ///   counts and complete usage snapshots. Duplicate storage, wrong identity
+    ///   assignment, byte/scalar confusion and mutation before refusal change
+    ///   those observations; allocation failure is not deterministically
+    ///   injected.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+    #[spec(
+        captures: before = (self.nodes.len(), self.texts.len(), self.meter.usage()),
+        ensures: |ret| ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
+                && self.texts.len() == before.1
+                && self.meter.usage() == before.2,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.texts.len() == before.1.saturating_add(1)
+                && self.nodes.last().is_some_and(|node| matches!(*node, DocNode::Text(identity) if usize::try_from(u32::from(identity)) == Ok(before.1))))
+    )]
     #[inline]
     #[must_use = "the text handle is the stored document leaf"]
     pub fn text(
@@ -249,7 +337,8 @@ impl<'meter> DocBuilder<'meter>
     /// Stores newline-free owned text as a document node.
     ///
     /// # Specification
-    /// - requires: `text` contains no carriage return, line feed, or tab.
+    /// - requires: `text` is complete UTF-8; forbidden scalars remain in the
+    ///   domain.
     /// - ensures: the supplied allocation is moved into one text identity.
     /// - provides: an owned checked text leaf for the document algebra.
     /// - fails: rejects invalid text, allocation failure, or a build ceiling.
@@ -260,9 +349,27 @@ impl<'meter> DocBuilder<'meter>
     /// `LimitExceeded` as applicable.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — owned text preserves bytes and checked width while
-    ///   rejecting each forbidden scalar through the borrowed validation path.
-    /// - witness: `algebra::tests::owned_text_preserves_bytes_width_and_rejects_forbidden_scalars`
+    /// - hypothesis: L3 — empty and multibyte text, physical fragments, shared
+    ///   handles and exact byte/node ceilings expose stored payloads, nominal
+    ///   counts and complete usage snapshots. Duplicate storage, wrong identity
+    ///   assignment, byte/scalar confusion and mutation before refusal change
+    ///   those observations; allocation failure is not deterministically
+    ///   injected.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+    #[spec(
+        captures: before = (self.nodes.len(), self.texts.len(), self.meter.usage()),
+        ensures: |ret| ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
+                && self.texts.len() == before.1
+                && self.meter.usage() == before.2,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.texts.len() == before.1.saturating_add(1)
+                && self.nodes.last().is_some_and(|node| matches!(*node, DocNode::Text(identity) if usize::try_from(u32::from(identity)) == Ok(before.1))))
+    )]
     #[inline]
     #[must_use = "the text handle is the stored document leaf"]
     pub fn text_owned(
@@ -276,7 +383,7 @@ impl<'meter> DocBuilder<'meter>
     /// Stores borrowed verbatim text with its physical fragment metrics.
     ///
     /// # Specification
-    /// - requires: `text` is UTF-8 and uses only LF or CRLF endings.
+    /// - requires: `text` is complete UTF-8; bare CR remains in the domain.
     /// - ensures: bytes and one record per physical fragment are stored
     ///   together.
     /// - provides: the opaque byte-identical document leaf.
@@ -289,9 +396,27 @@ impl<'meter> DocBuilder<'meter>
     /// `ArithmeticOverflow`, or `LimitExceeded` as applicable.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — no-ending, trailing, middle, and mixed-ending inputs
-    ///   distinguish bytes, scalar widths, endings, and fragment counts.
-    /// - witness: `algebra::tests::verbatim_with_a_trailing_ending_stores_an_empty_final_fragment`
+    /// - hypothesis: L3 — empty and multibyte text, physical fragments, shared
+    ///   handles and exact byte/node ceilings expose stored payloads, nominal
+    ///   counts and complete usage snapshots. Duplicate storage, wrong identity
+    ///   assignment, byte/scalar confusion and mutation before refusal change
+    ///   those observations; allocation failure is not deterministically
+    ///   injected.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+    #[spec(
+        captures: before = (self.nodes.len(), self.verbatim.len(), self.meter.usage()),
+        ensures: |ret| ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
+                && self.verbatim.len() == before.1
+                && self.meter.usage() == before.2,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.verbatim.len() == before.1.saturating_add(1)
+                && self.nodes.last().is_some_and(|node| matches!(*node, DocNode::Verbatim(identity) if usize::try_from(u32::from(identity)) == Ok(before.1))))
+    )]
     #[inline]
     #[must_use = "the verbatim handle is the stored document leaf"]
     pub fn verbatim(
@@ -305,7 +430,7 @@ impl<'meter> DocBuilder<'meter>
     /// Stores owned verbatim text with its physical fragment metrics.
     ///
     /// # Specification
-    /// - requires: `text` is UTF-8 and uses only LF or CRLF endings.
+    /// - requires: `text` is complete UTF-8; bare CR remains in the domain.
     /// - ensures: the supplied bytes and their scan records move into one node.
     /// - provides: the owned opaque byte-identical document leaf.
     /// - fails: rejects bare carriage returns, allocation failure, or a build
@@ -317,9 +442,27 @@ impl<'meter> DocBuilder<'meter>
     /// `ArithmeticOverflow`, or `LimitExceeded` as applicable.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — owned verbatim preserves an ending shape and rejects
-    ///   a bare carriage return through the shared scanner.
-    /// - witness: `algebra::tests::owned_verbatim_preserves_an_ending_and_rejects_a_bare_carriage_return`
+    /// - hypothesis: L3 — empty and multibyte text, physical fragments, shared
+    ///   handles and exact byte/node ceilings expose stored payloads, nominal
+    ///   counts and complete usage snapshots. Duplicate storage, wrong identity
+    ///   assignment, byte/scalar confusion and mutation before refusal change
+    ///   those observations; allocation failure is not deterministically
+    ///   injected.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+    #[spec(
+        captures: before = (self.nodes.len(), self.verbatim.len(), self.meter.usage()),
+        ensures: |ret| ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
+                && self.verbatim.len() == before.1
+                && self.meter.usage() == before.2,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.verbatim.len() == before.1.saturating_add(1)
+                && self.nodes.last().is_some_and(|node| matches!(*node, DocNode::Verbatim(identity) if usize::try_from(u32::from(identity)) == Ok(before.1))))
+    )]
     #[inline]
     #[must_use = "the verbatim handle is the stored document leaf"]
     pub fn verbatim_owned(
@@ -355,7 +498,8 @@ impl<'meter> DocBuilder<'meter>
     /// Stores an unaligned concatenation of two existing documents.
     ///
     /// # Specification
-    /// - requires: both handles belong to this builder's arena.
+    /// - requires: both arguments are candidate handles; foreign and
+    ///   out-of-range handles remain in the domain.
     /// - ensures: the left edge is visited before the right edge and both point
     ///   at earlier identities.
     /// - provides: one concatenation node preserving source order.
@@ -368,9 +512,24 @@ impl<'meter> DocBuilder<'meter>
     /// `LimitExceeded` as applicable.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — swapping the edge order changes the rendered node
-    ///   sequence and the exact two-edge boundary rejects at the ceiling.
+    /// - hypothesis: L3 — distinct ordered children, foreign handles, the next
+    ///   ordinal and an exhausted step budget expose exact graph edges,
+    ///   rendered order and usage snapshots. Reversing edges, accepting another
+    ///   namespace, charging before validation and changing an unrelated
+    ///   counter alter those observations.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
     /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
+    /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
+    #[spec(
+        captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
+        ensures: |ret| self.texts.len() == before.1
+                && self.verbatim.len() == before.2
+                && ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.nodes.last() == Some(&DocNode::Concat { left: left.node_id(), right: right.node_id() }))
+    )]
     #[inline]
     #[must_use = "the concatenation handle is the new document node"]
     pub fn concat(
@@ -399,7 +558,8 @@ impl<'meter> DocBuilder<'meter>
     /// Builds a balanced concatenation while preserving iterator order.
     ///
     /// # Specification
-    /// - requires: every iterator item is a handle from this builder.
+    /// - requires: the iterator yields candidate handles once; invalid handles
+    ///   remain in the domain.
     /// - ensures: the empty input is `empty`, one item is returned unchanged,
     ///   and larger inputs form a balanced left-to-right tree.
     /// - provides: bounded-depth concatenation construction for long inputs.
@@ -412,10 +572,26 @@ impl<'meter> DocBuilder<'meter>
     /// supplied handles.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — empty, singleton, and multi-item order distinguish
-    ///   the unit and associativity claims without relying on implementation
-    ///   ids.
-    /// - witness: `algebra::tests::concatenation_is_associative_up_to_the_rendered_node_sequence`
+    /// - hypothesis: L3 — empty, singleton, odd-length and shared input
+    ///   sequences expose exact rendered order and bounded construction depth.
+    ///   Dropping, duplicating or reversing an item and building a spine change
+    ///   those observations. The predicate checks newly stored topology without
+    ///   consuming the one-shot iterator a second time; order is witnessed
+    ///   through rendering.
+    /// - witness: `algebra::tests::parenthesizations_preserve_unicode_output_and_cost`
+    /// - witness: `algebra::tests::empty_operands_preserve_complete_rendered_output`
+    /// - witness: `algebra::tests::balanced_concatenation_preserves_odd_and_even_leaf_order`
+    /// - witness: `algebra::tests::a_wide_shared_graph_finalizes_without_native_stack_growth`
+    #[spec(
+        captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
+        ensures: |ret| self.texts.len() == before.1
+                && self.verbatim.len() == before.2
+                && ret.as_ref().map_or(true,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())).is_ok_and(|index| index < self.nodes.len())
+                && self.nodes.get(before.0 ..).is_some_and(|nodes| nodes.iter().enumerate().all(|(offset, node)| matches!(*node, DocNode::Concat { left, right } if usize::try_from(u32::from(left)).is_ok_and(|index| index < before.0.saturating_add(offset))
+                && usize::try_from(u32::from(right)).is_ok_and(|index| index < before.0.saturating_add(offset))))))
+    )]
     #[inline]
     #[must_use = "the balanced concatenation handle is the new document"]
     pub fn concat_all<Docs>(
@@ -474,8 +650,8 @@ impl<'meter> DocBuilder<'meter>
     /// Stores a checked nesting node.
     ///
     /// # Specification
-    /// - requires: `doc` belongs to this builder and `amount` is the caller's
-    ///   desired indentation increment.
+    /// - requires: `amount` is the requested increment and `doc` is any
+    ///   candidate handle.
     /// - ensures: the amount and child identity are retained without wrapping.
     /// - provides: a nesting node for later checked indentation resolution.
     /// - fails: rejects foreign handles, allocation failure, or a build
@@ -487,9 +663,24 @@ impl<'meter> DocBuilder<'meter>
     /// `LimitExceeded` as applicable.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — distinct amounts remain distinct and no insertion
-    ///   path converts them through a wrapping cast.
-    /// - witness: `algebra::tests::nest_raises_indentation_by_a_checked_amount`
+    /// - hypothesis: L3 — distinct ordered children, foreign handles, the next
+    ///   ordinal and an exhausted step budget expose exact graph edges,
+    ///   rendered order and usage snapshots. Reversing edges, accepting another
+    ///   namespace, charging before validation and changing an unrelated
+    ///   counter alter those observations.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
+    /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
+    #[spec(
+        captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
+        ensures: |ret| self.texts.len() == before.1
+                && self.verbatim.len() == before.2
+                && ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.nodes.last() == Some(&DocNode::Nest { amount: u32::from(amount), doc: doc.node_id() }))
+    )]
     #[inline]
     #[must_use = "the nesting handle is the new document node"]
     pub fn nest(
@@ -508,7 +699,8 @@ impl<'meter> DocBuilder<'meter>
     /// Stores an alignment node.
     ///
     /// # Specification
-    /// - requires: `doc` belongs to this builder.
+    /// - requires: `doc` is any candidate handle, including a foreign or
+    ///   out-of-range handle.
     /// - ensures: the child is retained under an alignment boundary.
     /// - provides: an alignment node for later resolution.
     /// - fails: rejects foreign handles, allocation failure, or a build
@@ -520,9 +712,24 @@ impl<'meter> DocBuilder<'meter>
     /// `LimitExceeded` as applicable.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the child edge is checked exactly once and the node
-    ///   identity is retained unchanged.
-    /// - witness: `algebra::tests::align_sets_indentation_to_the_current_column`
+    /// - hypothesis: L3 — distinct ordered children, foreign handles, the next
+    ///   ordinal and an exhausted step budget expose exact graph edges,
+    ///   rendered order and usage snapshots. Reversing edges, accepting another
+    ///   namespace, charging before validation and changing an unrelated
+    ///   counter alter those observations.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
+    /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
+    #[spec(
+        captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
+        ensures: |ret| self.texts.len() == before.1
+                && self.verbatim.len() == before.2
+                && ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.nodes.last() == Some(&DocNode::Align { doc: doc.node_id() }))
+    )]
     #[inline]
     #[must_use = "the alignment handle is the new document node"]
     pub fn align(
@@ -537,7 +744,8 @@ impl<'meter> DocBuilder<'meter>
     /// Stores an arbitrary choice between two existing documents.
     ///
     /// # Specification
-    /// - requires: both handles belong to this builder.
+    /// - requires: both arguments are candidate handles; foreign and
+    ///   out-of-range handles remain in the domain.
     /// - ensures: the left branch precedes the right branch and ties retain
     ///   that order for later resolution.
     /// - provides: a choice node with both alternatives intact.
@@ -550,9 +758,24 @@ impl<'meter> DocBuilder<'meter>
     /// `LimitExceeded` as applicable.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — exchanging alternatives changes the declared tie
-    ///   projection while preserving the two-edge accounting boundary.
+    /// - hypothesis: L3 — distinct ordered children, foreign handles, the next
+    ///   ordinal and an exhausted step budget expose exact graph edges,
+    ///   rendered order and usage snapshots. Reversing edges, accepting another
+    ///   namespace, charging before validation and changing an unrelated
+    ///   counter alter those observations.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
     /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
+    #[spec(
+        captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
+        ensures: |ret| self.texts.len() == before.1
+                && self.verbatim.len() == before.2
+                && ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.nodes.last() == Some(&DocNode::Choice { left: left.node_id(), right: right.node_id() }))
+    )]
     #[inline]
     #[must_use = "the choice handle is the new document node"]
     pub fn choice(
@@ -569,7 +792,8 @@ impl<'meter> DocBuilder<'meter>
     /// Stores a flatten node over an existing document.
     ///
     /// # Specification
-    /// - requires: `doc` belongs to this builder.
+    /// - requires: `doc` is any candidate handle, including a foreign or
+    ///   out-of-range handle.
     /// - ensures: the flatten request is retained until finalization.
     /// - provides: a node whose finalized image softens layout-owned lines.
     /// - fails: rejects foreign handles, allocation failure, or a build
@@ -581,9 +805,24 @@ impl<'meter> DocBuilder<'meter>
     /// `LimitExceeded` as applicable.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a soft line changes image identity while hard lines
-    ///   and verbatim nodes retain their identity.
-    /// - witness: `algebra::tests::flatten_turns_a_line_into_one_space`
+    /// - hypothesis: L3 — distinct ordered children, foreign handles, the next
+    ///   ordinal and an exhausted step budget expose exact graph edges,
+    ///   rendered order and usage snapshots. Reversing edges, accepting another
+    ///   namespace, charging before validation and changing an unrelated
+    ///   counter alter those observations.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
+    /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
+    #[spec(
+        captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len()),
+        ensures: |ret| self.texts.len() == before.1
+                && self.verbatim.len() == before.2
+                && ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.nodes.last() == Some(&DocNode::Flatten { doc: doc.node_id() }))
+    )]
     #[inline]
     #[must_use = "the flatten handle is the new document node"]
     pub fn flatten(
@@ -598,7 +837,8 @@ impl<'meter> DocBuilder<'meter>
     /// Stores `choice(doc, flatten(doc))` in that order.
     ///
     /// # Specification
-    /// - requires: `doc` belongs to this builder.
+    /// - requires: `doc` is any candidate handle, including a foreign or
+    ///   out-of-range handle.
     /// - ensures: the unflattened branch is the left alternative and the
     ///   flattened branch is the right alternative.
     /// - provides: the standard source-preserving grouping operation.
@@ -610,9 +850,24 @@ impl<'meter> DocBuilder<'meter>
     /// `LimitExceeded` as applicable.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — branch order is observable independently from later
-    ///   cost selection.
+    /// - hypothesis: L3 — distinct ordered children, foreign handles, the next
+    ///   ordinal and an exhausted step budget expose exact graph edges,
+    ///   rendered order and usage snapshots. Reversing edges, accepting another
+    ///   namespace, charging before validation and changing an unrelated
+    ///   counter alter those observations.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
     /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
+    #[spec(
+        captures: before = self.nodes.len(),
+        ensures: |ret| ret.as_ref().map_or(true,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.saturating_add(1))
+                && self.nodes.len() == before.saturating_add(2)
+                && self.nodes.get(before) == Some(&DocNode::Flatten { doc: doc.node_id() })
+                && self.nodes.last().is_some_and(|node| matches!(*node, DocNode::Choice { left, right } if left == doc.node_id()
+                && usize::try_from(u32::from(right)) == Ok(before))))
+    )]
     #[inline]
     #[must_use = "the grouped handle is the new document node"]
     pub fn group(
@@ -640,10 +895,27 @@ impl<'meter> DocBuilder<'meter>
     /// iterative pass.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — repeated finalization, structural reuse, and a limit
-    ///   boundary distinguish idempotence, linear growth, and no partial
-    ///   output.
+    /// - hypothesis: L3 — unchanged leaves, soft and hard lines, shared
+    ///   subgraphs and a reached ceiling expose flat-image identity, rendered
+    ///   bytes, node growth and step usage. Losing reuse, changing child order,
+    ///   retaining a soft line or omitting an edge/probe charge changes those
+    ///   observations; deep spines additionally witness heap rather than
+    ///   native-stack traversal.
     /// - witness: `algebra::tests::flattening_is_idempotent`
+    /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
+    /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
+    /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
+    #[spec(
+        captures: before = (self.arena, self.nodes.len()),
+        ensures: |ret| ret.as_ref().map_or(true,
+            |arena| { let count = u64::from(arena.node_count());
+            usize::try_from(count).is_ok_and(|count| count >= before.1
+                && count <= before.1.saturating_mul(2))
+                && (0 .. count).all(|index| u32::try_from(index).is_ok_and(|index| { let node = NodeId::from(index);
+            matches!(arena.contains(DocId::from_parts(before.0, node)), crate::arena::DocHandleStatus::Present)
+                && match arena.flattened_node(node) { Maybe::Present(image) => arena.flattened_node(image) == Maybe::Present(image)
+                && matches!(arena.node(image), Maybe::Present(candidate) if !matches!(candidate, DocNode::Line | DocNode::Flatten { .. })), Maybe::Absent(_) => false } })) })
+    )]
     #[inline]
     #[must_use = "the sealed arena is the document's immutable result"]
     pub fn finish(mut self) -> Result<DocArena, BuildError>
@@ -770,9 +1042,19 @@ impl<'meter> DocBuilder<'meter>
     /// Returns `UnknownDoc` for a foreign or out-of-range handle.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — foreign and out-of-range handles are distinguished
-    ///   from valid handles before mutation.
-    /// - witness: `algebra::tests::a_handle_from_another_arena_is_refused_before_lookup`
+    /// - hypothesis: L3 — distinct ordered children, foreign handles, the next
+    ///   ordinal and an exhausted step budget expose exact graph edges,
+    ///   rendered order and usage snapshots. Reversing edges, accepting another
+    ///   namespace, charging before validation and changing an unrelated
+    ///   counter alter those observations.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
+    /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
+    #[spec(
+        ensures: |ret| ret == if doc.arena_key() == self.arena
+                && usize::try_from(u32::from(doc.node_id())).is_ok_and(|index| index < self.nodes.len()) { Ok(doc.node_id()) }
+            else { Err(BuildError::UnknownDoc) }
+    )]
     #[inline]
     fn validate_doc(
         &self,
@@ -806,8 +1088,26 @@ impl<'meter> DocBuilder<'meter>
     /// Returns `UnknownDoc`, `ArithmeticOverflow`, or `LimitExceeded`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — invalid handles do not consume a build step.
-    /// - witness: `algebra::tests::a_handle_from_another_arena_is_refused_before_lookup`
+    /// - hypothesis: L3 — distinct ordered children, foreign handles, the next
+    ///   ordinal and an exhausted step budget expose exact graph edges,
+    ///   rendered order and usage snapshots. Reversing edges, accepting another
+    ///   namespace, charging before validation and changing an unrelated
+    ///   counter alter those observations.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `algebra::tests::concat_resolves_the_right_at_the_left_ending_column`
+    /// - witness: `algebra::tests::group_is_choice_of_the_unflattened_form_then_the_flattened_form`
+    #[spec(
+        captures: before = self.meter.usage(),
+        ensures: |ret| { let usage = self.meter.usage();
+            if doc.arena_key() == self.arena
+                && usize::try_from(u32::from(doc.node_id())).is_ok_and(|index| index < self.nodes.len()) { ret.as_ref().map_or_else(|error| usage == before
+                && matches!(*error, BuildError::ArithmeticOverflow { operation: BuildArithmetic::BuildSteps } | BuildError::LimitExceeded { kind: crate::error::BuildLimitKind::BuildSteps, .. }),
+            |node| *node == doc.node_id()
+                && u64::from(before.build_steps).checked_add(1) == Some(u64::from(usage.build_steps))
+                && usage == crate::limits::BuildUsage { build_steps: usage.build_steps, ..before }) }
+            else { ret == Err(BuildError::UnknownDoc)
+                && usage == before } }
+    )]
     #[inline]
     fn checked_edge(
         &mut self,
@@ -834,9 +1134,28 @@ impl<'meter> DocBuilder<'meter>
     /// `LimitExceeded`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one node insertion separates storage and node-limit
-    ///   boundaries without exposing partial state.
-    /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
+    /// - hypothesis: L3 — empty and multibyte text, physical fragments, shared
+    ///   handles and exact byte/node ceilings expose stored payloads, nominal
+    ///   counts and complete usage snapshots. Duplicate storage, wrong identity
+    ///   assignment, byte/scalar confusion and mutation before refusal change
+    ///   those observations; allocation failure is not deterministically
+    ///   injected.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+    #[spec(
+        captures: before = (self.nodes.len(), self.meter.usage()),
+        ensures: |ret| { let usage = self.meter.usage();
+            ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
+                && usage == before.1,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.nodes.last() == Some(&node)
+                && u64::from(before.1.doc_nodes).checked_add(1) == Some(u64::from(usage.doc_nodes))
+                && usage == crate::limits::BuildUsage { doc_nodes: usage.doc_nodes, ..before.1 }) }
+    )]
     #[inline]
     fn insert_node(
         &mut self,
@@ -872,9 +1191,36 @@ impl<'meter> DocBuilder<'meter>
     /// Returns the first typed failure found during preflight or insertion.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — byte and node boundaries reject without mutating the
-    ///   corresponding usage counter.
-    /// - witness: `algebra::tests::a_refused_charge_leaves_the_counter_unchanged`
+    /// - hypothesis: L3 — empty and multibyte text, physical fragments, shared
+    ///   handles and exact byte/node ceilings expose stored payloads, nominal
+    ///   counts and complete usage snapshots. Duplicate storage, wrong identity
+    ///   assignment, byte/scalar confusion and mutation before refusal change
+    ///   those observations; allocation failure is not deterministically
+    ///   injected.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+    #[spec(
+        captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len(), self.meter.usage(), text.as_ref().as_ptr(), text.as_ref().len(), text.width()),
+        ensures: |ret| { let usage = self.meter.usage();
+            ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
+                && self.texts.len() == before.1
+                && self.verbatim.len() == before.2
+                && usage == before.3,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.texts.len() == before.1.saturating_add(1)
+                && self.verbatim.len() == before.2
+                && self.nodes.last().is_some_and(|node| matches!(*node, DocNode::Text(identity) if usize::try_from(u32::from(identity)) == Ok(before.1)))
+                && self.texts.last().is_some_and(|stored| stored.as_ref().as_ptr() == before.4
+                && stored.as_ref().len() == before.5
+                && stored.width() == before.6)
+                && u64::from(before.3.doc_nodes).checked_add(1) == Some(u64::from(usage.doc_nodes))
+                && u64::try_from(before.5).ok().and_then(|amount| u64::from(before.3.text_bytes).checked_add(amount)) == Some(u64::from(usage.text_bytes))
+                && usage == crate::limits::BuildUsage { doc_nodes: usage.doc_nodes, text_bytes: usage.text_bytes, ..before.3 }) }
+    )]
     #[inline]
     fn store_text(
         &mut self,
@@ -914,7 +1260,8 @@ impl<'meter> DocBuilder<'meter>
     /// Stores one verbatim identity and its document node atomically.
     ///
     /// # Specification
-    /// - requires: `lines` is the scan of `bytes` and has a final fragment.
+    /// - requires: `text` has coherent bytes and scan records, including its
+    ///   final fragment.
     /// - ensures: bytes, fragments, and node usage are charged before stores
     ///   grow.
     /// - provides: the shared verbatim insertion path.
@@ -926,9 +1273,38 @@ impl<'meter> DocBuilder<'meter>
     /// Returns the first typed failure found during preflight or insertion.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every physical fragment, including an empty final
-    ///   fragment, is counted exactly once.
-    /// - witness: `algebra::tests::verbatim_with_a_trailing_ending_stores_an_empty_final_fragment`
+    /// - hypothesis: L3 — empty and multibyte text, physical fragments, shared
+    ///   handles and exact byte/node ceilings expose stored payloads, nominal
+    ///   counts and complete usage snapshots. Duplicate storage, wrong identity
+    ///   assignment, byte/scalar confusion and mutation before refusal change
+    ///   those observations; allocation failure is not deterministically
+    ///   injected.
+    /// - witness: `build::tests::failed_builder_operations_preserve_stores_and_charge_only_valid_edges`
+    /// - witness: `arena::tests::text_ingestion_preserves_unicode_counts_and_owned_allocations`
+    /// - witness: `arena::tests::short_verbatim_inputs_match_an_independent_fragment_oracle`
+    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
+    #[spec(
+        captures: before = (self.nodes.len(), self.texts.len(), self.verbatim.len(), self.meter.usage(), text.as_ref().as_ptr(), text.as_ref().len(), text.lines().as_ptr(), text.lines().len()),
+        ensures: |ret| { let usage = self.meter.usage();
+            ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
+                && self.texts.len() == before.1
+                && self.verbatim.len() == before.2
+                && usage == before.3,
+            |handle| handle.arena_key() == self.arena
+                && usize::try_from(u32::from(handle.node_id())) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.texts.len() == before.1
+                && self.verbatim.len() == before.2.saturating_add(1)
+                && self.nodes.last().is_some_and(|node| matches!(*node, DocNode::Verbatim(identity) if usize::try_from(u32::from(identity)) == Ok(before.2)))
+                && self.verbatim.last().is_some_and(|stored| stored.as_ref().as_ptr() == before.4
+                && stored.as_ref().len() == before.5
+                && stored.lines().as_ptr() == before.6
+                && stored.lines().len() == before.7)
+                && u64::from(before.3.doc_nodes).checked_add(1) == Some(u64::from(usage.doc_nodes))
+                && u64::try_from(before.5).ok().and_then(|amount| u64::from(before.3.text_bytes).checked_add(amount)) == Some(u64::from(usage.text_bytes))
+                && u64::try_from(before.7).ok().and_then(|amount| u64::from(before.3.verbatim_lines).checked_add(amount)) == Some(u64::from(usage.verbatim_lines))
+                && usage == crate::limits::BuildUsage { doc_nodes: usage.doc_nodes, text_bytes: usage.text_bytes, verbatim_lines: usage.verbatim_lines, ..before.3 }) }
+    )]
     #[inline]
     fn store_verbatim(
         &mut self,
@@ -979,9 +1355,26 @@ impl<'meter> DocBuilder<'meter>
     /// Returns `UnknownDoc`, `ArithmeticOverflow`, or `LimitExceeded`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every flatten edge contributes exactly one build
-    ///   step.
+    /// - hypothesis: L3 — unchanged leaves, soft and hard lines, shared
+    ///   subgraphs and a reached ceiling expose flat-image identity, rendered
+    ///   bytes, node growth and step usage. Losing reuse, changing child order,
+    ///   retaining a soft line or omitting an edge/probe charge changes those
+    ///   observations; deep spines additionally witness heap rather than
+    ///   native-stack traversal.
+    /// - witness: `algebra::tests::flattening_is_idempotent`
+    /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
     /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
+    /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
+    #[spec(
+        captures: before = (self.meter.usage(), usize::try_from(u32::from(doc)).ok().and_then(|index| self.flattened.get(index)).copied()),
+        ensures: |ret| { let usage = self.meter.usage();
+            ret.as_ref().map_or_else(|error| usage == before.0
+                && (matches!(*error, BuildError::ArithmeticOverflow { operation: BuildArithmetic::BuildSteps } | BuildError::LimitExceeded { kind: crate::error::BuildLimitKind::BuildSteps, .. }) || (*error == BuildError::UnknownDoc
+                && before.1.is_none())),
+            |image| before.1 == Some(*image)
+                && u64::from(before.0.build_steps).checked_add(1) == Some(u64::from(usage.build_steps))
+                && usage == crate::limits::BuildUsage { build_steps: usage.build_steps, ..before.0 }) }
+    )]
     #[inline]
     fn flattened_edge(
         &mut self,
@@ -1006,7 +1399,7 @@ impl<'meter> DocBuilder<'meter>
     /// # Specification
     /// - requires: `candidate` is a fully mapped flattened node.
     /// - ensures: the image is the one stored for a structurally equal node, if
-    ///   any; the fixed-seed table makes the answer the same on every run.
+    ///   any; the ordered map makes the answer the same on every run.
     /// - provides: image reuse; [`interned::Absent::Unseen`] when no equal
     ///   image was stored before.
     /// - fails: reports a build-step limit or arithmetic overflow.
@@ -1017,9 +1410,26 @@ impl<'meter> DocBuilder<'meter>
     /// charged.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two construction orders over the same candidates seal
-    ///   to the same image identities and the same arena shape.
-    /// - witness: `algebra::tests::finalization_is_deterministic_across_runs`
+    /// - hypothesis: L3 — unchanged leaves, soft and hard lines, shared
+    ///   subgraphs and a reached ceiling expose flat-image identity, rendered
+    ///   bytes, node growth and step usage. Losing reuse, changing child order,
+    ///   retaining a soft line or omitting an edge/probe charge changes those
+    ///   observations; deep spines additionally witness heap rather than
+    ///   native-stack traversal.
+    /// - witness: `algebra::tests::flattening_is_idempotent`
+    /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
+    /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
+    /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
+    #[spec(
+        captures: before = (self.meter.usage(), self.flatten_memo.get(&candidate).copied(), self.flatten_memo.len(), self.nodes.len()),
+        ensures: |ret| { let usage = self.meter.usage();
+            self.flatten_memo.len() == before.2
+                && self.nodes.len() == before.3
+                && ret.as_ref().map_or_else(|_error| usage == before.0,
+            |image| *image == before.1.map_or(Maybe::Absent(interned::Absent::Unseen), Maybe::Present)
+                && u64::from(before.0.build_steps).checked_add(1) == Some(u64::from(usage.build_steps))
+                && usage == crate::limits::BuildUsage { build_steps: usage.build_steps, ..before.0 }) }
+    )]
     #[inline]
     fn find_flattened(
         &mut self,
@@ -1049,9 +1459,30 @@ impl<'meter> DocBuilder<'meter>
     /// `LimitExceeded`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one distinct candidate creates at most one image and
-    ///   consumes exactly one node charge.
-    /// - witness: `algebra::tests::finalization_appends_at_most_one_image_per_node`
+    /// - hypothesis: L3 — unchanged leaves, soft and hard lines, shared
+    ///   subgraphs and a reached ceiling expose flat-image identity, rendered
+    ///   bytes, node growth and step usage. Losing reuse, changing child order,
+    ///   retaining a soft line or omitting an edge/probe charge changes those
+    ///   observations; deep spines additionally witness heap rather than
+    ///   native-stack traversal.
+    /// - witness: `algebra::tests::flattening_is_idempotent`
+    /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
+    /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
+    /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
+    #[spec(
+        requires: !self.flatten_memo.contains_key(&candidate), captures: before = (self.nodes.len(), self.flatten_memo.len(), self.meter.usage()),
+        ensures: |ret| { let usage = self.meter.usage();
+            ret.as_ref().map_or_else(|_error| self.nodes.len() == before.0
+                && self.flatten_memo.len() == before.1
+                && usage == before.2,
+            |node| usize::try_from(u32::from(*node)) == Ok(before.0)
+                && self.nodes.len() == before.0.saturating_add(1)
+                && self.nodes.last() == Some(&candidate)
+                && self.flatten_memo.len() == before.1.saturating_add(1)
+                && self.flatten_memo.get(&candidate) == Some(node)
+                && u64::from(before.2.doc_nodes).checked_add(1) == Some(u64::from(usage.doc_nodes))
+                && usage == crate::limits::BuildUsage { doc_nodes: usage.doc_nodes, ..before.2 }) }
+    )]
     #[inline]
     fn insert_flattened(
         &mut self,
@@ -1088,9 +1519,34 @@ impl<'meter> DocBuilder<'meter>
     /// Returns `AllocationFailed`, `ArithmeticOverflow`, or `LimitExceeded`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — repeated soft lines share one text identity and one
-    ///   byte charge.
-    /// - witness: `algebra::tests::flatten_turns_a_line_into_one_space`
+    /// - hypothesis: L3 — unchanged leaves, soft and hard lines, shared
+    ///   subgraphs and a reached ceiling expose flat-image identity, rendered
+    ///   bytes, node growth and step usage. Losing reuse, changing child order,
+    ///   retaining a soft line or omitting an edge/probe charge changes those
+    ///   observations; deep spines additionally witness heap rather than
+    ///   native-stack traversal.
+    /// - witness: `algebra::tests::flattening_is_idempotent`
+    /// - witness: `algebra::tests::finalization_reuses_the_original_identity_when_nothing_changes`
+    /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
+    /// - witness: `algebra::tests::deep_left_spine_construction_uses_a_heap_work_stack`
+    #[spec(
+        captures: before = (self.space_text, self.texts.len(), self.nodes.len(), self.meter.usage()),
+        ensures: |ret| { let usage = self.meter.usage();
+            self.nodes.len() == before.2
+                && ret.as_ref().map_or_else(|_error| self.space_text == before.0
+                && self.texts.len() == before.1
+                && usage == before.3,
+            |identity| self.space_text == Some(*identity)
+                && usize::try_from(u32::from(*identity)).ok().and_then(|index| self.texts.get(index)).is_some_and(|text| text.as_ref() == " "
+                && u32::from(text.width()) == 1)
+                && before.0.map_or_else(|| self.texts.len() == before.1.saturating_add(1)
+                && usize::try_from(u32::from(*identity)) == Ok(before.1)
+                && u64::from(before.3.text_bytes).checked_add(1) == Some(u64::from(usage.text_bytes))
+                && usage == crate::limits::BuildUsage { text_bytes: usage.text_bytes, ..before.3 },
+            |existing| *identity == existing
+                && self.texts.len() == before.1
+                && usage == before.3)) }
+    )]
     #[inline]
     fn space_text_id(&mut self) -> Result<TextId, BuildError>
     {
@@ -1136,10 +1592,18 @@ impl KeyCounter
     /// Returns [`BuildError::ArenaKeyExhausted`] once every token is taken.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surface is the exhaustion boundary: the largest
-    ///   token is minted once and leaves the counter exhausted, and the
-    ///   exhausted counter refuses rather than wrapping to a used token.
+    /// - hypothesis: L3 — local transitions at one, u32 maximum and exhausted
+    ///   zero expose exact token/next-state pairs; concurrent minting exposes
+    ///   duplicate arena keys without assuming a global starting value.
+    ///   Wraparound, token reuse, skipped advancement and a non-atomic update
+    ///   change these observations.
     /// - witness: `build::tests::an_exhausted_arena_key_counter_is_reported_rather_than_reused`
+    /// - witness: `build::tests::concurrent_minting_never_reuses_an_arena_namespace`
+    #[spec(
+        ensures: |ret| NonZeroU32::new(self.next).map_or_else(|| ret == Err(BuildError::ArenaKeyExhausted),
+            |token| ret.is_ok_and(|(key, next)| key == ArenaKey::from(token)
+                && next.next == self.next.checked_add(1).unwrap_or(0)))
+    )]
     fn mint(self) -> Result<(ArenaKey, Self), BuildError>
     {
         let Some(token) = NonZeroU32::new(self.next)
@@ -1164,9 +1628,21 @@ impl KeyCounter
 /// Returns `ArenaKeyExhausted` when no non-zero token remains.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — through [`KeyCounter::mint`], the one transition the
-///   atomic update applies, witnessed at the exhaustion boundary.
+/// - hypothesis: L3 — local transitions at one, u32 maximum and exhausted zero
+///   expose exact token/next-state pairs; concurrent minting exposes duplicate
+///   arena keys without assuming a global starting value. Wraparound, token
+///   reuse, skipped advancement and a non-atomic update change these
+///   observations.
 /// - witness: `build::tests::an_exhausted_arena_key_counter_is_reported_rather_than_reused`
+/// - witness: `build::tests::concurrent_minting_never_reuses_an_arena_namespace`
+#[spec(
+    captures: before = NonZeroU32::new(NEXT_ARENA_KEY.load(Ordering::Relaxed)).map(ArenaKey::from),
+    ensures: |ret| { let after = NonZeroU32::new(NEXT_ARENA_KEY.load(Ordering::Relaxed)).map(ArenaKey::from);
+        ret.as_ref().map_or_else(|error| *error == BuildError::ArenaKeyExhausted
+            && after.is_none(),
+        |key| before.is_some_and(|before| *key >= before)
+            && after.is_none_or(|after| *key < after)) }
+)]
 #[inline]
 fn mint_arena_key() -> Result<ArenaKey, BuildError>
 {
@@ -1208,5 +1684,156 @@ mod tests
             "the counter is exhausted, not wrapped"
         );
         assert_eq!(last.1.mint(), Err(BuildError::ArenaKeyExhausted));
+    }
+
+    /// Failed insertion leaves stores intact, while only previously validated
+    /// edges consume steps.
+    #[test]
+    fn failed_builder_operations_preserve_stores_and_charge_only_valid_edges()
+    {
+        use super::DocBuilder;
+        use crate::arena::TextOwned;
+        use crate::arena::TextSource;
+        use crate::arena::VerbatimSource;
+        use crate::error::BuildLimitKind;
+        use crate::limits::BuildLimits;
+        use crate::limits::BuildMeter;
+        use crate::units::LimitBound;
+        use crate::units::MaxBuildSteps;
+        use crate::units::MaxDocNodes;
+        use crate::units::MaxTextBytes;
+        use crate::units::MaxVerbatimLines;
+        let foreign = {
+            let mut meter = BuildMeter::new(BuildLimits::default());
+            DocBuilder::try_new(&mut meter)
+                .expect("foreign builder")
+                .empty()
+        };
+        let mut meter = BuildMeter::new(BuildLimits {
+            max_doc_nodes: MaxDocNodes::from(3_u32),
+            max_text_bytes: MaxTextBytes::from(0_usize),
+            max_verbatim_lines: MaxVerbatimLines::from(1_u32),
+            max_build_steps: MaxBuildSteps::from(1_u64),
+        });
+        {
+            let mut builder = DocBuilder::try_new(&mut meter).expect("singleton basis fits");
+            let before = builder.meter.usage();
+            // workflow-gates: allow-escaped-newline
+            assert_eq!(
+                builder.text(TextSource::from("\n")),
+                Err(BuildError::InvalidText)
+            );
+            assert_eq!(
+                builder.text_owned(TextOwned::from(alloc::string::String::from("\t"))),
+                Err(BuildError::InvalidText)
+            );
+            assert_eq!(
+                builder.verbatim(VerbatimSource::from("\r")),
+                Err(BuildError::InvalidVerbatimLineEnding)
+            );
+            assert_eq!(
+                builder.text(TextSource::from("a")),
+                Err(BuildError::LimitExceeded {
+                    kind: BuildLimitKind::TextBytes,
+                    limit: LimitBound::from(0_u64)
+                })
+            );
+            assert_eq!(
+                builder.verbatim(VerbatimSource::from("")),
+                Err(BuildError::LimitExceeded {
+                    kind: BuildLimitKind::DocNodes,
+                    limit: LimitBound::from(3_u64)
+                })
+            );
+            assert_eq!(builder.meter.usage(), before);
+            assert_eq!(
+                (
+                    builder.nodes.len(),
+                    builder.texts.len(),
+                    builder.verbatim.len()
+                ),
+                (3, 0, 0)
+            );
+            let empty = builder.empty();
+            assert_eq!(builder.concat(empty, foreign), Err(BuildError::UnknownDoc));
+            let after_edge = builder.meter.usage();
+            assert_eq!(u64::from(after_edge.build_steps), 1);
+            assert_eq!(after_edge, crate::limits::BuildUsage {
+                build_steps: after_edge.build_steps,
+                ..before
+            });
+            assert_eq!(builder.concat(foreign, empty), Err(BuildError::UnknownDoc));
+            assert_eq!(
+                builder.concat(empty, empty),
+                Err(BuildError::LimitExceeded {
+                    kind: BuildLimitKind::BuildSteps,
+                    limit: LimitBound::from(1_u64)
+                })
+            );
+            assert_eq!(
+                builder.space_text_id(),
+                Err(BuildError::LimitExceeded {
+                    kind: BuildLimitKind::TextBytes,
+                    limit: LimitBound::from(0_u64)
+                })
+            );
+            assert_eq!(builder.meter.usage(), after_edge);
+            assert_eq!(
+                (
+                    builder.nodes.len(),
+                    builder.texts.len(),
+                    builder.verbatim.len()
+                ),
+                (3, 0, 0)
+            );
+            assert_eq!(builder.space_text, None);
+        }
+        let spent = meter.usage();
+        assert!(matches!(
+            DocBuilder::try_new(&mut meter),
+            Err(BuildError::LimitExceeded {
+                kind: BuildLimitKind::DocNodes,
+                ..
+            })
+        ));
+        assert_eq!(meter.usage(), spent);
+        let mut shared_meter = BuildMeter::new(BuildLimits::default());
+        drop(DocBuilder::try_new(&mut shared_meter).expect("first builder"));
+        let spent = shared_meter.usage();
+        let next = DocBuilder::try_new(&mut shared_meter).expect("second builder");
+        assert_eq!(
+            u64::from(next.meter.usage().doc_nodes),
+            u64::from(spent.doc_nodes).saturating_add(3)
+        );
+    }
+
+    /// Concurrent calls mint disjoint namespaces without resetting the shared
+    /// counter.
+    #[test]
+    fn concurrent_minting_never_reuses_an_arena_namespace()
+    {
+        let barrier = std::sync::Barrier::new(4);
+        let keys = std::thread::scope(|scope| {
+            let workers = core::iter::repeat_with(|| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    core::iter::repeat_with(|| {
+                        super::mint_arena_key().expect("bounded key minting")
+                    })
+                    .take(32)
+                    .collect::<alloc::vec::Vec<_>>()
+                })
+            })
+            .take(4)
+            .collect::<alloc::vec::Vec<_>>();
+            workers
+                .into_iter()
+                .flat_map(|worker| worker.join().expect("minting worker"))
+                .collect::<alloc::vec::Vec<_>>()
+        });
+        let mut seen = alloc::collections::BTreeSet::new();
+        for key in keys {
+            assert!(seen.insert(key), "every key owns a distinct namespace");
+        }
     }
 }

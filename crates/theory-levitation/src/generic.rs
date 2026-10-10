@@ -24,6 +24,7 @@ use alloc::string::ToString as _;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arity::SortRef;
@@ -368,7 +369,17 @@ quenchant_shape::reason_enum! {
 /// The code of the constructor `ctor` names in `desc`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the addressed constructor's code when the tag is in range,
+///   otherwise the explicit out-of-range absence.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid tags, the first absent tag and the largest tag are
+///   observed through structural equality and exact encoded bytes; off-by-one
+///   indexing or treating absence as a unit payload changes them.
+/// - witness: `generic::tests::generic_eq_is_description_driven_structural`
+/// - witness: `generic::tests::malformed_values_and_out_of_range_tags_have_defined_observations`
+#[spec(ensures: |ref code| matches!(*code, Maybe::Present(_)) == (usize::from(ctor) < desc.ctors.len()))]
 fn ctor_code<G>(
     desc: &SignDesc<G>,
     ctor: ConstructorTag,
@@ -400,6 +411,16 @@ quenchant_shape::reason_enum! {
 /// - ensures: the name unless it is empty or underscore-led, which marks a
 ///   minted placeholder.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and underscore-led names are separated from an
+///   authored name by exact presence and rendered port text; omitting either
+///   anonymous-name condition or stripping a real name changes the result.
+/// - witness: `generic::tests::port_rendering_distinguishes_authored_and_placeholder_names`
+#[spec(ensures: |ref name| match *name {
+    | Maybe::Present(name) => name == &port.name && !name.as_ref().is_empty() && !name.as_ref().starts_with('_'),
+    | Maybe::Absent(_) => port.name.as_ref().is_empty() || port.name.as_ref().starts_with('_'),
+})]
 fn authored_name(port: &SortRef) -> Maybe<&Name, port_name::Absent>
 {
     let name = port.name.as_ref();
@@ -425,13 +446,18 @@ fn authored_name(port: &SortRef) -> Maybe<&Name, port_name::Absent>
 ///   occurrence re-enters at the nested constructor's code.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — equal values, values differing in constructor, values
-///   differing in a single nested leaf, and values differing only below a
-///   recursive occurrence are distinguished.
+/// - hypothesis: L3 — valid values, unequal tags/leaves/atoms, opposite sum
+///   injections, recursive differences, malformed payloads and out-of-range
+///   tags are observed by exact equality verdicts; skipped shape checks or
+///   comparing only a prefix changes those verdicts.
 /// - witness: `generic::tests::generic_eq_is_description_driven_structural`
 /// - witness: `generic::tests::generic_eq_recurses_through_var`
+/// - witness: `generic::tests::malformed_values_and_out_of_range_tags_have_defined_observations`
+/// - witness: `generic::tests::sum_and_abstraction_encodings_pin_sides_names_and_lengths`
 #[inline]
 #[must_use]
+#[spec(ensures: |equal| !bool::from(equal)
+    || (left == right && usize::from(left.ctor) < desc.ctors.len()))]
 pub fn generic_eq<G>(
     desc: &SignDesc<G>,
     left: &DescValue,
@@ -565,12 +591,18 @@ pub fn generic_eq<G>(
 ///   out-of-range tag encodes just the tag).
 ///
 /// # Adequacy
-/// - hypothesis: L3 — two equal values and a value differing in one leaf
-///   separate the determinism and injectivity claims, and the pinned bytes of
-///   one value fix the tag-then-length-then-bytes layout.
+/// - hypothesis: L3 — exact bytes for empty/nonempty leaves, both injection
+///   sides and atom names pin tags, lengths and order. Malformed payloads and
+///   first-past/largest tags pin partial encoding; wrong endian, side or length
+///   bytes, omitted names and encoding a refused payload differ.
 /// - witness: `generic::tests::serialization_is_deterministic_and_agrees_with_equality`
+/// - witness: `generic::tests::malformed_values_and_out_of_range_tags_have_defined_observations`
+/// - witness: `generic::tests::sum_and_abstraction_encodings_pin_sides_names_and_lengths`
 #[inline]
 #[must_use]
+#[spec(ensures: |ref bytes| bytes.as_ref().starts_with(
+    &u32::try_from(usize::from(value.ctor)).unwrap_or(u32::MAX).to_le_bytes()
+))]
 pub fn serialize_value<G>(
     desc: &SignDesc<G>,
     value: &DescValue,
@@ -686,17 +718,24 @@ pub fn serialize_value<G>(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — a parameterized description, descriptions whose
-///   constructors are recursive, attributed and primitive-fielded, and a
-///   description carrying a circuit rule with its telescope pin the rendered
-///   members and the omitted ones.
+/// - hypothesis: L3 — parameterized and unparameterized descriptions, no
+///   members and descriptions with sorts, operations and circuit telescopes
+///   have exact expected text; reordered or omitted members, added constructor
+///   members, lost separators and the wrong empty-body form change it.
 /// - witness: `generic::tests::desc_inspection_renders_the_structure`
 /// - witness: `generic::tests::desc_inspection_omits_constructor_members`
 /// - witness: `generic::tests::desc_inspection_renders_a_circuit_rule_and_its_telescope`
-/// - witness: `generic::tests::a_description_carrying_no_circuit_renders_exactly_as_before`
+/// - witness: `generic::tests::telescopes_and_empty_descriptions_have_exact_delimiters`
 /// - witness: `generic::tests::desc_inspection_omits_a_primitive_field_constructor`
+/// - witness: `generic::tests::port_rendering_distinguishes_authored_and_placeholder_names`
+/// - witness: `generic::tests::description_members_keep_their_declared_kind_order`
 #[inline]
 #[must_use]
+#[spec(ensures: |ref text| text.as_ref().strip_prefix("sign ")
+    .and_then(|body| body.strip_prefix(desc.id.name.as_ref()))
+    .is_some_and(|body| body.starts_with(if desc.params.is_empty() { " {" } else { "(" }))
+    && text.as_ref().ends_with(if desc.sorts.is_empty() && desc.opers.is_empty()
+        && desc.rules.is_empty() && desc.circuits.is_empty() { "{}" } else { "; }" }))]
 pub fn serialize_desc<G>(desc: &SignDesc<G>) -> SerializedDescText
 {
     let params: Vec<String> = desc
@@ -748,7 +787,18 @@ pub fn serialize_desc<G>(desc: &SignDesc<G>) -> SerializedDescText
 /// its parentheses.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: named-port input notation and an output tuple, except that a sole
+///   anonymous output is its bare sort; both empty tuples are explicit.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, one named, one anonymous and two output ports have
+///   exact text; omitted parentheses, named/anonymous confusion and reversed
+///   port order change the rendering.
+/// - witness: `generic::tests::port_rendering_distinguishes_authored_and_placeholder_names`
+#[spec(ensures: |ref text| text.strip_prefix("oper ")
+    .and_then(|body| body.strip_prefix(oper.name.as_ref()))
+    .is_some_and(|body| body.starts_with(" : (")) && text.contains(") --> "))]
 fn render_oper_member(oper: &OperDesc) -> String
 {
     let inputs: Vec<String> = oper.arity.inputs.iter().map(render_port).collect();
@@ -764,7 +814,19 @@ fn render_oper_member(oper: &OperDesc) -> String
 /// no authored name.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: anonymous ports render their bare sort; authored names render as
+///   the name, a colon separator and their sort.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, underscore and authored names have exact port
+///   text; a spurious name, lost sort or wrong separator changes that text.
+/// - witness: `generic::tests::port_rendering_distinguishes_authored_and_placeholder_names`
+#[spec(ensures: |ref text| match authored_name(port) {
+    | Maybe::Present(name) => text.strip_prefix(name.as_ref())
+        .and_then(|body| body.strip_prefix(" : ")) == Some(port.sort.as_ref()),
+    | Maybe::Absent(_) => text == port.sort.as_ref(),
+})]
 fn render_port(port: &SortRef) -> String
 {
     match authored_name(port) {
@@ -782,7 +844,18 @@ fn render_port(port: &SortRef) -> String
 /// with.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: no text for an empty telescope; otherwise ordered, comma-
+///   separated rewrite binders in parentheses, preserving sorted and pinned
+///   endpoint forms.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and mixed sorted/pinned telescopes have exact text;
+///   spurious empty parentheses, reordering and confusing the endpoint forms
+///   change that text.
+/// - witness: `generic::tests::telescopes_and_empty_descriptions_have_exact_delimiters`
+#[spec(ensures: |ref text| if ports.is_empty() { text.is_empty() }
+    else { text.starts_with('(') && text.ends_with(')') && text.contains(" ==> ") })]
 fn render_telescope(ports: &[RewritePort]) -> String
 {
     if ports.is_empty() {
@@ -804,7 +877,14 @@ fn render_telescope(ports: &[RewritePort]) -> String
 /// Render a rule face to the inspection notation `lhs ==> rhs`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the left and right inspection terms separated by ` ==> `.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a circuit sphere with different source and target
+///   applications has exact text; a missing separator or swapped sides fails.
+/// - witness: `generic::tests::desc_inspection_renders_a_circuit_rule_and_its_telescope`
+#[spec(ensures: |ref text| text.contains(" ==> "))]
 fn render_face(rule: &RuleFace) -> String
 {
     format!("{} ==> {}", rule.lhs, rule.rhs)
@@ -1048,23 +1128,72 @@ mod tests
     }
 
     #[test]
-    fn a_description_carrying_no_circuit_renders_exactly_as_before()
+    fn description_members_keep_their_declared_kind_order()
     {
+        let rules = [("x", "y"), ("y", "z")].map(|(left, right)| {
+            RuleFace::new(
+                FreeTerm::var(left),
+                FreeTerm::var(right),
+                [],
+                SurfaceSpan::new(0_usize.into(), 0_usize.into()),
+            )
+        });
+        let opers = ["first", "second"].map(|name| {
+            OperDesc::new(
+                name,
+                crate::arity::BridgeArity::single_output([], SortRef::new("", "A")),
+                Attrs::empty(),
+            )
+        });
+        let circuits = ["c", "d"]
+            .map(|name| CircuitRule::new(name, rules[0].clone(), CircuitBody::new([], "x")));
         let desc: SignDesc<Grade> = SignDesc::new(
-            NominalId::new(0_u64.into(), "Bit"),
-            Vec::new(),
-            [CtorDesc::new("Off", Code::unit(), "Bit", Attrs::empty())],
-            Vec::new(),
-            Vec::new(),
+            NominalId::new(0_u64.into(), "Ordered"),
+            [],
+            [],
+            opers,
+            rules,
             DeclPolarity::Data,
             Attrs::empty(),
-        );
+        )
+        .with_sorts([
+            crate::desc::SortDesc::new("A", DeclPolarity::Data),
+            crate::desc::SortDesc::new("B", DeclPolarity::Data),
+        ])
+        .with_circuits(circuits);
         assert_eq!(
-            "sign Bit { sort Bit : Type; }",
             serialize_desc(&desc).as_ref(),
-            "the circuit slot is invisible when it is empty, and the lone constructor has no \
-             member spelling"
+            "sign Ordered { sort A : Type; sort B : Type; oper first : () --> A; oper second : () --> A; rule x ==> y; rule y ==> z; rule c : x ==> y; rule d : x ==> y; }"
         );
+    }
+
+    #[test]
+    fn telescopes_and_empty_descriptions_have_exact_delimiters()
+    {
+        assert_eq!(render_telescope(&[]), "");
+        let ports = [
+            RewritePort::sorted("p", "Nat"),
+            RewritePort::pinned(
+                "q",
+                FreeTerm::var("x"),
+                FreeTerm::op("s", [FreeTerm::var("x")]),
+            ),
+        ];
+        assert_eq!(
+            render_telescope(&ports),
+            "(rule p : Nat ==> Nat, rule q : x ==> s(x))"
+        );
+        let desc: SignDesc<Grade> = SignDesc::new(
+            NominalId::new(0_u64.into(), "Empty"),
+            [],
+            [],
+            [],
+            [],
+            DeclPolarity::Data,
+            Attrs::empty(),
+        )
+        .with_sorts([]);
+        assert_eq!(serialize_desc(&desc).as_ref(), "sign Empty {}");
     }
 
     #[test]
@@ -1093,5 +1222,99 @@ mod tests
             serialize_desc(&desc).as_ref(),
             "a primitive-field constructor renders no member spelling either"
         );
+    }
+
+    #[test]
+    fn malformed_values_and_out_of_range_tags_have_defined_observations()
+    {
+        let desc = maybe_desc();
+        for tag in [2_usize, usize::MAX] {
+            let value = DescValue::new(ConstructorTag::from(tag), Payload::unit());
+            assert!(!bool::from(generic_eq(&desc, &value, &value)));
+            let expected = u32::try_from(tag).unwrap_or(u32::MAX).to_le_bytes();
+            assert_eq!(serialize_value(&desc, &value).as_ref(), expected);
+        }
+        let malformed = DescValue::new(ConstructorTag::from(1_usize), Payload::unit());
+        assert!(!bool::from(generic_eq(&desc, &malformed, &malformed)));
+        assert_eq!(serialize_value(&desc, &malformed).as_ref(), [1_u8, 0, 0, 0]);
+    }
+
+    #[test]
+    fn sum_and_abstraction_encodings_pin_sides_names_and_lengths()
+    {
+        let mut desc = maybe_desc();
+        let field = Code::field(ValueTypeRef::param("a"), Grade::One, Attrs::empty());
+        desc.ctors = alloc::boxed::Box::from([CtorDesc::new(
+            "Sum",
+            Code::sum(
+                field.clone(),
+                Code::bind(crate::code::AtomSort::named("Name"), field),
+            ),
+            "Maybe",
+            Attrs::empty(),
+        )]);
+        let left = DescValue::new(
+            ConstructorTag::from(0_usize),
+            Payload::inj(Side::Left, Payload::leaf(&b""[..])),
+        );
+        let right = DescValue::new(
+            ConstructorTag::from(0_usize),
+            Payload::inj(Side::Right, Payload::abs("a", Payload::leaf(&b"b"[..]))),
+        );
+        let renamed = DescValue::new(
+            ConstructorTag::from(0_usize),
+            Payload::inj(Side::Right, Payload::abs("c", Payload::leaf(&b"b"[..]))),
+        );
+        assert!(bool::from(generic_eq(&desc, &left, &left)));
+        assert!(bool::from(generic_eq(&desc, &right, &right)));
+        assert!(!bool::from(generic_eq(&desc, &left, &right)));
+        assert!(!bool::from(generic_eq(&desc, &right, &renamed)));
+        assert_eq!(serialize_value(&desc, &left).as_ref(), [
+            0_u8, 0, 0, 0, 0, 0, 0, 0, 0
+        ]);
+        assert_eq!(serialize_value(&desc, &right).as_ref(), [
+            0_u8, 0, 0, 0, 1, 1, 0, 0, 0, b'a', 1, 0, 0, 0, b'b'
+        ]);
+    }
+
+    #[test]
+    fn port_rendering_distinguishes_authored_and_placeholder_names()
+    {
+        for name in ["", "_", "_0", "_private"] {
+            let port = SortRef::new(name, "T");
+            assert_eq!(
+                authored_name(&port),
+                Maybe::Absent(port_name::Absent::Anonymous)
+            );
+            assert_eq!(render_port(&port), "T");
+        }
+        let named = SortRef::new("port", "T");
+        assert_eq!(authored_name(&named), Maybe::Present(&named.name));
+        assert_eq!(render_port(&named), "port : T");
+        for (outputs, expected) in [
+            (vec![], "oper f : (x : A, B) --> ()"),
+            (vec![SortRef::new("_0", "C")], "oper f : (x : A, B) --> C"),
+            (
+                vec![SortRef::new("y", "C")],
+                "oper f : (x : A, B) --> (y : C)",
+            ),
+            (
+                vec![SortRef::new("_0", "C"), SortRef::new("_1", "D")],
+                "oper f : (x : A, B) --> (C, D)",
+            ),
+        ] {
+            let oper = OperDesc::new(
+                "f",
+                crate::arity::BridgeArity::new(
+                    [SortRef::new("x", "A"), SortRef::new("_0", "B")],
+                    [],
+                    [],
+                    [],
+                    outputs,
+                ),
+                Attrs::empty(),
+            );
+            assert_eq!(render_oper_member(&oper), expected);
+        }
     }
 }

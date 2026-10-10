@@ -29,6 +29,8 @@
 //! segment, which is what stops a long run from resetting its own accounting
 //! between pieces.
 
+use anodized::spec;
+
 use crate::error::BuildError;
 use crate::error::RenderError;
 use crate::error::RenderLimitKind;
@@ -69,6 +71,18 @@ use crate::units::VmStepsUsed;
 /// - ensures: a builder refuses rather than exceeding any of the four.
 /// - provides: the complete build-phase budget, stated once.
 /// - panics: none.
+/// - executable: none — this configuration declaration has no invocation
+///   boundary; constructors and checked meter transitions carry its executable
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+///   followed by refusals and seeded u64 overflow. Exact snapshots and typed
+///   errors distinguish off-by-one admission, double charging, changes to
+///   unrelated counters and mutation before refusal. Preflights must leave the
+///   complete snapshot unchanged.
+/// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+/// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BuildLimits
 {
@@ -90,6 +104,18 @@ pub struct BuildLimits
 /// - provides: an observation of build cost a caller can log, assert on, or
 ///   compare across runs.
 /// - panics: none.
+/// - executable: none — this snapshot declaration has no invocation boundary;
+///   constructors and checked meter transitions carry its executable
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+///   followed by refusals and seeded u64 overflow. Exact snapshots and typed
+///   errors distinguish off-by-one admission, double charging, changes to
+///   unrelated counters and mutation before refusal. Preflights must leave the
+///   complete snapshot unchanged.
+/// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+/// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BuildUsage
 {
@@ -115,6 +141,18 @@ pub struct BuildUsage
 ///   and a refused charge leaves the counter unchanged.
 /// - provides: the enforcement point for every build limit in the crate.
 /// - panics: none.
+/// - executable: none — this state declaration has no invocation boundary;
+///   constructors and checked meter transitions carry its executable
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+///   followed by refusals and seeded u64 overflow. Exact snapshots and typed
+///   errors distinguish off-by-one admission, double charging, changes to
+///   unrelated counters and mutation before refusal. Preflights must leave the
+///   complete snapshot unchanged.
+/// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+/// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
 #[derive(Debug)]
 pub struct BuildMeter
 {
@@ -153,9 +191,20 @@ impl BuildMeter
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — a new meter starts all four cumulative counters at
-    ///   zero and accepts the builder's singleton baseline.
-    /// - witness: `algebra::tests::empty_emits_nothing_and_moves_no_column`
+    /// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+    ///   followed by refusals and seeded u64 overflow. Exact snapshots and
+    ///   typed errors distinguish off-by-one admission, double charging,
+    ///   changes to unrelated counters and mutation before refusal. Preflights
+    ///   must leave the complete snapshot unchanged.
+    /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    #[spec(
+        ensures: |ret| ret.limits == limits
+                && u64::from(ret.used.doc_nodes) == 0
+                && u64::from(ret.used.text_bytes) == 0
+                && u64::from(ret.used.verbatim_lines) == 0
+                && u64::from(ret.used.build_steps) == 0
+    )]
     #[inline]
     #[must_use = "a build meter must be retained for the document build"]
     pub fn new(limits: BuildLimits) -> Self
@@ -180,9 +229,16 @@ impl BuildMeter
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — usage snapshots are cumulative and do not reset the
-    ///   meter between observations.
+    /// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+    ///   followed by refusals and seeded u64 overflow. Exact snapshots and
+    ///   typed errors distinguish off-by-one admission, double charging,
+    ///   changes to unrelated counters and mutation before refusal. Preflights
+    ///   must leave the complete snapshot unchanged.
+    /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    #[spec(
+        ensures: |ret| ret == self.used
+    )]
     #[inline]
     #[must_use]
     pub fn usage(&self) -> BuildUsage
@@ -205,10 +261,22 @@ impl BuildMeter
     /// the configured node ceiling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the node preflight accepts the exact node boundary
-    ///   and leaves usage unchanged when the next charge is refused.
-    /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    /// - witness: `algebra::tests::a_refused_charge_leaves_the_counter_unchanged`
+    /// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+    ///   followed by refusals and seeded u64 overflow. Exact snapshots and
+    ///   typed errors distinguish off-by-one admission, double charging,
+    ///   changes to unrelated counters and mutation before refusal. Preflights
+    ///   must leave the complete snapshot unchanged.
+    /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    #[spec(
+        ensures: |ret| { let next = u128::from(u64::from(self.used.doc_nodes)).saturating_add(u128::from(1_u64));
+            let ceiling = Some(u64::from(u32::from(self.limits.max_doc_nodes)));
+            ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::NodeCount } }
+            else { ceiling.is_some_and(|limit| next > u128::from(limit)
+                && *error == BuildError::LimitExceeded { kind: crate::error::BuildLimitKind::DocNodes, limit: crate::units::LimitBound::from(limit) }) } },
+            |&()| next <= u128::from(u64::MAX)
+                && ceiling.is_some_and(|limit| next <= u128::from(limit))) }
+    )]
     #[inline]
     pub(crate) fn check_doc_node(&self) -> Result<(), BuildError>
     {
@@ -232,10 +300,22 @@ impl BuildMeter
     /// representable, or `LimitExceeded` at the configured byte ceiling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — text preflight accepts the exact byte boundary and
-    ///   leaves usage unchanged after refusal.
-    /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    /// - witness: `algebra::tests::a_refused_charge_leaves_the_counter_unchanged`
+    /// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+    ///   followed by refusals and seeded u64 overflow. Exact snapshots and
+    ///   typed errors distinguish off-by-one admission, double charging,
+    ///   changes to unrelated counters and mutation before refusal. Preflights
+    ///   must leave the complete snapshot unchanged.
+    /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    #[spec(
+        ensures: |ret| { let next = u128::from(u64::from(self.used.text_bytes)).saturating_add(u128::from(u64::from(amount)));
+            let ceiling = u64::try_from(usize::from(self.limits.max_text_bytes)).ok();
+            ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::TextBytes } }
+            else { ceiling.is_some_and(|limit| next > u128::from(limit)
+                && *error == BuildError::LimitExceeded { kind: crate::error::BuildLimitKind::TextBytes, limit: crate::units::LimitBound::from(limit) }) } },
+            |&()| next <= u128::from(u64::MAX)
+                && ceiling.is_some_and(|limit| next <= u128::from(limit))) }
+    )]
     #[inline]
     pub(crate) fn check_text_bytes(
         &self,
@@ -264,10 +344,22 @@ impl BuildMeter
     /// at the configured fragment ceiling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — verbatim preflight counts the complete scan and
-    ///   refuses only the charge beyond its exact fragment ceiling.
-    /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    /// - witness: `algebra::tests::verbatim_with_a_trailing_ending_stores_an_empty_final_fragment`
+    /// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+    ///   followed by refusals and seeded u64 overflow. Exact snapshots and
+    ///   typed errors distinguish off-by-one admission, double charging,
+    ///   changes to unrelated counters and mutation before refusal. Preflights
+    ///   must leave the complete snapshot unchanged.
+    /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    #[spec(
+        ensures: |ret| { let next = u128::from(u64::from(self.used.verbatim_lines)).saturating_add(u128::from(u64::from(amount)));
+            let ceiling = Some(u64::from(u32::from(self.limits.max_verbatim_lines)));
+            ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::VerbatimLines } }
+            else { ceiling.is_some_and(|limit| next > u128::from(limit)
+                && *error == BuildError::LimitExceeded { kind: crate::error::BuildLimitKind::VerbatimLines, limit: crate::units::LimitBound::from(limit) }) } },
+            |&()| next <= u128::from(u64::MAX)
+                && ceiling.is_some_and(|limit| next <= u128::from(limit))) }
+    )]
     #[inline]
     pub(crate) fn check_verbatim_lines(
         &self,
@@ -295,10 +387,22 @@ impl BuildMeter
     /// at the configured step ceiling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — step preflight accepts the exact work ceiling and
-    ///   refuses only the next checked operation.
-    /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
+    /// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+    ///   followed by refusals and seeded u64 overflow. Exact snapshots and
+    ///   typed errors distinguish off-by-one admission, double charging,
+    ///   changes to unrelated counters and mutation before refusal. Preflights
+    ///   must leave the complete snapshot unchanged.
+    /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    #[spec(
+        ensures: |ret| { let next = u128::from(u64::from(self.used.build_steps)).saturating_add(u128::from(1_u64));
+            let ceiling = Some(u64::from(self.limits.max_build_steps));
+            ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::BuildSteps } }
+            else { ceiling.is_some_and(|limit| next > u128::from(limit)
+                && *error == BuildError::LimitExceeded { kind: crate::error::BuildLimitKind::BuildSteps, limit: crate::units::LimitBound::from(limit) }) } },
+            |&()| next <= u128::from(u64::MAX)
+                && ceiling.is_some_and(|limit| next <= u128::from(limit))) }
+    )]
     #[inline]
     pub(crate) fn check_step(&self) -> Result<(), BuildError>
     {
@@ -311,23 +415,41 @@ impl BuildMeter
     /// Charges one stored document node after a successful preflight.
     ///
     /// # Specification
-    /// - requires: [`Self::check_doc_node`] succeeded without an intervening
-    ///   charge.
-    /// - ensures: usage increases exactly once.
-    /// - provides: node-limit accounting for original and flattened images.
-    /// - fails: reports the same typed errors as the preflight if state
-    ///   changed.
+    /// - requires: the caller attempts one checked unit of this resource;
+    ///   exhausted budgets remain in the domain.
+    /// - ensures: success adds the requested amount exactly once; refusal
+    ///   leaves every usage counter unchanged.
+    /// - provides: cumulative build accounting consistent with the
+    ///   corresponding preflight.
+    /// - fails: reports arithmetic overflow before the resource ceiling,
+    ///   without a partial charge.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `ArithmeticOverflow` or `LimitExceeded` if the precondition was
-    /// not maintained.
+    /// Returns `ArithmeticOverflow` or `LimitExceeded` when the requested
+    /// charge cannot fit.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a successful node preflight is consumed exactly once
-    ///   and a refused charge does not mutate usage.
-    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_node`
-    /// - witness: `algebra::tests::a_refused_charge_leaves_the_counter_unchanged`
+    /// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+    ///   followed by refusals and seeded u64 overflow. Exact snapshots and
+    ///   typed errors distinguish off-by-one admission, double charging,
+    ///   changes to unrelated counters and mutation before refusal. Preflights
+    ///   must leave the complete snapshot unchanged.
+    /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    #[spec(
+        captures: before = self.used,
+        ensures: |ret| { let next = u128::from(u64::from(before.doc_nodes)).saturating_add(u128::from(1_u64));
+            let ceiling = Some(u64::from(u32::from(self.limits.max_doc_nodes)));
+            ret.as_ref().map_or_else(|error| self.used == before
+                && { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::NodeCount } }
+            else { ceiling.is_some_and(|limit| next > u128::from(limit)
+                && *error == BuildError::LimitExceeded { kind: crate::error::BuildLimitKind::DocNodes, limit: crate::units::LimitBound::from(limit) }) } },
+            |&()| next <= u128::from(u64::MAX)
+                && ceiling.is_some_and(|limit| next <= u128::from(limit))
+                && u128::from(u64::from(self.used.doc_nodes)) == next
+                && self.used == BuildUsage { doc_nodes: self.used.doc_nodes, ..before }) }
+    )]
     #[inline]
     pub(crate) fn charge_doc_node(&mut self) -> Result<(), BuildError>
     {
@@ -341,23 +463,41 @@ impl BuildMeter
     /// Charges new text and verbatim bytes after a successful preflight.
     ///
     /// # Specification
-    /// - requires: [`Self::check_text_bytes`] succeeded without an intervening
-    ///   charge.
-    /// - ensures: usage increases exactly by `amount`.
-    /// - provides: cumulative byte accounting.
-    /// - fails: reports the same typed errors as the preflight if state
-    ///   changed.
+    /// - requires: `amount` describes the new stored identity; exhausted
+    ///   budgets remain in the domain.
+    /// - ensures: success adds the requested amount exactly once; refusal
+    ///   leaves every usage counter unchanged.
+    /// - provides: cumulative build accounting consistent with the
+    ///   corresponding preflight.
+    /// - fails: reports arithmetic overflow before the resource ceiling,
+    ///   without a partial charge.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `ArithmeticOverflow` or `LimitExceeded` if the precondition was
-    /// not maintained.
+    /// Returns `ArithmeticOverflow` or `LimitExceeded` when the requested
+    /// charge cannot fit.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a successful byte preflight consumes exactly the
-    ///   requested amount and a refusal preserves the previous usage.
-    /// - witness: `algebra::tests::a_second_edge_to_a_shared_handle_charges_no_new_text_bytes`
-    /// - witness: `algebra::tests::a_refused_charge_leaves_the_counter_unchanged`
+    /// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+    ///   followed by refusals and seeded u64 overflow. Exact snapshots and
+    ///   typed errors distinguish off-by-one admission, double charging,
+    ///   changes to unrelated counters and mutation before refusal. Preflights
+    ///   must leave the complete snapshot unchanged.
+    /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    #[spec(
+        captures: before = self.used,
+        ensures: |ret| { let next = u128::from(u64::from(before.text_bytes)).saturating_add(u128::from(u64::from(amount)));
+            let ceiling = u64::try_from(usize::from(self.limits.max_text_bytes)).ok();
+            ret.as_ref().map_or_else(|error| self.used == before
+                && { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::TextBytes } }
+            else { ceiling.is_some_and(|limit| next > u128::from(limit)
+                && *error == BuildError::LimitExceeded { kind: crate::error::BuildLimitKind::TextBytes, limit: crate::units::LimitBound::from(limit) }) } },
+            |&()| next <= u128::from(u64::MAX)
+                && ceiling.is_some_and(|limit| next <= u128::from(limit))
+                && u128::from(u64::from(self.used.text_bytes)) == next
+                && self.used == BuildUsage { text_bytes: self.used.text_bytes, ..before }) }
+    )]
     #[inline]
     pub(crate) fn charge_text_bytes(
         &mut self,
@@ -374,23 +514,41 @@ impl BuildMeter
     /// Charges scanned verbatim fragments after a successful preflight.
     ///
     /// # Specification
-    /// - requires: [`Self::check_verbatim_lines`] succeeded without an
-    ///   intervening charge.
-    /// - ensures: usage increases exactly by `amount`.
-    /// - provides: cumulative physical-fragment accounting.
-    /// - fails: reports the same typed errors as the preflight if state
-    ///   changed.
+    /// - requires: `amount` describes the new stored identity; exhausted
+    ///   budgets remain in the domain.
+    /// - ensures: success adds the requested amount exactly once; refusal
+    ///   leaves every usage counter unchanged.
+    /// - provides: cumulative build accounting consistent with the
+    ///   corresponding preflight.
+    /// - fails: reports arithmetic overflow before the resource ceiling,
+    ///   without a partial charge.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `ArithmeticOverflow` or `LimitExceeded` if the precondition was
-    /// not maintained.
+    /// Returns `ArithmeticOverflow` or `LimitExceeded` when the requested
+    /// charge cannot fit.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a successful fragment preflight consumes exactly the
-    ///   scan count, including its final fragment.
-    /// - witness: `algebra::tests::verbatim_with_a_trailing_ending_stores_an_empty_final_fragment`
-    /// - witness: `algebra::tests::a_refused_charge_leaves_the_counter_unchanged`
+    /// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+    ///   followed by refusals and seeded u64 overflow. Exact snapshots and
+    ///   typed errors distinguish off-by-one admission, double charging,
+    ///   changes to unrelated counters and mutation before refusal. Preflights
+    ///   must leave the complete snapshot unchanged.
+    /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    #[spec(
+        captures: before = self.used,
+        ensures: |ret| { let next = u128::from(u64::from(before.verbatim_lines)).saturating_add(u128::from(u64::from(amount)));
+            let ceiling = Some(u64::from(u32::from(self.limits.max_verbatim_lines)));
+            ret.as_ref().map_or_else(|error| self.used == before
+                && { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::VerbatimLines } }
+            else { ceiling.is_some_and(|limit| next > u128::from(limit)
+                && *error == BuildError::LimitExceeded { kind: crate::error::BuildLimitKind::VerbatimLines, limit: crate::units::LimitBound::from(limit) }) } },
+            |&()| next <= u128::from(u64::MAX)
+                && ceiling.is_some_and(|limit| next <= u128::from(limit))
+                && u128::from(u64::from(self.used.verbatim_lines)) == next
+                && self.used == BuildUsage { verbatim_lines: self.used.verbatim_lines, ..before }) }
+    )]
     #[inline]
     pub(crate) fn charge_verbatim_lines(
         &mut self,
@@ -407,23 +565,41 @@ impl BuildMeter
     /// Charges one checked constructor or finalization step after preflight.
     ///
     /// # Specification
-    /// - requires: [`Self::check_step`] succeeded without an intervening
-    ///   charge.
-    /// - ensures: usage increases exactly once.
-    /// - provides: cumulative build-work accounting.
-    /// - fails: reports the same typed errors as the preflight if state
-    ///   changed.
+    /// - requires: the caller attempts one checked unit of this resource;
+    ///   exhausted budgets remain in the domain.
+    /// - ensures: success adds the requested amount exactly once; refusal
+    ///   leaves every usage counter unchanged.
+    /// - provides: cumulative build accounting consistent with the
+    ///   corresponding preflight.
+    /// - fails: reports arithmetic overflow before the resource ceiling,
+    ///   without a partial charge.
     /// - panics: none.
     ///
     /// # Errors
-    /// Returns `ArithmeticOverflow` or `LimitExceeded` if the precondition was
-    /// not maintained.
+    /// Returns `ArithmeticOverflow` or `LimitExceeded` when the requested
+    /// charge cannot fit.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a successful step preflight consumes exactly one
-    ///   unit, including finalization work.
-    /// - witness: `algebra::tests::every_finalization_visit_edge_and_probe_charges_a_build_step`
-    /// - witness: `algebra::tests::a_refused_charge_leaves_the_counter_unchanged`
+    /// - hypothesis: L3 — distinct counters are charged through exact ceilings,
+    ///   followed by refusals and seeded u64 overflow. Exact snapshots and
+    ///   typed errors distinguish off-by-one admission, double charging,
+    ///   changes to unrelated counters and mutation before refusal. Preflights
+    ///   must leave the complete snapshot unchanged.
+    /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
+    /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
+    #[spec(
+        captures: before = self.used,
+        ensures: |ret| { let next = u128::from(u64::from(before.build_steps)).saturating_add(u128::from(1_u64));
+            let ceiling = Some(u64::from(self.limits.max_build_steps));
+            ret.as_ref().map_or_else(|error| self.used == before
+                && { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::BuildSteps } }
+            else { ceiling.is_some_and(|limit| next > u128::from(limit)
+                && *error == BuildError::LimitExceeded { kind: crate::error::BuildLimitKind::BuildSteps, limit: crate::units::LimitBound::from(limit) }) } },
+            |&()| next <= u128::from(u64::MAX)
+                && ceiling.is_some_and(|limit| next <= u128::from(limit))
+                && u128::from(u64::from(self.used.build_steps)) == next
+                && self.used == BuildUsage { build_steps: self.used.build_steps, ..before }) }
+    )]
     #[inline]
     pub(crate) fn charge_step(&mut self) -> Result<(), BuildError>
     {
@@ -441,6 +617,17 @@ impl BuildMeter
 /// - ensures: the resolver cannot spend beyond any named resource bound.
 /// - provides: one closed render-phase budget record.
 /// - panics: none.
+/// - executable: none — this configuration declaration has no invocation
+///   boundary; constructors and checked meter transitions carry its executable
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact ceilings, the first excess and seeded u64 overflow
+///   are observed as complete usage snapshots and typed refusals. Wrong
+///   increments, shifted boundaries, changes to unrelated counters and mutation
+///   before refusal change those observations; peak counters must retain their
+///   maximum.
+/// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RenderLimits
 {
@@ -497,6 +684,17 @@ impl Default for RenderLimits
 /// - ensures: cumulative fields never decrease and peak fields retain maxima.
 /// - provides: observable budget usage for diagnostics and tests.
 /// - panics: none.
+/// - executable: none — this snapshot declaration has no invocation boundary;
+///   constructors and checked meter transitions carry its executable
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact ceilings, the first excess and seeded u64 overflow
+///   are observed as complete usage snapshots and typed refusals. Wrong
+///   increments, shifted boundaries, changes to unrelated counters and mutation
+///   before refusal change those observations; peak counters must retain their
+///   maximum.
+/// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RenderUsage
 {
@@ -530,6 +728,17 @@ pub struct RenderUsage
 /// - provides: the shared accounting authority for resolution and rendering.
 /// - fails: returns a typed error at the first refused charge.
 /// - panics: none.
+/// - executable: none — this state declaration has no invocation boundary;
+///   constructors and checked meter transitions carry its executable
+///   predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact ceilings, the first excess and seeded u64 overflow
+///   are observed as complete usage snapshots and typed refusals. Wrong
+///   increments, shifted boundaries, changes to unrelated counters and mutation
+///   before refusal change those observations; peak counters must retain their
+///   maximum.
+/// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
 #[derive(Debug)]
 pub struct RenderMeter
 {
@@ -550,6 +759,28 @@ impl RenderMeter
     /// - ensures: every usage counter starts at zero.
     /// - provides: the shared render accounting authority.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact ceilings, the first excess and seeded u64
+    ///   overflow are observed as complete usage snapshots and typed refusals.
+    ///   Wrong increments, shifted boundaries, changes to unrelated counters
+    ///   and mutation before refusal change those observations; peak counters
+    ///   must retain their maximum.
+    /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
+    #[spec(
+        ensures: |ret| ret.limits == limits
+                && ret.live_plan_nodes == 0
+                && u64::from(ret.used.memo_states) == 0
+                && u64::from(ret.used.frontier_entries) == 0
+                && u64::from(ret.used.plan_nodes_created) == 0
+                && u64::from(ret.used.peak_live_plan_nodes) == 0
+                && u64::from(ret.used.output_bytes) == 0
+                && u64::from(ret.used.layout_steps) == 0
+                && u64::from(ret.used.resolver_work_entries) == 0
+                && u64::from(ret.used.peak_resolver_stack) == 0
+                && u64::from(ret.used.vm_steps) == 0
+                && u64::from(ret.used.peak_vm_stack) == 0
+    )]
     #[inline]
     #[must_use = "the render meter must be retained for resolution"]
     pub fn new(limits: RenderLimits) -> Self
@@ -579,6 +810,17 @@ impl RenderMeter
     /// - ensures: the snapshot is independent and does not alter usage.
     /// - provides: the current render accounting projection.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact ceilings, the first excess and seeded u64
+    ///   overflow are observed as complete usage snapshots and typed refusals.
+    ///   Wrong increments, shifted boundaries, changes to unrelated counters
+    ///   and mutation before refusal change those observations; peak counters
+    ///   must retain their maximum.
+    /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
+    #[spec(
+        ensures: |ret| ret == self.used
+    )]
     #[inline]
     #[must_use]
     pub fn usage(&self) -> RenderUsage
@@ -594,6 +836,27 @@ impl RenderMeter
     /// - provides: memo-state accounting.
     /// - fails: returns the memo-state limit or arithmetic error.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact ceilings, the first excess and seeded u64
+    ///   overflow are observed as complete usage snapshots and typed refusals.
+    ///   Wrong increments, shifted boundaries, changes to unrelated counters
+    ///   and mutation before refusal change those observations; peak counters
+    ///   must retain their maximum.
+    /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
+    #[spec(
+        captures: before = (self.used, self.live_plan_nodes),
+        ensures: |ret| { let next = u128::from(u64::from(before.0.memo_states)).saturating_add(u128::from(1_u64));
+            let limit = u64::from(self.limits.max_memo_states);
+            self.live_plan_nodes == before.1
+                && ret.as_ref().map_or_else(|error| self.used == before.0
+                && if next > u128::from(u64::MAX) { *error == RenderError::ArithmeticOverflow { operation: crate::error::RenderArithmetic::StepCounter } }
+            else { next > u128::from(limit)
+                && *error == RenderError::LimitExceeded { kind: RenderLimitKind::MemoStates, limit: crate::units::LimitBound::from(limit) } },
+            |&()| next <= u128::from(limit)
+                && u128::from(u64::from(self.used.memo_states)) == next
+                && self.used == RenderUsage { memo_states: self.used.memo_states, ..before.0 }) }
+    )]
     pub(crate) fn charge_memo_state(&mut self) -> Result<(), RenderError>
     {
         let current = u64::from(self.used.memo_states);
@@ -621,6 +884,27 @@ impl RenderMeter
     /// - provides: frontier accounting.
     /// - fails: returns the frontier-entry limit or arithmetic error.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact ceilings, the first excess and seeded u64
+    ///   overflow are observed as complete usage snapshots and typed refusals.
+    ///   Wrong increments, shifted boundaries, changes to unrelated counters
+    ///   and mutation before refusal change those observations; peak counters
+    ///   must retain their maximum.
+    /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
+    #[spec(
+        captures: before = (self.used, self.live_plan_nodes),
+        ensures: |ret| { let next = u128::from(u64::from(before.0.frontier_entries)).saturating_add(u128::from(1_u64));
+            let limit = u64::from(self.limits.max_frontier_entries);
+            self.live_plan_nodes == before.1
+                && ret.as_ref().map_or_else(|error| self.used == before.0
+                && if next > u128::from(u64::MAX) { *error == RenderError::ArithmeticOverflow { operation: crate::error::RenderArithmetic::StepCounter } }
+            else { next > u128::from(limit)
+                && *error == RenderError::LimitExceeded { kind: RenderLimitKind::FrontierEntries, limit: crate::units::LimitBound::from(limit) } },
+            |&()| next <= u128::from(limit)
+                && u128::from(u64::from(self.used.frontier_entries)) == next
+                && self.used == RenderUsage { frontier_entries: self.used.frontier_entries, ..before.0 }) }
+    )]
     pub(crate) fn charge_frontier_entry(&mut self) -> Result<(), RenderError>
     {
         let current = u64::from(self.used.frontier_entries);
@@ -646,8 +930,37 @@ impl RenderMeter
     /// - requires: the plan node is about to enter the plan arena.
     /// - ensures: both cumulative and simultaneous ceilings are checked first.
     /// - provides: plan-storage accounting.
-    /// - fails: returns the first exceeded plan limit or allocation error.
+    /// - fails: returns the first exceeded plan limit or arithmetic error.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — coupled cumulative/live limits and cumulative/depth
+    ///   limits are crossed independently and together, with u64 overflow,
+    ///   releases and lower later depths. Complete snapshots, exact refusal
+    ///   kinds and retained peaks distinguish partial updates, reversed refusal
+    ///   precedence and confusing a live gauge with a cumulative or peak
+    ///   counter.
+    /// - witness: `limits::tests::compound_plan_and_work_charges_refuse_before_any_counter_changes`
+    #[spec(
+        captures: before = (self.used, self.live_plan_nodes),
+        ensures: |ret| { let created = u128::from(u64::from(before.0.plan_nodes_created)).saturating_add(1);
+            let live = u128::from(before.1).saturating_add(1);
+            let created_limit = u64::from(self.limits.max_plan_nodes_created);
+            let live_limit = u64::from(self.limits.max_live_plan_nodes);
+            ret.as_ref().map_or_else(|error| self.used == before.0
+                && self.live_plan_nodes == before.1
+                && if created > u128::from(u64::MAX) { *error == RenderError::ArithmeticOverflow { operation: crate::error::RenderArithmetic::PlanRefcount } }
+            else if created > u128::from(created_limit) { *error == RenderError::LimitExceeded { kind: RenderLimitKind::PlanNodesCreated, limit: crate::units::LimitBound::from(created_limit) } }
+            else if live > u128::from(u64::MAX) { *error == RenderError::ArithmeticOverflow { operation: crate::error::RenderArithmetic::PlanRefcount } }
+            else { live > u128::from(live_limit)
+                && *error == RenderError::LimitExceeded { kind: RenderLimitKind::LivePlanNodes, limit: crate::units::LimitBound::from(live_limit) } },
+            |&()| created <= u128::from(created_limit)
+                && live <= u128::from(live_limit)
+                && u128::from(u64::from(self.used.plan_nodes_created)) == created
+                && u128::from(self.live_plan_nodes) == live
+                && u64::from(self.used.peak_live_plan_nodes) == u64::from(before.0.peak_live_plan_nodes).max(self.live_plan_nodes)
+                && self.used == RenderUsage { plan_nodes_created: self.used.plan_nodes_created, peak_live_plan_nodes: self.used.peak_live_plan_nodes, ..before.0 }) }
+    )]
     pub(crate) fn charge_plan_node(&mut self) -> Result<(), RenderError>
     {
         let created = u64::from(self.used.plan_nodes_created);
@@ -691,6 +1004,20 @@ impl RenderMeter
     /// - ensures: the live gauge decreases without changing cumulative usage.
     /// - provides: peak-versus-live plan accounting.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — coupled cumulative/live limits and cumulative/depth
+    ///   limits are crossed independently and together, with u64 overflow,
+    ///   releases and lower later depths. Complete snapshots, exact refusal
+    ///   kinds and retained peaks distinguish partial updates, reversed refusal
+    ///   precedence and confusing a live gauge with a cumulative or peak
+    ///   counter.
+    /// - witness: `limits::tests::compound_plan_and_work_charges_refuse_before_any_counter_changes`
+    #[spec(
+        captures: before = (self.used, self.live_plan_nodes),
+        ensures: |_| self.used == before.0
+                && self.live_plan_nodes == before.1.saturating_sub(1)
+    )]
     #[inline]
     pub(crate) fn release_plan_node(&mut self)
     {
@@ -705,6 +1032,27 @@ impl RenderMeter
     /// - provides: output accounting for both the resolver and VM.
     /// - fails: returns the output limit or checked arithmetic error.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact ceilings, the first excess and seeded u64
+    ///   overflow are observed as complete usage snapshots and typed refusals.
+    ///   Wrong increments, shifted boundaries, changes to unrelated counters
+    ///   and mutation before refusal change those observations; peak counters
+    ///   must retain their maximum.
+    /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
+    #[spec(
+        captures: before = (self.used, self.live_plan_nodes),
+        ensures: |ret| { let next = u128::from(u64::from(before.0.output_bytes)).saturating_add(u128::from(u64::from(amount)));
+            let limit = u64::from(self.limits.max_output_bytes);
+            self.live_plan_nodes == before.1
+                && ret.as_ref().map_or_else(|error| self.used == before.0
+                && if next > u128::from(u64::MAX) { *error == RenderError::ArithmeticOverflow { operation: crate::error::RenderArithmetic::OutputBytes } }
+            else { next > u128::from(limit)
+                && *error == RenderError::LimitExceeded { kind: RenderLimitKind::OutputBytes, limit: crate::units::LimitBound::from(limit) } },
+            |&()| next <= u128::from(limit)
+                && u128::from(u64::from(self.used.output_bytes)) == next
+                && self.used == RenderUsage { output_bytes: self.used.output_bytes, ..before.0 }) }
+    )]
     pub(crate) fn charge_output_bytes(
         &mut self,
         amount: crate::units::OutputBytes,
@@ -741,9 +1089,20 @@ impl RenderMeter
     /// or `LimitExceeded` when the output ceiling would be crossed.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the selected output preflight rejects an over-limit
-    ///   measure without mutating cumulative output usage.
-    /// - witness: `algebra::tests::render_limits_fail_without_partial_output`
+    /// - hypothesis: L3 — exact ceilings, the first excess and seeded u64
+    ///   overflow are observed as complete usage snapshots and typed refusals.
+    ///   Wrong increments, shifted boundaries, changes to unrelated counters
+    ///   and mutation before refusal change those observations; peak counters
+    ///   must retain their maximum.
+    /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
+    #[spec(
+        ensures: |ret| { let next = u128::from(u64::from(self.used.output_bytes)).saturating_add(u128::from(u64::from(amount)));
+            let limit = u64::from(self.limits.max_output_bytes);
+            ret.as_ref().map_or_else(|error| if next > u128::from(u64::MAX) { *error == RenderError::ArithmeticOverflow { operation: crate::error::RenderArithmetic::OutputBytes } }
+            else { next > u128::from(limit)
+                && *error == RenderError::LimitExceeded { kind: RenderLimitKind::OutputBytes, limit: crate::units::LimitBound::from(limit) } },
+            |&()| next <= u128::from(limit)) }
+    )]
     pub(crate) fn check_output_bytes(
         &self,
         amount: crate::units::OutputBytes,
@@ -774,6 +1133,27 @@ impl RenderMeter
     /// - provides: the resolver's work bound.
     /// - fails: returns the layout-step limit or arithmetic error.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact ceilings, the first excess and seeded u64
+    ///   overflow are observed as complete usage snapshots and typed refusals.
+    ///   Wrong increments, shifted boundaries, changes to unrelated counters
+    ///   and mutation before refusal change those observations; peak counters
+    ///   must retain their maximum.
+    /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
+    #[spec(
+        captures: before = (self.used, self.live_plan_nodes),
+        ensures: |ret| { let next = u128::from(u64::from(before.0.layout_steps)).saturating_add(u128::from(1_u64));
+            let limit = u64::from(self.limits.max_layout_steps);
+            self.live_plan_nodes == before.1
+                && ret.as_ref().map_or_else(|error| self.used == before.0
+                && if next > u128::from(u64::MAX) { *error == RenderError::ArithmeticOverflow { operation: crate::error::RenderArithmetic::StepCounter } }
+            else { next > u128::from(limit)
+                && *error == RenderError::LimitExceeded { kind: RenderLimitKind::LayoutSteps, limit: crate::units::LimitBound::from(limit) } },
+            |&()| next <= u128::from(limit)
+                && u128::from(u64::from(self.used.layout_steps)) == next
+                && self.used == RenderUsage { layout_steps: self.used.layout_steps, ..before.0 }) }
+    )]
     pub(crate) fn charge_layout_step(&mut self) -> Result<(), RenderError>
     {
         let current = u64::from(self.used.layout_steps);
@@ -801,6 +1181,32 @@ impl RenderMeter
     /// - provides: one metered push boundary for the iterative resolver.
     /// - fails: returns a cumulative, peak, or arithmetic render error.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — coupled cumulative/live limits and cumulative/depth
+    ///   limits are crossed independently and together, with u64 overflow,
+    ///   releases and lower later depths. Complete snapshots, exact refusal
+    ///   kinds and retained peaks distinguish partial updates, reversed refusal
+    ///   precedence and confusing a live gauge with a cumulative or peak
+    ///   counter.
+    /// - witness: `limits::tests::compound_plan_and_work_charges_refuse_before_any_counter_changes`
+    #[spec(
+        captures: before = (self.used, self.live_plan_nodes),
+        ensures: |ret| { let next = u128::from(u64::from(before.0.resolver_work_entries)).saturating_add(1);
+            let limit = u64::from(self.limits.max_resolver_work_entries);
+            let stack_limit = u64::from(self.limits.max_resolver_stack);
+            self.live_plan_nodes == before.1
+                && ret.as_ref().map_or_else(|error| self.used == before.0
+                && if next > u128::from(u64::MAX) { *error == RenderError::ArithmeticOverflow { operation: crate::error::RenderArithmetic::ResolverWorkCounter } }
+            else if next > u128::from(limit) { *error == RenderError::LimitExceeded { kind: RenderLimitKind::ResolverWorkEntries, limit: crate::units::LimitBound::from(limit) } }
+            else { u64::from(depth) > stack_limit
+                && *error == RenderError::LimitExceeded { kind: RenderLimitKind::ResolverStack, limit: crate::units::LimitBound::from(stack_limit) } },
+            |&()| next <= u128::from(limit)
+                && u64::from(depth) <= stack_limit
+                && u128::from(u64::from(self.used.resolver_work_entries)) == next
+                && u64::from(self.used.peak_resolver_stack) == u64::from(before.0.peak_resolver_stack).max(u64::from(depth))
+                && self.used == RenderUsage { resolver_work_entries: self.used.resolver_work_entries, peak_resolver_stack: self.used.peak_resolver_stack, ..before.0 }) }
+    )]
     pub(crate) fn push_resolver_work(
         &mut self,
         depth: crate::units::PeakResolverStack,
@@ -849,9 +1255,25 @@ impl RenderMeter
     /// advance.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — machine steps reject the first over-limit pop before
-    ///   usage changes.
-    /// - witness: `vm::tests::vm_step_limit_is_checked_before_usage_changes`
+    /// - hypothesis: L3 — exact ceilings, the first excess and seeded u64
+    ///   overflow are observed as complete usage snapshots and typed refusals.
+    ///   Wrong increments, shifted boundaries, changes to unrelated counters
+    ///   and mutation before refusal change those observations; peak counters
+    ///   must retain their maximum.
+    /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
+    #[spec(
+        captures: before = (self.used, self.live_plan_nodes),
+        ensures: |ret| { let next = u128::from(u64::from(before.0.vm_steps)).saturating_add(u128::from(1_u64));
+            let limit = u64::from(self.limits.max_vm_steps);
+            self.live_plan_nodes == before.1
+                && ret.as_ref().map_or_else(|error| self.used == before.0
+                && if next > u128::from(u64::MAX) { *error == RenderError::ArithmeticOverflow { operation: crate::error::RenderArithmetic::StepCounter } }
+            else { next > u128::from(limit)
+                && *error == RenderError::LimitExceeded { kind: RenderLimitKind::VmSteps, limit: crate::units::LimitBound::from(limit) } },
+            |&()| next <= u128::from(limit)
+                && u128::from(u64::from(self.used.vm_steps)) == next
+                && self.used == RenderUsage { vm_steps: self.used.vm_steps, ..before.0 }) }
+    )]
     #[inline]
     pub(crate) fn charge_vm_step(&mut self) -> Result<(), RenderError>
     {
@@ -886,9 +1308,22 @@ impl RenderMeter
     /// configured machine-stack ceiling.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — machine-stack peaks reject the first over-limit depth
-    ///   before the recorded peak changes.
-    /// - witness: `vm::tests::vm_stack_limit_is_checked_before_peak_changes`
+    /// - hypothesis: L3 — exact ceilings, the first excess and seeded u64
+    ///   overflow are observed as complete usage snapshots and typed refusals.
+    ///   Wrong increments, shifted boundaries, changes to unrelated counters
+    ///   and mutation before refusal change those observations; peak counters
+    ///   must retain their maximum.
+    /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
+    #[spec(
+        captures: before = (self.used, self.live_plan_nodes),
+        ensures: |ret| self.live_plan_nodes == before.1
+                && ret.as_ref().map_or_else(|error| self.used == before.0
+                && u64::from(depth) > u64::from(self.limits.max_vm_stack)
+                && *error == RenderError::LimitExceeded { kind: RenderLimitKind::VmStack, limit: crate::units::LimitBound::from(u64::from(self.limits.max_vm_stack)) },
+            |&()| u64::from(depth) <= u64::from(self.limits.max_vm_stack)
+                && u64::from(self.used.peak_vm_stack) == u64::from(before.0.peak_vm_stack).max(u64::from(depth))
+                && self.used == RenderUsage { peak_vm_stack: self.used.peak_vm_stack, ..before.0 })
+    )]
     #[inline]
     pub(crate) fn observe_vm_stack(
         &mut self,
@@ -907,5 +1342,611 @@ impl RenderMeter
             self.used.peak_vm_stack = PeakVmStack::from(value);
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::*;
+    use crate::error::BuildArithmetic;
+    use crate::error::BuildLimitKind;
+    use crate::error::RenderArithmetic;
+    use crate::units::LimitBound;
+    use crate::units::OutputBytes;
+
+    /// Preflight and refusal preserve all counters; successful charges change
+    /// only their resource.
+    #[test]
+    fn build_meter_charges_are_atomic_and_preflights_do_not_spend()
+    {
+        let limits = BuildLimits {
+            max_doc_nodes: MaxDocNodes::from(13_u32),
+            max_text_bytes: MaxTextBytes::from(17_usize),
+            max_verbatim_lines: MaxVerbatimLines::from(19_u32),
+            max_build_steps: MaxBuildSteps::from(23_u64),
+        };
+        let empty = BuildMeter::new(limits).usage();
+        assert_eq!(
+            [
+                u64::from(empty.doc_nodes),
+                u64::from(empty.text_bytes),
+                u64::from(empty.verbatim_lines),
+                u64::from(empty.build_steps)
+            ],
+            [0_u64; 4]
+        );
+        let seed = BuildUsage {
+            doc_nodes: DocNodesUsed::from(3_u64),
+            text_bytes: TextBytesUsed::from(5_u64),
+            verbatim_lines: VerbatimLinesUsed::from(7_u64),
+            build_steps: BuildStepsUsed::from(11_u64),
+        };
+        {
+            let limits = BuildLimits {
+                max_doc_nodes: MaxDocNodes::from(3_u32),
+                ..limits
+            };
+            for current in [0_u64, 2, 3] {
+                let mut meter = BuildMeter::new(limits);
+                meter.used = BuildUsage {
+                    doc_nodes: DocNodesUsed::from(current),
+                    ..seed
+                };
+                let before = meter.usage();
+                let expected = if current < 3 {
+                    Ok(())
+                }
+                else {
+                    Err(BuildError::LimitExceeded {
+                        kind: BuildLimitKind::DocNodes,
+                        limit: LimitBound::from(3_u64),
+                    })
+                };
+                assert_eq!(meter.check_doc_node(), expected);
+                assert_eq!(meter.usage(), before);
+                assert_eq!(meter.charge_doc_node(), expected);
+                let after = if expected.is_ok() {
+                    BuildUsage {
+                        doc_nodes: DocNodesUsed::from(current.saturating_add(1)),
+                        ..before
+                    }
+                }
+                else {
+                    before
+                };
+                assert_eq!(meter.usage(), after);
+                assert_eq!(meter.limits, limits);
+            }
+        }
+        {
+            let limits = BuildLimits {
+                max_text_bytes: MaxTextBytes::from(3_usize),
+                ..limits
+            };
+            for current in [0_u64, 2, 3] {
+                let mut meter = BuildMeter::new(limits);
+                meter.used = BuildUsage {
+                    text_bytes: TextBytesUsed::from(current),
+                    ..seed
+                };
+                let before = meter.usage();
+                let expected = if current < 3 {
+                    Ok(())
+                }
+                else {
+                    Err(BuildError::LimitExceeded {
+                        kind: BuildLimitKind::TextBytes,
+                        limit: LimitBound::from(3_u64),
+                    })
+                };
+                assert_eq!(meter.check_text_bytes(TextBytesUsed::from(1_u64)), expected);
+                assert_eq!(meter.usage(), before);
+                assert_eq!(
+                    meter.charge_text_bytes(TextBytesUsed::from(1_u64)),
+                    expected
+                );
+                let after = if expected.is_ok() {
+                    BuildUsage {
+                        text_bytes: TextBytesUsed::from(current.saturating_add(1)),
+                        ..before
+                    }
+                }
+                else {
+                    before
+                };
+                assert_eq!(meter.usage(), after);
+                assert_eq!(meter.limits, limits);
+            }
+        }
+        {
+            let limits = BuildLimits {
+                max_verbatim_lines: MaxVerbatimLines::from(3_u32),
+                ..limits
+            };
+            for current in [0_u64, 2, 3] {
+                let mut meter = BuildMeter::new(limits);
+                meter.used = BuildUsage {
+                    verbatim_lines: VerbatimLinesUsed::from(current),
+                    ..seed
+                };
+                let before = meter.usage();
+                let expected = if current < 3 {
+                    Ok(())
+                }
+                else {
+                    Err(BuildError::LimitExceeded {
+                        kind: BuildLimitKind::VerbatimLines,
+                        limit: LimitBound::from(3_u64),
+                    })
+                };
+                assert_eq!(
+                    meter.check_verbatim_lines(VerbatimLinesUsed::from(1_u64)),
+                    expected
+                );
+                assert_eq!(meter.usage(), before);
+                assert_eq!(
+                    meter.charge_verbatim_lines(VerbatimLinesUsed::from(1_u64)),
+                    expected
+                );
+                let after = if expected.is_ok() {
+                    BuildUsage {
+                        verbatim_lines: VerbatimLinesUsed::from(current.saturating_add(1)),
+                        ..before
+                    }
+                }
+                else {
+                    before
+                };
+                assert_eq!(meter.usage(), after);
+                assert_eq!(meter.limits, limits);
+            }
+        }
+        {
+            let limits = BuildLimits {
+                max_build_steps: MaxBuildSteps::from(3_u64),
+                ..limits
+            };
+            for current in [0_u64, 2, 3] {
+                let mut meter = BuildMeter::new(limits);
+                meter.used = BuildUsage {
+                    build_steps: BuildStepsUsed::from(current),
+                    ..seed
+                };
+                let before = meter.usage();
+                let expected = if current < 3 {
+                    Ok(())
+                }
+                else {
+                    Err(BuildError::LimitExceeded {
+                        kind: BuildLimitKind::BuildSteps,
+                        limit: LimitBound::from(3_u64),
+                    })
+                };
+                assert_eq!(meter.check_step(), expected);
+                assert_eq!(meter.usage(), before);
+                assert_eq!(meter.charge_step(), expected);
+                let after = if expected.is_ok() {
+                    BuildUsage {
+                        build_steps: BuildStepsUsed::from(current.saturating_add(1)),
+                        ..before
+                    }
+                }
+                else {
+                    before
+                };
+                assert_eq!(meter.usage(), after);
+                assert_eq!(meter.limits, limits);
+            }
+        }
+        let mut meter = BuildMeter::new(BuildLimits {
+            max_build_steps: MaxBuildSteps::from(u64::MAX),
+            ..limits
+        });
+        meter.used = BuildUsage {
+            build_steps: BuildStepsUsed::from(u64::MAX),
+            ..seed
+        };
+        let before = meter.usage();
+        let overflow = Err(BuildError::ArithmeticOverflow {
+            operation: BuildArithmetic::BuildSteps,
+        });
+        assert_eq!(meter.check_step(), overflow);
+        assert_eq!(meter.charge_step(), overflow);
+        assert_eq!(meter.usage(), before);
+    }
+
+    /// Individual charges preserve unrelated resources and retain the highest
+    /// observed stack depth.
+    #[test]
+    fn render_meter_charges_preserve_refusal_and_peak_boundaries()
+    {
+        let limits = RenderLimits::default();
+        let empty = RenderMeter::new(limits);
+        assert_eq!(
+            [
+                u64::from(empty.usage().memo_states),
+                u64::from(empty.usage().frontier_entries),
+                u64::from(empty.usage().plan_nodes_created),
+                u64::from(empty.usage().peak_live_plan_nodes),
+                u64::from(empty.usage().output_bytes),
+                u64::from(empty.usage().layout_steps),
+                u64::from(empty.usage().resolver_work_entries),
+                u64::from(empty.usage().peak_resolver_stack),
+                u64::from(empty.usage().vm_steps),
+                u64::from(empty.usage().peak_vm_stack)
+            ],
+            [0_u64; 10]
+        );
+        assert_eq!(empty.live_plan_nodes, 0);
+        let seed = RenderUsage {
+            memo_states: MemoStatesUsed::from(3_u64),
+            frontier_entries: FrontierEntriesUsed::from(5_u64),
+            plan_nodes_created: PlanNodesCreated::from(7_u64),
+            peak_live_plan_nodes: PeakLivePlanNodes::from(2_u64),
+            output_bytes: OutputBytesUsed::from(11_u64),
+            layout_steps: LayoutStepsUsed::from(13_u64),
+            resolver_work_entries: ResolverWorkEntriesUsed::from(17_u64),
+            peak_resolver_stack: PeakResolverStack::from(3_u64),
+            vm_steps: VmStepsUsed::from(19_u64),
+            peak_vm_stack: PeakVmStack::from(5_u64),
+        };
+        {
+            for (current, ceiling) in [(0_u64, 1_u64), (2, 3), (3, 3), (u64::MAX, u64::MAX)] {
+                let limits = RenderLimits {
+                    max_memo_states: MaxMemoStates::from(ceiling),
+                    ..limits
+                };
+                let mut meter = RenderMeter::new(limits);
+                meter.used = RenderUsage {
+                    memo_states: MemoStatesUsed::from(current),
+                    ..seed
+                };
+                meter.live_plan_nodes = 2;
+                let before = meter.usage();
+                let next = u128::from(current).saturating_add(1);
+                let expected = if next > u128::from(u64::MAX) {
+                    Err(RenderError::ArithmeticOverflow {
+                        operation: RenderArithmetic::StepCounter,
+                    })
+                }
+                else if next > u128::from(ceiling) {
+                    Err(RenderError::LimitExceeded {
+                        kind: RenderLimitKind::MemoStates,
+                        limit: LimitBound::from(ceiling),
+                    })
+                }
+                else {
+                    Ok(())
+                };
+                assert_eq!(meter.charge_memo_state(), expected);
+                let after = if expected.is_ok() {
+                    RenderUsage {
+                        memo_states: MemoStatesUsed::from(
+                            u64::try_from(next).expect("admitted counter"),
+                        ),
+                        ..before
+                    }
+                }
+                else {
+                    before
+                };
+                assert_eq!(meter.usage(), after);
+                assert_eq!(meter.limits, limits);
+                assert_eq!(meter.live_plan_nodes, 2);
+            }
+        }
+        {
+            for (current, ceiling) in [(0_u64, 1_u64), (2, 3), (3, 3), (u64::MAX, u64::MAX)] {
+                let limits = RenderLimits {
+                    max_frontier_entries: MaxFrontierEntries::from(ceiling),
+                    ..limits
+                };
+                let mut meter = RenderMeter::new(limits);
+                meter.used = RenderUsage {
+                    frontier_entries: FrontierEntriesUsed::from(current),
+                    ..seed
+                };
+                meter.live_plan_nodes = 2;
+                let before = meter.usage();
+                let next = u128::from(current).saturating_add(1);
+                let expected = if next > u128::from(u64::MAX) {
+                    Err(RenderError::ArithmeticOverflow {
+                        operation: RenderArithmetic::StepCounter,
+                    })
+                }
+                else if next > u128::from(ceiling) {
+                    Err(RenderError::LimitExceeded {
+                        kind: RenderLimitKind::FrontierEntries,
+                        limit: LimitBound::from(ceiling),
+                    })
+                }
+                else {
+                    Ok(())
+                };
+                assert_eq!(meter.charge_frontier_entry(), expected);
+                let after = if expected.is_ok() {
+                    RenderUsage {
+                        frontier_entries: FrontierEntriesUsed::from(
+                            u64::try_from(next).expect("admitted counter"),
+                        ),
+                        ..before
+                    }
+                }
+                else {
+                    before
+                };
+                assert_eq!(meter.usage(), after);
+                assert_eq!(meter.limits, limits);
+                assert_eq!(meter.live_plan_nodes, 2);
+            }
+        }
+        {
+            for (current, ceiling) in [(0_u64, 1_u64), (2, 3), (3, 3), (u64::MAX, u64::MAX)] {
+                let limits = RenderLimits {
+                    max_layout_steps: MaxLayoutSteps::from(ceiling),
+                    ..limits
+                };
+                let mut meter = RenderMeter::new(limits);
+                meter.used = RenderUsage {
+                    layout_steps: LayoutStepsUsed::from(current),
+                    ..seed
+                };
+                meter.live_plan_nodes = 2;
+                let before = meter.usage();
+                let next = u128::from(current).saturating_add(1);
+                let expected = if next > u128::from(u64::MAX) {
+                    Err(RenderError::ArithmeticOverflow {
+                        operation: RenderArithmetic::StepCounter,
+                    })
+                }
+                else if next > u128::from(ceiling) {
+                    Err(RenderError::LimitExceeded {
+                        kind: RenderLimitKind::LayoutSteps,
+                        limit: LimitBound::from(ceiling),
+                    })
+                }
+                else {
+                    Ok(())
+                };
+                assert_eq!(meter.charge_layout_step(), expected);
+                let after = if expected.is_ok() {
+                    RenderUsage {
+                        layout_steps: LayoutStepsUsed::from(
+                            u64::try_from(next).expect("admitted counter"),
+                        ),
+                        ..before
+                    }
+                }
+                else {
+                    before
+                };
+                assert_eq!(meter.usage(), after);
+                assert_eq!(meter.limits, limits);
+                assert_eq!(meter.live_plan_nodes, 2);
+            }
+        }
+        {
+            for (current, ceiling) in [(0_u64, 1_u64), (2, 3), (3, 3), (u64::MAX, u64::MAX)] {
+                let limits = RenderLimits {
+                    max_vm_steps: MaxVmSteps::from(ceiling),
+                    ..limits
+                };
+                let mut meter = RenderMeter::new(limits);
+                meter.used = RenderUsage {
+                    vm_steps: VmStepsUsed::from(current),
+                    ..seed
+                };
+                meter.live_plan_nodes = 2;
+                let before = meter.usage();
+                let next = u128::from(current).saturating_add(1);
+                let expected = if next > u128::from(u64::MAX) {
+                    Err(RenderError::ArithmeticOverflow {
+                        operation: RenderArithmetic::StepCounter,
+                    })
+                }
+                else if next > u128::from(ceiling) {
+                    Err(RenderError::LimitExceeded {
+                        kind: RenderLimitKind::VmSteps,
+                        limit: LimitBound::from(ceiling),
+                    })
+                }
+                else {
+                    Ok(())
+                };
+                assert_eq!(meter.charge_vm_step(), expected);
+                let after = if expected.is_ok() {
+                    RenderUsage {
+                        vm_steps: VmStepsUsed::from(u64::try_from(next).expect("admitted counter")),
+                        ..before
+                    }
+                }
+                else {
+                    before
+                };
+                assert_eq!(meter.usage(), after);
+                assert_eq!(meter.limits, limits);
+                assert_eq!(meter.live_plan_nodes, 2);
+            }
+        }
+        {
+            for (current, ceiling) in [(0_u64, 3_u64), (2, 5), (5, 5), (u64::MAX, u64::MAX)] {
+                let limits = RenderLimits {
+                    max_output_bytes: MaxOutputBytes::from(ceiling),
+                    ..limits
+                };
+                let mut meter = RenderMeter::new(limits);
+                meter.used = RenderUsage {
+                    output_bytes: OutputBytesUsed::from(current),
+                    ..seed
+                };
+                meter.live_plan_nodes = 2;
+                let before = meter.usage();
+                let next = u128::from(current).saturating_add(3);
+                let expected = if next > u128::from(u64::MAX) {
+                    Err(RenderError::ArithmeticOverflow {
+                        operation: RenderArithmetic::OutputBytes,
+                    })
+                }
+                else if next > u128::from(ceiling) {
+                    Err(RenderError::LimitExceeded {
+                        kind: RenderLimitKind::OutputBytes,
+                        limit: LimitBound::from(ceiling),
+                    })
+                }
+                else {
+                    Ok(())
+                };
+                assert_eq!(meter.check_output_bytes(OutputBytes::from(3_u64)), expected);
+                assert_eq!(meter.usage(), before);
+                assert_eq!(
+                    meter.charge_output_bytes(OutputBytes::from(3_u64)),
+                    expected
+                );
+                let after = if expected.is_ok() {
+                    RenderUsage {
+                        output_bytes: OutputBytesUsed::from(
+                            u64::try_from(next).expect("admitted counter"),
+                        ),
+                        ..before
+                    }
+                }
+                else {
+                    before
+                };
+                assert_eq!(meter.usage(), after);
+                assert_eq!(meter.limits, limits);
+                assert_eq!(meter.live_plan_nodes, 2);
+            }
+        }
+        let mut meter = RenderMeter::new(RenderLimits {
+            max_vm_stack: MaxVmStack::from(3_u64),
+            ..limits
+        });
+        for depth in [0_u64, 1, 3, 2, 4] {
+            let before = meter.usage();
+            let expected = if depth > 3 {
+                Err(RenderError::LimitExceeded {
+                    kind: RenderLimitKind::VmStack,
+                    limit: LimitBound::from(3_u64),
+                })
+            }
+            else {
+                Ok(())
+            };
+            assert_eq!(meter.observe_vm_stack(PeakVmStack::from(depth)), expected);
+            assert_eq!(
+                meter.usage(),
+                if expected.is_ok() {
+                    RenderUsage {
+                        peak_vm_stack: PeakVmStack::from(
+                            u64::from(before.peak_vm_stack).max(depth),
+                        ),
+                        ..before
+                    }
+                }
+                else {
+                    before
+                }
+            );
+        }
+    }
+
+    /// Compound refusals preserve both counters and choose the documented first
+    /// failure.
+    #[test]
+    fn compound_plan_and_work_charges_refuse_before_any_counter_changes()
+    {
+        let limits = RenderLimits {
+            max_plan_nodes_created: MaxPlanNodesCreated::from(3_u64),
+            max_live_plan_nodes: MaxLivePlanNodes::from(2_u64),
+            max_resolver_work_entries: MaxResolverWorkEntries::from(3_u64),
+            max_resolver_stack: MaxResolverStack::from(2_u64),
+            ..RenderLimits::default()
+        };
+        let mut meter = RenderMeter::new(limits);
+        assert_eq!(meter.charge_plan_node(), Ok(()));
+        assert_eq!(meter.charge_plan_node(), Ok(()));
+        let before = meter.usage();
+        assert_eq!(u64::from(before.plan_nodes_created), 2);
+        assert_eq!(u64::from(before.peak_live_plan_nodes), 2);
+        assert_eq!(
+            meter.charge_plan_node(),
+            Err(RenderError::LimitExceeded {
+                kind: RenderLimitKind::LivePlanNodes,
+                limit: LimitBound::from(2_u64)
+            })
+        );
+        assert_eq!(meter.usage(), before);
+        assert_eq!(meter.live_plan_nodes, 2);
+        meter.release_plan_node();
+        assert_eq!(meter.usage(), before);
+        assert_eq!(meter.live_plan_nodes, 1);
+        assert_eq!(meter.charge_plan_node(), Ok(()));
+        let before = meter.usage();
+        assert_eq!(u64::from(before.plan_nodes_created), 3);
+        assert_eq!(u64::from(before.peak_live_plan_nodes), 2);
+        assert_eq!(
+            meter.charge_plan_node(),
+            Err(RenderError::LimitExceeded {
+                kind: RenderLimitKind::PlanNodesCreated,
+                limit: LimitBound::from(3_u64)
+            })
+        );
+        assert_eq!(meter.usage(), before);
+        assert_eq!(meter.live_plan_nodes, 2);
+        meter.limits.max_plan_nodes_created = MaxPlanNodesCreated::from(u64::MAX);
+        meter.used.plan_nodes_created = PlanNodesCreated::from(u64::MAX);
+        let before = meter.usage();
+        assert_eq!(
+            meter.charge_plan_node(),
+            Err(RenderError::ArithmeticOverflow {
+                operation: RenderArithmetic::PlanRefcount
+            })
+        );
+        assert_eq!(meter.usage(), before);
+        assert_eq!(meter.live_plan_nodes, 2);
+        assert_eq!(
+            meter.push_resolver_work(PeakResolverStack::from(1_u64)),
+            Ok(())
+        );
+        let before = meter.usage();
+        assert_eq!(
+            meter.push_resolver_work(PeakResolverStack::from(3_u64)),
+            Err(RenderError::LimitExceeded {
+                kind: RenderLimitKind::ResolverStack,
+                limit: LimitBound::from(2_u64)
+            })
+        );
+        assert_eq!(meter.usage(), before);
+        assert_eq!(
+            meter.push_resolver_work(PeakResolverStack::from(2_u64)),
+            Ok(())
+        );
+        assert_eq!(
+            meter.push_resolver_work(PeakResolverStack::from(1_u64)),
+            Ok(())
+        );
+        let before = meter.usage();
+        assert_eq!(u64::from(before.resolver_work_entries), 3);
+        assert_eq!(u64::from(before.peak_resolver_stack), 2);
+        assert_eq!(
+            meter.push_resolver_work(PeakResolverStack::from(3_u64)),
+            Err(RenderError::LimitExceeded {
+                kind: RenderLimitKind::ResolverWorkEntries,
+                limit: LimitBound::from(3_u64)
+            })
+        );
+        assert_eq!(meter.usage(), before);
+        meter.limits.max_resolver_work_entries = MaxResolverWorkEntries::from(u64::MAX);
+        meter.used.resolver_work_entries = ResolverWorkEntriesUsed::from(u64::MAX);
+        let before = meter.usage();
+        assert_eq!(
+            meter.push_resolver_work(PeakResolverStack::from(3_u64)),
+            Err(RenderError::ArithmeticOverflow {
+                operation: RenderArithmetic::ResolverWorkCounter
+            })
+        );
+        assert_eq!(meter.usage(), before);
     }
 }

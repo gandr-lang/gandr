@@ -10,6 +10,8 @@
 
 use alloc::boxed::Box;
 
+use anodized::spec;
+
 use crate::boundary::MonomialCount;
 use crate::code::Name;
 
@@ -119,11 +121,19 @@ impl BridgeArity
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a two-input operation pins each of the three maps
-    ///   exactly.
+    /// - hypothesis: L3 — zero, one and two input ports distinguish a missing
+    ///   nullary monomial, truncated factors, shifted source indices and a
+    ///   wrong destination; exact maps and port identities are the observers.
     /// - witness: `arity::tests::single_output_builds_a_composing_arity`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ref arity| {
+        let factors = u32::try_from(arity.inputs.len()).unwrap_or(u32::MAX);
+        arity.factors.as_ref() == [factors]
+            && arity.source.iter().copied().eq(0 .. factors)
+            && arity.dest.as_ref() == [0_u32]
+            && arity.outputs.len() == 1
+    })]
     pub fn single_output<In>(
         inputs: In,
         output: SortRef,
@@ -163,18 +173,20 @@ mod tests
     #[test]
     fn single_output_builds_a_composing_arity()
     {
-        let arity = BridgeArity::single_output(
-            [SortRef::new("m", "NatDiv"), SortRef::new("n", "NatDiv")],
-            SortRef::new("q", "NatDiv"),
-        );
-        assert_eq!(MonomialCount::from(1), arity.monomials(), "one monomial");
-        assert_eq!(&[2_u32], &*arity.factors, "the monomial has two factors");
-        assert_eq!(
-            &[0_u32, 1_u32],
-            &*arity.source,
-            "factors read inputs in order"
-        );
-        assert_eq!(&[0_u32], &*arity.dest, "the monomial feeds the sole output");
-        assert_eq!(1, arity.outputs.len(), "one output port");
+        let ports = [SortRef::new("m", "Dividend"), SortRef::new("n", "Divisor")];
+        for (inputs, factors, source) in [
+            (&ports[.. 0], [0_u32], &[][..]),
+            (&ports[.. 1], [1_u32], &[0_u32][..]),
+            (&ports[..], [2_u32], &[0_u32, 1_u32][..]),
+        ] {
+            let output = SortRef::new("q", "Quotient");
+            let arity = BridgeArity::single_output(inputs, output.clone());
+            assert_eq!(MonomialCount::from(1), arity.monomials());
+            assert_eq!(arity.factors.as_ref(), factors);
+            assert_eq!(arity.source.as_ref(), source);
+            assert_eq!(arity.dest.as_ref(), [0_u32]);
+            assert_eq!(arity.inputs.as_ref(), inputs);
+            assert_eq!(arity.outputs.as_ref(), [output]);
+        }
     }
 }

@@ -37,12 +37,19 @@ impl Interval
     ///   no later than `hi` in the order (the caller establishes this when it
     ///   mints the endpoints in pre/post-order).
     /// - ensures: returns the interval carrying the two endpoints unchanged.
-    /// - provides: the datum the containment test consumes. This remains a
-    ///   `const fn` without `#[spec]`: the pinned expansion calls a non-const
-    ///   evaluator and fails with `E0015`. The precondition stays prose for the
-    ///   same reason the containment test's does — endpoint liveness and
-    ///   interval order are established where the endpoints are minted.
+    /// - provides: the datum the containment test consumes. Its owning order
+    ///   establishes endpoint liveness and relative position.
     /// - panics: none.
+    /// - executable: none — the owning order is absent, and opaque `Pos`
+    ///   exposes neither its fields here nor a const value-equality observer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested, disjoint and equal-endpoint intervals
+    ///   distinguish endpoint placement through the owning order; a stale
+    ///   endpoint produces absence. These observations do not claim to validate
+    ///   liveness when constructing the datum.
+    /// - witness: `order::tests::interval_containment`
+    /// - witness: `order::tests::interval_with_stale_endpoint_is_none`
     #[inline]
     #[must_use]
     pub const fn new(

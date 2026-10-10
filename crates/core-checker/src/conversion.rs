@@ -76,7 +76,17 @@ impl ConversionCount
     /// The count after one more crossing, saturating at the ceiling.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: one more crossing below the ceiling; the ceiling otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary two-bridge checking and a tally one below
+    ///   the ceiling followed by success and refusal separate lost increments,
+    ///   wrapping and refusal paths that stop counting.
+    /// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
+    /// - witness: `conversion::tests::crossing_counts_saturate_on_success_and_refusal`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1))]
     const fn crossed(self) -> Self
     {
         Self(self.0.saturating_add(1_usize))
@@ -156,8 +166,8 @@ enum Agreement
 ///   exactly when they share a sort and the synthesised level lies at or below
 ///   the expected one, below only in the value sort, which records a [`Lift`]
 ///   at `at` from the synthesised level to the expected one; otherwise success
-///   exactly when [`convert`] answers convertible. `tally` is one higher on
-///   every outcome.
+///   exactly when [`convert`] answers convertible. `tally` advances once on
+///   every outcome, saturating at its ceiling.
 /// - provides: the only comparison of value types the judgement makes, and the
 ///   only place a code moves up a universe.
 /// - fails: [`CheckRefusal::SortMismatch`] for two universes of different
@@ -184,6 +194,23 @@ enum Agreement
 /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
 /// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
 /// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
+#[spec(
+    captures: before = tally.0,
+    ensures: |ret| tally.0 == before.saturating_add(1)
+        && match ret {
+            | Err(CheckRefusal::TypeMismatch(Mismatch::Value { at: named, synthesised: found, expected: wanted })) => named == at && found == synthesised && wanted == expected,
+            | Err(CheckRefusal::SortMismatch { at: named, .. } | CheckRefusal::LevelMismatch { at: named, .. }) => named == at,
+            | _ => true,
+        }
+        && if let (Ok(ValueTypeView::Universe { sort: found_sort, level: found }), Ok(ValueTypeView::Universe { sort: wanted_sort, level: wanted })) =
+            (value_type_view(context.arena(), synthesised), value_type_view(context.arena(), expected)) {
+            let lifts = found_sort == GroundSort::Value && bool::from(found.lt(wanted));
+            ret.is_ok() == (found_sort == wanted_sort && (found == wanted || lifts))
+                && (ret.is_err() || !lifts || context.lifts().get(&at).is_some_and(|lift| lift.natural() == found && lift.target() == wanted))
+        } else {
+            true
+        },
+)]
 pub fn value_bridge(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -244,8 +271,8 @@ pub fn value_bridge(
 ///
 /// # Specification
 /// - requires: both types are formed, in the context's arena.
-/// - ensures: success exactly when [`convert`] answers convertible; `tally` is
-///   one higher on every outcome.
+/// - ensures: success exactly when [`convert`] answers convertible; `tally`
+///   advances once on every outcome, saturating at its ceiling.
 /// - provides: the only comparison of computation types the judgement makes.
 /// - fails: [`CheckRefusal::TypeMismatch`] with [`Mismatch::Computation`]
 ///   naming `at` and both types when they differ; the unfolding's refusal when
@@ -264,6 +291,15 @@ pub fn value_bridge(
 ///   have no smallness rule.
 /// - witness: `judgement::tests::a_mismatched_application_is_refused_at_the_computation_bridge`
 /// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
+#[spec(
+    captures: before = tally.0,
+    ensures: |ret| tally.0 == before.saturating_add(1)
+        && (synthesised != expected || ret == Ok(()))
+        && match ret {
+            | Err(CheckRefusal::TypeMismatch(Mismatch::Computation { at: named, synthesised: found, expected: wanted })) => named == at && found == synthesised && wanted == expected,
+            | _ => true,
+        },
+)]
 pub fn comp_bridge(
     context: &mut CheckingContext<'_>,
     at: ComputationId,
@@ -289,8 +325,8 @@ pub fn comp_bridge(
 /// # Specification
 /// - requires: `synthesised` is formed, in the context's arena.
 /// - ensures: success exactly when `synthesised` is, at its weak head, the
-///   universe of `sort` at exactly `target`; `tally` is one higher on every
-///   outcome.
+///   universe of `sort` at exactly `target`; `tally` advances once on every
+///   outcome, saturating at its ceiling.
 /// - provides: formation's one comparison: a decode is formed at its own level,
 ///   with no smallness, so a classifier is read off its type.
 /// - fails: [`CheckRefusal::SortMismatch`] for a universe of the other sort;
@@ -311,6 +347,21 @@ pub fn comp_bridge(
 /// - witness: `formation::tests::every_value_type_constructor_has_a_formation_rule`
 /// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
 /// - witness: `context::tests::a_value_typed_hypothesis_does_not_become_a_type_variable`
+#[spec(
+    captures: before = tally.0,
+    ensures: |ret| tally.0 == before.saturating_add(1)
+        && match value_type_view(context.arena(), synthesised) {
+            | Ok(ValueTypeView::Universe { sort: found, level }) => ret.is_ok() == (found == sort && level == target),
+            | _ => true,
+        }
+        && match ret {
+            | Err(CheckRefusal::TypeMismatch(Mismatch::Value { at, expected, .. })
+                | CheckRefusal::SortMismatch { at, expected, .. }
+                | CheckRefusal::LevelMismatch { at, expected, .. }) => at == code
+                    && matches!(value_type_view(context.arena(), expected), Ok(ValueTypeView::Universe { sort: found, level }) if found == sort && level == target),
+            | _ => true,
+        },
+)]
 pub fn decode_bridge(
     context: &mut CheckingContext<'_>,
     code: ValueId,
@@ -987,6 +1038,33 @@ mod tests
             }),
             "an id from another arena is refused rather than read"
         );
+    }
+
+    #[test]
+    fn crossing_counts_saturate_on_success_and_refusal()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let literal = arena.value_literal(crate::fixture::integer_literal());
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        let mut tally = ConversionCount::from(usize::MAX - 1);
+        assert_eq!(
+            value_bridge(&mut context, literal, integer, integer, &mut tally),
+            Ok(())
+        );
+        assert_eq!(usize::from(tally), usize::MAX);
+        assert_eq!(
+            value_bridge(&mut context, literal, integer, string, &mut tally),
+            Err(CheckRefusal::TypeMismatch(
+                crate::refusal::Mismatch::Value {
+                    at: literal,
+                    synthesised: integer,
+                    expected: string,
+                }
+            ))
+        );
+        assert_eq!(usize::from(tally), usize::MAX);
     }
 
     proptest! {

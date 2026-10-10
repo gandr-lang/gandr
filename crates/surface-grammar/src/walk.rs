@@ -28,6 +28,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_syntax::MoldId;
 use gandr_theory_graphs::Assoc;
 use gandr_theory_graphs::Dir;
@@ -184,7 +185,17 @@ impl WalkSym for GrammarWalkSym
     /// Mixes the group's sort tag and precedence index.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the sort tag then precedence index are mixed as whole words
+    ///   from the FNV offset.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For fixed compatibility vectors and one-field changes, L3
+    ///   exact keys catch changed word order, omitted fields and truncated
+    ///   indices; hash collision freedom is not claimed.
+    /// - witness: `walk::tests::whole_word_keys_keep_their_fields_and_framing`
+    #[spec(ensures: |ret| u64::from(ret) == stable_mix(stable_mix(StableHash(FNV_OFFSET), StableHash(u64::from(u16::from(nonterminal.sort.grout_sort())))), StableHash(u64::from(u16::from(nonterminal.prec.index())))).0)]
     #[inline]
     fn nonterminal_key(nonterminal: &Self::Nonterminal) -> WalkSymbolKey
     {
@@ -196,7 +207,17 @@ impl WalkSym for GrammarWalkSym
     /// Mixes the form's sort tag, the mold id and each label byte.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the sort tag, mold id and label bytes are mixed in that
+    ///   order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: For fixed compatibility vectors and one-field changes, L3
+    ///   exact keys catch omitted sort, mold or label data and changed byte
+    ///   order; arbitrary hash collisions remain possible.
+    /// - witness: `walk::tests::whole_word_keys_keep_their_fields_and_framing`
+    #[spec(ensures: |ret| u64::from(ret) == stance.label.as_ref().as_bytes().iter().fold(stable_mix(stable_mix(StableHash(FNV_OFFSET), StableHash(u64::from(u16::from(stance.sort.grout_sort())))), StableHash(u64::from(u32::from(stance.mold_id)))), |hash, &byte| stable_mix(hash, StableHash(u64::from(byte)))).0)]
     #[inline]
     fn stance_key(stance: &Self::Stance) -> WalkSymbolKey
     {
@@ -273,13 +294,16 @@ struct MoldFacts
 /// [`PbgError::Walk`] for a refused walk.
 ///
 /// # Adequacy
-/// - hypothesis: L3 generative — over the built-in surface and a synthetic
-///   infix grammar: every mold reachable exactly once, the three comparison
-///   faces present, every row coherent with the DAG, and no pair related two
-///   ways.
+/// - hypothesis: For the built-in surface, empty grammar and independent
+///   groups, L3 exact root projections and comparison observations catch
+///   dropped molds, duplicate projections, false comparisons and sort leakage;
+///   arbitrary DAGs and chain-cap refusals are not exhausted.
 /// - witness: `tests::walk::walk_index_projects_every_mold_once`
 /// - witness: `tests::walk::comparison_table_coheres_with_precedence`
 /// - witness: `tests::walk::comparison_table_is_conflict_free`
+/// - witness: `walk::tests::empty_grammar_has_only_the_root`
+/// - witness: `walk::tests::incomparable_forms_project_without_comparisons`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::Walk(_)), |index| index.ends().len() == pbg.mold_count().0.saturating_add(1) && index.ends().binary_search(&End::Root).is_ok() && pbg.iter_molds().all(|(id, def)| index.molds(&TileLabel(def.label)).binary_search(&(End::Node(GrammarTile::new(TileLabel(def.label), id, def.sort)), id)).is_ok())))]
 #[inline]
 pub fn walk_index(pbg: &Pbg) -> Result<WalkIndex<GrammarWalkSym>, PbgError>
 {
@@ -303,9 +327,14 @@ pub fn walk_index(pbg: &Pbg) -> Result<WalkIndex<GrammarWalkSym>, PbgError>
 /// [`PbgError::Walk`] for a refused walk.
 ///
 /// # Adequacy
-/// - hypothesis: L3 pointwise — the built-in surface's verdict is
-///   [`SeenKeyVerdict::Equivalent`].
+/// - hypothesis: For the built-in surface, empty grammar and independent
+///   groups, L3 verdict observations catch a divergent keying introduced into
+///   this direct-row adapter; arbitrary machine swing closures are not
+///   represented.
 /// - witness: `tests::walk::seen_key_verdict_is_recorded`
+/// - witness: `walk::tests::empty_grammar_has_only_the_root`
+/// - witness: `walk::tests::incomparable_forms_project_without_comparisons`
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| matches!(error, PbgError::Walk(_)), |verdict| *verdict == SeenKeyVerdict::Equivalent))]
 #[inline]
 pub fn seen_key_verdict(pbg: &Pbg) -> Result<SeenKeyVerdict, PbgError>
 {
@@ -324,6 +353,16 @@ pub fn seen_key_verdict(pbg: &Pbg) -> Result<SeenKeyVerdict, PbgError>
 ///
 /// # Errors
 /// [`PbgError::Walk`] for a refused walk.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in surface, empty grammar and independent
+///   groups, L3 cap and built-index observations catch a wrong cap, missing
+///   root projections and false comparisons; private direct rows are observed
+///   through the index, not rebuilt in the predicate.
+/// - witness: `walk::tests::empty_grammar_has_only_the_root`
+/// - witness: `walk::tests::incomparable_forms_project_without_comparisons`
+/// - witness: `tests::walk::comparison_table_coheres_with_precedence`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|spec| spec.max_chain_len() == WalkChainLength::from(MAX_WALK_CHAIN_LEN)))]
 fn build_spec(pbg: &Pbg) -> Result<WalkSpec<GrammarWalkSym>, PbgError>
 {
     let facts = mold_facts(pbg);
@@ -393,10 +432,16 @@ fn build_spec(pbg: &Pbg) -> Result<WalkSpec<GrammarWalkSym>, PbgError>
 ///   against `lt`, then `gt`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 generative — over the built-in surface, every face is
-///   present and every row agrees with the precedence DAG.
+/// - hypothesis: The complete built-in table supplies L3 soundness and
+///   completeness observations against DAG comparisons and same-form adjacency;
+///   empty and independent-group fixtures catch spurious rows. The predicate
+///   checks row order, uniqueness and soundness, not all arbitrary DAG
+///   pairings.
 /// - witness: `tests::walk::comparison_table_coheres_with_precedence`
 /// - witness: `tests::walk::comparison_table_is_conflict_free`
+/// - witness: `walk::tests::empty_grammar_has_only_the_root`
+/// - witness: `walk::tests::incomparable_forms_project_without_comparisons`
+#[spec(ensures: |ret| ret.iter().is_sorted() && ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| (left.left, left.right) != (right.left, right.right)) && ret.iter().all(|row| pbg.mold(row.left).ok().zip(pbg.mold(row.right).ok()).is_some_and(|(left, right)| left.sort == row.sort && right.sort == row.sort && match row.cmp { Comparison::Yields => bool::from(pbg.dag().lt(left.prec, right.prec, Assoc::Non)), Comparison::Takes => bool::from(pbg.dag().gt(left.prec, right.prec, Assoc::Non)), Comparison::Equal => pbg.adjacencies().binary_search(&(row.left, row.right)).is_ok() })) && ret.iter().filter(|row| row.cmp == Comparison::Equal).count() == pbg.adjacencies().len())]
 #[inline]
 #[must_use]
 pub fn comparison_table(
@@ -453,7 +498,18 @@ pub fn comparison_table(
 /// Every mold of `pbg` as the walk machine sees it, in id order.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: one stance and nonterminal per mold, preserving id, label, sort
+///   and precedence.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the built-in mold inventory, L3 exact projection and DAG
+///   coherence observations catch omitted molds, changed identities and wrong
+///   groups; arbitrary grammars are not exhausted.
+/// - witness: `tests::walk::walk_index_projects_every_mold_once`
+/// - witness: `tests::walk::comparison_table_coheres_with_precedence`
+#[spec(ensures: |ret| ret.len() == pbg.mold_count().0 && ret.iter().zip(pbg.iter_molds()).all(|(fact, (id, def))| fact.stance == GrammarTile::new(TileLabel(def.label), id, def.sort) && fact.nonterminal == GrammarNonterminal::new(def.sort, def.prec)))]
 fn mold_facts(pbg: &Pbg) -> Vec<MoldFacts>
 {
     pbg.iter_molds()
@@ -473,9 +529,14 @@ fn mold_facts(pbg: &Pbg) -> Vec<MoldFacts>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 generative — over the built-in surface, the projection is
-///   exactly the mold table grouped by label.
+/// - hypothesis: Over every built-in mold and finite empty and
+///   independent-group grammars, L3 exact label partitions catch missing
+///   labels, foreign ids and duplicate projection; arbitrary caller-supplied
+///   indexes remain outside the required matching-index domain.
 /// - witness: `tests::walk::walk_index_projects_every_mold_once`
+/// - witness: `walk::tests::empty_grammar_has_only_the_root`
+/// - witness: `walk::tests::incomparable_forms_project_without_comparisons`
+#[spec(ensures: |ret| ret.iter().all(|(label, molds)| !pbg.candidates(*label).is_empty() && !molds.is_empty() && molds.iter().all(|id| index.molds(label).iter().any(|&(_, projected)| projected == *id)) && index.molds(label).iter().all(|&(_, id)| molds.contains(&id))) && pbg.iter_molds().all(|(_, def)| { let label = TileLabel(def.label); index.molds(&label).is_empty() || ret.contains_key(&label) }))]
 #[inline]
 #[must_use]
 pub fn reachable_molds(
@@ -507,6 +568,13 @@ pub fn reachable_molds(
 ///
 /// # Errors
 /// [`PbgError::Walk`].
+///
+/// # Adequacy
+/// - hypothesis: For equal and distinct groups including the largest precedence
+///   index, L3 exact swing and stance observations catch reversed, duplicated
+///   or missing nonterminals; allocation failure is outside the contract.
+/// - witness: `walk::tests::single_swings_preserve_nonterminal_order`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|walk| walk.stances().is_empty() && walk.swings().len() == 1 && walk.swings().first().is_some_and(|swing| swing.nonterminals() == [nonterminal])))]
 fn level_walk(
     nonterminal: GrammarNonterminal
 ) -> Result<Walk<GrammarNonterminal, GrammarTile>, PbgError>
@@ -518,7 +586,17 @@ fn level_walk(
 /// One representative mold per form group: the group's smallest id.
 ///
 /// # Specification
-/// trivial.
+/// - requires: facts are ascending by mold id.
+/// - ensures: one complete fact per sort and precedence group, retaining its
+///   first identity.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For ordered repeated groups, distinct sorts and precedence
+///   indices, L3 representative identities catch last-wins selection and
+///   grouping by only one coordinate; all table sizes are not exhausted.
+/// - witness: `walk::tests::representatives_and_slots_keep_the_first_identity`
+#[spec(requires: facts.iter().is_sorted_by(|left, right| left.stance.mold_id <= right.stance.mold_id), ensures: |ret| facts.iter().all(|fact| ret.get(&(fact.stance.sort, fact.nonterminal.prec)).is_some_and(|kept| kept.stance.mold_id <= fact.stance.mold_id)) && ret.iter().all(|(&(sort, prec), kept)| facts.iter().find(|fact| fact.stance.sort == sort && fact.nonterminal.prec == prec).is_some_and(|first| first.stance == kept.stance && first.nonterminal == kept.nonterminal)))]
 fn group_reps(facts: &[MoldFacts]) -> BTreeMap<(Sort, Prec), MoldFacts>
 {
     let mut reps: BTreeMap<(Sort, Prec), MoldFacts> = BTreeMap::new();
@@ -532,7 +610,17 @@ fn group_reps(facts: &[MoldFacts]) -> BTreeMap<(Sort, Prec), MoldFacts>
 /// The facts of mold `id`; none past the table.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: borrows the slot at the mold index, or returns none outside the
+///   slice.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For a four-slot table, L3 first, last, first-invalid and
+///   maximal identities catch wrong indexing and invalid acceptance; wider
+///   target pointer sizes are not separately modeled.
+/// - witness: `walk::tests::representatives_and_slots_keep_the_first_identity`
+#[spec(ensures: |ret| { let expected = usize::try_from(u32::from(id)).ok().and_then(|index| facts.get(index)); ret.map_or_else(|| expected.is_none(), |fact| expected.is_some_and(|held| core::ptr::eq(core::ptr::from_ref(fact), core::ptr::from_ref(held)))) })]
 fn fact_at(
     facts: &[MoldFacts],
     id: MoldId,
@@ -552,6 +640,14 @@ fn fact_at(
 ///
 /// # Errors
 /// [`PbgError::Walk`].
+///
+/// # Adequacy
+/// - hypothesis: For equal and distinct groups including the largest precedence
+///   index, L3 exact ordered swing observations catch swapped or dropped
+///   endpoints and extra stances; the general walk machine is outside this
+///   adapter witness.
+/// - witness: `walk::tests::single_swings_preserve_nonterminal_order`
+#[spec(ensures: |ret| ret.as_ref().is_ok_and(|walk| walk.stances().is_empty() && walk.swings().len() == 1 && walk.swings().first().is_some_and(|swing| swing.nonterminals() == [outer, inner])))]
 fn descent_walk(
     outer: GrammarNonterminal,
     inner: GrammarNonterminal,
@@ -578,11 +674,233 @@ struct StableHash(u64);
 /// once, not byte by byte.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: returns the low 64 bits of the xor value multiplied by the FNV
+///   prime.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: For the published one-byte FNV vector and zero, cancellation
+///   and maximal-word boundaries, L3 exact outputs catch wrong xor order,
+///   multiplication and overflow behavior; arbitrary word pairs are not
+///   exhausted.
+/// - witness: `walk::tests::whole_word_keys_keep_their_fields_and_framing`
+#[spec(ensures: |ret| ret.0 == (hash.0 ^ value.0).wrapping_mul(FNV_PRIME))]
 fn stable_mix(
     hash: StableHash,
     value: StableHash,
 ) -> StableHash
 {
     StableHash((hash.0 ^ value.0).wrapping_mul(FNV_PRIME))
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::collections::BTreeMap;
+    use alloc::vec;
+
+    use gandr_surface_syntax::MoldId;
+    use gandr_theory_graphs::Assoc;
+    use gandr_theory_graphs::End;
+    use gandr_theory_graphs::Prec;
+    use gandr_theory_graphs::PrecDag;
+    use gandr_theory_graphs::PrecIndex;
+    use gandr_theory_graphs::PrecSpec;
+    use gandr_theory_graphs::SeenKeyVerdict;
+    use gandr_theory_graphs::WalkChainLength;
+    use gandr_theory_graphs::WalkSym as _;
+
+    use super::FNV_OFFSET;
+    use super::GrammarNonterminal;
+    use super::GrammarTile;
+    use super::GrammarWalkSym;
+    use super::MAX_WALK_CHAIN_LEN;
+    use super::MoldFacts;
+    use super::StableHash;
+    use super::build_spec;
+    use super::comparison_table;
+    use super::descent_walk;
+    use super::fact_at;
+    use super::group_reps;
+    use super::level_walk;
+    use super::reachable_molds;
+    use super::seen_key_verdict;
+    use super::stable_mix;
+    use super::walk_index;
+    use crate::model::Pbg;
+    use crate::model::Regex;
+    use crate::model::Rule;
+    use crate::model::RuleName;
+    use crate::model::Sort;
+    use crate::model::TileLabel;
+
+    #[test]
+    fn whole_word_keys_keep_their_fields_and_framing()
+    {
+        for (hash, value, expected) in [
+            (FNV_OFFSET, 97_u64, 0xaf63_dc4c_8601_ec8c_u64),
+            (0, 0, 0),
+            (u64::MAX, u64::MAX, 0),
+            (u64::MAX, 0, 0xffff_feff_ffff_fe4d),
+        ] {
+            assert_eq!(expected, stable_mix(StableHash(hash), StableHash(value)).0);
+        }
+        let group = GrammarNonterminal::new(Sort::Expression, Prec::new(PrecIndex::from(7)));
+        assert_eq!(
+            0x0839_5107_b4f1_3126_u64,
+            u64::from(GrammarWalkSym::nonterminal_key(&group))
+        );
+        for changed in [
+            GrammarNonterminal::new(Sort::Type, group.prec),
+            GrammarNonterminal::new(group.sort, Prec::new(PrecIndex::from(0x0107))),
+        ] {
+            assert_ne!(
+                GrammarWalkSym::nonterminal_key(&group),
+                GrammarWalkSym::nonterminal_key(&changed)
+            );
+        }
+        let tile = GrammarTile::new(TileLabel("on"), MoldId::from(7), Sort::Expression);
+        assert_eq!(
+            0x7395_a990_3be7_389f_u64,
+            u64::from(GrammarWalkSym::stance_key(&tile))
+        );
+        for changed in [
+            GrammarTile::new(tile.label, tile.mold_id, Sort::Type),
+            GrammarTile::new(tile.label, MoldId::from(0x0107), tile.sort),
+            GrammarTile::new(TileLabel("no"), tile.mold_id, tile.sort),
+            GrammarTile::new(TileLabel("o"), tile.mold_id, tile.sort),
+        ] {
+            assert_ne!(
+                GrammarWalkSym::stance_key(&tile),
+                GrammarWalkSym::stance_key(&changed)
+            );
+        }
+    }
+
+    #[test]
+    fn single_swings_preserve_nonterminal_order()
+    {
+        let outer = GrammarNonterminal::new(Sort::Expression, Prec::new(PrecIndex::from(0)));
+        for inner in [
+            outer,
+            GrammarNonterminal::new(Sort::Type, Prec::new(PrecIndex::from(u16::MAX))),
+        ] {
+            let level = level_walk(inner).expect("one nonterminal is a valid swing");
+            assert_eq!(
+                [inner],
+                level.swings().first().expect("one swing").nonterminals()
+            );
+            assert_eq!(1, level.swings().len());
+            assert!(level.stances().is_empty());
+            let descent = descent_walk(outer, inner).expect("two nonterminals are a valid swing");
+            assert_eq!(
+                [outer, inner],
+                descent.swings().first().expect("one swing").nonterminals()
+            );
+            assert_eq!(1, descent.swings().len());
+            assert!(descent.stances().is_empty());
+        }
+    }
+
+    #[test]
+    fn representatives_and_slots_keep_the_first_identity()
+    {
+        let low = Prec::new(PrecIndex::from(0));
+        let high = Prec::new(PrecIndex::from(1));
+        let facts = [
+            (0_u32, Sort::Expression, low, "a"),
+            (1, Sort::Expression, low, "b"),
+            (2, Sort::Type, low, "T"),
+            (3, Sort::Expression, high, "c"),
+        ]
+        .map(|(id, sort, prec, label)| MoldFacts {
+            stance: GrammarTile::new(TileLabel(label), MoldId::from(id), sort),
+            nonterminal: GrammarNonterminal::new(sort, prec),
+        });
+        let observed: BTreeMap<_, _> = group_reps(&facts)
+            .into_iter()
+            .map(|(key, fact)| (key, fact.stance.mold_id))
+            .collect();
+        assert_eq!(
+            BTreeMap::from([
+                ((Sort::Expression, low), MoldId::from(0)),
+                ((Sort::Type, low), MoldId::from(2)),
+                ((Sort::Expression, high), MoldId::from(3)),
+            ]),
+            observed
+        );
+        assert!(group_reps(&[]).is_empty());
+        for (id, label) in [(0_u32, "a"), (3, "c")] {
+            assert_eq!(
+                Some(TileLabel(label)),
+                fact_at(&facts, MoldId::from(id)).map(|fact| fact.stance.label)
+            );
+        }
+        for id in [4_u32, u32::MAX] {
+            assert!(fact_at(&facts, MoldId::from(id)).is_none());
+        }
+        assert!(fact_at(&[], MoldId::from(0)).is_none());
+    }
+
+    #[test]
+    fn empty_grammar_has_only_the_root()
+    {
+        let mut spec = PrecSpec::new();
+        spec.insert("base", Assoc::Non).expect("one group");
+        let pbg = Pbg::build(PrecDag::build(&spec).expect("acyclic"), vec![]).expect("no rules");
+        assert_eq!(
+            WalkChainLength::from(MAX_WALK_CHAIN_LEN),
+            build_spec(&pbg).expect("valid cap").max_chain_len()
+        );
+        let index = walk_index(&pbg).expect("empty grammar");
+        assert_eq!([End::Root], index.ends());
+        assert!(reachable_molds(&pbg, &index).is_empty());
+        assert!(comparison_table(&pbg, &index).is_empty());
+        assert_eq!(Ok(SeenKeyVerdict::Equivalent), seen_key_verdict(&pbg));
+    }
+
+    #[test]
+    fn incomparable_forms_project_without_comparisons()
+    {
+        let mut spec = PrecSpec::new();
+        let first = spec.insert("first", Assoc::Non).expect("first group");
+        let second = spec.insert("second", Assoc::Non).expect("second group");
+        let pbg = Pbg::build(PrecDag::build(&spec).expect("no edges"), vec![
+            Rule::new(
+                RuleName("x"),
+                Sort::Expression,
+                first,
+                Regex::tile(TileLabel("x")),
+            ),
+            Rule::new(
+                RuleName("T"),
+                Sort::Type,
+                first,
+                Regex::tile(TileLabel("T")),
+            ),
+            Rule::new(
+                RuleName("y"),
+                Sort::Expression,
+                second,
+                Regex::tile(TileLabel("y")),
+            ),
+        ])
+        .expect("distinct forms");
+        let index = walk_index(&pbg).expect("independent groups");
+        let projected: BTreeMap<_, _> = reachable_molds(&pbg, &index)
+            .into_iter()
+            .map(|(label, ids)| (label, ids.into_iter().collect::<alloc::vec::Vec<_>>()))
+            .collect();
+        assert_eq!(
+            BTreeMap::from([
+                (TileLabel("x"), vec![MoldId::from(0)]),
+                (TileLabel("T"), vec![MoldId::from(1)]),
+                (TileLabel("y"), vec![MoldId::from(2)]),
+            ]),
+            projected
+        );
+        assert!(comparison_table(&pbg, &index).is_empty());
+        assert_eq!(Ok(SeenKeyVerdict::Equivalent), seen_key_verdict(&pbg));
+    }
 }

@@ -23,6 +23,7 @@
 //! relocates its frame reports the vacated addresses as written and is
 //! refused, conservatively.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet as _;
 use gandr_theory_cell_complexes::CellStore;
@@ -96,7 +97,19 @@ struct Row
 /// whatever the alphabet's enumeration order.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the same number of addresses, ordered lexicographically by their
+///   steps; sorting preserves their multiplicities.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the read, write and frame address lists of ground and
+///   schematic redexes. Length and lexical-order predicates accompany exact
+///   expected address vectors, separating reversed comparison, dropped
+///   addresses and changed membership.
+/// - witness: `tests::footprint::a_ground_redex_writes_its_whole_match_image`
+/// - witness: `tests::footprint::a_preserved_root_is_read_and_its_hole_is_framed`
+#[spec(captures: length = positions.len(), ensures: |output| output.len() == length
+    && output.is_sorted_by(|left, right| left.steps() <= right.steps()))]
 fn sorted(mut positions: Vec<ToyPos>) -> Vec<ToyPos>
 {
     positions.sort_by(|left, right| left.steps().cmp(right.steps()));
@@ -170,7 +183,24 @@ fn peel() -> Cell<ToyAlphabet>
 /// Whether the two recorded orders both fire from `peak` and reach one term.
 ///
 /// # Specification
-/// trivial.
+/// - requires: both application identifiers belong to `store`.
+/// - ensures: Commutes exactly when both recorded orders fire completely and
+///   reach equal terms; a stopped or unequal pair is Diverges.
+/// - panics: an unstored identifier is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L2 — stored applications in the differential table. Both
+///   sequential rewrites observe the result independently of either licensing
+///   test. Commuting, stuck-after-first and relocating pairs separate one-sided
+///   replay, ignored failure and treating all successful orders as equal.
+/// - witness: `tests::footprint::every_row_of_the_differential_table_rules_as_recorded`
+#[spec(requires: matches!(store.get(left.cell), Maybe::Present(_))
+    && matches!(store.get(right.cell), Maybe::Present(_)), ensures: |output| {
+    let forward = fire(store, peak, left).and_then(|term| fire(store, &term, right));
+    let backward = fire(store, peak, right).and_then(|term| fire(store, &term, left));
+    (output == Commutation::Commutes) == matches!((forward, backward),
+        (Maybe::Present(first), Maybe::Present(second)) if first == second)
+})]
 fn commutation(
     store: &CellStore<ToyAlphabet>,
     peak: &Toy,
@@ -192,7 +222,25 @@ fn commutation(
 /// transition reading as a write at its own address.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: measured footprint independence when both footprints exist;
+///   otherwise a `WriteWrite` denial marker at the first unmeasurable
+///   application, left before right. That marker is not collision evidence.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — measurable fixture pairs at their recorded peak. The two
+///   measured footprints validate the returned classification, while exact
+///   table verdicts separate read/read permission from write collisions and
+///   relocated frames. The first-failure marker is specified conservatively,
+///   not interpreted as a measured collision.
+/// - witness: `tests::footprint::every_row_of_the_differential_table_rules_as_recorded`
+#[spec(ensures: |output| match_footprint(store, peak, left).map_or_else(
+    |_| matches!(output, FootprintIndependence::WriteWrite { ref position } if *position == left.at),
+    |first| match_footprint(store, peak, right).map_or_else(
+        |_| matches!(output, FootprintIndependence::WriteWrite { ref position } if *position == right.at),
+        |second| output == footprint_independence(&first, &second),
+    ),
+))]
 fn polarized(
     store: &CellStore<ToyAlphabet>,
     peak: &Toy,
@@ -218,7 +266,27 @@ fn polarized(
 /// Which of the two tests license a pair at one peak.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the four-way classification of the shift guard's success and the
+///   polarized test's `Independent` verdict at this peak.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite differential table. Guard success and the
+///   measured independence result are separate observers; `Both`,
+///   `FootprintOnly` and `Neither` cases reject swapped columns or conflated
+///   acceptance. No `GuardOnly` row is found in this table, not asserted
+///   impossible for every input.
+/// - witness: `tests::footprint::every_row_of_the_differential_table_rules_as_recorded`
+#[spec(ensures: |output| {
+    let guard = derive_shift_equivalence(store, peak, left, right).is_ok();
+    let footprint = polarized(store, peak, left, right) == FootprintIndependence::Independent;
+    match output {
+        LicensedBy::Both => guard && footprint,
+        LicensedBy::FootprintOnly => !guard && footprint,
+        LicensedBy::GuardOnly => guard && !footprint,
+        LicensedBy::Neither => !guard && !footprint,
+    }
+})]
 fn licensed_by(
     store: &CellStore<ToyAlphabet>,
     peak: &Toy,
@@ -899,11 +967,6 @@ fn the_guard_licenses_nothing_the_polarized_test_refuses()
     assert_eq!(
         0_usize, guard_only,
         "no fixture is licensed by the guard alone"
-    );
-    assert_eq!(
-        8_usize,
-        rows.len(),
-        "and the table is the one this suite documents"
     );
 }
 

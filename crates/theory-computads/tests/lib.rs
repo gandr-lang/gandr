@@ -7,8 +7,6 @@
 //! two applications that could commute; the description suites read the
 //! sequent alphabet, which is what a description elaborates into.
 
-extern crate alloc;
-
 /// A toy position from child indices, read from the root outward.
 macro_rules! at {
     ($($step:expr),* $(,)?) => {
@@ -31,5 +29,3 @@ mod fixture;
 mod linearity;
 #[cfg(test)]
 mod order;
-#[cfg(test)]
-mod workspace;

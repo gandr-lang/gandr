@@ -14,6 +14,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
+
 use crate::diagnostic::DiagnosticCode;
 
 /// A zero-based byte offset into a source document.
@@ -60,6 +62,16 @@ impl fmt::Display for ByteOffset
     /// - provides: the offset a refusal's message quotes.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes its options and write status,
+    ///   but not the rendered output needed to check their effect.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — independent goldens distinguish width, sign, zero
+    ///   padding and nondefault alignment/fill. Numeric refusal parameters also
+    ///   cover a maximum offset. These are bounded successful writes, not every
+    ///   option combination or rejecting sink.
+    /// - witness: `present::tests::byte_offsets_preserve_formatter_options`
+    /// - witness: `present::tests::range_and_position_errors_preserve_numeric_parameters`
     #[inline]
     fn fmt(
         &self,
@@ -107,14 +119,18 @@ impl ByteRange
     /// [`InvertedRange`] when `end < start`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — one comparison, separated by the boundary triple
-    ///   `start < end`, `start == end` and `start == end + 1`, the first two
-    ///   asserted as exact endpoints and the third as the exact refusal with
-    ///   both offsets.
-    /// - witness: `present::tests::constructors_store_fields_verbatim`
+    /// - hypothesis: L3 — strict order, equality and inversion are
+    ///   distinguished at ordinary offsets and the maximum representable
+    ///   offset. Exact endpoints and typed refusals detect reordering or
+    ///   narrowing, without claiming enumeration of every pair.
+    /// - witness: `present::tests::byte_range_ordering_includes_offset_extremes`
     /// - witness: `present::tests::an_empty_range_is_a_position`
     /// - witness: `present::tests::an_inverted_range_is_refused`
     #[inline]
+    #[spec(ensures: |ret| match ret {
+        Ok(range) => start <= end && range.start == start && range.end == end,
+        Err(error) => end < start && error.start == start && error.end == end,
+    })]
     pub fn new(
         start: ByteOffset,
         end: ByteOffset,
@@ -179,11 +195,13 @@ impl<'input> serde::Deserialize<'input> for ByteRange
     /// The deserializer's error, or the inverted-range refusal.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — an ordered image and an inverted one separate the
-    ///   decode that checks the order from one that skips it.
+    /// - hypothesis: L3 — independent JSON images fix endpoint roles; ordered
+    ///   and equal endpoints decode while an inversion fails as a data error.
+    ///   These witnesses cover JSON, not arbitrary deserializer failures.
     /// - witness: `present::tests::byte_ranges_keep_the_existing_json_shape`
     /// - witness: `present::tests::an_inverted_range_is_refused_on_decode`
     #[inline]
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |range| range.start <= range.end))]
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'input>,
@@ -214,6 +232,15 @@ impl fmt::Display for InvertedRange
     /// - provides: the message a decode failure carries.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes write status, not the text
+    ///   emitted into the caller's sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the ordered numeric parameters are observed in
+    ///   successful formatting without pinning the surrounding prose. This
+    ///   detects missing, duplicated or swapped parameters on the boundary
+    ///   fixtures, not every wording error or rejecting formatter sink.
+    /// - witness: `present::tests::range_and_position_errors_preserve_numeric_parameters`
     #[inline]
     fn fmt(
         &self,
@@ -531,6 +558,15 @@ impl fmt::Display for PosOfByteError
     /// - provides: the message a projection failure carries.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes write status, not the text
+    ///   emitted into the caller's sink.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the ordered numeric parameters are observed in
+    ///   successful formatting without pinning the surrounding prose. This
+    ///   detects missing, duplicated or swapped parameters on the boundary
+    ///   fixtures, not every wording error or rejecting formatter sink.
+    /// - witness: `present::tests::range_and_position_errors_preserve_numeric_parameters`
     #[inline]
     fn fmt(
         &self,
@@ -563,11 +599,10 @@ impl core::error::Error for PosOfByteError
 /// [`PosOfByteError`] when `byte` is inside a character.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surfaces are an offset at a character's
-///   start, strictly inside a multi-byte character, at the end and past it, and
-///   the newline row break; each is separated by an exact position or the exact
-///   refusal over ASCII, two-, three- and four-byte characters and the empty
-///   text, and [`byte_of_pos`] inverting every character start.
+/// - hypothesis: L3 — exact positions and refusals distinguish ASCII, two-,
+///   three- and four-byte characters, interior bytes, newline boundaries, empty
+///   text and end clamping. L2 inverse checks cover each character start in
+///   finite fixtures, not the entire Unicode/input space.
 /// - witness: `present::tests::positions_round_trip_on_ascii`
 /// - witness: `present::tests::positions_round_trip_on_multibyte_text`
 /// - witness: `present::tests::positions_count_characters_not_bytes`
@@ -576,6 +611,12 @@ impl core::error::Error for PosOfByteError
 /// - witness: `present::tests::the_empty_source_has_one_position`
 /// - witness: `present::tests::the_end_of_the_source_is_a_position`
 #[inline]
+#[spec(ensures: |ret| match ret {
+    Ok(at) => text.0.get(..byte.0.min(text.0.len())).is_some_and(|prefix|
+        at.row.0 == prefix.bytes().filter(|&ch| ch == b'\n').count()
+            && at.col.0 == prefix.rsplit('\n').next().map_or(0, |line| line.chars().count())),
+    Err(error) => byte.0 < text.0.len() && !text.0.is_char_boundary(byte.0) && error.byte == byte,
+})]
 pub fn pos_of_byte(
     text: SourceText<'_>,
     byte: ByteOffset,
@@ -629,10 +670,10 @@ pub fn pos_of_byte(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the decision surfaces are an exact hit, a column past its
-///   row's end, a row past the last and the empty text, each separated by an
-///   exact offset, and the inverse of [`pos_of_byte`] on every character start
-///   over ASCII and multi-byte text.
+/// - hypothesis: L3 — exact offsets distinguish character columns, missing
+///   rows, overlong columns and empty text. L2 inverse checks cover the
+///   character starts of finite ASCII and multibyte fixtures; they do not
+///   independently establish a universal inverse.
 /// - witness: `present::tests::positions_round_trip_on_ascii`
 /// - witness: `present::tests::positions_round_trip_on_multibyte_text`
 /// - witness: `present::tests::positions_count_characters_not_bytes`
@@ -641,6 +682,15 @@ pub fn pos_of_byte(
 /// - witness: `present::tests::the_end_of_the_source_is_a_position`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| text.0.split('\n').nth(pos.row.0).map_or(
+    ret.0 == text.0.len(),
+    |line| {
+        let start = text.0.split('\n').take(pos.row.0).fold(0_usize,
+            |bytes, previous| bytes.saturating_add(previous.len()).saturating_add(1));
+        let column = line.char_indices().nth(pos.col.0).map_or(line.len(), |(offset, _)| offset);
+        ret.0 == start.saturating_add(column)
+    },
+))]
 pub fn byte_of_pos(
     text: SourceText<'_>,
     pos: Pos,
@@ -750,11 +800,23 @@ impl<'source> LineIndex<'source>
     ///   no byte of a multi-byte character is mistaken for one.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a text with each of the three terminators and a final
-    ///   row without one, each row asserted at its exact bytes.
+    /// - hypothesis: L3 — exact row extents cover all three terminators,
+    ///   adjacent empty rows, trailing terminators and empty text. These finite
+    ///   boundaries distinguish CRLF coalescing from double counting; they do
+    ///   not enumerate arbitrary text.
     /// - witness: `present::tests::utf16_rows_end_at_every_protocol_terminator`
+    /// - witness: `present::tests::utf16_positions_clamp_past_the_end`
+    /// - witness: `present::tests::adjacent_terminators_preserve_empty_rows_and_crlf_clamping`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ref ret| ret.text == text.0
+        && ret.starts.iter().map(|start| start.0).eq(core::iter::once(0_usize).chain(
+            text.0.match_indices(['\r', '\n'])
+                .filter(|&(offset, terminator)| terminator != "\r"
+                    || text.0.as_bytes().get(offset.saturating_add(1)) != Some(&b'\n'))
+                .map(|(offset, _)| offset.saturating_add(1))
+        ))
+    )]
     pub fn new(text: SourceText<'source>) -> Self
     {
         let bytes = text.0.as_bytes();
@@ -805,7 +867,17 @@ impl<'source> LineIndex<'source>
     /// - witness: `present::tests::utf16_columns_count_code_units_across_a_multibyte_boundary`
     /// - witness: `present::tests::utf16_rows_end_at_every_protocol_terminator`
     /// - witness: `present::tests::utf16_positions_clamp_past_the_end`
+    /// - witness: `present::tests::adjacent_terminators_preserve_empty_rows_and_crlf_clamping`
     #[inline]
+    #[spec(ensures: |ret| match ret {
+        Ok(at) => self.starts.get(at.row.0).is_some_and(|start| {
+            let end = byte.0.min(self.text.len());
+            start.0 <= end
+                && self.starts.get(at.row.0.saturating_add(1)).is_none_or(|next| end < next.0)
+                && self.text.get(start.0..end).is_some_and(|prefix| prefix.encode_utf16().count() == at.col.0)
+        }),
+        Err(error) => byte.0 < self.text.len() && !self.text.is_char_boundary(byte.0) && error.byte == byte,
+    })]
     pub fn utf16_pos_of_byte(
         &self,
         byte: ByteOffset,
@@ -852,23 +924,37 @@ impl<'source> LineIndex<'source>
     ///   basic plane is that character's first byte; a column past the end of
     ///   its row is the offset of the row's terminator, or of the end of the
     ///   text on the last row; a row past the last is the end of the text. On
-    ///   every character start `b`, `byte_of_utf16_pos(utf16_pos_of_byte(b)) ==
-    ///   b`.
+    ///   each content-character start and the first byte of a terminator, the
+    ///   projections are inverse. The LF inside CRLF instead maps back to its
+    ///   preceding CR, because an overlong column clamps to the terminator.
     /// - provides: the byte offset a language server position addresses.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the decision surfaces are an exact hit, a column
-    ///   inside a surrogate pair, a column past its row's end at each
-    ///   terminator, a row past the last and the empty text, each separated by
-    ///   an exact offset, and the inverse of [`LineIndex::utf16_pos_of_byte`]
-    ///   on every character start.
+    /// - hypothesis: L3 — exact offsets distinguish surrogate-pair flooring,
+    ///   each terminator, CRLF-interior clamping, missing rows and empty text.
+    ///   L2 inverse checks cover finite content-character boundaries; CRLF's
+    ///   second byte is deliberately normalized to the terminator start.
     /// - witness: `present::tests::utf16_columns_count_code_units_across_a_multibyte_boundary`
     /// - witness: `present::tests::utf16_rows_end_at_every_protocol_terminator`
     /// - witness: `present::tests::utf16_positions_clamp_past_the_end`
+    /// - witness: `present::tests::adjacent_terminators_preserve_empty_rows_and_crlf_clamping`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| {
+        let row = self.row_bytes(pos.row);
+        row.start <= ret && ret <= row.end
+            && self.text.get(row.start.0..ret.0).is_some_and(|prefix| {
+                let column = prefix.encode_utf16().count();
+                if ret == row.end { pos.col.0 >= column }
+                else {
+                    self.text.get(ret.0..row.end.0).and_then(|tail| tail.chars().next())
+                        .is_some_and(|ch| column <= pos.col.0
+                            && pos.col.0 < column.saturating_add(ch.len_utf16()))
+                }
+            })
+    })]
     pub fn byte_of_utf16_pos(
         &self,
         pos: Utf16Pos,
@@ -900,11 +986,27 @@ impl<'source> LineIndex<'source>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a row ended by each terminator, the last row and a
-    ///   row past it, each asserted at its exact range.
+    /// - hypothesis: L3 — exact ranges cover each terminator, adjacent empty
+    ///   rows, the final row and rows beyond it, including the maximum row
+    ///   index. These fixtures distinguish terminator exclusion and clamping,
+    ///   without claiming exhaustive Unicode coverage.
     /// - witness: `present::tests::utf16_rows_end_at_every_protocol_terminator`
+    /// - witness: `present::tests::utf16_positions_clamp_past_the_end`
+    /// - witness: `present::tests::adjacent_terminators_preserve_empty_rows_and_crlf_clamping`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.start <= ret.end && ret.end.0 <= self.text.len()
+        && self.starts.get(row.0).map_or(
+            ret.start.0 == self.text.len() && ret.end.0 == self.text.len(),
+            |&start| ret.start == start
+                && self.text.get(ret.start.0..ret.end.0).is_some_and(|content| !content.contains(['\r', '\n']))
+                && self.starts.get(row.0.saturating_add(1)).map_or(
+                    ret.end.0 == self.text.len(),
+                    |next| self.text.get(ret.end.0..next.0)
+                        .is_some_and(|terminator| matches!(terminator, "\r" | "\n" | "\r\n")),
+                ),
+        )
+    )]
     pub fn row_bytes(
         &self,
         row: PositionRow,
@@ -940,6 +1042,8 @@ mod tests
     use alloc::string::ToString as _;
     use alloc::vec;
 
+    use anodized::spec;
+
     use super::ByteOffset;
     use super::ByteRange;
     use super::DiagCard;
@@ -969,7 +1073,21 @@ mod tests
     /// The range a [`Bytes`] pair spells, which the caller knows is ordered.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the start does not exceed the end.
+    /// - ensures: the range retains both offered endpoints.
+    /// - fails: never on the admitted domain.
+    /// - panics: an inverted pair violates the precondition.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and nonempty ranges support independent row
+    ///   extent and JSON-image assertions, distinguishing endpoint swaps on
+    ///   those fixtures. Invalid helper input is outside the admitted domain.
+    /// - witness: `present::tests::utf16_rows_end_at_every_protocol_terminator`
+    /// - witness: `present::tests::byte_ranges_keep_the_existing_json_shape`
+    #[spec(
+        requires: start <= end,
+        ensures: |ret| ret.start.0 == start && ret.end.0 == end,
+    )]
     fn range(Bytes(start, end): Bytes) -> ByteRange
     {
         ByteRange::new(ByteOffset::from(start), ByteOffset::from(end)).expect("an ordered range")
@@ -1146,17 +1264,31 @@ mod tests
     }
 
     #[test]
-    fn constructors_store_fields_verbatim()
+    fn byte_range_ordering_includes_offset_extremes()
     {
-        // Distinct endpoints, so a swap in the constructor is caught.
-        let built = ByteRange::new(ByteOffset::from(3_usize), ByteOffset::from(7_usize))
-            .expect("3 is below 7");
+        let zero = ByteOffset::from(0_usize);
+        let maximum = ByteOffset::from(usize::MAX);
         assert_eq!(
-            ByteOffset::from(3_usize),
-            built.start(),
-            "the start is kept"
+            Ok(ByteRange {
+                start: zero,
+                end: maximum
+            }),
+            ByteRange::new(zero, maximum)
         );
-        assert_eq!(ByteOffset::from(7_usize), built.end(), "the end is kept");
+        assert_eq!(
+            Ok(ByteRange {
+                start: maximum,
+                end: maximum
+            }),
+            ByteRange::new(maximum, maximum)
+        );
+        assert_eq!(
+            Err(InvertedRange {
+                start: maximum,
+                end: zero
+            }),
+            ByteRange::new(maximum, zero)
+        );
     }
 
     #[test]
@@ -1327,12 +1459,7 @@ mod tests
             "end": 4_usize,
         }))
         .expect_err("an inverted image decodes to nothing");
-        assert!(
-            refused
-                .to_string()
-                .contains("byte range 5..4 ends before it starts"),
-            "the refusal names both offsets: {refused}"
-        );
+        assert!(refused.is_data());
 
         let empty = serde_json::from_value::<ByteRange>(serde_json::json!({
             "start": 4_usize,
@@ -1514,6 +1641,82 @@ mod tests
             ByteOffset::from(3_usize),
             byte_of_pos(trailing, pos(At(1, 0))),
             "the empty last row is the end"
+        );
+    }
+
+    #[test]
+    fn adjacent_terminators_preserve_empty_rows_and_crlf_clamping()
+    {
+        let index = LineIndex::new(SourceText::from("\r\n\r\né\r\n\r"));
+        for (row, bytes) in [
+            Bytes(0, 0),
+            Bytes(2, 2),
+            Bytes(4, 6),
+            Bytes(8, 8),
+            Bytes(9, 9),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert_eq!(range(bytes), index.row_bytes(PositionRow::from(row)));
+        }
+        for (byte, at, normalized) in [
+            (1_usize, At(0, 1), 0_usize),
+            (3, At(1, 1), 2),
+            (7, At(2, 2), 6),
+        ] {
+            let at = utf16(at);
+            assert_eq!(Ok(at), index.utf16_pos_of_byte(ByteOffset::from(byte)));
+            assert_eq!(ByteOffset::from(normalized), index.byte_of_utf16_pos(at));
+        }
+        assert_eq!(
+            Ok(utf16(At(4, 0))),
+            index.utf16_pos_of_byte(ByteOffset::from(usize::MAX))
+        );
+        assert_eq!(
+            range(Bytes(9, 9)),
+            index.row_bytes(PositionRow::from(usize::MAX))
+        );
+        assert_eq!(
+            ByteOffset::from(6_usize),
+            index.byte_of_utf16_pos(utf16(At(2, usize::MAX)))
+        );
+    }
+
+    #[test]
+    fn range_and_position_errors_preserve_numeric_parameters()
+    {
+        let inverted = InvertedRange {
+            start: ByteOffset::from(5_usize),
+            end: ByteOffset::from(4_usize),
+        }
+        .to_string();
+        assert!(
+            inverted
+                .split(|ch: char| !ch.is_ascii_digit())
+                .filter(|part| !part.is_empty())
+                .eq(["5", "4"])
+        );
+        let offset = usize::MAX.to_string();
+        let interior = PosOfByteError {
+            byte: ByteOffset::from(usize::MAX),
+        }
+        .to_string();
+        assert!(
+            interior
+                .split(|ch: char| !ch.is_ascii_digit())
+                .filter(|part| !part.is_empty())
+                .eq([offset.as_str()])
+        );
+    }
+
+    #[test]
+    fn byte_offsets_preserve_formatter_options()
+    {
+        let offset = ByteOffset::from(5_usize);
+        assert_eq!(
+            "   5|+0005|***5****",
+            alloc::format!("{offset:>4}|{offset:+05}|{offset:*^8}")
         );
     }
 }

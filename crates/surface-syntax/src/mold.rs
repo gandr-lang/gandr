@@ -8,6 +8,8 @@
 
 use core::num::TryFromIntError;
 
+use anodized::spec;
+
 /// One mold's position in the table of the grammar that assigned it.
 ///
 /// An id means nothing without its table: the [`GrammarFingerprint`] of the
@@ -17,6 +19,27 @@ use core::num::TryFromIntError;
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MoldId(u32);
+
+impl MoldId
+{
+    /// Compare represented values during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> crate::ConstEquality
+    {
+        if self.0 == other.0 {
+            crate::ConstEquality::Equal
+        }
+        else {
+            crate::ConstEquality::Unequal
+        }
+    }
+}
 
 impl From<u32> for MoldId
 {
@@ -60,10 +83,16 @@ impl TryFrom<usize> for MoldId
     /// The integer conversion's error when `position` exceeds `u32::MAX`.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 boundary — the largest 32-bit index converts and the
-    ///   next one, where the host can name it, is refused.
+    /// - hypothesis: L3 — zero, an ordinary id and the largest 32-bit index
+    ///   retain their exact values; the next index, where the host can name it,
+    ///   is refused. These observers detect truncation, shifted ids and an
+    ///   off-by-one upper bound.
     /// - witness: `mold::tests::a_host_index_past_the_id_width_is_refused`
     #[inline]
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
+        |_| u32::try_from(position).is_err(),
+        |id| usize::try_from(id.0) == Ok(position),
+    ))]
     fn try_from(position: usize) -> Result<Self, Self::Error>
     {
         u32::try_from(position).map(Self)
@@ -74,6 +103,27 @@ impl TryFrom<usize> for MoldId
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct GroutSort(u16);
+
+impl GroutSort
+{
+    /// Compare represented values during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> crate::ConstEquality
+    {
+        if self.0 == other.0 {
+            crate::ConstEquality::Equal
+        }
+        else {
+            crate::ConstEquality::Unequal
+        }
+    }
+}
 
 impl From<u16> for GroutSort
 {
@@ -125,6 +175,27 @@ pub enum GroutShape
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct GrammarFingerprint(u64);
+
+impl GrammarFingerprint
+{
+    /// Compare represented values during constant evaluation.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn const_eq(
+        self,
+        other: Self,
+    ) -> crate::ConstEquality
+    {
+        if self.0 == other.0 {
+            crate::ConstEquality::Equal
+        }
+        else {
+            crate::ConstEquality::Unequal
+        }
+    }
+}
 
 impl From<u64> for GrammarFingerprint
 {
@@ -202,6 +273,7 @@ impl ClosingClass
     /// - witness: `mold::tests::openers_and_closers_pair_by_family`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret == match spelling.0 { "(" => Some(Self::Paren), "[" => Some(Self::Bracket), "{" | "#{" => Some(Self::Brace), _ => None })]
     pub fn opening(spelling: DelimSpelling<'_>) -> Option<Self>
     {
         match spelling.0 {
@@ -227,6 +299,7 @@ impl ClosingClass
     /// - witness: `mold::tests::openers_and_closers_pair_by_family`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret == match spelling.0 { ")" => Some(Self::Paren), "]" => Some(Self::Bracket), "}" => Some(Self::Brace), _ => None })]
     pub fn closing(spelling: DelimSpelling<'_>) -> Option<Self>
     {
         match spelling.0 {
@@ -277,10 +350,12 @@ mod tests
     #[test]
     fn a_host_index_past_the_id_width_is_refused()
     {
-        assert_eq!(
-            Ok(MoldId::from(u32::MAX)),
-            MoldId::try_from(usize::try_from(u32::MAX).expect("hosts are at least 32-bit"))
-        );
+        for value in [0_u32, 17, u32::MAX] {
+            assert_eq!(
+                Ok(MoldId::from(value)),
+                MoldId::try_from(usize::try_from(value).expect("hosts are at least 32-bit")),
+            );
+        }
         let past = usize::try_from(u64::from(u32::MAX).checked_add(1).expect("fits in u64"));
         if let Ok(past) = past {
             assert!(MoldId::try_from(past).is_err());

@@ -13,6 +13,7 @@ mod tests
 {
     use std::path::Path;
 
+    use anodized::spec;
     use expect_test::expect_file;
     use gandr_core_nbe::Definitions;
     use gandr_core_nbe::DomainArena;
@@ -100,7 +101,21 @@ mod tests
     /// `root` of `source` laid out at `page`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the fixture fits the default build and render ceilings.
+    /// - ensures: the selected type or value presentation has no carriage
+    ///   return or tab; layout-owned line endings are line feeds.
+    /// - provides: a presentation for exact fixture observations.
+    /// - panics: if the presentation refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite type, value and control-string fixtures expose
+    ///   wrong root selection or unescaped controls. Meter exhaustion is
+    ///   outside these fixtures, whose helper deliberately treats refusal as
+    ///   failure.
+    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `goldens::tests::string_controls_stay_in_one_escaped_literal`
+    #[spec(ensures: |ref ret| !ret.as_ref().contains(['\r', '\t']))]
     fn presented<S>(
         source: &S,
         root: Root,
@@ -122,7 +137,26 @@ mod tests
     /// and each matches its golden file, which ends in a line feed.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a nonempty fixture key with no path separator, and a flat
+    ///   spelling without a line ending or tab. The source fits default
+    ///   ceilings.
+    /// - ensures: both pages match their files and expected fidelity; a
+    ///   spelling that fits the wide page appears there unchanged.
+    /// - provides: independent byte-for-byte layout observations.
+    /// - panics: on a layout refusal, unreadable golden or mismatched
+    ///   observation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — finite narrow and wide arrow, bracket and
+    ///   control-string fixtures expose wrong breaks, omitted escapes and
+    ///   changed fidelity. Filesystem failure and arbitrary fixture keys are
+    ///   not exercised.
+    /// - witness: `goldens::tests::arrow_chain_breaks_before_each_continuation`
+    /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
+    /// - witness: `goldens::tests::string_controls_stay_in_one_escaped_literal`
+    #[spec(requires: !pinned.name.is_empty()
+        && !pinned.name.contains(['/', '\\']) && !pinned.flat.contains(['\r', '\n', '\t'])
+    )]
     fn pin(
         source: &CoreSource<'_>,
         root: Root,
@@ -154,10 +188,23 @@ mod tests
             .assert_eq(&format!("{at_wide}\n"));
     }
 
-    /// The one-line spelling and fidelity of `root` at the wide page.
+    /// The wide-page spelling and fidelity of `root`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the fixture fits the default presentation ceilings.
+    /// - ensures: wide-page text contains no carriage return or tab, and
+    ///   carries the presentation's node-derived fidelity.
+    /// - provides: an observation independent of the golden-file helper.
+    /// - panics: if presentation refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact type, literal and malformed-source observations
+    ///   distinguish wrong spelling and fidelity. Other page widths are outside
+    ///   this wide-page helper's evidence.
+    /// - witness: `goldens::tests::every_type_former_spells_as_the_grammar_writes_it`
+    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+    #[spec(ensures: |ref ret| !ret.0.contains(['\r', '\t']))]
     fn spelled<S>(
         source: &S,
         root: Root,
@@ -173,7 +220,24 @@ mod tests
     /// normal form evaluation hands a reader, minted afresh.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a held closed value whose evaluation and unfolding readback
+    ///   fit 4,096 fuel steps and the fixture arena.
+    /// - ensures: a live core value handle denoting the fixture's normal form.
+    /// - provides: the values the concrete reader sees after normalization.
+    /// - panics: if evaluation or readback refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite literal, pair, injection and thunk
+    ///   fixtures observe their evaluated presentation. Dangling inputs, fuel
+    ///   exhaustion and arbitrary closed values are outside this fixture
+    ///   helper's domain.
+    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
+    /// - witness: `goldens::tests::record_value_breaks_fields_at_the_narrow_page`
+    #[spec(
+        requires: core.value(value).is_some(),
+        ensures: |ret| matches!(ret, CoreNode::Value(id) if core.value(id).is_some()),
+    )]
     fn normal_form(
         core: &mut CoreArena,
         value: ValueId,
@@ -207,7 +271,29 @@ mod tests
     /// The integer literal of the decimal `digits`, with `sign`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nonempty ASCII decimal digits and room in the fixture arena.
+    /// - ensures: a held integer literal with canonical magnitude; a zero
+    ///   magnitude is non-negative, otherwise the supplied sign is retained.
+    /// - provides: concrete signed literals for presentation observations.
+    /// - panics: if decimal construction or arena allocation refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — signed integer and injection fixtures observe the
+    ///   stored literal through exact presentation. Padded digits, negative
+    ///   zero and malformed decimal input are outside these fixtures.
+    /// - witness: `goldens::tests::every_value_leaf_spells_as_the_surface_writes_it`
+    /// - witness: `goldens::tests::pair_of_injections_pins_sum_notation`
+    #[spec(
+        requires: !digits.0.is_empty() && digits.0.bytes().all(|byte| byte.is_ascii_digit()),
+        ensures: |ret| match core.value(ret) {
+            Some(&gandr_core_term::Value::Literal(Literal::Integer(ref integer))) => {
+                let canonical = digits.0.trim_start_matches('0');
+                integer.magnitude().as_ref() == if canonical.is_empty() { "0" } else { canonical }
+                    && integer.sign() == if canonical.is_empty() { Sign::NonNegative } else { sign }
+            },
+            _ => false,
+        },
+    )]
     fn integer(
         core: &mut CoreArena,
         sign: Sign,
@@ -243,7 +329,26 @@ mod tests
     /// zero.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: room for the variable and its decoding type in the fixture
+    ///   arena.
+    /// - ensures: an element type at level zero whose code is the
+    ///   intuitionistic variable at the supplied de Bruijn index.
+    /// - provides: dependent types referring to their enclosing fixture
+    ///   binders.
+    /// - panics: if arena allocation refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested dependent arrows and static abstractions
+    ///   observe the correct binder reference, distinguishing shifted indices
+    ///   and the wrong variable zone. Other level targets are not fixture
+    ///   inputs.
+    /// - witness: `goldens::tests::long_dependent_function_type_breaks_at_the_narrow_page`
+    /// - witness: `goldens::tests::a_binder_skips_the_names_the_type_mentions`
+    /// - witness: `goldens::tests::static_operators_spell_as_the_grammar_writes_them`
+    #[spec(ensures: |ret| matches!(core.value_type(ret),
+        Some(&gandr_core_term::ValueType::Element { code, .. }) if matches!(core.value(code),
+            Some(&gandr_core_term::Value::Variable { zone: Zone::Intuitionistic, index: actual }) if actual == index)
+    ))]
     fn bound(
         core: &mut CoreArena,
         index: DeBruijnIndex,
@@ -270,7 +375,23 @@ mod tests
         /// The row's former, or unreadable past the table.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing; dangling rows are admissible.
+        /// - ensures: the stored former at a held row, unreadable beyond the
+        ///   table.
+        /// - provides: deliberately malformed graphs for the public reader.
+        /// - fails: never.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — misplaced children, an empty table, a dangling
+        ///   child and a cycle distinguish shifted lookup and fabricated
+        ///   formers. Other hand-built graphs are outside the finite
+        ///   malformed-source fixtures.
+        /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+        #[spec(ensures: |ret| self.0.get(node.0).map_or(
+            matches!(ret, Former::Unreadable),
+            |held| core::mem::discriminant(held) == core::mem::discriminant(&ret),
+        ))]
         fn read(
             &self,
             node: Row,
@@ -293,7 +414,18 @@ mod tests
     /// The wide spelling of the table's first row, read as `reading` says.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the finite fixture's layout fits default ceilings.
+    /// - ensures: the first row is presented in the requested position; text
+    ///   contains no carriage return or tab and reports node-derived fidelity.
+    /// - provides: exact observations over deliberately malformed sources.
+    /// - panics: if layout refuses.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — type/value misplacement, missing rows and a cycle
+    ///   observe position checking and approximation. Layout-meter exhaustion
+    ///   is outside this helper's finite fixtures.
+    /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
+    #[spec(ensures: |ref ret| !ret.0.contains(['\r', '\t']))]
     fn table_spelling(
         rows: Vec<Former<'static, Row>>,
         reading: Reading,

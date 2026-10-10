@@ -44,6 +44,15 @@ Routes an understood `gandr` driver invocation to the outcome the driver renders
 - `Script`, `ScriptRun`, `Ran`, `execute` and `run_source`: the run verb. Witnesses: `tests::the_run_verb_routes_to_a_script`, `script::tests::each_kind_of_source_has_its_status`, `run::run::run_source_runs_source_text`, `run::run::run_source_file_runs_a_script_file`, `run::run::run_source_file_accepts_an_executable_shebang_line`, `run::run::run_source_file_reports_the_path_of_an_absent_file`, `run::run::run_source_file_surfaces_a_source_failure_unchanged`.
 - The corpus's two roots, run through the walk: `corpus::corpus::the_strict_root_checks_owing_nothing`, `corpus::corpus::the_fixture_root_settles_every_fixture`, `corpus::corpus::the_two_roots_exercise_every_row`, `corpus::corpus::a_run_lowers_each_source_once`; every run outcome they state, and the focusing of every declaration they accept: `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_model_corpus`, `corpus::corpus::l_machine_matches_the_outcome_snapshots_on_the_pathological_corpus`, `corpus::corpus::focusing_is_total_on_the_model_corpus`, `corpus::corpus::focusing_is_total_on_the_pathological_corpus`; and the registration witness ([one walk registers every source](../surface-corpus/README.md#one-walk-registers-every-source)): `corpus::corpus::every_corpus_source_is_registered`, `corpus::corpus::a_planted_orphan_is_not_registered`.
 
+Each nontrivial operation states an executable contract or a local exemption, plus a bounded adequacy claim pointing to its witnesses. The boundary evidence includes:
+
+| Surface | Observed boundary |
+| ------- | ----------------- |
+| [Reports](src/report.rs) and [exercised rows](src/exercised.rs) | Saturating counts preserve unrelated fields; repeated row assignments retain the last value. |
+| [Filesystem walk](src/walk.rs) | Late filesystem changes retain pending sources; exhaustion is stable; explicit links retain their reported path and use their target for classification. |
+| [Evaluation](src/evaluate.rs) | Construction accepts sparse admission indices; terminal classification preserves declaration identity; nested fields retain order and repeated references. |
+| [Corpus registration](tests/corpus.rs) | A directory with a source extension is traversed rather than registered as a source. |
+
 ## Expected features
 
 - **A renderer.** The caller renders each `Outcome` and each `Step`; `gandr-surface-diagnostics` renders a source step. A `Step::Source` carries the source's text, and `Composed::Settled` the module's origin table, so a renderer can quote the lines a refusal covers and locate a checker refusal at its node's origin without composing the source again. `StatusReport`'s `Display` writes one sentence and no line terminator; `RunReport`'s writes its counts one per line, without a trailing terminator.
@@ -116,7 +125,7 @@ What crossed is exported once on the same pass: `Composed::Settled` carries `ker
 
 ## Routing performs no I/O; the walk is the verb's
 
-`dispatch` reads no file and writes nothing: it builds the grammar the walk parses with, which is computation, and returns. The walk's I/O — listing a directory, reading a source — happens one source at a time as the driver calls `Walk::step`, and the step borrows the source's text, so a run over a large tree holds one source in memory. Directories are walked depth-first in byte order of their entries' names, reaching directories and regular `.gandr` files and following no symbolic link; a path given explicitly is read as a source whatever its name.
+`dispatch` reads no file and writes nothing: it builds the grammar the walk parses with, which is computation, and returns. The walk's I/O — listing a directory, reading a source — happens one source at a time as the driver calls `Walk::step`, and the step borrows the source's text, so a run over a large tree holds one source in memory. Directories are walked depth-first in byte order of their entries' names. Discovered symbolic links are skipped; other non-directory `.gandr` entries are selected without a regular-file check. A path given explicitly is read as a source whatever its name, following symbolic links.
 
 The alternative was collecting every source before composing any, which holds the tree in memory and delays the first line of output to the last read. The choice reverses if a verb needs the whole set before judging any member, such as a cross-source import, which would collect the paths first and still read one source at a time.
 

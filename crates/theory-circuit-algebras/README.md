@@ -190,10 +190,13 @@ fn example() -> Result<(), Box<dyn core::error::Error>> {
 }
 ```
 
+Nontrivial operations carry executable `#[spec]` predicates beside their `# Adequacy` witnesses. The predicates cover state transitions, certificate correspondence and refusal payloads without repeating allocating graph searches. Reachability, convexity and presentation invariance additionally rely on the named fixture and differential witnesses. The opaque port-image iterator and generated-presentation strategy carry reasoned backend exemptions.
+
 Run the tests:
 
 ```sh
 cargo nextest run -p gandr-theory-circuit-algebras
+RUSTFLAGS="--cfg anodized_panic" cargo test -p gandr-theory-circuit-algebras --all-targets
 ```
 
 ## The fragment, at construction

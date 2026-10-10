@@ -1,6 +1,7 @@
 //! The causal web compared colour by colour with the event order it was built
 //! from, and its named refusals read through the public surface.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes_tools::Toy;
@@ -25,10 +26,25 @@ use crate::fixture::c_cell;
 use crate::fixture::f_cell;
 
 /// The order of `cell` fired at both arguments of `Add(Succ(Zero),
-/// Succ(Zero))`: two events at incomparable positions.
+/// Succ(Zero))`, dropping instance-unit firings.
 ///
 /// # Specification
+/// - ensures: two events exactly when the cell changes `Succ(Zero)`, and no
+///   events when that firing is an instance unit.
 /// - panics: when the two steps do not replay, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L1 — cells firing on Succ(Zero), used at its two disjoint
+///   copies. One root firing predicts the non-unit event count; canonical keys
+///   and independent colours distinguish dropping a real event or merging the
+///   two positions.
+/// - witness: `tests::causal_web::independent_tracelet_web_matches_canonical_event_order`
+#[spec(captures: moved = {
+    let input = Toy::succ(Toy::zero());
+    matches!(gandr_theory_coherent_resolutions::rewrite_at(&cell, &input, &at![]),
+        Maybe::Present(reached) if reached != input)
+}, ensures: |output|
+    usize::from(output.event_count()) == usize::from(moved).saturating_mul(2))]
 fn two_event_order(cell: Cell<ToyAlphabet>) -> EventOrder<ToyAlphabet>
 {
     let mut store = CellStore::new();
@@ -41,7 +57,21 @@ fn two_event_order(cell: Cell<ToyAlphabet>) -> EventOrder<ToyAlphabet>
 /// The order of `cell` fired once at the root of `Succ(Zero)`.
 ///
 /// # Specification
+/// - ensures: one event exactly when the cell changes `Succ(Zero)`, and no
+///   event for an instance-unit firing.
 /// - panics: when the step does not replay, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L1 — a cell firing at the fixed root. A root rewrite predicts
+///   whether the event survives; the cardinality frontier distinguishes this
+///   one-event input from the two-event source.
+/// - witness: `tests::causal_web::refusal_frontiers_remain_named_in_public_api`
+#[spec(captures: moved = {
+    let input = Toy::succ(Toy::zero());
+    matches!(gandr_theory_coherent_resolutions::rewrite_at(&cell, &input, &at![]),
+        Maybe::Present(reached) if reached != input)
+}, ensures: |output|
+    usize::from(output.event_count()) == usize::from(moved))]
 fn one_event_order(cell: Cell<ToyAlphabet>) -> EventOrder<ToyAlphabet>
 {
     let mut store = CellStore::new();
@@ -56,7 +86,16 @@ fn one_event_order(cell: Cell<ToyAlphabet>) -> EventOrder<ToyAlphabet>
 /// dependent.
 ///
 /// # Specification
+/// - ensures: two events, with the second directly dependent on the first.
 /// - panics: when the two steps do not replay, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two root add-Z firings. Event count and the directed
+///   dependency observer distinguish a dropped repetition, independence or
+///   reversed precedence; the projected web checks both colours.
+/// - witness: `tests::causal_web::dependent_tracelet_web_matches_canonical_event_order`
+#[spec(ensures: |output| usize::from(output.event_count()) == 2
+    && bool::from(output.depends_directly(EventIndex::from(1), EventIndex::from(0))))]
 fn dependent_order() -> EventOrder<ToyAlphabet>
 {
     let mut store = CellStore::new();
@@ -80,7 +119,38 @@ fn alternate_cell() -> Cell<ToyAlphabet>
 /// pair of distinct vertices in the colour `order` decides.
 ///
 /// # Specification
+/// - ensures: the canonical key list and every ordered distinct pair agree.
 /// - panics: when the web disagrees with the order on any key or pair.
+///
+/// # Adequacy
+/// - hypothesis: L1 — a projected web and its source event order. Canonical
+///   keys and all directed pair colours validate the correspondence;
+///   independent, directly dependent and transitively dependent fixtures
+///   separate reversed coordinates, lost ancestry and copied labels.
+/// - witness: `tests::causal_web::a_precedence_reached_only_through_an_intermediate_event_is_green`
+/// - witness: `tests::causal_web::independent_tracelet_web_matches_canonical_event_order`
+/// - witness: `tests::causal_web::dependent_tracelet_web_matches_canonical_event_order`
+#[spec(ensures: {
+    let canonical = order.canonical_order();
+    canonical.len() == web.events.len()
+        && canonical.iter().enumerate().all(|(index, event)| match order.key(*event) {
+            Maybe::Present(key) => web.events.get(index) == Some(&key),
+            Maybe::Absent(_) => false,
+        })
+        && canonical.iter().enumerate().all(|(left_index, left)|
+            canonical.iter().enumerate().all(|(right_index, right)| {
+                left_index == right_index || {
+                    let expected = if bool::from(order.precedes(*left, *right)) {
+                        WebRelation::Precedes
+                    } else if bool::from(order.precedes(*right, *left)) {
+                        WebRelation::Follows
+                    } else {
+                        WebRelation::Independent
+                    };
+                    web.relation(WebVertex::from(left_index), WebVertex::from(right_index)) == expected
+                }
+            }))
+})]
 fn assert_web_matches_order(
     order: &EventOrder<ToyAlphabet>,
     web: &CausalWeb,
