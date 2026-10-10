@@ -246,10 +246,8 @@ impl Context
     ///   is reachable at one more than it was, and index zero of the zone names
     ///   `declared`.
     /// - provides: the binder-opening half of every rule that goes under a
-    ///   binder. The postcondition stays prose: its shift half relates every
-    ///   previously bound index to where the same binder now sits, which a
-    ///   predicate could observe only against an allocating entry snapshot of
-    ///   the zone.
+    ///   binder. The predicate observes depth, the new slot and the untouched
+    ///   zone's depth; the shift of older slots is witnessed by lookup.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -260,6 +258,16 @@ impl Context
     ///   by reading the fresh linear slot's use, which must open available.
     /// - witness: `context::tests::opening_a_binder_shifts_the_zones_indices`
     /// - witness: `context::tests::a_fresh_linear_slot_opens_available`
+    #[spec(
+        captures: [structural = self.intuitionistic.len(), linear = self.linear.len()],
+        ensures: match zone {
+            | Zone::Intuitionistic => structural.checked_add(1) == Some(self.intuitionistic.len())
+                && self.linear.len() == linear && self.intuitionistic.last() == Some(&declared),
+            | Zone::Linear => linear.checked_add(1) == Some(self.linear.len())
+                && self.intuitionistic.len() == structural
+                && self.linear.last() == Some(&LinearSlot { declared, use_state: LinearUse::Available }),
+        },
+    )]
     #[inline]
     pub fn open(
         &mut self,
@@ -436,10 +444,9 @@ impl Context
     ///   named slot is left [`LinearUse::Consumed`]. No other slot is touched
     ///   in either zone.
     /// - provides: the typing rule for [`Value::Variable`], which is the only
-    ///   place the two zones' disciplines differ. The postcondition stays
-    ///   prose: its no-other-slot-touched half quantifies over every slot of
-    ///   both zones, which a predicate could observe only against an allocating
-    ///   entry snapshot of the whole context.
+    ///   place the two zones' disciplines differ. The predicate observes the
+    ///   selected slot, exact refusal and both depths; neighbouring slots are
+    ///   distinguished by the finite transition witness.
     /// - fails: [`ContextError::UnboundIndex`] when the index names no binder;
     ///   [`ContextError::LinearSlotConsumed`] when the linear slot's single use
     ///   is already spent. A refusal spends nothing, so the context after a
@@ -460,8 +467,27 @@ impl Context
     /// - witness: `context::tests::the_intuitionistic_zone_admits_contraction`
     /// - witness: `context::tests::the_linear_zone_refuses_contraction`
     /// - witness: `context::tests::an_index_past_the_depth_is_unbound`
+    /// - witness: `context::tests::occurrences_preserve_other_slots_and_refusal_state`
     ///
     /// [`Value::Variable`]: crate::Value::Variable
+    #[spec(
+        captures: [declared = self.declared(zone, index), use_state = self.linear_use(index),
+            structural = self.intuitionistic.len(), linear = self.linear.len()],
+        ensures: |ret| self.intuitionistic.len() == structural && self.linear.len() == linear
+            && match declared {
+                | Err(error) => ret == Err(error) && self.linear_use(index) == use_state,
+                | Ok(declared) => match zone {
+                    | Zone::Intuitionistic => ret == Ok(declared) && self.linear_use(index) == use_state,
+                    | Zone::Linear => match use_state {
+                        | Ok(LinearUse::Available) => ret == Ok(declared)
+                            && self.linear_use(index) == Ok(LinearUse::Consumed),
+                        | Ok(LinearUse::Consumed) => ret == Err(ContextError::LinearSlotConsumed { index })
+                            && self.linear_use(index) == use_state,
+                        | Err(error) => ret == Err(error) && self.linear_use(index) == use_state,
+                    },
+                },
+            },
+    )]
     #[inline]
     pub fn occurrence(
         &mut self,
@@ -561,12 +587,72 @@ mod tests
     ///   of it with itself, together with both ids, which are distinct.
     /// - provides: the shared fixture the context rows open binders at.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unequal declared types distinguish the innermost
+    ///   binder from the outer one as opening shifts de Bruijn indices.
+    /// - witness: `context::tests::opening_a_binder_shifts_the_zones_indices`
+    #[anodized::spec(ensures: |ret| ret.1 != ret.2
+        && ret.0.value_type(ret.1) == Some(&crate::ValueType::Unit)
+        && ret.0.value_type(ret.2) == Some(&crate::ValueType::Product(ret.1, ret.1)))]
     fn two_types() -> (CoreArena, ValueTypeId, ValueTypeId)
     {
         let mut arena = CoreArena::new();
         let unit = arena.value_type_unit();
         let pair = arena.value_type_product(unit, unit);
         (arena, unit, pair)
+    }
+
+    #[test]
+    fn occurrences_preserve_other_slots_and_refusal_state()
+    {
+        let (_arena, outer, inner) = two_types();
+        let mut context = Context::new();
+        for zone in [Zone::Intuitionistic, Zone::Linear] {
+            context.open(zone, outer);
+            context.open(zone, inner);
+        }
+        for zone in [Zone::Intuitionistic, Zone::Linear] {
+            for raw in [2_u32, u32::MAX] {
+                let index = DeBruijnIndex::from(raw);
+                let before = context.clone();
+                assert_eq!(
+                    Err(ContextError::UnboundIndex {
+                        zone,
+                        index,
+                        depth: BinderDepth::from(2_usize)
+                    }),
+                    context.occurrence(zone, index)
+                );
+                assert_eq!(before, context);
+            }
+        }
+        let zero = DeBruijnIndex::from(0_u32);
+        let one = DeBruijnIndex::from(1_u32);
+        assert_eq!(Ok(outer), context.occurrence(Zone::Linear, one));
+        assert_eq!(Ok(LinearUse::Available), context.linear_use(zero));
+        assert_eq!(Ok(LinearUse::Consumed), context.linear_use(one));
+        let before = context.clone();
+        assert_eq!(
+            Err(ContextError::LinearSlotUnconsumed {
+                depth: BinderDepth::from(2_usize)
+            }),
+            context.close(Zone::Linear)
+        );
+        assert_eq!(before, context);
+        assert_eq!(Ok(inner), context.occurrence(Zone::Intuitionistic, zero));
+        assert_eq!(before, context);
+        assert_eq!(Ok(inner), context.occurrence(Zone::Linear, zero));
+        assert_eq!(Ok(inner), context.close(Zone::Linear));
+        assert_eq!(Ok(outer), context.declared(Zone::Linear, zero));
+        assert_eq!(
+            Err(ContextError::LinearSlotConsumed { index: zero }),
+            context.occurrence(Zone::Linear, zero)
+        );
+        assert_eq!(Ok(inner), context.declared(Zone::Intuitionistic, zero));
+        assert_eq!(Ok(outer), context.declared(Zone::Intuitionistic, one));
+        assert_eq!(Ok(outer), context.close(Zone::Linear));
+        assert_eq!(BinderDepth::from(0_usize), context.depth(Zone::Linear));
     }
 
     #[test]

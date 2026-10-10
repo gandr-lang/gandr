@@ -172,7 +172,7 @@ Transparent ascription makes the same atom manifest inside a sealed module and o
 
 ## Arena ownership
 
-An id is minted only by a `CoreArena` constructor over already-allocated children, so a child id always resolves and, within its family, is strictly less than its parent's. The four families index independently; acyclicity across them rests on minting order, since a constructor cannot name a node that does not exist yet. Lookups return `Option`, because a `u32` id can name no node. `CoreArena::watermark` snapshots the four family lengths and `CoreArena::truncate_to` restores them, so a pass's intermediates allocate past a mark and drop in one step. The arena offers constructors and lookups only; each walk over its edges belongs to the consumer that needs it.
+A constructor records child ids supplied by its caller. Keeping those children live in the same arena, within the representable family-index limit, makes a same-family child strictly earlier than its parent; cross-family acyclicity follows from minting order rather than numeric comparison. The ids carry neither arena identity nor allocation generation. A lookup checks the current family bounds, not provenance: truncation removes nodes, but later allocation can reuse their indices. The caller therefore discards ids to removed nodes. `CoreArena::watermark` snapshots the four family lengths and `CoreArena::truncate_to` drops later nodes without growing a family when given a stale larger mark. Each walk over arena edges belongs to the consumer that needs it.
 
 ## One failure vocabulary
 
@@ -180,7 +180,15 @@ An id is minted only by a `CoreArena` constructor over already-allocated childre
 
 ## Specification attributes
 
-Each item's `# Specification` prose is the statement of record. Where a clause is a cheap predicate over one call, a `#[spec(...)]` attribute states it verbatim, and a postcondition is stated by an independent reading — a linear scan against the chain's binary search, an inward count against the shared offset arithmetic — rather than the body's own expression read back. `Context::open` and `Context::occurrence` stay prose: each postcondition relates every slot of the context before and after the call, which only an allocating snapshot could observe.
+Nontrivial operations carry executable `#[spec(...)]` predicates and `# Adequacy` hypotheses linked to runnable witnesses. The predicates observe allocation indices and family lengths, lookup identity, the selected context slot, and rewrite scheduling and reconstruction. `Context::open` and `Context::occurrence` capture only bounded entry state: depth and selected-slot observations are executable without cloning the context. Finite transition witnesses distinguish changes to neighbouring slots.
+
+The choice is constant-size captures and local observations rather than whole-arena or whole-context snapshots, which would allocate and can turn a linear walk into a quadratic one. The variable rule checks the below/equal/above-depth boundaries, including saturated arithmetic and substitution beneath a binder. Independent level-based construction checks 600 deterministic bounded codomains; fixed asymmetric goldens constrain that reference observer, and the small-stack integration witness walks 50,000 static applications. These are scoped witnesses, not a proof of equivalence for ungenerated terms.
+
+Run the crate with executable specifications enabled:
+
+```sh
+RUSTFLAGS="--cfg anodized_panic" cargo test -p gandr-core-term --all-targets
+```
 
 ## License
 
