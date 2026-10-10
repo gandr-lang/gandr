@@ -59,8 +59,22 @@ use crate::wire::digest;
 ///
 /// The expected number of records per leaf is two to this power, so the value
 /// selects the mean leaf size directly.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: safe construction admits widths from one through thirty-two
+///   inclusive and preserves the offered width.
+/// - fails: outside widths are refused by the checked conversion.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 exhausts all 256 input bytes and observes refinement
+///   admission, the exact converted width or its refusal class. Shifted bounds
+///   and substituted widths are distinguished.
+/// - witness: `boundary::tests::mask_bits_admit_the_interval_and_refuse_outside`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[spec(maintains: self.0 >= 1_u8 && self.0 <= 32_u8)]
 pub struct BoundaryMaskBits(u8);
 
 impl BoundaryMaskBits
@@ -99,12 +113,16 @@ impl TryFrom<u8> for BoundaryMaskBits
     /// wider than the predicate reads.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the decision surface is the two range
-    ///   comparisons, separated exhaustively by the four boundary values around
-    ///   the admissible interval.
+    /// - hypothesis: L3 exhausts all input bytes against the interval 1..=32,
+    ///   observing preserved widths or the refusal class. Shifted bounds, lost
+    ///   values and wrong error classes are distinguished.
     /// - witness: `boundary::tests::mask_bits_admit_the_interval_and_refuse_outside`
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok() == (Self::MIN.0..=Self::MAX.0).contains(&bits))]
+    #[spec(ensures: |ret| match ret.as_ref() {
+        Ok(width) => (Self::MIN.0..=Self::MAX.0).contains(&bits) && width.0 == bits,
+        Err(error) => !(Self::MIN.0..=Self::MAX.0).contains(&bits)
+            && matches!(error, &RecordTreeError::IncompatibleParameters { .. }),
+    })]
     fn try_from(bits: u8) -> Result<Self, Self::Error>
     {
         if !(Self::MIN.0 ..= Self::MAX.0).contains(&bits) {
@@ -141,6 +159,14 @@ impl fmt::Display for BoundaryMaskBits
     /// - provides: the width a parameter refusal names.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the width endpoints and caps 1, 37 and `u32::MAX`
+    ///   compares padded rendering with the carried primitive; L3 observes sink
+    ///   refusal. Substituted values, ignored flags and swallowed errors are
+    ///   distinguished.
+    /// - witness: `boundary::tests::parameter_formatting_preserves_values_and_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -152,8 +178,22 @@ impl fmt::Display for BoundaryMaskBits
 }
 
 /// The largest number of records one leaf may hold before the cap ends it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: safe construction admits exactly the positive u32 counts and
+///   preserves the offered cap.
+/// - fails: zero is refused by the checked conversion.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 at zero, one, 65 and `u32::MAX` observes refinement
+///   admission and the refusal class or exact converted cap, distinguishing
+///   zero admission, premature ceilings and truncation.
+/// - witness: `boundary::tests::record_cap_refuses_zero`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[spec(maintains: self.0 > 0_u32)]
 pub struct BoundaryRecordCap(u32);
 
 impl TryFrom<u32> for BoundaryRecordCap
@@ -175,11 +215,16 @@ impl TryFrom<u32> for BoundaryRecordCap
     /// [`RecordTreeError::IncompatibleParameters`] — the cap is zero.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the decision surface is the comparison against
-    ///   zero, separated by zero (refused) and one (admitted).
+    /// - hypothesis: L3 at zero, one, 65 and `u32::MAX` observes the refusal
+    ///   class or preserved cap, distinguishing zero admission, premature
+    ///   ceilings and truncation.
     /// - witness: `boundary::tests::record_cap_refuses_zero`
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok() == (cap != 0_u32))]
+    #[spec(ensures: |ret| match ret.as_ref() {
+        Ok(limit) => cap != 0 && limit.0 == cap,
+        Err(error) => cap == 0
+            && matches!(error, &RecordTreeError::IncompatibleParameters { .. }),
+    })]
     fn try_from(cap: u32) -> Result<Self, Self::Error>
     {
         if cap == 0_u32 {
@@ -216,6 +261,14 @@ impl fmt::Display for BoundaryRecordCap
     /// - provides: the cap a parameter refusal names.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the width endpoints and caps 1, 37 and `u32::MAX`
+    ///   compares padded rendering with the carried primitive; L3 observes sink
+    ///   refusal. Substituted values, ignored flags and swallowed errors are
+    ///   distinguished.
+    /// - witness: `boundary::tests::parameter_formatting_preserves_values_and_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -253,8 +306,16 @@ impl BoundaryProfile
     ///   reordering this enum cannot change a committed root.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the default and wide-cap commitments observes the
+    ///   leading protocol byte, distinguishing changed discriminators without
+    ///   relying on enum ordinal position.
+    /// - witness: `boundary::tests::default_commitment_is_pinned`
+    /// - witness: `boundary::tests::commitment_preserves_wide_caps`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.0 == 1)]
     const fn tag(self) -> WireTag
     {
         match self {
@@ -270,18 +331,21 @@ impl BoundaryProfile
 /// - ensures: two parameter sets are equal exactly when their commitments are
 ///   equal, because the commitment encodes every field and nothing else.
 /// - provides: the rule a tree's leaves were cut by, in a form a root manifest
-///   can hash. The postcondition stays prose: it relates two parameter sets,
-///   and a data specification's `maintains` is not evaluated when a value is
-///   constructed, so a clause here would be inert.
+///   can hash.
 /// - fails: never, once constructed.
 /// - panics: none.
+/// - executable: none — every admitted component combination is valid. Equality
+///   of commitments relates two parameter sets, not one; `commitment` checks
+///   each returned image against its fields.
 ///
 /// # Adequacy
-/// - hypothesis: L2 agreement — the commitment is exercised as a pinned golden
-///   against the default profile's exact bytes, and L3 pointwise for the claim
-///   that a changed field changes the commitment, one boundary pair per field.
+/// - hypothesis: L2 compares default and wide-cap wire images with literal
+///   goldens; L3 varies mask 4/5 and cap 64/65 independently. Missing fields,
+///   swapped fields and narrowing are distinguished. The profile enum has only
+///   one variant, so a profile perturbation is not available.
 /// - witness: `boundary::tests::default_commitment_is_pinned`
 /// - witness: `boundary::tests::each_field_moves_the_commitment`
+/// - witness: `boundary::tests::commitment_preserves_wide_caps`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct BoundaryParams
 {
@@ -298,15 +362,23 @@ impl BoundaryParams
     /// Builds a parameter set from explicit choices.
     ///
     /// # Specification
-    /// - requires: `mask_bits` and `record_cap` were minted through their own
-    ///   fallible conversions, which is the only way to obtain either.
+    /// - requires: nothing beyond the component types' checked invariants.
     /// - ensures: the set carries exactly the three choices offered.
     /// - provides: the only way to state a boundary rule, so a rule is always
     ///   three deliberate choices.
     /// - fails: never — the range checks live in the two conversions.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 observes exact default and explicit wide-cap wire
+    ///   images; L3 varies mask and cap independently, distinguishing dropped
+    ///   or substituted choices.
+    /// - witness: `boundary::tests::commitment_preserves_wide_caps`
+    /// - witness: `boundary::tests::each_field_moves_the_commitment`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.mask_bits.0 == mask_bits.0
+        && ret.record_cap.0 == record_cap.0)]
     pub const fn new(
         profile: BoundaryProfile,
         mask_bits: BoundaryMaskBits,
@@ -334,8 +406,16 @@ impl BoundaryParams
     ///   a writer and a reader cannot disagree on it.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 observes the current rule's committed wire bytes and
+    ///   its cut positions over 200 records, distinguishing changed defaults or
+    ///   changed boundary semantics.
+    /// - witness: `boundary::tests::default_commitment_is_pinned`
+    /// - witness: `boundary::tests::the_cuts_of_a_fixed_corpus_are_pinned`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.mask_bits.0 == 4 && ret.record_cap.0 == 64)]
     pub const fn current() -> Self
     {
         Self::new(
@@ -390,8 +470,21 @@ impl BoundaryParams
     ///   root built under it rather than misreading one.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 compares default and mixed-byte cap images with literal
+    ///   goldens; L3 varies each variable field independently. Reordering,
+    ///   omitted fields, endianness changes and cap truncation are
+    ///   distinguished.
+    /// - witness: `boundary::tests::default_commitment_is_pinned`
+    /// - witness: `boundary::tests::commitment_preserves_wide_caps`
+    /// - witness: `boundary::tests::each_field_moves_the_commitment`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.as_ref().iter().copied().eq(
+        [u8::from(self.profile.tag()), u8::from(self.mask_bits)].into_iter()
+            .chain(u64::from(u32::from(self.record_cap)).to_le_bytes()),
+    ))]
     pub fn commitment(&self) -> ProfileCommitment
     {
         let mut bytes = WireBuffer::new();
@@ -407,9 +500,8 @@ impl BoundaryParams
     /// token cap.
     ///
     /// # Specification
-    /// - requires: the mask width and the cap were minted through their own
-    ///   conversions, so the width is at most thirty-two and the cap at least
-    ///   one.
+    /// - requires: the component invariants hold: the mask width is between one
+    ///   and thirty-two inclusive, and the record cap is at least one.
     /// - ensures: `|ret| u64::from(ret.kappa()).is_power_of_two() &&
     ///   u64::from(ret.kappa()).trailing_zeros() == u32::from(self.mask_bits.0)
     ///   && u64::from(ret.cap()) == u64::from(self.record_cap.0)` — kappa is
@@ -418,6 +510,12 @@ impl BoundaryParams
     /// - provides: the rule the span walk drives the scanner with.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at mask widths 1, 4 and 32 and caps 1, 64 and
+    ///   `u32::MAX` observes exact kappa/cap pairs. Wrong exponents, off-by-one
+    ///   caps and saturation are distinguished.
+    /// - witness: `boundary::tests::the_scanner_rule_is_two_to_the_width_and_the_cap`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| u64::from(ret.kappa()).is_power_of_two()
@@ -442,13 +540,23 @@ impl BoundaryParams
     /// - requires: `record` is the canonical encoding of one record.
     /// - ensures: the leading eight bytes of the record's digest under the
     ///   boundary domain, read little-endian.
-    /// - provides: the boundary event's residue, read from this record alone,
-    ///   which is what keeps the rule local. The postcondition stays prose:
-    ///   restating the digest here would be this body again.
+    /// - provides: the boundary event's residue, determined by this record
+    ///   rather than any preceding or following record.
     /// - fails: none — the residue is total.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 compares cut positions for 200 records under the
+    ///   current and mixed cap/digest rules with fixed expectations; L3 re-cuts
+    ///   an aligned suffix. Enforcing calls also compare every residue byte
+    ///   with the digest. Wrong hashing domains, byte order, digest windows and
+    ///   predecessor dependence are distinguished on that corpus.
+    /// - witness: `boundary::tests::the_cuts_of_a_fixed_corpus_are_pinned`
+    /// - witness: `boundary::tests::a_records_decision_reads_only_that_record`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| digest(Domain::Boundary, WireBytes::from(record.as_ref()))
+        .as_ref().get(..8) == Some(u64::from(ret).to_le_bytes().as_slice()))]
     fn residue(
         self,
         record: RecordEncoding<'_>,
@@ -478,7 +586,13 @@ impl Default for BoundaryParams
     /// - provides: the default a caller reaches without naming three fields.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 observes the default rule's exact committed bytes,
+    ///   distinguishing divergence from the current protocol profile.
+    /// - witness: `boundary::tests::default_commitment_is_pinned`
     #[inline]
+    #[spec(ensures: |ret| ret == Self::current())]
     fn default() -> Self
     {
         Self::current()
@@ -500,8 +614,22 @@ impl From<Vec<u8>> for ProfileCommitment
     /// Takes over a byte vector as committed boundary bytes.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: owns the offered byte sequence without adding or removing
+    ///   bytes.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on default and mixed-byte cap commitments observes the
+    ///   complete image, distinguishing omitted, reordered or substituted
+    ///   bytes.
+    /// - witness: `boundary::tests::default_commitment_is_pinned`
+    /// - witness: `boundary::tests::commitment_preserves_wide_caps`
     #[inline]
+    #[spec(captures: offered = (bytes.len(), bytes.first().copied(), bytes.last().copied()),
+        ensures: |ret| (ret.as_ref().len(), ret.as_ref().first().copied(),
+            ret.as_ref().last().copied()) == offered)]
     fn from(bytes: Vec<u8>) -> Self
     {
         Self(bytes.into_boxed_slice())
@@ -535,7 +663,24 @@ impl AsRef<[u8]> for ProfileCommitment
 }
 
 /// A half-open run of record positions forming one leaf.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the start does not exceed the end; emitted nonempty leaves cover
+///   a contiguous run, while the empty constructor denotes 0..0.
+/// - fails: never, once constructed.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on empty, one-record and 500-record inputs observes exact
+///   endpoints and contiguous coverage; a privately reversed span has a false
+///   refinement. Reversed runs, skipped positions and nonempty representations
+///   of the empty leaf are distinguished.
+/// - witness: `boundary::tests::spans_partition_the_input`
+/// - witness: `boundary::tests::empty_records_are_admissible_input_to_the_rule`
+/// - witness: `tests::build::an_empty_tree_is_one_empty_leaf`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[spec(maintains: self.start <= self.end)]
 pub struct RecordSpan
 {
     /// The first position in the run.
@@ -559,8 +704,15 @@ impl RecordSpan
     ///   the reason the paragraph above states.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 builds an empty tree and observes one empty leaf and
+    ///   zero committed records, distinguishing a shifted or nonempty run.
+    /// - witness: `tests::build::an_empty_tree_is_one_empty_leaf`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| matches!((ret.start, ret.end),
+        (RecordIndex::ZERO, RecordIndex::ZERO)))]
     pub const fn empty() -> Self
     {
         Self {
@@ -601,11 +753,11 @@ impl RecordSpan
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: the encoding is injective in the key-value pair: distinct pairs
-///   give distinct bytes, because both lengths precede both bodies.
-/// - provides: the boundary rule's input, and the only place a record becomes
-///   bytes outside a node encoding. The postcondition stays prose: injectivity
-///   relates two key-value pairs, and one call encodes one pair.
+/// - ensures: the record domain tag followed by the key length, key bytes,
+///   value length and value bytes, with both lengths as little-endian u64s.
+///   Decoding this complete image recovers the offered pair, so distinct pairs
+///   cannot share an encoding.
+/// - provides: the boundary rule's input outside a node encoding.
 /// - fails: [`RecordTreeError::ArithmeticOverflow`] when a key or value length
 ///   exceeds the wire width.
 /// - panics: none.
@@ -614,10 +766,29 @@ impl RecordSpan
 /// [`RecordTreeError::ArithmeticOverflow`] — a field length exceeds `u64`.
 ///
 /// # Adequacy
-/// - hypothesis: L3 only — the injectivity claim's decision surface is the
-///   field framing, killed by the length-prefix ambiguity trap pair (`("ab",
-///   "c")` against `("a", "bc")`) asserted to give different bytes.
+/// - hypothesis: L2 on empty fields and a mixed binary pair compares full wire
+///   images with literal goldens; L3 separates (ab, c) from (a, bc). Missing
+///   lengths, swapped fields, wrong domains and trailing bytes are
+///   distinguished. Wider-than-u64 field lengths are not constructible on the
+///   supported targets.
 /// - witness: `boundary::tests::record_encoding_separates_the_ambiguity_pair`
+/// - witness: `boundary::tests::record_encoding_pins_field_framing`
+#[spec(ensures: |ret| {
+    let lengths_fit = u64::try_from(record.key().as_ref().len()).is_ok()
+        && u64::try_from(record.value().as_ref().len()).is_ok();
+    ret.is_ok() == lengths_fit && ret.as_ref().map_or_else(
+        |error| matches!(error, &RecordTreeError::ArithmeticOverflow { .. }),
+        |encoded| {
+            let mut cursor = crate::wire::Cursor::new(WireBytes::from(encoded.as_ref()));
+            cursor.expect_domain(Domain::Record, "record domain".into()).is_ok()
+                && cursor.read_length_prefixed("record key".into())
+                    .is_ok_and(|field| field.as_ref() == record.key().as_ref())
+                && cursor.read_length_prefixed("record value".into())
+                    .is_ok_and(|field| field.as_ref() == record.value().as_ref())
+                && cursor.completion() == crate::wire::DecodeCompletion::Complete
+        },
+    )
+})]
 pub(crate) fn encode_record(record: RecordRef<'_>) -> Result<OwnedRecordEncoding, RecordTreeError>
 {
     let mut bytes = WireBuffer::new();
@@ -652,26 +823,27 @@ pub(crate) fn encode_record(record: RecordRef<'_>) -> Result<OwnedRecordEncoding
 /// - fails: [`RecordTreeError::ArithmeticOverflow`] when a record cannot be
 ///   encoded for the rule, or when a position exceeds the host width.
 /// - panics: none.
-/// - intension: exactly one pass over `records`, one record encoding, one
-///   digest and one scanner step per record, and no lookahead — the promised
-///   property is that a record's own decision never reads a later record, which
-///   is what makes the partition local. The observation is the returned
-///   partition itself.
+/// - intension: excluding executable predicates, exactly one pass over
+///   `records`, one record encoding, one digest and one scanner step per
+///   record, with no lookahead. Returned partitions observe boundary locality
+///   but do not measure these operational counts.
 ///
 /// # Errors
 /// [`RecordTreeError::ArithmeticOverflow`] — a record's fields or a position
 /// exceed their widths.
 ///
 /// # Adequacy
-/// - hypothesis: L2 agreement for the partition law — a property over generated
-///   corpora asserts the spans reassemble the input exactly — and against a
-///   pinned golden of where one fixed corpus is cut under two rules, plus L3
-///   for the two cut causes, separated by a corpus with a digest-induced cut
-///   and by a corpus of cap-length runs, and by the empty input.
+/// - hypothesis: L2 observes a complete partition of 500 records and fixed cut
+///   positions for 200 records under current and mixed rules; L3 observes eight
+///   cap-length runs of eight, an empty input and one empty record. Gaps,
+///   overlap, omitted tails, skipped empty records, wrong digest rules and
+///   disabled cap cuts are distinguished on these corpora. Exact work counts
+///   and absence of speculative reads remain unmeasured by this suite.
 /// - witness: `boundary::tests::spans_partition_the_input`
 /// - witness: `boundary::tests::the_cuts_of_a_fixed_corpus_are_pinned`
 /// - witness: `boundary::tests::the_cap_ends_a_run_the_digest_does_not`
 /// - witness: `boundary::tests::an_empty_input_has_no_spans`
+/// - witness: `boundary::tests::empty_records_are_admissible_input_to_the_rule`
 #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|spans| {
     spans.iter().all(|span| span.start() < span.end())
         && spans.first().is_none_or(|span| span.start() == RecordIndex::ZERO)
@@ -730,22 +902,38 @@ mod tests
     use super::BoundaryParams;
     use super::BoundaryProfile;
     use super::BoundaryRecordCap;
+    use super::RecordSpan;
     use super::encode_record;
     use super::leaf_spans;
+    use crate::bytes::OwnedRecordEncoding;
+    use crate::bytes::RecordEncoding;
     use crate::error::RecordTreeError;
     use crate::record::Record;
     use crate::record::RecordCount;
+    use crate::record::RecordIndex;
     use crate::record::RecordRef;
 
     /// A corpus of `count` records with distinct keys in key order.
     ///
     /// # Specification
-    /// - requires: nothing; a count of zero yields no record.
-    /// - ensures: exactly `count` records whose keys are the zero-padded
-    ///   decimal positions, so they are distinct and already in key order.
+    /// - requires: `count` is at most 100,000,000, so every position fits the
+    ///   eight-digit key field and numeric order agrees with byte order.
+    /// - ensures: exactly `count` records with keys `key-{index:08}` and values
+    ///   `value-{index:08}`, in increasing position order.
     /// - provides: the corpus every span fixture below is cut from, ordered so
     ///   a test never depends on the build's own sorting.
+    /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on corpora of 64, 200 and 500 records observes exact
+    ///   partitions and fixed cut positions. Dropped records, duplicate keys
+    ///   and changed fixture bytes are distinguished on these corpora.
+    /// - witness: `boundary::tests::spans_partition_the_input`
+    /// - witness: `boundary::tests::the_cuts_of_a_fixed_corpus_are_pinned`
+    #[anodized::spec(requires: u64::from(count) <= 100_000_000,
+        ensures: |ret| u64::try_from(ret.len()) == Ok(u64::from(count))
+            && ret.array_windows::<2>().all(|pair| pair[0].key() < pair[1].key()))]
     fn corpus(count: RecordCount) -> Vec<Record>
     {
         let mut records = Vec::new();
@@ -771,6 +959,15 @@ mod tests
     ///   position for position.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on 200- and 500-record corpora observes exact coverage
+    ///   and fixed cut positions. Dropped, duplicated or permuted records
+    ///   change those observers.
+    /// - witness: `boundary::tests::spans_partition_the_input`
+    /// - witness: `boundary::tests::the_cuts_of_a_fixed_corpus_are_pinned`
+    #[anodized::spec(ensures: |ret| ret.iter().copied()
+        .eq(records.iter().map(Record::as_record_ref)))]
     fn borrow(records: &[Record]) -> Vec<RecordRef<'_>>
     {
         records.iter().map(Record::as_record_ref).collect()
@@ -779,27 +976,36 @@ mod tests
     #[test]
     fn mask_bits_admit_the_interval_and_refuse_outside()
     {
-        assert!(BoundaryMaskBits::try_from(0_u8).is_err());
-        assert_eq!(BoundaryMaskBits::try_from(1_u8), Ok(BoundaryMaskBits::MIN));
-        assert_eq!(BoundaryMaskBits::try_from(32_u8), Ok(BoundaryMaskBits::MAX));
-        assert_eq!(
-            BoundaryMaskBits::try_from(33_u8),
-            Err(RecordTreeError::IncompatibleParameters {
-                context: "boundary mask width is outside the admissible range".into(),
-            })
-        );
+        for bits in 0_u8 ..= u8::MAX {
+            assert_eq!(
+                anodized::types::Spec::predicate(&BoundaryMaskBits(bits)),
+                (1_u8 ..= 32).contains(&bits)
+            );
+            let converted = BoundaryMaskBits::try_from(bits);
+            if (1_u8 ..= 32).contains(&bits) {
+                assert_eq!(converted.map(u8::from), Ok(bits));
+            }
+            else {
+                assert!(matches!(
+                    converted,
+                    Err(RecordTreeError::IncompatibleParameters { .. })
+                ));
+            }
+        }
     }
 
     #[test]
     fn record_cap_refuses_zero()
     {
-        assert_eq!(
+        assert!(!anodized::types::Spec::predicate(&BoundaryRecordCap(0_u32)));
+        assert!(matches!(
             BoundaryRecordCap::try_from(0_u32),
-            Err(RecordTreeError::IncompatibleParameters {
-                context: "boundary record cap is zero".into(),
-            })
-        );
-        assert!(BoundaryRecordCap::try_from(1_u32).is_ok());
+            Err(RecordTreeError::IncompatibleParameters { .. })
+        ));
+        for cap in [1_u32, 65, u32::MAX] {
+            assert!(anodized::types::Spec::predicate(&BoundaryRecordCap(cap)));
+            assert_eq!(BoundaryRecordCap::try_from(cap).map(u32::from), Ok(cap));
+        }
     }
 
     #[test]
@@ -831,7 +1037,7 @@ mod tests
     #[test]
     fn default_commitment_is_pinned()
     {
-        let commitment = BoundaryParams::current().commitment();
+        let commitment = BoundaryParams::default().commitment();
 
         // Hand check of the record-cap field: the current cap is 64, which is
         // 0x40, and a little-endian long writes the low byte first, so the
@@ -885,12 +1091,18 @@ mod tests
 
         let mut expected_start = 0_usize;
         for span in spans.as_ref() {
+            assert!(anodized::types::Spec::predicate(span));
             assert_eq!(usize::from(span.start()), expected_start);
             assert!(usize::from(span.end()) > usize::from(span.start()));
             expected_start = usize::from(span.end());
         }
         assert_eq!(expected_start, records.len());
         assert!(spans.len() > 1_usize, "the corpus produces several leaves");
+        assert!(anodized::types::Spec::predicate(&RecordSpan::empty()));
+        assert!(!anodized::types::Spec::predicate(&RecordSpan {
+            start: RecordIndex::from(1_usize),
+            end: RecordIndex::ZERO,
+        }));
     }
 
     #[test]
@@ -898,8 +1110,8 @@ mod tests
     {
         let owned = corpus(RecordCount::from(64_u64));
         let records = borrow(owned.as_slice());
-        // A mask this wide makes a digest-induced cut vanishingly unlikely over
-        // a corpus this small, so every cut observed is the cap's.
+        // This fixed corpus has no digest-induced cut under the wide mask;
+        // exact cap-length runs distinguish the cap from the digest rule.
         let params = BoundaryParams::new(
             BoundaryProfile::CURRENT,
             BoundaryMaskBits::MAX,
@@ -962,7 +1174,12 @@ mod tests
         let spans = leaf_spans(records.as_slice(), BoundaryParams::current())
             .expect("an empty record encodes");
 
-        assert_eq!(spans.len(), 1_usize);
+        assert!(
+            spans
+                .iter()
+                .map(|span| (usize::from(span.start()), usize::from(span.end())))
+                .eq([(0_usize, 1_usize)])
+        );
     }
 
     #[test]
@@ -996,5 +1213,109 @@ mod tests
             1, 4, 6, 9, 10, 12, 15, 16, 17, 18, 19, 21, 22, 23, 24, 26, 27, 28, 30, 33, 36, 38, 39,
             41, 43
         ]);
+    }
+
+    #[test]
+    fn commitment_preserves_wide_caps()
+    {
+        let params = BoundaryParams::new(
+            BoundaryProfile::CURRENT,
+            BoundaryMaskBits::MAX,
+            BoundaryRecordCap::try_from(0x0102_0304_u32).expect("the cap is positive"),
+        );
+        assert_eq!(params.commitment().as_ref(), [
+            1_u8, 32, 4, 3, 2, 1, 0, 0, 0, 0
+        ]);
+    }
+
+    #[test]
+    fn record_encoding_pins_field_framing()
+    {
+        let empty = b"gandr:storage-records:record:v1\
+            \0\0\0\0\0\0\0\0\
+            \0\0\0\0\0\0\0\0";
+        let binary = b"gandr:storage-records:record:v1\
+            \x02\0\0\0\0\0\0\0\0\xff\
+            \x03\0\0\0\0\0\0\0\x80\x01\0";
+        let pair = b"gandr:storage-records:record:v1\
+            \x02\0\0\0\0\0\0\0ab\
+            \x01\0\0\0\0\0\0\0c";
+        // Independent BLAKE3 vectors pin the boundary domain and byte order.
+        let cases = [
+            (
+                RecordRef::new(b"", b""),
+                OwnedRecordEncoding::from(empty),
+                9_148_802_485_720_952_849_u64,
+            ),
+            (
+                RecordRef::new(b"\0\xff", b"\x80\x01\0"),
+                OwnedRecordEncoding::from(binary.as_slice()),
+                10_278_879_429_000_478_782_u64,
+            ),
+            (
+                RecordRef::new(b"ab", b"c"),
+                OwnedRecordEncoding::from(RecordEncoding::from(pair)),
+                18_332_636_201_592_727_709_u64,
+            ),
+        ];
+        let params = BoundaryParams::current();
+        for (record, image, residue) in cases {
+            assert_eq!(encode_record(record).expect("the fields fit"), image);
+            assert_eq!(u64::from(params.residue(image.as_borrowed())), residue);
+        }
+    }
+
+    /// A sink that refuses every offered byte sequence.
+    struct RefusingSink;
+
+    impl core::fmt::Write for RefusingSink
+    {
+        /// Refuses a formatter write.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: returns the formatter error for every offered string.
+        /// - fails: always with the formatter error.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 observes the sink refusal through both parameter
+        ///   formatters, distinguishing swallowed or converted refusals.
+        /// - witness: `boundary::tests::parameter_formatting_preserves_values_and_refusal`
+        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        fn write_str(
+            &mut self,
+            _text: &str,
+        ) -> core::fmt::Result
+        {
+            Err(core::fmt::Error)
+        }
+    }
+
+    #[test]
+    fn parameter_formatting_preserves_values_and_refusal()
+    {
+        for offered in [1_u8, 32] {
+            let width = BoundaryMaskBits::try_from(offered).expect("the width is admissible");
+            assert_eq!(
+                alloc::format!("{width:0>12}"),
+                alloc::format!("{offered:0>12}")
+            );
+            assert_eq!(
+                core::fmt::Write::write_fmt(&mut RefusingSink, format_args!("{width}")),
+                Err(core::fmt::Error)
+            );
+        }
+        for offered in [1_u32, 37, u32::MAX] {
+            let cap = BoundaryRecordCap::try_from(offered).expect("the cap is admissible");
+            assert_eq!(
+                alloc::format!("{cap:0>12}"),
+                alloc::format!("{offered:0>12}")
+            );
+            assert_eq!(
+                core::fmt::Write::write_fmt(&mut RefusingSink, format_args!("{cap}")),
+                Err(core::fmt::Error)
+            );
+        }
     }
 }

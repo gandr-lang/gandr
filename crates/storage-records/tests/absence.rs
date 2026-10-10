@@ -1,6 +1,7 @@
 //! Absence: keys below, between and above a tree's records prove, and forged
 //! or mis-shaped absence material is refused.
 
+use anodized::spec;
 use gandr_storage_records::BoundaryRecordCap;
 use gandr_storage_records::NonMembershipEvidence;
 use gandr_storage_records::NonMembershipProof;
@@ -26,20 +27,8 @@ fn a_valid_proof_verifies()
         .verify(&built.root(), key)
         .expect("the proof is honest");
 
-    assert_eq!(
-        evidence
-            .predecessor()
-            .map(Record::key)
-            .map(|key| key.as_ref().to_vec()),
-        Some(b"key-00000123".to_vec())
-    );
-    assert_eq!(
-        evidence
-            .successor()
-            .map(Record::key)
-            .map(|key| key.as_ref().to_vec()),
-        Some(b"key-00000124".to_vec())
-    );
+    assert_eq!(evidence.predecessor(), corpus.entries().get(123));
+    assert_eq!(evidence.successor(), corpus.entries().get(124));
 }
 
 #[test]
@@ -72,12 +61,14 @@ fn absent_keys_everywhere_prove()
             .verify(&built.root(), key)
             .expect("the proof is honest");
 
-        if let Some(predecessor) = evidence.predecessor() {
-            assert!(predecessor.key() < key);
-        }
-        if let Some(successor) = evidence.successor() {
-            assert!(successor.key() > key);
-        }
+        assert_eq!(
+            evidence.predecessor(),
+            corpus.entries().iter().rfind(|record| record.key() < key)
+        );
+        assert_eq!(
+            evidence.successor(),
+            corpus.entries().iter().find(|record| key < record.key())
+        );
     }
 }
 
@@ -93,13 +84,7 @@ fn a_key_below_every_record_has_no_predecessor()
         .expect("the proof is honest");
 
     assert_eq!(evidence.predecessor(), None);
-    assert_eq!(
-        evidence
-            .successor()
-            .map(Record::key)
-            .map(|key| key.as_ref().to_vec()),
-        Some(b"key-00000000".to_vec())
-    );
+    assert_eq!(evidence.successor(), corpus.entries().first());
 }
 
 #[test]
@@ -114,13 +99,7 @@ fn a_key_past_the_last_record_proves()
         .expect("the proof is honest");
 
     assert_eq!(evidence.successor(), None);
-    assert_eq!(
-        evidence
-            .predecessor()
-            .map(Record::key)
-            .map(|key| key.as_ref().to_vec()),
-        Some(b"key-00000299".to_vec())
-    );
+    assert_eq!(evidence.predecessor(), corpus.entries().last());
 }
 
 #[test]
@@ -135,7 +114,11 @@ fn a_key_absent_from_a_single_leaf_tree_proves()
     let proof = built.prove_non_membership(key).expect("the key is absent");
 
     assert_eq!(proof.nodes().len(), 1);
-    assert!(proof.verify(&built.root(), key).is_ok());
+    let evidence = proof
+        .verify(&built.root(), key)
+        .expect("the proof is honest");
+    assert_eq!(evidence.predecessor(), corpus.entries().get(2));
+    assert_eq!(evidence.successor(), corpus.entries().get(3));
 }
 
 #[test]
@@ -144,12 +127,10 @@ fn a_present_key_has_no_absence_proof()
     let corpus = Corpus::of_size(CorpusSize::from(20));
     let built = tree(&corpus);
 
-    assert_eq!(
+    assert!(matches!(
         built.prove_non_membership(RecordKey::from(b"key-00000003")),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the key an absence proof was asked for is present".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -167,12 +148,10 @@ fn forged_evidence_is_refused()
         honest.nodes().to_vec(),
     );
 
-    assert_eq!(
+    assert!(matches!(
         forged.verify(&built.root(), key),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the claimed neighbours are not the authenticated ones".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -194,12 +173,10 @@ fn a_missing_successor_leaf_is_refused()
         honest.nodes()[.. 2].to_vec(),
     );
 
-    assert_eq!(
+    assert!(matches!(
         truncated.verify(&built.root(), key.as_borrowed()),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "absence needing the next leaf".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -222,12 +199,10 @@ fn an_unnecessary_successor_leaf_is_refused()
         nodes,
     );
 
-    assert_eq!(
+    assert!(matches!(
         padded.verify(&built.root(), key),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "absence not needing the next leaf".into(),
-        })
-    );
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
 }
 
 #[test]
@@ -239,12 +214,66 @@ fn a_foreign_root_is_refused()
     let key = RecordKey::from(b"key-00000123x");
     let proof = built.prove_non_membership(key).expect("the key is absent");
 
-    assert_eq!(
+    assert!(matches!(
         proof.verify(&other.root(), key),
-        Err(RecordTreeError::InvalidProofShape {
-            context: "the proof names a different root".into(),
-        })
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
+}
+
+#[test]
+fn an_empty_tree_proves_absence()
+{
+    let built = tree(&Corpus::of_size(CorpusSize::from(0)));
+    let key = RecordKey::from(b"missing");
+    let proof = built
+        .prove_non_membership(key)
+        .expect("the empty tree has no key");
+    let evidence = proof
+        .verify(&built.root(), key)
+        .expect("the empty-tree proof is honest");
+    assert_eq!(evidence.predecessor(), None);
+    assert_eq!(evidence.successor(), None);
+
+    let forged = NonMembershipProof::new(
+        proof.envelope(),
+        proof.root_node_hash(),
+        key,
+        NonMembershipEvidence::new(Some(Record::new(b"a", b"invented")), None),
+        proof.nodes().to_vec(),
     );
+    assert!(matches!(
+        forged.verify(&built.root(), key),
+        Err(RecordTreeError::InvalidProofShape { .. })
+    ));
+}
+
+#[test]
+fn a_present_key_is_refused_by_verification()
+{
+    for size in [5_usize, 200_usize] {
+        let corpus = Corpus::of_size(CorpusSize::from(size));
+        let built = tree_with(
+            &corpus,
+            capped_params(BoundaryRecordCap::try_from(64_u32).expect("the cap is not zero")),
+        );
+        let honest = built
+            .prove_non_membership(RecordKey::from(b"key-00000002x"))
+            .expect("the query is absent");
+        let mut nodes = honest.nodes().to_vec();
+        nodes.truncate(2);
+        let present = RecordKey::from(b"key-00000002");
+        let forged = NonMembershipProof::new(
+            honest.envelope(),
+            honest.root_node_hash(),
+            present,
+            honest.evidence().clone(),
+            nodes,
+        );
+        assert!(matches!(
+            forged.verify(&built.root(), present),
+            Err(RecordTreeError::InvalidProofShape { .. })
+        ));
+    }
 }
 
 /// Returns an absent key just above some leaf's last record, so the proof needs
@@ -261,6 +290,14 @@ fn a_foreign_root_is_refused()
 ///   position.
 /// - panics: when no probed key produces a three-node proof, so a corpus that
 ///   stopped spanning leaves fails loudly rather than asserting the wrong arm.
+///
+/// # Adequacy
+/// - hypothesis: L3 queries in the 300-record corpus yield a three-node absence
+///   proof whose successor leaf is necessary. Removing it is refused,
+///   distinguishing a probe that accidentally selects a two-node layout.
+/// - witness: `tests::absence::a_missing_successor_leaf_is_refused`
+#[spec(ensures: |ret| built.lookup(ret.as_borrowed()).is_none()
+    && built.prove_non_membership(ret.as_borrowed()).is_ok_and(|proof| proof.nodes().len() == 3_usize))]
 fn key_needing_a_successor_leaf(
     built: &gandr_storage_records::RecordTree,
     corpus: &Corpus,

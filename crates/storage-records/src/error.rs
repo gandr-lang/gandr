@@ -53,6 +53,13 @@ impl fmt::Display for FailureContext
     ///   allocation and no per-run format argument.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on empty and punctuation-bearing context phrases; exact
+    ///   payload rendering and sink refusal distinguish quoting, substitution
+    ///   and swallowed errors.
+    /// - witness: `error::tests::context_and_version_render_payloads`
     #[inline]
     fn fmt(
         &self,
@@ -109,6 +116,13 @@ impl fmt::Display for WireVersion
     /// - provides: the number a version refusal reports, uninterpreted.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 against primitive decimal formatting at zero, 37 and
+    ///   the largest wire version, including padding; L3 on a refusing sink
+    ///   distinguishes value, formatting-option and error-propagation faults.
+    /// - witness: `error::tests::context_and_version_render_payloads`
     #[inline]
     fn fmt(
         &self,
@@ -230,6 +244,15 @@ impl fmt::Display for RecordTreeError
     ///   [`Error`] rendering the trait implementation below inherits.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 over all eleven refusal classes, varying each numeric
+    ///   payload at zero, an interior value and its width limit, and each
+    ///   context or hash independently; distinct messages, contained payloads
+    ///   and sink errors distinguish collapsed variants and lost values.
+    /// - witness: `error::tests::refusal_classes_stay_distinct`
+    /// - witness: `error::tests::refusal_payloads_are_not_lost`
     #[inline]
     fn fmt(
         &self,
@@ -279,4 +302,176 @@ impl fmt::Display for RecordTreeError
 
 impl Error for RecordTreeError
 {
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::format;
+
+    use super::FailureContext;
+    use super::RecordTreeError;
+    use super::WireVersion;
+    use crate::bytes::NodeHash;
+    use crate::record::RecordIndex;
+
+    /// A sink that refuses every attempted write.
+    #[derive(Debug)]
+    struct RefusingSink;
+
+    impl core::fmt::Write for RefusingSink
+    {
+        /// Refuses the offered text.
+        ///
+        /// # Specification
+        /// - requires: nothing; the text is arbitrary.
+        /// - ensures: returns the formatting error for each write.
+        /// - provides: the refusal observer for the error formatters.
+        /// - fails: always returns the formatting error.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 on text from every refusal class; the exact error
+        ///   distinguishes a sink that incorrectly accepts the write.
+        /// - witness: `error::tests::refusal_classes_stay_distinct`
+        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        fn write_str(
+            &mut self,
+            _text: &str,
+        ) -> core::fmt::Result
+        {
+            Err(core::fmt::Error)
+        }
+    }
+
+    #[test]
+    fn context_and_version_render_payloads()
+    {
+        for phrase in ["", "budget", "a: \"b\""] {
+            let context = FailureContext::from(phrase);
+            assert_eq!(format!("{context}"), phrase);
+            assert_eq!(
+                core::fmt::write(&mut RefusingSink, format_args!("{context}")),
+                Err(core::fmt::Error)
+            );
+        }
+        for raw in [0_u16, 37, u16::MAX] {
+            let version = WireVersion::from(raw);
+            assert_eq!(format!("{version:06}"), format!("{raw:06}"));
+            assert_eq!(
+                core::fmt::write(&mut RefusingSink, format_args!("{version}")),
+                Err(core::fmt::Error)
+            );
+        }
+    }
+
+    #[test]
+    fn refusal_classes_stay_distinct()
+    {
+        let context = FailureContext::from("probe");
+        let hash = NodeHash::from([0_u8; 32]);
+        let errors = [
+            RecordTreeError::UnsortedInput {
+                previous: 0_usize.into(),
+                current: 1_usize.into(),
+            },
+            RecordTreeError::DuplicateKeys {
+                first: 0_usize.into(),
+                second: 1_usize.into(),
+            },
+            RecordTreeError::MalformedNode { context },
+            RecordTreeError::UnknownNode { hash },
+            RecordTreeError::HashMismatch {
+                expected: hash,
+                actual: NodeHash::from([1_u8; 32]),
+            },
+            RecordTreeError::IncompatibleParameters { context },
+            RecordTreeError::UnsupportedVersion {
+                version: WireVersion::from(7),
+            },
+            RecordTreeError::InvalidProofShape { context },
+            RecordTreeError::InvalidRange { context },
+            RecordTreeError::BudgetExceeded { context },
+            RecordTreeError::ArithmeticOverflow { context },
+        ];
+        let messages = errors.map(|error| {
+            assert_eq!(
+                core::fmt::write(&mut RefusingSink, format_args!("{error}")),
+                Err(core::fmt::Error)
+            );
+            format!("{error}")
+        });
+        for (index, message) in messages.iter().enumerate() {
+            for other in messages.iter().skip(index.saturating_add(1)) {
+                assert_ne!(message, other);
+            }
+        }
+    }
+
+    #[test]
+    fn refusal_payloads_are_not_lost()
+    {
+        for raw in [0_usize, 37, usize::MAX] {
+            let index = RecordIndex::from(raw);
+            let zero = RecordIndex::from(0_usize);
+            let expected = format!("{raw}");
+            for error in [
+                RecordTreeError::UnsortedInput {
+                    previous: index,
+                    current: zero,
+                },
+                RecordTreeError::UnsortedInput {
+                    previous: zero,
+                    current: index,
+                },
+                RecordTreeError::DuplicateKeys {
+                    first: index,
+                    second: zero,
+                },
+                RecordTreeError::DuplicateKeys {
+                    first: zero,
+                    second: index,
+                },
+            ] {
+                assert!(format!("{error}").contains(expected.as_str()));
+            }
+        }
+        for raw in [0_u16, 37, u16::MAX] {
+            let error = RecordTreeError::UnsupportedVersion {
+                version: WireVersion::from(raw),
+            };
+            assert!(format!("{error}").contains(format!("{raw}").as_str()));
+        }
+        for phrase in ["context-a", "context-b"] {
+            let context = FailureContext::from(phrase);
+            for error in [
+                RecordTreeError::MalformedNode { context },
+                RecordTreeError::IncompatibleParameters { context },
+                RecordTreeError::InvalidProofShape { context },
+                RecordTreeError::InvalidRange { context },
+                RecordTreeError::BudgetExceeded { context },
+                RecordTreeError::ArithmeticOverflow { context },
+            ] {
+                assert!(format!("{error}").contains(phrase));
+            }
+        }
+        for raw in [0_u8, 37, u8::MAX] {
+            let hash = NodeHash::from([raw; 32]);
+            let zero = NodeHash::from([0_u8; 32]);
+            let expected = format!("{hash}");
+            for error in [
+                RecordTreeError::UnknownNode { hash },
+                RecordTreeError::HashMismatch {
+                    expected: hash,
+                    actual: zero,
+                },
+                RecordTreeError::HashMismatch {
+                    expected: zero,
+                    actual: hash,
+                },
+            ] {
+                assert!(format!("{error}").contains(expected.as_str()));
+            }
+        }
+    }
 }

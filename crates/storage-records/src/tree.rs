@@ -62,7 +62,22 @@ use crate::wire::NodeCount;
 use crate::wire::ensure_proof_budget;
 
 /// One leaf of a built tree.
+///
+/// # Specification
+/// - requires: construction from a built leaf and its input span.
+/// - ensures: the identity authenticates the stored bytes; the span names the
+///   corresponding input run, whose context is retained by the parent tree.
+/// - provides: the cached leaf and source coordinates used for proof selection.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on a three-record, one-record-per-leaf tree replaces a
+///   payload under its original identity and observes a false refinement; the
+///   parent also refuses a substituted source span. These distinguish
+///   unauthenticated cached bytes and lost coordinate correlation.
+/// - witness: `tree::tests::built_state_refinements_reject_cache_corruption`
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[spec(maintains: hash_node(self.node.bytes()) == self.node.identity())]
 struct LeafEntry
 {
     /// The leaf's identity and bytes.
@@ -82,13 +97,57 @@ struct LeafEntry
 /// - ensures: the root manifest binds the parameters, the record count and the
 ///   root node; every leaf's identity appears in the root's child references
 ///   when the root is internal; and the record sequence is strictly increasing.
-/// - provides: lookup, range, proof construction and the store write. The
-///   postcondition stays prose: it is an invariant of every value of this type,
-///   and a data specification's `maintains` is not evaluated when a value is
-///   constructed, so a clause here would be inert.
-/// - fails: only at construction and at proof construction, as those state.
+/// - provides: lookup, range, proof construction and the store write.
+/// - fails: only at construction and proof construction, as those state.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 on empty, nine-record and twenty-record capped trees
+///   observes complete records, decoded shape and ordered node identities.
+///   Reassembly of 300 records observes equal roots and leaves, distinguishing
+///   input-order leakage and loss of the link between roots and leaves. L3
+///   privately changes cached count, key order, child order, span or payload in
+///   a three-record tree and observes false refinements. These observations
+///   cover cached consistency, not every possible payload or hash collision.
+/// - witness: `tests::build::an_empty_tree_is_one_empty_leaf`
+/// - witness: `tests::build::a_small_tree_is_a_single_leaf`
+/// - witness: `tests::build::a_large_tree_has_an_internal_root`
+/// - witness: `tests::build::the_root_is_a_function_of_the_records`
+/// - witness: `tree::tests::built_state_refinements_reject_cache_corruption`
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[spec(maintains: {
+    if RecordCount::of_slice(self.records.as_ref()) != Ok(self.root.record_count())
+        || !self.records.array_windows::<2>().all(|pair| pair[0].key() < pair[1].key())
+        || self.children.len() != self.leaves.len()
+        || self.root.ensure_binds(self.root_node.identity()).is_err()
+        || hash_node(self.root_node.bytes()) != self.root_node.identity()
+    {
+        return false;
+    }
+    let mut next = 0_usize;
+    for (child, leaf) in self.children.iter().zip(self.leaves.iter()) {
+        let start = usize::from(leaf.span.start());
+        let end = usize::from(leaf.span.end());
+        if start != next || child.identity() != leaf.node.identity()
+            || !anodized::types::Spec::predicate(leaf)
+        {
+            return false;
+        }
+        let Some(run) = self.records.get(start .. end) else {
+            return false;
+        };
+        let Some(first) = run.first() else {
+            return false;
+        };
+        if child.first_key() != first.key()
+            || RecordCount::of_slice(run) != Ok(child.record_count())
+        {
+            return false;
+        }
+        next = end;
+    }
+    self.leaves.is_empty() || next == self.records.len()
+})]
 pub struct RecordTree
 {
     /// The root manifest.
@@ -108,14 +167,12 @@ impl RecordTree
     /// Builds a tree from a strictly increasing record sequence.
     ///
     /// # Specification
-    /// - requires: `records` is strictly increasing in key order; `params` is a
-    ///   parameter set this build implements.
-    /// - ensures: the built tree's root is a function of the record sequence
-    ///   and the parameters alone, so two builders that agree on both agree on
-    ///   the root. An empty sequence gives a tree of one empty leaf.
-    /// - provides: the only constructor. The postcondition stays prose: that
-    ///   the root is a function of its inputs is a law over two builds, and one
-    ///   call carries one input pair.
+    /// - requires: none; ordering and parameter support are checked.
+    /// - ensures: success retains exactly the records and parameters, seals the
+    ///   root over their count and the root node, and pairs every carried leaf
+    ///   with its child identity. Equal inputs determine equal roots; an empty
+    ///   sequence gives one empty leaf.
+    /// - provides: the only constructor of a validated tree.
     /// - fails: [`RecordTreeError::UnsortedInput`] and
     ///   [`RecordTreeError::DuplicateKeys`] for an input that is not strictly
     ///   increasing; [`RecordTreeError::UnsupportedVersion`] and
@@ -141,19 +198,28 @@ impl RecordTree
     /// boundary rule does not produce.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 agreement — the root is required to be a function of
-    ///   the record set, asserted as a differential between a tree built in one
-    ///   call and one built from the same records reconstructed differently,
-    ///   over generated corpora; plus L3 for each refusal and for the two
-    ///   shapes, separated by the empty input, a single-leaf input and a
-    ///   multi-leaf input.
+    /// - hypothesis: L2 compares direct and map-reassembled builds of 300
+    ///   records. Empty, nine-record and twenty-record capped inputs observe
+    ///   exact records, decoded shape and child/leaf correspondence. L3 checks
+    ///   reversed keys, duplicates and the unsupported encoding version. These
+    ///   cases distinguish lost payloads, shape confusion and omitted guards.
     /// - witness: `tests::build::the_root_is_a_function_of_the_records`
     /// - witness: `tests::build::an_empty_tree_is_one_empty_leaf`
     /// - witness: `tests::build::a_small_tree_is_a_single_leaf`
     /// - witness: `tests::build::a_large_tree_has_an_internal_root`
     /// - witness: `tests::build::unsorted_input_is_refused`
     /// - witness: `tests::build::duplicate_keys_are_refused`
+    /// - witness: `tests::build::unsupported_parameters_are_refused`
     #[inline]
+    #[spec(ensures: |ret| {
+        match params.ensure_supported().and_then(|()| ensure_strictly_sorted(records.iter().map(RecordRef::key))) {
+            | Err(error) => ret.as_ref().is_err_and(|actual| *actual == error),
+            | Ok(()) => ret.as_ref().ok().is_none_or(|tree|
+                tree.root.params() == params
+                    && tree.records.iter().map(Record::as_record_ref).eq(records.iter().copied())
+                    && anodized::types::Spec::predicate(tree)),
+        }
+    })]
     pub fn build(
         records: &[RecordRef<'_>],
         params: TreeParams,
@@ -270,8 +336,17 @@ impl RecordTree
     ///   trees reads the same order the digest was folded over.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 on empty, nine-record and twenty-record trees observes
+    ///   the entire original sequence, distinguishing reordered, omitted or
+    ///   substituted records.
+    /// - witness: `tests::build::an_empty_tree_is_one_empty_leaf`
+    /// - witness: `tests::build::a_small_tree_is_a_single_leaf`
+    /// - witness: `tests::build::a_large_tree_has_an_internal_root`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| core::ptr::eq(core::ptr::from_ref(ret), core::ptr::from_ref(self.records.as_ref())))]
     pub fn records(&self) -> &[Record]
     {
         self.records.as_ref()
@@ -291,8 +366,22 @@ impl RecordTree
     ///   as an empty list.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on empty, single-leaf and five-leaf trees compares
+    ///   exact leaf identities with decoded root children and ordered node
+    ///   enumeration. It distinguishes dropping the single root leaf, reversing
+    ///   leaves and including an internal root among them.
+    /// - witness: `tests::build::an_empty_tree_is_one_empty_leaf`
+    /// - witness: `tests::build::a_small_tree_is_a_single_leaf`
+    /// - witness: `tests::build::a_large_tree_has_an_internal_root`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| if self.leaves.is_empty() {
+        ret.as_ref() == [self.root_node.identity()].as_slice()
+    } else {
+        ret.iter().copied().eq(self.leaves.iter().map(|leaf| leaf.node.identity()))
+    })]
     pub fn leaf_hashes(&self) -> Box<[NodeHash]>
     {
         if self.leaves.is_empty() {
@@ -315,12 +404,23 @@ impl RecordTree
     /// - ensures: the root node first, then each leaf in key order; every
     ///   node's identity appears in the root's child references, or is the
     ///   root's own for a single-leaf tree.
-    /// - provides: the whole node set a caller writes to a store or checks a
-    ///   proof against, in one pass and one allocation.
+    /// - provides: owned copies of the complete ordered node set for storage
+    ///   and proofs, including cloned encoded payloads.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on empty, one-leaf and five-leaf trees observes the
+    ///   root first, decoded records and child identities in order. It
+    ///   distinguishes root omission and leaf permutation; these observations
+    ///   do not measure allocation counts.
+    /// - witness: `tests::build::an_empty_tree_is_one_empty_leaf`
+    /// - witness: `tests::build::a_small_tree_is_a_single_leaf`
+    /// - witness: `tests::build::a_large_tree_has_an_internal_root`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.iter().eq(core::iter::once(&self.root_node)
+        .chain(self.leaves.iter().map(|leaf| &leaf.node))))]
     pub fn nodes(&self) -> Box<[ProofNode]>
     {
         let mut nodes = Vec::<ProofNode>::with_capacity(self.leaves.len().saturating_add(1_usize));
@@ -356,8 +456,10 @@ impl RecordTree
     /// [`RecordTreeError::ArithmeticOverflow`] — a count exceeds a width.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 agreement — every written node is required to load back
-    ///   byte-identical, asserted over generated trees.
+    /// - hypothesis: L2 on a 400-record tree writes every node and loads back
+    ///   exact identity/byte pairs, distinguishing omitted nodes and
+    ///   substituted encodings. This is a fixed corpus, not generated-tree
+    ///   coverage.
     /// - witness: `tests::store::every_node_of_a_tree_loads_back`
     #[inline]
     #[spec(ensures: |ret| ret.is_err()
@@ -396,8 +498,16 @@ impl RecordTree
     /// - fails: yields nothing for an absent key, which is the non-failure
     ///   absence rather than a refusal.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 over every key of a fifty-record tree and absent keys
+    ///   below, between and above it observes exact values or absence. It
+    ///   distinguishes wrong neighbours, value substitution and an invented
+    ///   match.
+    /// - witness: `tests::build::lookup_and_range_answer_from_the_built_tree`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret == self.records.iter().find(|record| record.key() == key).map(Record::value))]
     pub fn lookup(
         &self,
         key: RecordKey<'_>,
@@ -416,8 +526,16 @@ impl RecordTree
     /// - provides: the interval query a range proof is checked against.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 on fifty records observes complete results for
+    ///   unbounded, bounded half-open, empty and outside ranges. Exact slices
+    ///   distinguish endpoint mistakes, omitted records and permutations.
+    /// - witness: `tests::build::lookup_and_range_answer_from_the_built_tree`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.iter().eq(self.records.iter().filter(|record|
+        range.contains(record.key()) == crate::record::RangeContainment::Inside)))]
     pub fn range(
         &self,
         range: KeyRange<'_>,
@@ -449,18 +567,16 @@ impl RecordTree
     ///   a caller cannot answer it by comparing roots.
     /// - fails: never.
     /// - panics: none.
-    /// - intension: the fast path settles disagreement only between roots that
-    ///   commit to the same parameters; every other pair runs the record
-    ///   comparison, which is what makes the digest a fast path rather than a
-    ///   decision. The observation is the answer, which is unchanged by the
-    ///   fast path.
+    /// - intension: excluding predicate evaluation, differing roots under equal
+    ///   parameters take the fast path; other pairs compare records. The output
+    ///   is independent of that optimization.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — the decision surface is the two-stage
-    ///   comparison, separated by equal trees, by trees differing in one record
-    ///   value, and by the noninterference case: the answer must not change if
-    ///   the fast path is removed, asserted by comparing against the direct
-    ///   record comparison over generated pairs.
+    /// - hypothesis: L1 compares all pairs of six fixed trees, including empty,
+    ///   single-record, changed-value and missing-record cases, against direct
+    ///   sequence equality. Equal and changed records under different boundary
+    ///   parameters distinguish digest-only and parameter-only decisions. The
+    ///   answer does not measure whether the fast path ran.
     /// - witness: `tests::agreement::equal_trees_agree`
     /// - witness: `tests::agreement::trees_differing_in_one_value_disagree`
     /// - witness: `tests::agreement::the_answer_is_the_direct_comparison`
@@ -506,17 +622,19 @@ impl RecordTree
     /// [`RecordTreeError::InvalidProofShape`] — the key is absent.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 evidence — the proof is the witness and the verifier is
-    ///   its validator, so the obligation is that every proof this builds
-    ///   verifies, asserted over every key of generated trees; plus L3 for the
-    ///   absent-key refusal.
+    /// - hypothesis: L1 verifies every key of a 300-record tree and a key of a
+    ///   five-record single leaf against exact values; node counts distinguish
+    ///   the two proof layouts. L3 requires a shape refusal for an absent key,
+    ///   separating unconditional success from valid membership evidence.
     /// - witness: `tests::membership::every_key_of_a_tree_proves`
     /// - witness: `tests::membership::an_absent_key_has_no_membership_proof`
+    /// - witness: `tests::membership::a_key_of_a_single_leaf_tree_proves`
     #[inline]
-    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|proof| {
-        find_record(self.records.as_ref(), key)
-            .is_some_and(|record| proof.verify(&self.root, key, record.value()).is_ok())
-    }))]
+    #[spec(ensures: |ret| match find_record(self.records.as_ref(), key) {
+        | Some(record) => ret.as_ref().is_ok_and(|proof|
+            proof.verify(&self.root, key, record.value()).is_ok()),
+        | None => matches!(ret, Err(RecordTreeError::InvalidProofShape { .. })),
+    })]
     pub fn prove_membership(
         &self,
         key: RecordKey<'_>,
@@ -564,18 +682,21 @@ impl RecordTree
     /// [`RecordTreeError::InvalidProofShape`] — the key is present.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 evidence — every proof this builds must verify,
-    ///   asserted over absent keys spanning below, between and above the tree's
-    ///   records; plus L3 for the present-key refusal and for the two carried
-    ///   layouts.
+    /// - hypothesis: L1 verifies absent keys below, between and above a
+    ///   300-record tree and within a five-record single leaf. Exact extreme
+    ///   neighbours and required successor layouts distinguish wrong brackets
+    ///   and missing leaves; L3 refuses a present key.
     /// - witness: `tests::absence::absent_keys_everywhere_prove`
     /// - witness: `tests::absence::a_present_key_has_no_absence_proof`
     /// - witness: `tests::absence::a_key_past_the_last_record_proves`
+    /// - witness: `tests::absence::a_key_below_every_record_has_no_predecessor`
+    /// - witness: `tests::absence::a_key_absent_from_a_single_leaf_tree_proves`
     #[inline]
-    #[spec(ensures: |ret| ret
-        .as_ref()
-        .ok()
-        .is_none_or(|proof| proof.verify(&self.root, key).is_ok()))]
+    #[spec(ensures: |ret| if find_record(self.records.as_ref(), key).is_some() {
+        matches!(ret, Err(RecordTreeError::InvalidProofShape { .. }))
+    } else {
+        ret.as_ref().is_ok_and(|proof| proof.verify(&self.root, key).is_ok())
+    })]
     pub fn prove_non_membership(
         &self,
         key: RecordKey<'_>,
@@ -649,19 +770,22 @@ impl RecordTree
     /// [`RecordTreeError::ArithmeticOverflow`] — a position exceeds its width.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 evidence — every proof this builds must verify and must
-    ///   return exactly the range's records, asserted over generated ranges
-    ///   including the empty range, one-key ranges and the unbounded range.
+    /// - hypothesis: L1 verifies exact records for 32 generated ranges over 300
+    ///   records: lower index 0..300, span 0..60, either upper inclusion. Fixed
+    ///   empty, unbounded and single-leaf queries distinguish missing endpoints
+    ///   and layouts. L3 checks 4096 carried nodes versus 4097, separating an
+    ///   inclusive budget ceiling from its first refusal.
     /// - witness: `tests::range::generated_ranges_prove_and_verify`
     /// - witness: `tests::range::the_unbounded_range_proves`
     /// - witness: `tests::range::an_empty_range_proves`
     /// - witness: `tests::range::a_span_past_the_node_budget_is_refused`
     /// - witness: `tests::range::the_node_budget_ceiling_proves`
+    /// - witness: `tests::range::a_range_over_a_single_leaf_tree_proves`
     #[inline]
-    #[spec(ensures: |ret| ret
-        .as_ref()
-        .ok()
-        .is_none_or(|proof| proof.verify(&self.root, range).is_ok()))]
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|proof|
+        proof.verify(&self.root, range).is_ok_and(|verified|
+            verified.iter().eq(self.records.iter().filter(|record|
+                range.contains(record.key()) == crate::record::RangeContainment::Inside)))))]
     pub fn prove_range(
         &self,
         range: KeyRange<'_>,
@@ -728,15 +852,17 @@ impl RecordTree
     /// - fails: [`RecordTreeError::InvalidProofShape`] when the root's children
     ///   select no position for the key.
     /// - panics: none.
-    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|position| {
-        *position
-            == if self.children.is_empty() {
-                None
-            }
-            else {
-                select_child(self.children.as_ref(), key)
-            }
-    }))]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 verifies membership for every key of a 300-record tree
+    ///   and a five-record single leaf. Absence queries straddling separators
+    ///   distinguish a wrong child or confusing the leaf-rooted case with a
+    ///   missing leaf.
+    /// - witness: `tests::membership::every_key_of_a_tree_proves`
+    /// - witness: `tests::membership::a_key_of_a_single_leaf_tree_proves`
+    /// - witness: `tests::absence::absent_keys_everywhere_prove`
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|position| *position
+        == if self.children.is_empty() { None } else { select_child(self.children.as_ref(), key) }))]
     fn selected_leaf(
         &self,
         key: RecordKey<'_>,
@@ -765,8 +891,17 @@ impl RecordTree
     /// - fails: [`RecordTreeError::InvalidProofShape`] when the position is
     ///   outside the tree.
     /// - panics: none.
-    #[spec(ensures: |ret| ret.as_ref().ok().copied()
-        == self.leaves.get(usize::from(position)).map(|leaf| &leaf.node))]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 through every membership key of a 300-record tree
+    ///   observes the authenticated selected leaf. Invalid positions are
+    ///   unreachable from admitted membership construction; trailing absence
+    ///   queries separately exercise the record-view boundary.
+    /// - witness: `tests::membership::every_key_of_a_tree_proves`
+    #[spec(ensures: |ret| self.leaves.get(usize::from(position)).map_or_else(
+        || matches!(ret, Err(RecordTreeError::InvalidProofShape { .. })),
+        |leaf| ret.as_ref().is_ok_and(|actual| core::ptr::eq(core::ptr::from_ref(*actual), &raw const leaf.node)),
+    ))]
     fn leaf_node(
         &self,
         position: ChildIndex,
@@ -792,11 +927,19 @@ impl RecordTree
     /// - fails: [`RecordTreeError::InvalidProofShape`] when the position is
     ///   outside the tree or its record run is outside the record sequence.
     /// - panics: none.
-    #[spec(ensures: |ret| ret.as_ref().ok().copied()
-        == self.leaves.get(usize::from(position)).and_then(|leaf| {
-            self.records
-                .get(usize::from(leaf.span.start()) .. usize::from(leaf.span.end()))
-        }))]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 verifies absent queries before, between and after 300
+    ///   records, observing exact predecessor/successor records. The last-leaf
+    ///   query probes an out-of-range successor and requires no successor,
+    ///   distinguishing truncated leaf views and an invented following leaf.
+    /// - witness: `tests::absence::absent_keys_everywhere_prove`
+    /// - witness: `tests::absence::a_key_below_every_record_has_no_predecessor`
+    /// - witness: `tests::absence::a_key_past_the_last_record_proves`
+    #[spec(ensures: |ret| self.leaves.get(usize::from(position)).and_then(|leaf|
+        self.records.get(usize::from(leaf.span.start()) .. usize::from(leaf.span.end())))
+        .map_or_else(|| matches!(ret, Err(RecordTreeError::InvalidProofShape { .. })),
+            |expected| ret.as_ref().is_ok_and(|actual| core::ptr::eq(core::ptr::from_ref(*actual), core::ptr::from_ref(expected)))))]
     fn leaf_records(
         &self,
         position: ChildIndex,
@@ -831,7 +974,22 @@ pub enum RecordAgreement
 /// Verification covers only the root node. The handle does not traverse
 /// children or attest that every leaf is present; queries and proof
 /// construction require a [`RecordTree`].
+///
+/// # Specification
+/// - requires: construction through `StoredRoot::open`.
+/// - ensures: the manifest binds the retained node identity; the node was
+///   verified when opened, without a promise of future store availability.
+/// - provides: a store handle with a checked manifest-to-node relation.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 opens a written three-record tree, then substitutes a leaf
+///   identity for the root and observes a false refinement. A 400-record store
+///   witness distinguishes present and subsequently absent root material.
+/// - witness: `tree::tests::built_state_refinements_reject_cache_corruption`
+/// - witness: `tests::store::a_written_root_opens`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[spec(maintains: self.root.ensure_binds(self.root_node_hash).is_ok())]
 pub struct StoredRoot
 {
     /// The root manifest.
@@ -878,8 +1036,9 @@ impl StoredRoot
     /// - witness: `tests::store::an_unwritten_root_does_not_open`
     /// - witness: `tests::store::a_root_bound_elsewhere_does_not_open`
     #[inline]
-    #[spec(ensures: |ret| ret.is_err()
-        || (root.ensure_binds(root_node_hash).is_ok() && store.load(root_node_hash).is_ok()))]
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|opened|
+        opened.root == root && opened.root_node_hash == root_node_hash
+            && anodized::types::Spec::predicate(opened) && store.load(root_node_hash).is_ok()))]
     pub fn open<S>(
         root: TreeRoot,
         root_node_hash: NodeHash,
@@ -941,6 +1100,13 @@ impl StoredRoot
     /// [`RecordTreeError::BudgetExceeded`] — a declared count exceeds its
     /// ceiling.
     /// [`RecordTreeError::ArithmeticOverflow`] — a count exceeds a width.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on an opened 400-record root checks success in its
+    ///   populated store and `UnknownNode` with the exact identity in an empty
+    ///   store. This separates a stale unconditional success from a fresh
+    ///   availability check.
+    /// - witness: `tests::store::a_written_root_opens`
     #[inline]
     #[spec(ensures: |ret| ret.is_err() || store.load(self.root_node_hash).is_ok())]
     pub fn recheck<S>(
@@ -953,5 +1119,86 @@ impl StoredRoot
         let _node = store.load(self.root_node_hash)?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::RecordTree;
+    use super::StoredRoot;
+    use crate::boundary::BoundaryMaskBits;
+    use crate::boundary::BoundaryParams;
+    use crate::boundary::BoundaryProfile;
+    use crate::boundary::BoundaryRecordCap;
+    use crate::params::EncodingVersion;
+    use crate::params::HashAlgorithm;
+    use crate::params::SeparatorConvention;
+    use crate::params::TreeKind;
+    use crate::params::TreeParams;
+    use crate::params::TreeRoot;
+    use crate::proof::ProofNode;
+    use crate::record::RecordCount;
+    use crate::record::RecordRef;
+    use crate::store::InMemoryBlockStore;
+
+    #[test]
+    fn built_state_refinements_reject_cache_corruption()
+    {
+        let boundary = BoundaryParams::new(
+            BoundaryProfile::CURRENT,
+            BoundaryMaskBits::MIN,
+            BoundaryRecordCap::try_from(1_u32).expect("one record per leaf is admissible"),
+        );
+        let params = TreeParams::new(
+            TreeKind::CURRENT,
+            EncodingVersion::CURRENT,
+            HashAlgorithm::CURRENT,
+            SeparatorConvention::CURRENT,
+            boundary,
+        );
+        let mut tree = RecordTree::build(
+            &[
+                RecordRef::new(b"a", b"1"),
+                RecordRef::new(b"m", b"2"),
+                RecordRef::new(b"z", b"3"),
+            ],
+            params,
+        )
+        .expect("the ordered corpus builds");
+        assert!(anodized::types::Spec::predicate(&tree));
+        let mut store = InMemoryBlockStore::new();
+        tree.write_to(&mut store).expect("the built nodes store");
+        let mut opened = StoredRoot::open(tree.root(), tree.root_node_hash(), &store)
+            .expect("the written root opens");
+        assert!(anodized::types::Spec::predicate(&opened));
+        assert!(tree.leaves.len() >= 2_usize);
+        opened.root_node_hash = tree.leaves[0_usize].node.identity();
+        assert!(!anodized::types::Spec::predicate(&opened));
+
+        let root = tree.root;
+        tree.root = TreeRoot::seal(params, RecordCount::from(4_u64), tree.root_node.identity())
+            .expect("the substituted count has a manifest");
+        assert!(!anodized::types::Spec::predicate(&tree));
+        tree.root = root;
+        tree.records.swap(0_usize, 1_usize);
+        assert!(!anodized::types::Spec::predicate(&tree));
+        tree.records.swap(0_usize, 1_usize);
+        tree.children.swap(0_usize, 1_usize);
+        assert!(!anodized::types::Spec::predicate(&tree));
+        tree.children.swap(0_usize, 1_usize);
+        let span = tree.leaves[0_usize].span;
+        tree.leaves[0_usize].span = tree.leaves[1_usize].span;
+        assert!(!anodized::types::Spec::predicate(&tree));
+        tree.leaves[0_usize].span = span;
+        let identity = tree.leaves[0_usize].node.identity();
+        let node = core::mem::replace(
+            &mut tree.leaves[0_usize].node,
+            ProofNode::new(identity, b"corrupt"),
+        );
+        assert!(!anodized::types::Spec::predicate(&tree.leaves[0_usize]));
+        assert!(!anodized::types::Spec::predicate(&tree));
+        tree.leaves[0_usize].node = node;
+        assert!(anodized::types::Spec::predicate(&tree));
     }
 }
