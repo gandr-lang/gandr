@@ -21,6 +21,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Native universe paths](#native-universe-paths)
 - [Identity and bridge recursion](#identity-and-bridge-recursion)
 - [Guarded higher fields](#guarded-higher-fields)
+- [Universe-flow experiment](#universe-flow-experiment)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
@@ -222,6 +223,32 @@ Term conversion with δ-, β- and η-rules is proof search, and a concurrent sea
 **Alternatives.** Running the engine's search inside the kernel would certify by trusting the search. Trusting the engine's verdict would certify nothing. Replaying a refuted decomposition without its negative subgoal means trying every premise, which is search. Memoizing replayed sub-derivations would let a trace refer back to a shared one; the engine emits a derivation shared by two parents once under each, so the trace is the derivation's expansion as a tree and the replay needs no table.
 
 **Reversal.** A back-reference decision, with a replay-side table keyed on the goal it names, replaces the expansion once a measured trace of a deeply shared proof outgrows the replay budget. A closing the kernel cannot reproduce, because the engine's structural equality and the kernel's α-equality disagree on a pair, shows up as a refusal on an engine trace and moves the tie-break into the vocabulary.
+
+
+## Universe-flow experiment
+
+`flow_universe` defines a separate in-memory `Flow_U a b` family over quoted Unit, Sum, Product and Base codes. A forward certificate stores one closed CBPV translator and one proposed image/dialogue per source constructor pattern. It carries neither an inverse nor round-trip evidence. Every consuming formation checks the translator in a fresh closed checker session, validates the images, and replays kernel-built positive claims. No stored node or classifier is an admission receipt.
+
+| Boundary | Rule or refusal |
+| -------- | --------------- |
+| Forward formation | Exhaustive symbolic source patterns; each target Base position selects a same-typed source leaf. |
+| Directed computation | `ride e v` exposes the checked forward application for ordinary conversion replay. |
+| Directed reflexivity | `ride (stay a) v` returns `v` in one step, without allocating or evaluating an identity translator. |
+| Motive formation | Moving endpoints occur only covariantly; arrow domains and Flow sources reverse variance. |
+| Symmetry | `Flow(Moving, Fixed)` returns `NonCovariantMotive`, including when nested beneath positive formers. |
+| Family separation | A valid equivalence at a Flow boundary, or a Flow at a Path boundary, returns `FamilyMismatch`. |
+| Sequential composition | `Compose { seam: Sequence, .. }` checks the intermediate type and lowers in order to CBPV bind. |
+| Feedback | Connecting the second output back into the first input returns `Cycle` with both occurrences. |
+
+**Leaf naturality.** Each source Base position is a distinct rigid variable, including equal-typed positions in a product. Proposed output syntax contains only canonical constructors and those correctly typed variables. The kernel replays the translator on these symbolic inputs; a trace generated at a literal sample has no authority over that obligation. Literals nested beneath sums or products, fresh variables, wrong-typed selections, and sample-only constant maps refuse. The witnesses cover diagonals, both injections, codiagonals, product identity and terminal projection to Unit. The inherited native CBPV vocabulary has no general product eliminator, so these witnesses do not establish generation of every projection or fullness of the one-way alphabet.
+
+**The gate reads wiring.** Sequence has one edge between two occurrences; feedback adds the reverse edge and closes a cycle. Equal endpoint codes do not identify occurrences. In particular, injection followed by fold forms and replays as identity, and terminal followed by injection forms a constant Bool endomap. Neither composite grants inverse evidence. This closed-code gate handles explicit two-occurrence seams, not a general reflected cell-support graph or invertible-core comparison.
+
+**Choice.** The additive rule arena reuses native closed checking and conversion replay. Flat, constructor-ordered ids and bounded iterative walks avoid recursive ownership; formation/lowering tables live only for one call. Reusing native replay avoids a second evaluator; host-language translators would bypass the obligation. Native persisted formers would require encoding, support and wire integration. No wire tag is allocated. Reconsider this representation when declaration admission must consume Flow syntax. Motive checking is the term-structural covariance side condition over El, Flow, Arrow, Sum and Product; value transport uses `El(Moving)`. General dependent directed elimination and the reflected variance calculus remain outside this experiment.
+
+The seven `flow_universe::tests` witnesses use the independent conversion engine and exact expected outputs. The public replay boundary restores its arena watermark on success and failure. Its memo discipline is the existing six-condition discipline: no caller-supplied checker memo, persistent verdict, storage policy or authority-bearing hit.
+
+**Mutation scope.** The universe-flow source range owns a standalone campaign over leaf aliasing and type confusion, manufactured constants, omitted source coverage, forged dialogues, reversed composition, missed feedback, motive sign propagation, family coercion and Stay reduction. No mutation campaign or score is claimed.
 
 ## Native universe paths
 
