@@ -69,6 +69,7 @@ pub mod conv;
 pub mod encoding;
 pub mod env;
 pub mod error;
+pub mod identity_recursion;
 pub mod levels;
 pub mod path_universe;
 pub mod replay;

@@ -1135,7 +1135,11 @@ fn collect_reachable(
                     pending.push(AnyNode::Computation(head));
                     pending.push(AnyNode::Value(argument));
                 },
-                | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+                | Some(
+                    &Computation::Return(value)
+                    | &Computation::Force(value)
+                    | &Computation::Absurd(value),
+                ) => {
                     pending.push(AnyNode::Value(value));
                 },
                 | Some(&Computation::Bind(bound, body)) => {
@@ -1162,7 +1166,12 @@ fn collect_reachable(
                         pending.push(AnyNode::Value(code));
                     }
                 },
-                | Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. })
+                | Some(
+                    &ValueType::Base(_)
+                    | &ValueType::Unit
+                    | &ValueType::Empty
+                    | &ValueType::Universe { .. },
+                )
                 | None => {},
                 | Some(
                     &ValueType::Product(first, second)

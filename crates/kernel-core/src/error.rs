@@ -44,6 +44,8 @@ pub enum ValueTypeHead
     Base,
     /// The unit type.
     Unit,
+    /// The empty type.
+    Empty,
     /// A product.
     Product,
     /// A sum.
@@ -77,6 +79,7 @@ impl ValueTypeHead
         match *value_type {
             | ValueType::Base(_) => Self::Base,
             | ValueType::Unit => Self::Unit,
+            | ValueType::Empty => Self::Empty,
             | ValueType::Element { .. } => Self::Element,
             | ValueType::Product(..) => Self::Product,
             | ValueType::Sum(..) => Self::Sum,
@@ -258,6 +261,8 @@ pub enum NonInferableForm
     Injection,
     /// A lambda carries no domain annotation.
     Lambda,
+    /// Empty elimination carries no result annotation.
+    Absurd,
 }
 
 /// Which polarity the checker machine's produced register was expected to hold.

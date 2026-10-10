@@ -707,6 +707,8 @@ enum Elimination
 {
     /// The head forced.
     Force,
+    /// Empty elimination of the head.
+    Absurd,
     /// An application to this argument.
     Apply(ValueId),
     /// A bind into this continuation.
@@ -1575,7 +1577,11 @@ where
                     | Some(&Value::Thunk(_)) | None => return Rigidity::Flexible,
                 },
                 | AnyNode::Computation(computation) => match self.arena.computation(computation) {
-                    | Some(&(Computation::Return(value) | Computation::Force(value))) => {
+                    | Some(
+                        &(Computation::Return(value)
+                        | Computation::Force(value)
+                        | Computation::Absurd(value)),
+                    ) => {
                         work.push(AnyNode::Value(value));
                     },
                     | Some(&Computation::Application(head, argument)) => {
@@ -1594,6 +1600,7 @@ where
                     | Some(
                         &(ValueType::Base(_)
                         | ValueType::Unit
+                        | ValueType::Empty
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_)),
                     ) => {},
@@ -1714,6 +1721,11 @@ where
                 },
                 | Some(&Computation::Force(value)) => {
                     spine.push(Elimination::Force);
+                    let head = self.value_head(value, frozen, side)?;
+                    break head;
+                },
+                | Some(&Computation::Absurd(value)) => {
+                    spine.push(Elimination::Absurd);
                     let head = self.value_head(value, frozen, side)?;
                     break head;
                 },
@@ -1855,6 +1867,7 @@ where
                     focus = bound;
                 },
                 | Some(&Computation::Force(_)) => break self.arena.computation_force(body),
+                | Some(&Computation::Absurd(_)) => break self.arena.computation_absurd(body),
                 | Some(&Computation::Case {
                     on_left, on_right, ..
                 }) => {
@@ -2045,6 +2058,7 @@ where
                     },
                     | Some(&Frame::Apply(_)) | None => break,
                 },
+                | Some(&Computation::Absurd(_)) => break,
                 | None => return Err(unreadable()),
             }
         }
@@ -2239,7 +2253,8 @@ fn spines(
     let mut premises = Vec::new();
     for (&one, &other) in left.iter().zip(right) {
         match (one, other) {
-            | (Elimination::Force, Elimination::Force) => {},
+            | (Elimination::Force, Elimination::Force)
+            | (Elimination::Absurd, Elimination::Absurd) => {},
             | (Elimination::Apply(left_argument), Elimination::Apply(right_argument))
             | (
                 Elimination::StaticApply(left_argument),
@@ -2259,6 +2274,7 @@ fn spines(
             },
             | (
                 Elimination::Force
+                | Elimination::Absurd
                 | Elimination::Apply(_)
                 | Elimination::Bind(_)
                 | Elimination::Case(..)

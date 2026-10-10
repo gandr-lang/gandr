@@ -1234,6 +1234,10 @@ fn decode_entry(
             DecodedNode::ValueType(table.arena.value_type_unit()),
             Family::ValueType,
         ),
+        | tags::NODE_VT_EMPTY => (
+            DecodedNode::ValueType(table.arena.value_type_empty()),
+            Family::ValueType,
+        ),
         | tags::NODE_VT_UNIVERSE => {
             let level = decode_level(reader)?;
             let id = table.arena.value_type_universe(GroundSort::Value, level);
@@ -1398,6 +1402,11 @@ fn decode_entry(
         | tags::NODE_C_FORCE => {
             let value = read_value(reader, table, this, &mut children)?;
             let id = table.arena.computation_force(value);
+            (DecodedNode::Computation(id), Family::Computation)
+        },
+        | tags::NODE_C_ABSURD => {
+            let value = read_value(reader, table, this, &mut children)?;
+            let id = table.arena.computation_absurd(value);
             (DecodedNode::Computation(id), Family::Computation)
         },
         | tags::NODE_C_CASE => {

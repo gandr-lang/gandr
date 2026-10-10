@@ -8,8 +8,10 @@
 //! an expected type flowing down from the declaration's declared type; the
 //! eliminators and atoms — variable, constant, application, force, bind, case,
 //! literal, lift — **synthesize** a type flowing up. A synthesizing term used
-//! where a type is expected triggers a conversion at the mode switch. This
-//! needs no metavariable and no inference.
+//! where a type is expected triggers a conversion at the mode switch. Empty
+//! elimination is checking-only: its value child checks at Empty and the
+//! expected computation type supplies its result. This needs no metavariable
+//! and no inference.
 //!
 //! # Arena-native: ids, never owned types
 //!
@@ -59,7 +61,7 @@
 //!
 //! | recursive arm                          | goal push                    | frames                                              |
 //! | -------------------------------------- | ---------------------------- | --------------------------------------------------- |
-//! | `value_type_level` Base / Unit         | leaf, level zero             | —                                                   |
+//! | `value_type_level` Base / Unit / Empty | leaf, level zero             | —                                                   |
 //! | `value_type_level` Universe, any sort  | leaf, scope then successor   | —                                                   |
 //! | `value_type_level` Abstract            | leaf, kind lookup            | —                                                   |
 //! | `value_type_level` Element             | leaf, level read, code owed  | —                                                   |
@@ -77,6 +79,8 @@
 //! | `synth_value` Lift                     | `SynthValue(body)`           | `SynthLift`                                         |
 //! | `synth_value` Injection                | leaf, not inferable          | —                                                   |
 //! | `synth_value` Quote, either family     | leaf, formation then universe | —                                                  |
+//! | `synth_comp` Absurd                    | leaf, not inferable          | —                                                   |
+//! | `check_comp` Absurd                    | `CheckValue(body, Empty)`    | —                                                   |
 //! | `check_value` Injection                | `CheckValue(body, summand)`  | —                                                   |
 //! | `check_value` Pair                     | `CheckValue(first, first_t)` | `CheckPairSecond`                                   |
 //! | `check_value` Thunk                    | `CheckComp(body, codomain)`  | —                                                   |
@@ -501,7 +505,7 @@ where
                 | TypeLevelGoal::Value(id) => {
                     let value_type = arena.value_type(id).ok_or(KernelError::ArenaFault)?;
                     match *value_type {
-                        | ValueType::Base(_) | ValueType::Unit => Level::zero(),
+                        | ValueType::Base(_) | ValueType::Unit | ValueType::Empty => Level::zero(),
                         // A universe of either sort forms one level above the
                         // level it carries, in the universe of value types:
                         // a code is a value whatever family it decodes into.
@@ -714,6 +718,7 @@ fn abstract_atom_level(
         }
         | ValueType::Base(_)
         | ValueType::Unit
+        | ValueType::Empty
         | ValueType::Product(..)
         | ValueType::Sum(..)
         | ValueType::Thunk(_)
@@ -760,6 +765,7 @@ fn static_classifier(
         | ValueType::Universe { .. } | ValueType::StaticPi { .. } => Ok(()),
         | ValueType::Base(_)
         | ValueType::Unit
+        | ValueType::Empty
         | ValueType::Product(..)
         | ValueType::Sum(..)
         | ValueType::Thunk(_)
@@ -1525,6 +1531,11 @@ where
                     },
                 },
                 | Goal::SynthComp(id) => match read_computation(arena, id)? {
+                    | Computation::Absurd(_) => {
+                        return Err(KernelError::NotInferable {
+                            form: NonInferableForm::Absurd,
+                        });
+                    },
                     | Computation::Application(head, argument) => {
                         frames.push(Frame::SynthApply(argument));
                         goal = Goal::SynthComp(head);
@@ -1561,6 +1572,11 @@ where
                     },
                 },
                 | Goal::CheckComp(id, expected) => match read_computation(arena, id)? {
+                    | Computation::Absurd(scrutinee) => {
+                        let empty = arena.value_type_empty();
+                        goal = Goal::CheckValue(scrutinee, empty);
+                        continue 'expand;
+                    },
                     // A lambda pushes the arrow's domain as the innermost
                     // context slot and checks its body against the codomain
                     // read from under that slot. The dependent arrow's codomain
@@ -2126,6 +2142,7 @@ where
                 }
                 | ValueType::Base(_)
                 | ValueType::Unit
+                | ValueType::Empty
                 | ValueType::Product(..)
                 | ValueType::Sum(..)
                 | ValueType::Thunk(_)

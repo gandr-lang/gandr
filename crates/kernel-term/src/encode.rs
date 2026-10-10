@@ -478,6 +478,7 @@ fn intern(
     == Some(u8::from(match node {
         AnyNode::ValueType(id) => match arena.value_type(id) {
             None | Some(&ValueType::Unit) => tags::NODE_VT_UNIT,
+            Some(&ValueType::Empty) => tags::NODE_VT_EMPTY,
             Some(&ValueType::Base(_)) => tags::NODE_VT_BASE,
             Some(&ValueType::Universe { sort: GroundSort::Value, .. }) => tags::NODE_VT_UNIVERSE,
             Some(&ValueType::Universe { sort: GroundSort::Computation, .. }) => {
@@ -517,6 +518,7 @@ fn intern(
             Some(&Computation::Bind(..)) => tags::NODE_C_BIND,
             Some(&Computation::Force(_)) => tags::NODE_C_FORCE,
             Some(&Computation::Case { .. }) => tags::NODE_C_CASE,
+            Some(&Computation::Absurd(_)) => tags::NODE_C_ABSURD,
         },
     })))]
 fn encode_entry(
@@ -535,6 +537,7 @@ fn encode_entry(
                     out.put_tag(base_type_tag(base));
                 },
                 | ValueType::Unit => out.put_tag(tags::NODE_VT_UNIT),
+                | ValueType::Empty => out.put_tag(tags::NODE_VT_EMPTY),
                 | ValueType::Universe {
                     sort: GroundSort::Value,
                     ref level,
@@ -614,6 +617,7 @@ fn encode_entry(
             | Some(&Computation::Bind(..)) => out.put_tag(tags::NODE_C_BIND),
             | Some(&Computation::Force(_)) => out.put_tag(tags::NODE_C_FORCE),
             | Some(&Computation::Case { .. }) => out.put_tag(tags::NODE_C_CASE),
+            | Some(&Computation::Absurd(_)) => out.put_tag(tags::NODE_C_ABSURD),
         },
     }
     for &child in child_globals {

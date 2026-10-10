@@ -739,7 +739,9 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenComp(head));
                             tasks.push(ReachTask::OpenValue(argument));
                         },
-                        | Computation::Return(value) | Computation::Force(value) => {
+                        | Computation::Return(value)
+                        | Computation::Force(value)
+                        | Computation::Absurd(value) => {
                             tasks.push(ReachTask::OpenValue(value));
                         },
                         | Computation::Bind(bound, body) => {
@@ -774,6 +776,7 @@ impl LooseDepths
                     match *node {
                         | ValueType::Base(_)
                         | ValueType::Unit
+                        | ValueType::Empty
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_) => {},
                         | ValueType::Product(first, second)
@@ -938,6 +941,7 @@ impl LooseDepths
         match *node {
             | ValueType::Base(_)
             | ValueType::Unit
+            | ValueType::Empty
             | ValueType::Universe { .. }
             | ValueType::Abstract(_) => LooseDepth(0),
             | ValueType::Product(first, second)
@@ -1070,7 +1074,9 @@ impl LooseDepths
             | Computation::Application(head, argument) => {
                 self.cached_comp(head).join(self.cached_value(argument))
             },
-            | Computation::Return(value) | Computation::Force(value) => self.cached_value(value),
+            | Computation::Return(value)
+            | Computation::Force(value)
+            | Computation::Absurd(value) => self.cached_value(value),
             | Computation::Bind(bound, body) => self
                 .cached_comp(bound)
                 .join(self.cached_comp(body).under_binder()),

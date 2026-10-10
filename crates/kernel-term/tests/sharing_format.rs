@@ -38,8 +38,6 @@ mod sharing_format
     use gandr_kernel_term::NameSegment;
     use gandr_kernel_term::ReservedKind;
     use gandr_kernel_term::ReservedSlot;
-    use gandr_kernel_term::SHARING_BLOCK_FIRST;
-    use gandr_kernel_term::SHARING_BLOCK_LAST;
     use gandr_kernel_term::StructuredName;
     use gandr_kernel_term::TableEntryCount;
     use gandr_kernel_term::TagSite;
@@ -1677,22 +1675,17 @@ mod sharing_format
     #[test]
     fn an_unassigned_node_tag_is_refused_by_name()
     {
-        // Both ends of the reserved sharing block, and the first byte above
-        // it, where the frozen block resumes now that the growth room is spent.
-        // The settled numbering assigns the block but this crate emits no entry
-        // carrying one, so a reader meeting one refuses it exactly as it
-        // refuses any other unassigned byte — the reservation is a numbering
-        // claim, never a parse.
-        let unassigned = [
-            RawByte(u8::from(SHARING_BLOCK_FIRST)),
-            RawByte(u8::from(SHARING_BLOCK_LAST)),
-            RawByte(
-                u8::from(SHARING_BLOCK_LAST)
-                    .checked_add(1)
-                    .expect("the block ends below the byte ceiling"),
-            ),
-        ];
-        for tag in unassigned {
+        // Reject every unassigned byte, including the reserved sharing block.
+        // Growth above that block does not change the rejection contract.
+        for byte in u8::MIN ..= u8::MAX {
+            let wire = WireTag::from(byte);
+            if gandr_kernel_term::NODE_TAG_TABLE
+                .iter()
+                .any(|row| row.tag == wire)
+            {
+                continue;
+            }
+            let tag = RawByte(byte);
             let bytes = raw_artifact(current_version(), &[], &[RawDeclaration::axiom(
                 vec![entry_unassigned_tag(tag)],
                 TableIndex(0),
@@ -1703,7 +1696,7 @@ mod sharing_format
                     tag: WireTag::from(tag.0),
                 }),
                 decode(ArtifactImage::from(bytes.as_ref())),
-                "the space above the frozen block is a named refusal, never a mis-parse"
+                "an unassigned tag is a named refusal, never a mis-parse"
             );
         }
     }

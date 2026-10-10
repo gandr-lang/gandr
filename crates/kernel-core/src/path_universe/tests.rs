@@ -253,6 +253,9 @@ fn children(
             | _ => panic!("unsupported fixture value"),
         },
         | AnyNode::Computation(id) => match *arena.computation(id).expect("computation resolves") {
+            | Computation::Absurd(_) => {
+                panic!("empty elimination is outside the path fixture fragment")
+            },
             | Computation::Lambda(body) => vec![AnyNode::Computation(body)],
             | Computation::Application(head, value) => {
                 vec![AnyNode::Computation(head), AnyNode::Value(value)]
@@ -328,6 +331,9 @@ fn translate(
             },
             | AnyNode::Computation(id) => {
                 let computation = match *arena.computation(id).expect("computation resolves") {
+                    | Computation::Absurd(_) => {
+                        panic!("empty elimination is outside the path fixture fragment")
+                    },
                     | Computation::Return(value) => core.computation_return(values[&value]),
                     | Computation::Force(value) => core.computation_force(values[&value]),
                     | Computation::Lambda(body) => core.computation_lambda(computations[&body]),

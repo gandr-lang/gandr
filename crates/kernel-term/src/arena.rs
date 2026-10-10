@@ -877,6 +877,29 @@ impl TermArena
         })
     }
 
+    /// Mint empty elimination over an already-allocated scrutinee.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn computation_absurd(
+        &mut self,
+        scrutinee: ValueId,
+    ) -> ComputationId
+    {
+        self.alloc_computation(Computation::Absurd(scrutinee))
+    }
+
+    /// Mint the empty value type.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub fn value_type_empty(&mut self) -> ValueTypeId
+    {
+        self.alloc_value_type(ValueType::Empty)
+    }
+
     // Value-type constructors.
 
     /// Mint a base value type.
@@ -1259,7 +1282,7 @@ impl TermArena
             Some(&Computation::Lambda(body)) => ret.as_slice() == [AnyNode::Computation(body)],
             Some(&Computation::Application(head, argument)) =>
                 ret.as_slice() == [AnyNode::Computation(head), AnyNode::Value(argument)],
-            Some(&Computation::Return(value) | &Computation::Force(value)) =>
+            Some(&Computation::Return(value) | &Computation::Force(value) | &Computation::Absurd(value)) =>
                 ret.as_slice() == [AnyNode::Value(value)],
             Some(&Computation::Bind(bound, body)) =>
                 ret.as_slice() == [AnyNode::Computation(bound), AnyNode::Computation(body)],
@@ -1271,7 +1294,7 @@ impl TermArena
                 ],
         },
         AnyNode::ValueType(id) => match self.value_type(id) {
-            Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_))
+            Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Empty | &ValueType::Universe { .. } | &ValueType::Abstract(_))
             | None => ret.is_empty(),
             Some(&ValueType::Product(first, second) | &ValueType::Sum(first, second)
                 | &ValueType::StaticPi { domain: first, codomain: second }) =>
@@ -1320,7 +1343,11 @@ impl TermArena
                     children.push(AnyNode::Computation(head));
                     children.push(AnyNode::Value(argument));
                 },
-                | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+                | Some(
+                    &Computation::Return(value)
+                    | &Computation::Force(value)
+                    | &Computation::Absurd(value),
+                ) => {
                     children.push(AnyNode::Value(value));
                 },
                 | Some(&Computation::Bind(bound, body)) => {
@@ -1341,6 +1368,7 @@ impl TermArena
                 | Some(
                     &ValueType::Base(_)
                     | &ValueType::Unit
+                    | &ValueType::Empty
                     | &ValueType::Universe { .. }
                     | &ValueType::Abstract(_),
                 )

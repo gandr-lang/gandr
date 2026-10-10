@@ -92,6 +92,8 @@ pub enum ValueType
     Base(BaseType),
     /// The unit type, inhabited by [`crate::Value::Unit`] alone.
     Unit,
+    /// The empty value type, with no introduction rule.
+    Empty,
     /// The non-dependent product `A × B`.
     Product(ValueTypeId, ValueTypeId),
     /// The sum `A + B`, with left and right injections.

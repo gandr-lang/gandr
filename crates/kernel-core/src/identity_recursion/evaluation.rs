@@ -1,0 +1,474 @@
+//! Generic evaluation of relation programs, with typed neutral indices.
+
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+
+use gandr_kernel_term::Side;
+use gandr_kernel_term::TermArena;
+use gandr_kernel_term::Value;
+use gandr_kernel_term::ValueId;
+use gandr_kernel_term::ValueTypeId;
+
+use super::Clause;
+use super::Relation;
+use super::RelationError;
+use super::RelationId;
+use super::check_value;
+use crate::conv::Convertibility;
+use crate::conv::equal_values;
+
+/// An index-expression address in one fibre computation.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct IndexId(usize);
+
+/// A native value or a typed projection of a neutral product index.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum Index
+{
+    /// An existing value in the term arena.
+    Value(ValueId),
+    /// First product coordinate; canonical pairs reduce before insertion.
+    First(IndexId),
+    /// Second product coordinate; canonical pairs reduce before insertion.
+    Second(IndexId),
+}
+
+/// An address in a computed fibre graph.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct FiberId(usize);
+
+/// A relation fibre in normal form, including its uncomputed neutral cases.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Fiber
+{
+    /// The inhabited unit fibre.
+    Unit,
+    /// The empty fibre, not an error or a negative checker verdict.
+    Empty,
+    /// Both component fibres, without dropping either coordinate.
+    Product(FiberId, FiberId),
+    /// Discrete equality on neutral base indices remains a type.
+    Discrete(IndexId, IndexId),
+    /// A case-indexed relation awaiting an injection at an index.
+    Suspended(IndexId, IndexId),
+}
+
+/// One evaluated fibre, retaining symbolic indices rather than deciding them.
+#[derive(Clone, Debug)]
+pub struct Fibers
+{
+    /// Index expressions in constructor order.
+    indices: Vec<Index>,
+    /// Fibre expressions in constructor order.
+    nodes: Vec<Fiber>,
+    /// The result expression.
+    root: FiberId,
+}
+
+/// A product coordinate selected by the generic evaluator.
+#[derive(Clone, Copy)]
+enum Coordinate
+{
+    /// First component.
+    First,
+    /// Second component.
+    Second,
+}
+
+/// Explicit evaluator continuations; no Rust call-stack recursion.
+#[derive(Clone, Copy)]
+enum Task
+{
+    /// Evaluate a relation combinator at two indices.
+    Visit(RelationId, IndexId, IndexId),
+    /// Assemble independently computed component fibres.
+    Pair,
+    /// Retain a completed fibre for this call only.
+    Remember(RelationId, IndexId, IndexId),
+}
+
+impl Relation
+{
+    /// Compute the indexed fibre in an ordinary open term context.
+    ///
+    /// # Specification
+    /// - ensures: checks both indices, then interprets relation combinators.
+    ///   Cross-injection fibres are Empty; products unfold even at neutral
+    ///   indices by projections. Unequal neutral base variables remain a
+    ///   discrete relation, never an empty fibre. Sum neutrals remain
+    ///   suspended.
+    /// - fails: `Typing` for ill-typed indices; `Arena` for unreadable nodes.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — closed constructors have their mathematical fibres;
+    ///   distinct rigid variables cannot be judged unequal merely by syntax.
+    /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
+    /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
+    #[inline]
+    pub fn fiber(
+        &self,
+        arena: &mut TermArena,
+        context: &[ValueTypeId],
+        left: ValueId,
+        right: ValueId,
+    ) -> Result<Fibers, RelationError>
+    {
+        let root = self.node(self.root)?;
+        check_value(arena, context, left, root.source)?;
+        check_value(arena, context, right, root.target)?;
+        let mut result = Fibers {
+            indices: Vec::new(),
+            nodes: Vec::new(),
+            root: FiberId(0),
+        };
+        let mut shared = BTreeMap::new();
+        let left = result.index(Index::Value(left), &mut shared);
+        let right = result.index(Index::Value(right), &mut shared);
+        let mut tasks = Vec::from([Task::Visit(self.root, left, right)]);
+        let mut values = Vec::new();
+        let mut completed = BTreeMap::new();
+        while let Some(task) = tasks.pop() {
+            let fibre = match task {
+                | Task::Remember(relation, left, right) => {
+                    let value = *values.last().ok_or(RelationError::Arena)?;
+                    completed.insert((relation, left, right), value);
+                    continue;
+                },
+                | Task::Pair => {
+                    let right = values.pop().ok_or(RelationError::Arena)?;
+                    let left = values.pop().ok_or(RelationError::Arena)?;
+                    Fiber::Product(left, right)
+                },
+                | Task::Visit(relation, left, right) => {
+                    if let Some(&value) = completed.get(&(relation, left, right)) {
+                        values.push(value);
+                        continue;
+                    }
+                    tasks.push(Task::Remember(relation, left, right));
+                    let node = self.node(relation)?;
+                    match node.clause {
+                        | Clause::Unit => Fiber::Unit,
+                        | Clause::Empty => Fiber::Empty,
+                        | Clause::Discrete => result.discrete(arena, left, right)?,
+                        | Clause::Product(first, second) => {
+                            let first_left =
+                                result.project(arena, left, Coordinate::First, &mut shared)?;
+                            let first_right =
+                                result.project(arena, right, Coordinate::First, &mut shared)?;
+                            let second_left =
+                                result.project(arena, left, Coordinate::Second, &mut shared)?;
+                            let second_right =
+                                result.project(arena, right, Coordinate::Second, &mut shared)?;
+                            tasks.push(Task::Pair);
+                            tasks.push(Task::Visit(second, second_left, second_right));
+                            tasks.push(Task::Visit(first, first_left, first_right));
+                            continue;
+                        },
+                        | Clause::Sum(first, second) => {
+                            let left_injection = result.injection(arena, left)?;
+                            let right_injection = result.injection(arena, right)?;
+                            match (left_injection, right_injection) {
+                                | (Injection::Known(a, x), Injection::Known(b, y)) => {
+                                    if a == b {
+                                        let relation = match a {
+                                            | Side::Left => first,
+                                            | Side::Right => second,
+                                        };
+                                        let left = result.index(Index::Value(x), &mut shared);
+                                        let right = result.index(Index::Value(y), &mut shared);
+                                        tasks.push(Task::Visit(relation, left, right));
+                                        continue;
+                                    }
+                                    Fiber::Empty
+                                },
+                                | _ => Fiber::Suspended(left, right),
+                            }
+                        },
+                        | clause @ (Clause::CaseLeft(first, second)
+                        | Clause::CaseRight(first, second)) => {
+                            let index = match clause {
+                                | Clause::CaseLeft(..) => left,
+                                | _ => right,
+                            };
+                            let injection = result.injection(arena, index)?;
+                            match injection {
+                                | Injection::Known(side, value) => {
+                                    let relation = match side {
+                                        | Side::Left => first,
+                                        | Side::Right => second,
+                                    };
+                                    let payload = result.index(Index::Value(value), &mut shared);
+                                    let (left, right) = match clause {
+                                        | Clause::CaseLeft(..) => (payload, right),
+                                        | _ => (left, payload),
+                                    };
+                                    tasks.push(Task::Visit(relation, left, right));
+                                    continue;
+                                },
+                                | Injection::Neutral => Fiber::Suspended(left, right),
+                            }
+                        },
+                    }
+                },
+            };
+            let id = FiberId(result.nodes.len());
+            result.nodes.push(fibre);
+            values.push(id);
+        }
+        result.root = values.pop().ok_or(RelationError::Arena)?;
+        Ok(result)
+    }
+}
+
+/// An injection observation; absence means a neutral, not a malformed value.
+enum Injection
+{
+    /// A visible injection and its payload.
+    Known(Side, ValueId),
+    /// Case evaluation is suspended on this index.
+    Neutral,
+}
+
+impl Fibers
+{
+    /// The fibre graph's root.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn root(&self) -> FiberId
+    {
+        self.root
+    }
+
+    /// Resolve a fibre expression.
+    ///
+    /// # Specification
+    /// - ensures: the requested fibre, or `Arena` for an unrelated address.
+    /// - fails: `Arena` for an unreadable address.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// `RelationError::Arena`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — products preserve both observable component fibres.
+    /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
+    #[inline]
+    pub fn get(
+        &self,
+        id: FiberId,
+    ) -> Result<Fiber, RelationError>
+    {
+        self.nodes.get(id.0).copied().ok_or(RelationError::Arena)
+    }
+
+    /// Resolve a symbolic index expression.
+    ///
+    /// # Specification
+    /// - ensures: the requested index, or `Arena` for an unrelated address.
+    /// - fails: `Arena` for an unreadable address.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// `RelationError::Arena`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the two projections of a neutral pair stay distinct.
+    /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
+    #[inline]
+    pub fn get_index(
+        &self,
+        id: IndexId,
+    ) -> Result<Index, RelationError>
+    {
+        self.indices.get(id.0).copied().ok_or(RelationError::Arena)
+    }
+
+    /// Lower a fully computed fibre to the native value-type vocabulary.
+    ///
+    /// # Specification
+    /// - ensures: Unit, Empty and Product fibres become native types; a
+    ///   residual is refused rather than interpreted as either truth or
+    ///   falsity.
+    /// - fails: `NeutralFiber` if any fibre is residual; `Arena` on invalid
+    ///   edges.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// As `fails`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — cross injections lower to native Empty, while neutral
+    ///   base equality never does.
+    /// - witness: `identity_recursion::tests::both_modes_compute_all_element_clauses`
+    /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
+    #[inline]
+    pub fn native(
+        &self,
+        arena: &mut TermArena,
+    ) -> Result<ValueTypeId, RelationError>
+    {
+        if self
+            .nodes
+            .iter()
+            .any(|node| matches!(node, Fiber::Discrete(..) | Fiber::Suspended(..)))
+        {
+            return Err(RelationError::NeutralFiber);
+        }
+        let mut types = Vec::with_capacity(self.nodes.len());
+        for &node in &self.nodes {
+            let ty = match node {
+                | Fiber::Unit => arena.value_type_unit(),
+                | Fiber::Empty => arena.value_type_empty(),
+                | Fiber::Product(left, right) => {
+                    let left = *types.get(left.0).ok_or(RelationError::Arena)?;
+                    let right = *types.get(right.0).ok_or(RelationError::Arena)?;
+                    arena.value_type_product(left, right)
+                },
+                | Fiber::Discrete(..) | Fiber::Suspended(..) => {
+                    return Err(RelationError::NeutralFiber);
+                },
+            };
+            types.push(ty);
+        }
+        types.get(self.root.0).copied().ok_or(RelationError::Arena)
+    }
+
+    /// Intern index syntax locally; equality is a positive syntax-sharing step.
+    ///
+    /// # Specification
+    /// trivial.
+    fn index(
+        &mut self,
+        index: Index,
+        shared: &mut BTreeMap<Index, IndexId>,
+    ) -> IndexId
+    {
+        if let Some(&id) = shared.get(&index) {
+            return id;
+        }
+        let id = IndexId(self.indices.len());
+        self.indices.push(index);
+        shared.insert(index, id);
+        id
+    }
+
+    /// Observe a product coordinate, reducing only a visible pair.
+    ///
+    /// # Specification
+    /// - requires: `index` has a product type, established by the relation
+    ///   program.
+    /// - ensures: selects the requested child or retains a neutral projection.
+    /// - fails: `Arena` on an unreadable index.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// `RelationError::Arena`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — neutral products unfold without requiring closed
+    ///   pairs.
+    /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
+    fn project(
+        &mut self,
+        arena: &TermArena,
+        index: IndexId,
+        coordinate: Coordinate,
+        shared: &mut BTreeMap<Index, IndexId>,
+    ) -> Result<IndexId, RelationError>
+    {
+        let index_term = self.get_index(index)?;
+        if let Index::Value(value) = index_term
+            && let Some(&Value::Pair(left, right)) = arena.value(value)
+        {
+            let value = match coordinate {
+                | Coordinate::First => left,
+                | Coordinate::Second => right,
+            };
+            return Ok(self.index(Index::Value(value), shared));
+        }
+        let projection = match coordinate {
+            | Coordinate::First => Index::First(index),
+            | Coordinate::Second => Index::Second(index),
+        };
+        Ok(self.index(projection, shared))
+    }
+
+    /// Observe an injection without deciding equality of neutral indices.
+    ///
+    /// # Specification
+    /// - ensures: a constructor observation or an explicit suspended case.
+    /// - fails: `Arena` on an unreadable index.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// `RelationError::Arena`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a neutral sum index never selects a branch.
+    /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
+    fn injection(
+        &self,
+        arena: &TermArena,
+        index: IndexId,
+    ) -> Result<Injection, RelationError>
+    {
+        let index = self.get_index(index)?;
+        match index {
+            | Index::Value(value) => match arena.value(value) {
+                | Some(&Value::Injection(side, payload)) => Ok(Injection::Known(side, payload)),
+                | _ => Ok(Injection::Neutral),
+            },
+            | Index::First(_) | Index::Second(_) => Ok(Injection::Neutral),
+        }
+    }
+
+    /// Compute discrete base identity, distinguishing syntax from inequality.
+    ///
+    /// # Specification
+    /// - ensures: reflexive syntax yields Unit; unequal canonical literals
+    ///   yield Empty; every other pair yields a residual discrete relation.
+    /// - fails: `Arena` on an unreadable index.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// `RelationError::Arena`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — different base variables remain related by an unknown
+    ///   fibre, while distinct canonical literals have an empty fibre.
+    /// - witness: `identity_recursion::tests::neutral_fibres_do_not_decide_equality`
+    fn discrete(
+        &self,
+        arena: &TermArena,
+        left: IndexId,
+        right: IndexId,
+    ) -> Result<Fiber, RelationError>
+    {
+        if left == right {
+            return Ok(Fiber::Unit);
+        }
+        let left_index = self.get_index(left)?;
+        let right_index = self.get_index(right)?;
+        if let (Index::Value(a), Index::Value(b)) = (left_index, right_index) {
+            if equal_values(arena, a, b) == Convertibility::Convertible {
+                return Ok(Fiber::Unit);
+            }
+            if matches!(
+                (arena.value(a), arena.value(b)),
+                (Some(Value::Literal(_)), Some(Value::Literal(_)))
+            ) {
+                return Ok(Fiber::Empty);
+            }
+        }
+        Ok(Fiber::Discrete(left, right))
+    }
+}

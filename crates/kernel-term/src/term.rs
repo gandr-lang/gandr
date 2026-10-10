@@ -173,6 +173,9 @@ pub enum Value
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Computation
 {
+    /// Empty elimination: checks against any computation type when its
+    /// scrutinee checks at Empty. There is no beta rule.
+    Absurd(ValueId),
     /// A lambda `λ. M`, binding one value variable; introduces `A → C`.
     Lambda(ComputationId),
     /// An application `M v` of a computation to a value argument.

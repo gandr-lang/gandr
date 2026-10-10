@@ -786,6 +786,10 @@ impl ContentTable
     )
     {
         match *computation {
+            | Computation::Absurd(value) => {
+                record.put_tag(gandr_kernel_term::NODE_C_ABSURD);
+                record.put_content(self.content_of(AnyNode::Value(value)));
+            },
             | Computation::Lambda(body) => {
                 record.put_tag(gandr_kernel_term::NODE_C_LAMBDA);
                 record.put_content(self.content_of(AnyNode::Computation(body)));
@@ -843,6 +847,7 @@ impl ContentTable
                 record.put_tag(base_tag(base));
             },
             | ValueType::Unit => record.put_tag(gandr_kernel_term::NODE_VT_UNIT),
+            | ValueType::Empty => record.put_tag(gandr_kernel_term::NODE_VT_EMPTY),
             | ValueType::Universe {
                 sort: GroundSort::Value,
                 ref level,
@@ -986,7 +991,11 @@ fn push_children(
                 tasks.push(EncodeTask::Open(AnyNode::Computation(head)));
                 tasks.push(EncodeTask::Open(AnyNode::Value(argument)));
             },
-            | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+            | Some(
+                &Computation::Return(value)
+                | &Computation::Force(value)
+                | &Computation::Absurd(value),
+            ) => {
                 tasks.push(EncodeTask::Open(AnyNode::Value(value)));
             },
             | Some(&Computation::Bind(bound, body)) => {
@@ -1008,6 +1017,7 @@ fn push_children(
             | Some(
                 &ValueType::Base(_)
                 | &ValueType::Unit
+                | &ValueType::Empty
                 | &ValueType::Universe { .. }
                 | &ValueType::Abstract(_),
             ) => {},

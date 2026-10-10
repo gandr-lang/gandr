@@ -3,7 +3,6 @@
 The certified kernel's judgements: the defunctionalized checking machine, type formation, conversion, the admission choke point, the check memo wired as the default path on both machines, and the sequential replay of an untrusted engine's conversion trace.
 
 <!-- toc -->
-
 - [Synopsis](#synopsis)
 - [Provided features](#provided-features)
 - [Expected features](#expected-features)
@@ -20,11 +19,11 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Static operators](#static-operators)
 - [Conversion replay](#conversion-replay)
 - [Universe-path experiment](#universe-path-experiment)
+- [Identity and bridge recursion](#identity-and-bridge-recursion)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
 - [License](#license)
-
 <!-- tocstop -->
 
 ## Synopsis
@@ -248,6 +247,33 @@ The seven witnesses in `path_universe::tests` use the independent `core-nbe` eng
 **Choice.** The rule module borrows the existing term arena and checker, without changing serialized syntax. Replaying ordinary CBPV reducts keeps evaluation independent of the producer and avoids a second evaluator. Extending the persisted vocabulary would require all exporters and importers to participate; using Rust translator closures would bypass the question. **Reversal.** Integration into declaration admission requires native term formers, content encoding and wire support before any persistent receipt can claim to admit a universe path. Element identity, open types, higher fields, function codes and general dependent elimination remain outside this experiment.
 
 **Mutation scope.** The universe-path source range owns a standalone campaign over omitted coverage, swapped translators or product legs, accepted bad dialogues, reflexivity reduction, and certificate-proof erasure. The seven witnesses name the expected distinguishing observations; no mutation score is claimed.
+
+## Identity and bridge recursion
+
+The experimental `identity_recursion` module folds one closed, level-zero code vocabulary with `Mode::Identity` or `Mode::Bridge`. It is an in-memory rule language beside `path_universe`, not a persisted element-identity syntax. Endpoints are ordinary typed values in an open context; unsupported codes are refused before interpretation.
+
+| Code | Both modes | Identity structure |
+| ---- | ---------- | ------------------ |
+| Unit | Unit fibre at every pair of indices. | Unit witness; reflexive transport returns its input. |
+| Base | Discrete relation: identical indices give Unit; distinct canonical literals give Empty; unresolved neutral equality remains a relation. | Reflexivity is constructive; distinct variables are not assumed unequal. |
+| Sum | Matching injections recurse on their payloads; different injections give Empty. An unknown injection remains suspended. | Payload reflexivity and transport use the matching branch. |
+| Product | Component relations paired, including projections of neutral indices. | Componentwise reflexivity and composition; neither coordinate is dropped. |
+| Abstract | Named interface obstruction, even for the same nominal atom. | Its declaration supplies a kind, not relation, reflexivity, transport and coherence fields. |
+| Codes | Identity consumes existing `Path_U` formation; bridges are checked indexed families over two element types. | Existing certified-equivalence and transport semantics are reused, not redefined. |
+
+**Base choice.** These built-in scalar codes are discrete; their canonical data has decidable equality. This is not a nominal-identifier test for sealed values. A different base interpretation needs an explicit relation interface. A sealed Abstract likewise needs a supplied relation, reflexivity, transport and coherence structure, with any bridge interpretation supplied separately. Looking through the seal or treating its name as equality evidence is not an alternative.
+
+`Relation::constant` and `Relation::cases` construct heterogeneous indexed bridge families. The distinguishing witness is `Br_U Unit Bool` with fibre Unit at `((), inl ())` and Empty at `((), inr ())`. It requires no equality on arbitrary elements and is not an equivalence. This refutes the broad claim that a relational bridge necessarily needs strict element equality beyond canonical data, **for this direct first-order construction**. It does not turn an arbitrary span into a relation: that translation would require endpoint fibres and their reindexing laws. Nor does it establish the full model laws of [Internal Parametricity, without an Interval](https://doi.org/10.1145/3632920).
+
+Identity evidence checks against its computed fibre. `reflexivity` constructs the diagonal; `compose` transports in the identity fibre, pairing both product components. `transport` accepts native representable level-zero motives and reduces reflexivity to the exact input. An unresolved non-reflexive transport retains its endpoints, proof, motive and input as a neutral operation, not a fabricated target value. Suspended sum reflexivity is a structural diagonal program. This does not provide J, arbitrary dependent motives, a general fibrancy theorem, higher fields or a nested universe.
+
+Computed fibres lower to native Unit, Empty and Product types. Empty is the separate native extension: it forms at level zero, has no constructor, and `absurd e` checks against any expected computation type when `e : Empty`. It has no beta rule. Empty is an output fibre here, not an additional input code in the parent experiment's closed vocabulary.
+
+The arena handles remain scoped to their original nodes; callers must not truncate and reuse those nodes. Code folding, fibre evaluation and proof construction preserve DAG sharing with call-local tables. Those tables grant no admission capability or conversion authority. Declaration admission contains only the native Empty extension; no receipt admits these experimental identity programs.
+
+**Choice.** One code fold produces relation combinators; a shared evaluator computes both modes, while only identity carries reflexivity and transport. Separate per-mode recursions would duplicate the former clauses. Native identity syntax would prematurely couple this experiment to persistent declarations. **Reversal.** Integrating element identity requires native syntax, scoped dependent motives and checked reduction/substitution laws; accepting Abstract requires its missing interface, not a default relation.
+
+**Mutation scope.** The witnesses in `identity_recursion::tests` distinguish wrong sum branches, dropped product coordinates, negative equality on neutrals, forged identity evidence, incorrect universe classifiers, seal inspection and malformed Empty elimination. No mutation score is claimed.
 
 ## Sharing and persistence
 

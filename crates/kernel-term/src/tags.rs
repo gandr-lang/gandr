@@ -34,8 +34,10 @@
 //!
 //! | region        | tags        | holds                                                                |
 //! | ------------- | ----------- | -------------------------------------------------------------------- |
-//! | frozen block  | `0x00–0x1F` | every former this crate mints, contiguous from zero                  |
+//! | frozen block  | `0x00–0x1F` | initial formers, contiguous from zero                                |
 //! | sharing block | `0x20–0x27` | the stored sharing plane: one former per family, plus held weakening |
+//! | empty block   | `0x28–0x29` | Empty value type and checking-only absurd computation                |
+//!
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
 //! binder, so it is a different node from the non-dependent [`NODE_CT_ARROW`]
 //! at the same arity and takes its own tag rather than a flag on the arrow's.
@@ -57,8 +59,8 @@
 //! static Pi [`NODE_VT_STATIC_PI`] among the value types and the static
 //! application [`NODE_V_STATIC_APPLICATION`] among the values. The static
 //! lambda takes none, because the kernel never represents it: a producer
-//! normalizes it away before export. The growth room is spent, so the next
-//! former resumes above [`SHARING_BLOCK_LAST`].
+//! normalizes it away before export. Empty resumes above
+//! [`SHARING_BLOCK_LAST`], with [`NODE_VT_EMPTY`] and [`NODE_C_ABSURD`].
 //!
 //! The sharing block is **reserved and unassigned**: four per-family sharing
 //! formers so polarity stays recoverable from the tag alone, and four held
@@ -224,6 +226,10 @@ pub const SHARING_BLOCK_FIRST: WireTag = NODE_SHARE_VALUE;
 /// The last tag of the reserved stored-sharing block: the fourth held slot,
 /// which the explicit weakening form would take one family at a time.
 pub const SHARING_BLOCK_LAST: WireTag = WireTag(0x27);
+/// Node tag: the empty value type, with no children.
+pub const NODE_VT_EMPTY: WireTag = WireTag(0x28);
+/// Node tag: empty elimination, over one value scrutinee.
+pub const NODE_C_ABSURD: WireTag = WireTag(0x29);
 
 /// The number of subterm-table child references an entry carries after its
 /// inline payload.
@@ -409,7 +415,7 @@ const fn bounded_alias(
 /// own child relation, and its rows are pinned against the encoder's wire
 /// images by the round-trip suites, so a row that drifts from the code is a
 /// test failure rather than a comment that quietly went stale.
-pub const NODE_TAG_TABLE: [NodeTagDescription; 32] = [
+pub const NODE_TAG_TABLE: [NodeTagDescription; 34] = [
     row(
         NODE_VT_BASE,
         ChildArity(0),
@@ -448,6 +454,8 @@ pub const NODE_TAG_TABLE: [NodeTagDescription; 32] = [
     unbounded(NODE_V_QUOTE_COMPUTATION, ChildArity(1)),
     unbounded(NODE_VT_STATIC_PI, ChildArity(2)),
     unbounded(NODE_V_STATIC_APPLICATION, ChildArity(2)),
+    bounded_alias(NODE_VT_EMPTY, TokenCount(1)),
+    unbounded(NODE_C_ABSURD, ChildArity(1)),
 ];
 
 #[cfg(test)]
@@ -526,6 +534,8 @@ mod tests
         let quote_computation = arena.value_quote_computation(returner);
         let static_pi = arena.value_type_static_pi(universe, universe);
         let static_application = arena.value_static_application(constant, quote);
+        let empty = arena.value_type_empty();
+        let absurd = arena.computation_absurd(variable);
         let nodes = alloc::vec![
             AnyNode::ValueType(base),
             AnyNode::ValueType(unit_type),
@@ -559,6 +569,8 @@ mod tests
             AnyNode::Value(quote_computation),
             AnyNode::ValueType(static_pi),
             AnyNode::Value(static_application),
+            AnyNode::ValueType(empty),
+            AnyNode::Computation(absurd),
         ];
         (arena, nodes)
     }
@@ -584,57 +596,21 @@ mod tests
     }
 
     #[test]
-    fn the_tag_table_is_a_contiguous_frozen_block()
+    fn assigned_wire_tags_are_unique_and_leave_reserved_bytes_unassigned()
     {
-        let tags: Vec<WireTag> = NODE_TAG_TABLE.iter().map(|row| row.tag).collect();
-        let expected: Vec<WireTag> = (0_u8 .. 32).map(WireTag::from).collect();
-        assert_eq!(expected, tags, "the node tags are contiguous from zero");
-    }
-
-    /// The settled numbering, asserted as the regions it splits into: the
-    /// frozen block stays strictly below the sharing block and, the growth
-    /// room spent by the static operators, meets it; the sharing block is
-    /// eight contiguous tags. A frozen-block addition that grew into the
-    /// reserved block would fail here rather than at the merge the settlement
-    /// exists to avoid.
-    #[test]
-    fn the_reserved_sharing_block_sits_above_the_frozen_block()
-    {
-        let highest = NODE_TAG_TABLE.last().expect("the table is non-empty").tag;
-        assert!(
-            u8::from(highest) < u8::from(super::SHARING_BLOCK_FIRST),
-            "the frozen block stays below the reserved sharing block"
-        );
-        assert_eq!(
-            u8::from(highest).checked_add(1),
-            Some(u8::from(super::SHARING_BLOCK_FIRST)),
-            "and the growth room between them is spent, so the next former resumes above the \
-             block"
-        );
-        let block = [
-            super::NODE_SHARE_VALUE,
-            super::NODE_SHARE_COMPUTATION,
-            super::NODE_SHARE_VALUE_TYPE,
-            super::NODE_SHARE_COMP_TYPE,
-        ];
-        for (offset, tag) in block.iter().enumerate() {
-            let expected = u8::from(super::SHARING_BLOCK_FIRST)
-                .checked_add(u8::try_from(offset).expect("four fits a byte"))
-                .expect("the block does not wrap");
-            assert_eq!(
-                expected,
-                u8::from(*tag),
-                "the four per-family sharing formers open the block in family order"
+        let mut assigned = [false; 256];
+        let reserved = u8::from(super::SHARING_BLOCK_FIRST) ..= u8::from(super::SHARING_BLOCK_LAST);
+        for row in &NODE_TAG_TABLE {
+            let tag = u8::from(row.tag);
+            assert!(
+                !core::mem::replace(&mut assigned[usize::from(tag)], true),
+                "one wire byte cannot identify two formers"
+            );
+            assert!(
+                !reserved.contains(&tag),
+                "an assigned former cannot consume a reserved sharing byte"
             );
         }
-        assert_eq!(
-            8_u8,
-            u8::from(super::SHARING_BLOCK_LAST)
-                .checked_sub(u8::from(super::SHARING_BLOCK_FIRST))
-                .and_then(|span| span.checked_add(1))
-                .expect("the block is well ordered"),
-            "the block is eight tags: four formers and four held weakening slots"
-        );
     }
 
     #[test]

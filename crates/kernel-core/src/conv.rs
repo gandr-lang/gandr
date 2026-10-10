@@ -395,7 +395,8 @@ fn converge(
                             return Convertibility::Distinct;
                         }
                     },
-                    | (&ValueType::Unit, &ValueType::Unit) => {},
+                    | (&ValueType::Unit, &ValueType::Unit)
+                    | (&ValueType::Empty, &ValueType::Empty) => {},
                     | (
                         &ValueType::Product(one_first, one_second),
                         &ValueType::Product(other_first, other_second),
@@ -474,6 +475,7 @@ fn converge(
                     | (
                         &ValueType::Base(_)
                         | &ValueType::Unit
+                        | &ValueType::Empty
                         | &ValueType::Product(..)
                         | &ValueType::Sum(..)
                         | &ValueType::Thunk(_)
@@ -675,6 +677,7 @@ fn converge(
                         stack.push(ConversionGoal::Value(one_argument, other_argument));
                     },
                     | (&Computation::Return(one), &Computation::Return(other))
+                    | (&Computation::Absurd(one), &Computation::Absurd(other))
                     | (&Computation::Force(one), &Computation::Force(other)) => {
                         stack.push(ConversionGoal::Value(one, other));
                     },
@@ -705,6 +708,7 @@ fn converge(
                         &Computation::Lambda(_)
                         | &Computation::Application(..)
                         | &Computation::Return(_)
+                        | &Computation::Absurd(_)
                         | &Computation::Bind(..)
                         | &Computation::Force(_)
                         | &Computation::Case { .. },

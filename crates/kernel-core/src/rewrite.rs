@@ -1083,7 +1083,11 @@ fn push_rewrite_children(
                     rewrite,
                 ));
             },
-            | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+            | Some(
+                &Computation::Return(value)
+                | &Computation::Force(value)
+                | &Computation::Absurd(value),
+            ) => {
                 tasks.push(RewriteTask::Open(AnyNode::Value(value), depth, rewrite));
             },
             | Some(&Computation::Bind(bound, body)) => {
@@ -1120,6 +1124,7 @@ fn push_rewrite_children(
             | Some(
                 &ValueType::Base(_)
                 | &ValueType::Unit
+                | &ValueType::Empty
                 | &ValueType::Universe { .. }
                 | &ValueType::Abstract(_),
             )
@@ -1467,6 +1472,15 @@ fn close_computation(
                 arena.computation_return(rewritten)
             }
         },
+        | Computation::Absurd(value) => {
+            let rewritten = popped(results, AnyNode::Value(value)).value_or(value);
+            if rewritten == value {
+                id
+            }
+            else {
+                arena.computation_absurd(rewritten)
+            }
+        },
         | Computation::Force(value) => {
             let rewritten = popped(results, AnyNode::Value(value)).value_or(value);
             if rewritten == value {
@@ -1534,6 +1548,7 @@ fn close_value_type(
     match node {
         | ValueType::Base(_)
         | ValueType::Unit
+        | ValueType::Empty
         | ValueType::Universe { .. }
         | ValueType::Abstract(_) => id,
         | ValueType::Element { code, target } => {
