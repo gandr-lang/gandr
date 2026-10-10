@@ -118,14 +118,22 @@ impl core::error::Error for UnfocusRefusal
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — decoding inverts focusing on generated closed core
-///   computations, over an L3 residue: a jump out of the computation and a `μ`
-///   standing as a value are refused by name with the core arena back at its
-///   mark.
+/// - hypothesis: L2 — source terms and their independently focused image expose
+///   wrong formers, child order and binder shifts on bounded generated
+///   computations. L3 — dangling roots, malformed heads and escaping
+///   continuations are refused with exact payloads and rollback.
 /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
 /// - witness: `unfocus::tests::an_escaping_covariable_is_refused_and_rolled_back`
 /// - witness: `unfocus::tests::a_capture_standing_as_a_value_is_outside_the_image`
+/// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
 #[inline]
+#[anodized::spec(
+    captures: [mark = core.watermark()],
+    ensures: |ret| match ret {
+        | Ok(id) => core.computation(id).is_some(),
+        | Err(_) => core.watermark() == mark,
+    },
+)]
 pub fn unfocus_command(
     arena: &CommandArena,
     command: CommandId,
@@ -153,9 +161,19 @@ pub fn unfocus_command(
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — as [`unfocus_command`], over generated values.
+/// - hypothesis: L2 — bounded generated source values are the independent
+///   expected reading. L3 — wrong arities, suspended heads and dangling roots
+///   expose lost image checks through exact refusal and rollback.
 /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+/// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
 #[inline]
+#[anodized::spec(
+    captures: [mark = core.watermark()],
+    ensures: |ret| match ret {
+        | Ok(id) => core.value(id).is_some(),
+        | Err(_) => core.watermark() == mark,
+    },
+)]
 pub fn unfocus_value(
     arena: &CommandArena,
     producer: ProducerId,
@@ -193,6 +211,16 @@ impl Depth
     /// # Specification
     /// - ensures: the producer count is one higher, saturating at a ceiling no
     ///   arena of at most `u32::MAX` nodes per family can reach.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the product of zero, one, the penultimate count and
+    ///   the ceiling observes each successor and the untouched opposite depth.
+    ///   Swapped counters, wrapping and premature saturation are distinguished.
+    /// - witness: `unfocus::tests::binder_depths_saturate_independently`
+    #[anodized::spec(ensures: |ret| ret.producers == self.producers.saturating_add(1)
+        && ret.covariables == self.covariables
+    )]
     fn under_producer(self) -> Self
     {
         Self {
@@ -206,6 +234,16 @@ impl Depth
     /// # Specification
     /// - ensures: the covariable count is one higher, saturating as
     ///   [`Self::under_producer`] does.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the product of zero, one, the penultimate count and
+    ///   the ceiling observes each successor and the untouched opposite depth.
+    ///   Swapped counters, wrapping and premature saturation are distinguished.
+    /// - witness: `unfocus::tests::binder_depths_saturate_independently`
+    #[anodized::spec(ensures: |ret| ret.covariables == self.covariables.saturating_add(1)
+        && ret.producers == self.producers
+    )]
     fn under_covariable(self) -> Self
     {
         Self {
@@ -266,6 +304,28 @@ pub enum Decoded
 ///
 /// # Errors
 /// As the failure clause states.
+///
+/// # Adequacy
+/// - hypothesis: L2 — bounded generated source terms and machine closure
+///   readbacks observe decoding independently of the IL traversal. L3 —
+///   substitution at binder/closing boundaries, malformed heads and exact
+///   dangling-root rollback distinguish shift and image-check defects.
+/// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+/// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+/// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+/// - witness: `unfocus::tests::closing_substitution_distinguishes_binders_and_zones`
+/// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+/// - witness: `machine::tests::a_function_terminal_reads_back_closed_over_its_environment`
+/// - witness: `machine::tests::a_thunk_reads_back_closed_over_its_environment`
+#[anodized::spec(
+    requires: closing.iter().all(|id| core.value(*id).is_some()),
+    captures: [mark = core.watermark()],
+    ensures: |ret| match ret {
+        | Ok(Decoded::Value(id)) => core.value(id).is_some(),
+        | Ok(Decoded::Computation(id)) => core.computation(id).is_some(),
+        | Err(_) => core.watermark() == mark,
+    },
+)]
 pub fn decode(
     arena: &CommandArena,
     root: Root,
@@ -353,6 +413,23 @@ impl Unfocusing<'_>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — source terms compared with independently focused and
+    ///   decoded bounded generated inputs expose wrong formers, child order and
+    ///   binder shifts. L3 — malformed heads and exact refusal payloads cover
+    ///   the directed image boundary.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `unfocus::tests::decoding_result_stacks_refuse_underflow_and_surplus`
+    #[anodized::spec(ensures: |ret| ret.is_err() || (self.tasks.is_empty()
+        && match ret {
+            | Ok(Decoded::Value(id)) => self.values.as_slice() == [id] && self.computations.is_empty(),
+            | Ok(Decoded::Computation(id)) => self.computations.as_slice() == [id] && self.values.is_empty(),
+            | Err(_) => false,
+        })
+    )]
     fn run(
         &mut self,
         root: Root,
@@ -390,6 +467,28 @@ impl Unfocusing<'_>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — source terms compared with independently focused and
+    ///   decoded bounded generated inputs expose wrong formers, child order and
+    ///   binder shifts. L3 — malformed heads and exact refusal payloads cover
+    ///   the directed image boundary.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    #[anodized::spec(
+        requires: match &task {
+            | &Task::Pair => self.values.len() >= 2,
+            | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force => !self.values.is_empty(),
+            | &Task::Thunk | &Task::Lambda | &Task::Spine(..) => !self.computations.is_empty(),
+            | &Task::Application => !self.values.is_empty() && !self.computations.is_empty(),
+            | &Task::Bind => self.computations.len() >= 2,
+            | &Task::Case => !self.values.is_empty() && self.computations.len() >= 2,
+            | &Task::Value(..) | &Task::Command(..) => true,
+        },
+        ensures: |ret| ret.is_err() || (self.values.last().is_none_or(|id| self.core.value(*id).is_some())
+            && self.computations.last().is_none_or(|id| self.core.computation(*id).is_some())),
+    )]
     fn step(
         &mut self,
         task: Task,
@@ -480,6 +579,22 @@ impl Unfocusing<'_>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — source terms compared with independently focused and
+    ///   decoded bounded generated inputs expose wrong formers, child order and
+    ///   binder shifts. L3 — malformed heads and exact refusal payloads cover
+    ///   the directed image boundary.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+    #[anodized::spec(
+        captures: [work = self.tasks.len(), results = self.values.len()],
+        ensures: |ret| if self.arena.producer(id).is_none() {
+            ret == Err(UnfocusRefusal::DanglingProducer(id))
+        } else { ret.is_err() || self.tasks.len() > work || self.values.len() > results },
+    )]
     fn value(
         &mut self,
         id: ProducerId,
@@ -551,6 +666,27 @@ impl Unfocusing<'_>
     /// - provides: the closing substitution, fused into the walk.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the first bound variable, each closing entry, the
+    ///   first variable past closing and the linear zone are observed at exact
+    ///   value identity or variable index. Wrong subtraction, binder capture
+    ///   and accidental linear substitution change these boundary readings.
+    /// - witness: `unfocus::tests::closing_substitution_distinguishes_binders_and_zones`
+    #[anodized::spec(ensures: self.values.last().is_some_and(|value| {
+        let past = if zone == Zone::Intuitionistic {
+            u32::from(index).checked_sub(depth.producers)
+        } else { None };
+        match past {
+            | Some(past) => match usize::try_from(past).ok().and_then(|offset| self.closing.get(offset)) {
+                | Some(closed) => value == closed,
+                | None => self.core.value(*value) == Some(&gandr_core_term::Value::Variable {
+                    zone, index: DeBruijnIndex::from(u32::from(index).saturating_sub(u32::try_from(self.closing.len()).unwrap_or(u32::MAX))),
+                }),
+            },
+            | None => self.core.value(*value) == Some(&gandr_core_term::Value::Variable { zone, index }),
+        }
+    }))]
     fn variable(
         &mut self,
         zone: Zone,
@@ -590,6 +726,22 @@ impl Unfocusing<'_>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — source terms compared with independently focused and
+    ///   decoded bounded generated inputs expose wrong formers, child order and
+    ///   binder shifts. L3 — malformed heads and exact refusal payloads cover
+    ///   the directed image boundary.
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+    #[anodized::spec(
+        captures: [work = self.tasks.len()],
+        ensures: |ret| if self.arena.command(id).is_none() {
+            ret == Err(UnfocusRefusal::DanglingCommand(id))
+        } else { ret.is_err() || self.tasks.len() > work },
+    )]
     fn command(
         &mut self,
         id: CommandId,
@@ -680,6 +832,20 @@ impl Unfocusing<'_>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a missing producer, a non-function and copattern
+    ///   objects with zero, one valid, one wrong and two arms distinguish shape
+    ///   and head checks by exact refusal. L2 — generated lambda readings
+    ///   observe the scheduled body and binders.
+    /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    #[anodized::spec(ensures: |ret| ret == match self.arena.producer(id) {
+        | None => Err(UnfocusRefusal::DanglingProducer(id)),
+        | Some(&ProducerNode::Cocase { ref arms }) if matches!(arms.as_ref(),
+            &[crate::il::CopatternArm { destructor: DestructorTag::Apply, .. }]) => Ok(()),
+        | Some(_) => Err(UnfocusRefusal::ProducerOutsideTheImage(id)),
+    })]
     fn function_head(
         &mut self,
         id: ProducerId,
@@ -722,6 +888,35 @@ impl Unfocusing<'_>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — base versus bound return points, a nonzero
+    ///   covariable, both destructor arities and a match observe exact
+    ///   continuation/image refusals. L2 — independent source readings expose
+    ///   misplaced application and binder tasks.
+    /// - witness: `unfocus::tests::spines_distinguish_return_points_and_frame_arities`
+    /// - witness: `unfocus::tests::an_escaping_covariable_is_refused_and_rolled_back`
+    /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
+    /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
+    #[anodized::spec(
+        requires: !self.computations.is_empty(),
+        captures: [work = self.tasks.len()],
+        ensures: |ret| match self.arena.consumer(id) {
+            | None => ret == Err(UnfocusRefusal::DanglingConsumer(id)),
+            | Some(&ConsumerNode::Covariable(index)) => if u32::from(index) == 0 && depth.covariables > 0 {
+                ret.is_ok() && self.tasks.len() == work
+            } else { ret == Err(UnfocusRefusal::EscapingContinuation(id)) },
+            | Some(&ConsumerNode::Top) => if depth.covariables == 0 {
+                ret.is_ok() && self.tasks.len() == work
+            } else { ret == Err(UnfocusRefusal::EscapingContinuation(id)) },
+            | Some(&ConsumerNode::Destructor { tag: DestructorTag::Force, .. } | &ConsumerNode::Case { .. }) =>
+                ret == Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
+            | Some(&ConsumerNode::Destructor { ref producers, ref consumers, .. })
+                if producers.len() != 1 || consumers.len() != 1 => ret == Err(UnfocusRefusal::ConsumerOutsideTheImage(id)),
+            | Some(_) => ret.is_ok() && self.tasks.len() > work,
+        },
+    )]
     fn spine(
         &mut self,
         id: ConsumerId,
@@ -779,7 +974,25 @@ impl Unfocusing<'_>
     /// Pop a decoded value.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the last value is removed and returned; an empty stack is
+    ///   unchanged and refused.
+    /// - provides: the checked result pop used by decoding builders.
+    /// - fails: [`UnfocusRefusal::DecodeInvariant`] on an empty stack.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The missing-result invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct results expose wrong-end removal; the exact
+    ///   empty-stack refusal exposes silent or stale underflow.
+    /// - witness: `unfocus::tests::decoding_result_stacks_refuse_underflow_and_surplus`
+    #[anodized::spec(
+        captures: [last = self.values.last().copied(), length = self.values.len()],
+        ensures: |ret| ret == last.ok_or(UnfocusRefusal::DecodeInvariant)
+            && self.values.len() == length.saturating_sub(1),
+    )]
     fn pop_value(&mut self) -> Result<ValueId, UnfocusRefusal>
     {
         self.values.pop().ok_or(UnfocusRefusal::DecodeInvariant)
@@ -788,7 +1001,25 @@ impl Unfocusing<'_>
     /// Pop a decoded computation.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the last computation is removed and returned; an empty stack
+    ///   is unchanged and refused.
+    /// - provides: the checked result pop used by decoding builders.
+    /// - fails: [`UnfocusRefusal::DecodeInvariant`] on an empty stack.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// The missing-result invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct results expose wrong-end removal; the exact
+    ///   empty-stack refusal exposes silent or stale underflow.
+    /// - witness: `unfocus::tests::decoding_result_stacks_refuse_underflow_and_surplus`
+    #[anodized::spec(
+        captures: [last = self.computations.last().copied(), length = self.computations.len()],
+        ensures: |ret| ret == last.ok_or(UnfocusRefusal::DecodeInvariant)
+            && self.computations.len() == length.saturating_sub(1),
+    )]
     fn pop_computation(&mut self) -> Result<ComputationId, UnfocusRefusal>
     {
         self.computations
@@ -909,6 +1140,379 @@ mod tests
             CoreArena::new().watermark(),
             core.watermark(),
             "nothing is left behind"
+        );
+    }
+
+    /// Each binder counter saturates without changing the other counter.
+    #[test]
+    fn binder_depths_saturate_independently()
+    {
+        let bounds = [
+            (0_u32, 1_u32),
+            (1, 2),
+            (u32::MAX.saturating_sub(1), u32::MAX),
+            (u32::MAX, u32::MAX),
+        ];
+        for (producers, next_producers) in bounds {
+            for (covariables, next_covariables) in bounds {
+                let depth = Depth {
+                    producers,
+                    covariables,
+                };
+                assert_eq!(
+                    Depth {
+                        producers: next_producers,
+                        covariables
+                    },
+                    depth.under_producer()
+                );
+                assert_eq!(
+                    Depth {
+                        producers,
+                        covariables: next_covariables
+                    },
+                    depth.under_covariable()
+                );
+            }
+        }
+    }
+
+    /// Substitution respects the binder boundary, closing order, residual index
+    /// and zone.
+    #[test]
+    fn closing_substitution_distinguishes_binders_and_zones()
+    {
+        use gandr_core_term::Value;
+
+        let arena = CommandArena::new();
+        let mut core = CoreArena::new();
+        let first = core.value_unit();
+        let second = core.value_constant(7_usize.into());
+        let closing = [first, second];
+        for (zone, index, producers, length, expected) in [
+            (Zone::Intuitionistic, 0_u32, 0_u32, 2_usize, Value::Unit),
+            (
+                Zone::Intuitionistic,
+                1,
+                0,
+                2,
+                Value::Constant(7_usize.into()),
+            ),
+            (Zone::Intuitionistic, 2, 0, 2, Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: 0_u32.into(),
+            }),
+            (Zone::Intuitionistic, 0, 1, 2, Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: 0_u32.into(),
+            }),
+            (Zone::Intuitionistic, 1, 1, 2, Value::Unit),
+            (
+                Zone::Intuitionistic,
+                2,
+                1,
+                2,
+                Value::Constant(7_usize.into()),
+            ),
+            (Zone::Intuitionistic, 3, 1, 2, Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: 1_u32.into(),
+            }),
+            (Zone::Intuitionistic, 1, 0, 0, Value::Variable {
+                zone: Zone::Intuitionistic,
+                index: 1_u32.into(),
+            }),
+            (Zone::Linear, 2, 1, 2, Value::Variable {
+                zone: Zone::Linear,
+                index: 2_u32.into(),
+            }),
+        ] {
+            let mut walk = Unfocusing {
+                arena: &arena,
+                core: &mut core,
+                closing: &closing[.. length],
+                tasks: Vec::new(),
+                values: Vec::new(),
+                computations: Vec::new(),
+            };
+            walk.variable(zone, index.into(), Depth {
+                producers,
+                covariables: 0,
+            });
+            let value = walk.pop_value().expect("one variable reading");
+            assert_eq!(Some(&expected), walk.core.value(value));
+            match expected {
+                | Value::Unit => assert_eq!(first, value),
+                | Value::Constant(_) => assert_eq!(second, value),
+                | _ => {},
+            }
+        }
+    }
+
+    /// Missing roots and malformed positive and negative heads are refused
+    /// without residue.
+    #[test]
+    fn decoding_refuses_missing_roots_and_malformed_heads()
+    {
+        let mut arena = CommandArena::new();
+        let mut core = CoreArena::new();
+        core.value_unit();
+        let mark = core.watermark();
+        let missing_command = CommandId::from(0_u32);
+        let missing_producer = ProducerId::from(0_u32);
+        assert_eq!(
+            Err(UnfocusRefusal::DanglingCommand(missing_command)),
+            unfocus_command(&arena, missing_command, &mut core)
+        );
+        assert_eq!(
+            Err(UnfocusRefusal::DanglingProducer(missing_producer)),
+            unfocus_value(&arena, missing_producer, &mut core)
+        );
+        assert_eq!(
+            Err(UnfocusRefusal::DanglingProducer(missing_producer)),
+            decode(&arena, Root::Function(missing_producer), &mut core, &[])
+        );
+        assert_eq!(mark, core.watermark());
+        let unit = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: ConstructorTag::Unit,
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            })
+            .expect("leaf");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let back = arena
+            .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+            .expect("leaf");
+        let body = arena
+            .mint_cut(Polarity::Positive, unit, back)
+            .expect("live children");
+        assert_eq!(
+            Err(UnfocusRefusal::ProducerOutsideTheImage(unit)),
+            decode(&arena, Root::Function(unit), &mut core, &[])
+        );
+        for node in [
+            ProducerNode::Constructor {
+                tag: ConstructorTag::Unit,
+                producers: Box::from([unit]),
+                consumers: Box::from([]),
+            },
+            ProducerNode::Constructor {
+                tag: ConstructorTag::Pair,
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            },
+            ProducerNode::Constructor {
+                tag: ConstructorTag::Injection(Side::Left),
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            },
+            ProducerNode::Constructor {
+                tag: ConstructorTag::Lift(Level::zero()),
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            },
+            ProducerNode::Constructor {
+                tag: ConstructorTag::Unit,
+                producers: Box::from([]),
+                consumers: Box::from([top]),
+            },
+        ] {
+            let bad = arena.mint_producer(node).expect("references resolve");
+            assert_eq!(
+                Err(UnfocusRefusal::ProducerOutsideTheImage(bad)),
+                unfocus_value(&arena, bad, &mut core)
+            );
+            assert_eq!(mark, core.watermark());
+        }
+        let apply = crate::il::CopatternArm {
+            destructor: DestructorTag::Apply,
+            body,
+        };
+        let force = crate::il::CopatternArm {
+            destructor: DestructorTag::Force,
+            body,
+        };
+        let shapes: [Box<[crate::il::CopatternArm]>; 3] =
+            [Box::from([]), Box::from([force]), Box::from([apply, apply])];
+        for arms in shapes {
+            let bad = arena
+                .mint_producer(ProducerNode::Cocase { arms })
+                .expect("references resolve");
+            assert_eq!(
+                Err(UnfocusRefusal::ProducerOutsideTheImage(bad)),
+                decode(&arena, Root::Function(bad), &mut core, &[])
+            );
+            assert_eq!(
+                Err(UnfocusRefusal::ProducerOutsideTheImage(bad)),
+                unfocus_value(&arena, bad, &mut core)
+            );
+            assert_eq!(mark, core.watermark());
+        }
+        for node in [
+            ConsumerNode::Destructor {
+                tag: DestructorTag::Force,
+                producers: Box::from([unit]),
+                consumers: Box::from([top]),
+            },
+            ConsumerNode::Destructor {
+                tag: DestructorTag::Force,
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            },
+            ConsumerNode::Case {
+                arms: Box::from([
+                    crate::il::PatternArm {
+                        constructor: ConstructorTag::Injection(Side::Right),
+                        body,
+                    },
+                    crate::il::PatternArm {
+                        constructor: ConstructorTag::Injection(Side::Left),
+                        body,
+                    },
+                ]),
+            },
+        ] {
+            let bad = arena.mint_consumer(node).expect("references resolve");
+            let root = arena
+                .mint_cut(Polarity::Positive, unit, bad)
+                .expect("references resolve");
+            assert_eq!(
+                Err(UnfocusRefusal::ConsumerOutsideTheImage(bad)),
+                unfocus_command(&arena, root, &mut core)
+            );
+            assert_eq!(mark, core.watermark());
+        }
+    }
+
+    /// Return-point depth and application arities select distinct spine
+    /// outcomes.
+    #[test]
+    fn spines_distinguish_return_points_and_frame_arities()
+    {
+        let mut arena = CommandArena::new();
+        let mut core = CoreArena::new();
+        let value = core.value_unit();
+        let result = core.computation_return(value);
+        let producer = arena
+            .mint_producer(ProducerNode::Constant(0_usize.into()))
+            .expect("leaf");
+        let top = arena.mint_consumer(ConsumerNode::Top).expect("leaf");
+        let zero = arena
+            .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(0_u32)))
+            .expect("leaf");
+        let one = arena
+            .mint_consumer(ConsumerNode::Covariable(CovariableIndex::from(1_u32)))
+            .expect("leaf");
+        for (consumer, depth, expected) in [
+            (top, 0_u32, Ok(())),
+            (top, 1, Err(UnfocusRefusal::EscapingContinuation(top))),
+            (zero, 0, Err(UnfocusRefusal::EscapingContinuation(zero))),
+            (zero, 1, Ok(())),
+            (one, 1, Err(UnfocusRefusal::EscapingContinuation(one))),
+        ] {
+            let mut walk = Unfocusing {
+                arena: &arena,
+                core: &mut core,
+                closing: &[],
+                tasks: Vec::new(),
+                values: Vec::new(),
+                computations: alloc::vec![result],
+            };
+            assert_eq!(
+                expected,
+                walk.spine(consumer, Depth {
+                    producers: 0,
+                    covariables: depth
+                })
+            );
+            assert_eq!([result], walk.computations.as_slice());
+        }
+        for node in [
+            ConsumerNode::Destructor {
+                tag: DestructorTag::Apply,
+                producers: Box::from([]),
+                consumers: Box::from([top]),
+            },
+            ConsumerNode::Destructor {
+                tag: DestructorTag::Apply,
+                producers: Box::from([producer]),
+                consumers: Box::from([]),
+            },
+            ConsumerNode::Destructor {
+                tag: DestructorTag::Force,
+                producers: Box::from([]),
+                consumers: Box::from([top]),
+            },
+            ConsumerNode::Case {
+                arms: Box::from([]),
+            },
+        ] {
+            let consumer = arena.mint_consumer(node).expect("references resolve");
+            let mut walk = Unfocusing {
+                arena: &arena,
+                core: &mut core,
+                closing: &[],
+                tasks: Vec::new(),
+                values: Vec::new(),
+                computations: alloc::vec![result],
+            };
+            assert_eq!(
+                Err(UnfocusRefusal::ConsumerOutsideTheImage(consumer)),
+                walk.spine(consumer, Depth::ROOT)
+            );
+        }
+        let missing = ConsumerId::from(u32::MAX);
+        let mut walk = Unfocusing {
+            arena: &arena,
+            core: &mut core,
+            closing: &[],
+            tasks: Vec::new(),
+            values: Vec::new(),
+            computations: alloc::vec![result],
+        };
+        assert_eq!(
+            Err(UnfocusRefusal::DanglingConsumer(missing)),
+            walk.spine(missing, Depth::ROOT)
+        );
+    }
+
+    /// Decoding pops exact last results and rejects both underflow and a
+    /// surplus root.
+    #[test]
+    fn decoding_result_stacks_refuse_underflow_and_surplus()
+    {
+        let mut arena = CommandArena::new();
+        let unit = arena
+            .mint_producer(ProducerNode::Constructor {
+                tag: ConstructorTag::Unit,
+                producers: Box::from([]),
+                consumers: Box::from([]),
+            })
+            .expect("leaf");
+        let mut core = CoreArena::new();
+        let first = core.value_unit();
+        let last = core.value_constant(1_usize.into());
+        let before = core.computation_return(first);
+        let after = core.computation_return(last);
+        let mut walk = Unfocusing {
+            arena: &arena,
+            core: &mut core,
+            closing: &[],
+            tasks: Vec::new(),
+            values: alloc::vec![first, last],
+            computations: alloc::vec![before, after],
+        };
+        assert_eq!(Ok(last), walk.pop_value());
+        assert_eq!(Ok(first), walk.pop_value());
+        assert_eq!(Err(UnfocusRefusal::DecodeInvariant), walk.pop_value());
+        assert_eq!(Ok(after), walk.pop_computation());
+        assert_eq!(Ok(before), walk.pop_computation());
+        assert_eq!(Err(UnfocusRefusal::DecodeInvariant), walk.pop_computation());
+        walk.values.push(first);
+        assert_eq!(
+            Err(UnfocusRefusal::DecodeInvariant),
+            walk.run(Root::Value(unit))
         );
     }
 }

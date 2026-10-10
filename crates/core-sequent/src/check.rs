@@ -212,6 +212,19 @@ impl FreeSet
 /// - witness: `check::tests::a_head_answered_twice_is_rejected`
 /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
 #[inline]
+#[anodized::spec(ensures: |ref ret| match ret.as_ref() {
+    | Err(error) => arena.command(command).is_some() || *error == CheckRefusal::DanglingCommand(command),
+    | Ok(free) => arena.command(command).is_some_and(|&CommandNode::Cut { producer, consumer, .. }|
+        match arena.producer(producer) {
+            | Some(&ProducerNode::Variable { zone, index }) => free.producers.contains(&(zone, index)),
+            | Some(_) => true,
+            | None => false,
+        } && match arena.consumer(consumer) {
+            | Some(&ConsumerNode::Covariable(index)) => free.covariables.contains(&index),
+            | Some(_) => true,
+            | None => false,
+        }),
+})]
 pub fn check_command(
     arena: &CommandArena,
     command: CommandId,
@@ -248,7 +261,21 @@ impl Depth
     /// most `u32::MAX` nodes per family can reach.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: each depth is increased by its corresponding arity, with
+    ///   arities wider than `u32` and sums past its ceiling saturating there.
+    /// - provides: independent scope offsets for the two binding namespaces.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — zero, ordinary and ceiling-crossing arities are
+    ///   applied to distinct producer and covariable depths. Exact paired
+    ///   counts distinguish exchanged arities, wrapping and premature clamping.
+    /// - witness: `check::tests::scope_depths_widen_and_saturate_independently`
+    #[anodized::spec(ensures: |ret|
+        ret.producers == self.producers.saturating_add(u32::try_from(usize::from(producers)).unwrap_or(u32::MAX))
+            && ret.covariables == self.covariables.saturating_add(u32::try_from(usize::from(covariables)).unwrap_or(u32::MAX))
+    )]
     fn under(
         self,
         producers: ProducerArity,
@@ -301,6 +328,23 @@ impl Walk<'_>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both polarities and inherited heads distinguish
+    ///   polarity inversions; a missing root distinguishes skipped lookup.
+    ///   Exact free sets and refusals observe the scheduled sides.
+    /// - witness: `check::tests::terminal_cut_is_wellformed`
+    /// - witness: `check::tests::scope_tracks_binders`
+    /// - witness: `check::tests::dangling_reference_is_rejected`
+    /// - witness: `check::tests::polarity_mismatch_is_rejected`
+    /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
+    #[anodized::spec(
+        captures: [work = self.stack.len()],
+        ensures: |ref ret| ret.is_err() || (work.checked_add(2) == Some(self.stack.len())
+            && self.arena.command(id).is_some_and(|&CommandNode::Cut { producer, consumer, .. }|
+                matches!(self.stack.get(work), Some(&Visit::Consumer(found, under)) if found == consumer && under == depth)
+                    && matches!(self.stack.last(), Some(&Visit::Producer(found, under)) if found == producer && under == depth))),
+    )]
     fn command(
         &mut self,
         id: CommandId,
@@ -353,6 +397,30 @@ impl Walk<'_>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — free and bound producer occurrences, linear
+    ///   occurrences under binders, exact arities and duplicate heads
+    ///   distinguish wrong index shifts and missing structural checks.
+    /// - witness: `check::tests::scope_tracks_binders`
+    /// - witness: `check::tests::constructor_arity_is_checked`
+    /// - witness: `check::tests::constructor_consumer_arity_is_checked`
+    /// - witness: `check::tests::non_value_argument_is_rejected`
+    /// - witness: `check::tests::a_head_answered_twice_is_rejected`
+    /// - witness: `check::tests::child_refusals_follow_declared_precedence`
+    /// - witness: `check::tests::scope_boundaries_keep_linear_variables_free`
+    #[anodized::spec(
+        captures: [free = self.free.producers.len()],
+        ensures: |ref ret| ret.is_err() || self.arena.producer(id).is_some_and(|node| match *node {
+            | ProducerNode::Variable { zone, index } => match zone {
+                | Zone::Linear => self.free.producers.contains(&(zone, index)),
+                | Zone::Intuitionistic => u32::from(index).checked_sub(depth.producers)
+                    .map_or_else(|| self.free.producers.len() == free,
+                        |past| self.free.producers.contains(&(zone, DeBruijnIndex::from(past)))),
+            },
+            | _ => true,
+        }),
+    )]
     fn producer(
         &mut self,
         id: ProducerId,
@@ -429,6 +497,26 @@ impl Walk<'_>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — free and bound covariables, both destructor arities
+    ///   and duplicate pattern heads distinguish wrong scope offsets, ignored
+    ///   continuations and missing uniqueness checks by exact sets and errors.
+    /// - witness: `check::tests::scope_tracks_binders`
+    /// - witness: `check::tests::destructor_consumer_arity_is_checked`
+    /// - witness: `check::tests::consumer_arity_follows_the_head_not_a_constant`
+    /// - witness: `check::tests::a_head_answered_twice_is_rejected`
+    /// - witness: `check::tests::child_refusals_follow_declared_precedence`
+    /// - witness: `check::tests::scope_boundaries_keep_linear_variables_free`
+    #[anodized::spec(
+        captures: [free = self.free.covariables.len()],
+        ensures: |ref ret| ret.is_err() || self.arena.consumer(id).is_some_and(|node| match *node {
+            | ConsumerNode::Covariable(index) => u32::from(index).checked_sub(depth.covariables)
+                .map_or_else(|| self.free.covariables.len() == free,
+                    |past| self.free.covariables.contains(&CovariableIndex::from(past))),
+            | _ => true,
+        }),
+    )]
     fn consumer(
         &mut self,
         id: ConsumerId,
@@ -502,6 +590,27 @@ impl Walk<'_>
     ///
     /// # Errors
     /// As the failure clause states.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — simultaneous wrong counts distinguish producer before
+    ///   consumer arity; bad producer addresses and captures at opposite field
+    ///   positions distinguish first-field refusal. Valid children are observed
+    ///   through the root free set; consumer lookup is deferred to its
+    ///   scheduled visit.
+    /// - witness: `check::tests::child_refusals_follow_declared_precedence`
+    /// - witness: `check::tests::constructor_arity_is_checked`
+    /// - witness: `check::tests::destructor_consumer_arity_is_checked`
+    /// - witness: `check::tests::scope_tracks_binders`
+    #[anodized::spec(
+        captures: [work = self.stack.len()],
+        ensures: |ref ret| if ret.is_ok() {
+            producers.len() == usize::from(producer_arity)
+                && consumers.len() == usize::from(consumer_arity)
+                && work.checked_add(producers.len()).and_then(|count| count.checked_add(consumers.len())) == Some(self.stack.len())
+                && producers.iter().all(|id| self.arena.producer(*id)
+                    .is_some_and(|node| !matches!(node, &ProducerNode::Mu { .. })))
+        } else { self.stack.len() == work },
+    )]
     fn children(
         &mut self,
         head: ArityHead,
@@ -552,6 +661,17 @@ impl Walk<'_>
 /// # Specification
 /// - ensures: positive for literals, constructors and thunks; negative for
 ///   copattern objects; `None` for variables, constants and `μ`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every producer node kind is assigned its exact intrinsic
+///   polarity or inherited polarity. Reclassified literals, functions, thunks
+///   and captures change the table observation.
+/// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
+#[anodized::spec(ensures: |ret| ret == match *node {
+    | ProducerNode::Literal(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } => Some(Polarity::Positive),
+    | ProducerNode::Cocase { .. } => Some(Polarity::Negative),
+    | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => None,
+})]
 fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 {
     match *node {
@@ -570,6 +690,17 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 /// # Specification
 /// - ensures: positive for matches, the polarity its head observes for a
 ///   destructor frame, `None` for covariables, `μ̃` and `★`.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every consumer node kind, including both destructor
+///   heads, is observed at its exact intrinsic or inherited polarity. Swapped
+///   observations and incorrectly fixed tails are distinguished.
+/// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
+#[anodized::spec(ensures: |ret| ret == match *node {
+    | ConsumerNode::Case { .. } | ConsumerNode::Destructor { tag: DestructorTag::Force, .. } => Some(Polarity::Positive),
+    | ConsumerNode::Destructor { tag: DestructorTag::Apply, .. } => Some(Polarity::Negative),
+    | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
+})]
 fn consumer_polarity(node: &ConsumerNode) -> Option<Polarity>
 {
     match *node {
@@ -620,7 +751,29 @@ mod tests
     /// ordinary position.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the consumer's children resolve and the arena has room.
+    /// - ensures: a positive cut from a nullary unit to the supplied consumer.
+    /// - provides: the consumer in the checker's ordinary elimination position.
+    /// - panics: on a refused node or cut allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — scope, polarity and arity fixtures observe the
+    ///   requested side of a positive cut. These distinguish the wrong wrapper
+    ///   polarity, an incorrect terminal side and a replaced node kind. Only
+    ///   small arenas with live child references are in the fixture domain.
+    /// - witness: `check::tests::scope_tracks_binders`
+    /// - witness: `check::tests::destructor_consumer_arity_is_checked`
+    /// - witness: `check::tests::a_head_answered_twice_is_rejected`
+    #[anodized::spec(
+        captures: [kind = core::mem::discriminant(&consumer)],
+        ensures: |ret| arena.command(ret).is_some_and(|node| match *node {
+            | CommandNode::Cut { polarity, producer, consumer } => polarity == Polarity::Positive
+                && arena.consumer(consumer).is_some_and(|node| core::mem::discriminant(node) == kind)
+                && arena.producer(producer).is_some_and(|node| matches!(*node,
+                    ProducerNode::Constructor { tag: ConstructorTag::Unit, ref producers, ref consumers }
+                    if producers.is_empty() && consumers.is_empty())),
+        }),
+    )]
     fn cut_against_unit(
         arena: &mut CommandArena,
         consumer: ConsumerNode,
@@ -636,7 +789,28 @@ mod tests
     /// Build `⟨producer |+ ★⟩`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the producer's children resolve and the arena has room.
+    /// - ensures: a positive cut from the supplied producer to the terminal.
+    /// - provides: the producer in a closed observation context.
+    /// - panics: on a refused node or cut allocation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — scope, polarity and arity fixtures observe the
+    ///   requested side of a positive cut. These distinguish the wrong wrapper
+    ///   polarity, an incorrect terminal side and a replaced node kind. Only
+    ///   small arenas with live child references are in the fixture domain.
+    /// - witness: `check::tests::terminal_cut_is_wellformed`
+    /// - witness: `check::tests::scope_tracks_binders`
+    /// - witness: `check::tests::constructor_arity_is_checked`
+    /// - witness: `check::tests::polarity_mismatch_is_rejected`
+    #[anodized::spec(
+        captures: [kind = core::mem::discriminant(&producer)],
+        ensures: |ret| arena.command(ret).is_some_and(|node| match *node {
+            | CommandNode::Cut { polarity, producer, consumer } => polarity == Polarity::Positive
+                && arena.producer(producer).is_some_and(|node| core::mem::discriminant(node) == kind)
+                && matches!(arena.consumer(consumer), Some(&ConsumerNode::Top)),
+        }),
+    )]
     fn cut_against_top(
         arena: &mut CommandArena,
         producer: ProducerNode,
@@ -960,6 +1134,294 @@ mod tests
             ))),
             check_command(&arena, root),
             "an object answers each destructor once"
+        );
+    }
+
+    /// Independent arity namespaces widen and saturate at their own boundaries.
+    #[test]
+    fn scope_depths_widen_and_saturate_independently()
+    {
+        for (producers, covariables, add_producers, add_covariables, expected) in [
+            (0_u32, 0_u32, 0_usize, 0_usize, Depth {
+                producers: 0,
+                covariables: 0,
+            }),
+            (2, 7, 3, 5, Depth {
+                producers: 5,
+                covariables: 12,
+            }),
+            (u32::MAX.saturating_sub(1), 2, 2, 4, Depth {
+                producers: u32::MAX,
+                covariables: 6,
+            }),
+            (1, u32::MAX, 2, 1, Depth {
+                producers: 3,
+                covariables: u32::MAX,
+            }),
+            (1, 0, usize::MAX, usize::MAX, Depth {
+                producers: u32::MAX,
+                covariables: u32::MAX,
+            }),
+        ] {
+            assert_eq!(
+                expected,
+                Depth {
+                    producers,
+                    covariables
+                }
+                .under(add_producers.into(), add_covariables.into())
+            );
+        }
+    }
+
+    /// Intrinsic polarity is a total table over node kinds and destructor
+    /// heads.
+    #[test]
+    fn every_node_kind_declares_its_intrinsic_polarity()
+    {
+        let body = CommandId::from(0_u32);
+        for (node, expected) in [
+            (
+                ProducerNode::Variable {
+                    zone: Zone::Intuitionistic,
+                    index: 0_u32.into(),
+                },
+                None,
+            ),
+            (ProducerNode::Constant(0_usize.into()), None),
+            (
+                ProducerNode::Literal(gandr_kernel_term::Literal::Text(
+                    gandr_kernel_term::StringLiteral::new("text".into()),
+                )),
+                Some(Polarity::Positive),
+            ),
+            (
+                ProducerNode::Constructor {
+                    tag: ConstructorTag::Unit,
+                    producers: Box::from([]),
+                    consumers: Box::from([]),
+                },
+                Some(Polarity::Positive),
+            ),
+            (ProducerNode::Thunk { body }, Some(Polarity::Positive)),
+            (
+                ProducerNode::Cocase {
+                    arms: Box::from([]),
+                },
+                Some(Polarity::Negative),
+            ),
+            (ProducerNode::Mu { body }, None),
+        ] {
+            assert_eq!(expected, producer_polarity(&node));
+        }
+        for (node, expected) in [
+            (ConsumerNode::Covariable(0_u32.into()), None),
+            (ConsumerNode::Top, None),
+            (ConsumerNode::MuTilde { body }, None),
+            (
+                ConsumerNode::Case {
+                    arms: Box::from([]),
+                },
+                Some(Polarity::Positive),
+            ),
+            (
+                ConsumerNode::Destructor {
+                    tag: DestructorTag::Apply,
+                    producers: Box::from([]),
+                    consumers: Box::from([]),
+                },
+                Some(Polarity::Negative),
+            ),
+            (
+                ConsumerNode::Destructor {
+                    tag: DestructorTag::Force,
+                    producers: Box::from([]),
+                    consumers: Box::from([]),
+                },
+                Some(Polarity::Positive),
+            ),
+        ] {
+            assert_eq!(expected, consumer_polarity(&node));
+        }
+    }
+
+    /// Scope subtraction binds intuitionistic variables but not linear ones.
+    #[test]
+    fn scope_boundaries_keep_linear_variables_free()
+    {
+        let mut arena = CommandArena::new();
+        let mut producers = Vec::new();
+        for (zone, index) in [
+            (Zone::Intuitionistic, 0_u32),
+            (Zone::Intuitionistic, 2),
+            (Zone::Linear, 0),
+        ] {
+            producers.push(
+                arena
+                    .mint_producer(ProducerNode::Variable {
+                        zone,
+                        index: index.into(),
+                    })
+                    .expect("leaf"),
+            );
+        }
+        let mut consumers = Vec::new();
+        for index in [0_u32, 1, 3] {
+            consumers.push(
+                arena
+                    .mint_consumer(ConsumerNode::Covariable(index.into()))
+                    .expect("leaf"),
+            );
+        }
+        for (depth, expected_producers, expected_covariables) in [
+            (
+                Depth::default(),
+                BTreeSet::from([
+                    (Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
+                    (Zone::Intuitionistic, 2_u32.into()),
+                    (Zone::Linear, 0_u32.into()),
+                ]),
+                BTreeSet::from([CovariableIndex::from(0_u32), 1_u32.into(), 3_u32.into()]),
+            ),
+            (
+                Depth {
+                    producers: 2,
+                    covariables: 2,
+                },
+                BTreeSet::from([
+                    (Zone::Intuitionistic, DeBruijnIndex::from(0_u32)),
+                    (Zone::Linear, 0_u32.into()),
+                ]),
+                BTreeSet::from([CovariableIndex::from(1_u32)]),
+            ),
+        ] {
+            let mut walk = Walk {
+                arena: &arena,
+                stack: Vec::new(),
+                free: FreeSet::default(),
+            };
+            for &producer in &producers {
+                walk.producer(producer, depth).expect("variable is valid");
+            }
+            for &consumer in &consumers {
+                walk.consumer(consumer, depth).expect("covariable is valid");
+            }
+            assert_eq!(
+                FreeSet {
+                    producers: expected_producers,
+                    covariables: expected_covariables
+                },
+                walk.free
+            );
+        }
+    }
+
+    /// Counts precede child lookup, then the first bad producer wins without
+    /// scheduling.
+    #[test]
+    fn child_refusals_follow_declared_precedence()
+    {
+        let mut arena = CommandArena::new();
+        let value = unit(&mut arena);
+        let continuation = top(&mut arena);
+        let body = arena
+            .mint_cut(Polarity::Positive, value, continuation)
+            .expect("live children");
+        let capture = arena
+            .mint_producer(ProducerNode::Mu { body })
+            .expect("live body");
+        let missing_producer = ProducerId::from(u32::MAX);
+        let missing_consumer = ConsumerId::from(u32::MAX);
+        for (head, producer_arity, consumer_arity, producers, consumers, expected) in [
+            (
+                ArityHead::Destructor(DestructorTag::Apply),
+                ProducerArity::ONE,
+                ConsumerArity::ONE,
+                [].as_slice(),
+                [].as_slice(),
+                CheckRefusal::ProducerArity {
+                    head: ArityHead::Destructor(DestructorTag::Apply),
+                    expected: ProducerArity::ONE,
+                    found: ProducerArity::ZERO,
+                },
+            ),
+            (
+                ArityHead::Destructor(DestructorTag::Apply),
+                ProducerArity::ONE,
+                ConsumerArity::ONE,
+                [missing_producer].as_slice(),
+                [].as_slice(),
+                CheckRefusal::ConsumerArity {
+                    head: ArityHead::Destructor(DestructorTag::Apply),
+                    expected: ConsumerArity::ONE,
+                    found: ConsumerArity::ZERO,
+                },
+            ),
+            (
+                ArityHead::Destructor(DestructorTag::Apply),
+                ProducerArity::ONE,
+                ConsumerArity::ONE,
+                [missing_producer].as_slice(),
+                [missing_consumer].as_slice(),
+                CheckRefusal::DanglingProducer(missing_producer),
+            ),
+            (
+                ArityHead::Destructor(DestructorTag::Apply),
+                ProducerArity::ONE,
+                ConsumerArity::ONE,
+                [capture].as_slice(),
+                [missing_consumer].as_slice(),
+                CheckRefusal::NonValueArgument(capture),
+            ),
+            (
+                ArityHead::Constructor(ConstructorTag::Pair),
+                ProducerArity::TWO,
+                ConsumerArity::ZERO,
+                [capture, missing_producer].as_slice(),
+                [].as_slice(),
+                CheckRefusal::NonValueArgument(capture),
+            ),
+            (
+                ArityHead::Constructor(ConstructorTag::Pair),
+                ProducerArity::TWO,
+                ConsumerArity::ZERO,
+                [missing_producer, capture].as_slice(),
+                [].as_slice(),
+                CheckRefusal::DanglingProducer(missing_producer),
+            ),
+        ] {
+            let mut walk = Walk {
+                arena: &arena,
+                stack: alloc::vec![Visit::Command(body, Depth::default())],
+                free: FreeSet::default(),
+            };
+            assert_eq!(
+                Err(expected),
+                walk.children(
+                    head,
+                    producer_arity,
+                    consumer_arity,
+                    producers,
+                    consumers,
+                    Depth::default()
+                )
+            );
+            assert!(
+                matches!(walk.stack.as_slice(), &[Visit::Command(found, depth)] if found == body && depth == Depth::default())
+            );
+        }
+        let mut walk = Walk {
+            arena: &arena,
+            stack: Vec::new(),
+            free: FreeSet::default(),
+        };
+        assert_eq!(
+            Err(CheckRefusal::DanglingConsumer(missing_consumer)),
+            walk.consumer(missing_consumer, Depth::default())
+        );
+        assert_eq!(
+            Err(CheckRefusal::DanglingProducer(missing_producer)),
+            walk.producer(missing_producer, Depth::default())
         );
     }
 }
