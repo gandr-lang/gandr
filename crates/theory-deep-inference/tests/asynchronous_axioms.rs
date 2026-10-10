@@ -39,6 +39,7 @@
 //! axioms silently, which the non-local adversary in the normal-form suite
 //! exhibits.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet as _;
 use gandr_theory_cell_complexes::CellStore;
@@ -198,7 +199,33 @@ fn cube_fixture() -> (
 /// Every edge out of `term`: one per `(cell, position)` pair that fires.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: exactly one application for every stored-cell and
+///   command-position pair that fires at `term`; no other application is
+///   returned.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — finite toy terms and fixture stores. The full
+///   position/cell grid, successful rewrites and output cardinality validate
+///   the edge set without prescribing enumeration order. Cube and branching
+///   fixtures separate missing edges, invented firings and duplicated
+///   applications.
+/// - witness: `tests::asynchronous_axioms::every_permutation_tile_is_symmetric`
+/// - witness: `tests::asynchronous_axioms::rewrite_branching_never_reaches_the_tile_set`
+#[spec(ensures: |output| {
+    let mut count = 0_usize;
+    for position in ToyAlphabet::command_positions(term) {
+        for (id, cell) in store.iter() {
+            if matches!(rewrite_at(cell, term, &position), Maybe::Present(_)) {
+                count = count.saturating_add(1);
+                if !output.iter().any(|step| step.cell == id && step.at == position) {
+                    return false;
+                }
+            }
+        }
+    }
+    output.len() == count
+})]
 fn edges_at(
     store: &CellStore<ToyAlphabet>,
     term: &Toy,
@@ -225,7 +252,19 @@ fn edges_at(
 /// exists and `other` is its other sequentialization.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: Present exactly when the guard licenses `path` and `other` is
+///   that same labelled pair in reverse order.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — positive cube tiles, a branching same-position pair and a
+///   cube missing one face. Exact label reversal and the guard result
+///   distinguish a common endpoint from a licensed tile, and a wrong residual
+///   label from the required swap.
+/// - witness: `tests::asynchronous_axioms::the_cube_property_holds_for_every_pair_of_three_paths`
+/// - witness: `tests::asynchronous_axioms::a_missing_pairwise_tile_removes_both_cube_routes`
+#[spec(ensures: |output| (output == Presence::Present) == (other.0 == path.1 && other.1 == path.0
+    && derive_shift_equivalence(store, vertex, path.0, path.1).is_ok()))]
 fn is_tile(
     store: &CellStore<ToyAlphabet>,
     vertex: &Toy,
@@ -249,7 +288,32 @@ fn is_tile(
 /// `u₂·u₃ ◇ u₂'·w₃`, `u₁·u₂' ◇ v₁·v₂'`, `v₂'·w₃ ◇ v₂·v₃`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the first identifier of each input path belongs to `store`.
+/// - ensures: Present exactly when the three stated front tiles have a witness
+///   among the graph's edges; a present chain makes both paths fire completely
+///   to one term.
+/// - panics: an unstored first identifier is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L2 — replay of both input paths checks the soundness of a
+///   reported route. L3 — all 36 ordered pairs in the finite cube have the
+///   exact reversal verdict, and removing one pairwise tile removes the route
+///   despite the remaining firings. These observers separate commutation alone
+///   from a licensed braid.
+/// - witness: `tests::asynchronous_axioms::the_cube_property_holds_for_every_pair_of_three_paths`
+/// - witness: `tests::asynchronous_axioms::a_missing_pairwise_tile_removes_both_cube_routes`
+#[spec(requires: matches!(store.get(forward.0.cell), Maybe::Present(_))
+    && matches!(store.get(backward.0.cell), Maybe::Present(_)), ensures: |output| output == Presence::Absent || {
+    let target = |path: ThreePath<'_>| [path.0, path.1, path.2].into_iter()
+        .try_fold(peak.clone(), |current, step| {
+            let Maybe::Present(cell) = store.get(step.cell) else { return None; };
+            match rewrite_at(cell, &current, &step.at) {
+                Maybe::Present(next) => Some(next),
+                Maybe::Absent(_) => None,
+            }
+        });
+    matches!((target(forward), target(backward)), (Some(left), Some(right)) if left == right)
+})]
 fn front_chain(
     store: &CellStore<ToyAlphabet>,
     peak: &Toy,
@@ -290,7 +354,29 @@ fn front_chain(
 /// with `u₁·u₂ ◇ w₁·u₂''`, `u₂''·u₃ ◇ v₂''·v₃`, `w₁·v₂'' ◇ v₁·v₂`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: Present exactly when the three stated back tiles have a witness
+///   among the graph's edges; a present chain makes both input paths fire
+///   completely to one term.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — the common replay endpoint is independent of the tile
+///   search. L3 — the cube’s complete reversal table and missing-face refusal
+///   distinguish a reported but unlicensed route, a wrong target permutation
+///   and agreement obtained by always refusing.
+/// - witness: `tests::asynchronous_axioms::the_cube_property_holds_for_every_pair_of_three_paths`
+/// - witness: `tests::asynchronous_axioms::a_missing_pairwise_tile_removes_both_cube_routes`
+#[spec(ensures: |output| output == Presence::Absent || {
+    let target = |path: ThreePath<'_>| [path.0, path.1, path.2].into_iter()
+        .try_fold(peak.clone(), |current, step| {
+            let Maybe::Present(cell) = store.get(step.cell) else { return None; };
+            match rewrite_at(cell, &current, &step.at) {
+                Maybe::Present(next) => Some(next),
+                Maybe::Absent(_) => None,
+            }
+        });
+    matches!((target(forward), target(backward)), (Some(left), Some(right)) if left == right)
+})]
 fn back_chain(
     store: &CellStore<ToyAlphabet>,
     peak: &Toy,
@@ -327,7 +413,24 @@ fn back_chain(
 /// Every path of length 3 out of `peak`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: every length-three firing path from `peak`, without duplicate
+///   labelled paths; enumeration order is unspecified.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the finite three-redex cube. Every returned path is
+///   replayed from the given peak and duplicates are rejected; the six-path
+///   cardinality and exact reversal table establish completeness on this
+///   fixture, distinguishing dropped, repeated or non-firing paths.
+/// - witness: `tests::asynchronous_axioms::the_cube_property_holds_for_every_pair_of_three_paths`
+#[spec(ensures: |output| output.iter().enumerate().all(|(index, path)| !output[..index].contains(path)
+    && path.iter().try_fold(peak.clone(), |current, step| {
+        let Maybe::Present(cell) = store.get(step.cell) else { return None; };
+        match rewrite_at(cell, &current, &step.at) {
+            Maybe::Present(next) => Some(next),
+            Maybe::Absent(_) => None,
+        }
+    }).is_some()))]
 fn three_paths(
     store: &CellStore<ToyAlphabet>,
     peak: &Toy,
@@ -355,7 +458,29 @@ fn three_paths(
 /// Every square the tile set generates out of `peak`, closed under symmetry.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: exactly the licensed two-step squares, closed under exchange of
+///   their paths; duplicate presentations and enumeration order are irrelevant.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — finite cube vertices. Two-step shape, tile validity,
+///   symmetry and inclusion of every licensed edge pair check the represented
+///   set independently of duplicate presentations. A concrete root tile
+///   prevents vacuous determinism, and matching first paths must have matching
+///   partners.
+/// - witness: `tests::asynchronous_axioms::every_permutation_tile_is_deterministic`
+#[spec(ensures: |output| {
+    let edges = edges_at(store, peak);
+    output.iter().all(|square| square.path.len() == 2 && square.other.len() == 2
+        && square.path.first().zip(square.path.get(1))
+            .zip(square.other.first().zip(square.other.get(1)))
+            .is_some_and(|(path, other)| is_tile(store, peak, path, other) == Presence::Present)
+        && output.iter().any(|reverse| reverse.path == square.other && reverse.other == square.path))
+        && edges.iter().all(|first| edges.iter().all(|second|
+            derive_shift_equivalence(store, peak, first, second).is_err()
+                || output.iter().any(|square| square.path.iter().eq([first, second])
+                    && square.other.iter().eq([second, first]))))
+})]
 fn squares_at(
     store: &CellStore<ToyAlphabet>,
     peak: &Toy,
@@ -385,7 +510,26 @@ fn squares_at(
 /// Every vertex the given applications reach from `peak`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the given identifiers belong to `store`, and their reachable
+///   graph from `peak` is finite.
+/// - ensures: distinct reachable vertices, including `peak`, closed under every
+///   successful application in `steps`; order is unspecified.
+/// - panics: an unstored identifier is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the finite cube graph and its stored applications. Root
+///   inclusion, uniqueness and closure under the supplied rewrites reject a
+///   missing successor or repeated state. The tile sweep checks its twelve
+///   licensed ordered pairs; finiteness is a caller obligation, not inferred
+///   from term size.
+/// - witness: `tests::asynchronous_axioms::every_permutation_tile_is_symmetric`
+#[spec(requires: steps.iter().all(|step| matches!(store.get(step.cell), Maybe::Present(_))),
+    ensures: |output| output.contains(peak)
+        && output.iter().enumerate().all(|(index, vertex)| !output[..index].contains(vertex)
+            && steps.iter().all(|step| match fire(store, vertex, step) {
+                Maybe::Present(next) => output.contains(&next),
+                Maybe::Absent(_) => true,
+            })))]
 fn fixture_vertices(
     store: &CellStore<ToyAlphabet>,
     peak: &Toy,
@@ -408,24 +552,6 @@ fn fixture_vertices(
         }
     }
     out
-}
-
-#[test]
-fn an_edge_target_is_fixed_by_its_source_and_label()
-{
-    // The graph is a deterministic labelled transition system, the half of
-    // determinism that lives below the tile set.
-    let (store, first, _second, _third) = cube_fixture();
-    let peak = cube_peak();
-    assert_eq!(
-        fire(&store, &peak, &first),
-        fire(&store, &peak, &first),
-        "one label at one source reaches one target"
-    );
-    assert!(
-        matches!(fire(&store, &peak, &first), Maybe::Present(_)),
-        "and the fixture's edge is an edge"
-    );
 }
 
 #[test]
@@ -536,9 +662,18 @@ fn every_permutation_tile_is_deterministic()
     // Axiom 2 as stated: no 2-path is the first component of two squares with
     // different second components.
     let (store, first, second, third) = cube_fixture();
-    let mut checked = 0_usize;
-    for peak in fixture_vertices(&store, &cube_peak(), &[&first, &second, &third]) {
+    let initial = cube_peak();
+    for peak in fixture_vertices(&store, &initial, &[&first, &second, &third]) {
         let squares = squares_at(&store, &peak);
+        if peak == initial {
+            assert!(
+                squares
+                    .iter()
+                    .any(|square| square.path.iter().eq([&first, &second])
+                        && square.other.iter().eq([&second, &first])),
+                "the known root tile is present, independently of duplicate presentations"
+            );
+        }
         for square in &squares {
             for candidate in squares
                 .iter()
@@ -548,14 +683,9 @@ fn every_permutation_tile_is_deterministic()
                     square.other, candidate.other,
                     "one 2-path is tiled with at most one other 2-path"
                 );
-                checked = checked.saturating_add(1_usize);
             }
         }
     }
-    assert_eq!(
-        48_usize, checked,
-        "the fixture family's square comparisons, so the sweep is not vacuous"
-    );
 }
 
 #[test]
@@ -624,7 +754,6 @@ fn the_cube_property_holds_for_every_pair_of_three_paths()
         paths.len(),
         "three pairwise disjoint redexes and nothing else"
     );
-    let mut pairs = 0_usize;
     let mut present = 0_usize;
     for forward in &paths {
         for backward in &paths {
@@ -632,17 +761,22 @@ fn the_cube_property_holds_for_every_pair_of_three_paths()
             let backward_ref = (&backward[0], &backward[1], &backward[2]);
             let front = front_chain(&store, &peak, forward_ref, backward_ref);
             let back = back_chain(&store, &peak, forward_ref, backward_ref);
+            let expected = if backward.iter().eq(forward.iter().rev()) {
+                Presence::Present
+            }
+            else {
+                Presence::Absent
+            };
             assert_eq!(
-                front, back,
-                "the cube property is an iff, and both sides agree here"
+                (expected, expected),
+                (front, back),
+                "both braid routes exist exactly for the reversed path"
             );
             if front == Presence::Present {
                 present = present.saturating_add(1_usize);
             }
-            pairs = pairs.saturating_add(1_usize);
         }
     }
-    assert_eq!(36_usize, pairs, "every ordered pair of the six 3-paths");
     assert_eq!(
         6_usize, present,
         "and the iff is not vacuous: each path's reversal is reached by both chains"

@@ -18,6 +18,7 @@ The identity relations on derivations: when two derivations that fire the same c
 - [The flow projection](#the-flow-projection)
 - [The footprint relation](#the-footprint-relation)
 - [Oracle tests over the engine](#oracle-tests-over-the-engine)
+- [Specification evidence](#specification-evidence)
 - [The guarded template](#the-guarded-template)
 - [Boundary wrappers](#boundary-wrappers)
 - [License](#license)
@@ -199,6 +200,16 @@ An event depends directly on every earlier event the guard refuses to commute wi
 ## Oracle tests over the engine
 
 Three tests read the engine's outputs through this crate's normalizer: every certificate completion emits is certified and replays along its plan, a relabelled twin schedules and replays identically, and the batches the overlap support schedules replay along their plans. Each claims something about this crate's normalizer over the engine's outputs, so they live in this crate's integration suite, over the sequent alphabet the engine's own suites use. Placing them in the engine would need a dev-dependency from the engine onto a crate above it, inverting the layering in the dev graph. They move to the engine when an engine specification clause takes the certified normal form as its witness.
+
+## Specification evidence
+
+Nontrivial implementations and their fixture oracles carry executable `#[spec]` obligations and an item-local `# Adequacy` argument. Enforcement with `--cfg anodized_panic` checks those obligations during the existing unit and integration suites. The hypotheses state the input domain, the observer and the mutations it separates; generated cases are sampled evidence, not universal proofs.
+
+The boundary witnesses cover empty orders and replay plans, fuel and lookup refusal priority, repeated and absent factors, layered dependencies, flow ports and peak anchors, reversed web coordinates, and template cache and admission transitions. The finite cube checks the exact verdict for every ordered pair of its six paths. Content hashing is checked against the published FNV-128 vectors in
+[draft-eastlake-fnv-25, Appendix C](https://www.ietf.org/archive/id/draft-eastlake-fnv-25.html#appendix-C);
+the content-faithfulness corpus remains a finite collision witness rather than a claim that a finite digest is injective.
+
+Two generator returns remain exempt: their opaque `impl Strategy` return cannot appear in the attribute's evaluation closure under enforcement. The local corpus trait and its two abstract methods also remain exempt: trait instrumentation emits qualifier constants rejected by the lint wall. Both concrete implementations carry executable obligations. These exemptions are removed when the attribute implementation supports the return form and emits lint-compatible trait qualifiers; no lint is relaxed to admit them. The ignored `tests::template::verdict_table` witness is run explicitly with `--ignored --nocapture` to exercise the rendered report.
 
 ## The guarded template
 

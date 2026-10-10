@@ -45,6 +45,7 @@
 //! transposition stays dependent only because the overlap enumerator counts a
 //! metavariable position as a composition seam.
 
+use anodized::spec;
 use gandr_theory_cell_complexes::Cell;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellId;
@@ -125,11 +126,22 @@ fn drop_cell() -> Cell<ToyAlphabet>
     toy_cell(Toy::add(Toy::zero(), Toy::var("x")), Toy::zero())
 }
 
-/// The right-nested spine `Add(r, Add(r, … r))` carrying `count` (f)-redexes
-/// at pairwise incomparable positions.
+/// The right-nested spine carrying at least one (f)-redex at pairwise
+/// incomparable positions; a zero count is clamped to one.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: a nonempty spine of Succ(Zero) leaves; zero requested leaves are
+///   clamped to one. Its node count is three times the leaf count minus one.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — representable spines. Node count detects omitted or extra
+///   frames; zero and generated counts two through six are observed. Replay of
+///   every selected leaf and shuffled normalization distinguish incorrect
+///   constructors or nesting.
+/// - witness: `tests::normal_form::fixture_boundaries_preserve_singletons_and_key_fallbacks`
+/// - witness: `tests::normal_form::a_shuffled_independent_schedule_has_one_normal_form`
+#[spec(ensures: |output| usize::from(ToyAlphabet::cmd_size(&output)) == count.0.max(1).saturating_mul(3).saturating_sub(1))]
 fn spine(count: RedexCount) -> Toy
 {
     let redex = Toy::succ(Toy::zero());
@@ -140,11 +152,28 @@ fn spine(count: RedexCount) -> Toy
     term
 }
 
-/// The `count` redex positions of [`spine`], outer to inner: `[1]*i ++ [0]`
-/// for every redex but the last, and `[1]*(count-1)` for the last.
+/// The clamped leaf count of redex positions of the spine, outer to inner:
+/// right steps and one left step for each nonterminal leaf, then only right
+/// steps.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: one position per clamped leaf count: right steps followed by a
+///   left step, except that the last position consists only of right steps.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — zero, singleton and generated positive counts. Exact path
+///   lengths and child choices distinguish an extra terminal step, left/right
+///   reversal and a missing leaf; replay and shuffled schedules exercise the
+///   resulting addresses.
+/// - witness: `tests::normal_form::fixture_boundaries_preserve_singletons_and_key_fallbacks`
+/// - witness: `tests::normal_form::a_shuffled_independent_schedule_has_one_normal_form`
+#[spec(ensures: |output| output.len() == count.0.max(1) && output.iter().enumerate().all(|(index, position)| {
+    let last = index.saturating_add(1) == count.0.max(1);
+    position.steps().len() == index.saturating_add(usize::from(!last))
+        && position.steps().iter().enumerate().all(|(offset, step)|
+            *step == PositionStep::from(usize::from(offset < index)))
+}))]
 fn spine_positions(count: RedexCount) -> Vec<ToyPos>
 {
     let last = count.0.saturating_sub(1_usize);
@@ -191,7 +220,27 @@ fn spine_fixture(
 /// shifted-schedule refusal here is the kill signal.
 ///
 /// # Specification
+/// - ensures: the recorded boundary is preserved, and resolving and replaying
+///   the returned canonical schedule reaches its skolemized join.
 /// - panics: when the derivation is refused a normal form.
+///
+/// # Adequacy
+/// - hypothesis: L2 — derivations accepted by the normalizer. Independent
+///   ground rewriting observes the canonical path and endpoint, rejecting an
+///   unfactored address or wrong boundary. Reversed independent schedules and a
+///   dependent three-layer fixture exercise reordering and preserved
+///   precedence.
+/// - witness: `tests::normal_form::a_reversed_independent_schedule_is_the_canonical_one`
+/// - witness: `tests::normal_form::a_three_layer_derivation_orders_each_layer_by_content_address`
+#[spec(ensures: |output| output.peak == *peak && output.joins_at == *joins_at
+    && matches!(output.canonical_path(), Maybe::Present(schedule) if
+        schedule.iter().try_fold(A::skolemize(peak), |current, step| {
+            let Maybe::Present(cell) = store.get(step.cell) else { return None; };
+            match gandr_theory_coherent_resolutions::rewrite_at(cell, &current, &step.at) {
+                Maybe::Present(next) => Some(next),
+                Maybe::Absent(_) => None,
+            }
+        }).is_some_and(|reached| reached == A::skolemize(joins_at))))]
 fn normalized<A>(
     store: &CellStore<A>,
     peak: &A::Cmd,
@@ -271,7 +320,21 @@ fn overlapping_pair() -> (
 /// it.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: generated heights lie in zero through two; the key supply has one
+///   entry per tree redex, with each key below 64.
+/// - panics: none.
+/// - executable: none — the opaque strategy return cannot be named by the
+///   attribute's evaluation closure; enforcing an attribute on it produces
+///   E0562, because `impl Trait` is not allowed in a closure return type.
+///
+/// # Adequacy
+/// - hypothesis: L3 — generated trees of at most seven redexes. Every sample is
+///   replayed to the explicit zero term before its causal laws are checked.
+///   Wrong layer order, missing events and duplicate addresses break replay or
+///   the strict-order and exchange witnesses; this is sampled evidence, not an
+///   exhaustive key-space proof.
+/// - witness: `tests::normal_form::causal_precedence_is_a_strict_partial_order`
+/// - witness: `tests::normal_form::the_canonical_order_is_always_reachable_by_licensed_transpositions`
 fn tree_case() -> impl Strategy<Value = (TreeHeight, Vec<LayerSortKey>)>
 {
     (0_usize ..= 2_usize).prop_flat_map(|height| {
@@ -292,7 +355,17 @@ fn tree_case() -> impl Strategy<Value = (TreeHeight, Vec<LayerSortKey>)>
 /// to `Zero`, which makes the causal order a tree rather than an antichain.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: a complete binary tree with height plus one layers of Add nodes
+///   and Zero leaves; size(0)=3 and size(h+1)=2*size(h)+1.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — representable heights, sampled at zero through two. Node
+///   count distinguishes a dropped or extra layer; complete collapse to the
+///   explicit zero term checks constructors and compatibility of generated
+///   layers with the tree.
+/// - witness: `tests::normal_form::causal_precedence_is_a_strict_partial_order`
+#[spec(ensures: |output| usize::from(ToyAlphabet::cmd_size(&output)) == (0..height.0).fold(3_usize, |size, _| size.saturating_mul(2).saturating_add(1)))]
 fn tree(height: TreeHeight) -> Toy
 {
     let mut term = Toy::add(Toy::zero(), Toy::zero());
@@ -306,7 +379,24 @@ fn tree(height: TreeHeight) -> Toy
 /// layer `k` holds every position of length `height - k`.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: height plus one layers, deepest first, each containing every
+///   binary path at its depth exactly once; within-layer order is unspecified.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — finite representable binary trees. Depth, binary child
+///   choices, uniqueness and power-of-two cardinality characterize the complete
+///   position set at each layer. Replaying generated permutations to zero
+///   separates reversed layers, omissions and duplicate positions.
+/// - witness: `tests::normal_form::causal_precedence_is_a_strict_partial_order`
+#[spec(ensures: |output| output.len() == height.0.saturating_add(1) && output.iter().enumerate().all(|(index, layer)| {
+    let depth = height.0.saturating_sub(index);
+    layer.len() == (0..depth).fold(1_usize, |size, _| size.saturating_mul(2))
+        && layer.iter().enumerate().all(|(offset, position)|
+            position.steps().len() == depth && !layer[..offset].contains(position)
+                && position.steps().iter().all(|step|
+                    *step == PositionStep::from(0_usize) || *step == PositionStep::from(1_usize)))
+}))]
 fn tree_layers(height: TreeHeight) -> Vec<Vec<ToyPos>>
 {
     let mut layers: Vec<Vec<ToyPos>> = Vec::with_capacity(height.0.saturating_add(1_usize));
@@ -357,7 +447,16 @@ fn tree_fixture(height: TreeHeight) -> (CellStore<ToyAlphabet>, CellId, Toy, Vec
 /// event key, the two stores would disagree.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the returned identifier holds (c), and a distinct identifier
+///   holds the unrelated no-op cell in the same store.
+/// - panics: if the supposedly distinct fixture cells are interned together.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the two fixed distinct cells. Store lookups check that
+///   the decoy changes the identifier context; cross-store canonical keys and
+///   schedules then detect accidental dependence on insertion handles.
+/// - witness: `tests::normal_form::the_canonical_order_is_the_same_in_two_differently_ordered_stores`
+#[spec(ensures: |output| output.0.get(output.1) == Maybe::Present(&c_cell()) && output.0.iter().any(|(id, cell)| id != output.1 && *cell == nop_cell()))]
 fn tree_fixture_behind_a_decoy(
     height: TreeHeight
 ) -> (CellStore<ToyAlphabet>, CellId, Toy, Vec<Vec<ToyPos>>)
@@ -373,7 +472,20 @@ fn tree_fixture_behind_a_decoy(
 /// ordering inside a layer by the supplied keys.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: every position appears once with `cell`, keeping layer order and
+///   stably sorting within each layer by successive keys. Missing keys are
+///   zero; surplus keys are ignored.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — arbitrary finite layers and key supplies. Captured
+///   cardinality and labels detect lost applications or a changed cell; a
+///   concrete two-layer case checks stable ties, exhausted keys and surplus
+///   keys. Generated replay observes dependent layer order.
+/// - witness: `tests::normal_form::fixture_boundaries_preserve_singletons_and_key_fallbacks`
+/// - witness: `tests::normal_form::causal_precedence_is_a_strict_partial_order`
+#[spec(captures: count = layers.iter().fold(0_usize, |sum, layer| sum.saturating_add(layer.len())),
+    ensures: |output| output.len() == count && output.iter().all(|step| step.cell == cell))]
 fn tree_path(
     cell: CellId,
     layers: Vec<Vec<ToyPos>>,
@@ -442,7 +554,18 @@ impl ThreeLayer
 /// Build the three-layer fixture, running the recorded order to its join.
 ///
 /// # Specification
+/// - ensures: the stored collapse rule and recorded four-step path reach the
+///   explicit zero join from the fixed three-layer peak.
 /// - panics: when the recorded order does not fire, which is a fixture defect.
+///
+/// # Adequacy
+/// - hypothesis: L1 — the fixed nested and independent branches. Rule lookup
+///   and the explicit zero endpoint distinguish the wrong rule or incomplete
+///   collapse; independently enumerated dependency edges and three expected
+///   layers observe the returned path geometry.
+/// - witness: `tests::normal_form::the_dependence_edges_are_the_pairs_the_guard_refuses`
+/// - witness: `tests::normal_form::a_three_layer_derivation_gives_three_layers`
+#[spec(ensures: |output| output.join == Toy::zero() && output.store.get(output.cell) == Maybe::Present(&c_cell()))]
 fn three_layer_fixture() -> ThreeLayer
 {
     let mut store = CellStore::new();
@@ -1873,4 +1996,33 @@ proptest! {
             "a derivation with more than one event has an adjacent independent pair"
         );
     }
+}
+
+#[test]
+fn fixture_boundaries_preserve_singletons_and_key_fallbacks()
+{
+    assert_eq!(Toy::succ(Toy::zero()), spine(RedexCount(0)));
+    assert_eq!(vec![at![]], spine_positions(RedexCount(0)));
+    let (store, cell, peak, _) = tree_fixture(TreeHeight(1));
+    let layers = vec![vec![at![1], at![0]], vec![at![]]];
+    let fallback = tree_path(cell, layers.clone(), &[LayerSortKey(9)]);
+    assert_eq!(
+        vec![at![0], at![1], at![]],
+        fallback
+            .iter()
+            .map(|step| step.at.clone())
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(Toy::zero(), run(&store, &peak, &fallback));
+    let tied = tree_path(cell, layers, &[
+        LayerSortKey(4),
+        LayerSortKey(4),
+        LayerSortKey(8),
+        LayerSortKey(1),
+    ]);
+    assert_eq!(
+        vec![at![1], at![0], at![]],
+        tied.iter().map(|step| step.at.clone()).collect::<Vec<_>>()
+    );
+    assert_eq!(Toy::zero(), run(&store, &peak, &tied));
 }

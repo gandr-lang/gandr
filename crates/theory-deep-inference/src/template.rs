@@ -23,6 +23,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_theory_cell_complexes::CellAlphabet;
 use gandr_theory_cell_complexes::CellStore;
 use gandr_theory_cell_complexes::Generalization;
@@ -201,6 +202,16 @@ impl InheritanceCache
     /// - ensures: the verdict last checked or recorded for `key`.
     /// - provides: [`inheritance_lookup::Absent::Unchecked`] when none was.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — any cache key, including an absent key and a replaced
+    ///   seed. Borrowed lookup, neighboring verdicts and counters separate
+    ///   missed overwrites, fabricated presence and reads counted as hits.
+    /// - witness: `template::tests::cache_transitions_keep_checks_hits_and_seeds_distinct`
+    #[spec(ensures: |output| match output {
+        Maybe::Present(verdict) => self.verdicts.get(key) == Some(verdict),
+        Maybe::Absent(inheritance_lookup::Absent::Unchecked) => !self.verdicts.contains_key(key),
+    })]
     #[inline]
     pub fn get(
         &self,
@@ -222,6 +233,16 @@ impl InheritanceCache
     /// - panics: none.
     /// - intension: the cache is untrusted evidence a caller may seed; a seeded
     ///   lie is caught at admission, not here.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh and occupied keys with positive or negative
+    ///   seeds. The overwritten verdict, distinct-key count and unchanged
+    ///   counters reject treating a seed as a check or retaining an earlier
+    ///   verdict.
+    /// - witness: `template::tests::cache_transitions_keep_checks_hits_and_seeds_distinct`
+    #[spec(captures: [checked = self.checked, hits = self.hits], ensures:
+        self.verdicts.get(&key) == Some(&verdict)
+            && self.checked == checked && self.hits == hits)]
     #[inline]
     pub fn record(
         &mut self,
@@ -246,10 +267,24 @@ impl InheritanceCache
     ///
     /// # Specification
     /// - ensures: as [`InheritanceCache::get`], owned, and the hit count is one
-    ///   higher when a verdict is held.
+    ///   higher, saturating, when a verdict is held.
     /// - provides: [`inheritance_lookup::Absent::Unchecked`] when none is, the
     ///   counts unchanged.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — missing, seeded and checked entries. The returned
+    ///   verdict and exact counter transitions distinguish an absent lookup
+    ///   from a hit without counting either as a new check.
+    /// - witness: `template::tests::cache_transitions_keep_checks_hits_and_seeds_distinct`
+    #[spec(captures: [held = self.verdicts.get(key).copied(), checked = self.checked, hits = self.hits],
+        ensures: |output| self.checked == checked
+            && self.verdicts.get(key).copied() == held
+            && usize::from(self.hits) == usize::from(hits).saturating_add(usize::from(held.is_some()))
+            && match output {
+                Maybe::Present(verdict) => held == Some(verdict),
+                Maybe::Absent(inheritance_lookup::Absent::Unchecked) => held.is_none(),
+            })]
     fn lookup(
         &mut self,
         key: &InheritanceKey,
@@ -267,8 +302,17 @@ impl InheritanceCache
     ///
     /// # Specification
     /// - ensures: as [`InheritanceCache::record`], and the check count is one
-    ///   higher.
+    ///   higher, saturating; the hit count is unchanged.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fresh checked key beside seeded keys. Its verdict,
+    ///   the one-check increment, preserved hit count and later counted lookup
+    ///   distinguish checks from seeds and cache hits.
+    /// - witness: `template::tests::cache_transitions_keep_checks_hits_and_seeds_distinct`
+    #[spec(captures: [checked = self.checked, hits = self.hits], ensures:
+        self.verdicts.get(&key) == Some(&verdict) && self.hits == hits
+            && usize::from(self.checked) == usize::from(checked).saturating_add(1))]
     fn record_check(
         &mut self,
         key: InheritanceKey,
@@ -437,7 +481,20 @@ pub enum TemplateObstruction
 /// one node per recorded step of either leg.
 ///
 /// # Specification
-/// trivial.
+/// - ensures: the saturating sum of the two boundary node counts and both
+///   recorded path lengths.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 — generated sequent and toy certificates. The independently
+///   counted boundaries and recorded steps reject an omitted boundary, an
+///   omitted leg or counting only one step per leg.
+/// - witness: `tests::template::a_template_is_emitted_only_below_its_expansion_factor`
+#[spec(ensures: |output| usize::from(output) == [
+    usize::from(A::cmd_size(&tracelet.overlap.peak)),
+    usize::from(A::cmd_size(&tracelet.joins_at)),
+    tracelet.path_a.len(), tracelet.path_b.len(),
+].into_iter().fold(0_usize, usize::saturating_add))]
 fn plain_size<A>(tracelet: &Tracelet<A>) -> NodeCount
 where
     A: CellAlphabet,
@@ -456,6 +513,22 @@ where
 /// - ensures: a digest over the carrier's peak, join and two paths behind the
 ///   region domain; equal regions have equal addresses.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — lawful alphabets and carriers with shared paths but
+///   varying bodies. The domain-framed content observer and cache reuse
+///   separate omitted fields or domains from identical-region reuse; no
+///   collision-freedom claim is made.
+/// - witness: `tests::template::the_inheritance_check_runs_once_per_distinct_triple`
+#[spec(ensures: |output| {
+    let mut observer = ContentHasher::new();
+    core::hash::Hasher::write(&mut observer, REGION_DOMAIN);
+    core::hash::Hash::hash(&carrier.overlap.peak, &mut observer);
+    core::hash::Hash::hash(&carrier.joins_at, &mut observer);
+    core::hash::Hash::hash(&carrier.path_a, &mut observer);
+    core::hash::Hash::hash(&carrier.path_b, &mut observer);
+    output == TemplateAddress(observer.digest())
+})]
 fn region_address<A>(carrier: &Tracelet<A>) -> TemplateAddress
 where
     A: CellAlphabet,
@@ -475,6 +548,19 @@ where
 /// - ensures: a digest over the binding behind the arm domain; equal bindings
 ///   have equal addresses.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — substitution bodies from generated families, including
+///   repeated and distinct arms. The domain-framed binding digest and
+///   distinct-triple counts reject omitting the domain or body and treating
+///   repeated arms as fresh; hashes are not assumed collision-free.
+/// - witness: `tests::template::the_inheritance_check_runs_once_per_distinct_triple`
+#[spec(ensures: |output| {
+    let mut observer = ContentHasher::new();
+    core::hash::Hasher::write(&mut observer, ARM_DOMAIN);
+    core::hash::Hash::hash(binding, &mut observer);
+    output == ArmAddress(observer.digest())
+})]
 fn arm_address<A>(binding: &A::Subst) -> ArmAddress
 where
     A: CellAlphabet,
@@ -495,6 +581,31 @@ where
 /// - panics: none.
 /// - intension: every other point stays a metavariable, which replay
 ///   skolemizes, so a step that reads into another entry does not fire.
+///
+/// # Adequacy
+/// - hypothesis: L3 — complete, missing-cell, stopped and wrong-join replays of
+///   the same carrier. First-leg verdicts and fired-step counts separate
+///   skipping a leg, reversing refusal precedence and counting a refused step;
+///   the predicate checks the verdict-dependent count bounds.
+/// - witness: `tests::template::inheritance_refusals_preserve_leg_and_step_boundaries`
+#[spec(ensures: |output| {
+    let fired = usize::from(output.1);
+    let left = carrier.path_a.len();
+    let right = carrier.path_b.len();
+    match output.0 {
+        InheritanceVerdict::Inherited
+        | InheritanceVerdict::MissesTheJoin { leg: TemplateLeg::PathB } => fired == left.saturating_add(right),
+        InheritanceVerdict::MissesTheJoin { leg: TemplateLeg::PathA } => fired >= left && fired <= left.saturating_add(right),
+        InheritanceVerdict::Stuck { leg: TemplateLeg::PathA, step, .. } => {
+            let step = usize::from(step);
+            step < left && fired >= step && fired <= step.saturating_add(right)
+        },
+        InheritanceVerdict::Stuck { leg: TemplateLeg::PathB, step, .. } => {
+            let step = usize::from(step);
+            step < right && fired == left.saturating_add(step)
+        },
+    }
+})]
 fn inheritance_check<A>(
     carrier: &Tracelet<A>,
     binding: &A::Subst,
@@ -569,13 +680,12 @@ where
 /// As the failure clause states.
 ///
 /// # Adequacy
-/// - hypothesis: L1 — over generated families of both alphabets, every template
-///   emitted has `s < ⌊F / s⌋` with `F` summed independently, and every member
-///   is admitted exactly as its plain replay decides, also under a cache seeded
-///   with lies. L3 — a skeleton-divergent family, a family with a member whose
-///   body a cell discriminates on, and a family sharing nothing below the
-///   skeleton each yield no template while a near miss of each does; a family
-///   of 64 members checks each distinct triple once.
+/// - hypothesis: L1 — generated sequent and toy families, including an
+///   untrusted cache. Independent size sums and plain replay observe price and
+///   admission; L3 — empty, divergent, discriminated and unshared families
+///   separate refusal precedence, charging checks before price and admitting
+///   stale evidence. Repeated 64- and 256-member families distinguish checks
+///   from hits.
 /// - witness: `tests::template::a_template_is_emitted_only_below_its_expansion_factor`
 /// - witness: `tests::template::every_member_admits_as_its_plain_replay`
 /// - witness: `tests::template::a_skeleton_divergent_family_yields_no_template`
@@ -583,6 +693,69 @@ where
 /// - witness: `tests::template::a_family_with_no_shared_content_yields_no_template`
 /// - witness: `tests::template::the_inheritance_check_runs_once_per_distinct_triple`
 /// - witness: `tests::template::a_poisoned_inheritance_entry_is_caught_at_admission`
+/// - witness: `tests::template::empty_input_and_report_inputs_do_not_rewrite_production_counts`
+#[spec(captures: [checked = cache.checked, hits = cache.hits], ensures: |output| {
+    let unchanged = cache.checked == checked && cache.hits == hits;
+    match family.split_first() {
+        None => matches!(output, Err(TemplateRefusal::EmptyFamily)) && unchanged,
+        Some((first, rest)) => {
+            let divergence = rest.iter().position(|member| {
+                member.overlap.left != first.overlap.left
+                    || member.overlap.right != first.overlap.right
+                    || member.overlap.kind != first.overlap.kind
+                    || member.overlap.seam != first.overlap.seam
+                    || member.path_a != first.path_a || member.path_b != first.path_b
+            });
+            if let Some(index) = divergence {
+                matches!(output, Err(TemplateRefusal::SkeletonDivergence { member })
+                    if usize::from(member) == index.saturating_add(1)) && unchanged
+            } else {
+                let plain = family.iter().fold(0_usize, |sum, member|
+                    sum.saturating_add(usize::from(plain_size(member))));
+                match output.as_ref() {
+                    Ok(template) => {
+                        let size = template.entries.iter().flat_map(|entry| entry.arms.values())
+                            .fold(usize::from(plain_size(&template.carrier)), |sum, arm|
+                                sum.saturating_add(usize::from(arm.size)).saturating_add(1));
+                        usize::from(template.members) == family.len()
+                            && usize::from(template.plain_size) == plain
+                            && usize::from(template.size) == size
+                            && plain.checked_div(size).is_some_and(|factor| size < factor)
+                            && template.region == region_address(&template.carrier)
+                            && template.carrier.overlap.left == first.overlap.left
+                            && template.carrier.overlap.right == first.overlap.right
+                            && template.carrier.overlap.kind == first.overlap.kind
+                            && template.carrier.overlap.seam == first.overlap.seam
+                            && template.carrier.overlap.unifier == first.overlap.unifier
+                            && template.carrier.overlap.right_renamed() == first.overlap.right_renamed()
+                            && template.carrier.path_a == first.path_a && template.carrier.path_b == first.path_b
+                            && usize::from(template.production.triples_checked)
+                                == usize::from(cache.checked).saturating_sub(usize::from(checked))
+                            && usize::from(template.production.cache_hits)
+                                == usize::from(cache.hits).saturating_sub(usize::from(hits))
+                            && template.entries.iter().enumerate().all(|(index, entry)|
+                                entry.arms.iter().all(|(body, arm)| {
+                                    let key = InheritanceKey { region: template.region,
+                                        entry: EntryIndex::from(index), body: *body };
+                                    *body == arm_address::<A>(&arm.binding)
+                                        && cache.verdicts.get(&key) == Some(&InheritanceVerdict::Inherited)
+                                }))
+                    },
+                    Err(&TemplateRefusal::DoesNotPay { template_size, plain_size }) => {
+                        let size = usize::from(template_size);
+                        usize::from(plain_size) == plain && unchanged
+                            && plain.checked_div(size).is_none_or(|factor| size >= factor)
+                    },
+                    Err(&TemplateRefusal::NotInherited { key, verdict }) =>
+                        verdict != InheritanceVerdict::Inherited && cache.verdicts.get(&key) == Some(&verdict),
+                    Err(&(TemplateRefusal::Ungeneralizable | TemplateRefusal::EntryOutsidePeak { .. }
+                        | TemplateRefusal::ArmAddressCollision { .. })) => unchanged,
+                    Err(&(TemplateRefusal::EmptyFamily | TemplateRefusal::SkeletonDivergence { .. })) => false,
+                }
+            }
+        },
+    }
+})]
 #[inline]
 pub fn anti_unify_tracelets<A>(
     family: &[Tracelet<A>],
@@ -824,10 +997,19 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — every member's peak yields a substitution that
-    ///   rebuilds the member. L3 — a peak of another shape is refused by name.
+    /// - hypothesis: L1 — generated family peaks rebuild through the returned
+    ///   substitution; L3 — a different peak shape is refused by name. These
+    ///   observers separate a wrong binding from accepting a failed match.
     /// - witness: `tests::template::every_member_admits_as_its_plain_replay`
     /// - witness: `tests::template::a_certificate_outside_the_template_is_refused_by_name`
+    #[spec(ensures: |output| match output.as_ref() {
+        Ok(substitution) => A::apply_subst(substitution, &self.carrier.overlap.peak) == *peak,
+        Err(&TemplateObstruction::PeakNotAnInstance) => {
+            let mut observer = A::Subst::default();
+            !bool::from(A::match_cmd(&self.carrier.overlap.peak, peak, &mut observer))
+        },
+        Err(&(TemplateObstruction::UnboundEntry { .. } | TemplateObstruction::ArmOutsideTemplate { .. })) => false,
+    })]
     #[inline]
     pub fn peak_substitution(
         &self,
@@ -866,11 +1048,38 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — every member rebuilds to its own peak and join and
-    ///   replays as its plain replay. L3 — a body outside the template and an
-    ///   unbound entry are each refused by name.
+    /// - hypothesis: L1 — member substitutions reconstruct both boundaries and
+    ///   preserve the recorded skeleton; L3 — absent bindings and external
+    ///   bodies identify the first offending entry. Boundary, skeleton and
+    ///   typed-refusal observers reject applying only to the peak, choosing
+    ///   another arm or skipping an unbound entry.
     /// - witness: `tests::template::every_member_admits_as_its_plain_replay`
     /// - witness: `tests::template::a_certificate_outside_the_template_is_refused_by_name`
+    #[spec(ensures: |output| {
+        let expected = self.entries.iter().enumerate().try_fold(
+            (self.carrier.overlap.peak.clone(), self.carrier.joins_at.clone()),
+            |(peak, join), (index, entry)| {
+                let bound = A::restrict_subst(substitution, core::slice::from_ref(&entry.var));
+                if bound == A::Subst::default() {
+                    return Err(TemplateObstruction::UnboundEntry { entry: EntryIndex::from(index) });
+                }
+                entry.arms.values().find(|arm| arm.binding == bound)
+                    .ok_or_else(|| TemplateObstruction::ArmOutsideTemplate { entry: EntryIndex::from(index) })
+                    .map(|arm| (A::apply_subst(&arm.binding, &peak), A::apply_subst(&arm.binding, &join)))
+            });
+        match (output.as_ref(), expected) {
+            (Ok(instance), Ok((peak, join))) => instance.overlap.peak == peak && instance.joins_at == join
+                && instance.path_a == self.carrier.path_a && instance.path_b == self.carrier.path_b
+                && instance.overlap.left == self.carrier.overlap.left
+                && instance.overlap.right == self.carrier.overlap.right
+                && instance.overlap.kind == self.carrier.overlap.kind
+                && instance.overlap.unifier == self.carrier.overlap.unifier
+                && instance.overlap.seam == self.carrier.overlap.seam
+                && instance.overlap.right_renamed() == self.carrier.overlap.right_renamed(),
+            (Err(actual), Err(expected)) => *actual == expected,
+            (Ok(_), Err(_)) | (Err(_), Ok(_)) => false,
+        }
+    })]
     #[inline]
     pub fn instantiate(
         &self,
@@ -915,11 +1124,15 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L1 — every member of a generated family is admitted
-    ///   exactly as its plain replay decides. L3 — under a cache seeded with a
-    ///   lie, the member the lie covers is still refused.
+    /// - hypothesis: L1 — generated members are compared with plain replay. L3
+    ///   — the deliberately poisoned cache still refuses its bad member. The
+    ///   rebuilt-boundary and replay observers reject trusting a cached
+    ///   verdict, omitting reconstruction or accepting a failed leg.
     /// - witness: `tests::template::every_member_admits_as_its_plain_replay`
     /// - witness: `tests::template::a_poisoned_inheritance_entry_is_caught_at_admission`
+    #[spec(ensures: |output| output == self.peak_substitution(peak)
+        .and_then(|substitution| self.instantiate(&substitution))
+        .map(|instance| instance.replay(store)))]
     #[inline]
     pub fn admit(
         &self,
@@ -942,10 +1155,12 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     /// As the failure clause states.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — over the sequent alphabet, whose only command
-    ///   position is the root, every member of an emitted family has the
-    ///   template's flow on both legs.
+    /// - hypothesis: L3 — generated sequent members, whose sole command
+    ///   position is the root. Canonical port and incidence observers compare
+    ///   both member legs with the carrier, rejecting projection of one leg
+    ///   only or substitution-dependent family identity.
     /// - witness: `tests::template::a_template_has_one_flow_for_its_family`
+    #[spec(ensures: |output| output == tracelet_flow(&self.carrier, store))]
     #[inline]
     pub fn flow(
         &self,
@@ -960,15 +1175,29 @@ impl<A: CellAlphabet> GuardedTemplate<A>
     /// # Specification
     /// - ensures: the template's member count, sizes and expansion factor and
     ///   its production counts; the members of `family` it admits; and the
-    ///   recorded steps of both legs of every member of `family`, which plain
-    ///   replay of each would fire.
+    ///   recorded steps of both legs of every member of `family`, regardless of
+    ///   whether its replay would finish.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a 64-member family reports two checks per entry, the
-    ///   remaining lookups as hits, every member admitted, and fewer steps
-    ///   replayed than plain replay fires.
+    /// - hypothesis: L3 — full, empty, singleton and external-body report
+    ///   inputs for one produced template. Exact stored production counters,
+    ///   admission counts and recorded path lengths reject recomputing
+    ///   production from the report input or counting an obstructed peak as
+    ///   admitted.
     /// - witness: `tests::template::the_inheritance_check_runs_once_per_distinct_triple`
+    /// - witness: `tests::template::empty_input_and_report_inputs_do_not_rewrite_production_counts`
+    #[spec(ensures: |output| (
+        output.members, output.plain_size, output.template_size, output.expansion_factor,
+        output.triples_checked, output.cache_hits, output.replayed_steps,
+    ) == (
+        self.members, self.plain_size, self.size, self.expansion_factor(),
+        self.production.triples_checked, self.production.cache_hits, self.production.replayed_steps,
+    )
+        && usize::from(output.admissions) == family.iter().filter(|member|
+            self.admit(&member.overlap.peak, store).is_ok_and(bool::from)).count()
+        && usize::from(output.plain_replayed_steps) == family.iter().fold(0_usize, |sum, member|
+            sum.saturating_add(member.path_a.len()).saturating_add(member.path_b.len())))]
     #[inline]
     #[must_use]
     pub fn cost_report(
@@ -997,5 +1226,97 @@ impl<A: CellAlphabet> GuardedTemplate<A>
             replayed_steps: self.production.replayed_steps,
             plain_replayed_steps: ReplayStepCount::from(plain_replayed_steps),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use super::ArmAddress;
+    use super::ContentHasher;
+    use super::EntryIndex;
+    use super::InheritanceCache;
+    use super::InheritanceKey;
+    use super::InheritanceVerdict;
+    use super::LegStepIndex;
+    use super::Maybe;
+    use super::StuckStep;
+    use super::TemplateAddress;
+    use super::TemplateLeg;
+
+    #[test]
+    fn cache_transitions_keep_checks_hits_and_seeds_distinct()
+    {
+        let digest = ContentHasher::new().digest();
+        let seeded = InheritanceKey {
+            region: TemplateAddress(digest),
+            entry: EntryIndex::from(0),
+            body: ArmAddress(digest),
+        };
+        let neighbor = InheritanceKey {
+            entry: EntryIndex::from(1),
+            ..seeded
+        };
+        let checked = InheritanceKey {
+            entry: EntryIndex::from(2),
+            ..seeded
+        };
+        let missing = InheritanceKey {
+            entry: EntryIndex::from(3),
+            ..seeded
+        };
+        let negative = InheritanceVerdict::MissesTheJoin {
+            leg: TemplateLeg::PathA,
+        };
+        let stopped = InheritanceVerdict::Stuck {
+            leg: TemplateLeg::PathB,
+            step: LegStepIndex::from(0),
+            reason: StuckStep::UnissuedCell,
+        };
+        let mut cache = InheritanceCache::new();
+        assert!(matches!(cache.lookup(&missing), Maybe::Absent(_)));
+        cache.record(seeded, negative);
+        cache.record(neighbor, InheritanceVerdict::Inherited);
+        assert_eq!(
+            (usize::from(cache.checked), usize::from(cache.hits)),
+            (0, 0)
+        );
+        assert_eq!(cache.get(&seeded), Maybe::Present(&negative));
+        assert_eq!(usize::from(cache.hits), 0);
+        assert_eq!(cache.lookup(&seeded), Maybe::Present(negative));
+        cache.record(seeded, InheritanceVerdict::Inherited);
+        assert_eq!(
+            (
+                cache.verdicts.len(),
+                usize::from(cache.checked),
+                usize::from(cache.hits)
+            ),
+            (2, 0, 1)
+        );
+        cache.record_check(checked, stopped);
+        assert_eq!(
+            (
+                cache.verdicts.len(),
+                usize::from(cache.checked),
+                usize::from(cache.hits)
+            ),
+            (3, 1, 1)
+        );
+        assert_eq!(cache.lookup(&checked), Maybe::Present(stopped));
+        assert!(matches!(cache.lookup(&missing), Maybe::Absent(_)));
+        assert_eq!(
+            (usize::from(cache.checked), usize::from(cache.hits)),
+            (1, 2)
+        );
+        assert_eq!(
+            cache.get(&seeded),
+            Maybe::Present(&InheritanceVerdict::Inherited)
+        );
+        assert_eq!(
+            cache.get(&neighbor),
+            Maybe::Present(&InheritanceVerdict::Inherited)
+        );
+        assert_eq!(cache.get(&checked), Maybe::Present(&stopped));
+        assert!(matches!(cache.get(&missing), Maybe::Absent(_)));
     }
 }
