@@ -12,7 +12,8 @@
 //!   anywhere.
 //! - [`Oblig`], [`ObligationInstance`] and [`Delta`] are the completion
 //!   obligations: the material a partial parse is missing, ordered by severity.
-//! - [`parse()`] runs the three over one source.
+//! - [`parse()`] runs the three over one source; [`FormSplit`] runs them over
+//!   one source's top-level forms apart and joins them into the same parse.
 //!
 //! The design is stated in this crate's `README.md`: its synopsis, and the
 //! decision sections that follow it.
@@ -42,6 +43,7 @@ pub use crate::meld::Completion;
 pub use crate::meld::CompletionStatus;
 pub use crate::meld::Expected;
 pub use crate::meld::FormContinuation;
+pub use crate::meld::FormUnit;
 pub use crate::meld::Frontier;
 pub use crate::meld::HeadOperandPresence;
 pub use crate::meld::Mark;
@@ -51,10 +53,15 @@ pub use crate::meld::MoldAdmissibility;
 pub use crate::meld::MoldedTile;
 pub use crate::meld::OpenFormPresence;
 pub use crate::meld::OperandContinuation;
+pub use crate::meld::SeamBreak;
 pub use crate::meld::SpaceText;
 pub use crate::meld::TileText;
+pub use crate::meld::UnitBase;
+pub use crate::meld::UnitSeam;
 pub use crate::mold::CandidateLabel;
 pub use crate::mold::Molder;
+pub use crate::mold::TokenIndex;
+pub use crate::mold::TokenRun;
 pub use crate::mold::TokenText;
 pub use crate::mold::candidate_labels;
 pub use crate::oblig::Delta;
@@ -64,6 +71,9 @@ pub use crate::oblig::Oblig;
 pub use crate::oblig::ObligClassIndex;
 pub use crate::oblig::ObligationCount;
 pub use crate::oblig::ObligationInstance;
+pub use crate::parse::FormJoin;
+pub use crate::parse::FormSplit;
 pub use crate::parse::ParseCleanStatus;
 pub use crate::parse::ParseResult;
 pub use crate::parse::parse;
+pub use crate::parse::parse_by_form;
