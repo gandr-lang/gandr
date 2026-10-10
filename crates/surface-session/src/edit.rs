@@ -32,6 +32,7 @@ use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
 use core::mem;
 
+use anodized::spec;
 use gandr_core_checker::body;
 use gandr_core_checker::signature;
 use gandr_core_incremental::ContentNode;
@@ -149,6 +150,23 @@ impl From<ChildSlot> for usize
 
 /// A position in a revision's lowered core: an item, and the child slots
 /// from its body's root to the node.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: An item ordinal and ordered child slots identify a proposed body
+///   locus; the empty slot sequence names the body root. A snapshot decides
+///   whether that locus exists.
+/// - executable: none — A path does not carry its snapshot or expose a callable
+///   validation boundary; `Snapshot::node`, `Snapshot::span` and `path_of`
+///   check its interpretation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CorePath
 {
@@ -199,6 +217,23 @@ impl CorePath
 
 /// One core term read out of its arena: content nodes numbered breadth-first
 /// from the root, the root first, each child an index into the same table.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: A body or signature is represented root-first with canonical
+///   breadth-first child indices; each occurrence has its own node.
+/// - executable: none — The aggregate has no callable boundary; read, subtree
+///   and graft check canonical numbering, and `diff/apply` witnesses check the
+///   represented term.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Tree
@@ -223,7 +258,39 @@ impl Tree
     /// The node `slots` reach from the root.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: returns root index zero for an empty path, otherwise follows
+    ///   each child slot in order; the first missing step yields `NoChild`. The
+    ///   caller checks whether the resulting index names a node.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every child slot of hand-built multi-child body
+    ///   formers and absent item/body/child paths. Exact node payloads and
+    ///   distinct absence reasons distinguish slot reversal and premature or
+    ///   delayed absence.
+    /// - witness: `tests::edit::apply_of_diff_reproduces_new`
+    /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+    /// - witness: `tests::edit::constructor_change_is_one_replace`
+    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    #[spec(
+        ensures: |ret| {
+    let expected = slots
+        .iter()
+        .try_fold(
+            NodeIndex::from(0_usize),
+            |at, &slot| {
+                let node = self.nodes.get(usize::from(at))?;
+                children(node).get(slot)
+            },
+        );
+    match (ret, expected) {
+        (Maybe::Present(found), Some(expected)) => found == expected,
+        (Maybe::Absent(addressed::Absent::NoChild), None) => true,
+        _ => false,
+    }
+},
+    )]
     fn resolve(
         &self,
         slots: &[ChildSlot],
@@ -246,7 +313,48 @@ impl Tree
     /// The subtree rooted at `root`, renumbered breadth-first from it.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the reachable child graph is finite and every present child
+    ///   names a node.
+    /// - ensures: copies the subtree rooted at `root`, preserving formers and
+    ///   payloads while renumbering every child breadth-first; an absent root
+    ///   gives an empty tree.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a constructor change at a nested node and every
+    ///   multi-child body former, replayed to the independently lowered target
+    ///   snapshot. Root/payload preservation and canonical child numbering are
+    ///   executable; full descendant correspondence is observed by replay.
+    /// - witness: `tests::edit::apply_of_diff_reproduces_new`
+    /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+    /// - witness: `tests::edit::constructor_change_is_one_replace`
+    #[spec(
+        ensures: |ret| match self.nodes.get(usize::from(root)) {
+    Some(original) => {
+        ret
+            .nodes
+            .first()
+            .is_some_and(|node| agreement(original, node) == Agreement::Same)
+            && (ret.nodes.is_empty()
+                || {
+                    let mut expected = 1_usize;
+                    ret
+                        .nodes
+                        .iter()
+                        .all(|node| {
+                            children(node)
+                                .iter()
+                                .all(|child| {
+                                    let correct = usize::from(child) == expected;
+                                    expected = expected.saturating_add(1_usize);
+                                    correct
+                                })
+                        }) && expected == ret.nodes.len()
+                })
+    }
+    None => ret.nodes.is_empty(),
+},
+    )]
     fn subtree(
         &self,
         root: NodeIndex,
@@ -273,6 +381,22 @@ impl Tree
 
 /// One item of a revision: its identity, its signature and its body, each
 /// read out of the arena.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: The reference identifies the declaration; signature and body
+///   images independently preserve present or owed halves.
+/// - executable: none — The data declaration has no runtime invocation;
+///   `Snapshot::of` checks reference and half correspondence, while
+///   `diff/apply` observe their transitions.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::hole_fill_and_erase`
+/// - witness: `tests::edit::item_ascription_change_is_one_set_item_ascription`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ItemTree
 {
@@ -336,6 +460,25 @@ struct Visited(usize);
 /// The lowering records where each node came from, which for a function's
 /// lambda is its parameter, not its body; the extent restores the nesting a
 /// localizer descends by, every node enclosing everything beneath it.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: The item order agrees with the source program, body span tables
+///   parallel body nodes, and indexed body extents ascend by start position.
+/// - executable: none — The aggregate has no runtime invocation or source
+///   program of its own; `Snapshot::of` checks its image and the localizer
+///   checks source containment.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Snapshot
 {
@@ -367,12 +510,98 @@ impl Snapshot
     ///   body nodes.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the child order is pinned by a hand-built arena
-    ///   holding every multi-child former of the body sorts, each leaf's path
-    ///   written out by hand and checked against the path its change is diffed
-    ///   at; the spans by the localization suite over lowered sources.
+    /// - hypothesis: L3 — every multi-child body former in a hand-built arena,
+    ///   source-localized nested terms, holes and missing origins. Exact leaf
+    ///   paths and spans distinguish child permutations and lost origins;
+    ///   predicates additionally check item identities, body/signature
+    ///   presence, canonical numbering and sorted body extents.
+    /// - witness: `tests::edit::apply_of_diff_reproduces_new`
     /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+    /// - witness: `tests::edit::constructor_change_is_one_replace`
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
     /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    #[spec(
+        ensures: |ret| {
+    ret.items.len() == program.items().len() && ret.spans.len() == ret.items.len()
+        && ret
+            .items
+            .iter()
+            .zip(&ret.spans)
+            .zip(program.items().iter().zip(program.references()))
+            .all(|((item, spans), (original, reference))| {
+                item.reference == *reference
+                    && match (item.signature(), original.declaration().signature()) {
+                        (Maybe::Present(tree), Maybe::Present(_)) => {
+                            tree.nodes.is_empty()
+                                || {
+                                    let mut expected = 1_usize;
+                                    tree
+                                        .nodes
+                                        .iter()
+                                        .all(|node| {
+                                            children(node)
+                                                .iter()
+                                                .all(|child| {
+                                                    let correct = usize::from(child) == expected;
+                                                    expected = expected.saturating_add(1_usize);
+                                                    correct
+                                                })
+                                        }) && expected == tree.nodes.len()
+                                }
+                        }
+                        (Maybe::Absent(left), Maybe::Absent(right)) => left == right,
+                        _ => false,
+                    }
+                    && match (item.body(), original.declaration().body()) {
+                        (Maybe::Present(tree), Maybe::Present(_)) => {
+                            spans.len() == tree.nodes.len()
+                                && (tree.nodes.is_empty()
+                                    || {
+                                        let mut expected = 1_usize;
+                                        tree
+                                            .nodes
+                                            .iter()
+                                            .all(|node| {
+                                                children(node)
+                                                    .iter()
+                                                    .all(|child| {
+                                                        let correct = usize::from(child) == expected;
+                                                        expected = expected.saturating_add(1_usize);
+                                                        correct
+                                                    })
+                                            }) && expected == tree.nodes.len()
+                                    })
+                        }
+                        (Maybe::Absent(left), Maybe::Absent(right)) => {
+                            left == right && spans.is_empty()
+                        }
+                        _ => false,
+                    }
+            })
+        && ret
+            .bodies
+            .windows(2)
+            .all(|pair| {
+                matches!(pair, [(left, _), (right, _)] if left.start() <= right.start())
+            })
+        && ret.bodies.len()
+            == ret
+                .spans
+                .iter()
+                .filter(|spans| matches!(spans.first(), Some(Maybe::Present(_))))
+                .count()
+        && ret
+            .bodies
+            .iter()
+            .all(|&(span, item)| {
+                ret.spans
+                    .get(usize::from(item))
+                    .and_then(|spans| spans.first())
+                    .is_some_and(|found| *found == Maybe::Present(span))
+            })
+},
+    )]
     #[inline]
     #[must_use]
     pub fn of(
@@ -437,9 +666,47 @@ impl Snapshot
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every leaf of a hand-built tree read at the path
-    ///   written out for it.
+    /// - hypothesis: L3 — independently named leaves of multi-child formers and
+    ///   separate absent-item, absent-body and absent-child paths. Exact
+    ///   payloads, borrow identity and absence tags distinguish wrong traversal
+    ///   and collapsed failure causes.
     /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    #[spec(
+        ensures: |ret| {
+    self.items
+        .get(usize::from(path.item))
+        .map_or(
+            matches!(ret, Maybe::Absent(addressed::Absent::NoItem)),
+            |item| match item.body {
+                Maybe::Absent(_) => {
+                    matches!(ret, Maybe::Absent(addressed::Absent::NoBody))
+                }
+                Maybe::Present(ref tree) => {
+                    match tree.resolve(&path.slots) {
+                        Maybe::Present(index) => {
+                            tree.nodes
+                                .get(usize::from(index))
+                                .map_or(
+                                    matches!(ret, Maybe::Absent(addressed::Absent::NoChild)),
+                                    |node| {
+                                        matches!(
+                                            ret, Maybe::Present(found) if
+                                            core::ptr::eq(core::ptr::from_ref(found),
+                                            core::ptr::from_ref(node))
+                                        )
+                                    },
+                                )
+                        }
+                        Maybe::Absent(_) => {
+                            matches!(ret, Maybe::Absent(addressed::Absent::NoChild))
+                        }
+                    }
+                }
+            },
+        )
+},
+    )]
     #[inline]
     pub fn node(
         &self,
@@ -476,9 +743,42 @@ impl Snapshot
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a literal's span and a body root's span read and
-    ///   localized back to their own paths.
+    /// - hypothesis: L3 — a literal and its enclosing body, missing
+    ///   item/body/child paths, and a valid node with no recorded origin. Exact
+    ///   spans and distinct Unaddressed/Unrecorded reasons distinguish lost
+    ///   provenance from absent nodes.
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
     /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    #[spec(
+        ensures: |ret| {
+    ret
+        == match (
+            self.items.get(usize::from(path.item)),
+            self.spans.get(usize::from(path.item)),
+        ) {
+            (Some(item), Some(spans)) => {
+                match item.body {
+                    Maybe::Present(ref tree) => {
+                        match tree.resolve(&path.slots) {
+                            Maybe::Present(index) => {
+                                spans
+                                    .get(usize::from(index))
+                                    .copied()
+                                    .unwrap_or(Maybe::Absent(spanned::Absent::Unaddressed))
+                            }
+                            Maybe::Absent(_) => {
+                                Maybe::Absent(spanned::Absent::Unaddressed)
+                            }
+                        }
+                    }
+                    Maybe::Absent(_) => Maybe::Absent(spanned::Absent::Unaddressed),
+                }
+            }
+            _ => Maybe::Absent(spanned::Absent::Unaddressed),
+        }
+},
+    )]
     #[inline]
     pub fn span(
         &self,
@@ -526,14 +826,33 @@ impl Snapshot
     ///   the work grows with the depth of the locus, not with the snapshot.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — every node span of several sources, and each of its
-    ///   endpoints as a point, is localized and compared with a linear scan of
-    ///   every node as the external oracle; L3 for the cost — the nodes the
-    ///   descent examines stay fixed as the snapshot grows fivefold.
+    /// - hypothesis: L2 over the node spans and endpoints of five named source
+    ///   shapes: an independent linear scan orders candidates by extent, depth
+    ///   and left-to-right position. L3 for traversal cost: the same nested
+    ///   locus with eight and forty unrelated declarations has equal visited
+    ///   counts. The predicate checks containment and Outside without replaying
+    ///   the allocating localizer.
     /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
-    /// - witness: `edit::tests::localize_descends_in_depth_not_map_size`
     /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+    /// - witness: `edit::tests::localize_descends_in_depth_not_map_size`
     /// - witness: `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`
+    #[spec(
+        ensures: |ret| match ret {
+    Maybe::Present(ref path) => {
+        matches!(
+            self.span(path), Maybe::Present(span) if span.start() <= range.start() &&
+            range.end() <= span.end()
+        )
+    }
+    Maybe::Absent(located::Absent::Outside) => {
+        self.bodies
+            .iter()
+            .all(|&(span, _)| {
+                !(span.start() <= range.start() && range.end() <= span.end())
+            })
+    }
+},
+    )]
     #[inline]
     pub fn localize(
         &self,
@@ -553,11 +872,29 @@ impl Snapshot
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a one-literal edit maps to the literal's path, and
-    ///   every path the reconstructed diff of the same edit names sits under
-    ///   it.
+    /// - hypothesis: L3 — a literal replacement and generated source edits,
+    ///   observed at the old-span locus and reconstructed action paths. Using
+    ///   new coordinates or an unrelated body changes containment or the
+    ///   independent path witness.
     /// - witness: `edit::tests::edit_locus_maps_a_source_edit_to_its_old_span_locus`
     /// - witness: `tests::edit::edit_locus_contains_the_diff`
+    #[spec(
+        ensures: |ret| match ret {
+    Maybe::Present(ref path) => {
+        matches!(
+            self.span(path), Maybe::Present(span) if span.start() <= edit.old.start() &&
+            edit.old.end() <= span.end()
+        )
+    }
+    Maybe::Absent(located::Absent::Outside) => {
+        self.bodies
+            .iter()
+            .all(|&(span, _)| {
+                !(span.start() <= edit.old.start() && edit.old.end() <= span.end())
+            })
+    }
+},
+    )]
     #[inline]
     pub fn edit_locus(
         &self,
@@ -570,7 +907,55 @@ impl Snapshot
     /// The locus of `range`, and how many nodes the descent examined.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the body extents and child trees are the snapshot’s
+    ///   canonical source image.
+    /// - ensures: returns the smallest enclosing body term, preferring
+    ///   shallower then leftmost ties, and counts the body root plus each
+    ///   inspected child; Outside inspects no nodes.
+    /// - panics: none.
+    /// - intension: binary-searches body starts, then visits only children of
+    ///   enclosing nodes.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 for five source shapes and their node-span endpoints
+    ///   against an independent linear scan; L3 for a fixed deep locus with
+    ///   increasing unrelated declarations. Exact paths and visited counts
+    ///   distinguish wrong ties, skipped nodes and a whole-map traversal.
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+    /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+    /// - witness: `edit::tests::localize_descends_in_depth_not_map_size`
+    #[spec(
+        ensures: |ret| {
+    (match ret.0 {
+        Maybe::Present(ref path) => {
+            matches!(
+                self.span(path), Maybe::Present(span) if span.start() <= range.start() &&
+                range.end() <= span.end()
+            )
+        }
+        Maybe::Absent(located::Absent::Outside) => {
+            self.bodies
+                .iter()
+                .all(|&(span, _)| {
+                    !(span.start() <= range.start() && range.end() <= span.end())
+                })
+        }
+    })
+        && match ret.0 {
+            Maybe::Present(ref path) => {
+                self.items
+                    .get(usize::from(path.item))
+                    .is_some_and(|item| match item.body {
+                        Maybe::Present(ref tree) => {
+                            ret.1.0 > 0_usize && ret.1.0 <= tree.nodes.len()
+                        }
+                        Maybe::Absent(_) => false,
+                    })
+            }
+            Maybe::Absent(_) => ret.1.0 == 0_usize,
+        }
+},
+    )]
     fn descend(
         &self,
         range: ByteSpan,
@@ -654,6 +1039,23 @@ impl Snapshot
 
 /// A source edit: the bytes it replaced in the old revision, and where the
 /// replacement ends in the new one.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: The old span names the replaced source extent; `new_end` names
+///   the replacement end in the new revision. Localization uses old
+///   coordinates.
+/// - executable: none — The two source revisions needed to validate an edit are
+///   not stored in this data record; `edit_locus` checks containment in the old
+///   snapshot.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `edit::tests::edit_locus_maps_a_source_edit_to_its_old_span_locus`
+/// - witness: `tests::edit::edit_locus_contains_the_diff`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct SourceEdit
 {
@@ -709,6 +1111,24 @@ impl SourceEdit
 /// and [`Self::EraseToHole`] all install or remove a whole tree, and stay
 /// distinct because the distinction is what a consumer reports: a hole
 /// filled, a body erased to a hole, a former replaced.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: Deletion and body/signature edits use old ordinals and paths;
+///   insertion uses its new ordinal. Leaf actions retain before and after
+///   payloads.
+/// - executable: none — An action alone does not contain the two revisions that
+///   give its anchors meaning and has no callable boundary; diff checks anchors
+///   and apply witnesses check replay.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action
 {
@@ -795,7 +1215,59 @@ impl Action
     /// The body node a path-addressed action edits.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: borrows the old-body path for a subtree or leaf action;
+    ///   item-list and item-half actions report `ItemLevel`. The const
+    ///   predicate checks the path’s own child-slot scalars; exact item and
+    ///   path values are observed by witnesses.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — named leaf, constructor, insertion, deletion,
+    ///   signature and hole transitions. Exact action paths and item-level
+    ///   absence distinguish confusing old and new ordinals or inventing a path
+    ///   for an item edit; no const equality of a foreign ordinal is assumed.
+    /// - witness: `tests::edit::literal_edit_is_one_set_int`
+    /// - witness: `tests::edit::item_insertion_leaves_neighbours_untouched`
+    /// - witness: `tests::edit::hole_fill_and_erase`
+    /// - witness: `tests::edit::constructor_change_is_one_replace`
+    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    #[spec(
+        ensures: |ret| match *self {
+    Self::Replace { ref path, .. }
+    | Self::SetLiteral { ref path, .. }
+    | Self::SetVariable { ref path, .. }
+    | Self::SetConstant { ref path, .. } => {
+        match ret {
+            Maybe::Present(found) => {
+                let mut left = found.slots.as_slice();
+                let mut right = path.slots.as_slice();
+                let mut equal = left.len() == right.len();
+                while let (&[first, ref rest @ ..], &[second, ref tail @ ..]) = (
+                    left,
+                    right,
+                ) {
+                    if first.0 != second.0 {
+                        equal = false;
+                        break;
+                    }
+                    left = rest;
+                    right = tail;
+                }
+                equal
+            }
+            Maybe::Absent(_) => false,
+        }
+    }
+    Self::InsertItem { .. }
+    | Self::DeleteItem { .. }
+    | Self::SetSignature { .. }
+    | Self::FillHole { .. }
+    | Self::EraseToHole { .. } => {
+        matches!(ret, Maybe::Absent(body_path::Absent::ItemLevel))
+    }
+},
+    )]
     #[inline]
     pub const fn path(&self) -> Maybe<&CorePath, body_path::Absent>
     {
@@ -818,6 +1290,23 @@ impl Action
 /// They are kept in the order the diff emitted them: deletions by old
 /// ordinal, insertions by new ordinal, then each kept item's signature, hole
 /// and body actions, items in old order and body actions in pre-order.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: Actions are emitted in deletion, insertion and aligned-item
+///   order, with body edits in preorder; replay produces the next item image.
+/// - executable: none — A script does not own its source and target snapshots
+///   or a runtime validation boundary; diff checks the emitted anchors and
+///   apply/replay supplies the relational witness.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EditScript(Vec<Action>);
@@ -855,11 +1344,13 @@ impl EditScript
 ///   each body pair is walked once, and a path is built only for an action.
 ///
 /// # Adequacy
-/// - hypothesis: L2 for soundness — over generated revision pairs `apply` of
-///   the diff reproduces the new revision's own snapshot, the external oracle,
-///   and a self-diff is empty; L3 for localization — each action kind is
-///   reached by a named edit and asserted at its exact path and payload.
+/// - hypothesis: L2 over generated revision pairs: replay is compared with the
+///   independently lowered target snapshot. L3 over each named edit kind: exact
+///   old paths and before/after payloads distinguish coarse, misanchored and
+///   wrong-kind scripts. Predicates check identity, anchors and source payloads
+///   without allocating a replay.
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
 /// - witness: `tests::edit::self_diff_is_identity`
 /// - witness: `tests::edit::literal_edit_is_one_set_int`
 /// - witness: `tests::edit::item_insertion_leaves_neighbours_untouched`
@@ -869,6 +1360,88 @@ impl EditScript
 /// - witness: `tests::edit::comp_constructor_change_is_one_replace`
 /// - witness: `tests::edit::item_deletion_is_one_delete`
 /// - witness: `tests::edit::multi_point_edit_localizes_to_the_common_ancestor`
+#[spec(
+    ensures: |ret| {
+    ret.0.is_empty() == (old.items == new.items)
+        && ret
+            .0
+            .iter()
+            .all(|action| match *action {
+                Action::InsertItem { .. } => true,
+                Action::DeleteItem { at }
+                | Action::SetSignature { at, .. }
+                | Action::FillHole { at, .. }
+                | Action::EraseToHole { at } => usize::from(at) < old.items.len(),
+                Action::Replace { ref path, .. }
+                | Action::SetLiteral { ref path, .. }
+                | Action::SetVariable { ref path, .. }
+                | Action::SetConstant { ref path, .. } => {
+                    old.items
+                        .get(usize::from(path.item))
+                        .is_some_and(|item| match item.body {
+                            Maybe::Present(ref tree) => {
+                                matches!(
+                                    tree.resolve(& path.slots), Maybe::Present(index) if
+                                    usize::from(index) < tree.nodes.len()
+                                )
+                            }
+                            Maybe::Absent(_) => false,
+                        })
+                }
+            })
+        && ret
+            .0
+            .iter()
+            .all(|action| match *action {
+                Action::InsertItem { at, ref item } => {
+                    new.items.get(usize::from(at)) == Some(item)
+                }
+                Action::SetSignature { at, ref from, .. } => {
+                    old.items
+                        .get(usize::from(at))
+                        .is_some_and(|item| item.signature == *from)
+                }
+                Action::FillHole { at, .. } => {
+                    old.items
+                        .get(usize::from(at))
+                        .is_some_and(|item| matches!(item.body, Maybe::Absent(_)))
+                }
+                Action::EraseToHole { at } => {
+                    old.items
+                        .get(usize::from(at))
+                        .is_some_and(|item| matches!(item.body, Maybe::Present(_)))
+                }
+                Action::SetLiteral { ref path, ref from, .. } => {
+                    match old.node(path) {
+                        Maybe::Present(node) => {
+                            matches!(
+                                * node, ContentNode::Literal(ref literal) if literal == from
+                            )
+                        }
+                        Maybe::Absent(_) => false,
+                    }
+                }
+                Action::SetVariable { ref path, from, .. } => {
+                    matches!(
+                        old.node(path), Maybe::Present(& ContentNode::Variable { zone,
+                        index }) if (zone, index) == from
+                    )
+                }
+                Action::SetConstant { ref path, ref from, .. } => {
+                    match old.node(path) {
+                        Maybe::Present(node) => {
+                            matches!(
+                                * node, ContentNode::Constant(ref reference) if reference ==
+                                from
+                            )
+                        }
+                        Maybe::Absent(_) => false,
+                    }
+                }
+                Action::DeleteItem { .. } | Action::Replace { .. } => true,
+            })
+},
+)]
 #[inline]
 #[must_use]
 pub fn diff(
@@ -947,16 +1520,48 @@ pub fn diff(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — over generated revision pairs the applied diff equals the
-///   new revision's own snapshot; L3 — each action kind applied once, a leaf
-///   grafted at every child slot of every multi-child former and a subtree at a
-///   body root, and the result compared with the edited revision's snapshot.
+/// - hypothesis: L2 over generated revision pairs: applying a diff equals the
+///   independently lowered target. L3 for every action kind, each multi-child
+///   slot and root replacement. The predicate checks item conservation,
+///   insertion positions and the empty-script identity without rebuilding a
+///   second result.
 /// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
 /// - witness: `tests::edit::self_diff_is_empty_and_apply_is_identity`
 /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
 /// - witness: `tests::edit::constructor_change_is_one_replace`
 /// - witness: `tests::edit::hole_fill_and_erase`
 /// - witness: `tests::edit::item_insertion_leaves_neighbours_untouched`
+#[spec(
+    ensures: |ret| {
+    ret.len()
+        == old
+            .len()
+            .saturating_sub(
+                script
+                    .0
+                    .iter()
+                    .filter(|action| matches!(action, Action::DeleteItem { .. }))
+                    .count(),
+            )
+            .saturating_add(
+                script
+                    .0
+                    .iter()
+                    .filter(|action| matches!(action, Action::InsertItem { .. }))
+                    .count(),
+            ) && (!script.0.is_empty() || ret == old)
+        && script
+            .0
+            .iter()
+            .all(|action| match *action {
+                Action::InsertItem { at, ref item } => {
+                    ret.get(usize::from(at)) == Some(item)
+                }
+                _ => true,
+            })
+},
+)]
 #[inline]
 #[must_use]
 pub fn apply(
@@ -1041,6 +1646,23 @@ pub fn apply(
 }
 
 /// What a path-addressed action installs at its node.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: A replacement is either an entire borrowed subtree or an owned
+///   leaf; descendants of a replaced subtree are not edited again.
+/// - executable: none — The replacement lacks the old tree and its anchor, and
+///   the enum has no invocation; graft checks its installed root and canonical
+///   numbering.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
 #[derive(Clone, Debug)]
 enum Graft<'script>
 {
@@ -1051,6 +1673,22 @@ enum Graft<'script>
 }
 
 /// Where a rebuilt node is copied from.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: Queued nodes are read from either the original tree or the
+///   particular grafted subtree that owns their index.
+/// - executable: none — An original-node variant lacks its original tree;
+///   interpretation is checked at graft, not at this inert queue element.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
 #[derive(Clone, Copy, Debug)]
 enum Source<'script>
 {
@@ -1064,7 +1702,61 @@ enum Source<'script>
 /// breadth-first.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the tree and grafted subtrees have canonical breadth-first
+///   numbering and finite child graphs; edits are the non-overlapping old paths
+///   a diff emits.
+/// - ensures: installs each addressed leaf or subtree, retains unaffected nodes
+///   and renumbers the result breadth-first; an unresolved path changes
+///   nothing.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 over generated diff/replay pairs and L3 over leaf
+///   replacements at every multi-child slot and a whole-body constructor
+///   change. Exact target snapshots distinguish lost siblings, wrong anchors
+///   and renumbering mistakes; root replacement and numbering are executable
+///   without a second graft.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+#[spec(
+    ensures: |ret| {
+    (ret.nodes.is_empty()
+        || {
+            let mut expected = 1_usize;
+            ret
+                .nodes
+                .iter()
+                .all(|node| {
+                    children(node)
+                        .iter()
+                        .all(|child| {
+                            let correct = usize::from(child) == expected;
+                            expected = expected.saturating_add(1_usize);
+                            correct
+                        })
+                }) && expected == ret.nodes.len()
+        })
+        && match edits.iter().rev().find(|edit| edit.0.slots.is_empty()) {
+            Some(&(_, Graft::Subtree(subtree))) => ret == *subtree,
+            Some(&(_, Graft::Leaf(ref leaf))) => {
+                ret.nodes.as_slice() == core::slice::from_ref(leaf)
+            }
+            None => {
+                match tree.nodes.first() {
+                    Some(root) => {
+                        ret.nodes
+                            .first()
+                            .is_some_and(|found| {
+                                agreement(root, found) == Agreement::Same
+                            })
+                    }
+                    None => ret.nodes.is_empty(),
+                }
+            }
+        }
+},
+)]
 fn graft(
     tree: &Tree,
     edits: &[(&CorePath, Graft<'_>)],
@@ -1118,7 +1810,45 @@ fn graft(
 /// in both revisions by reference whose order the two share, ascending.
 ///
 /// # Specification
-/// trivial.
+/// - requires: item references are unique within each revision, as the
+///   program’s key-and-occurrence scheme establishes.
+/// - ensures: returns an order-preserving set of equal-reference pairs of
+///   maximum cardinality; both ordinal projections strictly ascend.
+/// - panics: none.
+/// - intension: uses patience sorting in n log n time rather than a quadratic
+///   alignment table.
+///
+/// # Adequacy
+/// - hypothesis: L2 over all subsets and permutations of three distinct
+///   references: exhaustive old subsequences independently determine the
+///   maximum cardinality. Exact matched references and ascending ordinals
+///   distinguish mismatched identities and order violations; replay witnesses
+///   observe the resulting edits.
+/// - witness: `edit::tests::alignment_matches_exhaustive_reference_subsequences`
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+#[spec(
+    ensures: |ret| {
+    ret.len() <= old.len().min(new.len())
+        && ret
+            .iter()
+            .all(|&(before, after)| {
+                matches!(
+                    (old.get(usize::from(before)), new.get(usize::from(after))),
+                    (Some(left), Some(right)) if left.reference == right.reference
+                )
+            })
+        && ret
+            .windows(2)
+            .all(|pair| {
+                matches!(
+                    pair, [(left_old, left_new), (right_old, right_new)] if left_old <
+                    right_old && left_new < right_new
+                )
+            }) && (old != new || ret.len() == old.len())
+},
+)]
 fn align(
     old: &[ItemTree],
     new: &[ItemTree],
@@ -1178,6 +1908,22 @@ fn align(
 struct FrameIndex(usize);
 
 /// One node, or pair of nodes, a walk reached, and how it was reached.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: A frame records its nodes, parent and child slot; parent links
+///   used for paths point to earlier frames.
+/// - executable: none — The frame does not know its position or enclosing frame
+///   table; `path_of` checks parent indices where the complete table is
+///   available.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
 #[derive(Clone, Copy, Debug)]
 struct Frame<Nodes>
 {
@@ -1192,7 +1938,45 @@ struct Frame<Nodes>
 /// The path of the frame `at`, walking its parents.
 ///
 /// # Specification
-/// trivial.
+/// - requires: each parent points to an earlier frame, so the parent chain
+///   terminates.
+/// - ensures: retains `item` and returns the non-root frame slots in
+///   root-to-leaf order; a missing frame terminates the chain.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested localized terms and each multi-child body slot,
+///   with exact independently named root-to-leaf paths. Reversed slots, a
+///   spurious root slot or wrong item ordinal change those paths; the
+///   precondition checks parent-chain well-foundedness.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+#[spec(
+    requires: frames
+    .iter()
+    .enumerate()
+    .all(|(index, frame)| frame.parent.is_none_or(|parent| parent.0 < index)),
+    ensures: |ret| {
+    ret.item == item
+        && {
+            let mut cursor = Some(at);
+            let mut slots = ret.slots.iter().rev();
+            let mut exact = true;
+            while let Some(index) = cursor {
+                let Some(frame) = frames.get(index.0) else { break };
+                if frame.parent.is_some() && slots.next() != Some(&frame.slot) {
+                    exact = false;
+                    break;
+                }
+                cursor = frame.parent;
+            }
+            exact && slots.next().is_none()
+        }
+},
+)]
 fn path_of<Nodes>(
     frames: &[Frame<Nodes>],
     at: FrameIndex,
@@ -1219,7 +2003,50 @@ fn path_of<Nodes>(
 /// ordinal `item`, in pre-order.
 ///
 /// # Specification
-/// trivial.
+/// - requires: both trees are finite canonical images of bodies; existing
+///   actions belong to earlier items.
+/// - ensures: appends only old-body paths for `item`, in preorder; equal
+///   formers descend, unequal leaves become leaf actions and other differences
+///   become subtree replacements. Equal trees append nothing.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 over generated replay pairs and L3 over exact leaf and
+///   constructor edits in nested and multi-child bodies. Wrong item anchors,
+///   skipped changes or destructive prefix handling alter the final action
+///   sequence or reconstructed target.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+#[spec(
+    captures: before = actions.len(),
+    ensures: |_| {
+    actions.len() >= before
+        && actions
+            .get(before..)
+            .is_some_and(|added| {
+                added
+                    .iter()
+                    .all(|action| match *action {
+                        Action::Replace { ref path, .. }
+                        | Action::SetLiteral { ref path, .. }
+                        | Action::SetVariable { ref path, .. }
+                        | Action::SetConstant { ref path, .. } => {
+                            path.item == item
+                                && matches!(
+                                    old.resolve(& path.slots), Maybe::Present(index) if
+                                    usize::from(index) < old.nodes.len()
+                                )
+                                && matches!(
+                                    new.resolve(& path.slots), Maybe::Present(index) if
+                                    usize::from(index) < new.nodes.len()
+                                )
+                        }
+                        _ => false,
+                    })
+            }) && (old != new || actions.len() == before)
+},
+)]
 fn diff_trees(
     old: &Tree,
     new: &Tree,
@@ -1301,6 +2128,23 @@ fn diff_trees(
 }
 
 /// Whether two nodes share their former and payload.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: Same means equal former and non-child payload, not equal
+///   descendants; A difference requires replacing a leaf or subtree.
+/// - executable: none — The comparison operands are absent from this result
+///   enum; agreement carries the executable equivalence and diff/replay
+///   observes its consequences.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Agreement
 {
@@ -1313,13 +2157,81 @@ enum Agreement
 /// Whether `old` and `new` share their former and payload, children aside.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: agrees exactly on the former and non-child payload: leaf values,
+///   injection side, classifier targets, and path evidence matter; child
+///   indices do not.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — literal, variable, constant and constructor edits, plus
+///   payload-bearing node pairs whose children alone differ. Distinct actions
+///   and exact payloads distinguish ignoring semantic data or treating
+///   renumbered children as a change. Independent source- and target-dialogue
+///   edits retain their evidence even when every child is unchanged.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::child_mapping_preserves_payloads_without_replaying_the_callback`
+#[spec(
+    ensures: |ret| {
+    (ret == Agreement::Same)
+        == (mem::discriminant(old) == mem::discriminant(new)
+            && match *old {
+                ContentNode::PathEquiv { evidence: ref left, .. } => {
+                    matches!(
+                        * new, ContentNode::PathEquiv { evidence : ref right, .. } if
+                        left == right
+                    )
+                }
+                ContentNode::Injection(left, _) => {
+                    matches!(* new, ContentNode::Injection(right, _) if left == right)
+                }
+                ContentNode::ValueLift { target: ref left, .. } => {
+                    matches!(
+                        * new, ContentNode::ValueLift { target : ref right, .. } if left
+                        == right
+                    )
+                }
+                ContentNode::TypeLift { target: ref left, .. } => {
+                    matches!(
+                        * new, ContentNode::TypeLift { target : ref right, .. } if left
+                        == right
+                    )
+                }
+                ContentNode::Element { target: ref left, .. } => {
+                    matches!(
+                        * new, ContentNode::Element { target : ref right, .. } if left ==
+                        right
+                    )
+                }
+                ContentNode::ComputationElement { target: ref left, .. } => {
+                    matches!(
+                        * new, ContentNode::ComputationElement { target : ref right, .. }
+                        if left == right
+                    )
+                }
+                _ if children(old).count == 0_usize => old == new,
+                _ => true,
+            })
+},
+)]
 fn agreement(
     old: &ContentNode,
     new: &ContentNode,
 ) -> Agreement
 {
     let same = match (old, new) {
+        | (
+            &ContentNode::PathEquiv {
+                evidence: ref left, ..
+            },
+            &ContentNode::PathEquiv {
+                evidence: ref right,
+                ..
+            },
+        ) => left == right,
         | (&ContentNode::Injection(left, _), &ContentNode::Injection(right, _)) => left == right,
         | (
             &ContentNode::ValueLift {
@@ -1365,6 +2277,23 @@ fn agreement(
 }
 
 /// The children of one content node, in its former's order.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: The used prefix contains zero through three children in former
+///   order; unused array slots have no semantic meaning.
+/// - executable: none — The originating content node is not held by this data
+///   record and there is no callable type boundary; children, get and iter
+///   check the prefix relation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited independently constructed revision images,
+///   paths and edit transitions distinguish wrong identities, ordering or
+///   source interpretation. The predicates live on the operations that possess
+///   the necessary context.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
 #[derive(Clone, Copy, Debug, Default)]
 struct Children
 {
@@ -1379,7 +2308,22 @@ impl Children
     /// The child at `slot`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: returns the selected slot exactly when it lies in both the
+    ///   used prefix and the physical array; unused slots have no child.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — child orders of multi-child body formers and an
+    ///   out-of-range path; wrong slot order and exposing an unused slot change
+    ///   the observed leaf or absence.
+    /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+    /// - witness: `edit::tests::missing_paths_and_unrecorded_origins_stay_distinct`
+    #[spec(
+        ensures: |ret| {
+    ret == if slot.0 < self.count { self.slots.get(slot.0).copied() } else { None }
+},
+    )]
     fn get(
         &self,
         slot: ChildSlot,
@@ -1396,8 +2340,23 @@ impl Children
     /// The children, in order.
     ///
     /// # Specification
-    /// trivial.
-    fn iter(&self) -> impl Iterator<Item = NodeIndex>
+    /// - requires: nothing.
+    /// - ensures: yields exactly the used child-slot prefix, in order, without
+    ///   exposing unused array cells.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every multi-child body former and replayed
+    ///   constructor edits; the yielded order selects independently stated leaf
+    ///   paths. Cloning the borrowing iterator checks it without consuming the
+    ///   caller’s result.
+    /// - witness: `tests::edit::apply_of_diff_reproduces_new`
+    /// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+    /// - witness: `tests::edit::constructor_change_is_one_replace`
+    #[spec(
+        ensures: |ret| ret.clone().eq(self.slots.iter().take(self.count).copied()),
+    )]
+    fn iter(&self) -> core::iter::Copied<core::iter::Take<core::slice::Iter<'_, NodeIndex>>>
     {
         self.slots.iter().take(self.count).copied()
     }
@@ -1406,7 +2365,74 @@ impl Children
 /// The children of `node`, in its former's order.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: returns exactly the node’s children in former order: zero through
+///   three used slots, with case ordered scrutinee, left branch, right branch.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — hand-built multi-child body formers, localized leaf edits
+///   and replayed source revisions; a changed arity or permuted child moves the
+///   independently named leaf path. Zero-child and out-of-range observations
+///   distinguish unused slots.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+#[spec(
+    ensures: |ret| match *node {
+    ContentNode::PathEquiv { path_type, forward, backward, .. } => {
+        ret.count == 3_usize
+            && ret.slots.get(..ret.count) == Some(&[path_type, forward, backward])
+    }
+    ContentNode::Variable { .. }
+    | ContentNode::Constant(_)
+    | ContentNode::Unit
+    | ContentNode::Literal(_)
+    | ContentNode::Base(_)
+    | ContentNode::UnitType
+    | ContentNode::Universe { .. }
+    | ContentNode::Abstract(_)
+    | ContentNode::Unresolved(_) => {
+        ret.count == 0_usize && ret.slots.get(..ret.count) == Some(&[])
+    }
+    ContentNode::PathRefl(only)
+    | ContentNode::Injection(_, only)
+    | ContentNode::Thunk(only)
+    | ContentNode::ValueLift { body: only, .. }
+    | ContentNode::Quote(only)
+    | ContentNode::QuoteComputation(only)
+    | ContentNode::StaticLambda(only)
+    | ContentNode::Lambda(only)
+    | ContentNode::Return(only)
+    | ContentNode::Force(only)
+    | ContentNode::ThunkType(only)
+    | ContentNode::TypeLift { inner: only, .. }
+    | ContentNode::Element { code: only, .. }
+    | ContentNode::ComputationElement { code: only, .. }
+    | ContentNode::Returner(only) => {
+        ret.count == 1_usize && ret.slots.get(..ret.count) == Some(&[only])
+    }
+    ContentNode::PathUniverse(first, second)
+    | ContentNode::PathProduct(first, second)
+    | ContentNode::Transport(first, second)
+    | ContentNode::Pair(first, second)
+    | ContentNode::Application(first, second)
+    | ContentNode::Bind(first, second)
+    | ContentNode::Product(first, second)
+    | ContentNode::StaticApplication(first, second)
+    | ContentNode::Sum(first, second)
+    | ContentNode::Arrow { domain: first, codomain: second }
+    | ContentNode::Pi { domain: first, codomain: second }
+    | ContentNode::StaticPi { domain: first, codomain: second } => {
+        ret.count == 2_usize && ret.slots.get(..ret.count) == Some(&[first, second])
+    }
+    ContentNode::Case { scrutinee, on_left, on_right } => {
+        ret.count == 3_usize
+            && ret.slots.get(..ret.count) == Some(&[scrutinee, on_left, on_right])
+    }
+},
+)]
 fn children(node: &ContentNode) -> Children
 {
     let unused = NodeIndex::default();
@@ -1472,6 +2498,23 @@ fn children(node: &ContentNode) -> Children
 }
 
 /// The root a tree is read from.
+///
+/// # Specification
+/// - requires: nothing beyond the documented producer and consumer contracts.
+/// - ensures: Each arena identifier retains the sort in which it must be read;
+///   a missing entry yields Unresolved of that sort.
+/// - executable: none — The enum does not hold the arena that gives an
+///   identifier meaning; read and the four sort-specific readers check the
+///   interpretation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — missing roots of all four arena sorts and independently
+///   named child paths. Exact sort tags and replay images distinguish
+///   misinterpretation.
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
 #[derive(Clone, Copy, Debug)]
 enum Root
 {
@@ -1488,7 +2531,68 @@ enum Root
 /// The tree rooted at `root` in `program`'s arena, and each node's span.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the reachable arena graph is finite, and origins refer to the
+///   same arena.
+/// - ensures: returns the root-first breadth-first content image with one span
+///   entry per node; missing entries retain their arena sort, and recorded
+///   extents enclose every recorded descendant.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — multi-child body terms, nested source extents and absent
+///   roots of all four sorts. Exact node paths, source slices and
+///   unresolved-sort tags distinguish shape, numbering and provenance errors; a
+///   direct span-hull witness separates absent origins from recorded
+///   descendants.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+/// - witness: `edit::tests::hulls_cover_descendants_without_inventing_origins`
+#[spec(
+    ensures: |ret| {
+    ret.0.nodes.len() == ret.1.len() && !ret.0.nodes.is_empty()
+        && (ret.0.nodes.is_empty()
+            || {
+                let mut expected = 1_usize;
+                ret
+                    .0
+                    .nodes
+                    .iter()
+                    .all(|node| {
+                        children(node)
+                            .iter()
+                            .all(|child| {
+                                let correct = usize::from(child) == expected;
+                                expected = expected.saturating_add(1_usize);
+                                correct
+                            })
+                    }) && expected == ret.0.nodes.len()
+            })
+        && ret
+            .0
+            .nodes
+            .iter()
+            .enumerate()
+            .all(|(index, node)| {
+                children(node)
+                    .iter()
+                    .all(|child| match ret.1.get(usize::from(child)) {
+                        Some(&Maybe::Present(child_span)) => {
+                            matches!(
+                                ret.1.get(index), Some(& Maybe::Present(parent)) if parent
+                                .start() <= child_span.start() && child_span.end() <= parent
+                                .end()
+                            )
+                        }
+                        _ => true,
+                    })
+            })
+},
+)]
 fn read(
     program: &Program,
     origins: &OriginTable,
@@ -1535,7 +2639,82 @@ fn read(
 /// The content node of the value `id`, each child numbered by `child`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `child` numbers the supplied child roots.
+/// - ensures: preserves the arena node’s former and non-child payload, resolves
+///   constants by program identity, and invokes `child` in former order with
+///   each child’s sort. An absent arena entry is Unresolved at the requested
+///   sort.
+/// - panics: only if `child` panics.
+///
+/// # Adequacy
+/// - hypothesis: L3 — hand-built multi-child body formers, generated typed
+///   source revisions and absent roots in each of the four arena sorts. Exact
+///   leaf paths, replayed target snapshots and sort-specific unresolved results
+///   distinguish swapped child sorts, metadata loss and conflated missing
+///   entries; the predicate does not replay the callback.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+#[spec(
+    ensures: |ret| {
+    program
+        .arena()
+        .value(id)
+        .map_or(
+            matches!(ret, ContentNode::Unresolved(Sort::Value)),
+            |node| match *node {
+                Value::PathRefl(_) => matches!(ret, ContentNode::PathRefl(_)),
+                Value::PathProduct(..) => matches!(ret, ContentNode::PathProduct(..)),
+                Value::PathEquiv { ref evidence, .. } => {
+                    matches!(
+                        ret, ContentNode::PathEquiv { evidence : ref found, .. } if found
+                        == evidence
+                    )
+                }
+                Value::Variable { zone, index } => {
+                    matches!(
+                        ret, ContentNode::Variable { zone : found_zone, index :
+                        found_index } if found_zone == zone && found_index == index
+                    )
+                }
+                Value::Constant(position) => {
+                    matches!(
+                        ret, ContentNode::Constant(ref found) if program.items().iter()
+                        .position(| item | item.declaration().constant() == position)
+                        .and_then(| ordinal | program.references().get(ordinal))
+                        .map_or(matches!(found, Reference::Unoccupied), | expected |
+                        found == expected)
+                    )
+                }
+                Value::Unit => matches!(ret, ContentNode::Unit),
+                Value::Literal(ref expected) => {
+                    matches!(ret, ContentNode::Literal(ref found) if found == expected)
+                }
+                Value::Injection(side, _) => {
+                    matches!(ret, ContentNode::Injection(found, _) if found == side)
+                }
+                Value::Lift { ref target, .. } => {
+                    matches!(
+                        ret, ContentNode::ValueLift { target : ref found, .. } if found
+                        == target
+                    )
+                }
+                Value::Pair(..) => matches!(ret, ContentNode::Pair(..)),
+                Value::Thunk(..) => matches!(ret, ContentNode::Thunk(..)),
+                Value::Quote(..) => matches!(ret, ContentNode::Quote(..)),
+                Value::QuoteComputation(..) => {
+                    matches!(ret, ContentNode::QuoteComputation(..))
+                }
+                Value::StaticLambda(..) => matches!(ret, ContentNode::StaticLambda(..)),
+                Value::StaticApplication(..) => {
+                    matches!(ret, ContentNode::StaticApplication(..))
+                }
+            },
+        )
+},
+)]
 fn read_value<Child>(
     program: &Program,
     id: ValueId,
@@ -1593,7 +2772,45 @@ where
 /// The content node of the computation `id`, each child numbered by `child`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `child` numbers the supplied child roots.
+/// - ensures: preserves the arena node’s former and non-child payload, resolves
+///   constants by program identity, and invokes `child` in former order with
+///   each child’s sort. An absent arena entry is Unresolved at the requested
+///   sort.
+/// - panics: only if `child` panics.
+///
+/// # Adequacy
+/// - hypothesis: L3 — hand-built multi-child body formers, generated typed
+///   source revisions and absent roots in each of the four arena sorts. Exact
+///   leaf paths, replayed target snapshots and sort-specific unresolved results
+///   distinguish swapped child sorts, metadata loss and conflated missing
+///   entries; the predicate does not replay the callback.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+#[spec(
+    ensures: |ret| {
+    program
+        .arena()
+        .computation(id)
+        .map_or(
+            matches!(ret, ContentNode::Unresolved(Sort::Computation)),
+            |node| match *node {
+                Computation::Transport(..) => matches!(ret, ContentNode::Transport(..)),
+                Computation::Lambda(..) => matches!(ret, ContentNode::Lambda(..)),
+                Computation::Application(..) => {
+                    matches!(ret, ContentNode::Application(..))
+                }
+                Computation::Return(..) => matches!(ret, ContentNode::Return(..)),
+                Computation::Bind(..) => matches!(ret, ContentNode::Bind(..)),
+                Computation::Force(..) => matches!(ret, ContentNode::Force(..)),
+                Computation::Case { .. } => matches!(ret, ContentNode::Case { .. }),
+            },
+        )
+},
+)]
 fn read_computation<Child>(
     program: &Program,
     id: ComputationId,
@@ -1638,7 +2855,74 @@ where
 /// The content node of the value type `id`, each child numbered by `child`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `child` numbers the supplied child roots.
+/// - ensures: preserves the arena node’s former and non-child payload, resolves
+///   constants by program identity, and invokes `child` in former order with
+///   each child’s sort. An absent arena entry is Unresolved at the requested
+///   sort.
+/// - panics: only if `child` panics.
+///
+/// # Adequacy
+/// - hypothesis: L3 — hand-built multi-child body formers, generated typed
+///   source revisions and absent roots in each of the four arena sorts. Exact
+///   leaf paths, replayed target snapshots and sort-specific unresolved results
+///   distinguish swapped child sorts, metadata loss and conflated missing
+///   entries; the predicate does not replay the callback.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `edit::tests::path_evidence_changes_are_reconstructed`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+#[spec(
+    ensures: |ret| {
+    program
+        .arena()
+        .value_type(id)
+        .map_or(
+            matches!(ret, ContentNode::Unresolved(Sort::ValueType)),
+            |node| match *node {
+                ValueType::PathUniverse(..) => {
+                    matches!(ret, ContentNode::PathUniverse(..))
+                }
+                ValueType::Base(base) => {
+                    matches!(ret, ContentNode::Base(found) if found == base)
+                }
+                ValueType::Unit => matches!(ret, ContentNode::UnitType),
+                ValueType::Product(..) => matches!(ret, ContentNode::Product(..)),
+                ValueType::Sum(..) => matches!(ret, ContentNode::Sum(..)),
+                ValueType::Thunk(_) => matches!(ret, ContentNode::ThunkType(_)),
+                ValueType::Universe { sort, ref level } => {
+                    matches!(
+                        ret, ContentNode::Universe { sort : found_sort, level : ref
+                        found_level } if found_sort == sort && found_level == level
+                    )
+                }
+                ValueType::Lift { ref target, .. } => {
+                    matches!(
+                        ret, ContentNode::TypeLift { target : ref found, .. } if found ==
+                        target
+                    )
+                }
+                ValueType::Element { ref target, .. } => {
+                    matches!(
+                        ret, ContentNode::Element { target : ref found, .. } if found ==
+                        target
+                    )
+                }
+                ValueType::Abstract(position) => {
+                    matches!(
+                        ret, ContentNode::Abstract(ref found) if program.items().iter()
+                        .position(| item | item.declaration().constant() == position)
+                        .and_then(| ordinal | program.references().get(ordinal))
+                        .map_or(matches!(found, Reference::Unoccupied), | expected |
+                        found == expected)
+                    )
+                }
+                ValueType::StaticPi { .. } => matches!(ret, ContentNode::StaticPi { .. }),
+            },
+        )
+},
+)]
 fn read_value_type<Child>(
     program: &Program,
     id: ValueTypeId,
@@ -1691,7 +2975,44 @@ where
 /// `child`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `child` numbers the supplied child roots.
+/// - ensures: preserves the arena node’s former and non-child payload, resolves
+///   constants by program identity, and invokes `child` in former order with
+///   each child’s sort. An absent arena entry is Unresolved at the requested
+///   sort.
+/// - panics: only if `child` panics.
+///
+/// # Adequacy
+/// - hypothesis: L3 — hand-built multi-child body formers, generated typed
+///   source revisions and absent roots in each of the four arena sorts. Exact
+///   leaf paths, replayed target snapshots and sort-specific unresolved results
+///   distinguish swapped child sorts, metadata loss and conflated missing
+///   entries; the predicate does not replay the callback.
+/// - witness: `tests::edit::apply_of_diff_reproduces_new`
+/// - witness: `tests::edit::step_comp_child_order_matches_diff_and_rebuild`
+/// - witness: `tests::edit::constructor_change_is_one_replace`
+/// - witness: `edit::tests::absent_arena_roots_keep_their_sorts`
+#[spec(
+    ensures: |ret| {
+    program
+        .arena()
+        .comp_type(id)
+        .map_or(
+            matches!(ret, ContentNode::Unresolved(Sort::CompType)),
+            |node| match *node {
+                CompType::Returner(_) => matches!(ret, ContentNode::Returner(_)),
+                CompType::Arrow { .. } => matches!(ret, ContentNode::Arrow { .. }),
+                CompType::Pi { .. } => matches!(ret, ContentNode::Pi { .. }),
+                CompType::Element { ref target, .. } => {
+                    matches!(
+                        ret, ContentNode::ComputationElement { target : ref found, .. }
+                        if found == target
+                    )
+                }
+            },
+        )
+},
+)]
 fn read_comp_type<Child>(
     program: &Program,
     id: CompTypeId,
@@ -1730,7 +3051,65 @@ where
 /// origin and its children's extents.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the tree is numbered breadth-first and the span table has one
+///   entry per node.
+/// - ensures: widens each recorded extent to the hull of itself and every
+///   recorded descendant; an unknown parent inherits recorded descendants,
+///   while a wholly unrecorded subtree remains unrecorded.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an unrecorded branching root with disjoint recorded
+///   children and an unknown leaf, plus source-localized nested terms. Exact
+///   union endpoints and retained absence distinguish overwriting a span,
+///   dropping descendants or inventing source provenance.
+/// - witness: `edit::tests::hulls_cover_descendants_without_inventing_origins`
+/// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+/// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+#[spec(
+    requires: spans.len() == tree.nodes.len()
+    && (tree.nodes.is_empty()
+        || {
+            let mut expected = 1_usize;
+            tree
+                .nodes
+                .iter()
+                .all(|node| {
+                    children(node)
+                        .iter()
+                        .all(|child| {
+                            let correct = usize::from(child) == expected;
+                            expected = expected.saturating_add(1_usize);
+                            correct
+                        })
+                }) && expected == tree.nodes.len()
+        }),
+    captures: recorded = spans
+    .iter()
+    .filter(|span| matches!(span, Maybe::Present(_)))
+    .count(),
+    ensures: |_| {
+    spans.iter().filter(|span| matches!(span, Maybe::Present(_))).count() >= recorded
+        && tree
+            .nodes
+            .iter()
+            .enumerate()
+            .all(|(index, node)| {
+                children(node)
+                    .iter()
+                    .all(|child| match spans.get(usize::from(child)) {
+                        Some(&Maybe::Present(child_span)) => {
+                            matches!(
+                                spans.get(index), Some(& Maybe::Present(parent)) if parent
+                                .start() <= child_span.start() && child_span.end() <= parent
+                                .end()
+                            )
+                        }
+                        _ => true,
+                    })
+            })
+},
+)]
 fn hull(
     tree: &Tree,
     spans: &mut [Maybe<ByteSpan, spanned::Absent>],
@@ -1762,6 +3141,7 @@ mod tests
     use alloc::vec::Vec;
     use core::fmt::Write as _;
 
+    use anodized::spec;
     use gandr_core_incremental::ItemOrdinal;
     use gandr_surface_dispatcher::Lowered;
     use gandr_surface_dispatcher::LoweringCount;
@@ -1783,7 +3163,28 @@ mod tests
     /// The snapshot of `text`, which the lowering must read as a module.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the fixture text parses and lowers to an ordered module.
+    /// - ensures: returns its source-provenanced body and signature image.
+    /// - panics: if the fixture grammar, lowering or module ordering is
+    ///   invalid.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — independently located nested literals, holes and
+    ///   adjacent declarations; exact node paths and source slices distinguish
+    ///   an incorrectly adapted fixture.
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+    /// - witness: `tests::edit::localize_finds_smallest_enclosing_term`
+    #[spec(
+        ensures: |ret| {
+    ret.spans
+        .iter()
+        .flatten()
+        .all(|span| match *span {
+            Maybe::Present(span) => span.end() <= text.end(),
+            Maybe::Absent(_) => true,
+        })
+},
+    )]
     fn snapshot_of(text: SourceText<'_>) -> Snapshot
     {
         let grammar = built_in().expect("the built-in grammar builds");
@@ -1802,7 +3203,36 @@ mod tests
     /// the first in item and breadth-first order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the snapshot is a canonical source image.
+    /// - ensures: chooses the enclosing span with least extent, then least
+    ///   depth, then first item and breadth-first position; reports Outside
+    ///   exactly when no body contains the range.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 over the spans and endpoints of five source shapes
+    ///   against the independently implemented indexed descent. The two
+    ///   algorithms share span containment, not candidate enumeration or
+    ///   ranking.
+    /// - witness: `edit::tests::descent_agrees_with_the_linear_stab_oracle`
+    #[spec(
+        ensures: |ret| match ret {
+    Maybe::Present(ref path) => {
+        matches!(
+            snapshot.span(path), Maybe::Present(span) if span.start() <= range.start() &&
+            range.end() <= span.end()
+        )
+    }
+    Maybe::Absent(located::Absent::Outside) => {
+        snapshot
+            .bodies
+            .iter()
+            .all(|&(span, _)| {
+                !(span.start() <= range.start() && range.end() <= span.end())
+            })
+    }
+},
+    )]
     fn stab(
         snapshot: &Snapshot,
         range: ByteSpan,
@@ -1881,7 +3311,7 @@ mod tests
         ];
         for source in sources {
             let snapshot = snapshot_of(SourceText::from(source));
-            let mut probes = 0_usize;
+
             for spans in &snapshot.spans {
                 for &span in spans {
                     let Maybe::Present(span) = span
@@ -1891,7 +3321,6 @@ mod tests
                     let start = ByteSpan::new(span.start(), span.start()).expect("a point");
                     let end = ByteSpan::new(span.end(), span.end()).expect("a point");
                     for probe in [span, start, end] {
-                        probes = probes.saturating_add(1);
                         assert_eq!(
                             snapshot.localize(probe),
                             stab(&snapshot, probe),
@@ -1900,7 +3329,377 @@ mod tests
                     }
                 }
             }
-            assert!(probes > 0_usize, "{source:?} has spanned nodes to probe");
+        }
+    }
+
+    #[test]
+    fn missing_paths_and_unrecorded_origins_stay_distinct()
+    {
+        use super::addressed;
+        use super::spanned;
+        let snapshot = snapshot_of(SourceText::from(
+            r#"def owed : Integer ;
+def body = 1 ;
+"#,
+        ));
+        let missing_item = CorePath::new(ItemOrdinal::from(2_usize), Vec::new());
+        let missing_body = CorePath::new(ItemOrdinal::from(0_usize), Vec::new());
+        let missing_child =
+            CorePath::new(ItemOrdinal::from(1_usize), vec![ChildSlot::from(0_usize)]);
+        assert_eq!(
+            snapshot.node(&missing_item),
+            Maybe::Absent(addressed::Absent::NoItem)
+        );
+        assert_eq!(
+            snapshot.node(&missing_body),
+            Maybe::Absent(addressed::Absent::NoBody)
+        );
+        assert_eq!(
+            snapshot.node(&missing_child),
+            Maybe::Absent(addressed::Absent::NoChild)
+        );
+        for path in [&missing_item, &missing_body, &missing_child] {
+            assert_eq!(
+                snapshot.span(path),
+                Maybe::Absent(spanned::Absent::Unaddressed)
+            );
+        }
+        let body = CorePath::new(ItemOrdinal::from(1_usize), Vec::new());
+        let mut unrecorded = snapshot.clone();
+        for span in unrecorded.spans.iter_mut().flatten() {
+            *span = Maybe::Absent(spanned::Absent::Unrecorded);
+        }
+        unrecorded.bodies.clear();
+        assert_eq!(unrecorded.node(&body), snapshot.node(&body));
+        assert_eq!(
+            unrecorded.span(&body),
+            Maybe::Absent(spanned::Absent::Unrecorded)
+        );
+        let range = ByteSpan::new(
+            super::ByteOffset::from(0_usize),
+            super::ByteOffset::from(0_usize),
+        )
+        .expect("a point");
+        assert_eq!(
+            unrecorded.localize(range),
+            Maybe::Absent(located::Absent::Outside)
+        );
+        assert_eq!(
+            children(&super::ContentNode::Unit).get(ChildSlot::from(0_usize)),
+            None
+        );
+    }
+
+    #[test]
+    fn child_mapping_preserves_payloads_without_replaying_the_callback()
+    {
+        use gandr_kernel_term::Side;
+
+        use super::ContentNode;
+        use super::NodeIndex;
+        let original = ContentNode::Case {
+            scrutinee: NodeIndex::from(7_usize),
+            on_left: NodeIndex::from(3_usize),
+            on_right: NodeIndex::from(11_usize),
+        };
+        let mut seen = Vec::new();
+        let mapped = super::map_children(&original, &mut |index| {
+            seen.push(index);
+            NodeIndex::from(19_usize.saturating_add(seen.len()))
+        });
+        assert_eq!(seen, vec![
+            NodeIndex::from(7_usize),
+            NodeIndex::from(3_usize),
+            NodeIndex::from(11_usize)
+        ]);
+        assert_eq!(mapped, ContentNode::Case {
+            scrutinee: NodeIndex::from(20_usize),
+            on_left: NodeIndex::from(21_usize),
+            on_right: NodeIndex::from(22_usize)
+        });
+        assert_eq!(children(&mapped).get(ChildSlot::from(3_usize)), None);
+        let left = ContentNode::Injection(Side::Left, NodeIndex::from(7_usize));
+        let changed = super::map_children(&left, &mut |_| NodeIndex::from(8_usize));
+        assert_eq!(
+            changed,
+            ContentNode::Injection(Side::Left, NodeIndex::from(8_usize))
+        );
+        assert_eq!(super::agreement(&left, &changed), super::Agreement::Same);
+        assert_ne!(
+            super::agreement(
+                &left,
+                &ContentNode::Injection(Side::Right, NodeIndex::from(7_usize))
+            ),
+            super::Agreement::Same
+        );
+        assert_eq!(
+            super::map_children(&ContentNode::Unit, &mut |_| panic!("a leaf has no child")),
+            ContentNode::Unit
+        );
+    }
+
+    #[test]
+    fn path_evidence_changes_are_reconstructed()
+    {
+        use alloc::sync::Arc;
+
+        use gandr_core_incremental::ContentNode;
+        use gandr_core_incremental::ItemKey;
+        use gandr_core_incremental::NodeIndex;
+        use gandr_core_incremental::Occurrence;
+        use gandr_core_incremental::Program;
+        use gandr_core_incremental::Reference;
+        use gandr_core_term::CoreArena;
+        use gandr_kernel_term::BaseType;
+        use gandr_kernel_term::PathEvidence;
+        use gandr_surface_lowering::OriginTable;
+
+        use super::Action;
+        use super::Root;
+        use super::Tree;
+        use super::apply;
+        use super::diff;
+        use super::read;
+        use super::spanned;
+
+        let mut arena = CoreArena::new();
+        let unit_type = arena.value_type_unit();
+        let integer_type = arena.value_type_base(BaseType::Integer);
+        let source = arena.value_quote(unit_type);
+        let target = arena.value_quote(integer_type);
+        let classifier = arena.value_type_path_universe(source, target);
+        let forward = arena.value_path_refl(source);
+        let backward = arena.value_path_refl(target);
+        let evidence = Arc::new(PathEvidence::default());
+        let equivalence =
+            arena.value_path_equiv(classifier, forward, backward, Arc::clone(&evidence));
+        let product = arena.value_path_product(forward, backward);
+        let unit = arena.value_unit();
+        let transport = arena.computation_transport(product, unit);
+        let program = Program::new(arena, Vec::new()).expect("empty item order");
+        let origins = OriginTable::default();
+        let (signature, _) = read(&program, &origins, Root::ValueType(classifier));
+        assert_eq!(signature.nodes(), &[
+            ContentNode::PathUniverse(NodeIndex::from(1_usize), NodeIndex::from(2_usize)),
+            ContentNode::Quote(NodeIndex::from(3_usize)),
+            ContentNode::Quote(NodeIndex::from(4_usize)),
+            ContentNode::UnitType,
+            ContentNode::Base(BaseType::Integer),
+        ]);
+        let (body, spans) = read(&program, &origins, Root::Value(equivalence));
+        assert_eq!(
+            body.nodes().get(.. 4_usize),
+            Some(
+                [
+                    ContentNode::PathEquiv {
+                        path_type: NodeIndex::from(1_usize),
+                        forward: NodeIndex::from(2_usize),
+                        backward: NodeIndex::from(3_usize),
+                        evidence: Arc::clone(&evidence),
+                    },
+                    ContentNode::PathUniverse(NodeIndex::from(4_usize), NodeIndex::from(5_usize)),
+                    ContentNode::PathRefl(NodeIndex::from(6_usize)),
+                    ContentNode::PathRefl(NodeIndex::from(7_usize)),
+                ]
+                .as_slice()
+            )
+        );
+        assert!(
+            spans
+                .iter()
+                .all(|span| *span == Maybe::Absent(spanned::Absent::Unrecorded))
+        );
+        let (transported, _) = read(&program, &origins, Root::Computation(transport));
+        assert_eq!(
+            transported.nodes().get(.. 5_usize),
+            Some(
+                [
+                    ContentNode::Transport(NodeIndex::from(1_usize), NodeIndex::from(2_usize)),
+                    ContentNode::PathProduct(NodeIndex::from(3_usize), NodeIndex::from(4_usize)),
+                    ContentNode::Unit,
+                    ContentNode::PathRefl(NodeIndex::from(5_usize)),
+                    ContentNode::PathRefl(NodeIndex::from(6_usize)),
+                ]
+                .as_slice()
+            )
+        );
+
+        let old = Snapshot {
+            items: vec![ItemTree {
+                reference: Reference::Item {
+                    key: ItemKey::from("equivalence"),
+                    occurrence: Occurrence::from(0_usize),
+                },
+                signature: Maybe::Present(signature),
+                body: Maybe::Present(body),
+            }],
+            spans: vec![spans],
+            bodies: Vec::new(),
+        };
+        for replacement in [
+            PathEvidence {
+                source: vec![Vec::new()],
+                target: Vec::new(),
+            },
+            PathEvidence {
+                source: Vec::new(),
+                target: vec![Vec::new()],
+            },
+        ] {
+            let mut new = old.clone();
+            let item = new.items.first_mut().expect("one item");
+            let Maybe::Present(Tree { ref mut nodes }) = item.body
+            else {
+                panic!("the equivalence body");
+            };
+            let root = nodes.first_mut().expect("the equivalence root");
+            let ContentNode::PathEquiv {
+                ref mut evidence, ..
+            } = *root
+            else {
+                panic!("the equivalence former");
+            };
+            *evidence = Arc::new(replacement);
+            let script = diff(&old, &new);
+            assert!(matches!(script.actions(), [Action::Replace { path, .. }]
+                if path == &CorePath::new(ItemOrdinal::from(0_usize), Vec::new())));
+            assert_eq!(apply(old.items(), &script), new.items());
+        }
+    }
+
+    #[test]
+    fn alignment_matches_exhaustive_reference_subsequences()
+    {
+        let snapshot = snapshot_of(SourceText::from(
+            r#"def a = 1 ;
+def b = 2 ;
+def c = 3 ;
+"#,
+        ));
+        let old = snapshot.items();
+        let permutations = [
+            [0_usize, 1_usize, 2_usize],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
+        for permutation in permutations {
+            for selected in 0_u8 .. 8_u8 {
+                let new: Vec<_> = permutation
+                    .into_iter()
+                    .filter(|&index| selected & (1_u8 << index) != 0_u8)
+                    .map(|index| old.get(index).expect("three fixture items").clone())
+                    .collect();
+                let pairs = super::align(old, &new);
+                let maximum = (0_u8 .. 8_u8)
+                    .filter_map(|mask| {
+                        let wanted: Vec<_> = old
+                            .iter()
+                            .enumerate()
+                            .filter(|&(index, _)| mask & (1_u8 << index) != 0_u8)
+                            .map(|(_, item)| &item.reference)
+                            .collect();
+                        let mut remaining = new.iter();
+                        wanted
+                            .iter()
+                            .all(|reference| remaining.any(|item| &item.reference == *reference))
+                            .then_some(wanted.len())
+                    })
+                    .max()
+                    .expect("the empty subsequence is valid");
+                assert_eq!(
+                    pairs.len(),
+                    maximum,
+                    "permutation {permutation:?}, subset {selected}"
+                );
+                assert!(pairs.iter().all(|&(left, right)| {
+                    old.get(usize::from(left))
+                        .zip(new.get(usize::from(right)))
+                        .is_some_and(|(before, after)| before.reference == after.reference)
+                }));
+                assert!(pairs.windows(2).all(|pair| matches!(pair, [(left_old, left_new), (right_old, right_new)] if left_old < right_old && left_new < right_new)));
+            }
+        }
+    }
+
+    #[test]
+    fn hulls_cover_descendants_without_inventing_origins()
+    {
+        use super::ContentNode;
+        use super::NodeIndex;
+        use super::spanned;
+        let tree = super::Tree {
+            nodes: vec![
+                ContentNode::Case {
+                    scrutinee: NodeIndex::from(1_usize),
+                    on_left: NodeIndex::from(2_usize),
+                    on_right: NodeIndex::from(3_usize),
+                },
+                ContentNode::Unit,
+                ContentNode::Unit,
+                ContentNode::Unit,
+            ],
+        };
+        let left = ByteSpan::new(
+            super::ByteOffset::from(17_usize),
+            super::ByteOffset::from(20_usize),
+        )
+        .expect("ordered extent");
+        let right = ByteSpan::new(
+            super::ByteOffset::from(4_usize),
+            super::ByteOffset::from(9_usize),
+        )
+        .expect("ordered extent");
+        let unknown = Maybe::Absent(spanned::Absent::Unrecorded);
+        let mut spans = vec![
+            unknown,
+            Maybe::Present(left),
+            unknown,
+            Maybe::Present(right),
+        ];
+        super::hull(&tree, &mut spans);
+        assert_eq!(spans, vec![
+            Maybe::Present(
+                ByteSpan::new(
+                    super::ByteOffset::from(4_usize),
+                    super::ByteOffset::from(20_usize)
+                )
+                .expect("union")
+            ),
+            Maybe::Present(left),
+            unknown,
+            Maybe::Present(right)
+        ]);
+    }
+
+    #[test]
+    fn absent_arena_roots_keep_their_sorts()
+    {
+        use gandr_core_term::CoreArena;
+        let program =
+            super::Program::new(CoreArena::new(), Vec::new()).expect("empty positions ascend");
+        let mut foreign = CoreArena::new();
+        let value = foreign.value_unit();
+        let computation = foreign.computation_return(value);
+        let value_type = foreign.value_type_unit();
+        let comp_type = foreign.comp_type_returner(value_type);
+        let roots = [
+            (super::Root::Value(value), super::Sort::Value),
+            (
+                super::Root::Computation(computation),
+                super::Sort::Computation,
+            ),
+            (super::Root::ValueType(value_type), super::Sort::ValueType),
+            (super::Root::CompType(comp_type), super::Sort::CompType),
+        ];
+        for (root, sort) in roots {
+            let (tree, spans) = super::read(&program, &super::OriginTable::default(), root);
+            assert_eq!(tree.nodes, vec![super::ContentNode::Unresolved(sort)]);
+            assert_eq!(spans, vec![Maybe::Absent(
+                super::spanned::Absent::Unrecorded
+            )]);
         }
     }
 
@@ -1918,7 +3717,24 @@ mod tests
     /// the first's bytes are the same whatever the breadth.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the fixture size fits memory.
+    /// - ensures: the first declaration nests one literal at the requested
+    ///   depth, followed by exactly the requested number of independent shallow
+    ///   declarations.
+    /// - panics: none; writing to a String cannot refuse formatting.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — depth eight with eight and forty following
+    ///   declarations. The same independently located literal path and equal
+    ///   visit counts distinguish breadth leaking into the first declaration.
+    /// - witness: `edit::tests::localize_descends_in_depth_not_map_size`
+    #[spec(
+        ensures: |ret| {
+    ret.lines().count() == breadth.0.saturating_add(1_usize)
+        && ret.matches("thunk { ret ").count() == depth.0
+        && ret.starts_with("def deep = ") && ret.ends_with(" ;\n")
+},
+    )]
     fn deep_then_shallow(
         depth: Depth,
         breadth: Breadth,
