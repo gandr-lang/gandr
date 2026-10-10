@@ -16,7 +16,7 @@ The gandr terminal face: the read-evaluate loop's transcript, an input pane and 
 - [The transcript pane](#the-transcript-pane)
 - [Keys](#keys)
 - [The smoke face](#the-smoke-face)
-- [Tests: the floor and what is new](#tests-the-floor-and-what-is-new)
+- [Specification and evidence](#specification-and-evidence)
 - [License](#license)
 
 <!-- tocstop -->
@@ -36,10 +36,12 @@ The gandr terminal face: the read-evaluate loop's transcript, an input pane and 
 
 ## Provided features
 
-- **The face's model.** `App`, `App::new`, `App::handle`, `App::transcript`; `Key`, `Handled`. Witnesses: `launch::tests::the_face_drives_the_loop_from_its_keys`, `launch::tests::a_waiting_buffer_shows_in_the_input_pane`, `launch::tests::an_outcome_refusal_is_visible_in_the_transcript_pane`.
-- **The paint.** `draw`. Witnesses: `launch::tests::a_fixed_session_paints_as_the_golden`, `launch::tests::a_submitted_keyword_is_painted_in_the_keyword_colour`, `launch::tests::the_painted_frame_is_not_uniformly_default`, `launch::tests::the_transcript_pane_follows_the_newest_rows`, `launch::tests::a_waiting_buffer_shows_in_the_input_pane`.
-- **The style maps.** `style_of`, total over `HlRole`, and `style_of_kind`, total over `OutKind`. Witnesses: `theme::tests::every_role_and_kind_sets_a_foreground`, `theme::tests::other_is_the_terminal_default`, `theme::tests::keyword_and_boolean_share_the_keyword_colour`, `launch::tests::a_fixed_session_paints_as_the_golden`.
-- **The event loop and its faces.** `drive`, `Input`, `InputSource`, `run`, `run_smoke`, `SMOKE_NOTE`. Witnesses: `launch::tests::the_face_drives_the_loop_from_its_keys`, `launch::tests::smoke_writes_the_launch_note`.
+| Surface | Contract and witnesses |
+| ------- | ---------------------- |
+| Application state | `App` edits Unicode scalars, submits one line, preserves accepted blocks and discards incomplete input on interrupt. The application witnesses cover exact source and retained names. |
+| Painting | `draw` keeps the newest transcript rows and visible input tail; backend witnesses observe pane layout, roles, cursor geometry and malformed highlight boundaries. |
+| Styling | Both const style maps have executable predicates. Finite witnesses cover all 23 roles and eight line kinds, semantic contrast and emphasis. |
+| Event loop | `drive` draws before reading and stops on quit or failure. Scripted input, modifier boundaries and partial-write failure observe its transitions and error provenance. |
 
 ## Expected features
 
@@ -57,13 +59,13 @@ $ gandr tui
 
 ## A verb of the driver
 
-The face is reached as `gandr tui`, and its smoke face as `gandr tui --smoke`, verbs of the `gandr` binary beside `check`, `test`, `lsp` and `repl`; bare `gandr` keeps its status report. The prior implementation made bare `gandr` the read-evaluate loop, which would change a landed driver witness and read a file name where a verb stands. The choice reverses if bare `gandr` is ruled the loop.
+The face is reached as `gandr tui`, and its smoke face as `gandr tui --smoke`, verbs of the `gandr` binary beside `check`, `test`, `lsp` and `repl`; bare `gandr` keeps its status report. An explicit verb avoids interpreting a verb as source input. The alternative, making the bare command interactive, becomes appropriate only if the driver's command contract changes.
 
 ## One loop, shared
 
 The face owns no part of the loop. Each Enter offers the edited line to `SessionLoop::offer` and acts on its `LoopEvent`: a block joins the transcript, a line the parser waits on stays visible in the input pane until the block arrives, and `:quit` leaves. The loop keeps the buffer and the accepted text, decides completeness, submits to the session, and encodes the block; the face keeps a copy of the waiting lines only to show them, and drops it with the loop's buffer on an interrupt. The layout of a block is the loop's `rows`, which `write_block` also prints, so the face draws the same marks and indents as a pipe.
 
-The prior implementation kept a continued buffer in its input line and offered it again whole at the next Enter, so the loop's buffer received the first line twice. Offering one line per Enter, as the line editor does, is the loop's contract; the waiting lines are the face's display alone. The alternative was a face that buffers lines itself and offers a whole buffer at once, which would decide completeness a second time, outside the loop. The choice reverses if the loop takes a whole buffer per offer.
+Each submitted line is unterminated, as `SessionLoop::offer` requires; `App::handle` states that precondition for Enter. The waiting lines are display state, not input to offer again. Buffering and resubmitting a whole accumulated source would duplicate pending text and decide completeness outside the shared loop. That alternative becomes appropriate only if the loop changes to accept whole buffers.
 
 ## The renderer
 
@@ -83,9 +85,11 @@ The alternatives were `cursive`, which owns the event loop and its own view tree
 
 ## The transcript pane
 
-The pane shows the newest rows of the transcript that fit, bottom-aligned once the transcript outgrows it; earlier rows scroll away. Each row is a row of the loop's `rows`, with its mark or indent as [the transcript](../surface-repl/README.md#the-transcript) lays it out. An echo row is clipped against the block's highlight spans, so a span crossing rows paints on each; a span the highlighter's ordering excludes — overlapping the one before it, or off a character boundary — is passed over and its bytes painted at the default rather than guessed. Rows are not wrapped, so a diagnostic's snippet keeps its columns, and a row wider than the pane is cut at its edge.
+The pane shows the newest rows of the transcript that fit; earlier rows scroll away. Each row follows [the shared transcript layout](../surface-repl/README.md#the-transcript). Highlight spans are clipped to each echo row. A clipped span splitting a character or starting before the last accepted span ends is ignored: earlier styling remains and uncovered bytes retain the terminal default. Rows are not wrapped, so diagnostic snippets retain their columns.
 
 Each frame counts the transcript's rows to find the newest that fit and paints only those. The cost of the count grows with the session; a running count beside the transcript replaces it if a long session lags.
+
+The input pane selects visible waiting rows before converting coordinates, clips them at the right edge, and reserves one editable cell for the cursor. The current line uses ratatui's right-aligned `Line` renderer when its tail must be clipped; widths remain machine-sized until cursor placement. This retains the actual tail beyond 65,535 cells without hand-written Unicode clipping or collecting off-screen waiting rows. An empty inner pane requests no cursor. Keeping a single scrolled paragraph is simpler but its bounded scroll coordinates lose the true tail; reconsider it only if it can express the required offsets and cursor ownership.
 
 ## Keys
 
@@ -103,11 +107,19 @@ Each frame counts the transcript's rows to find the newest that fit and paints o
 
 `run_smoke` drives the same event loop as `gandr tui` over ratatui's headless backend, 80 columns by 24 rows, with an input source that asks to leave at its first read, then prints `gandr tui: ready`. The gate exercises the grammar, the loop's construction, one full paint and the event loop without a terminal, and the driver's witness spawns it as a user would.
 
-## Tests: the floor and what is new
+## Specification and evidence
 
-The prior implementation's suite is the floor: 6 tests, all here under their names. `smoke_writes_the_launch_note` also asserts the note's literal line. `an_outcome_refusal_is_visible_in_the_transcript_pane` takes a definition the checker refuses against an earlier signature, the fragment's form, and asserts the loop's refusal painted in the pane row for row, where the prior row only searched the block for a message. `a_submitted_keyword_is_painted_in_the_keyword_colour` and `the_painted_frame_is_not_uniformly_default` submit `def one = 1 ;`; the second reads the echo row alone, because the status line is styled whatever the transcript holds.
+The crate specifies 26 nontrivial items: 21 executable predicates and 26 bounded adequacy arguments. Transparent accessors and the constant quit source remain trivial. Predicates cover editing transitions, style classifications, text conservation, coordinate saturation, key precedence, fault provenance and the test harness's transformations.
 
-The crate carries 11 tests: the 6 ported rows and five for what is new here — both style maps' totality, a fixed session's frame against its golden, the event loop over scripted keys, a waiting buffer in the input pane, and the pane following the newest rows. The golden compares every symbol of a 48 by 18 frame and every style of the transcript pane, each checked definition's value line among its rows; its types are spelled by the loop's renderer, the source it types spells its types the same way, and the roles it expects are read off the blocks, so it restates no spelling the surface owns.
+Five items need effect witnesses instead of predicates:
+
+- `draw`, `draw_transcript` and `draw_input`: ratatui exposes the frame buffer only through a mutable borrow, which a predicate's `Fn` closure cannot take; frame cursor state has no getter. Tests observe the completed backend instead.
+- `InputSource::next`: the abstract source has no pending-input or read-state observer.
+- `drive`: generic input and backend traits expose no immutable queue or painted-state observer, and supplied faults may be arbitrary.
+
+The 21 terminal-free tests cover application transitions, complete style classifications, Unicode and coordinate boundaries, malformed highlight precedence, modifier handling, independent frame layouts, transcript scrolling, failed-input termination and partial-write failure. A 22nd test, `the_terminal_face_completes_and_restores_its_settings`, is opt-in because it needs an attached terminal: it reads real quit keys and compares terminal settings before and after. The two cursor/tail regression witnesses fail on the previous renderer and pass with the corrected clipping. Wording-only and implementation-copy checks are not evidence; the frame golden compares literal pane layout rather than rebuilding the painter's algorithm.
+
+`cargo nextest run -p gandr-surface-tui` runs the terminal-free witnesses. With `RUSTFLAGS='--cfg anodized_panic'`, it also executes their predicates. To exercise the native input and terminal predicates, build the `launch` test executable with that flag, then run it on a terminal with `--exact tests::the_terminal_face_completes_and_restores_its_settings --ignored --nocapture` and enter `:quit`. A public rendering probe covers empty panes, wide and combining characters, and a 65,537-character input; `gandr tui --smoke` exercises terminal-free launch. A real terminal session also discards an incomplete definition, evaluates and queries an accepted definition, quits through `:quit`, and restores terminal settings. Real terminal failure injection and font-dependent glyph appearance remain outside the deterministic test domain.
 
 ## License
 

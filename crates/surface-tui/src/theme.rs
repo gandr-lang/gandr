@@ -24,13 +24,17 @@ use ratatui::style::Style;
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — every role is enumerated and its foreground asserted set,
-///   the unclassified role asserted at the terminal default, and the keyword
-///   grouping asserted; L2 — a painted frame's keyword cells carry the keyword
-///   colour.
+/// - hypothesis: L3 — all 23 roles set a foreground; the default group is
+///   anchored at reset, every semantic group agrees internally and distinct
+///   groups contrast. Missing foregrounds, split groups and collapsed styles
+///   change observations. Palette changes preserving those relations are
+///   outside the relational witnesses.
 /// - witness: `theme::tests::every_role_and_kind_sets_a_foreground`
 /// - witness: `theme::tests::other_is_the_terminal_default`
-/// - witness: `theme::tests::keyword_and_boolean_share_the_keyword_colour`
+/// - witness: `theme::tests::role_groups_preserve_semantic_contrast`
+#[anodized::spec(ensures: |ret| ret.fg.is_some()
+    && (matches!(role, HlRole::Other | HlRole::VariableDef | HlRole::Variable)
+        == matches!(ret.fg, Some(Color::Reset))))]
 #[inline]
 #[must_use]
 pub const fn style_of(role: HlRole) -> Style
@@ -63,11 +67,23 @@ pub const fn style_of(role: HlRole) -> Style
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — every kind is enumerated and its foreground asserted set;
-///   L2 — a fixed session's painted frame carries each line's kind style cell
-///   by cell.
+/// - hypothesis: L3 — all eight kinds retain their semantic role colours; only
+///   source marks and blame add bold, and no kind cancels that emphasis.
+///   Missing colour, wrong grouping or misplaced emphasis changes the finite
+///   observations. Backgrounds and terminal-specific colour appearance are
+///   outside the witnesses.
 /// - witness: `theme::tests::every_role_and_kind_sets_a_foreground`
-/// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
+/// - witness: `theme::tests::line_kinds_preserve_role_colours_and_emphasis`
+#[anodized::spec(ensures: |ret| matches!((kind, ret.fg),
+    (OutKind::Source | OutKind::Value, Some(Color::Reset))
+    | (OutKind::Type, Some(Color::Green))
+    | (OutKind::Goal, Some(Color::Magenta))
+    | (OutKind::Diag | OutKind::Blame, Some(Color::Red))
+    | (OutKind::Stuck, Some(Color::Yellow))
+    | (OutKind::Info, Some(Color::DarkGray)))
+    && ((ret.add_modifier.bits() & Modifier::BOLD.bits() != 0) == matches!(kind, OutKind::Source | OutKind::Blame))
+    && ret.sub_modifier.bits() & Modifier::BOLD.bits() == 0
+)]
 #[inline]
 #[must_use]
 pub const fn style_of_kind(kind: OutKind) -> Style
@@ -198,15 +214,81 @@ mod tests
         );
     }
 
-    /// A boolean is painted as a keyword, as the language server sends both
-    /// under one token type.
+    /// Equal semantic roles share styles; different groups remain distinct.
     #[test]
-    fn keyword_and_boolean_share_the_keyword_colour()
+    fn role_groups_preserve_semantic_contrast()
     {
-        assert_eq!(
-            style_of(HlRole::Keyword),
-            style_of(HlRole::Boolean),
-            "booleans share the keyword style"
-        );
+        let groups: [&[HlRole]; 8_usize] = [
+            &[
+                HlRole::Keyword,
+                HlRole::Boolean,
+                HlRole::Hole,
+                HlRole::Directive,
+            ],
+            &[HlRole::Operator, HlRole::Label],
+            &[
+                HlRole::FunctionDef,
+                HlRole::FunctionCall,
+                HlRole::Constructor,
+            ],
+            &[HlRole::VariableDef, HlRole::Variable, HlRole::Other],
+            &[HlRole::VariableParam, HlRole::Member, HlRole::Number],
+            &[HlRole::Type, HlRole::TypeBuiltin, HlRole::TypeVariable],
+            &[
+                HlRole::StringLit,
+                HlRole::Character,
+                HlRole::Escape,
+                HlRole::Path,
+            ],
+            &[HlRole::Comment],
+        ];
+        for (index, group) in groups.iter().enumerate() {
+            let representative = style_of(group[0_usize]);
+            for &role in *group {
+                assert_eq!(
+                    style_of(role),
+                    representative,
+                    "one semantic group: {role:?}"
+                );
+            }
+            for other in groups.iter().skip(index.saturating_add(1_usize)) {
+                assert_ne!(
+                    representative,
+                    style_of(other[0_usize]),
+                    "semantic groups remain distinguishable"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn line_kinds_preserve_role_colours_and_emphasis()
+    {
+        for (kind, role, bold) in [
+            (OutKind::Source, HlRole::Other, true),
+            (OutKind::Type, HlRole::Type, false),
+            (OutKind::Value, HlRole::Other, false),
+            (OutKind::Goal, HlRole::Hole, false),
+            (OutKind::Diag, HlRole::StringLit, false),
+            (OutKind::Blame, HlRole::StringLit, true),
+            (OutKind::Stuck, HlRole::Number, false),
+            (OutKind::Info, HlRole::Comment, false),
+        ] {
+            let style = style_of_kind(kind);
+            assert_eq!(
+                style.fg,
+                style_of(role).fg,
+                "{kind:?} keeps its role colour"
+            );
+            assert_eq!(
+                style.add_modifier.contains(ratatui::style::Modifier::BOLD),
+                bold,
+                "only source marks and blame add emphasis"
+            );
+            assert!(
+                !style.sub_modifier.contains(ratatui::style::Modifier::BOLD),
+                "the style cannot cancel its own emphasis"
+            );
+        }
     }
 }

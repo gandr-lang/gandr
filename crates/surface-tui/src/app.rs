@@ -65,8 +65,7 @@ impl App
     /// # Specification
     /// - requires: nothing.
     /// - ensures: an empty line, nothing waiting and an empty transcript over a
-    ///   loop whose refusals carry no terminal escapes, so the face's own
-    ///   styles are the only ones painted.
+    ///   fresh loop whose refusal renderer selects plain styling.
     /// - provides: the model every run of the face starts from.
     /// - fails: [`PbgError`] when the built-in grammar or its role table does
     ///   not build.
@@ -76,8 +75,14 @@ impl App
     /// [`PbgError`] when the built-in grammar or its role table does not build.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every face witness starts here.
-    /// - witness: `launch::tests::smoke_writes_the_launch_note`
+    /// - hypothesis: L3 — fresh state and an ASCII type mismatch expose empty
+    ///   editing buffers and diagnostic rows without added escapes. Dirty state
+    ///   or styled-loop substitution changes an observation;
+    ///   grammar-construction failure and literal control-bearing source text
+    ///   are excluded.
+    /// - witness: `app::tests::unicode_edits_and_empty_backspace_preserve_input_boundaries`
+    /// - witness: `app::tests::a_fresh_loop_keeps_refusal_rows_plain`
+    #[anodized::spec(ensures: |ref ret| ret.as_ref().map_or(true, |app| app.line.is_empty() && app.waiting.is_empty() && app.transcript.is_empty() && app.repl.prompt() == Prompt::Fresh))]
     #[inline]
     pub fn new() -> Result<Self, PbgError>
     {
@@ -131,13 +136,15 @@ impl App
     /// Apply `key`.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: a character extends the line and a backspace shortens it;
-    ///   enter offers the line to the loop and clears it — a line the loop
-    ///   holds for the parser is kept to show while it waits, a block joins the
-    ///   transcript and ends the wait, and `:quit` answers [`Handled::Quit`];
-    ///   an interrupt drops the line and the waiting buffer; quit answers
-    ///   [`Handled::Quit`]. Every other key answers [`Handled::Continue`].
+    /// - requires: on Enter, the edited line carries no CR or LF terminator, as
+    ///   required by the loop's line-oriented offer.
+    /// - ensures: a character appends one Unicode scalar; Backspace removes the
+    ///   last scalar, or preserves an empty line. Enter clears the line and
+    ///   offers it once; a waiting line is retained for display, a block joins
+    ///   the transcript and clears waiting lines, and `:quit` answers
+    ///   [`Handled::Quit`]. Interrupt drops the edit and waiting buffer while
+    ///   preserving accepted history. Quit preserves state and answers
+    ///   [`Handled::Quit`]. Other successful keys answer [`Handled::Continue`].
     /// - provides: the face's one update step.
     /// - fails: [`LoopError::Fault`] when the session faults on the offered
     ///   line.
@@ -147,11 +154,51 @@ impl App
     /// [`LoopError::Fault`] when the session faults on the offered line.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — over scripted keys, a continued buffer shown while it
-    ///   waits, an interrupt dropping it, a kept block and `:q` ending the run
-    ///   are asserted on the painted frame.
+    /// - hypothesis: L3 — one-, two- and four-byte scalars cover editing and
+    ///   empty Backspace; completed and interrupted continuations retain exact
+    ///   source and accepted names. Scripted redraw and quit cover loop
+    ///   transitions. Lost scalars, duplicated lines, discarded history or
+    ///   wrong exit tags change observations; session faults and invalid line
+    ///   submissions are outside the witnesses.
+    /// - witness: `app::tests::unicode_edits_and_empty_backspace_preserve_input_boundaries`
+    /// - witness: `app::tests::completed_and_interrupted_waits_preserve_the_transcript`
     /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
     /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
+    #[anodized::spec(
+        requires: key != Key::Enter || !self.line.contains(['\r', '\n']),
+        captures: [
+            line_bytes = self.line.len(),
+            last_bytes = self.line.chars().next_back().map_or(0_usize, char::len_utf8),
+            waiting = self.waiting.len(),
+            blocks = self.transcript.len(),
+            prompt = self.repl.prompt(),
+        ],
+        ensures: |ref ret| match key {
+            Key::Char(typed) => matches!(*ret, Ok(Handled::Continue))
+                && self.line.len().checked_sub(typed.len_utf8()) == Some(line_bytes)
+                && self.line.ends_with(typed) && self.waiting.len() == waiting
+                && self.transcript.len() == blocks && self.repl.prompt() == prompt,
+            Key::Backspace => matches!(*ret, Ok(Handled::Continue))
+                && self.line.len() == line_bytes.saturating_sub(last_bytes)
+                && self.waiting.len() == waiting && self.transcript.len() == blocks
+                && self.repl.prompt() == prompt,
+            Key::Interrupt => matches!(*ret, Ok(Handled::Continue))
+                && self.line.is_empty() && self.waiting.is_empty()
+                && self.transcript.len() == blocks && self.repl.prompt() == Prompt::Fresh,
+            Key::Quit => matches!(*ret, Ok(Handled::Quit))
+                && self.line.len() == line_bytes && self.waiting.len() == waiting
+                && self.transcript.len() == blocks && self.repl.prompt() == prompt,
+            Key::Enter => self.line.is_empty() && match *ret {
+                Ok(Handled::Continue) => match (self.transcript.len().checked_sub(blocks), self.repl.prompt()) {
+                    (Some(1_usize), Prompt::Fresh) => self.waiting.is_empty(),
+                    (Some(0_usize), Prompt::Continuing) => self.waiting.len().checked_sub(waiting) == Some(1_usize),
+                    (Some(0_usize), Prompt::Fresh) => self.waiting.len() == waiting,
+                    _ => false,
+                },
+                Ok(Handled::Quit) | Err(_) => self.waiting.len() == waiting && self.transcript.len() == blocks,
+            },
+        },
+    )]
     #[inline]
     pub fn handle(
         &mut self,
@@ -187,5 +234,161 @@ impl App
             | Key::Quit => return Ok(Handled::Quit),
         }
         Ok(Handled::Continue)
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_surface_render_remote::OutKind;
+    use gandr_surface_repl::Prompt;
+
+    use super::App;
+    use super::Handled;
+    use super::Key;
+
+    #[test]
+    fn unicode_edits_and_empty_backspace_preserve_input_boundaries()
+    {
+        let mut app = App::new().expect("the grammar builds");
+        assert!(app.line().as_ref().is_empty());
+        assert!(app.waiting().is_empty());
+        assert!(app.transcript().is_empty());
+        assert_eq!(app.prompt(), Prompt::Fresh);
+        for typed in "aé𐐀".chars() {
+            assert_eq!(
+                app.handle(Key::Char(typed)).expect("typing succeeds"),
+                Handled::Continue
+            );
+        }
+        assert_eq!(app.line().as_ref(), "aé𐐀");
+        for expected in ["aé", "a", "", ""] {
+            assert_eq!(
+                app.handle(Key::Backspace).expect("deleting succeeds"),
+                Handled::Continue
+            );
+            assert_eq!(app.line().as_ref(), expected);
+            assert!(app.waiting().is_empty());
+            assert!(app.transcript().is_empty());
+            assert_eq!(app.prompt(), Prompt::Fresh);
+        }
+        assert_eq!(
+            app.handle(Key::Char('é')).expect("typing succeeds"),
+            Handled::Continue
+        );
+        assert_eq!(
+            app.handle(Key::Quit).expect("leaving succeeds"),
+            Handled::Quit
+        );
+        assert_eq!(app.line().as_ref(), "é");
+    }
+
+    #[test]
+    fn completed_and_interrupted_waits_preserve_the_transcript()
+    {
+        let mut app = App::new().expect("the grammar builds");
+        for typed in "def kept = (".chars() {
+            assert_eq!(
+                app.handle(Key::Char(typed)).expect("typing succeeds"),
+                Handled::Continue
+            );
+        }
+        assert_eq!(
+            app.handle(Key::Enter).expect("an open form waits"),
+            Handled::Continue
+        );
+        assert_eq!(app.prompt(), Prompt::Continuing);
+        assert!(app.line().as_ref().is_empty());
+        assert!(
+            app.waiting()
+                .iter()
+                .map(String::as_str)
+                .eq(["def kept = ("])
+        );
+        assert!(app.transcript().is_empty());
+        for typed in "17) ;".chars() {
+            assert_eq!(
+                app.handle(Key::Char(typed)).expect("typing succeeds"),
+                Handled::Continue
+            );
+        }
+        assert_eq!(
+            app.handle(Key::Enter).expect("the form completes"),
+            Handled::Continue
+        );
+        assert_eq!(app.prompt(), Prompt::Fresh);
+        assert!(app.waiting().is_empty());
+        assert_eq!(app.transcript().len(), 1_usize);
+        assert_eq!(app.transcript()[0_usize].source, "def kept = (\n17) ;");
+        for typed in "def abandoned = (".chars() {
+            assert_eq!(
+                app.handle(Key::Char(typed)).expect("typing succeeds"),
+                Handled::Continue
+            );
+        }
+        assert_eq!(
+            app.handle(Key::Enter).expect("an open form waits"),
+            Handled::Continue
+        );
+        assert_eq!(
+            app.handle(Key::Char('9')).expect("typing succeeds"),
+            Handled::Continue
+        );
+        assert_eq!(
+            app.handle(Key::Interrupt).expect("interrupting succeeds"),
+            Handled::Continue
+        );
+        assert!(app.line().as_ref().is_empty());
+        assert!(app.waiting().is_empty());
+        assert_eq!(app.prompt(), Prompt::Fresh);
+        assert_eq!(app.transcript().len(), 1_usize);
+        assert_eq!(app.transcript()[0_usize].source, "def kept = (\n17) ;");
+        for typed in ":type kept".chars() {
+            assert_eq!(
+                app.handle(Key::Char(typed)).expect("typing succeeds"),
+                Handled::Continue
+            );
+        }
+        assert_eq!(
+            app.handle(Key::Enter).expect("the retained name resolves"),
+            Handled::Continue
+        );
+        assert_eq!(app.transcript().len(), 2_usize);
+        assert!(
+            app.transcript()[1_usize]
+                .lines
+                .iter()
+                .any(|&(kind, _)| kind == OutKind::Type)
+        );
+        assert!(
+            app.transcript()[1_usize]
+                .lines
+                .iter()
+                .all(|&(kind, _)| kind != OutKind::Diag)
+        );
+    }
+
+    #[test]
+    fn a_fresh_loop_keeps_refusal_rows_plain()
+    {
+        let mut app = App::new().expect("the grammar builds");
+        for line in ["def wrong : Integer ;", "def wrong = \"text\" ;"] {
+            for typed in line.chars() {
+                assert_eq!(
+                    app.handle(Key::Char(typed)).expect("typing succeeds"),
+                    Handled::Continue
+                );
+            }
+            assert_eq!(
+                app.handle(Key::Enter).expect("the declaration is answered"),
+                Handled::Continue
+            );
+        }
+        let refusal = app
+            .transcript()
+            .last()
+            .expect("the mismatch produces a block");
+        assert!(refusal.lines.iter().any(|&(kind, _)| kind == OutKind::Diag));
+        assert!(refusal.lines.iter().all(|line| !line.1.contains('\u{1b}')));
     }
 }
