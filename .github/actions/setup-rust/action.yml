@@ -13,12 +13,6 @@ inputs:
   install-toolchain:
     description: "Restore, install, and save the rustup toolchain in this job"
     default: "true"
-  cache-workspace-crates:
-    description: "Keep the workspace crates in the Rust dependency cache"
-    default: "false"
-  cache-targets:
-    description: "Include target artifacts in the dependency cache"
-    default: "true"
 runs:
   using: composite
   steps:
@@ -59,12 +53,10 @@ runs:
         # complete archive separately, without dependency-cache pruning.
         prefix-key: gandr-v2-rust-deps
         key: ${{ hashFiles('Cargo.toml') }}
-        # One dependency cache across every Rust job; the gate lane's
-        # block shares this key, so the cache holds the whole
-        # workspace's artifacts under the single toolchain.
+        # Share crate downloads across every Rust lane. Complete compiled
+        # test artifacts have their own cache, including integration tests.
         shared-key: rust-deps
         cache-all-crates: false
-        cache-targets: ${{ inputs.cache-targets }}
-        cache-workspace-crates: ${{ inputs.cache-workspace-crates }}
+        cache-targets: false
         cache-on-failure: false
         save-if: ${{ inputs.cache-save == 'true' }}

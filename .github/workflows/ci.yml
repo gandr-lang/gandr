@@ -86,15 +86,11 @@ jobs:
       - &setup-rust
         id: setup-rust
         name: setup rust
-        if: ${{ env.CI_BUILD_STATE == '' || hashFiles('build-state-*.tar.zst') != '' }}
+        if: ${{ github.event_name != 'push' || hashFiles('build-state-*.tar.zst') != '' }}
         uses: ./.github/actions/setup-rust # zizmor: ignore[self-repository]
         with:
           install-toolchain: ${{ env.CI_INSTALL_TOOLCHAIN || needs.ci-image-ref.outputs.ref == '' }}
           cache-save: ${{ hashFiles('build-state-*.tar.zst') != '' || (github.event_name == 'workflow_dispatch' && startsWith(github.job, 'cargo-test')) }}
-          # Test archives retain every binary; dependency cleanup must not
-          # decide which integration-test targets survive in the warm state.
-          cache-targets: ${{ env.CI_BUILD_STATE == '' }}
-          cache-workspace-crates: true
       # Cache installed tools by locked pins, including source-built sizelint
       # and macOS Dylint tools. Install the complete CI subset inside the cache.
       - &install-policy-tools
