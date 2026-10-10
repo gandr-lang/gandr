@@ -25,17 +25,6 @@
 //! [`BlockStore`]: gandr_storage_records::BlockStore
 
 #![no_std]
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 
 extern crate alloc;
 
@@ -88,20 +77,27 @@ pub use crate::record::SegmentBytes;
 /// [`ArtifactError::Records`] — the record plane refuses.
 ///
 /// # Adequacy
-/// - hypothesis: L2 agreement — one artifact committed twice into two stores
-///   mints one identity, a permuted record order mints the same, one changed
-///   segment moves it, and a generated environment's committed tree reads back
-///   as the decode of its own image.
+/// - hypothesis: L2 on the shared four-declaration artifact compares repeated
+///   and permuted builds; header and segment perturbations change its identity.
+///   Sixty-four generated environments of zero to 47 declarations read back
+///   equal to their kernel decode. L3 refuses the previous record encoding
+///   before writing any node. It distinguishes lost bytes, history-sensitive
+///   identities and writes before parameter admission, not arbitrary store
+///   failures, tree limits or all parameter combinations.
 /// - witness: `artifact_contract::artifact_contract::the_same_artifact_mints_the_same_identity`
 /// - witness: `artifact_contract::artifact_contract::a_permuted_build_order_yields_the_same_identity`
 /// - witness: `artifact_contract::artifact_contract::any_perturbation_changes_the_identity`
 /// - witness: `artifact_contract::artifact_contract::round_trip_over_generated_environments`
+/// - witness: `artifact_contract::artifact_contract::unsupported_build_parameters_do_not_write_nodes`
 #[inline]
-#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|manifest|
-    *manifest.commitment() == params.boundary_commitment()
+#[spec(ensures: |ret| match ret {
+    Ok(ref manifest) => *manifest.commitment() == params.boundary_commitment()
         && manifest.kernel_format() == FORMAT_VERSION
         && usize::try_from(u64::from(manifest.record_count()))
-            .is_ok_and(|count| count == records.records().len().saturating_add(1_usize))))]
+            .is_ok_and(|count| count == records.records().len().saturating_add(1_usize)),
+    Err(ArtifactError::Records { .. }) => true,
+    Err(_) => false,
+})]
 pub fn build<S>(
     records: &ArtifactRecordSet,
     params: TreeParams,

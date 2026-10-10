@@ -45,6 +45,8 @@ A consumer supplies the `BlockStore` and the `TreeParams` an artifact is committ
 
 The optional executable specification checks use `--cfg anodized_panic` across the dependency graph, as in the enforcing test lane.
 
+Function predicates check current fields and captured transition state without replaying generic store I/O. Each nontrivial contract states bounded evidence in its `# Adequacy` section; formatter output, parser history and opaque strategy support use explicit exemptions where the item cannot observe the claimed property.
+
 ## Examples
 
 Commit a one-declaration artifact and read it back:
@@ -99,6 +101,8 @@ The header sits under the empty key, which sorts before every admission key, so 
 
 A segment may reference subterm-table entries an earlier segment introduced, so a record is a content-addressing grain and never an independently decodable unit: the reader reassembles the whole image and decodes it once.
 
+Executable record refinements bind each key to its index and require strictly increasing, unique keys. Raw header and segment bytes, empty sets and noncontiguous indices remain admissible; those refinements do not certify kernel validity. Mutation witnesses separately corrupt the key binding, ordering and uniqueness.
+
 **Choice.** The key is big-endian at a fixed width of eight bytes, and the header is a record of its own. **Alternatives.** A little-endian key, which the recorded design names, sorts index 256 before index 2 bytewise, and the record plane orders keys bytewise, so key order would stop being admission order past 255 declarations. The prior implementation kept the header beside the tree rather than in it, so its identity did not bind the header's bytes and a reader needed the header from somewhere else; here one root covers the whole image. **Reversal.** A record plane that orders keys by a typed comparison rather than bytewise makes the key's byte order free.
 
 ## Cuts come from the decoder
@@ -123,6 +127,8 @@ identity := BLAKE3(image)
 
 **Alternatives.** Typing the identity as `gandr-storage-values`' `ManifestDigest` would let an artifact identity stand where a committed value's is expected and compile. Binding the record tree's `TreeRoot` digest instead of its root node identity would leave a reader nothing to load the tree by. Copying the prior implementation's fixed 93-byte chunker commitment would carry a second commitment format beside the record plane's own. **Reversal.** A second manifest layout, or a reader that must recognise a value manifest and an artifact manifest in one slot, makes the shared scheme a shared type.
 
+The manifest refinement admits only layout version one without narrowing the opaque metadata. The owned image refinement checks the exact domain, version and commitment length against the complete frame without allocating or decoding the kernel. Fixed witnesses reject every proper golden prefix, inconsistent lengths and trailing bytes, while retaining empty commitments, zero and maximum record counts, and future kernel versions as metadata.
+
 ## Integrity and validity
 
 A matching identity proves which bytes these are, never that they are a valid artifact. `read_under` first establishes integrity — the stored records rebuild exactly the tree the manifest names, under the reader's own parameters — and then hands validity to the kernel's decoder alone, under its work budgets. `a_matching_identity_over_bytes_the_kernel_refuses_is_refused` holds the line: a tree whose identity matches the one the reader holds, over a header whose magic is one byte off, is refused with the decoder's own refusal. Nothing here re-checks typing, and nothing short-circuits the decoder because a hash matched; a decoded artifact is still unadmitted, and admission is the consumer's next wall.
@@ -144,12 +150,16 @@ The checked lemmas that bound a node's storage tokens under LoCalMem's boundary 
 | Statement | Witness |
 | --------- | ------- |
 | The manifest's image is a fixed layout and its identity is BLAKE3 of it | `manifest::tests::the_manifest_layout_is_golden`, `manifest::tests::the_identity_is_blake3_of_the_canonical_bytes` |
-| Decode inverts encode, and refuses each malformed image by field | `manifest::tests::the_manifest_round_trips_through_decode`, `manifest::tests::an_unknown_manifest_version_is_refused`, `manifest::tests::a_malformed_manifest_is_rejected`, `manifest::tests::a_bad_commitment_length_is_rejected`, `manifest::tests::truncation_at_every_prefix_is_rejected` |
-| Every manifest field binds the identity | `manifest::tests::any_field_perturbation_changes_the_identity` |
+| The golden round-trips; every proper prefix and selected malformed fields receive the named refusal | `manifest::tests::the_manifest_round_trips_through_decode`, `manifest::tests::an_unknown_manifest_version_is_refused`, `manifest::tests::a_malformed_manifest_is_rejected`, `manifest::tests::a_bad_commitment_length_is_rejected`, `manifest::tests::truncation_at_every_prefix_is_rejected` |
+| Perturbing each supplied manifest field changes the identity | `manifest::tests::any_field_perturbation_changes_the_identity` |
 | A set is canonical in its record order and refuses a repeated index | `record::tests::from_records_sorts_any_permutation_canonically`, `record::tests::a_duplicate_admission_key_is_rejected` |
+| Admission keys preserve numeric order across every native-word byte carry | `record::tests::admission_keys_preserve_numeric_order_across_byte_carries` |
+| Cursor reads preserve exact suffixes and distinguish refusal before and after a length prefix | `manifest::tests::cursor_transitions_preserve_suffixes_and_refusal_positions` |
+| Identity rendering preserves every byte and propagates sink refusal; diagnostic variants retain their payloads | `manifest::tests::identity_rendering_preserves_all_bytes_and_refusals`, `error::tests::every_refusal_renders_apart`, `error::tests::every_manifest_field_renders_apart` |
 | The records reassemble to the artifact byte for byte | `artifact_contract::records_round_trip_to_a_byte_identical_artifact`, `artifact_contract::round_trip_over_generated_environments` |
-| The identity is deterministic, history-independent and sensitive to every byte | `artifact_contract::the_same_artifact_mints_the_same_identity`, `artifact_contract::a_permuted_build_order_yields_the_same_identity`, `artifact_contract::any_perturbation_changes_the_identity` |
+| Repeated and permuted builds agree; header and segment perturbations change the identity | `artifact_contract::the_same_artifact_mints_the_same_identity`, `artifact_contract::a_permuted_build_order_yields_the_same_identity`, `artifact_contract::any_perturbation_changes_the_identity` |
 | A committed artifact reads back as the decode of its own image, from a leaf root and from an internal one | `artifact_contract::tree_nodes_store_and_reopen`, `artifact_contract::round_trip_over_generated_environments` |
+| The previous record encoding is refused before any node is written | `artifact_contract::unsupported_build_parameters_do_not_write_nodes` |
 | A foreign kernel format or boundary rule is refused before any load | `artifact_contract::a_foreign_profile_or_format_is_refused_before_any_load` |
 | A matching identity over bytes the kernel refuses is refused | `artifact_contract::a_matching_identity_over_bytes_the_kernel_refuses_is_refused` |
 | Misplaced keys and records off a segment boundary are refused | `artifact_contract::a_stored_tree_with_misplaced_keys_is_refused`, `artifact_contract::records_cut_off_a_segment_boundary_are_refused` |
