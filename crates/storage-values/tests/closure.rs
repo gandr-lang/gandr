@@ -77,7 +77,20 @@ fn fixed(kappa: Kappa) -> ValueProfile
 /// Every child pointer in the body of the chunk `digest` names.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the store successfully loads the named chunk with a well-formed
+///   token body.
+/// - ensures: returns every encoded child pointer in wire order, retaining
+///   repetitions; it does not require the referenced chunks to exist.
+/// - fails: never within the admitted domain.
+/// - panics: when loading or scanning refuses.
+/// - executable: none — the input does not expose the loaded body; obtaining it
+///   for a capture or postcondition would repeat observable backend I/O.
+///
+/// # Adequacy
+/// - hypothesis: L3 follows references through two seams, removes only the
+///   selected grandchild and checks that both closure and embedding name the
+///   same missing digest rather than requiring every child to be present.
+/// - witness: `tests::closure::a_missing_descendant_fails_the_closure_by_name`
 fn children(
     store: &dyn ChunkStore,
     digest: ChunkDigest,

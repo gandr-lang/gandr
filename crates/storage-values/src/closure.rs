@@ -58,6 +58,22 @@ use crate::units::MAX_DECODE_WORK;
 use crate::units::TokenBody;
 
 /// The chunks a reader of a value loads.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: contains at least the chunk from which the walk started.
+/// - provides: a nonempty set of authenticated chunk identities.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on repeated references to a root and an interior subtree
+///   observes the exact two-digest closure; an empty forged closure is refused
+///   by the refinement. This separates missing roots and empty acceptance, not
+///   hash collisions or arbitrary store implementations.
+/// - witness: `closure::tests::cached_counts_distinguish_offsets_and_repeat_per_reference`
+/// - witness: `closure::tests::closure_state_refinements_reject_impossible_counts`
+#[spec(maintains: !self.0.is_empty())]
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValueClosure(BTreeSet<ChunkDigest>);
@@ -102,6 +118,23 @@ impl From<ValueClosure> for BTreeSet<ChunkDigest>
 
 /// What a walk from one pointer found: its closure, and the records a reader
 /// of the pointer delivers.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the closure is nonempty and the delivered count includes at least
+///   an opening and closing record for the addressed value.
+/// - provides: the closure and record count of one complete subtree.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on repeated root/interior references observes fifteen
+///   delivered records and exactly two digests. Forged empty closures and
+///   counts below two are refused, separating impossible successful results.
+/// - witness: `closure::tests::cached_counts_distinguish_offsets_and_repeat_per_reference`
+/// - witness: `closure::tests::closure_state_refinements_reject_impossible_counts`
+#[spec(maintains: anodized::types::Spec::predicate(&self.closure)
+    && u64::from(self.token_count) >= 2_u64)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Walked
 {
@@ -175,6 +208,24 @@ enum Scanned
 }
 
 /// One subtree being counted.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: delivered records cover the open-constructor depth; a complete
+///   scan stands outside every constructor. An unfinished scan may stand
+///   outside before reading its root or after a refused accounting step.
+/// - provides: the local state needed to count one addressed subtree.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on three literal records observes each count and phase,
+///   including a complete no-read step and a refused budget charge. Forged
+///   counts below depth and completion inside a constructor are rejected. This
+///   separates impossible local states, not all discarded prefixes.
+/// - witness: `closure::tests::scan_transitions_preserve_counts_and_budget_refusals`
+#[spec(maintains: u64::from(self.delivered) >= self.depth.0
+    && (self.state != ScanState::Complete || self.depth == SubtreeDepth::OUTSIDE))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct Scan<'store>
 {
@@ -227,6 +278,15 @@ impl<'store> Scan<'store>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a nested body at offsets zero and one, a word-only
+    ///   body, a close-only body, an unclosed constructor and the exact end
+    ///   observes precise counts or refusal positions. This separates wrong
+    ///   suffixes, premature ends and misplaced faults.
+    /// - witness: `closure::tests::the_walk_counts_the_addressed_subtree_and_refuses_a_malformed_one`
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|&(record, rest)|
+        split_record(self.remaining) == Ok(BodyFront::Record(record, rest))))]
     fn front(&self) -> Result<(Record<'store>, TokenBody<'store>), ValueError>
     {
         let position = self.position;
@@ -255,9 +315,18 @@ impl<'store> Scan<'store>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
-    #[spec(captures: [entry = u64::from(*spent)],
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on three literal records observes each position and
+    ///   unit charge; an exhausted budget refuses before consuming the first
+    ///   record. This separates missed advancement, uncharged work and mutation
+    ///   despite a refused charge.
+    /// - witness: `closure::tests::scan_transitions_preserve_counts_and_budget_refusals`
+    #[spec(captures: [entry = u64::from(*spent), position = self.position],
         ensures: |ret| ret.is_err()
-            || (u64::from(*spent) == entry.saturating_add(1_u64) && self.remaining == rest))]
+            || (entry.checked_add(1_u64) == Some(u64::from(*spent))
+                && position.next() == Ok(self.position) && self.remaining == rest
+                && *spent <= MAX_DECODE_WORK))]
     fn advance(
         &mut self,
         rest: TokenBody<'store>,
@@ -284,7 +353,15 @@ impl<'store> Scan<'store>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
-    #[spec(ensures: |ret| ret.is_err() || self.position == count)]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a five-record body at offsets zero, one and five
+    ///   observes the whole count, the exact interior count and end truncation.
+    ///   This separates restarting at zero, counting skipped records and
+    ///   accepting an absent subtree.
+    /// - witness: `closure::tests::the_walk_counts_the_addressed_subtree_and_refuses_a_malformed_one`
+    #[spec(requires: self.position == TokenOffset::ZERO,
+        ensures: |ret| ret.is_err() || self.position == count)]
     fn skip(
         &mut self,
         count: TokenOffset,
@@ -317,6 +394,31 @@ impl<'store> Scan<'store>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on three literal records observes exact count and phase
+    ///   transitions and no work after completion. A repeated-reference DAG
+    ///   exercises child records separately from delivered records; malformed
+    ///   subtree heads are refused by kind and position. These distinguish
+    ///   early completion, missed records and counted pointers.
+    /// - witness: `closure::tests::scan_transitions_preserve_counts_and_budget_refusals`
+    /// - witness: `closure::tests::cached_counts_distinguish_offsets_and_repeat_per_reference`
+    /// - witness: `closure::tests::the_walk_counts_the_addressed_subtree_and_refuses_a_malformed_one`
+    #[spec(captures: [position = self.position, delivered = self.delivered, spent_before = *spent],
+        ensures: |ret| ret.as_ref().ok().is_none_or(|scanned|
+            anodized::types::Spec::predicate(self)
+            && (if *scanned == Scanned::Complete {
+                self.position == position && *spent == spent_before
+            } else {
+                position.next() == Ok(self.position)
+                    && u64::from(spent_before).checked_add(1_u64) == Some(u64::from(*spent))
+            })
+            && match *scanned {
+                Scanned::Complete => self.state == ScanState::Complete && self.delivered == delivered,
+                Scanned::Delivered => u64::from(delivered).checked_add(1_u64)
+                    == Some(u64::from(self.delivered)),
+                Scanned::Child(_) => self.delivered == delivered,
+            }))]
     fn step(
         &mut self,
         spent: &mut DecodeWork,
@@ -380,8 +482,17 @@ impl<'store> Scan<'store>
     ///
     /// # Errors
     /// [`ValueError::ArithmeticOverflow`] — the count passes its width.
-    #[spec(ensures: |ret| ret.is_err()
-        || ((self.state == ScanState::Complete) == (self.depth == SubtreeDepth::OUTSIDE)))]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes three own records and repeated references
+    ///   delivering five, three and five records under a two-record parent.
+    ///   Exact total fifteen and final completion separate counting pointers,
+    ///   deduplicating logical deliveries and caching by digest without offset.
+    /// - witness: `closure::tests::scan_transitions_preserve_counts_and_budget_refusals`
+    /// - witness: `closure::tests::cached_counts_distinguish_offsets_and_repeat_per_reference`
+    #[spec(captures: delivered = self.delivered, ensures: |ret| ret.is_err()
+        || (u64::from(delivered).checked_add(u64::from(count)) == Some(u64::from(self.delivered))
+            && ((self.state == ScanState::Complete) == (self.depth == SubtreeDepth::OUTSIDE))))]
     fn absorb(
         &mut self,
         count: TokenCount,
@@ -398,6 +509,24 @@ impl<'store> Scan<'store>
 
 /// The walk's state: the store, the chunks loaded, the subtrees counted, and
 /// the work spent.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: spent work fits the decode budget; each cached pointer names a
+///   loaded digest and counts at least one opening and closing record.
+/// - provides: bounded traversal state and completed-subtree accounting.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on an entered leaf observes a valid cached count; forged
+///   over-budget work, an unloaded cache key and a count below two are refused.
+///   These distinguish the stored-state bounds, not completeness of an
+///   arbitrary store's authenticated closure.
+/// - witness: `closure::tests::closure_state_refinements_reject_impossible_counts`
+#[spec(maintains: self.spent <= MAX_DECODE_WORK
+    && self.counted.iter().all(|(pointer, count)|
+        self.digests.contains(&pointer.digest()) && u64::from(*count) >= 2_u64))]
 struct Walk<'store, Store>
 where
     Store: ChunkStore + ?Sized,
@@ -430,7 +559,18 @@ where
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
-    #[spec(ensures: |ret| ret.is_err() || self.digests.contains(&pointer.digest()))]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 enters a literal leaf and observes exact image-byte
+    ///   work, offset zero and recorded digest; an interior pointer observes
+    ///   its own three-record subtree. These separate omitted loads, body-only
+    ///   charges and an ignored pointer offset.
+    /// - witness: `closure::tests::closure_state_refinements_reject_impossible_counts`
+    /// - witness: `closure::tests::the_walk_counts_the_addressed_subtree_and_refuses_a_malformed_one`
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|scan|
+        self.digests.contains(&pointer.digest()) && scan.at == pointer
+            && scan.position == pointer.offset() && scan.delivered == TokenCount::ZERO
+            && self.spent <= MAX_DECODE_WORK))]
     fn enter(
         &mut self,
         pointer: ContentPtr,
@@ -474,19 +614,20 @@ where
 /// [`ValueError`] — as listed above.
 ///
 /// # Adequacy
-/// - hypothesis: L2 agreement — the closure of every generated value under
-///   every generated profile, committed into an empty store, is the set of
-///   digests the store holds, and its token count the manifest's — plus L3 for
-///   a missing chunk two seams below the root, named exactly, for an interior
-///   offset counting only its own subtree, and for each malformed subtree,
-///   refused by variant and position.
+/// - hypothesis: L2 over generated values of at most 4096 records observes
+///   exact closure digests and delivered counts. L3 covers a missing chunk two
+///   seams down, an interior offset, malformed subtree heads and repeated
+///   references to two offsets of one chunk. These separate omitted or extra
+///   descendants, wrong fault positions and deduplicated logical deliveries.
 /// - witness: `tests::closure::the_closure_is_every_chunk_the_commit_wrote`
 /// - witness: `tests::closure::a_missing_descendant_fails_the_closure_by_name`
 /// - witness: `closure::tests::the_walk_counts_the_addressed_subtree_and_refuses_a_malformed_one`
+/// - witness: `closure::tests::cached_counts_distinguish_offsets_and_repeat_per_reference`
 #[spec(ensures: |ret| ret
     .as_ref()
     .ok()
-    .is_none_or(|walked| walked.closure.0.contains(&root.digest())))]
+    .is_none_or(|walked| walked.closure.0.contains(&root.digest())
+        && anodized::types::Spec::predicate(walked)))]
 pub(crate) fn walk_closure<Store>(
     store: &Store,
     root: ContentPtr,
@@ -546,7 +687,15 @@ where
 ///
 /// # Errors
 /// [`ValueError::ArithmeticOverflow`] — the sum passes sixty-four bits.
-#[spec(ensures: |ret| ret.is_ok() == u64::from(count).checked_add(u64::from(more)).is_some())]
+///
+/// # Adequacy
+/// - hypothesis: L3 at zero, the representable ceiling and the first
+///   overflowing sum observes exact totals or token-count overflow. This
+///   separates wrong addends, wrapping and an off-by-one admission boundary.
+/// - witness: `closure::tests::token_sums_preserve_the_width_boundary`
+#[spec(ensures: |ret| ret.is_ok() == u64::from(count).checked_add(u64::from(more)).is_some()
+    && ret.as_ref().ok().is_none_or(|total|
+        u64::from(count).checked_add(u64::from(more)) == Some(u64::from(*total))))]
 pub(crate) fn add_tokens(
     count: TokenCount,
     more: TokenCount,
@@ -563,16 +712,33 @@ pub(crate) fn add_tokens(
 #[cfg(test)]
 mod tests
 {
+    use alloc::collections::BTreeMap;
+    use alloc::collections::BTreeSet;
+
     use gandr_storage_chunker::TokenCount;
 
+    use super::Scan;
+    use super::ScanState;
+    use super::Scanned;
+    use super::ValueClosure;
+    use super::Walk;
+    use super::Walked;
+    use super::add_tokens;
     use super::walk_closure;
+    use crate::ChunkDigest;
+    use crate::ConstructorTag;
+    use crate::ValueQuantity;
     use crate::chunk::ChunkStore as _;
     use crate::chunk::InMemoryChunkStore;
     use crate::chunk::frame_chunk;
     use crate::error::ValueError;
     use crate::ptr::ContentPtr;
     use crate::ptr::TokenOffset;
+    use crate::tokens::BodyWriter;
+    use crate::tokens::Record;
     use crate::tokens::TokenKind;
+    use crate::units::DecodeWork;
+    use crate::units::MAX_DECODE_WORK;
     use crate::units::TokenBody;
 
     #[test]
@@ -629,5 +795,145 @@ mod tests
                 "the walk from {pointer:?} is refused by name"
             );
         }
+    }
+
+    #[test]
+    fn token_sums_preserve_the_width_boundary()
+    {
+        assert_eq!(
+            add_tokens(TokenCount::ZERO, TokenCount::ZERO),
+            Ok(TokenCount::ZERO)
+        );
+        assert_eq!(
+            add_tokens(TokenCount::from(u64::MAX - 1_u64), TokenCount::from(1_u64)),
+            Ok(TokenCount::from(u64::MAX))
+        );
+        assert_eq!(
+            add_tokens(TokenCount::from(u64::MAX), TokenCount::from(1_u64)),
+            Err(ValueError::ArithmeticOverflow {
+                quantity: ValueQuantity::TokenCount
+            })
+        );
+    }
+
+    #[test]
+    fn scan_transitions_preserve_counts_and_budget_refusals()
+    {
+        let bytes = [1_u8, 42, 2, 7, 0, 0, 0, 0, 0, 0, 0, 5];
+        let at = ContentPtr::new(ChunkDigest::from([7_u8; 32]), TokenOffset::ZERO);
+        let mut scan = Scan::at_start(at, TokenBody::from(bytes.as_slice()));
+        let mut spent = DecodeWork::ZERO;
+        assert!(anodized::types::Spec::predicate(&scan));
+        assert_eq!(scan.step(&mut spent), Ok(Scanned::Delivered));
+        assert_eq!(scan.delivered, TokenCount::from(1_u64));
+        assert_eq!(scan.position, TokenOffset::from(1_u32));
+        assert_eq!(spent, DecodeWork::ONE);
+        assert_eq!(scan.state, ScanState::Reading);
+        let mut forged = scan;
+        forged.delivered = TokenCount::ZERO;
+        assert!(!anodized::types::Spec::predicate(&forged));
+        forged = scan;
+        forged.state = ScanState::Complete;
+        assert!(!anodized::types::Spec::predicate(&forged));
+        assert_eq!(scan.step(&mut spent), Ok(Scanned::Delivered));
+        assert_eq!(scan.delivered, TokenCount::from(2_u64));
+        assert_eq!(scan.step(&mut spent), Ok(Scanned::Delivered));
+        assert_eq!(scan.delivered, TokenCount::from(3_u64));
+        assert_eq!(scan.state, ScanState::Complete);
+        assert!(anodized::types::Spec::predicate(&scan));
+        assert_eq!(scan.step(&mut spent), Ok(Scanned::Complete));
+        assert_eq!(scan.position, TokenOffset::from(3_u32));
+        assert_eq!(spent, DecodeWork::from(3_u64));
+
+        let mut scan = Scan::at_start(at, TokenBody::from(bytes.as_slice()));
+        let mut spent = MAX_DECODE_WORK;
+        assert_eq!(
+            scan.step(&mut spent),
+            Err(ValueError::DecodeBudgetExceeded {
+                spent: DecodeWork::from(u64::from(MAX_DECODE_WORK).saturating_add(1_u64)),
+                ceiling: MAX_DECODE_WORK,
+            })
+        );
+        assert_eq!(spent, MAX_DECODE_WORK);
+        assert_eq!(scan.position, TokenOffset::ZERO);
+        assert_eq!(scan.delivered, TokenCount::ZERO);
+        assert!(anodized::types::Spec::predicate(&scan));
+    }
+
+    #[test]
+    fn cached_counts_distinguish_offsets_and_repeat_per_reference()
+    {
+        let child_bytes = [1_u8, 42, 1, 43, 2, 7, 0, 0, 0, 0, 0, 0, 0, 5, 5];
+        let child = frame_chunk(TokenBody::from(child_bytes.as_slice())).expect("the child frames");
+        let whole = ContentPtr::new(child.digest(), TokenOffset::ZERO);
+        let inner = ContentPtr::new(child.digest(), TokenOffset::from(1_u32));
+        let mut body = BodyWriter::default();
+        body.push(Record::Open(ConstructorTag::from(1_u8)))
+            .expect("the parent opens");
+        for pointer in [whole, inner, whole] {
+            body.push(Record::Child(pointer))
+                .expect("the child record emits");
+        }
+        body.push(Record::Close).expect("the parent closes");
+        let root = frame_chunk(body.as_body()).expect("the parent frames");
+        let mut store = InMemoryChunkStore::new();
+        store.insert(child.as_verified()).expect("the child stores");
+        store.insert(root.as_verified()).expect("the parent stores");
+        let walked = walk_closure(&store, ContentPtr::new(root.digest(), TokenOffset::ZERO))
+            .expect("the references close");
+        assert_eq!(walked.token_count(), TokenCount::from(15_u64));
+        assert_eq!(
+            walked.closure().digests(),
+            &BTreeSet::from([child.digest(), root.digest()])
+        );
+        assert!(anodized::types::Spec::predicate(walked.closure()));
+        assert!(anodized::types::Spec::predicate(&walked));
+    }
+
+    #[test]
+    fn closure_state_refinements_reject_impossible_counts()
+    {
+        let bytes = [1_u8, 42, 5];
+        let chunk = frame_chunk(TokenBody::from(bytes.as_slice())).expect("the leaf frames");
+        let at = ContentPtr::new(chunk.digest(), TokenOffset::ZERO);
+        let mut store = InMemoryChunkStore::new();
+        store.insert(chunk.as_verified()).expect("the leaf stores");
+        let mut walk = Walk {
+            store: &store,
+            digests: BTreeSet::new(),
+            counted: BTreeMap::new(),
+            spent: DecodeWork::ZERO,
+        };
+        assert!(anodized::types::Spec::predicate(&walk));
+        let scan = walk.enter(at).expect("the leaf opens");
+        assert_eq!(scan.position, TokenOffset::ZERO);
+        assert_eq!(walk.digests, BTreeSet::from([chunk.digest()]));
+        assert_eq!(
+            u64::from(walk.spent),
+            u64::try_from(chunk.image().as_ref().len()).expect("a fixture image")
+        );
+        let _old = walk.counted.insert(at, TokenCount::from(2_u64));
+        assert!(anodized::types::Spec::predicate(&walk));
+        let valid_spent = walk.spent;
+        walk.spent = DecodeWork::from(u64::from(MAX_DECODE_WORK).saturating_add(1_u64));
+        assert!(!anodized::types::Spec::predicate(&walk));
+        walk.spent = valid_spent;
+        let _old = walk.counted.insert(at, TokenCount::from(1_u64));
+        assert!(!anodized::types::Spec::predicate(&walk));
+        let _old = walk.counted.insert(at, TokenCount::from(2_u64));
+        walk.digests.clear();
+        assert!(!anodized::types::Spec::predicate(&walk));
+
+        let empty = ValueClosure(BTreeSet::new());
+        assert!(!anodized::types::Spec::predicate(&empty));
+        let mut walked = Walked {
+            closure: empty,
+            token_count: TokenCount::from(2_u64),
+        };
+        assert!(!anodized::types::Spec::predicate(&walked));
+        walked.closure = ValueClosure(BTreeSet::from([chunk.digest()]));
+        assert!(anodized::types::Spec::predicate(&walked));
+        walked.token_count = TokenCount::from(1_u64);
+        assert!(!anodized::types::Spec::predicate(&walked));
     }
 }
