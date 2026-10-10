@@ -222,6 +222,10 @@ Term conversion with δ-, β- and η-rules is proof search, and a concurrent sea
 
 **Reversal.** A back-reference decision, with a replay-side table keyed on the goal it names, replaces the expansion once a measured trace of a deeply shared proof outgrows the replay budget. A closing the kernel cannot reproduce, because the engine's structural equality and the kernel's α-equality disagree on a pair, shows up as a refusal on an engine trace and moves the tie-break into the vocabulary.
 
+**Laws and evidence.** The unit and purity specifications, their named witnesses and the goal-refinement composition shape live on [`replay`](src/replay.rs). `KernelVerdict` carries the refusal class table and the certified fragment's partial-equivalence scope. [`tests/replay_laws.rs`](tests/replay_laws.rs) generates 256 recipes, checking each claim twice and in a cloned arena, with exact unit-law goldens and rollback checks.
+
+**Property-test dependency.** Dev-only `proptest` uses the workspace's 1.11 version range, defaults off and only `std` for generation, shrinking and persistence. It reuses the workspace's runner without expanding the shipped kernel dependencies. QuickCheck would add a second runner; hand-written enumeration would lose shrinking of generated term recipes. Reconsider on an unmaintained release, a high-risk advisory or a need the existing strategy API cannot express.
+
 ## Sharing and persistence
 
 The crate holds no interning table of decoded values that conversion consults, no content-keyed memo on the conversion path, and no persistence. The sharing a decode hands over is the sharing the checker sees, and identity equality is conversion's only sharing-aware step. The kernel's own type conversion performs no search, so it records no conversion trace; the replay is where the kernel reads one.
