@@ -1,3 +1,14 @@
+// Specification backfill pending (gandr-lang/gandr#9): the executable-
+// specification lints are allowed until this crate's own backfill lands.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        spec_attribute_present,
+        adequacy_present,
+        maybe_shape,
+        erased_error_signature
+    )
+)]
 //! Evaluate, read back, and compare the term against one written out by hand.
 //!
 //! The unit suites separate each decision surface of the readback machine one

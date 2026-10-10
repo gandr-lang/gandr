@@ -1,3 +1,14 @@
+// Specification backfill pending (gandr-lang/gandr#9): the executable-
+// specification lints are allowed until this crate's own backfill lands.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        spec_attribute_present,
+        adequacy_present,
+        maybe_shape,
+        erased_error_signature
+    )
+)]
 //! Static normalization through the public surface: a defined operator at an
 //! instance reads back as the ground type it stands for, two reduction orders
 //! over generated well-kinded terms reach the readback's normal form, and a

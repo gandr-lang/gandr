@@ -1,3 +1,14 @@
+// Specification backfill pending (gandr-lang/gandr#9): the executable-
+// specification lints are allowed until this crate's own backfill lands.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        spec_attribute_present,
+        adequacy_present,
+        maybe_shape,
+        erased_error_signature
+    )
+)]
 //! Type operators, lowered and checked: the relative-monad witness written
 //! with every universe spelled out and with the defaults left off, each
 //! lowered, judged by the checker and readmitted to the kernel, the two
