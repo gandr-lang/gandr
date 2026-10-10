@@ -76,14 +76,14 @@ impl Extent
     ///   `usize::MAX`. A count of nodes held in memory never reaches that
     ///   bound, so every sum the crate forms is exact.
     /// - panics: none.
-    /// - executable: none — the specification backend wraps bodies in a
-    ///   non-const closure call; this operation retains its const interface.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — exact results at zero, below the ceiling, at the
     ///   ceiling and beyond it distinguish wrapping, truncation and an early
-    ///   saturation boundary on representable extent pairs.
+    ///   saturation boundary on representable extent pairs, in both const
+    ///   evaluation and runtime calls.
     /// - witness: `tree::tests::extent_addition_saturates_at_usize_boundary`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(rhs.0))]
     #[inline]
     const fn saturating_add(
         self,
@@ -563,6 +563,10 @@ mod tests
     #[test]
     fn extent_addition_saturates_at_usize_boundary()
     {
+        const EXACT: Extent = Extent(3).saturating_add(Extent(4));
+        const CAPPED: Extent = Extent(usize::MAX).saturating_add(Extent::ONE);
+        assert_eq!(EXACT, Extent(7));
+        assert_eq!(CAPPED, Extent(usize::MAX));
         for (left, right, expected) in [
             (0, 0, 0),
             (3, 4, 7),
