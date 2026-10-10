@@ -166,7 +166,9 @@ A staged declaration outlives its builder's borrow, so staging order need not be
 
 **Content-start below outstanding content is refused.** Stage one declaration, stage a second, then offer the first: the second's nodes sit above the first's content-start while its `StagedDeclaration` is live, the floor lies below both, and a contiguous truncation cannot spare a disjoint region. Rolling back would hand the producer dangling roots, or free indices a later staging re-mints so that a subsequent admission checks other content under that name. The environment tracks the content-start mark of every staged, unresolved declaration and answers `KernelError::OutstandingStagedContent`, naming how many sit above.
 
-A mark is resolved by admitting, bypassing or `Environment::abandon`; abandoning a staging session before it finishes resolves its mark too. `abandon` truncates when nothing outstanding sits above the mark and otherwise retains the region as an orphan, the same clamp a rejection takes. "Above" is componentwise rather than lexicographic, because truncation is per family.
+A mark is resolved by admitting, bypassing or `Environment::abandon`. Before a borrowing session finishes, both explicit discard and ordinary scope exit roll back its builder and release its final registration. The claim guard holds only the exclusive tracker borrow: no intervening registration is possible, so release pops that final entry without an allocation, state flag or duplicate watermark. All four finishers disarm the guard when responsibility passes to the `StagedDeclaration`.
+
+`abandon` truncates when nothing outstanding sits above the mark and otherwise retains the region as an orphan, the same clamp a rejection takes. "Above" is componentwise rather than lexicographic, because truncation is per family.
 
 ## Sharing-aware conversion
 

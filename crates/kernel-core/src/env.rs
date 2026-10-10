@@ -320,6 +320,56 @@ impl StagedMarks
     }
 }
 
+/// The exclusively borrowed final registration of a live staging session.
+///
+/// While this borrow lives, no other registration can be appended or resolved.
+/// Dropping it removes the final entry; a finisher suppresses that destructor
+/// when ownership of the claim passes to a staged declaration.
+#[repr(transparent)]
+struct StagingClaim<'env>
+{
+    /// The nonempty multiset whose final entry belongs to this session.
+    outstanding: &'env mut StagedMarks,
+}
+
+impl Drop for StagingClaim<'_>
+{
+    /// Release the session's final registration without disturbing its prefix.
+    ///
+    /// # Specification
+    /// - requires: the exclusively borrowed multiset is nonempty; construction
+    ///   registered this session last and the borrow prevents intervening
+    ///   edits.
+    /// - ensures: the final registration is removed and the preceding sequence
+    ///   is unchanged. The predicate checks its length and final endpoint.
+    /// - provides: automatic claim release on ordinary and unwinding scope
+    ///   exit.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — explicit discard and implicit scope exit both
+    ///   preserve an earlier staged declaration's claim and permit its later
+    ///   admission. The witnesses cover ordinary scope exit, not every
+    ///   unwinding context.
+    /// - witness: `env::tests::implicit_staging_drop_releases_its_claim`
+    /// - witness: `env::tests::an_abandoned_staging_releases_its_claim`
+    #[spec(
+        requires: !self.outstanding.marks.is_empty(),
+        captures: [
+            entry_len = self.outstanding.marks.len(),
+            prefix_last = self.outstanding.marks.len().checked_sub(2_usize)
+                .and_then(|index| self.outstanding.marks.get(index)).copied()
+        ],
+        ensures: self.outstanding.marks.len() == entry_len.saturating_sub(1_usize)
+            && self.outstanding.marks.last().copied() == prefix_last
+    )]
+    fn drop(&mut self)
+    {
+        let _released = self.outstanding.marks.pop();
+    }
+}
+
 /// A borrowing staging session for one declaration's content.
 ///
 /// It wraps the term crate's builder so that finishing yields a
@@ -337,9 +387,8 @@ pub struct Staging<'env>
 {
     /// The wrapped builder, which owns the rollback.
     builder: DeclarationBuilder<'env>,
-    /// The environment's outstanding marks, so this session can register and
-    /// resolve its own.
-    outstanding: &'env mut StagedMarks,
+    /// The final registration, dropped after the builder rolls back the arena.
+    claim: StagingClaim<'env>,
 }
 
 impl<'env> Staging<'env>
@@ -355,6 +404,18 @@ impl<'env> Staging<'env>
     ///   content is minted without a mark a rejection must respect.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a finished definition retains its claim, while a
+    ///   later implicit abandonment restores the prior arena and claim
+    ///   sequence.
+    /// - witness: `env::tests::implicit_staging_drop_releases_its_claim`
+    #[spec(
+        captures: [entry_mark = arena.watermark(), entry_len = outstanding.marks.len()],
+        ensures: |ret| ret.builder.content_start() == entry_mark
+            && ret.claim.outstanding.marks.len().checked_sub(1_usize) == Some(entry_len)
+            && ret.claim.outstanding.marks.last() == Some(&entry_mark)
+    )]
     #[inline]
     fn new(
         arena: &'env mut TermArena,
@@ -365,7 +426,7 @@ impl<'env> Staging<'env>
         outstanding.register(builder.content_start());
         Self {
             builder,
-            outstanding,
+            claim: StagingClaim { outstanding },
         }
     }
 
@@ -382,30 +443,55 @@ impl<'env> Staging<'env>
     /// Discard the staged content, restoring the arena and resolving the mark.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the arena is truncated back to this session's content-start
-    ///   and the session's mark is resolved, so nothing it minted survives and
-    ///   no later rejection is blocked by it.
+    /// - requires: the session owns its builder's start mark as the final
+    ///   registration, as established by construction and its exclusive borrow.
+    /// - ensures: each arena family is truncated to the lesser of its current
+    ///   length and this session's content-start; the final claim is released.
+    ///   No node minted by this session survives and no claim blocks a later
+    ///   admission.
     /// - provides: the abandonment path a producer takes before offering
     ///   anything, which is what makes a probe-before-stage discipline
     ///   unnecessary.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — explicit abandonment rolls back one newly minted
+    ///   value and releases a later claim so an earlier declaration admits.
+    /// - witness: `env::tests::an_abandoned_staging_leaves_the_arena_unchanged`
+    /// - witness: `env::tests::an_abandoned_staging_releases_its_claim`
+    #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()))]
     #[inline]
     pub fn discard(self)
     {
-        let Self {
-            builder,
-            outstanding,
-        } = self;
-        outstanding.resolve(builder.content_start());
-        builder.discard();
+        // Fields drop in declaration order: the builder rolls back first, then
+        // the exclusively borrowed registration is released.
     }
 
     /// Finalize a definition over an already-minted declared type and body.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: this session owns the final registration for its builder's
+    ///   start mark, as established by construction and its exclusive borrow.
+    /// - ensures: the returned definition retains that start mark and the
+    ///   supplied level signature and roots. Its arena content and registration
+    ///   remain live until admission, bypass, or abandonment.
+    /// - provides: ownership transfer from a borrowing session to a staged
+    ///   declaration without triggering either rollback or claim release.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each of the four finishers leaves a later claim that
+    ///   blocks an earlier admission without truncating either region, and the
+    ///   retained declaration subsequently admits on its own.
+    /// - witness: `env::tests::every_finisher_retains_its_claim_until_admission`
+    #[spec(
+        requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
+        captures: [entry_start = self.builder.content_start()],
+        ensures: |ret| ret.content_start == entry_start
+            && *ret.declaration.content() == DeclarationContent::Def { declared, body }
+    )]
     #[inline]
     #[must_use]
     pub fn def(
@@ -416,6 +502,7 @@ impl<'env> Staging<'env>
     ) -> StagedDeclaration
     {
         let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
             declaration: self.builder.def(levels, declared, body),
@@ -425,7 +512,29 @@ impl<'env> Staging<'env>
     /// Finalize a definition carrying sealing provenance.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: this session owns the final registration for its builder's
+    ///   start mark, as established by construction and its exclusive borrow.
+    /// - ensures: the returned definition carrying the supplied sealing
+    ///   provenance retains that start mark and the supplied level signature
+    ///   and roots. Its arena content and registration remain live until
+    ///   admission, bypass, or abandonment.
+    /// - provides: ownership transfer from a borrowing session to a staged
+    ///   declaration without triggering either rollback or claim release.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each of the four finishers leaves a later claim that
+    ///   blocks an earlier admission without truncating either region, and the
+    ///   retained declaration subsequently admits on its own.
+    /// - witness: `env::tests::every_finisher_retains_its_claim_until_admission`
+    #[spec(
+        requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
+        captures: [entry_start = self.builder.content_start(), entry_provenance = provenance.len()],
+        ensures: |ret| ret.content_start == entry_start
+            && *ret.declaration.content() == DeclarationContent::Def { declared, body }
+            && ret.declaration.provenance().len() == entry_provenance
+    )]
     #[inline]
     #[must_use]
     pub fn sealed_def(
@@ -437,6 +546,7 @@ impl<'env> Staging<'env>
     ) -> StagedDeclaration
     {
         let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
             declaration: self.builder.sealed_def(levels, declared, body, provenance),
@@ -446,7 +556,27 @@ impl<'env> Staging<'env>
     /// Finalize an axiom over an already-minted declared type.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: this session owns the final registration for its builder's
+    ///   start mark, as established by construction and its exclusive borrow.
+    /// - ensures: the returned axiom retains that start mark and the supplied
+    ///   level signature and roots. Its arena content and registration remain
+    ///   live until admission, bypass, or abandonment.
+    /// - provides: ownership transfer from a borrowing session to a staged
+    ///   declaration without triggering either rollback or claim release.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each of the four finishers leaves a later claim that
+    ///   blocks an earlier admission without truncating either region, and the
+    ///   retained declaration subsequently admits on its own.
+    /// - witness: `env::tests::every_finisher_retains_its_claim_until_admission`
+    #[spec(
+        requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
+        captures: [entry_start = self.builder.content_start()],
+        ensures: |ret| ret.content_start == entry_start
+            && *ret.declaration.content() == DeclarationContent::Axiom { declared }
+    )]
     #[inline]
     #[must_use]
     pub fn axiom(
@@ -456,6 +586,7 @@ impl<'env> Staging<'env>
     ) -> StagedDeclaration
     {
         let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
             declaration: self.builder.axiom(levels, declared),
@@ -465,7 +596,27 @@ impl<'env> Staging<'env>
     /// Finalize a sealed abstract type at an already-minted universe kind.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: this session owns the final registration for its builder's
+    ///   start mark, as established by construction and its exclusive borrow.
+    /// - ensures: the returned abstract type retains that start mark and the
+    ///   supplied level signature and roots. Its arena content and registration
+    ///   remain live until admission, bypass, or abandonment.
+    /// - provides: ownership transfer from a borrowing session to a staged
+    ///   declaration without triggering either rollback or claim release.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each of the four finishers leaves a later claim that
+    ///   blocks an earlier admission without truncating either region, and the
+    ///   retained declaration subsequently admits on its own.
+    /// - witness: `env::tests::every_finisher_retains_its_claim_until_admission`
+    #[spec(
+        requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
+        captures: [entry_start = self.builder.content_start()],
+        ensures: |ret| ret.content_start == entry_start
+            && *ret.declaration.content() == DeclarationContent::AbstractType { kind }
+    )]
     #[inline]
     #[must_use]
     pub fn abstract_type(
@@ -475,6 +626,7 @@ impl<'env> Staging<'env>
     ) -> StagedDeclaration
     {
         let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
             declaration: self.builder.abstract_type(levels, kind),
@@ -1859,6 +2011,75 @@ mod tests
         assert!(
             environment.add_decl(first).is_ok(),
             "a discarded session holds no claim, so the earlier declaration admits"
+        );
+    }
+
+    #[test]
+    fn every_finisher_retains_its_claim_until_admission()
+    {
+        enum Finisher
+        {
+            Definition,
+            SealedDefinition,
+            Axiom,
+            AbstractType,
+        }
+
+        for finisher in [
+            Finisher::Definition,
+            Finisher::SealedDefinition,
+            Finisher::Axiom,
+            Finisher::AbstractType,
+        ] {
+            let mut environment = Environment::new();
+            let earlier = stage_unit(&mut environment);
+            let later = {
+                let mut staging = environment.stage();
+                let declared = staging.arena().value_type_unit();
+                let body = staging.arena().value_unit();
+                let kind = staging
+                    .arena()
+                    .value_type_universe(GroundSort::Value, Level::zero());
+                match finisher {
+                    | Finisher::Definition => {
+                        staging.def(LevelSignature::monomorphic(), declared, body)
+                    },
+                    | Finisher::SealedDefinition => {
+                        staging.sealed_def(LevelSignature::monomorphic(), declared, body, vec![])
+                    },
+                    | Finisher::Axiom => staging.axiom(LevelSignature::monomorphic(), declared),
+                    | Finisher::AbstractType => {
+                        staging.abstract_type(LevelSignature::monomorphic(), kind)
+                    },
+                }
+            };
+            let before = environment.arena().watermark();
+            assert_eq!(
+                Err(KernelError::OutstandingStagedContent {
+                    above: OutstandingCount::from(1_usize)
+                }),
+                environment.add_decl(earlier),
+            );
+            assert_eq!(before, environment.arena().watermark());
+            assert!(environment.add_decl(later).is_ok());
+        }
+    }
+
+    #[test]
+    fn implicit_staging_drop_releases_its_claim()
+    {
+        let mut environment = Environment::new();
+        let first = stage_unit(&mut environment);
+        let before = environment.arena().watermark();
+        {
+            let mut abandoned = environment.stage();
+            let _discarded = abandoned.arena().value_unit();
+        }
+        assert_eq!(before, environment.arena().watermark());
+        assert_eq!(vec![first.content_start], environment.outstanding.marks);
+        assert!(
+            environment.add_decl(first).is_ok(),
+            "implicit abandonment cannot block an earlier declaration"
         );
     }
 
