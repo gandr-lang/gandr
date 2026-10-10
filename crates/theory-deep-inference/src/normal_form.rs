@@ -339,6 +339,17 @@ impl<A: CellAlphabet> ReplayWitness<A>
         self.normal_form
     }
 
+    /// Take the normal form and its causal order without copying either.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub fn into_parts(self) -> (TraceletNf<A>, EventOrder<A>)
+    {
+        (self.normal_form, self.order)
+    }
+
     /// The finite event partial order of the certified derivation.
     ///
     /// # Specification
