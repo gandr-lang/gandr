@@ -53,6 +53,7 @@ use gandr_theory_graphs::Dir;
 use gandr_theory_graphs::Prec;
 use gandr_theory_graphs::PrecIndex;
 
+use crate::mold::TokenRun;
 use crate::oblig::Delta;
 use crate::oblig::Oblig;
 use crate::oblig::ObligationInstance;
@@ -561,7 +562,7 @@ primitive_copy_wrapper!(
 );
 primitive_copy_wrapper!(
     /// Whether a mold can open an item-position declaration at a fresh slot.
-    struct DeclarationStart(bool);
+    pub struct DeclarationStart(bool);
 );
 primitive_copy_wrapper!(
     /// Whether a stack cell is an operand.
@@ -580,6 +581,62 @@ enum CollapseStep
     ReduceOperator(OperatorIndex),
     /// Force-close an open form frontier.
     ForceCloseForm(FrontierIndex),
+}
+
+/// One thing a commit from the current slope would have to supply, found by
+/// [`MeldState::shortfalls`] from the slope head down.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Shortfall
+{
+    /// The open form frontier `mold`, spanning `frontier`, awaits its
+    /// `≐`-continuation.
+    Continuation
+    {
+        /// The frontier's mold.
+        mold: MoldId,
+        /// The frontier tile's bytes.
+        frontier: SourceSpan,
+    },
+    /// An operator of `sort` misses its right operand, owed at `at`.
+    RightOperand
+    {
+        /// The operand's sort.
+        sort: Sort,
+        /// The empty span right after the operator.
+        at: SourceSpan,
+    },
+    /// An operator misses its left operand, owed at `at`.
+    LeftOperand
+    {
+        /// The empty span right before the operator.
+        at: SourceSpan,
+    },
+}
+
+/// One slope edit made while a [`Mark`] is live, undone by
+/// [`MeldState::rollback_to`] in reverse order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SlopeEdit
+{
+    /// A cell was pushed on top of the slope.
+    Pushed,
+    /// The cell at `index` was overwritten; `cell` is what it held.
+    Overwritten
+    {
+        /// The overwritten slope position.
+        index: usize,
+        /// The cell it held before.
+        cell: Cell,
+    },
+    /// One cell replaced the cells from `low`; the last `removed` cells of the
+    /// removed-cell log are the cells it replaced, in slope order.
+    Spliced
+    {
+        /// Where the replacement landed.
+        low: usize,
+        /// How many cells it replaced.
+        removed: usize,
+    },
 }
 
 /// What arrives after a required-tail form's tail: the tile being pushed,
@@ -1080,6 +1137,46 @@ const fn is_item_position(sort: Sort) -> ItemPosition
     ItemPosition(matches!(sort, Sort::Item | Sort::ModuleMember))
 }
 
+/// Return whether `mold` can open an item-position declaration at a fresh
+/// slot of `pbg`.
+///
+/// Three conditions, each excluding a distinct near-miss. [`Sort::Item`] is
+/// the item position itself. Membership in the grammar's FIRST set is what
+/// `admits_at` already means by "opens at a fresh slot", and it excludes a
+/// head inlined as a container's member tile — a module body's `def` is a
+/// tile of `module_declaration`, never a form of its own. Having a
+/// `≐`-successor excludes the bare `;` of `expression_statement`: holes are
+/// tile-transparent when the FIRST set is computed, so that `;` is the rule's
+/// first tile and is item-sorted, yet it terminates a statement rather than
+/// opening one.
+///
+/// # Specification
+/// - ensures: recognizes exactly item-position first molds that also have a
+///   same-form successor; missing molds are false.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — declaration heads, inlined members and a terminating
+///   semicolon differ at sort, FIRST and successor boundaries. Their repair
+///   behavior exposes admitting a terminator or rejecting a real head.
+/// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
+#[spec(ensures: |ret| bool::from(ret) == pbg.mold(mold).is_ok_and(|def| matches!(def.sort, Sort::Item | Sort::ModuleMember) && bool::from(pbg.mold_is_form_first(mold)) && bool::from(pbg.mold_has_successor(mold))))]
+pub fn declaration_head(
+    pbg: &Pbg,
+    mold: MoldId,
+) -> DeclarationStart
+{
+    let Ok(def) = pbg.mold(mold)
+    else {
+        return DeclarationStart::from(false);
+    };
+    DeclarationStart::from(
+        bool::from(is_item_position(def.sort))
+            && bool::from(FormTable::is_form_first(pbg, mold))
+            && bool::from(FormTable::has_succ(pbg, mold)),
+    )
+}
+
 /// A resumable, first-order push machine over a checked PBG.
 ///
 /// See the module docs for the three push rules and the append-only emission
@@ -1147,6 +1244,17 @@ pub struct MeldState<'pbg>
     /// losslessness (space is skipped by the merkle hash, so tree position is
     /// not identity-bearing).
     spaces: Vec<EmitId>,
+    /// The slope edits made while a [`Mark`] is live, oldest first.
+    edits: Vec<SlopeEdit>,
+    /// The cells [`SlopeEdit::Spliced`] edits replaced, in edit order.
+    removed: Vec<Cell>,
+    /// How many marks are live; edits are recorded only while one is.
+    live_marks: usize,
+    /// The lowest slope position any splice or frontier flip has touched,
+    /// dry-runs included; `usize::MAX` while none has. A form unit's
+    /// boundary operand sits at position zero, so this is what says whether
+    /// the unit's fold ever reached past its own forms.
+    low_water: usize,
 }
 
 impl<'pbg> MeldState<'pbg>
@@ -1169,7 +1277,7 @@ impl<'pbg> MeldState<'pbg>
     /// - witness: `meld::tests::empty_state_commits_to_a_root`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.source.is_empty() && ret.emit.is_empty() && ret.stack.is_empty() && ret.frontiers.is_empty() && ret.operators.is_empty() && ret.barriers.is_empty() && ret.obligations.is_empty() && ret.spaces.is_empty() && ret.pbg.fingerprint() == pbg.fingerprint())]
+    #[spec(ensures: |ret| ret.source.is_empty() && ret.emit.is_empty() && ret.stack.is_empty() && ret.frontiers.is_empty() && ret.operators.is_empty() && ret.barriers.is_empty() && ret.obligations.is_empty() && ret.spaces.is_empty() && ret.edits.is_empty() && ret.removed.is_empty() && ret.live_marks == 0 && ret.low_water == usize::MAX && ret.pbg.fingerprint() == pbg.fingerprint())]
     pub fn new(pbg: &'pbg Pbg) -> Self
     {
         Self {
@@ -1182,6 +1290,10 @@ impl<'pbg> MeldState<'pbg>
             barriers: Vec::new(),
             obligations: Vec::new(),
             spaces: Vec::new(),
+            edits: Vec::new(),
+            removed: Vec::new(),
+            live_marks: 0,
+            low_water: usize::MAX,
         }
     }
 
@@ -1219,24 +1331,49 @@ impl<'pbg> MeldState<'pbg>
         tile: &MoldedTile,
     )
     {
-        let def = match self.pbg.mold(tile.mold) {
+        self.push_text(tile.mold, tile.text());
+    }
+
+    /// [`push`](Self::push) a tile of `mold` over `text`, borrowing the text:
+    /// the molder's dry-runs push without owning a [`MoldedTile`].
+    ///
+    /// # Specification
+    /// - requires: none; `mold` may be arbitrary.
+    /// - ensures: the state [`push`](Self::push) of a tile of `mold` and `text`
+    ///   reaches.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every [`push`](Self::push) witness runs through this
+    ///   body, and the molder's dry-runs and committed tiles push here, so a
+    ///   drift between the two changes the corpus trees.
+    /// - witness: `meld::tests::push_preserves_unknown_and_multibyte_source`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[spec(captures: before = self.source.len(), ensures: |_| self.source.get(before ..) == Some(<&str>::from(text)) && (self.pbg.mold(mold).is_ok() || self.obligations.last().is_some_and(|obligation| obligation.class == Oblig::UnmoldedTok)))]
+    pub(crate) fn push_text(
+        &mut self,
+        mold: MoldId,
+        text: TileText<'_>,
+    )
+    {
+        let def = match self.pbg.mold(mold) {
             | Ok(def) => *def,
             | Err(_error) => {
-                self.push_unmolded(SourceFragment::from(tile.text()));
+                self.push_unmolded(SourceFragment::from(text));
                 return;
             },
         };
         // Settle any completable open frontier (a bare `?` hole) the incoming
         // tile does not continue, so it stands as a complete operand and the
         // incoming tile is a flat sibling, not absorbed into the hole meld.
-        self.settle_completable(tile.mold);
+        self.settle_completable(mold);
         // A prefix form may have an optional tile-bearing branch followed by a
         // required sort hole. It cannot close before that operand arrives, but
         // once its tail is whole it is a complete form even without a terminal
         // tile, unless this tile continues the tail.
-        self.settle_filled_required_tail(Incoming::Tile(tile.mold));
-        let span = self.append_source(SourceFragment::from(tile.text()));
-        let tile_emit = self.emit_token(NodeLabel::Tile(tile.mold), span);
+        self.settle_filled_required_tail(Incoming::Tile(mold));
+        let span = self.append_source(SourceFragment::from(text));
+        let tile_emit = self.emit_token(NodeLabel::Tile(mold), span);
         let cell = Cell {
             emit: tile_emit,
             start: u32::from(span.start),
@@ -1245,25 +1382,25 @@ impl<'pbg> MeldState<'pbg>
             role: Role::Operand,
         };
 
-        match self.classify(tile.mold) {
+        match self.classify(mold) {
             | Kind::FormStart { absorb_left } => {
-                self.open_form(tile.mold, def.sort, cell, AbsorbsLeft::from(absorb_left));
+                self.open_form(mold, def.sort, cell, AbsorbsLeft::from(absorb_left));
             },
             | Kind::FormMid => {
-                self.continue_form(tile.mold, def.sort, cell, FormEndTile::from(false));
+                self.continue_form(mold, def.sort, cell, FormEndTile::from(false));
             },
             | Kind::FormEnd => {
-                self.continue_form(tile.mold, def.sort, cell, FormEndTile::from(true));
+                self.continue_form(mold, def.sort, cell, FormEndTile::from(true));
             },
             | Kind::Operand => {
-                self.reduce_toward(def.sort, def.prec, tile.mold, span);
+                self.reduce_toward(def.sort, def.prec, mold, span);
                 self.push_cell(cell);
             },
             | Kind::Operator(shape) => {
-                self.reduce_toward(def.sort, def.prec, tile.mold, span);
+                self.reduce_toward(def.sort, def.prec, mold, span);
                 self.push_cell(Cell {
                     role: Role::Operator {
-                        mold: tile.mold,
+                        mold,
                         prec: def.prec,
                         sort: def.sort,
                         shape,
@@ -1592,21 +1729,10 @@ impl<'pbg> MeldState<'pbg>
     }
 
     /// Return whether `mold` can open an item-position declaration at a fresh
-    /// slot.
-    ///
-    /// Three conditions, each excluding a distinct near-miss. [`Sort::Item`]
-    /// is the item position itself. Membership in the grammar's FIRST set is
-    /// what `admits_at` already means by "opens at a fresh slot", and it
-    /// excludes a head inlined as a container's member tile — a module body's
-    /// `def` is a tile of `module_declaration`, never a form of its own.
-    /// Having a `≐`-successor excludes the bare `;` of `expression_statement`:
-    /// holes are tile-transparent when the FIRST set is computed, so that `;`
-    /// is the rule's first tile and is item-sorted, yet it terminates a
-    /// statement rather than opening one.
+    /// slot of this state's grammar: [`declaration_head`].
     ///
     /// # Specification
-    /// - ensures: recognizes exactly item-position first molds that also have a
-    ///   same-form successor; missing molds are false.
+    /// - ensures: [`declaration_head`] over this state's grammar.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -1614,21 +1740,13 @@ impl<'pbg> MeldState<'pbg>
     ///   semicolon differ at sort, FIRST and successor boundaries. Their repair
     ///   behavior exposes admitting a terminator or rejecting a real head.
     /// - witness: `tests::acceptance::an_unclosed_delimiter_yields_to_every_declaration_family`
-    #[spec(ensures: |ret| bool::from(ret) == self.pbg.mold(mold).is_ok_and(|def| matches!(def.sort, Sort::Item | Sort::ModuleMember) && bool::from(self.pbg.mold_is_form_first(mold)) && bool::from(self.pbg.mold_has_successor(mold))))]
+    #[spec(ensures: |ret| ret == declaration_head(self.pbg, mold))]
     fn opens_declaration(
         &self,
         mold: MoldId,
     ) -> DeclarationStart
     {
-        let Ok(def) = self.pbg.mold(mold)
-        else {
-            return DeclarationStart::from(false);
-        };
-        DeclarationStart::from(
-            bool::from(is_item_position(def.sort))
-                && bool::from(FormTable::is_form_first(self.pbg, mold))
-                && bool::from(FormTable::has_succ(self.pbg, mold)),
-        )
+        declaration_head(self.pbg, mold)
     }
 
     /// Return the nearest open frontier whose form starts at a declaration
@@ -2466,20 +2584,11 @@ impl<'pbg> MeldState<'pbg>
     ) -> SuccessorLabelPresence
     {
         let labels = <&[&'static str]>::from(labels);
-        let adjacencies = self.pbg.adjacencies();
-        let start = adjacencies.partition_point(|&(left, _)| left < mold);
-        SuccessorLabelPresence::from(
-            adjacencies
-                .get(start ..)
-                .unwrap_or(&[])
-                .iter()
-                .take_while(|&&(left, _)| left == mold)
-                .any(|&(_, right)| {
-                    self.pbg
-                        .mold(right)
-                        .is_ok_and(|def| labels.contains(&def.label))
-                }),
-        )
+        SuccessorLabelPresence::from(self.pbg.mold_successors(mold).iter().any(|&(_, right)| {
+            self.pbg
+                .mold(right)
+                .is_ok_and(|def| labels.contains(&def.label))
+        }))
     }
 
     /// Open a new multi-tile form with `mold` as its start frontier.
@@ -2652,6 +2761,15 @@ impl<'pbg> MeldState<'pbg>
     {
         let index = usize::from(index);
         let open = bool::from(open);
+        if self.live_marks > 0
+            && let Some(&before) = self.stack.get(index)
+            && matches!(before.role, Role::FormTile { open: was_open, .. } if was_open != open)
+        {
+            self.edits.push(SlopeEdit::Overwritten {
+                index,
+                cell: before,
+            });
+        }
         if let Some(cell) = self.stack.get_mut(index)
             && let Role::FormTile {
                 open: ref mut flag, ..
@@ -2659,6 +2777,7 @@ impl<'pbg> MeldState<'pbg>
         {
             let was_open = *flag;
             *flag = open;
+            self.low_water = self.low_water.min(index);
             // Maintain the open-frontier cache. Both callers flip the NEAREST
             // open frontier (`continue_form` / `force_close_form` act on
             // `nearest_open_form`), so closing pops the cache top; the sorted
@@ -2915,7 +3034,7 @@ impl<'pbg> MeldState<'pbg>
         right: MoldId,
     ) -> SameFormAdjacency
     {
-        SameFormAdjacency::from(self.pbg.adjacencies().binary_search(&(left, right)).is_ok())
+        SameFormAdjacency::from(bool::from(self.pbg.molds_adjacent(left, right)))
     }
 
     /// Return the first `≐`-successor mold of `mold`, if any (the completion
@@ -2946,11 +3065,9 @@ impl<'pbg> MeldState<'pbg>
         mold: MoldId,
     ) -> Option<MoldId>
     {
-        let adjacencies = self.pbg.adjacencies();
-        let start = adjacencies.partition_point(|&(left, _)| left < mold);
-        adjacencies
-            .get(start)
-            .filter(|&&(left, _)| left == mold)
+        self.pbg
+            .mold_successors(mold)
+            .first()
             .map(|&(_, right)| right)
     }
 
@@ -3451,6 +3568,9 @@ impl<'pbg> MeldState<'pbg>
         cell: Cell,
     )
     {
+        if self.live_marks > 0 {
+            self.edits.push(SlopeEdit::Pushed);
+        }
         self.index_cell(StackIndex::from(self.stack.len()), &cell);
         self.stack.push(cell);
     }
@@ -3524,8 +3644,9 @@ impl<'pbg> MeldState<'pbg>
         }
     }
 
-    /// Rebuild the head caches from the slope (checkpoint resume only — every
-    /// streaming mutation maintains them incrementally).
+    /// Rebuild the head caches from the slope (checkpoint resume and the
+    /// defensive middle splice — every other mutation maintains them
+    /// incrementally).
     ///
     /// # Specification
     /// - ensures: replaces every cache with the exact ascending role indices of
@@ -3550,10 +3671,43 @@ impl<'pbg> MeldState<'pbg>
         })]
     fn rebuild_head_caches(&mut self)
     {
-        self.frontiers.clear();
-        self.operators.clear();
-        self.barriers.clear();
-        for index in 0 .. self.stack.len() {
+        self.reindex_from(StackFloor::from(StackIndex::from(0)));
+    }
+
+    /// Re-derive the head caches for the slope at and above `floor`, the cache
+    /// entries below it already exact.
+    ///
+    /// # Specification
+    /// - requires: the cache entries below `floor` are exactly the role indices
+    ///   of the cells below it.
+    /// - ensures: every cache holds the exact ascending role indices of the
+    ///   current stack.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — rollbacks undoing pushes, deep splices and older
+    ///   frontier flips, and resumed checkpoints, rebuild from floors at the
+    ///   top, in the middle and at the base; a floor one too high leaves a
+    ///   stale entry and changes the nearest frontier or reducible operator.
+    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
+    /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
+    #[spec(ensures: |_| {
+            let mut frontiers = self.frontiers.iter();
+            let mut operators = self.operators.iter();
+            let mut barriers = self.barriers.iter();
+            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
+                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
+                Role::Operator { .. } => operators.next() == Some(&index),
+                Role::Operand => true,
+            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
+        })]
+    fn reindex_from(
+        &mut self,
+        floor: StackFloor,
+    )
+    {
+        self.unindex_from(floor);
+        for index in usize::from(floor) .. self.stack.len() {
             if let Some(cell) = self.stack.get(index).copied() {
                 self.index_cell(StackIndex::from(index), &cell);
             }
@@ -3653,11 +3807,21 @@ impl<'pbg> MeldState<'pbg>
             self.push_cell(cell);
             return;
         }
+        self.low_water = self.low_water.min(low);
         self.unindex_from(StackFloor::from(range.low));
-        let _drained: Vec<Cell> = self
-            .stack
-            .splice(low .. high, core::iter::once(cell))
-            .collect();
+        // While a mark is live the replaced cells go to the removed-cell log
+        // for rollback; otherwise finishing the splice just places `cell`.
+        let replaced = self.stack.splice(low .. high, core::iter::once(cell));
+        if self.live_marks > 0 {
+            self.removed.extend(replaced);
+            self.edits.push(SlopeEdit::Spliced {
+                low,
+                removed: high.saturating_sub(low),
+            });
+        }
+        else {
+            replaced.for_each(|_removed| ());
+        }
         // The replacement landed at `low`; cells above `high` shifted down,
         // but every caller splices a top region, so none exist. Defensive:
         // if any survived, rebuild rather than corrupt the caches.
@@ -3941,6 +4105,100 @@ impl<'pbg> MeldState<'pbg>
     {
         let mut expected: Vec<Expected> = Vec::new();
         let mut obligations: Vec<ObligationInstance> = Vec::new();
+        self.shortfalls(|shortfall| match shortfall {
+            | Shortfall::Continuation { mold, frontier } => {
+                if let Some(succ) = self.first_successor(mold)
+                    && let Ok(def) = self.pbg.mold(succ)
+                {
+                    expected.push(Expected::Tile(def.label));
+                }
+                if let Ok(span) = frontier.byte_span() {
+                    obligations.push(ObligationInstance::new(Oblig::MissingTile, span));
+                }
+            },
+            | Shortfall::RightOperand { sort, at } => {
+                expected.push(Expected::Hole(sort));
+                if let Ok(span) = at.byte_span() {
+                    obligations.push(ObligationInstance::new(Oblig::MissingMeld, span));
+                }
+            },
+            | Shortfall::LeftOperand { at } => {
+                if let Ok(span) = at.byte_span() {
+                    obligations.push(ObligationInstance::new(Oblig::MissingMeld, span));
+                }
+            },
+        });
+        Completion {
+            expected,
+            obligations,
+        }
+    }
+
+    /// `base` with every obligation [`finalize`](Self::finalize) reports
+    /// inserted, counted without building the completion.
+    ///
+    /// # Specification
+    /// - ensures: equals `base` after inserting the class of every obligation
+    ///   of [`finalize`](Self::finalize); leaves `self` unchanged; allocates
+    ///   nothing.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the molder's completion tiebreak and window ends read
+    ///   this delta on every corpus source and malformed variant, so a class
+    ///   counted that `finalize` drops, or one missed, changes a chosen mold
+    ///   and the committed tree.
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
+    #[must_use]
+    #[spec(ensures: |ret| { let mut delta = base; for obligation in self.finalize().obligations() { delta.insert(obligation.class); } ret == delta })]
+    pub(crate) fn completion_delta(
+        &self,
+        base: Delta,
+    ) -> Delta
+    {
+        let mut delta = base;
+        self.shortfalls(|shortfall| {
+            let (class, span) = match shortfall {
+                | Shortfall::Continuation { frontier, .. } => (Oblig::MissingTile, frontier),
+                | Shortfall::RightOperand { at, .. } | Shortfall::LeftOperand { at } => {
+                    (Oblig::MissingMeld, at)
+                },
+            };
+            if span.byte_span().is_ok() {
+                delta.insert(class);
+            }
+        });
+        delta
+    }
+
+    /// Visit what a commit from the current slope would have to supply, from
+    /// the slope head down: each open frontier's continuation, and each
+    /// operator's missing right then left operand.
+    ///
+    /// The scan reads each cell as it stands, so it is a bound rather than a
+    /// replay (see [`finalize`](Self::finalize)).
+    ///
+    /// # Specification
+    /// - ensures: calls `visit` once per shortfall, cells from the head down, a
+    ///   cell's right operand before its left; leaves `self` unchanged.
+    /// - panics: none.
+    /// - executable: none — `visit` is a write-only sink; what it is handed is
+    ///   observed by the callers' executable clauses, which read
+    ///   [`finalize`](Self::finalize) and the completion delta.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty stacks, missing unary and binary operands, open
+    ///   forms, completable optional tails and occupied required tails expose
+    ///   each shortfall through [`finalize`](Self::finalize)'s exact expected
+    ///   material and repair spans.
+    /// - witness: `meld::tests::finalize_charges_a_required_tail_only_when_it_is_absent`
+    /// - witness: `meld::tests::missing_operator_operands_are_zero_width_repairs`
+    fn shortfalls(
+        &self,
+        mut visit: impl FnMut(Shortfall),
+    )
+    {
         let mut index = self.stack.len();
         while let Some(next_index) = index.checked_sub(1) {
             index = next_index;
@@ -3970,18 +4228,13 @@ impl<'pbg> MeldState<'pbg>
                     }
                     // An open form frontier expects its `≐`-continuation; commit
                     // force-closes it with a ghost end and a MissingTile.
-                    if let Some(succ) = self.first_successor(mold)
-                        && let Ok(def) = self.pbg.mold(succ)
-                    {
-                        expected.push(Expected::Tile(def.label));
-                    }
-                    let frontier = SourceSpan::new(
-                        SourceOffset::from(cell.start),
-                        SourceOffset::from(cell.end),
-                    );
-                    if let Ok(span) = frontier.byte_span() {
-                        obligations.push(ObligationInstance::new(Oblig::MissingTile, span));
-                    }
+                    visit(Shortfall::Continuation {
+                        mold,
+                        frontier: SourceSpan::new(
+                            SourceOffset::from(cell.start),
+                            SourceOffset::from(cell.end),
+                        ),
+                    });
                 },
                 | Role::Operator { sort, shape, .. } => {
                     let wants_right = matches!(shape, OpShape::Infix | OpShape::Prefix);
@@ -3989,12 +4242,10 @@ impl<'pbg> MeldState<'pbg>
                         .checked_add(1)
                         .is_some_and(|next| bool::from(self.is_operand_at(StackIndex::from(next))));
                     if wants_right && !right_filled {
-                        expected.push(Expected::Hole(sort));
-                        if let Ok(span) =
-                            SourceSpan::point(SourceOffset::from(cell.end)).byte_span()
-                        {
-                            obligations.push(ObligationInstance::new(Oblig::MissingMeld, span));
-                        }
+                        visit(Shortfall::RightOperand {
+                            sort,
+                            at: SourceSpan::point(SourceOffset::from(cell.end)),
+                        });
                     }
                     // An infix / postfix operator with no left operand is a
                     // completion obligation too — this is the signal that lets
@@ -4004,20 +4255,14 @@ impl<'pbg> MeldState<'pbg>
                     let left_filled = index
                         .checked_sub(1)
                         .is_some_and(|prev| bool::from(self.is_operand_at(StackIndex::from(prev))));
-                    if wants_left
-                        && !left_filled
-                        && let Ok(span) =
-                            SourceSpan::point(SourceOffset::from(cell.start)).byte_span()
-                    {
-                        obligations.push(ObligationInstance::new(Oblig::MissingMeld, span));
+                    if wants_left && !left_filled {
+                        visit(Shortfall::LeftOperand {
+                            at: SourceSpan::point(SourceOffset::from(cell.start)),
+                        });
                     }
                 },
                 | Role::FormTile { open: false, .. } | Role::Operand => {},
             }
-        }
-        Completion {
-            expected,
-            obligations,
         }
     }
 
@@ -4376,9 +4621,164 @@ impl<'pbg> MeldState<'pbg>
             barriers: Vec::new(),
             obligations: cp.obligations.clone(),
             spaces: cp.spaces.clone(),
+            edits: Vec::new(),
+            removed: Vec::new(),
+            live_marks: 0,
+            low_water: usize::MAX,
         };
         state.rebuild_head_caches();
         state
+    }
+
+    /// Join `unit` to the forms this state has molded when the seam between
+    /// them holds; otherwise leave this state as it was and say why.
+    ///
+    /// A source-start unit joins only a state that has molded nothing, and
+    /// becomes it. A form-boundary unit was molded over a stand-in item
+    /// operand; it joins when this state ends where the stand-in stands —
+    /// every slope cell a completed operand, the topmost of the boundary
+    /// sort — and the unit's fold, dry-runs included, never touched the
+    /// stand-in. Then the unit's source, emissions, slope cells above the
+    /// stand-in, obligations and spaces are appended after this state's own,
+    /// shifted past them, and the stand-in is dropped.
+    ///
+    /// # Specification
+    /// - requires: no mark is live on this state; `unit` was molded over this
+    ///   state's grammar.
+    /// - ensures: on [`UnitSeam::Joined`] the source is this state's followed
+    ///   by the unit's; on [`UnitSeam::Broken`] the state is unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+    ///   four fragments, split at every predicted boundary, join to the whole
+    ///   parse's tree and obligations; a seam held over an open form, a missed
+    ///   shift or a kept stand-in changes a joined tree.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `parse::tests::a_source_splits_before_each_declaration_head`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+    #[inline]
+    #[spec(requires: self.live_marks == 0, captures: before = (self.checkpoint(), unit.state.source.clone()), ensures: |ret| match ret { UnitSeam::Broken(_) => self.checkpoint() == before.0, UnitSeam::Joined => self.source.len() == before.0.source.len().saturating_add(before.1.len()) && self.source.ends_with(before.1.as_str()) })]
+    pub fn join_unit(
+        &mut self,
+        unit: FormUnit<'pbg>,
+    ) -> UnitSeam
+    {
+        let FormUnit {
+            base, state: unit, ..
+        } = unit;
+        match base {
+            | UnitBase::SourceStart => {
+                if !self.emit.is_empty() || !self.source.is_empty() {
+                    return UnitSeam::Broken(SeamBreak::NotAtStart);
+                }
+                *self = unit;
+            },
+            | UnitBase::FormBoundary => {
+                let Some(top) = self.stack.last()
+                else {
+                    return UnitSeam::Broken(SeamBreak::NoForm);
+                };
+                if !self.barriers.is_empty() || !self.operators.is_empty() {
+                    return UnitSeam::Broken(SeamBreak::OpenSlope);
+                }
+                if top.sort != BOUNDARY_SORT {
+                    return UnitSeam::Broken(SeamBreak::SortMismatch);
+                }
+                if unit.low_water == 0 {
+                    return UnitSeam::Broken(SeamBreak::Reached);
+                }
+                self.append_past_stand_in(unit);
+            },
+        }
+        UnitSeam::Joined
+    }
+
+    /// Append a form-boundary unit's state after this one's, dropping its
+    /// stand-in.
+    ///
+    /// Unit emission id `k` lands at this log's length plus `k - 1`; unit
+    /// offsets land past this state's source.
+    ///
+    /// # Specification
+    /// - requires: no mark is live on either state; `unit`'s stand-in sits at
+    ///   emission id and slope position zero, untouched.
+    /// - ensures: source, emissions, slope cells, obligations and spaces are
+    ///   this state's followed by the unit's past the stand-in, ids and offsets
+    ///   shifted; the head caches cover the appended cells.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+    ///   four fragments, split and joined, commit the whole parse's tree, spans
+    ///   and obligations; an id or offset off by the stand-in changes a node.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+    #[spec(captures: before = (self.source.len(), self.emit.len(), self.stack.len(), unit.emit.len(), unit.stack.len()), ensures: |_| self.emit.len() == before.1.saturating_add(before.3).saturating_sub(1) && self.stack.len() == before.2.saturating_add(before.4).saturating_sub(1))]
+    fn append_past_stand_in(
+        &mut self,
+        unit: Self,
+    )
+    {
+        let Self {
+            source,
+            emit,
+            stack,
+            obligations,
+            spaces,
+            ..
+        } = unit;
+        let byte_offset = self.source.len();
+        let offset = u32::try_from(byte_offset).unwrap_or(u32::MAX);
+        let base = u32::try_from(self.emit.len()).unwrap_or(u32::MAX);
+        let land = |id: EmitId| EmitId(base.saturating_add(id.0).saturating_sub(1));
+        self.source.push_str(&source);
+        self.emit
+            .extend(emit.into_iter().skip(1).map(|op| match op {
+                | EmitOp::Token { label, start, end } => EmitOp::Token {
+                    label,
+                    start: start.saturating_add(offset),
+                    end: end.saturating_add(offset),
+                },
+                | EmitOp::Interior {
+                    label,
+                    start,
+                    end,
+                    mut children,
+                } => {
+                    for child in &mut children {
+                        *child = land(*child);
+                    }
+                    EmitOp::Interior {
+                        label,
+                        start: start.saturating_add(offset),
+                        end: end.saturating_add(offset),
+                        children,
+                    }
+                },
+            }));
+        for cell in stack.into_iter().skip(1) {
+            self.push_cell(Cell {
+                emit: land(cell.emit),
+                start: cell.start.saturating_add(offset),
+                end: cell.end.saturating_add(offset),
+                ..cell
+            });
+        }
+        self.obligations
+            .extend(obligations.into_iter().map(|obligation| {
+                let span = ByteSpan::new(
+                    ByteOffset::from(
+                        usize::from(obligation.span.start()).saturating_add(byte_offset),
+                    ),
+                    ByteOffset::from(
+                        usize::from(obligation.span.end()).saturating_add(byte_offset),
+                    ),
+                )
+                .unwrap_or(obligation.span);
+                ObligationInstance::new(obligation.class, span)
+            }));
+        self.spaces.extend(spaces.into_iter().map(land));
     }
 
     /// Record a layout-space token for losslessness.
@@ -4419,119 +4819,84 @@ impl<'pbg> MeldState<'pbg>
 
     /// Open a lightweight in-place transaction over the current state.
     ///
-    /// A [`Mark`] snapshots the append-only log lengths (source, emission,
-    /// obligations) and the small first-order slope, so
-    /// [`rollback_to`](MeldState::rollback_to) restores the state by truncating
-    /// the appended tails and reinstating the slope — **without** cloning the
-    /// (arbitrarily long) emission log the way
-    /// [`checkpoint`](MeldState::checkpoint) does. This is the molder's
-    /// per-candidate transaction: the molder marks once, dry-runs a candidate
-    /// push, reads the candidate's
-    /// obligation [`delta_since`](MeldState::delta_since), and rolls back —
-    /// reusing buffers across candidates rather than paying a full
-    /// checkpoint clone per candidate.
+    /// A [`Mark`] records the append-only log lengths (source, emission,
+    /// obligations, spaces) and the position in the slope-edit trail; while it
+    /// is live every slope edit — a push, a reduction's splice, a frontier
+    /// flip — is recorded, so [`rollback_to`](MeldState::rollback_to) truncates
+    /// the appended tails and undoes just those edits, copying neither the
+    /// emission log (as [`checkpoint`](MeldState::checkpoint) does) nor the
+    /// slope. This is the molder's per-candidate transaction: it marks,
+    /// dry-runs a candidate push, reads the candidate's obligation
+    /// [`delta_since`](MeldState::delta_since), and rolls back.
     ///
     /// # Specification
     /// - requires: none.
-    /// - ensures: returns a snapshot of the log lengths and slope; leaves
-    ///   `self` unchanged.
+    /// - ensures: returns the log lengths, the trail position and the number of
+    ///   live marks; counts the new mark live; leaves the parse unchanged.
     /// - provides: the open side of the candidate dry-run transaction.
     /// - fails: never.
     /// - panics: none.
     ///
-    ///
     /// # Adequacy
-    /// - hypothesis: L3 — marks before and after dry-run pushes, pooled reuse
+    /// - hypothesis: L3 — marks before and after dry-run pushes, nested marks
     ///   and nested form changes expose exact rollback and subsequent
-    ///   continuation. Missing a length, retaining an old slope or stale role
-    ///   indices changes the restored checkpoint; pooling is exercised without
-    ///   an allocation-count claim.
+    ///   continuation. Missing a length or an edit recorded outside a live mark
+    ///   changes the restored checkpoint.
     /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
-    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
+    /// - witness: `mold::tests::dry_runs_restore_exact_state`
     #[inline]
     #[must_use]
-    #[spec(ensures: |ret| ret.source_len == self.source.len() && ret.emit_len == self.emit.len() && ret.oblig_len == self.obligations.len() && ret.spaces_len == self.spaces.len() && ret.stack == self.stack && ret.frontiers == self.frontiers && ret.operators == self.operators && ret.barriers == self.barriers)]
-    pub fn mark(&self) -> Mark
+    #[spec(captures: before = (self.live_marks, self.edits.len(), self.removed.len()), ensures: |ret| ret.source_len == self.source.len() && ret.emit_len == self.emit.len() && ret.oblig_len == self.obligations.len() && ret.spaces_len == self.spaces.len() && ret.edits_len == before.1 && ret.removed_len == before.2 && ret.depth == before.0 && self.live_marks == before.0.saturating_add(1))]
+    pub fn mark(&mut self) -> Mark
     {
-        Mark {
+        let mark = Mark {
             source_len: self.source.len(),
             emit_len: self.emit.len(),
             oblig_len: self.obligations.len(),
             spaces_len: self.spaces.len(),
-            stack: self.stack.clone(),
-            frontiers: self.frontiers.clone(),
-            operators: self.operators.clone(),
-            barriers: self.barriers.clone(),
-        }
+            edits_len: self.edits.len(),
+            removed_len: self.removed.len(),
+            depth: self.live_marks,
+        };
+        self.live_marks = self.live_marks.saturating_add(1);
+        mark
     }
 
-    /// Fill `mark` with the current state, reusing its buffers.
-    ///
-    /// The allocation-free twin of [`mark`](MeldState::mark): `clone_from`
-    /// reuses the mark's existing slope / cache capacity, so a caller that
-    /// pools marks (the molder's per-candidate dry-run loop) reaches a
-    /// zero-allocation steady state instead of four fresh vector allocations
-    /// per candidate.
+    /// Roll the state back to `mark`, discarding everything since.
     ///
     /// # Specification
-    /// - requires: none.
-    /// - ensures: `mark` compares equal to what [`mark`](MeldState::mark) would
-    ///   return; `self` is unchanged.
-    /// - provides: the pooled-mark fast path for dry-run transactions.
-    /// - fails: never.
-    /// - panics: none.
-    ///
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — marks before and after dry-run pushes, pooled reuse
-    ///   and nested form changes expose exact rollback and subsequent
-    ///   continuation. Missing a length, retaining an old slope or stale role
-    ///   indices changes the restored checkpoint; pooling is exercised without
-    ///   an allocation-count claim.
-    /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
-    /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
-    /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
-    #[inline]
-    #[spec(ensures: |_| mark.source_len == self.source.len() && mark.emit_len == self.emit.len() && mark.oblig_len == self.obligations.len() && mark.spaces_len == self.spaces.len() && mark.stack == self.stack && mark.frontiers == self.frontiers && mark.operators == self.operators && mark.barriers == self.barriers)]
-    pub fn mark_into(
-        &self,
-        mark: &mut Mark,
-    )
-    {
-        mark.source_len = self.source.len();
-        mark.emit_len = self.emit.len();
-        mark.oblig_len = self.obligations.len();
-        mark.spaces_len = self.spaces.len();
-        mark.stack.clone_from(&self.stack);
-        mark.frontiers.clone_from(&self.frontiers);
-        mark.operators.clone_from(&self.operators);
-        mark.barriers.clone_from(&self.barriers);
-    }
-
-    /// Roll the state back to `mark`, discarding everything appended since.
-    ///
-    /// # Specification
-    /// - requires: `mark` was taken from this same state, and only append-only
-    ///   growth (pushes) happened since — the molder's marked candidate loop.
-    /// - ensures: truncates the source, emission log, and obligation buffer to
-    ///   their marked lengths and restores the marked slope, so the state is
-    ///   bytewise identical to the mark.
+    /// - requires: `mark` was taken from this same state and is the latest live
+    ///   mark.
+    /// - ensures: truncates the source, emission log, obligation buffer and
+    ///   space list to their marked lengths and undoes every slope edit made
+    ///   since, newest first, so the state is bytewise identical to the mark;
+    ///   the head caches are exact; the marks live before `mark` stay live, and
+    ///   with none left the trail is empty.
     /// - provides: the close side of the candidate dry-run transaction.
     /// - fails: never.
     /// - panics: none.
     ///
-    ///
     /// # Adequacy
     /// - hypothesis: L3 — a marked candidate which changes emissions, source,
-    ///   slope and obligations is rolled back before another candidate. Exact
-    ///   checkpoint and continuation equality detect a forgotten buffer or
+    ///   slope and obligations is rolled back before another candidate, and
+    ///   nested marks roll back inside an outer one. Exact checkpoint and
+    ///   continuation equality detect a forgotten buffer, a missed edit or a
     ///   stale cache; same-state provenance remains a caller obligation beyond
-    ///   the checked length and UTF-8 boundary conditions.
+    ///   the checked lengths and UTF-8 boundary.
     /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
     /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
     #[inline]
-    #[spec(requires: mark.source_len <= self.source.len() && self.source.is_char_boundary(mark.source_len) && mark.emit_len <= self.emit.len() && mark.oblig_len <= self.obligations.len() && mark.spaces_len <= self.spaces.len(), ensures: |_| mark.source_len == self.source.len() && mark.emit_len == self.emit.len() && mark.oblig_len == self.obligations.len() && mark.spaces_len == self.spaces.len() && mark.stack == self.stack && mark.frontiers == self.frontiers && mark.operators == self.operators && mark.barriers == self.barriers)]
+    #[spec(requires: mark.source_len <= self.source.len() && self.source.is_char_boundary(mark.source_len) && mark.emit_len <= self.emit.len() && mark.oblig_len <= self.obligations.len() && mark.spaces_len <= self.spaces.len() && mark.edits_len <= self.edits.len() && mark.removed_len <= self.removed.len(), captures: marked = (mark.source_len, mark.emit_len, mark.oblig_len, mark.spaces_len, mark.depth), ensures: |_| marked.0 == self.source.len() && marked.1 == self.emit.len() && marked.2 == self.obligations.len() && marked.3 == self.spaces.len() && self.live_marks == marked.4 && (marked.4 > 0 || (self.edits.is_empty() && self.removed.is_empty())) && {
+            let mut frontiers = self.frontiers.iter();
+            let mut operators = self.operators.iter();
+            let mut barriers = self.barriers.iter();
+            self.stack.iter().enumerate().all(|(index, cell)| match cell.role {
+                Role::FormTile { open, .. } => barriers.next() == Some(&index) && (!open || frontiers.next() == Some(&index)),
+                Role::Operator { .. } => operators.next() == Some(&index),
+                Role::Operand => true,
+            }) && frontiers.next().is_none() && operators.next().is_none() && barriers.next().is_none()
+        })]
     pub fn rollback_to(
         &mut self,
         mark: &Mark,
@@ -4541,10 +4906,41 @@ impl<'pbg> MeldState<'pbg>
         self.emit.truncate(mark.emit_len);
         self.obligations.truncate(mark.oblig_len);
         self.spaces.truncate(mark.spaces_len);
-        self.stack.clone_from(&mark.stack);
-        self.frontiers.clone_from(&mark.frontiers);
-        self.operators.clone_from(&mark.operators);
-        self.barriers.clone_from(&mark.barriers);
+        // Undo the slope edits made since the mark, newest first; the lowest
+        // slope position any of them touched bounds the cache rebuild.
+        let mut floor = self.stack.len();
+        while self.edits.len() > mark.edits_len {
+            let Some(edit) = self.edits.pop()
+            else {
+                break;
+            };
+            match edit {
+                | SlopeEdit::Pushed => {
+                    self.stack.pop();
+                    floor = floor.min(self.stack.len());
+                },
+                | SlopeEdit::Overwritten { index, cell } => {
+                    if let Some(slot) = self.stack.get_mut(index) {
+                        *slot = cell;
+                    }
+                    floor = floor.min(index);
+                },
+                | SlopeEdit::Spliced { low, removed } => {
+                    let from = self.removed.len().saturating_sub(removed);
+                    let end = low.saturating_add(1).min(self.stack.len());
+                    self.stack
+                        .splice(low.min(end) .. end, self.removed.drain(from ..))
+                        .for_each(|_replacement| ());
+                    floor = floor.min(low);
+                },
+            }
+        }
+        self.reindex_from(StackFloor::from(StackIndex::from(floor)));
+        self.live_marks = mark.depth;
+        if self.live_marks == 0 {
+            self.edits.clear();
+            self.removed.clear();
+        }
     }
 
     /// Return the obligation [`Delta`] accumulated since `mark`.
@@ -4633,18 +5029,19 @@ pub struct Frontier
     pub expected: Sort,
 }
 
-/// A lightweight in-place transaction snapshot of a [`MeldState`].
+/// A lightweight in-place transaction over a [`MeldState`].
 ///
-/// A `Mark` records the append-only log lengths and the small first-order slope
-/// at [`mark`](MeldState::mark) time; [`rollback_to`](MeldState::rollback_to)
-/// restores them. Unlike a [`Checkpoint`], it does not clone the emission log,
-/// so the molder's candidate loop pays only a slope clone per mark.
+/// A `Mark` records the append-only log lengths and the position in the
+/// state's slope-edit trail at [`mark`](MeldState::mark) time;
+/// [`rollback_to`](MeldState::rollback_to) truncates the logs and undoes the
+/// slope edits made since. Unlike a [`Checkpoint`] it copies nothing: a dry-run
+/// costs the edits it makes, not the depth of the slope.
 ///
 /// # Specification
-/// - requires: used only against the state it was marked from, before any
-///   non-append mutation.
-/// - ensures: carries exactly the marked source, emission, and obligation
-///   lengths and the marked slope.
+/// - requires: used only against the state it was marked from; marks nest, the
+///   latest live mark rolled back first.
+/// - ensures: carries exactly the marked source, emission, obligation and space
+///   lengths, the marked trail position and the number of marks live before it.
 /// - provides: the candidate dry-run transaction token.
 /// - fails: never.
 /// - panics: none.
@@ -4653,13 +5050,13 @@ pub struct Frontier
 ///   observers and transitions carry the executable clauses.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — source, emissions, layout, obligations and role caches
-///   changed by candidate pushes are restored to their marked state. A lost
-///   length or stale slope changes exact checkpoint and subsequent
-///   continuation.
+/// - hypothesis: L3 — source, emissions, layout, obligations, slope and role
+///   caches changed by candidate pushes, reductions and frontier flips are
+///   restored to their marked state. A lost length or a missed edit changes
+///   exact checkpoint and subsequent continuation.
 /// - witness: `meld::tests::mark_rollback_restores_state_exactly`
 /// - witness: `meld::tests::head_caches_match_a_fresh_scan_across_streams`
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Mark
 {
     /// Assembled source length at mark time.
@@ -4670,14 +5067,168 @@ pub struct Mark
     oblig_len: usize,
     /// Floating-space-list length at mark time.
     spaces_len: usize,
-    /// The slope of terraces at mark time.
-    stack: Vec<Cell>,
-    /// The open-frontier index cache at mark time.
-    frontiers: Vec<usize>,
-    /// The operator index cache at mark time.
-    operators: Vec<usize>,
-    /// The form-tile index cache at mark time.
-    barriers: Vec<usize>,
+    /// Slope-edit trail length at mark time.
+    edits_len: usize,
+    /// Removed-cell log length at mark time.
+    removed_len: usize,
+    /// Marks live before this one.
+    depth: usize,
+}
+
+/// The sort of the completed form a [`FormUnit`]'s stand-in operand stands
+/// for: every top-level declaration is item-sorted.
+pub const BOUNDARY_SORT: Sort = Sort::Item;
+
+/// Where a [`FormUnit`]'s slope began.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnitBase
+{
+    /// The source's start: the empty slope every parse begins from.
+    SourceStart,
+    /// A top-level form boundary: the stand-in of
+    /// [`Checkpoint::form_boundary`].
+    FormBoundary,
+}
+
+/// Why a [`FormUnit`] could not join the state before it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SeamBreak
+{
+    /// A source-start unit met a state that had already molded tokens.
+    NotAtStart,
+    /// The state holds no completed form for the stand-in to stand for.
+    NoForm,
+    /// A form tile or an operator remains on the state's slope: a form is
+    /// still open, or closed but not yet reduced.
+    OpenSlope,
+    /// The state's topmost form is not of the boundary sort.
+    SortMismatch,
+    /// The unit's fold, dry-runs included, touched its stand-in.
+    Reached,
+}
+
+/// How a [`FormUnit`] met the state before it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnitSeam
+{
+    /// The seam held: the unit's forms were appended as molded.
+    Joined,
+    /// The seam broke: the state is as it was, and the unit's run is to be
+    /// molded onto it.
+    Broken(SeamBreak),
+}
+
+/// A run of tokens molded apart from the forms before it.
+///
+/// A run that starts the stream molds from the empty slope, as
+/// [`parse`](fn@crate::parse) does. A later run starts at a predicted
+/// top-level form boundary and molds from [`Checkpoint::form_boundary`]: one
+/// completed item operand standing in for every form before the boundary,
+/// which is all a parse's next token can see of those forms when the
+/// boundary is real. [`MeldState::join_unit`] appends the unit's forms to the
+/// state the earlier runs left once it has checked that the boundary was
+/// real and the unit never reached past its stand-in; otherwise the run is
+/// molded onto that state instead. Units are independent until they join,
+/// so they mold in parallel.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the melder holds the unit's base — the empty slope, or the
+///   stand-in at slope position and emission id zero — and every token molded
+///   into it since.
+/// - panics: none.
+/// - executable: none — this data type has no call boundary; its constructor
+///   and the join carry the executable clauses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+///   four fragments, split at every predicted boundary, mold unit by unit and
+///   join to the whole parse; a unit on the wrong base or a join that kept the
+///   stand-in changes a joined tree.
+/// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+/// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+pub struct FormUnit<'pbg>
+{
+    /// Where the unit's slope began.
+    base: UnitBase,
+    /// The tokens the unit molds.
+    run: TokenRun,
+    /// The melder the unit molds into.
+    state: MeldState<'pbg>,
+}
+
+impl<'pbg> FormUnit<'pbg>
+{
+    /// Begin the unit for `run` over `pbg`: from the empty slope when `run`
+    /// starts the stream, from [`Checkpoint::form_boundary`] otherwise.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: a [`UnitBase::SourceStart`] unit over an empty state when
+    ///   `run` starts at position zero; a [`UnitBase::FormBoundary`] unit
+    ///   resumed from the boundary checkpoint otherwise.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a split source's first and later runs begin on the
+    ///   two bases and join to the whole parse; swapping the bases changes the
+    ///   first form or every later one.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    #[inline]
+    #[must_use]
+    #[spec(ensures: |ret| ret.run == run && (ret.base == UnitBase::SourceStart) == (usize::from(run.start()) == 0) && ret.state.stack.len() == usize::from(ret.base == UnitBase::FormBoundary))]
+    pub fn new(
+        pbg: &'pbg Pbg,
+        run: TokenRun,
+    ) -> Self
+    {
+        if usize::from(run.start()) == 0 {
+            Self {
+                base: UnitBase::SourceStart,
+                run,
+                state: MeldState::new(pbg),
+            }
+        }
+        else {
+            Self {
+                base: UnitBase::FormBoundary,
+                run,
+                state: MeldState::resume(pbg, &Checkpoint::form_boundary(pbg)),
+            }
+        }
+    }
+
+    /// The tokens the unit molds.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn run(&self) -> TokenRun
+    {
+        self.run
+    }
+
+    /// Where the unit's slope began.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    #[must_use]
+    pub const fn base(&self) -> UnitBase
+    {
+        self.base
+    }
+
+    /// The melder the unit molds into.
+    ///
+    /// # Specification
+    /// trivial.
+    #[inline]
+    pub(crate) const fn state_mut(&mut self) -> &mut MeldState<'pbg>
+    {
+        &mut self.state
+    }
 }
 
 /// One expected item in a completion to `⊢`.
@@ -4964,6 +5515,55 @@ impl Checkpoint
     pub const fn fingerprint(&self) -> GrammarFingerprint
     {
         self.fingerprint
+    }
+
+    /// The checkpoint every parse of `pbg` holds at a top-level form
+    /// boundary, up to the forms before it: one completed operand of the
+    /// boundary sort, standing in for those forms, on an otherwise empty
+    /// slope with no source, obligations or spaces.
+    ///
+    /// The stand-in occupies emission id zero and slope position zero and
+    /// covers no source. It is never committed: a [`FormUnit`] resumed from
+    /// this checkpoint only ever joins a real state, which drops the
+    /// stand-in.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the stand-in is the only emission and the only slope cell, a
+    ///   zero-width operand of [`BOUNDARY_SORT`]; source, obligations and
+    ///   spaces are empty; the fingerprint is `pbg`'s.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every corpus source and 400 hostile sources of one to
+    ///   four fragments, split at every predicted boundary, join to the whole
+    ///   parse; a stand-in of another sort or role changes a unit's choices at
+    ///   its first token.
+    /// - witness: `parse::tests::form_split_parses_as_the_whole_source`
+    /// - witness: `parse::tests::arbitrary_source_parses_by_form_as_whole`
+    #[must_use]
+    #[spec(ensures: |ret| ret.fingerprint == pbg.fingerprint() && ret.source.is_empty() && ret.emit.len() == 1 && ret.stack == [Cell { emit: EmitId(0), start: 0, end: 0, sort: BOUNDARY_SORT, role: Role::Operand }] && ret.obligations.is_empty() && ret.spaces.is_empty())]
+    pub(crate) fn form_boundary(pbg: &Pbg) -> Self
+    {
+        Self {
+            fingerprint: pbg.fingerprint(),
+            source: String::new(),
+            emit: Vec::from([EmitOp::Interior {
+                label: NodeLabel::Wald,
+                start: 0,
+                end: 0,
+                children: Vec::new(),
+            }]),
+            stack: Vec::from([Cell {
+                emit: EmitId(0),
+                start: 0,
+                end: 0,
+                sort: BOUNDARY_SORT,
+                role: Role::Operand,
+            }]),
+            obligations: Vec::new(),
+            spaces: Vec::new(),
+        }
     }
 
     /// Encode the checkpoint as a self-contained little-endian byte stream.
@@ -8267,11 +8867,13 @@ mod tests
                 }
                 else {
                     // A mark/rollback dry-run before the real push exercises
-                    // the cache restore path at every position.
+                    // the slope undo and cache restore at every position.
+                    let before = state.checkpoint().to_bytes();
                     let mark = state.mark();
                     molder.mold(&mut state, token, SourceText::from(src));
                     state.assert_head_caches_exact();
                     state.rollback_to(&mark);
+                    assert_eq!(state.checkpoint().to_bytes(), before);
                     state.assert_head_caches_exact();
                     molder.mold(&mut state, token, SourceText::from(src));
                 }

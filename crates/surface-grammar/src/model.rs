@@ -34,6 +34,7 @@ use crate::mold::MoldHasSuccessor;
 use crate::mold::MoldIsFormFirst;
 use crate::mold::MoldIsFormLast;
 use crate::mold::MoldTable;
+use crate::mold::MoldsAdjacent;
 use crate::mold::RCtxId;
 use crate::mold::RCtxStep;
 use crate::parity::NamedKind;
@@ -1743,6 +1744,57 @@ impl Pbg
     pub fn adjacencies(&self) -> &[(MoldId, MoldId)]
     {
         self.molds.adjacencies()
+    }
+
+    /// The [`adjacencies`](Self::adjacencies) pairs whose left is `mold`,
+    /// ascending: its same-form successors.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: exactly the pairs of [`adjacencies`](Self::adjacencies) whose
+    ///   left is `mold`, in their order; empty for an id past the table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every built-in mold's run compares with a filter of
+    ///   the whole adjacency, and the first id past the table reads empty; a
+    ///   run cut short, shifted, or a neighbor's changes a comparison.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| ret.iter().copied().eq(self.adjacencies().iter().copied().filter(|&(left, _)| left == mold)))]
+    #[inline]
+    #[must_use]
+    pub fn mold_successors(
+        &self,
+        mold: MoldId,
+    ) -> &[(MoldId, MoldId)]
+    {
+        self.molds.successors(mold)
+    }
+
+    /// Whether `left` then `right` are same-form adjacent: `(left, right)` is
+    /// one of the [`adjacencies`](Self::adjacencies).
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: true exactly when `(left, right)` is in
+    ///   [`adjacencies`](Self::adjacencies).
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — every built-in pair, its reverse and a pair past the
+    ///   table compare with the whole list; a lookup in the wrong run changes a
+    ///   comparison.
+    /// - witness: `tests::walk::form_membership_flags_agree_with_their_lists`
+    #[spec(ensures: |ret| bool::from(ret) == self.adjacencies().contains(&(left, right)))]
+    #[inline]
+    #[must_use]
+    pub fn molds_adjacent(
+        &self,
+        left: MoldId,
+        right: MoldId,
+    ) -> MoldsAdjacent
+    {
+        self.molds.adjacent(left, right)
     }
 
     /// The molds that can be a form's first tile, ascending and unique.

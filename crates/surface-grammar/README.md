@@ -12,6 +12,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - [Regex layout](#regex-layout)
 - [Gates](#gates)
 - [Molds and contexts](#molds-and-contexts)
+- [Successor runs and dense membership flags](#successor-runs-and-dense-membership-flags)
 - [Closing class](#closing-class)
 - [Walk index and comparison table](#walk-index-and-comparison-table)
 - [Built-in surface](#built-in-surface)
@@ -44,7 +45,7 @@ The checked precedence-bounded grammar of the gandr surface: rules over a preced
 - `Regex`, `RegexView`, `RegexShape`, `Sym`, `Tile`: a form as a flat pre-order arena, built by `empty`, `sort`, `tile`, `seq`, `alt`, `optional` and `repeat` and read back as a tree. Witness: `tests::regex::nested_shapes_read_back_as_built`.
 - `Rule`, `Sort`, `Adaptation`, `Pbg::build`, `Pbg::build_table`, `PbgError`: rules checked into a grammar, every refusal typed and checked in a fixed order; `Sort` decodes from a `GroutSort` tag. Witnesses: `tests::pbg::pbg_rejects_invalid_prec_before_later_header_errors`, `tests::pbg::pbg_rejects_duplicate_rule_names_deterministically`, `tests::pbg::pbg_rejects_direct_adjacent_sorts_in_sequence`, `tests::pbg::pbg_rejects_adjacency_exposed_by_nullable_sequence_paths`, `tests::pbg::pbg_accepts_terminal_separators_between_sort_uses`, `tests::pbg::pbg_rejects_invalid_operator_form_even_with_adaptation`, `tests::surface::sort_decode_contract`.
 - `validate_operator_form`, `validate_unique_tiles`, `validate_assumption_3`: the gates on their own. Witnesses: `tests::pbg::unique_tiles_contract`, `tests::pbg::pbg_rejects_duplicate_rctx_tile`, `tests::pbg::pbg_accepts_same_label_at_distinct_contexts`, `tests::pbg::assumption_3_contract`.
-- `MoldDef`, `RCtxId`, `RCtxStep`, `StepSym` and the `Pbg` mold queries — `mold`, `bounds`, `step`, `candidates`, `fresh_candidates`, `candidate_counts`, `adjacencies`, `form_first`, `form_last` and the per-mold flags: the mold table a parser reads. Witnesses: `tests::walk::mold_lookup_checks_bounds`, `tests::walk::mold_bounds_follow_context_nullability`, `tests::walk::rctx_steps_cross_adjacent_symbols`, `tests::walk::same_form_adjacency_is_the_eq_relation`, `tests::walk::fresh_menus_keep_exactly_the_form_openers`, `tests::walk::form_membership_flags_agree_with_their_lists`, `tests::walk::declared_mold_candidate_inventory_is_exact`, `tests::surface::prefix_formers_keep_required_type_tails_unclosed`, `tests::surface::infix_type_operator_keeps_clean_completion`.
+- `MoldDef`, `RCtxId`, `RCtxStep`, `StepSym` and the `Pbg` mold queries — `mold`, `bounds`, `step`, `candidates`, `fresh_candidates`, `candidate_counts`, `adjacencies`, `mold_successors`, `molds_adjacent` with `MoldsAdjacent`, `form_first`, `form_last` and the per-mold flags: the mold table a parser reads. Witnesses: `tests::walk::mold_lookup_checks_bounds`, `tests::walk::mold_bounds_follow_context_nullability`, `tests::walk::rctx_steps_cross_adjacent_symbols`, `tests::walk::same_form_adjacency_is_the_eq_relation`, `tests::walk::fresh_menus_keep_exactly_the_form_openers`, `tests::walk::form_membership_flags_agree_with_their_lists`, `tests::walk::declared_mold_candidate_inventory_is_exact`, `tests::surface::prefix_formers_keep_required_type_tails_unclosed`, `tests::surface::infix_type_operator_keeps_clean_completion`.
 - `Pbg::closing_class`: the bracket family a mold's form completes into. Witnesses: `tests::closing_class::closing_class_is_form_level`, `tests::closing_class::closing_class_repeat_with_exit_shares_its_component_answer`.
 - `Pbg::rule_of` and `Pbg::named_kind`: the rule a mold belongs to and the named kind that rule realises, total over the mold table — what a consumer of a molded tree dispatches on. Witness: `tests::surface::every_mold_resolves_to_its_rule_and_named_kind`.
 - `Pbg::fingerprint`: the grammar's identity, pinned for the built-in surface. Witness: `tests::walk::pbg_fingerprint_is_stable_and_folds_precdag`.
@@ -133,6 +134,13 @@ A mold is one tile occurrence: its label, its sort, its precedence group, and th
 
 - Alternatives: a hash-map interner needs `std` or a further dependency and a fixed hasher for a stable order.
 - Reversal: a measured build in which interning dominates.
+
+## Successor runs and dense membership flags
+
+The table keeps same-form adjacency as one list of `(left, right)` pairs sorted by left then right, and form membership as the sorted `form_first` and `form_last` lists. The parser asks four questions of them on every candidate of every token: does this mold continue that one, what are this mold's successors, is it a form's first tile, does it end its form or require a tail. Answered by search, those questions were the molder's largest self-time cost, the pair-list binary search alone near a quarter of it. The build now also lays down, per mold, the start of its run in the pair list, and three dense flags for first, completing-last and required-tail. `Pbg::mold_successors` reads a run in constant time, `Pbg::molds_adjacent` searches only that run, and the membership queries read a flag. The lists stay the record and the fingerprint does not change: the run starts and flags are computed from them, and `tests::walk::form_membership_flags_agree_with_their_lists` checks every built-in mold, and the first id past the table, against them.
+
+- Alternatives: a hash set of pairs costs a hasher and `std`; a dense mold-by-mold bit matrix is quadratic in a table of over two thousand molds.
+- Reversal: a grammar whose successor runs grow long enough that a per-run search costs more than the list search did.
 
 ## Closing class
 
