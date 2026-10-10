@@ -19,11 +19,16 @@ anodized.workspace = true
 blake3.workspace = true
 gandr-kernel-term.workspace = true
 gandr-storage-records.workspace = true
+gandr-theory-cell-complexes.workspace = true
+gandr-theory-decomposition-spaces.workspace = true
+gandr-theory-deep-inference.workspace = true
+quenchant-shape.workspace = true
 
 # The level oracle builds the universe declarations the generated environments
 # range over; proptest generates them.
 [dev-dependencies]
 gandr-kernel-strata.workspace = true
+gandr-theory-coherent-resolutions.workspace = true
 proptest.workspace = true
 
 [lints]

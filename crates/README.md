@@ -29,7 +29,7 @@ crates/
 ├── theory-circuit-algebras/       the diagram view, the spine reading of a command pattern, embedding matching with its convexity check, the diagram normal form
 ├── theory-coherent-resolutions/   firing, critical pairs, replayable coherence certificates, budgeted completion
 ├── theory-computads/              descriptions elaborated into cells at the declaration's polarity, circuit rules instantiated where their shift question is well-posed, the convexity supply point
-├── theory-decomposition-spaces/   two-mode certificate composition and bounded backward pathway queries
+├── theory-decomposition-spaces/   two-mode certificate composition, bounded backward pathway queries and borrowed canonical step fields
 ├── theory-deep-inference/         shift equivalence, the causal order, the certificate normal form and replay plan, the causal web, the flow projection, guarded-family prices
 ├── theory-graphs/                 the precedence DAG, the walk machine, and the graph algorithms they read
 ├── theory-levitation/             the first-order code universe and the tagged description table, rule faces, circuit rules and their elaboration, bridge arities, the generic programs, host well-formedness, the typed rule face
@@ -51,7 +51,7 @@ crates/
 ├── storage-chunker/               content-defined chunk boundaries and their committed parameters
 ├── storage-records/               the authenticated ordered-record plane
 ├── storage-values/                the content-addressed value plane: typed chunk DAG and content pointers
-├── storage-artifact/              kernel artifacts on the record plane: declaration segments as keyed records under a BLAKE3 manifest identity, read back through the kernel's decoder
+├── storage-artifact/              kernel artifacts on the record plane and canonical BLAKE3 certificate-step identities
 ├── runtime-compile-host/          feature-gated positive-core images, typed admission, C boundary vocabulary and canonical value rendering
 ├── surface-syntax/                the molded concrete syntax tree and the mold references a grammar and a parser exchange
 ├── surface-render-remote/         the renderer seam: highlight and mark spans, diagnostic and goal cards, transcript blocks, the byte-to-position projections, the versioned render-bus frame

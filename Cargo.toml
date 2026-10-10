@@ -502,6 +502,7 @@ path = "crates/surface-tui"
 # the cell alphabet and its store.
 # consumers:
 # - core-sequent
+# - storage-artifact
 # - theory-cell-complexes-tools
 # - theory-circuit-algebras
 # - theory-coherent-resolutions
@@ -532,6 +533,7 @@ path = "crates/theory-circuit-algebras"
 # The rewriting engine: firing, the overlap enumerator and its support,
 # replayable coherence certificates, budgeted completion.
 # consumers:
+# - storage-artifact (dev)
 # - theory-computads
 # - theory-decomposition-spaces
 # - theory-deep-inference
@@ -552,6 +554,7 @@ default-features = false
 # features:
 # - none: alloc-only theory machinery.
 # consumers:
+# - storage-artifact
 # - theory-deep-inference (dev)
 # - theory-virtual-doctrines
 [workspace.dependencies.gandr-theory-decomposition-spaces]
@@ -562,6 +565,7 @@ default-features = false
 # guard it is earned against, the causal order, the certificate normal form.
 # consumers:
 # - core-checker
+# - storage-artifact
 # - theory-computads
 # - theory-decomposition-spaces
 [workspace.dependencies.gandr-theory-deep-inference]
@@ -671,6 +675,7 @@ default-features = false
 # - core-term
 # - kernel-core
 # - kernel-term
+# - storage-artifact
 # - surface-corpus
 # - surface-diagnostics
 # - surface-dispatcher
