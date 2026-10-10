@@ -63,6 +63,7 @@ mod decl;
 mod decode;
 mod encode;
 mod error;
+pub mod stage;
 mod tags;
 mod term;
 mod types;

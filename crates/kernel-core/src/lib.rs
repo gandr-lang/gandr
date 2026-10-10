@@ -87,6 +87,7 @@ pub mod levels;
 pub mod path_universe;
 pub mod replay;
 pub mod rewrite;
+pub mod stage;
 pub mod support;
 mod witness;
 
