@@ -8,9 +8,12 @@
 //! A zero-column pair pins fallback when both separator branches are tainted.
 //! Regenerate with `UPDATE_EXPECT=1` and review the diff.
 
+extern crate alloc;
+
 #[cfg(test)]
 mod tests
 {
+    use alloc::sync::Arc;
     use std::path::Path;
 
     use anodized::spec;
@@ -1020,5 +1023,44 @@ mod tests
             approximate(Written("?")),
             "a lift, which the surface does not write, spells `?`"
         );
+    }
+    /// Native introductions retain endpoint and map order but cannot claim
+    /// surface round-trip fidelity, because the parser has no path syntax.
+    #[test]
+    fn native_paths_preserve_ordered_endpoints_and_maps()
+    {
+        let mut core = CoreArena::new();
+        let unit = core.value_type_unit();
+        let integer = core.value_type_base(BaseType::Integer);
+        let unit_code = core.value_quote(unit);
+        let integer_code = core.value_quote(integer);
+        let path_type = core.value_type_path_universe(unit_code, integer_code);
+        let first = core.value_path_refl(unit_code);
+        let second = core.value_path_refl(integer_code);
+        let product = core.value_path_product(first, second);
+        let forward = core.value_constant(ConstantIndex::from(0_usize));
+        let backward = core.value_constant(ConstantIndex::from(1_usize));
+        let equiv = core.value_path_equiv(path_type, forward, backward, Arc::default());
+        let names = [Name::from("forward"), Name::from("backward")];
+        let source = CoreSource::new(&core, &names);
+        for (root, expected) in [
+            (
+                Root::Type(CoreNode::ValueType(path_type)),
+                "Path_U(Unit, Integer)",
+            ),
+            (Root::Value(CoreNode::Value(first)), "refl(Unit)"),
+            (
+                Root::Value(CoreNode::Value(product)),
+                "pathProduct(refl(Unit), refl(Integer))",
+            ),
+            (
+                Root::Value(CoreNode::Value(equiv)),
+                "equiv(forward, backward)",
+            ),
+        ] {
+            let rendered = presented(&source, root, wide());
+            assert_eq!(rendered.as_ref(), expected);
+            assert_eq!(rendered.fidelity(), Fidelity::Approximate);
+        }
     }
 }

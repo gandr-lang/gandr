@@ -966,6 +966,7 @@ impl<'source> Program<'source>
         Some(&Computation::Return(value)) => match core.value(value) {
             Some(&Value::Unit) => ret.0 == "()",
             Some(&Value::Thunk(_)) => ret.0 == "<thunk>",
+            Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. })) => ret.0 == "<path>",
             Some(&(Value::Quote(_) | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..))) => ret.0 == "<code>",
             Some(&Value::Constant(constant)) => match self.name(constant) {
                 Maybe::Present(name) => ret.0 == name.as_ref(),
@@ -992,7 +993,7 @@ impl<'source> Program<'source>
             Some(&Value::Lift { .. }) => true,
             None => ret.0 == "<dangling>",
         },
-        Some(&(Computation::Application(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. })) | None => ret.0 == "<computation>",
+        Some(&(Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) | Computation::Force(_) | Computation::Case { .. })) | None => ret.0 == "<computation>",
     })]
     fn spell(
         &self,
@@ -1005,7 +1006,8 @@ impl<'source> Program<'source>
             | Some(&Computation::Return(value)) => Vec::from([Piece::Value(value)]),
             | Some(&Computation::Lambda(_)) => Vec::from([Piece::Text("<fun>")]),
             | Some(
-                &(Computation::Application(..)
+                &(Computation::Transport(..)
+                | Computation::Application(..)
                 | Computation::Bind(..)
                 | Computation::Force(_)
                 | Computation::Case { .. }),
@@ -1021,6 +1023,9 @@ impl<'source> Program<'source>
                 | Piece::Value(value) => value,
             };
             match core.value(value) {
+                | Some(
+                    &(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. }),
+                ) => spelled.push_str("<path>"),
                 | Some(&Value::Literal(Literal::Integer(ref integer))) => {
                     if integer.sign() == Sign::Negative {
                         spelled.push('-');
@@ -1130,7 +1135,7 @@ enum Piece
     Some(&Value::Constant(constant)) => ret.iter().copied().eq([constant]),
     Some(&(Value::Variable { .. } | Value::Unit | Value::Literal(_) | Value::Quote(_)
         | Value::QuoteComputation(_) | Value::StaticLambda(_) | Value::StaticApplication(..))) | None => ret.is_empty(),
-    Some(&(Value::Pair(..) | Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_))) => true,
+    Some(&(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. } | Value::Pair(..) | Value::Injection(..) | Value::Lift { .. } | Value::Thunk(_))) => true,
 })]
 fn references(
     core: &CoreArena,
@@ -1152,10 +1157,22 @@ fn references(
         match node {
             | Node::Value(id) => match core.value(id) {
                 | Some(&Value::Constant(constant)) => referred.push(constant),
-                | Some(&Value::Pair(first, second)) => {
+                | Some(
+                    &(Value::PathProduct(first, second)
+                    | Value::PathEquiv {
+                        forward: first,
+                        backward: second,
+                        ..
+                    }
+                    | Value::Pair(first, second)),
+                ) => {
                     pending.extend([Node::Value(first), Node::Value(second)]);
                 },
-                | Some(&(Value::Injection(_, inner) | Value::Lift { body: inner, .. })) => {
+                | Some(
+                    &(Value::PathRefl(inner)
+                    | Value::Injection(_, inner)
+                    | Value::Lift { body: inner, .. }),
+                ) => {
                     pending.push(Node::Value(inner));
                 },
                 | Some(&Value::Thunk(computation)) => pending.push(Node::Computation(computation)),
@@ -1171,6 +1188,9 @@ fn references(
                 | None => {},
             },
             | Node::Computation(id) => match core.computation(id) {
+                | Some(&Computation::Transport(path, value)) => {
+                    pending.extend([Node::Value(path), Node::Value(value)]);
+                },
                 | Some(&Computation::Lambda(inner)) => pending.push(Node::Computation(inner)),
                 | Some(&Computation::Application(head, argument)) => {
                     pending.extend([Node::Computation(head), Node::Value(argument)]);

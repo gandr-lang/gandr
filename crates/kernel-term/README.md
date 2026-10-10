@@ -146,18 +146,44 @@ A decode failure is a format failure and never a typing failure. `DecodeError` i
 
 ## Tag numbering and versioning
 
-The tag space is one disjoint enumeration over the four families:
+The tag space is one disjoint enumeration over four families. The allocation and reservation table in [`tags`](src/tags.rs) is authoritative; `NODE_TAG_TABLE` supplies the assigned formers and their arities. Empty, absurd and native paths have distinct bytes. Higher fields and function identity remain in-memory rule languages, with reserved ranges and no wire nodes.
 
-| region | tags | holds |
-| ------ | ---- | ----- |
-| frozen block | `0x00–0x1F` | every former this crate mints, contiguous from zero through the two static operators |
-| sharing block | `0x20–0x27` | a stored sharing plane: one former per family, plus four held slots for an explicit weakening form |
+The original `0x00–0x1F` meanings are frozen, including static operators at `0x1E–0x1F`. The extension and reservation table covers the remaining bytes:
 
-The universe families took four tags from the former growth room, in family order: `NODE_VT_COMPUTATION_UNIVERSE` (`0x1A`), `NODE_CT_ELEMENT` (`0x1B`), `NODE_V_QUOTE` (`0x1C`) and `NODE_V_QUOTE_COMPUTATION` (`0x1D`). `NODE_VT_UNIVERSE` keeps its byte and now names the value universe alone. The sort is a tag rather than an inline byte on `NODE_VT_UNIVERSE` for the reason the dependent arrow is a tag rather than a flag on the arrow: a payload byte that changes what a node means is a field-shape change, which bumps `FORMAT_VERSION`, where a fresh tag holds it. The static operators took the last two, `NODE_VT_STATIC_PI` (`0x1E`) and `NODE_V_STATIC_APPLICATION` (`0x1F`); the growth room is spent, and the next core former resumes above `SHARING_BLOCK_LAST`.
+| Byte or range | Meaning | Artifact reader |
+| ------------- | ------- | --------------- |
+| `0x00–0x1F` | Original formers in `NODE_TAG_TABLE` | Admitted, unchanged |
+| `0x20` | Reserved value sharing | Refused |
+| `0x21` | Reserved computation sharing | Refused |
+| `0x22` | Reserved value-type sharing | Refused |
+| `0x23` | Reserved computation-type sharing | Refused |
+| `0x24–0x27` | Held weakening slots | Refused |
+| `0x28` | Empty value type, no children | Admitted |
+| `0x29` | Absurd computation, one value child | Admitted |
+| `0x2A` | `Path_U`, two value-code children | Admitted |
+| `0x2B` | Path reflexivity, one code child | Admitted |
+| `0x2C` | Equivalence, evidence and three children | Admitted |
+| `0x2D` | Product path, two path children | Admitted |
+| `0x2E` | Transport, path and input children | Admitted |
+| `0x2F` | Unassigned | Refused |
+| `0x30–0x37` | Higher-field reservation | Refused |
+| `0x38–0x47` | Funext reservation | Refused |
+| `0x48–0x4F` | `Flow_U` reservation | Refused |
+| `0x50` | List code, one element-type child | Admitted |
+| `0x51` | Reserved List inhabitant | Refused |
+| `0x52–0xFF` | Unassigned | Refused |
+
+The admitted domain is sparse: the greatest assigned byte is `0x50`, not a promise to accept every smaller byte. The boundary witnesses admit `0x50`, refuse `0x51` and every other unassigned byte, and retain the frozen block. Empty is a zero-child leaf and may be a bounded-alias target; no reservation becomes an alias target by being below the maximum.
 
 The sharing block is reserved: `NODE_SHARE_VALUE`, `NODE_SHARE_COMPUTATION`, `NODE_SHARE_VALUE_TYPE` and `NODE_SHARE_COMP_TYPE` name its per-family bytes, and no entry carries one. A reader meeting one of its bytes refuses it by name at the node site, exactly as it refuses any other unassigned byte. Reserving the block keeps the core vocabulary from growing into it: the core resumes above `SHARING_BLOCK_LAST`, and the block stays contiguous, so a sharing former's family is a subtraction.
 
 Assigning an unassigned tag or kind byte, or filling a reserved slot that is framed from the start, holds `FORMAT_VERSION`: the reader is a closed-vocabulary parser, so an unknown byte is a named refusal rather than a mis-parse. Reassigning a byte or changing a field's shape, order or width bumps it, because an older reader would otherwise parse successfully and wrongly.
+
+`PathUniverse` has two value-code children; reflexivity has one code, product paths have two paths, and transport has a path and input value. `PathEquiv` carries inline portable evidence followed by its classifier, forward map and backward map children. Evidence is source then target: a dialogue count, then each dialogue's decision count and unsigned decision words. Unknown words and oversized negative-premise positions are malformed; decoding never certifies a round trip.
+
+The portable decision alphabet comes from `kernel-conversion-trace`; unit anchors carry no arena identity. Reusing that vocabulary avoids a second replay protocol. The sharing-format witness preserves all decisions, empty dialogues and direction boundaries against independent bytes, and rejects malformed words and truncated prefixes. **Reversal:** introduce a new framing version if the alphabet needs payloads that cannot be encoded without changing existing word meanings.
+
+The List code (`NODE_VT_LIST`, `0x50`) has one value-type child, its element code. It represents the strictly positive fixed point `μX. Unit + A × X` without a back edge in the type arena. Its finite code round-trips through the ordinary sharing format. `NODE_LIST_VALUE_RESERVED` (`0x51`) remains unassigned: guarded list inhabitants are in-memory kernel observations, not persisted term values.
 
 ## Sharing and compression
 

@@ -666,20 +666,23 @@ impl LooseDepths
     /// # Specification
     /// - requires: nothing.
     /// - ensures: every node reachable from the root has a cached reach.
-    /// - provides: the shared engine of the two reach faces. Reachable-cache
-    ///   completeness remains prose-only: a predicate would have to walk every
-    ///   reachable child again; checking only the root would weaken the claim.
+    /// - provides: the shared engine of the two reach faces. The executable
+    ///   boundary checks root completion; witnesses cover descendant caching
+    ///   across binders and code edges.
     /// - fails: never — an unreadable node caches the widest reach.
     /// - panics: none.
     ///
-    /// # Termination
-    /// - reason: the walk is a loop over an explicit task stack, not recursion.
-    /// - measure: the number of reachable nodes without a cached reach, which
-    ///   strictly falls at every close step and never rises, since an open on a
-    ///   cached node pushes nothing.
-    /// - boundedness: the arena is finite and children have strictly smaller
-    ///   ids, so the reachable set is finite and acyclic.
-    /// - input recursion: none.
+    /// # Adequacy
+    /// - hypothesis: L3 — code crossings and binder depth close the root cache;
+    ///   unreadable nodes conservatively reach the whole telescope.
+    /// - witness: `support::tests::a_type_reaches_through_its_codes`
+    /// - witness: `support::tests::an_unreadable_node_reaches_widest`
+    #[spec(ensures: match root {
+        ReachTask::OpenValue(id) | ReachTask::CloseValue(id) => self.values.contains_key(&id),
+        ReachTask::OpenComp(id) | ReachTask::CloseComp(id) => self.computations.contains_key(&id),
+        ReachTask::OpenValueType(id) | ReachTask::CloseValueType(id) => self.value_types.contains_key(&id),
+        ReachTask::OpenCompType(id) | ReachTask::CloseCompType(id) => self.comp_types.contains_key(&id),
+    })]
     fn run(
         &mut self,
         arena: &TermArena,
@@ -705,7 +708,20 @@ impl LooseDepths
                         | Value::Constant(_)
                         | Value::Unit
                         | Value::Literal(_) => {},
-                        | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
+                        | Value::PathEquiv {
+                            path_type,
+                            forward,
+                            backward,
+                            ..
+                        } => {
+                            tasks.push(ReachTask::OpenValueType(path_type));
+                            tasks.push(ReachTask::OpenValue(forward));
+                            tasks.push(ReachTask::OpenValue(backward));
+                        },
+                        | Value::PathRefl(code) => tasks.push(ReachTask::OpenValue(code)),
+                        | Value::PathProduct(first, second)
+                        | Value::Pair(first, second)
+                        | Value::StaticApplication(first, second) => {
                             tasks.push(ReachTask::OpenValue(first));
                             tasks.push(ReachTask::OpenValue(second));
                         },
@@ -734,12 +750,18 @@ impl LooseDepths
                     };
                     tasks.push(ReachTask::CloseComp(id));
                     match *node {
+                        | Computation::Transport(path, value) => {
+                            tasks.push(ReachTask::OpenValue(path));
+                            tasks.push(ReachTask::OpenValue(value));
+                        },
                         | Computation::Lambda(body) => tasks.push(ReachTask::OpenComp(body)),
                         | Computation::Application(head, argument) => {
                             tasks.push(ReachTask::OpenComp(head));
                             tasks.push(ReachTask::OpenValue(argument));
                         },
-                        | Computation::Return(value) | Computation::Force(value) => {
+                        | Computation::Return(value)
+                        | Computation::Force(value)
+                        | Computation::Absurd(value) => {
                             tasks.push(ReachTask::OpenValue(value));
                         },
                         | Computation::Bind(bound, body) => {
@@ -774,6 +796,7 @@ impl LooseDepths
                     match *node {
                         | ValueType::Base(_)
                         | ValueType::Unit
+                        | ValueType::Empty
                         | ValueType::Universe { .. }
                         | ValueType::Abstract(_) => {},
                         | ValueType::Product(first, second)
@@ -785,7 +808,11 @@ impl LooseDepths
                             tasks.push(ReachTask::OpenValueType(first));
                             tasks.push(ReachTask::OpenValueType(second));
                         },
-                        | ValueType::Lift { inner, .. } => {
+                        | ValueType::PathUniverse(source, target) => {
+                            tasks.push(ReachTask::OpenValue(source));
+                            tasks.push(ReachTask::OpenValue(target));
+                        },
+                        | ValueType::Lift { inner, .. } | ValueType::List(inner) => {
                             tasks.push(ReachTask::OpenValueType(inner));
                         },
                         | ValueType::Thunk(body) => tasks.push(ReachTask::OpenCompType(body)),
@@ -925,6 +952,22 @@ impl LooseDepths
     /// - provides: the value-type arm of the bottom-up reach recurrence.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — closed types need no telescope; native universe
+    ///   endpoints, list elements and decoded codes retain their greatest loose
+    ///   index.
+    /// - witness: `support::tests::a_type_reaches_through_its_codes`
+    /// - witness: `support::tests::a_closed_type_goal_reads_no_binder`
+    #[spec(ensures: |ret| ret == match arena.value_type(id) {
+        None => LooseDepth::WIDEST,
+        Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Empty | &ValueType::Universe { .. } | &ValueType::Abstract(_)) => LooseDepth(0),
+        Some(&ValueType::PathUniverse(a, b)) => self.cached_value(a).join(self.cached_value(b)),
+        Some(&ValueType::Product(a, b) | &ValueType::Sum(a, b) | &ValueType::StaticPi { domain: a, codomain: b }) => self.cached_value_type(a).join(self.cached_value_type(b)),
+        Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => self.cached_value_type(inner),
+        Some(&ValueType::Thunk(body)) => self.cached_comp_type(body),
+        Some(&ValueType::Element { code, .. }) => self.cached_value(code),
+    })]
     fn combine_value_type(
         &self,
         arena: &TermArena,
@@ -936,8 +979,12 @@ impl LooseDepths
             return LooseDepth::WIDEST;
         };
         match *node {
+            | ValueType::PathUniverse(source, target) => {
+                self.cached_value(source).join(self.cached_value(target))
+            },
             | ValueType::Base(_)
             | ValueType::Unit
+            | ValueType::Empty
             | ValueType::Universe { .. }
             | ValueType::Abstract(_) => LooseDepth(0),
             | ValueType::Product(first, second)
@@ -948,7 +995,9 @@ impl LooseDepths
             } => self
                 .cached_value_type(first)
                 .join(self.cached_value_type(second)),
-            | ValueType::Lift { inner, .. } => self.cached_value_type(inner),
+            | ValueType::Lift { inner, .. } | ValueType::List(inner) => {
+                self.cached_value_type(inner)
+            },
             | ValueType::Thunk(body) => self.cached_comp_type(body),
             | ValueType::Element { code, .. } => self.cached_value(code),
         }
@@ -1008,6 +1057,24 @@ impl LooseDepths
     ///   makes an index a reach.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — free indices set telescope reach; native path
+    ///   classifiers and both maps contribute, but evidence has no term
+    ///   children.
+    /// - witness: `support::tests::a_variable_reaches_one_more_than_its_index`
+    /// - witness: `support::tests::a_binder_reading_node_splits_on_its_slice`
+    #[spec(ensures: |ret| ret == match arena.value(id) {
+        None => LooseDepth::WIDEST,
+        Some(&Value::Variable(index)) => LooseDepth(u32::from(index).saturating_add(1)),
+        Some(&Value::Constant(_) | &Value::Unit | &Value::Literal(_)) => LooseDepth(0),
+        Some(&Value::PathEquiv { path_type, forward, backward, .. }) => self.cached_value_type(path_type).join(self.cached_value(forward)).join(self.cached_value(backward)),
+        Some(&Value::PathRefl(body) | &Value::Injection(_, body) | &Value::Lift { body, .. }) => self.cached_value(body),
+        Some(&Value::PathProduct(a, b) | &Value::Pair(a, b) | &Value::StaticApplication(a, b)) => self.cached_value(a).join(self.cached_value(b)),
+        Some(&Value::Thunk(body)) => self.cached_comp(body),
+        Some(&Value::Quote(ty)) => self.cached_value_type(ty),
+        Some(&Value::QuoteComputation(ty)) => self.cached_comp_type(ty),
+    })]
     fn combine_value(
         &self,
         arena: &TermArena,
@@ -1027,7 +1094,19 @@ impl LooseDepths
                 )))
             },
             | Value::Constant(_) | Value::Unit | Value::Literal(_) => LooseDepth(0),
-            | Value::Pair(first, second) | Value::StaticApplication(first, second) => {
+            | Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ..
+            } => self
+                .cached_value_type(path_type)
+                .join(self.cached_value(forward))
+                .join(self.cached_value(backward)),
+            | Value::PathRefl(code) => self.cached_value(code),
+            | Value::PathProduct(first, second)
+            | Value::Pair(first, second)
+            | Value::StaticApplication(first, second) => {
                 self.cached_value(first).join(self.cached_value(second))
             },
             | Value::Injection(_, body) | Value::Lift { body, .. } => self.cached_value(body),
@@ -1055,6 +1134,21 @@ impl LooseDepths
     ///   the term language is accounted for.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a bind closes only its body; transport closes neither
+    ///   its certificate nor its value, so a free endpoint cannot disappear.
+    /// - witness: `support::tests::a_bind_closes_only_its_body`
+    /// - witness: `support::tests::a_binder_closes_its_body`
+    #[spec(ensures: |ret| ret == match arena.computation(id) {
+        None => LooseDepth::WIDEST,
+        Some(&Computation::Transport(path, value)) => self.cached_value(path).join(self.cached_value(value)),
+        Some(&Computation::Lambda(body)) => self.cached_comp(body).under_binder(),
+        Some(&Computation::Application(head, argument)) => self.cached_comp(head).join(self.cached_value(argument)),
+        Some(&Computation::Return(value) | &Computation::Force(value) | &Computation::Absurd(value)) => self.cached_value(value),
+        Some(&Computation::Bind(bound, body)) => self.cached_comp(bound).join(self.cached_comp(body).under_binder()),
+        Some(&Computation::Case { scrutinee, on_left, on_right }) => self.cached_value(scrutinee).join(self.cached_comp(on_left).under_binder()).join(self.cached_comp(on_right).under_binder()),
+    })]
     fn combine_comp(
         &self,
         arena: &TermArena,
@@ -1066,11 +1160,16 @@ impl LooseDepths
             return LooseDepth::WIDEST;
         };
         match *node {
+            | Computation::Transport(path, value) => {
+                self.cached_value(path).join(self.cached_value(value))
+            },
             | Computation::Lambda(body) => self.cached_comp(body).under_binder(),
             | Computation::Application(head, argument) => {
                 self.cached_comp(head).join(self.cached_value(argument))
             },
-            | Computation::Return(value) | Computation::Force(value) => self.cached_value(value),
+            | Computation::Return(value)
+            | Computation::Force(value)
+            | Computation::Absurd(value) => self.cached_value(value),
             | Computation::Bind(bound, body) => self
                 .cached_comp(bound)
                 .join(self.cached_comp(body).under_binder()),

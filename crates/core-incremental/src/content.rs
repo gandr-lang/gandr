@@ -161,6 +161,26 @@ pub enum ArenaNode
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ContentNode
 {
+    /// A native universe-path classifier over quoted codes.
+    PathUniverse(NodeIndex, NodeIndex),
+    /// A reflexivity certificate.
+    PathRefl(NodeIndex),
+    /// A product certificate.
+    PathProduct(NodeIndex, NodeIndex),
+    /// An equivalence, retaining its evidence in the cache identity.
+    PathEquiv
+    {
+        /// The classifier.
+        path_type: NodeIndex,
+        /// The forward map.
+        forward: NodeIndex,
+        /// The inverse map.
+        backward: NodeIndex,
+        /// The untrusted round-trip dialogues.
+        evidence: alloc::sync::Arc<gandr_kernel_term::PathEvidence>,
+    },
+    /// Native transport.
+    Transport(NodeIndex, NodeIndex),
     /// A bound variable.
     Variable
     {
@@ -393,6 +413,9 @@ impl ContentNode
     /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
     /// - witness: `content::tests::an_unresolved_id_makes_the_item_opaque`
     #[spec(ensures: |ret| match *self {
+        | Self::PathRefl(_)
+        | Self::PathProduct(..)
+        | Self::PathEquiv { .. }
         | Self::Variable { .. }
         | Self::Constant(_)
         | Self::Unit
@@ -405,12 +428,14 @@ impl ContentNode
         | Self::QuoteComputation(_)
         | Self::StaticLambda(_)
         | Self::StaticApplication(..) => matches!(ret, Sort::Value),
+        | Self::Transport(..)
         | Self::Lambda(_)
         | Self::Application(..)
         | Self::Return(_)
         | Self::Bind(..)
         | Self::Force(_)
         | Self::Case { .. } => matches!(ret, Sort::Computation),
+        | Self::PathUniverse(..)
         | Self::Base(_)
         | Self::UnitType
         | Self::Product(..)
@@ -436,6 +461,9 @@ impl ContentNode
     pub(crate) const fn sort(&self) -> Sort
     {
         match *self {
+            | Self::PathRefl(_)
+            | Self::PathProduct(..)
+            | Self::PathEquiv { .. }
             | Self::Variable { .. }
             | Self::Constant(_)
             | Self::Unit
@@ -448,12 +476,14 @@ impl ContentNode
             | Self::QuoteComputation(_)
             | Self::StaticLambda(_)
             | Self::StaticApplication(..) => Sort::Value,
+            | Self::Transport(..)
             | Self::Lambda(_)
             | Self::Application(..)
             | Self::Return(_)
             | Self::Bind(..)
             | Self::Force(_)
             | Self::Case { .. } => Sort::Computation,
+            | Self::PathUniverse(..)
             | Self::Base(_)
             | Self::UnitType
             | Self::Product(..)
@@ -503,9 +533,11 @@ impl ContentNode
             | Self::Universe { .. }
             | Self::Abstract(_)
             | Self::Unresolved(_) => ret.count == 0,
-            | Self::Pair(a, b) | Self::StaticApplication(a, b) => {
+            | Self::Pair(a, b) | Self::StaticApplication(a, b) | Self::PathUniverse(a, b) | Self::PathProduct(a, b) | Self::Transport(a, b) => {
                 actual == Some(&[(a, V), (b, V)][..])
             },
+            | Self::PathEquiv { path_type, forward, backward, .. } => actual == Some(&[(path_type, A), (forward, V), (backward, V)][..]),
+            | Self::PathRefl(a)
             | Self::StaticLambda(a)
             | Self::Injection(_, a)
             | Self::ValueLift { body: a, .. }
@@ -548,6 +580,12 @@ impl ContentNode
         use Sort::Value as V;
         use Sort::ValueType as A;
         match *self {
+            | Self::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ..
+            } => Children::of(&[(path_type, A), (forward, V), (backward, V)]),
             | Self::Variable { .. }
             | Self::Constant(_)
             | Self::Unit
@@ -557,9 +595,12 @@ impl ContentNode
             | Self::Universe { .. }
             | Self::Abstract(_)
             | Self::Unresolved(_) => Children::default(),
-            | Self::Pair(first, second) | Self::StaticApplication(first, second) => {
-                Children::of(&[(first, V), (second, V)])
-            },
+            | Self::PathUniverse(first, second)
+            | Self::PathProduct(first, second)
+            | Self::Transport(first, second)
+            | Self::Pair(first, second)
+            | Self::StaticApplication(first, second) => Children::of(&[(first, V), (second, V)]),
+            | Self::PathRefl(body)
             | Self::StaticLambda(body)
             | Self::Injection(_, body)
             | Self::ValueLift { body, .. }
@@ -615,6 +656,11 @@ impl ContentNode
             | Self::Constant(ref reference) | Self::Abstract(ref reference) => {
                 Maybe::Present(reference)
             },
+            | Self::PathUniverse(..)
+            | Self::PathRefl(_)
+            | Self::PathProduct(..)
+            | Self::PathEquiv { .. }
+            | Self::Transport(..)
             | Self::Variable { .. }
             | Self::Unit
             | Self::Literal(_)
@@ -1324,6 +1370,22 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *value {
+            | Value::PathRefl(code) => ContentNode::PathRefl(self.discover(ArenaNode::Value(code))),
+            | Value::PathProduct(first, second) => {
+                let first = self.discover(ArenaNode::Value(first));
+                ContentNode::PathProduct(first, self.discover(ArenaNode::Value(second)))
+            },
+            | Value::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                ref evidence,
+            } => ContentNode::PathEquiv {
+                path_type: self.discover(ArenaNode::ValueType(path_type)),
+                forward: self.discover(ArenaNode::Value(forward)),
+                backward: self.discover(ArenaNode::Value(backward)),
+                evidence: alloc::sync::Arc::clone(evidence),
+            },
             | Value::Variable { zone, index } => ContentNode::Variable { zone, index },
             | Value::Constant(position) => ContentNode::Constant(self.layout.resolve(position)),
             | Value::Unit => ContentNode::Unit,
@@ -1378,6 +1440,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *computation {
+            | Computation::Transport(path, value) => {
+                let path = self.discover(ArenaNode::Value(path));
+                ContentNode::Transport(path, self.discover(ArenaNode::Value(value)))
+            },
             | Computation::Lambda(body) => {
                 ContentNode::Lambda(self.discover(ArenaNode::Computation(body)))
             },
@@ -1433,6 +1499,10 @@ impl<'arena, 'layout> Encoder<'arena, 'layout>
     ) -> ContentNode
     {
         match *value_type {
+            | ValueType::PathUniverse(source, target) => {
+                let source = self.discover(ArenaNode::Value(source));
+                ContentNode::PathUniverse(source, self.discover(ArenaNode::Value(target)))
+            },
             | ValueType::Base(base) => ContentNode::Base(base),
             | ValueType::Unit => ContentNode::UnitType,
             | ValueType::Product(first, second) => {
@@ -1594,6 +1664,7 @@ pub fn renumber(
                 .map(|(_, sort)| sort)
                 .eq(node.children().iter().map(|(_, sort)| sort))
     })]
+#[inline]
 pub fn map_children<Image>(
     node: &ContentNode,
     image: &mut Image,
@@ -1602,6 +1673,30 @@ where
     Image: FnMut(NodeIndex) -> NodeIndex,
 {
     match *node {
+        | ContentNode::PathUniverse(source, target) => {
+            let source = image(source);
+            ContentNode::PathUniverse(source, image(target))
+        },
+        | ContentNode::PathRefl(code) => ContentNode::PathRefl(image(code)),
+        | ContentNode::PathProduct(first, second) => {
+            let first = image(first);
+            ContentNode::PathProduct(first, image(second))
+        },
+        | ContentNode::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            ref evidence,
+        } => ContentNode::PathEquiv {
+            path_type: image(path_type),
+            forward: image(forward),
+            backward: image(backward),
+            evidence: alloc::sync::Arc::clone(evidence),
+        },
+        | ContentNode::Transport(path, value) => {
+            let path = image(path);
+            ContentNode::Transport(path, image(value))
+        },
         | ContentNode::Variable { .. }
         | ContentNode::Constant(_)
         | ContentNode::Unit
@@ -1925,7 +2020,7 @@ fn minted_comp_type(
         Maybe::Absent(reason) => if matches!(*node, ContentNode::Unresolved(_)) {
             reason == seating::Absent::Unresolved
         } else if matches!(node.sort(), Sort::Value | Sort::Computation)
-            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. }) {
+            || matches!(*node, ContentNode::Element { .. } | ContentNode::ComputationElement { .. } | ContentNode::PathUniverse(..)) {
             reason == seating::Absent::Unseatable
         } else {
             reason == seating::Absent::IllSorted || (matches!(*node, ContentNode::Abstract(_)) && reason == seating::Absent::Unplaced)
@@ -2026,6 +2121,11 @@ fn mint_node(
             }
         },
         | ContentNode::Unresolved(_) => Maybe::Absent(seating::Absent::Unresolved),
+        | ContentNode::PathUniverse(..)
+        | ContentNode::PathRefl(_)
+        | ContentNode::PathProduct(..)
+        | ContentNode::PathEquiv { .. }
+        | ContentNode::Transport(..)
         | ContentNode::Element { .. }
         | ContentNode::ComputationElement { .. }
         | ContentNode::Variable { .. }
@@ -2246,6 +2346,13 @@ mod tests
     {
         let level = Level::zero();
         let cases = [
+            (
+                vec![
+                    ContentNode::PathUniverse(NodeIndex::from(1_usize), NodeIndex::from(1_usize)),
+                    ContentNode::UnitType,
+                ],
+                seating::Absent::Unseatable,
+            ),
             (
                 vec![ContentNode::Product(
                     NodeIndex::from(0_usize),

@@ -75,9 +75,9 @@ use crate::typing::Site;
 use crate::typing::Typing;
 
 /// The magic and version a persisted checkpoint set opens with.
-const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x03";
+const CHECKPOINTS_MAGIC: &[u8; 8] = b"GCKPT\0\0\x04";
 /// The magic and version a program's address is computed over.
-const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x01";
+const PROGRAM_MAGIC: &[u8; 8] = b"GPROG\0\0\x02";
 /// The decoder's cap on a level atom's offset.
 ///
 /// A level holds `x + o` only as `o` successors of `x`, so decoding an offset
@@ -1219,6 +1219,39 @@ where
     Out: Sink,
 {
     match *node {
+        | ContentNode::PathUniverse(source, target) => {
+            writer.tag(Tag(0x40));
+            write_index(writer, source)?;
+            write_index(writer, target)?;
+        },
+        | ContentNode::PathRefl(code) => {
+            writer.tag(Tag(0x41));
+            write_index(writer, code)?;
+        },
+        | ContentNode::PathEquiv {
+            path_type,
+            forward,
+            backward,
+            ref evidence,
+        } => {
+            writer.tag(Tag(0x42));
+            write_index(writer, path_type)?;
+            write_index(writer, forward)?;
+            write_index(writer, backward)?;
+            for word in evidence.words() {
+                writer.word(Word(word.0));
+            }
+        },
+        | ContentNode::PathProduct(first, second) => {
+            writer.tag(Tag(0x43));
+            write_index(writer, first)?;
+            write_index(writer, second)?;
+        },
+        | ContentNode::Transport(path, value) => {
+            writer.tag(Tag(0x44));
+            write_index(writer, path)?;
+            write_index(writer, value)?;
+        },
         | ContentNode::Variable { zone, index } => {
             writer.tag(Tag(0x01));
             writer.tag(match zone {
@@ -1426,6 +1459,11 @@ where
             reader.cursor > before
                 && reader.cursor <= reader.bytes.len()
                 && reader.bytes.get(before).is_some_and(|&tag| match *node {
+                    | ContentNode::PathUniverse(..) => tag == 0x40,
+                    | ContentNode::PathRefl(_) => tag == 0x41,
+                    | ContentNode::PathEquiv { .. } => tag == 0x42,
+                    | ContentNode::PathProduct(..) => tag == 0x43,
+                    | ContentNode::Transport(..) => tag == 0x44,
                     | ContentNode::Variable { .. } => tag == 0x01,
                     | ContentNode::Constant(_) => tag == 0x02,
                     | ContentNode::Unit => tag == 0x03,
@@ -1663,6 +1701,37 @@ fn read_node(reader: &mut Reader<'_>) -> Result<ContentNode, CodecError>
             let target = read_level(reader)?;
             ContentNode::ComputationElement { code, target }
         },
+        | 0x40 => ContentNode::PathUniverse(read_index(reader)?, read_index(reader)?),
+        | 0x41 => ContentNode::PathRefl(read_index(reader)?),
+        | 0x42 => {
+            let path_type = read_index(reader)?;
+            let forward = read_index(reader)?;
+            let backward = read_index(reader)?;
+            let mut evidence = gandr_kernel_term::PathEvidence::default();
+            for direction in [&mut evidence.source, &mut evidence.target] {
+                let count = reader.word()?;
+                for _ in 0 .. count.0 {
+                    let count = reader.word()?;
+                    let mut dialogue = Vec::new();
+                    for _ in 0 .. count.0 {
+                        let word = reader.word()?;
+                        let decision = gandr_kernel_term::EvidenceWord(word.0)
+                            .try_into()
+                            .map_err(|_site| CodecError::Corrupt)?;
+                        dialogue.push(decision);
+                    }
+                    direction.push(dialogue);
+                }
+            }
+            ContentNode::PathEquiv {
+                path_type,
+                forward,
+                backward,
+                evidence: alloc::sync::Arc::new(evidence),
+            }
+        },
+        | 0x43 => ContentNode::PathProduct(read_index(reader)?, read_index(reader)?),
+        | 0x44 => ContentNode::Transport(read_index(reader)?, read_index(reader)?),
         | _ => return Err(CodecError::Corrupt),
     };
     Ok(node)
@@ -2457,13 +2526,10 @@ fn read_site(reader: &mut Reader<'_>) -> Result<Site, CodecError>
 }
 
 /// The tags of the unadmitted formers, in declaration order.
-const FORMERS: [UnadmittedFormer; 11] = [
-    UnadmittedFormer::Injection,
+const FORMERS: [UnadmittedFormer; 8] = [
     UnadmittedFormer::ValueLift,
     UnadmittedFormer::NumericLiteral,
-    UnadmittedFormer::Case,
     UnadmittedFormer::NumericAtom,
-    UnadmittedFormer::Sum,
     UnadmittedFormer::TypeLift,
     UnadmittedFormer::Abstract,
     UnadmittedFormer::SortParameter,
@@ -2471,13 +2537,15 @@ const FORMERS: [UnadmittedFormer; 11] = [
     UnadmittedFormer::StaticLambda,
 ];
 
-/// The shapes a rule can require, in declaration order.
-const SHAPES: [ExpectedShape; 5] = [
+/// The shapes a rule can require, in stable wire order.
+const SHAPES: [ExpectedShape; 7] = [
     ExpectedShape::Thunk,
     ExpectedShape::Returner,
     ExpectedShape::Arrow,
     ExpectedShape::Product,
     ExpectedShape::StaticPi,
+    ExpectedShape::PathUniverse,
+    ExpectedShape::Sum,
 ];
 
 /// Write the position of `wanted` in `table` as a tag.
@@ -2629,6 +2697,10 @@ where
     Out: Sink,
 {
     match *refusal {
+        | Refusal::PathCode(site) => {
+            writer.tag(Tag(18));
+            write_site(writer, site)?;
+        },
         | Refusal::TypeMismatch {
             at,
             ref synthesised,
@@ -2652,6 +2724,14 @@ where
         | Refusal::NotSynthesisable { form } => {
             writer.tag(Tag(2));
             match form {
+                | Form::Injection(site) => {
+                    writer.tag(Tag(5));
+                    write_site(writer, site)?;
+                },
+                | Form::Case(site) => {
+                    writer.tag(Tag(6));
+                    write_site(writer, site)?;
+                },
                 | Form::Thunk(site) => {
                     writer.tag(Tag(0));
                     write_site(writer, site)?;
@@ -2861,6 +2941,7 @@ where
                     | Refusal::FamilyArgumentClassifier { .. } => 15,
                     | Refusal::StaticLambdaArgument { .. } => 16,
                     | Refusal::StaticClassifierExpected { .. } => 17,
+                    | Refusal::PathCode(_) => 18,
                 })
         },
         | Err(CodecError::LevelOffsetTooLarge { offset }) => {
@@ -2910,6 +2991,8 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
                     let site = read_site(reader)?;
                     Form::StaticLambda(site)
                 },
+                | 5 => Form::Injection(read_site(reader)?),
+                | 6 => Form::Case(read_site(reader)?),
                 | _ => return Err(CodecError::Corrupt),
             };
             Refusal::NotSynthesisable { form }
@@ -3014,6 +3097,7 @@ fn read_refusal(reader: &mut Reader<'_>) -> Result<Refusal, CodecError>
             let found = read_type(reader)?;
             Refusal::StaticClassifierExpected { at, found }
         },
+        | 18 => Refusal::PathCode(read_site(reader)?),
         | _ => return Err(CodecError::Corrupt),
     };
     Ok(refusal)
@@ -4045,7 +4129,7 @@ mod tests
     {
         let checkpoints = Checkpoints::new(CheckBudget::from(0x0102_0304_usize), vec![]);
         let expected = [
-            b'G', b'C', b'K', b'P', b'T', 0, 0, 3, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            b'G', b'C', b'K', b'P', b'T', 0, 0, 4, 4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ];
         assert_eq!(
             encode_checkpoints(&checkpoints)
@@ -4055,14 +4139,14 @@ mod tests
         );
         assert_eq!(decode_checkpoints(Bytes(&expected)), Ok(checkpoints));
         let mut wrong_version = expected;
-        *wrong_version.get_mut(7).expect("version byte") = 2;
+        *wrong_version.get_mut(7).expect("version byte") = 3;
         assert_eq!(
             decode_checkpoints(Bytes(&wrong_version)),
             Err(CodecError::Corrupt)
         );
         let mut program = CheckpointBytes::default();
         write_program(&mut program, &[]).expect("empty program");
-        assert_eq!(program.as_ref(), b"GPROG\0\0\x01\0\0\0\0\0\0\0\0");
+        assert_eq!(program.as_ref(), b"GPROG\0\0\x02\0\0\0\0\0\0\0\0");
         assert_eq!(
             decode_checkpoints(Bytes(program.as_ref())),
             Err(CodecError::Corrupt)
@@ -4203,7 +4287,7 @@ mod tests
             );
         }
 
-        for (prefix, consumed) in [(&[2, 5][..], 2), (&[5, 1, 2][..], 3)] {
+        for (prefix, consumed) in [(&[2, 7][..], 2), (&[5, 1, 2][..], 3)] {
             let mut bytes = prefix.to_vec();
             bytes.extend_from_slice(&[0; 16]);
             let mut reader = Reader {

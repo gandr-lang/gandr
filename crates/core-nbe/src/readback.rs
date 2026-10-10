@@ -120,7 +120,6 @@ use crate::eval::EvalFault;
 use crate::eval::Fuel;
 use crate::eval::apply_static_within;
 use crate::eval::eval_closed_value;
-use crate::eval::eval_comp_within;
 use crate::eval::eval_value_within;
 
 /// Which of the domain's two faces a readback spends.
@@ -552,7 +551,13 @@ enum Task
         /// The binders open where it stands.
         binders: OpenBinders,
     },
-    /// Assemble a pair from the two value terms its own tasks produced.
+    /// Assemble a native product path.
+    PathProduct,
+    /// Assemble transport beneath a neutral path.
+    Transport,
+    /// Assemble product transport beneath a neutral pair.
+    ProductTransport,
+    /// Assemble a pair from its two components.
     Pair,
     /// Assemble a sum injection.
     Inject
@@ -1033,7 +1038,7 @@ fn enter(
         | Entry::Bare => {},
         | Entry::Under { zone, bound } => environment.extend(zone, bound),
     }
-    let evaluated = eval_comp_within(
+    let evaluated = crate::eval::eval_body_within(
         core,
         domain,
         machine.definitions,
@@ -1568,13 +1573,10 @@ fn run(
 /// - requires: `task` was popped from `machine`'s own stack, so its operands
 ///   are on the result stacks.
 /// - ensures: the task's result is pushed on the stack of its own polarity, or
-///   further tasks are pushed that will produce it.
-/// - provides: the machine's whole transition relation, one arm per domain
-///   former plus one per assembly frame. This block stays prose: an assembly
-///   frame pops its operands in the same step that pushes its result, so no
-///   relation between the entry and exit stack lengths states that the result
-///   is pushed on the stack of its own polarity, and the operand precondition
-///   is a statement about the frame that popped the task.
+///   further tasks are pushed that will produce it. Nested evaluation can spend
+///   fuel but never replenishes the shared allowance.
+/// - provides: the machine's transition relation, one arm per domain former and
+///   assembly frame; the driver owns the charge for this task.
 /// - fails: every variant of [`ReadbackFault`] except
 ///   [`ReadbackFault::OutOfFuel`], which belongs to the driver rather than to a
 ///   step.
@@ -1588,6 +1590,7 @@ fn run(
 /// - witness: `readback::tests::a_pair_and_an_injection_rebuild_from_their_children`
 /// - witness: `readback::tests::a_stuck_spine_reads_back_as_its_eliminations`
 /// - witness: `readback::tests::a_stuck_bind_and_case_read_back_their_branches`
+#[spec(captures: before = machine.fuel, ensures: |ret| u32::from(machine.fuel) <= u32::from(before) && !matches!(ret, Err(ReadbackFault::OutOfFuel)))]
 fn step(
     core: &mut CoreArena,
     domain: &mut DomainArena,
@@ -1598,6 +1601,24 @@ fn step(
     match task {
         | Task::Value { value, binders } => step_value(core, domain, machine, value, binders),
         | Task::Comp { comp, binders } => step_comp(core, domain, machine, comp, binders),
+        | Task::PathProduct => {
+            let second = machine.pop_value()?;
+            let first = machine.pop_value()?;
+            machine.values.push(core.value_path_product(first, second));
+            Ok(())
+        },
+        | Task::Transport => {
+            let value = machine.pop_value()?;
+            let path = machine.pop_value()?;
+            machine.comps.push(core.computation_transport(path, value));
+            Ok(())
+        },
+        | Task::ProductTransport => {
+            let path = machine.pop_value()?;
+            let value = machine.pop_value()?;
+            machine.comps.push(core.computation_transport(path, value));
+            Ok(())
+        },
         | Task::Pair => {
             let second = machine.pop_value()?;
             let first = machine.pop_value()?;
@@ -1811,9 +1832,9 @@ fn held_level(
 /// Read one value type a quote carries.
 ///
 /// A type has no weak head and no face: it is rebuilt former by former, a
-/// leaf that holds no code is spliced as it stands, and a decode's code is
-/// evaluated in the frame and read back, so a code that unfolds comes back as
-/// what it unfolds to and a decode of a quote comes back as the quoted type.
+/// closed leaf or native path classifier is spliced as it stands, and a
+/// decode's code is evaluated in the frame and read back, so a code that
+/// unfolds comes back as its unfolding and a quote decodes to its type.
 ///
 /// # Specification
 /// - requires: `frame` binds every variable `quoted` reads past its own
@@ -1834,6 +1855,15 @@ fn held_level(
 /// - witness: `readback::tests::a_quote_reads_back_through_its_environment`
 /// - witness: `readback::tests::a_quoted_decode_unfolds_to_the_quoted_type`
 /// - witness: `readback::tests::a_quoted_static_pi_reads_back_former_by_former`
+#[spec(
+    captures: [types = machine.value_types.len(), tasks = machine.tasks.len()],
+    ensures: |ret| match core.value_type(quoted) {
+        None => matches!(ret, Err(ReadbackFault::MachineInvariant)),
+        Some(&ValueType::PathUniverse(..) | &ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_)) => ret.is_ok() && machine.value_types.len() == types.saturating_add(1) && machine.value_types.last() == Some(&quoted) && machine.tasks.len() == tasks,
+        Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. }) => ret.is_ok() && machine.value_types.len() == types && machine.tasks.len() == tasks.saturating_add(3),
+        Some(_) => ret.is_ok() && machine.value_types.len() == types && machine.tasks.len() == tasks.saturating_add(2),
+    },
+)]
 fn step_quoted_value_type(
     core: &CoreArena,
     domain: &mut DomainArena,
@@ -1853,6 +1883,7 @@ fn step_quoted_value_type(
         binders,
     };
     match node {
+        | ValueType::PathUniverse(..)
         | ValueType::Base(_)
         | ValueType::Unit
         | ValueType::Universe { .. }
@@ -2080,6 +2111,22 @@ fn step_value(
         return Ok(());
     }
     match node {
+        | DomainValue::PathCertificate { certificate, .. } => {
+            machine.values.push(certificate);
+            Ok(())
+        },
+        | DomainValue::PathProduct { first, second, .. } => {
+            machine.tasks.push(Task::PathProduct);
+            machine.tasks.push(Task::Value {
+                value: second,
+                binders,
+            });
+            machine.tasks.push(Task::Value {
+                value: first,
+                binders,
+            });
+            Ok(())
+        },
         | DomainValue::Unit { .. } => {
             machine.values.push(core.value_unit());
             Ok(())
@@ -2398,6 +2445,8 @@ fn step_neutral(
                     .iter()
                     .map_while(|elimination| match *elimination {
                         | Elimination::StaticApply(argument) => Some(argument),
+                        | Elimination::Transport(_)
+                        | Elimination::ProductTransport(_)
                         | Elimination::Apply(_)
                         | Elimination::Force
                         | Elimination::Bind(_)
@@ -2530,6 +2579,23 @@ fn step_spine(
     };
     let onward = Task::Spine(spine.onward(Polarity::Computation));
     match elimination {
+        | Elimination::Transport(value) => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::Transport);
+            machine.tasks.push(Task::Value { value, binders });
+            Ok(())
+        },
+        | Elimination::ProductTransport(path) => {
+            expect_polarity(spine.polarity, Polarity::Value, neutral)?;
+            machine.tasks.push(onward);
+            machine.tasks.push(Task::ProductTransport);
+            machine.tasks.push(Task::Value {
+                value: path,
+                binders,
+            });
+            Ok(())
+        },
         | Elimination::Force => {
             expect_polarity(spine.polarity, Polarity::Value, neutral)?;
             machine.tasks.push(onward);

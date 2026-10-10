@@ -365,6 +365,18 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// As above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — codes resolve through captured binders, while raw
+    ///   native certificate syntax stays an opaque atom rather than a computed
+    ///   map.
+    /// - witness: `code::tests::a_quoted_variable_is_read_through_the_environment`
+    /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
+    #[spec(ensures: |ret| match node {
+        Node::Code(id, _) if matches!(self.core.value(id), Some(&Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. } | &Value::Unit | &Value::Literal(_) | &Value::Pair(..) | &Value::Injection(..) | &Value::Thunk(_))) => matches!(ret, Ok(Atom::Other(found)) if found == node),
+        Node::Held(id) if matches!(self.domain.value(id), Some(&DomainValue::PathCertificate { .. } | &DomainValue::PathProduct { .. })) => matches!(ret, Ok(Atom::Other(found)) if found == node),
+        _ => true,
+    })]
     fn atom(
         &self,
         node: Node,
@@ -407,6 +419,9 @@ impl<'run> Walk<'run>
                             Node::Code(argument, place),
                         ));
                     },
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
                     | Value::Unit
                     | Value::Literal(_)
                     | Value::Pair(..)
@@ -434,6 +449,9 @@ impl<'run> Walk<'run>
                 {
                     | Value::Quote(quoted) => Ok(Atom::Quote(quoted, place)),
                     | Value::QuoteComputation(quoted) => Ok(Atom::QuoteComputation(quoted, place)),
+                    | Value::PathRefl(_)
+                    | Value::PathProduct(..)
+                    | Value::PathEquiv { .. }
                     | Value::Variable { .. }
                     | Value::Constant(_)
                     | Value::Unit
@@ -450,6 +468,8 @@ impl<'run> Walk<'run>
                 let closure = self.domain.value_closure(lambda).ok_or(dangling)?;
                 Ok(Atom::Operator(closure.body(), Self::opened(lambda)))
             },
+            | DomainValue::PathCertificate { .. }
+            | DomainValue::PathProduct { .. }
             | DomainValue::Unit { .. }
             | DomainValue::Literal { .. }
             | DomainValue::Pair { .. }
@@ -520,7 +540,9 @@ impl<'run> Walk<'run>
                 Node::Held(argument),
             )),
             | Some(
-                &(Elimination::Apply(_)
+                &(Elimination::Transport(_)
+                | Elimination::ProductTransport(_)
+                | Elimination::Apply(_)
                 | Elimination::Force
                 | Elimination::Bind(_)
                 | Elimination::Case { .. }),
@@ -731,6 +753,7 @@ impl<'run> Walk<'run>
                     .ok_or(ConversionFault::MachineInvariant)?
                 {
                     | ValueType::Element { code, .. } => (code, place),
+                    | ValueType::PathUniverse(..)
                     | ValueType::Base(_)
                     | ValueType::Unit
                     | ValueType::Product(..)
@@ -781,6 +804,15 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// As above, and as [`Walk::atom`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — universe path classifiers compare both endpoint
+    ///   atoms; constructor mismatches do not enqueue positive child
+    ///   obligations.
+    /// - witness: `code::tests::two_quotes_of_one_type_are_equal`
+    /// - witness: `code::tests::rigid_quotes_of_different_types_are_apart`
+    /// - witness: `code::tests::a_decode_of_a_held_quote_compares_as_its_quoted_type`
+    #[spec(captures: [nodes = pending.len(), leaves = atoms.len()], ensures: |ret| pending.len() >= nodes && pending.len() <= nodes.saturating_add(2) && atoms.len() >= leaves && atoms.len() <= leaves.saturating_add(2) && (!matches!(ret, Ok(Alike::Different)) || (pending.len() == nodes && atoms.len() == leaves)))]
     fn formers(
         &mut self,
         one: Node,
@@ -799,6 +831,17 @@ impl<'run> Walk<'run>
                     return Err(ConversionFault::MachineInvariant);
                 };
                 match (left, right) {
+                    | (&ValueType::PathUniverse(a, b), &ValueType::PathUniverse(c, d)) => {
+                        atoms.push((
+                            self.atom(Node::Code(a, here))?,
+                            self.atom(Node::Code(c, there))?,
+                        ));
+                        atoms.push((
+                            self.atom(Node::Code(b, here))?,
+                            self.atom(Node::Code(d, there))?,
+                        ));
+                        Ok(Alike::Same)
+                    },
                     | (&ValueType::Base(a), &ValueType::Base(b)) => Ok(Alike::between(&a, &b)),
                     | (&ValueType::Unit, &ValueType::Unit) => Ok(Alike::Same),
                     | (&ValueType::Abstract(a), &ValueType::Abstract(b)) => {
@@ -866,7 +909,8 @@ impl<'run> Walk<'run>
                         Ok(Alike::Same)
                     },
                     | (
-                        &(ValueType::Base(_)
+                        &(ValueType::PathUniverse(..)
+                        | ValueType::Base(_)
                         | ValueType::Unit
                         | ValueType::Product(..)
                         | ValueType::Sum(..)
@@ -977,6 +1021,18 @@ impl<'run> Walk<'run>
     ///
     /// # Errors
     /// As [`Walk::atom`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — closed quoted leaves are rigid, but static operators
+    ///   and definitions that can unfold cannot justify rigid separation.
+    /// - witness: `code::tests::rigid_quotes_of_different_types_are_apart`
+    /// - witness: `code::tests::a_quote_over_a_defined_constant_is_undecided`
+    /// - witness: `code::tests::static_operators_compare_by_binder_and_spine`
+    #[spec(ensures: |ret| match self.domain.value_closure(closure).and_then(|held| self.core.value(held.body())) {
+        Some(&Value::StaticLambda(_)) => matches!(ret, Ok(Rigidity::Flexible)),
+        Some(&Value::Quote(ty)) if matches!(self.core.value_type(ty), Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Abstract(_))) => matches!(ret, Ok(Rigidity::Rigid)),
+        _ => true,
+    })]
     fn rigidity(
         &mut self,
         closure: ValueClosureId,
@@ -1022,6 +1078,10 @@ impl<'run> Walk<'run>
                         .value_type(id)
                         .ok_or(ConversionFault::MachineInvariant)?
                     {
+                        | ValueType::PathUniverse(source, target) => {
+                            atoms.push(self.atom(Node::Code(source, place))?);
+                            atoms.push(self.atom(Node::Code(target, place))?);
+                        },
                         | ValueType::Base(_)
                         | ValueType::Unit
                         | ValueType::Universe { .. }

@@ -15,6 +15,7 @@ The read-evaluate loop over the interactive session: the completeness gate, the 
 - [A chunk is kept only when nothing in it was refused](#a-chunk-is-kept-only-when-nothing-in-it-was-refused)
 - [Completeness is the parser's](#completeness-is-the-parsers)
 - [Types are spelled from the checkpoints](#types-are-spelled-from-the-checkpoints)
+- [Native universe-path presentation](#native-universe-path-presentation)
 - [Repairs are cards](#repairs-are-cards)
 - [The transcript](#the-transcript)
 - [A checked declaration prints what it runs to](#a-checked-declaration-prints-what-it-runs-to)
@@ -99,6 +100,12 @@ A type line names its type through `spell`, the one spelling every transcript li
 The page is 100 columns, fixed rather than read off a terminal, so a transcript stays a function of its input. It bounds the type, not the `name :` before it, and a type wider than the page breaks onto continuation lines, which `rows` lays out as later rows of the type line. The choice reverses when a face lays types out at its own width: the terminal face once it reads the terminal's.
 
 Types come from checker checkpoints rather than surface-built stand-ins or `Debug` images. The shared printer handles universes and dependent arrows as well as ordinary arrows and polarity bridges.
+
+## Native universe-path presentation
+
+The checkpoint adapter passes native `Path_U` endpoints, reflexivity codes, forward/backward maps and product paths to `surface-pretty` in constructor order. Its [native notation](../surface-pretty/README.md#native-universe-paths) is approximate, not a new expression the REPL can parse. A transport computation is not presented as a value or a certificate verdict.
+
+**Choice.** Reuse the same source interface and fidelity result as ordinary core presentation, rather than render stored evidence with `Debug` or run it while printing. **Reversal.** Parsed path syntax and a certified run-stage image are prerequisites for an interactive introduction or elimination; merely storing a classifier is not enough.
 
 ## Repairs are cards
 

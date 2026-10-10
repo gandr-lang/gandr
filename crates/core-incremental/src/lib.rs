@@ -127,6 +127,7 @@ pub use crate::content::ItemContent;
 pub use crate::content::Opacity;
 pub use crate::content::Sort;
 pub use crate::content::TypeContent;
+pub use crate::content::map_children;
 pub use crate::content::referencing;
 pub use crate::content::seating;
 pub use crate::content::site;

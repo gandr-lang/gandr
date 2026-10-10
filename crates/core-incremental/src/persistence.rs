@@ -1722,6 +1722,7 @@ mod tests
             | Typing::Checked { .. } => "checked",
             | Typing::Synthesised { .. } => "synthesised",
             | Typing::Owed => "owed",
+            | Typing::Refused(Refusal::PathCode(_)) => "path-code",
             | Typing::Refused(Refusal::TypeMismatch { .. }) => "type-mismatch",
             | Typing::Refused(Refusal::ShapeMismatch { .. }) => "shape-mismatch",
             | Typing::Refused(Refusal::NotSynthesisable { .. }) => "not-synthesisable",

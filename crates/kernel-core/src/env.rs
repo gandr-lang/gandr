@@ -1086,13 +1086,17 @@ enum CodeEdges
 /// - fails: never.
 /// - panics: none.
 ///
-/// # Termination
-/// - reason: the walk is a loop over one explicit worklist, not recursion.
-/// - measure: the number of reachable nodes not yet in the seen set, which
-///   strictly falls at every step, since a node already seen is skipped.
-/// - boundedness: the arena is finite and children have strictly smaller ids
-///   within a family; a crossing reaches a node the seen set bounds as well.
-/// - input recursion: none.
+/// # Adequacy
+/// - hypothesis: L3 — constant roots and sealed atoms contribute their exact
+///   positions; opaque code edges do not leak into sealing provenance.
+/// - witness: `env::tests::audit_reaches_an_axiom_named_only_inside_a_code`
+/// - witness: `env::tests::sealing_provenance_does_not_follow_codes`
+/// - witness: `env::tests::a_type_level_atom_reference_reaches_the_audit`
+#[spec(ensures: |ret| match root {
+    AnyNode::Value(id) => match arena.value(id) { Some(&Value::Constant(index)) => ret.len() == 1 && ret.contains(&index), Some(&Value::Variable(_) | &Value::Unit | &Value::Literal(_)) | None => ret.is_empty(), _ => true },
+    AnyNode::ValueType(id) => match arena.value_type(id) { Some(&ValueType::Abstract(index)) => ret.len() == 1 && ret.contains(&index), Some(&ValueType::Element { .. }) if matches!(codes, CodeEdges::Stop) => ret.is_empty(), Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Empty | &ValueType::Universe { .. }) | None => ret.is_empty(), _ => true },
+    _ => true,
+})]
 fn collect_reachable(
     arena: &TermArena,
     root: AnyNode,
@@ -1118,7 +1122,22 @@ fn collect_reachable(
                     let _fresh = found.insert(index);
                 },
                 | Some(&Value::Variable(_) | &Value::Unit | &Value::Literal(_)) | None => {},
-                | Some(&Value::Pair(first, second) | &Value::StaticApplication(first, second)) => {
+                | Some(&Value::PathEquiv {
+                    path_type,
+                    forward,
+                    backward,
+                    ..
+                }) => {
+                    pending.push(AnyNode::ValueType(path_type));
+                    pending.push(AnyNode::Value(forward));
+                    pending.push(AnyNode::Value(backward));
+                },
+                | Some(&Value::PathRefl(code)) => pending.push(AnyNode::Value(code)),
+                | Some(
+                    &Value::PathProduct(first, second)
+                    | &Value::Pair(first, second)
+                    | &Value::StaticApplication(first, second),
+                ) => {
                     pending.push(AnyNode::Value(first));
                     pending.push(AnyNode::Value(second));
                 },
@@ -1130,12 +1149,20 @@ fn collect_reachable(
                 | Some(&Value::QuoteComputation(quoted)) => pending.push(AnyNode::CompType(quoted)),
             },
             | AnyNode::Computation(id) => match arena.computation(id) {
+                | Some(&Computation::Transport(path, value)) => {
+                    pending.push(AnyNode::Value(path));
+                    pending.push(AnyNode::Value(value));
+                },
                 | Some(&Computation::Lambda(body)) => pending.push(AnyNode::Computation(body)),
                 | Some(&Computation::Application(head, argument)) => {
                     pending.push(AnyNode::Computation(head));
                     pending.push(AnyNode::Value(argument));
                 },
-                | Some(&Computation::Return(value) | &Computation::Force(value)) => {
+                | Some(
+                    &Computation::Return(value)
+                    | &Computation::Force(value)
+                    | &Computation::Absurd(value),
+                ) => {
                     pending.push(AnyNode::Value(value));
                 },
                 | Some(&Computation::Bind(bound, body)) => {
@@ -1157,12 +1184,23 @@ fn collect_reachable(
                 | Some(&ValueType::Abstract(index)) => {
                     let _fresh = found.insert(index);
                 },
+                | Some(&ValueType::PathUniverse(source, target)) => {
+                    if follow {
+                        pending.push(AnyNode::Value(source));
+                        pending.push(AnyNode::Value(target));
+                    }
+                },
                 | Some(&ValueType::Element { code, .. }) => {
                     if follow {
                         pending.push(AnyNode::Value(code));
                     }
                 },
-                | Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. })
+                | Some(
+                    &ValueType::Base(_)
+                    | &ValueType::Unit
+                    | &ValueType::Empty
+                    | &ValueType::Universe { .. },
+                )
                 | None => {},
                 | Some(
                     &ValueType::Product(first, second)
@@ -1175,7 +1213,9 @@ fn collect_reachable(
                     pending.push(AnyNode::ValueType(first));
                     pending.push(AnyNode::ValueType(second));
                 },
-                | Some(&ValueType::Lift { inner, .. }) => pending.push(AnyNode::ValueType(inner)),
+                | Some(&ValueType::Lift { inner, .. } | &ValueType::List(inner)) => {
+                    pending.push(AnyNode::ValueType(inner));
+                },
                 | Some(&ValueType::Thunk(body)) => pending.push(AnyNode::CompType(body)),
             },
             | AnyNode::CompType(id) => match arena.comp_type(id) {

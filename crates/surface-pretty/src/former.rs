@@ -104,6 +104,14 @@ impl Borrow<str> for Name<'_>
 #[derive(Clone, Copy, Debug)]
 pub enum Former<'source, Node>
 {
+    /// A native universe-path classifier over two quoted codes.
+    PathUniverse(Node, Node),
+    /// Reflexivity at a quoted code.
+    PathRefl(Node),
+    /// The two translator programs of an equivalence, evidence omitted.
+    PathEquiv(Node, Node),
+    /// A componentwise product of paths.
+    PathProduct(Node, Node),
     /// A rigid base type: `Integer`, `String`, or the numeric atom.
     BaseType(BaseType),
     /// The unit type, `Unit`.

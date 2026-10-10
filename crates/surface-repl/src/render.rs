@@ -102,7 +102,10 @@ impl Source for ContentTable<'_>
             name.as_ref().as_bytes() == key.as_ref(),
         (Some(content), Former::Literal(actual)) =>
             matches!(*content, ContentNode::Literal(ref literal) if literal == actual),
-        (Some(&ContentNode::Pair(a, b)), Former::Pair(c, d))
+        (Some(&ContentNode::PathUniverse(a, b)), Former::PathUniverse(c, d))
+        | (Some(&ContentNode::PathProduct(a, b)), Former::PathProduct(c, d))
+        | (Some(&ContentNode::PathEquiv { forward: a, backward: b, .. }), Former::PathEquiv(c, d))
+        | (Some(&ContentNode::Pair(a, b)), Former::Pair(c, d))
         | (Some(&ContentNode::Product(a, b)), Former::Product(c, d))
         | (Some(&ContentNode::Sum(a, b)), Former::Sum(c, d))
         | (Some(&ContentNode::StaticApplication(a, b)), Former::StaticApplication(c, d))
@@ -112,7 +115,8 @@ impl Source for ContentTable<'_>
             a == c && b == d,
         (Some(&ContentNode::Injection(side, body)), Former::Injection(actual_side, actual_body)) =>
             side == actual_side && body == actual_body,
-        (Some(&ContentNode::Quote(a)), Former::Quote(b))
+        (Some(&ContentNode::PathRefl(a)), Former::PathRefl(b))
+        | (Some(&ContentNode::Quote(a)), Former::Quote(b))
         | (Some(&ContentNode::QuoteComputation(a)), Former::QuoteComputation(b))
         | (Some(&ContentNode::ThunkType(a)), Former::ThunkType(b))
         | (Some(&ContentNode::Element { code: a, .. }), Former::Element(b))
@@ -123,7 +127,7 @@ impl Source for ContentTable<'_>
         (Some(&ContentNode::Universe { sort, ref level }), Former::Universe { sort: actual_sort, level: actual_level }) =>
             sort == actual_sort && level == actual_level,
 
-        (Some(&ContentNode::Lambda(_) | &ContentNode::Application(..) | &ContentNode::Return(_)
+        (Some(&ContentNode::Transport(..) | &ContentNode::Lambda(_) | &ContentNode::Application(..) | &ContentNode::Return(_)
             | &ContentNode::Bind(..) | &ContentNode::Force(_) | &ContentNode::Case { .. }), Former::Computation)
         | (Some(&ContentNode::Unit), Former::Unit)
         | (Some(&ContentNode::Thunk(_)), Former::Thunk)
@@ -149,6 +153,12 @@ impl Source for ContentTable<'_>
             return Former::Unreadable;
         };
         match *content {
+            | ContentNode::PathUniverse(source, target) => Former::PathUniverse(source, target),
+            | ContentNode::PathRefl(code) => Former::PathRefl(code),
+            | ContentNode::PathProduct(first, second) => Former::PathProduct(first, second),
+            | ContentNode::PathEquiv {
+                forward, backward, ..
+            } => Former::PathEquiv(forward, backward),
             | ContentNode::Variable { zone, index } => Former::Variable { zone, index },
             | ContentNode::Constant(ref reference) => named(reference, Former::Constant),
             | ContentNode::Unit => Former::Unit,
@@ -159,6 +169,7 @@ impl Source for ContentTable<'_>
             | ContentNode::ValueLift { .. } => Former::ValueLift,
             | ContentNode::Quote(quoted) => Former::Quote(quoted),
             | ContentNode::QuoteComputation(quoted) => Former::QuoteComputation(quoted),
+            | ContentNode::Transport(..)
             | ContentNode::Lambda(_)
             | ContentNode::Application(..)
             | ContentNode::Return(_)
@@ -331,7 +342,7 @@ mod tests
     #[test]
     fn value_ty_covers_every_reachable_former()
     {
-        let [_, n1, n2, n3, ..] = indices();
+        let [_, n1, n2, n3, n4, ..] = indices();
         let integer = ContentNode::Base(BaseType::Integer);
         assert_eq!(
             spelled(core::slice::from_ref(&integer)),
@@ -365,6 +376,16 @@ mod tests
                 ContentNode::Returner(n2),
             ]),
             faithful("+U (Integer -> -F Integer)".into())
+        );
+        assert_eq!(
+            spelled(&[
+                ContentNode::PathUniverse(n1, n2),
+                ContentNode::Quote(n3),
+                ContentNode::Quote(n4),
+                ContentNode::UnitType,
+                ContentNode::Base(BaseType::Integer),
+            ]),
+            approximate("Path_U(Unit, Integer)".into())
         );
     }
 
