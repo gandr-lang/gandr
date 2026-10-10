@@ -69,6 +69,9 @@ fn children(
                 AnyNode::Computation(on_left),
                 AnyNode::Computation(on_right),
             ],
+            | Computation::Absurd(_) | Computation::Transport(..) => {
+                panic!("native elimination is outside the forward-translator fixture")
+            },
         },
         | AnyNode::ValueType(_) | AnyNode::CompType(_) => panic!("no fixture type node"),
     }
@@ -147,6 +150,9 @@ fn translate(
                         computations[&on_left],
                         computations[&on_right],
                     ),
+                    | Computation::Absurd(_) | Computation::Transport(..) => {
+                        panic!("native elimination is outside the forward-translator fixture")
+                    },
                 };
                 computations.insert(id, computation);
             },
@@ -156,6 +162,40 @@ fn translate(
         }
     }
     (core, computations[&left], computations[&right])
+}
+
+/// Erase arena-local hints, preserving every decision and premise position.
+///
+/// # Specification
+/// trivial.
+pub(super) fn portable<Node>(decision: ConversionDecision<Node>) -> ConversionDecision<()>
+where
+    Node: Copy,
+{
+    match decision {
+        | ConversionDecision::ReduceLeft { .. } => ConversionDecision::ReduceLeft { redex: () },
+        | ConversionDecision::ReduceRight { .. } => ConversionDecision::ReduceRight { redex: () },
+        | ConversionDecision::ConstShortcut { .. } => {
+            ConversionDecision::ConstShortcut { constant: () }
+        },
+        | ConversionDecision::Unfold { .. } => ConversionDecision::Unfold { constant: () },
+        | ConversionDecision::Postpone { .. } => ConversionDecision::Postpone { constant: () },
+        | ConversionDecision::Freeze { side, .. } => {
+            ConversionDecision::Freeze { constant: (), side }
+        },
+        | ConversionDecision::EtaExpand { side, .. } => {
+            ConversionDecision::EtaExpand { variable: (), side }
+        },
+        | ConversionDecision::Force { .. } => ConversionDecision::Force { thunk: () },
+        | ConversionDecision::ComparedShared { .. } => ConversionDecision::ComparedShared {
+            left: (),
+            right: (),
+        },
+        | ConversionDecision::Decompose => ConversionDecision::Decompose,
+        | ConversionDecision::NegativeSubgoal { position } => {
+            ConversionDecision::NegativeSubgoal { position }
+        },
+    }
 }
 
 /// Run the untrusted engine and retain its complete decision sequence.

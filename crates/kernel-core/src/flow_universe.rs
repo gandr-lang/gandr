@@ -17,7 +17,6 @@ use gandr_kernel_term::ValueTypeId;
 
 use crate::error::KernelError;
 use crate::path_universe::Dialogue;
-use crate::path_universe::PathId;
 use crate::replay::KernelVerdict;
 
 mod coverage;
@@ -126,8 +125,8 @@ pub enum Family
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Certificate
 {
-    /// A universe-path introduction.
-    Path(PathId),
+    /// A native universe-path value, checked afresh at its ordinary classifier.
+    Path(ValueId),
     /// A universe-flow introduction.
     Flow(FlowId),
 }

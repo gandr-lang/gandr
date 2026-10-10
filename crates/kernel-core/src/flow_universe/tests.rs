@@ -1,5 +1,6 @@
 //! Directed computation, naturality, variance and family-boundary witnesses.
 
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -7,6 +8,7 @@ use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ComputationId;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
+use gandr_kernel_term::PathEvidence;
 use gandr_kernel_term::Side;
 use gandr_kernel_term::StringLiteral;
 use gandr_kernel_term::TermArena;
@@ -14,14 +16,12 @@ use gandr_kernel_term::ValueId;
 use gandr_kernel_term::ValueTypeId;
 
 use super::*;
-use crate::path_universe::Path;
-use crate::path_universe::Paths;
-use crate::path_universe::RoundTrips;
 use crate::replay::EngineClaim;
 use crate::replay::ReplayBudget;
 
 mod engine;
 use engine::engine;
+use engine::portable;
 
 /// Bool, Unit and their canonical closed values.
 struct Fixture
@@ -521,7 +521,6 @@ fn path_and_flow_never_coerce()
     let fixture = fixture(&mut arena);
     let mut flows = Flows::new();
     let flow = terminal(&mut arena, &mut flows, &fixture);
-    let mut paths = Paths::new();
     let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
     let identity = returning(&mut arena, variable);
     let first = apply(&mut arena, identity, fixture.unit);
@@ -529,28 +528,26 @@ fn path_and_flow_never_coerce()
     let composite = arena.computation_bind(first, second);
     let expected = arena.computation_return(fixture.unit);
     let (_, dialogue) = engine(&arena, composite, expected);
-    let path = paths
-        .push(Path::Equiv {
-            source: fixture.unit_code,
-            target: fixture.unit_code,
-            forward: identity,
-            backward: identity,
-            round_trips: RoundTrips {
-                source: vec![dialogue.clone()],
-                target: vec![dialogue],
-            },
-        })
-        .expect("equivalence");
-    assert!(
-        matches!(form_certificate(&mut arena, &paths, &flows, Certificate::Path(path), Family::Path, ReplayBudget::DEFAULT), Ok(CertificateType::Path(classifier)) if classifier.source == fixture.unit_type && classifier.target == fixture.unit_type)
+    let classifier = arena.value_type_path_universe(fixture.unit_code, fixture.unit_code);
+    let dialogue = dialogue.0.into_iter().map(portable).collect::<Vec<_>>();
+    let path = arena.value_path_equiv(
+        classifier,
+        identity,
+        identity,
+        Arc::new(PathEvidence {
+            source: vec![dialogue.clone()],
+            target: vec![dialogue],
+        }),
     );
     assert!(
-        matches!(form_certificate(&mut arena, &paths, &flows, Certificate::Flow(flow), Family::Flow, ReplayBudget::DEFAULT), Ok(CertificateType::Flow(classifier)) if classifier.source == fixture.boolean_type && classifier.target == fixture.unit_type)
+        matches!(form_certificate(&mut arena, &flows, Certificate::Path(path), Family::Path, ReplayBudget::DEFAULT), Ok(CertificateType::Path(classifier)) if classifier.source == fixture.unit_type && classifier.target == fixture.unit_type)
+    );
+    assert!(
+        matches!(form_certificate(&mut arena, &flows, Certificate::Flow(flow), Family::Flow, ReplayBudget::DEFAULT), Ok(CertificateType::Flow(classifier)) if classifier.source == fixture.boolean_type && classifier.target == fixture.unit_type)
     );
     assert!(matches!(
         form_certificate(
             &mut arena,
-            &paths,
             &flows,
             Certificate::Path(path),
             Family::Flow,
@@ -564,7 +561,6 @@ fn path_and_flow_never_coerce()
     assert!(matches!(
         form_certificate(
             &mut arena,
-            &paths,
             &flows,
             Certificate::Flow(flow),
             Family::Path,
@@ -586,6 +582,35 @@ fn path_and_flow_never_coerce()
             actual: Family::Path
         })
     ));
+    let not_path = form_certificate(
+        &mut arena,
+        &flows,
+        Certificate::Path(fixture.unit),
+        Family::Path,
+        ReplayBudget::DEFAULT,
+    );
+    assert!(matches!(
+        not_path,
+        Err(FlowError::Path(
+            crate::path_universe::PathError::ExpectedPath(_)
+        ))
+    ));
+    let forged = arena.value_path_equiv(
+        classifier,
+        identity,
+        identity,
+        Arc::new(PathEvidence::default()),
+    );
+    let result = form_certificate(
+        &mut arena,
+        &flows,
+        Certificate::Path(forged),
+        Family::Path,
+        ReplayBudget::DEFAULT,
+    );
+    assert!(
+        matches!(result, Err(FlowError::Typing(error)) if matches!(*error, crate::error::KernelError::Path(_)))
+    );
 }
 
 #[test]

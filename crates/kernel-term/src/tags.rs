@@ -40,7 +40,7 @@
 //! | universe paths | `0x2A–0x2E` | `Path_U`, reflexivity, equivalence, product paths and transport        |
 //! | higher fields | `0x30–0x37` | reserved; guarded observations remain an in-memory rule language |
 //! | funext | `0x38–0x47` | reserved; higher evaluation remains an in-memory rule language |
-//! | directed paths | `0x48+` | reserved for directed universe-path formers |
+//! | universe flows | `0x48+` | reserved; forward certificates and replay remain an in-memory rule language |
 //!
 //! [`NODE_CT_PI`] is the dependent arrow: its codomain is scoped under a
 //! binder, so it is a different node from the non-dependent [`NODE_CT_ARROW`]
@@ -645,8 +645,8 @@ mod tests
                 "an assigned former cannot consume a reserved sharing byte"
             );
             assert!(
-                !(0x30_u8 .. 0x48).contains(&tag),
-                "higher-field and funext reservations have no native formers"
+                tag < 0x30,
+                "higher-field, funext and universe-flow reservations have no native formers"
             );
         }
     }

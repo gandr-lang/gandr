@@ -18,10 +18,10 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Universe families, codes and the lift](#universe-families-codes-and-the-lift)
 - [Static operators](#static-operators)
 - [Conversion replay](#conversion-replay)
+- [Universe-flow experiment](#universe-flow-experiment)
 - [Native universe paths](#native-universe-paths)
 - [Identity and bridge recursion](#identity-and-bridge-recursion)
 - [Guarded higher fields](#guarded-higher-fields)
-- [Universe-flow experiment](#universe-flow-experiment)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
@@ -224,7 +224,6 @@ Term conversion with δ-, β- and η-rules is proof search, and a concurrent sea
 
 **Reversal.** A back-reference decision, with a replay-side table keyed on the goal it names, replaces the expansion once a measured trace of a deeply shared proof outgrows the replay budget. A closing the kernel cannot reproduce, because the engine's structural equality and the kernel's α-equality disagree on a pair, shows up as a refusal on an engine trace and moves the tie-break into the vocabulary.
 
-
 ## Universe-flow experiment
 
 `flow_universe` defines a separate in-memory `Flow_U a b` family over quoted Unit, Sum, Product and Base codes. A forward certificate stores one closed CBPV translator and one proposed image/dialogue per source constructor pattern. It carries neither an inverse nor round-trip evidence. Every consuming formation checks the translator in a fresh closed checker session, validates the images, and replays kernel-built positive claims. No stored node or classifier is an admission receipt.
@@ -239,6 +238,8 @@ Term conversion with δ-, β- and η-rules is proof search, and a concurrent sea
 | Family separation | A valid equivalence at a Flow boundary, or a Flow at a Path boundary, returns `FamilyMismatch`. |
 | Sequential composition | `Compose { seam: Sequence, .. }` checks the intermediate type and lowers in order to CBPV bind. |
 | Feedback | Connecting the second output back into the first input returns `Cycle` with both occurrences. |
+
+**Native family boundary.** `Certificate::Path` carries a native value id. `form_certificate` synthesizes that value through the ordinary closed checker and decodes its checked `Path_U` endpoints; there is no auxiliary path arena or trusted classifier shortcut. Missing round-trip evidence and non-path classifiers refuse. Matching Path and Flow families retain separate formation judgements, and both cross-family directions refuse before elimination. The Flow range in the [wire-tag table](../kernel-term/src/tags.rs) remains reserved and unassigned.
 
 **Leaf naturality.** Each source Base position is a distinct rigid variable, including equal-typed positions in a product. Proposed output syntax contains only canonical constructors and those correctly typed variables. The kernel replays the translator on these symbolic inputs; a trace generated at a literal sample has no authority over that obligation. Literals nested beneath sums or products, fresh variables, wrong-typed selections, and sample-only constant maps refuse. The witnesses cover diagonals, both injections, codiagonals, product identity and terminal projection to Unit. The inherited native CBPV vocabulary has no general product eliminator, so these witnesses do not establish generation of every projection or fullness of the one-way alphabet.
 

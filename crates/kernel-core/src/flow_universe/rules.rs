@@ -22,10 +22,10 @@ use super::Ride;
 use super::Seam;
 use super::coverage;
 use crate::check::check_closed_value;
+use crate::check::synth_closed_value;
 use crate::conv::Convertibility;
 use crate::conv::convertible_value_types;
 use crate::path_universe::Dialogue;
-use crate::path_universe::Paths;
 use crate::replay::EngineClaim;
 use crate::replay::KernelVerdict;
 use crate::replay::ReplayBudget;
@@ -138,12 +138,15 @@ pub enum CertificateType
 /// Check a raw certificate against its expected family, without coercion.
 ///
 /// # Specification
-/// - ensures: only matching tags reach that family's formation rules.
-/// - fails: `FamilyMismatch` in both coercion directions, or a formation error.
+/// - ensures: only matching tags reach that family's formation rules. Native
+///   paths synthesize through the ordinary checker before endpoint decoding.
+/// - fails: `FamilyMismatch` in both coercion directions; `Typing` for native
+///   checking failures; `Path` for a non-path classifier or invalid endpoints;
+///   otherwise a Flow formation error.
 /// - panics: none.
 ///
 /// # Errors
-/// `FamilyMismatch`, `Path`, or an error from `form`.
+/// `FamilyMismatch`, `Typing`, `Path`, or an error from `form`.
 ///
 /// # Adequacy
 /// - hypothesis: L3 — a valid equivalence fails as Flow, a valid forward
@@ -152,7 +155,6 @@ pub enum CertificateType
 #[inline]
 pub fn form_certificate(
     arena: &mut TermArena,
-    paths: &Paths,
     flows: &Flows,
     certificate: Certificate,
     expected: Family,
@@ -161,8 +163,10 @@ pub fn form_certificate(
 {
     match (certificate, expected) {
         | (Certificate::Path(id), Family::Path) => {
-            let classifier =
-                crate::path_universe::form(arena, paths, id, budget).map_err(FlowError::Path)?;
+            let classifier = synth_closed_value(arena, id)
+                .map_err(|error| FlowError::Typing(Box::new(error)))?;
+            let classifier = crate::path_universe::endpoints(arena, classifier, budget)
+                .map_err(FlowError::Path)?;
             Ok(CertificateType::Path(classifier))
         },
         | (Certificate::Flow(id), Family::Flow) => {
