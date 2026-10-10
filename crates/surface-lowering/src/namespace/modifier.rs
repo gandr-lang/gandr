@@ -60,6 +60,8 @@ use alloc::vec::Vec;
 use core::mem;
 use core::slice;
 
+use anodized::spec;
+
 use crate::namespace::event::EventRejection;
 use crate::namespace::event::NamespaceEventHandler;
 use crate::namespace::path::NamePath;
@@ -68,6 +70,17 @@ use crate::namespace::trie::Emptiness;
 use crate::namespace::trie::Trie;
 
 /// A constructor's position in its modifier's arena.
+///
+/// # Specification
+/// - requires: the owning modifier arena accompanies the position.
+/// - ensures: the value identifies a constructor only in that arena.
+/// - provides: non-recursive operand references.
+/// - executable: none — an index alone holds neither its arena nor its extent.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested composition preserves its meaning after operand
+///   relocation; the bounds are checked when the interpreter enters.
+/// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct ConstructorId(usize);
@@ -77,7 +90,21 @@ impl ConstructorId
     /// This position moved `offset` places along.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: adds the offset to the position, saturating at the index
+    ///   ceiling.
+    /// - provides: operand relocation when arenas are concatenated.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — composed modifiers preserve their inner behavior
+    ///   after relocation; the fixture covers representable arena positions,
+    ///   not exhaustion.
+    /// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
+    #[spec(
+        ensures: |ret| ret.0 == self.0.saturating_add(offset.0),
+    )]
     const fn shifted(
         self,
         offset: Offset,
@@ -93,6 +120,21 @@ impl ConstructorId
 struct Offset(usize);
 
 /// One core constructor, its operands addressed in the modifier's arena.
+///
+/// # Specification
+/// - requires: the owning post-order arena accompanies the constructor.
+/// - ensures: operands refer to earlier constructors in that arena; paths and
+///   labels retain the operands of the corresponding core form.
+/// - provides: the six-constructor core of the modifier language.
+/// - executable: none — a constructor holds neither its owning arena nor its
+///   own position; builder and interpreter predicates check those boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every constructor has a namespace effect or event
+///   witness; composition fixes the finite order of its operands.
+/// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
+/// - witness: `namespace::namespace::in_runs_the_inner_modifier_on_one_subtree`
+/// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Constructor<Label>
 {
@@ -127,7 +169,49 @@ impl<Label> Constructor<Label>
     /// This constructor with every operand moved `offset` places along.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: preserves constructor kind, paths and labels while shifting
+    ///   every operand position by the offset.
+    /// - provides: arena relocation without interpreting a constructor.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — composition preserves the behavior of nested sequence
+    ///   and union operands; scalar shift predicates and endpoint checks
+    ///   constrain relocation without copying operand vectors.
+    /// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
+    /// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
+    #[spec(
+        captures: before = (core::mem::discriminant(&self), match self {
+            | Self::In { inner, .. } => Some((1_usize, Some(inner), Some(inner))),
+            | Self::Seq(ref members) | Self::Union(ref members) => Some((
+                members.len(),
+                members.first().copied(),
+                members.last().copied(),
+            )),
+            | Self::AssertNonEmpty | Self::Relocation { .. } | Self::Hook(_) => None,
+        }),
+        ensures: |ret| {
+            core::mem::discriminant(&ret) == before.0
+                && match (&ret, before.1) {
+                    | (&Self::In { inner, .. }, Some((1, Some(first), Some(last)))) => {
+                        first == last && inner == first.shifted(offset)
+                    },
+                    | (
+                        &Self::Seq(ref members) | &Self::Union(ref members),
+                        Some((count, first, last)),
+                    ) => {
+                        members.len() == count
+                            && members.first().copied()
+                                == first.map(|member| member.shifted(offset))
+                            && members.last().copied() == last.map(|member| member.shifted(offset))
+                    },
+                    | (_, None) => true,
+                    | _ => false,
+                }
+        },
+    )]
     fn shifted(
         self,
         offset: Offset,
@@ -159,6 +243,21 @@ impl<Label> Constructor<Label>
 ///
 /// Made only by the builders below, each of which expands to the six core
 /// constructors, so one interpreter covers the whole language.
+///
+/// # Specification
+/// - requires: construction passes through the builders.
+/// - ensures: the arena is nonempty, its root is last, and every operand refers
+///   to an earlier constructor.
+/// - provides: one finite post-order term interpreted without recursion.
+/// - executable: none — this build's specification facade does not expose the
+///   type-item runtime; builder predicates and the interpreter entry predicate
+///   check the arena.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested compositions agree with their direct reading; L2 —
+///   a fixed deep modifier is constructed and run iteratively.
+/// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
+/// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Modifier<Label>
@@ -174,7 +273,36 @@ impl<Label> Modifier<Label>
     /// operands.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the constructor has no operands.
+    /// - ensures: one constructor of the supplied kind forms the whole
+    ///   modifier.
+    /// - provides: the base case for modifier construction.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — identity, emptiness checks, relocation and hooks
+    ///   retain their distinct effects on the namespace and handler.
+    /// - witness: `namespace::namespace::the_identity_checks_nothing_on_an_empty_namespace`
+    /// - witness: `namespace::namespace::the_core_relocation_performs_no_emptiness_check`
+    /// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
+    #[spec(
+        requires: match constructor {
+            | Constructor::In { .. } => false,
+            | Constructor::Seq(ref members) | Constructor::Union(ref members) => members.is_empty(),
+            | Constructor::AssertNonEmpty
+            | Constructor::Relocation { .. }
+            | Constructor::Hook(_) => true,
+        },
+        captures: before = core::mem::discriminant(&constructor),
+        ensures: |ret| {
+            ret.constructors.len() == 1
+                && ret
+                    .constructors
+                    .first()
+                    .is_some_and(|constructor| core::mem::discriminant(constructor) == before)
+        },
+    )]
     fn leaf(constructor: Constructor<Label>) -> Self
     {
         Self {
@@ -186,13 +314,50 @@ impl<Label> Modifier<Label>
     /// appended in order.
     ///
     /// # Specification
-    /// - requires: nothing.
+    /// - requires: each operand has a root; wrap embeds their roots as a
+    ///   sequence or union, without inventing operand references.
     /// - ensures: the operands' constructors in order, each relocated by the
     ///   constructors before it, then the root over their roots; post-order is
     ///   kept.
     /// - provides: `seq` and `union`.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty sequences and unions have different identities,
+    ///   while nested composition preserves operand order and source isolation.
+    /// - witness: `namespace::namespace::the_empty_sequence_is_the_identity`
+    /// - witness: `namespace::namespace::the_empty_union_is_the_empty_namespace`
+    /// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
+    /// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
+    #[spec(
+        requires: operands
+            .iter()
+            .all(|operand| !operand.constructors.is_empty()),
+        captures: before = (
+            operands.len(),
+            operands.iter().fold(0_usize, |count, operand| {
+                count.saturating_add(operand.constructors.len())
+            }),
+        ),
+        ensures: |ret| {
+            ret.constructors.len() == before.1.saturating_add(1)
+                && ret.constructors.last().is_some_and(|root| match *root {
+                    | Constructor::Seq(ref members) | Constructor::Union(ref members) => {
+                        members.len() == before.0
+                            && members.iter().all(|member| member.0 < before.1)
+                            && members
+                                .iter()
+                                .zip(members.iter().skip(1))
+                                .all(|(left, right)| left.0 < right.0)
+                    },
+                    | Constructor::AssertNonEmpty
+                    | Constructor::In { .. }
+                    | Constructor::Relocation { .. }
+                    | Constructor::Hook(_) => false,
+                })
+        },
+    )]
     fn composite(
         operands: Vec<Self>,
         wrap: fn(Vec<ConstructorId>) -> Constructor<Label>,
@@ -241,7 +406,27 @@ impl<Label> Modifier<Label>
     /// already empty.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: checks nonemptiness before producing the empty namespace.
+    /// - provides: a checked drop through the core constructors.
+    /// - fails: never while building; interpretation may be refused by its
+    ///   handler.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — dropping an empty namespace performs not-found,
+    ///   whereas identity does not; excluding an absent subtree reaches the
+    ///   same check.
+    /// - witness: `namespace::namespace::except_on_an_absent_subtree_performs_not_found`
+    /// - witness: `namespace::namespace::the_identity_checks_nothing_on_an_empty_namespace`
+    #[spec(
+        ensures: |ret| {
+            ret.constructors.len() == 3
+                && matches!(ret.constructors.first(), Some(Constructor::AssertNonEmpty))
+                && matches!(ret.constructors.get(1), Some(Constructor::Union(branches)) if branches.is_empty())
+                && matches!(ret.constructors.last(), Some(Constructor::Seq(members)) if members.iter().map(|member| member.0).eq([0_usize, 1_usize]))
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn none() -> Self
@@ -253,7 +438,55 @@ impl<Label> Modifier<Label>
     /// performing not-found at `path` when that subtree is empty.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: checks the selected subtree, moves it to the root, then
+    ///   restores its prefix without the other bindings.
+    /// - provides: checked subtree selection.
+    /// - fails: never while building; interpretation may be refused by its
+    ///   handler.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — selecting an existing subtree drops its siblings, and
+    ///   selecting an absent subtree reports the written path.
+    /// - witness: `namespace::namespace::only_keeps_the_named_subtree_and_drops_the_rest`
+    /// - witness: `namespace::namespace::a_selection_that_matched_nothing_performs_not_found`
+    #[spec(
+        ensures: |ret| {
+            ret.constructors.len() == 5
+                && matches!(ret.constructors.first(), Some(Constructor::AssertNonEmpty))
+                && match (
+                    ret.constructors.get(1),
+                    ret.constructors.get(2),
+                    ret.constructors.get(3),
+                    ret.constructors.last(),
+                ) {
+                    | (
+                        Some(&Constructor::In { ref path, inner }),
+                        Some(&Constructor::Relocation {
+                            ref source,
+                            ref target,
+                        }),
+                        Some(&Constructor::Relocation {
+                            source: ref root,
+                            target: ref restored,
+                        }),
+                        Some(&Constructor::Seq(ref members)),
+                    ) => {
+                        inner.0 == 0
+                            && path == source
+                            && target.segments().is_empty()
+                            && root.segments().is_empty()
+                            && restored == path
+                            && members
+                                .iter()
+                                .map(|member| member.0)
+                                .eq([1_usize, 2_usize, 3_usize])
+                    },
+                    | _ => false,
+                }
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn only(path: NamePath) -> Self
@@ -281,7 +514,42 @@ impl<Label> Modifier<Label>
     /// not-found at `source` when that subtree is empty; the checked builder.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: checks the source before relocating its subtree to the
+    ///   target.
+    /// - provides: checked renaming rather than unchecked relocation.
+    /// - fails: never while building; interpretation may be refused by its
+    ///   handler.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an absent source is reported before a move; moving to
+    ///   the root unqualifies, and an occupied target is replaced.
+    /// - witness: `namespace::namespace::the_checked_renaming_builder_performs_not_found_on_an_absent_source`
+    /// - witness: `namespace::namespace::renaming_to_the_root_unqualifies`
+    /// - witness: `namespace::namespace::renaming_drops_whatever_was_at_the_target`
+    #[spec(
+        ensures: |ret| {
+            ret.constructors.len() == 4
+                && matches!(ret.constructors.first(), Some(Constructor::AssertNonEmpty))
+                && match (
+                    ret.constructors.get(1),
+                    ret.constructors.get(2),
+                    ret.constructors.last(),
+                ) {
+                    | (
+                        Some(&Constructor::In { ref path, inner }),
+                        Some(&Constructor::Relocation { ref source, .. }),
+                        Some(&Constructor::Seq(ref members)),
+                    ) => {
+                        inner.0 == 0
+                            && path == source
+                            && members.iter().map(|member| member.0).eq([1_usize, 2_usize])
+                    },
+                    | _ => false,
+                }
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn renaming(
@@ -313,7 +581,30 @@ impl<Label> Modifier<Label>
     /// `in p m`: run `inner` on the subtree at `path`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the inner modifier has a root.
+    /// - ensures: appends an in-subtree constructor pointing to that root,
+    ///   preserving post-order.
+    /// - provides: nested interpretation with the accumulated event prefix.
+    /// - fails: never while building.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one subtree changes without its siblings; nested
+    ///   events retain their full prefix. L2 — deep nesting is constructed
+    ///   iteratively.
+    /// - witness: `namespace::namespace::in_runs_the_inner_modifier_on_one_subtree`
+    /// - witness: `namespace::namespace::a_nested_event_reports_the_accumulated_prefix`
+    /// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+    /// - witness: `namespace::namespace::a_nested_hook_reports_the_accumulated_prefix`
+    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    #[spec(
+        requires: !inner.constructors.is_empty(),
+        captures: before = inner.constructors.len(),
+        ensures: |ret| {
+            ret.constructors.len() == before.saturating_add(1)
+                && matches!(ret.constructors.last(), Some(Constructor::In { inner, .. }) if inner.0 == before.saturating_sub(1))
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn in_subtree(
@@ -364,20 +655,11 @@ impl<Label> Modifier<Label>
     /// The modifier `import "URI" as name ;` means: `renaming . name`, checked.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: equal to [`Self::renaming`] from the root to the one-segment
-    ///   path `alias`.
-    /// - provides: the import desugaring the lowering applies to an import's
-    ///   root binding.
-    /// - fails: never.
-    /// - panics: none.
+    /// trivial.
     ///
     /// # Adequacy
-    /// - hypothesis: L0 — the equality with the general builder is asserted
-    ///   exactly, so a change to either side, the unchecked core included,
-    ///   separates them; L3 — the qualifying behaviour on a two-level namespace
-    ///   and the inherited emptiness check on the empty one.
-    /// - witness: `namespace::namespace::as_name_is_renaming_to_the_alias`
+    /// - hypothesis: L3 — the alias qualifies a two-level namespace and retains
+    ///   the checked renaming refusal on an empty import.
     /// - witness: `namespace::namespace::as_name_qualifies_every_imported_path`
     /// - witness: `namespace::namespace::as_name_on_an_empty_import_performs_not_found`
     #[inline]
@@ -391,8 +673,8 @@ impl<Label> Modifier<Label>
     /// `handler`.
     ///
     /// # Specification
-    /// - requires: `handler` interprets the hook vocabulary this modifier is
-    ///   labelled with.
+    /// - requires: a nonempty post-order constructor arena, and a handler
+    ///   interpreting the hook vocabulary with which it is labelled.
     /// - ensures: subtree-grained selection, target-dropping relocation and
     ///   pointwise union; every not-found, shadow and hook event reaches
     ///   `handler` at the accumulated prefix of the point that performed it, so
@@ -444,6 +726,20 @@ impl<Label> Modifier<Label>
     /// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
     /// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
     /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    #[spec(
+        requires: !self.constructors.is_empty()
+            && self.constructors.iter().enumerate().all(
+                |(position, constructor)| match *constructor {
+                    | Constructor::In { inner, .. } => inner.0 < position,
+                    | Constructor::Seq(ref members) | Constructor::Union(ref members) => {
+                        members.iter().all(|member| member.0 < position)
+                    },
+                    | Constructor::AssertNonEmpty
+                    | Constructor::Relocation { .. }
+                    | Constructor::Hook(_) => true,
+                },
+            ),
+    )]
     #[inline]
     pub fn apply<Data, Tag, Handler>(
         &self,
@@ -523,6 +819,66 @@ impl<Label> Modifier<Label>
     ///
     /// # Errors
     /// The rejection the handler produced for the event this step performed.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the constructor fixtures cover empty and occupied
+    ///   subjects, nested full-path events, target replacement, branch
+    ///   isolation and hook replacement; rejecting policies cover the two
+    ///   immediate event kinds. L2 — nested interpretation uses the explicit
+    ///   stack.
+    /// - witness: `namespace::namespace::the_identity_checks_nothing_on_an_empty_namespace`
+    /// - witness: `namespace::namespace::in_runs_the_inner_modifier_on_one_subtree`
+    /// - witness: `namespace::namespace::renaming_drops_whatever_was_at_the_target`
+    /// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
+    /// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
+    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_missing_selection`
+    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_hook`
+    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    #[spec(
+        requires: constructor.0 < self.constructors.len(),
+        captures: before = (stack.len(), usize::from(current.binding_count())),
+        ensures: |ret| {
+            match self.constructors.get(constructor.0) {
+            | Some(&Constructor::AssertNonEmpty) => {
+                stack.len() == before.0 && usize::from(current.binding_count()) == before.1
+            },
+            | Some(&Constructor::In { inner, .. }) => {
+                ret.is_ok()
+                    && stack.len() == before.0.saturating_add(2)
+                    && usize::from(current.binding_count()) <= before.1
+                    && matches!(stack.get(before.0), Some(Instruction::Regraft { outside, .. })
+                        if usize::from(outside.binding_count()) == before.1.saturating_sub(usize::from(current.binding_count())))
+                    && matches!(stack.last(), Some(Instruction::Apply { constructor, .. }) if *constructor == inner)
+            },
+            | Some(&Constructor::Relocation { .. }) => {
+                ret.is_ok() && stack.len() == before.0 && usize::from(current.binding_count()) <= before.1
+            },
+            | Some(&Constructor::Seq(ref members)) => {
+                ret.is_ok()
+                    && stack.len() == before.0.saturating_add(members.len())
+                    && usize::from(current.binding_count()) == before.1
+                    && stack.get(before.0..).is_some_and(|added| {
+                        added.iter().zip(members.iter().rev()).all(|(instruction, member)| {
+                            matches!(instruction, Instruction::Apply { constructor, .. } if constructor == member)
+                        })
+                    })
+            },
+            | Some(&Constructor::Union(ref branches)) => {
+                ret.is_ok() && if branches.is_empty() {
+                    stack.len() == before.0 && usize::from(current.binding_count()) == 0
+                } else {
+                    stack.len() == before.0.saturating_add(2)
+                        && usize::from(current.binding_count()) == before.1
+                        && matches!(stack.last(), Some(Instruction::Apply { constructor, .. }) if branches.first() == Some(constructor))
+                }
+            },
+            | Some(&Constructor::Hook(_)) => {
+                stack.len() == before.0 && (ret.is_ok() || usize::from(current.binding_count()) == 0)
+            },
+            | None => false,
+        }
+        },
+    )]
     fn step<'modifier, Data, Tag, Handler>(
         &'modifier self,
         current: &mut Trie<Data, Tag>,
@@ -607,6 +963,25 @@ impl<Label> Modifier<Label>
 /// One step of the interpreter's explicit stack: what is left to run, what to
 /// do with a finished `in` subtree, and what to do with a finished `union`
 /// branch.
+///
+/// # Specification
+/// - requires: the owning modifier and active interpreter state accompany the
+///   continuation.
+/// - ensures: apply frames preserve accumulated prefixes; regraft frames retain
+///   outside bindings; union frames retain original input and the completed
+///   branches.
+/// - provides: suspended work without recursive calls.
+/// - executable: none — a frame does not hold the active current namespace or
+///   the owning constructor arena; step predicates check frontier transitions.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested events retain their prefixes and each union branch
+///   reads the original input; L2 — a fixed deep run uses this frontier.
+/// - witness: `namespace::namespace::a_nested_event_reports_the_accumulated_prefix`
+/// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+/// - witness: `namespace::namespace::a_nested_hook_reports_the_accumulated_prefix`
+/// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
+/// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
 enum Instruction<'modifier, Data, Tag>
 {
     /// Run `constructor` on the current namespace, reporting at `prefix`.

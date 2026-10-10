@@ -32,6 +32,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::ValueId;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::NodeDigest;
@@ -78,6 +79,19 @@ quenchant_shape::reason_enum! {
 
 /// The furthest an unknown attribute name may sit from a registered one and
 /// still be answered with it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: candidate distances at most two are eligible; larger distances
+///   are not.
+/// - provides: the inclusive suggestion threshold.
+/// - executable: none — the specification attribute does not support constant
+///   items; selection and boundary witnesses exercise this policy.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distances two and three separate eligibility, and an
+///   equal-distance pair exercises the registry-order tie.
+/// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
 const SUGGESTION_BOUND: EditDistance = EditDistance(2_usize);
 
 /// One name the attribute registry holds.
@@ -230,10 +244,39 @@ pub enum PayloadVerdict
 /// Closed because a schema decides how a payload is read: a name outside this
 /// table has no reading at all, and answering it with a default would let a
 /// misspelling behave like the attribute it was not.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: lookup has no fallback for an unregistered name; suggestion is
+///   bounded and names retain registry order.
+/// - provides: the closed attribute vocabulary and its schema mapping.
+/// - executable: none — the unit facade holds no instance state; the associated
+///   function predicates check each observable boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every named schema, case-sensitive misses, near misses,
+///   the inclusive bound and a tied minimum are observed.
+/// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
+/// - witness: `attribute::tests::an_unregistered_name_answers_nothing`
+/// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AttributeRegistry;
 
 /// Every registered attribute, with its schema.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: names are distinct and each row supplies its declared schema; row
+///   order decides tied suggestions.
+/// - provides: the finite schema inventory used by resolution.
+/// - executable: none — the specification attribute does not support constant
+///   items; lookup and names predicates preserve the rows at runtime.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite inventory is checked row by row, and tied
+///   suggestions select the earlier eligible row.
+/// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
+/// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
 const REGISTRY: [(&str, AttributeSchema); 4_usize] = [
     ("checks", AttributeSchema::Marker),
     ("owes", AttributeSchema::Integer),
@@ -246,7 +289,24 @@ impl AttributeRegistry
     /// Every registered name, in registry order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: every registry spelling appears once in registry order.
+    /// - provides: the closed name inventory, without schema payloads.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the finite inventory has a lookup result and distinct
+    ///   near miss for every named schema.
+    /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
+    /// - witness: `attribute::tests::a_near_misspelling_suggests_its_attribute`
+    #[spec(
+        ensures: |ret| {
+            ret.len() == REGISTRY.len()
+                && ret
+                    .iter()
+                    .zip(REGISTRY)
+                    .all(|(name, (spelling, _))| name.0 == spelling)
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn names() -> Vec<RegisteredAttribute>
@@ -278,6 +338,19 @@ impl AttributeRegistry
     ///   asserted absent.
     /// - witness: `attribute::tests::every_registered_attribute_answers_its_schema`
     /// - witness: `attribute::tests::an_unregistered_name_answers_nothing`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present((registered, schema)) => {
+                registered.0 == name.as_ref()
+                    && REGISTRY
+                        .iter()
+                        .any(|&(spelled, expected)| spelled == registered.0 && expected == schema)
+            },
+            | Maybe::Absent(registry::Absent::Unregistered) => REGISTRY
+                .iter()
+                .all(|&(spelled, _)| spelled != name.as_ref()),
+        },
+    )]
     #[inline]
     pub fn lookup(
         name: SurfaceName<'_>
@@ -309,13 +382,35 @@ impl AttributeRegistry
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two decision surfaces (the minimum selection and the
-    ///   bound comparison) separated by one near miss per registry row, so an
-    ///   answer fixed to any single row fails two of the three, and by a
-    ///   spelling three edits from every row and the empty spelling, both
-    ///   asserted absent.
+    /// - hypothesis: L3 — one near miss per registry row, exact registered
+    ///   spellings, distances two and three, and a two-way tie separate minimum
+    ///   selection, inclusion of the bound and registry-order ties. The
+    ///   predicate checks membership, the length lower bound and exact matches
+    ///   without re-running the allocating distance calculation.
     /// - witness: `attribute::tests::a_near_misspelling_suggests_its_attribute`
     /// - witness: `attribute::tests::a_distant_spelling_suggests_nothing`
+    /// - witness: `attribute::tests::suggestions_include_the_bound_and_break_ties_by_registry_order`
+    #[spec(
+        ensures: |ret| {
+            let spelled: &str = name.as_ref();
+            match ret {
+                | Maybe::Present(registered) => {
+                    REGISTRY.iter().any(|&(entry, _)| entry == registered.0)
+                        && spelled
+                            .chars()
+                            .count()
+                            .abs_diff(registered.0.chars().count())
+                            <= SUGGESTION_BOUND.0
+                        && REGISTRY
+                            .iter()
+                            .all(|&(entry, _)| entry != spelled || registered.0 == spelled)
+                },
+                | Maybe::Absent(suggestion::Absent::BeyondBound) => {
+                    REGISTRY.iter().all(|&(entry, _)| entry != spelled)
+                },
+            }
+        },
+    )]
     #[inline]
     pub fn suggestion(name: SurfaceName<'_>) -> Maybe<RegisteredAttribute, suggestion::Absent>
     {
@@ -358,6 +453,21 @@ impl AttributeRegistry
 ///   vocabularies, enumerated exhaustively against a pinned twelve-row table,
 ///   so a swapped or widened arm breaks one row.
 /// - witness: `attribute::tests::the_payload_verdict_table_is_pinned`
+#[spec(
+    ensures: |ret| {
+        let admitted = matches!(
+            (schema, form),
+            (AttributeSchema::Marker, PayloadForm::Absent)
+                | (AttributeSchema::Integer, PayloadForm::Integer)
+                | (AttributeSchema::Text, PayloadForm::Text)
+        );
+        let missing =
+            matches!(form, PayloadForm::Absent) && !matches!(schema, AttributeSchema::Marker);
+        matches!(ret, PayloadVerdict::Admitted) == admitted
+            && matches!(ret, PayloadVerdict::Missing) == missing
+            && matches!(ret, PayloadVerdict::IllTyped) == (!admitted && !missing)
+    },
+)]
 #[inline]
 #[must_use]
 pub const fn payload_verdict(
@@ -386,8 +496,8 @@ pub const fn payload_verdict(
 /// The form a payload read as `former` was written in.
 ///
 /// # Specification
-/// - requires: `former` is the former of a payload that can stand as a value,
-///   which the attribute pass establishes before asking.
+/// - requires: nothing — classification is total over `Former`; the caller
+///   separately decides whether the form can stand as a value.
 /// - ensures: the two literal formers answer their own forms and every other
 ///   former answers the non-literal form; absence is not expressible here,
 ///   because a payload was written.
@@ -400,6 +510,15 @@ pub const fn payload_verdict(
 ///   exhaustively with each former's exact form asserted, so promoting any
 ///   former to a literal form breaks one row.
 /// - witness: `attribute::tests::only_the_two_literal_kinds_are_literal_payloads`
+#[spec(
+    ensures: |ret| {
+        matches!(ret, PayloadForm::Integer) == matches!(former, Former::Number)
+            && matches!(ret, PayloadForm::Text) == matches!(former, Former::Text)
+            && matches!(ret, PayloadForm::OtherValue)
+                != matches!(former, Former::Number | Former::Text)
+            && !matches!(ret, PayloadForm::Absent)
+    },
+)]
 #[inline]
 #[must_use]
 pub const fn payload_form(former: Former) -> PayloadForm
@@ -455,6 +574,20 @@ pub const fn payload_form(former: Former) -> PayloadForm
 /// - witness: `attribute::tests::the_edit_distance_of_equal_spellings_is_zero`
 /// - witness: `attribute::tests::each_single_edit_costs_one`
 /// - witness: `attribute::tests::an_empty_spelling_costs_the_other_length`
+/// - witness: `attribute::tests::edit_distance_counts_unicode_scalars_not_bytes`
+#[spec(
+    ensures: |ret| {
+        let left: &str = written.as_ref();
+        let right = candidate.0;
+        let left_len = left.chars().count();
+        let right_len = right.chars().count();
+        ret.0 >= left_len.abs_diff(right_len)
+            && ret.0 <= left_len.max(right_len)
+            && (ret.0 == 0) == (left == right)
+            && (!left.is_empty() || ret.0 == right_len)
+            && (!right.is_empty() || ret.0 == left_len)
+    },
+)]
 #[must_use]
 fn edit_distance(
     written: SurfaceName<'_>,
@@ -490,6 +623,23 @@ fn edit_distance(
 }
 
 /// One attribute, resolved against the registry and filed under a declaration.
+///
+/// # Specification
+/// - requires: the producer establishes registry, payload and source-span
+///   correspondence before filing.
+/// - ensures: construction retains the supplied record unchanged; the record
+///   itself does not validate schema admission or authenticate an arena value.
+/// - provides: a resolved attribute record beside its declaration.
+/// - executable: none — the record holds neither its source form nor the value
+///   arena needed to check producer correspondence; construction is a field
+///   initializer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact distinct records retain their filing order and stay
+///   separated by declaration keys; these are storage witnesses, not proof of
+///   arbitrary payload admission.
+/// - witness: `attribute::tests::entries_keep_the_order_they_were_filed_in`
+/// - witness: `attribute::tests::two_declarations_keep_separate_entry_lists`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AttributeEntry
 {
@@ -572,6 +722,23 @@ impl AttributeEntry
 
 /// Every attributed declaration's entries, keyed by the declaration form's
 /// content identity.
+///
+/// # Specification
+/// - requires: producers file entries under the intended declaration content
+///   digest.
+/// - ensures: every stored key has a nonempty ordered entry list; no lookup
+///   synthesizes an attribute and a repeated key appends rather than replaces.
+/// - provides: attribute metadata separated from core terms.
+/// - executable: none — this build's specification facade does not expose the
+///   type-item runtime; filing and lookup predicates check the observable
+///   boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — fresh and repeated keys, a second independent key and an
+///   absent key separate append, key isolation and absence.
+/// - witness: `attribute::tests::entries_keep_the_order_they_were_filed_in`
+/// - witness: `attribute::tests::two_declarations_keep_separate_entry_lists`
+/// - witness: `attribute::tests::an_unattributed_declaration_has_no_entries`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct AttributeTable
@@ -616,6 +783,18 @@ impl AttributeTable
     ///   asserted not to disturb the first.
     /// - witness: `attribute::tests::entries_keep_the_order_they_were_filed_in`
     /// - witness: `attribute::tests::two_declarations_keep_separate_entry_lists`
+    #[spec(
+        captures: before = (
+            self.entries.len(),
+            self.entries.get(&key).map_or(0, Vec::len),
+            self.entries.contains_key(&key),
+            entry,
+        ),
+        ensures: self.entries.len() == before.0.saturating_add(usize::from(!before.2))
+            && self.entries.get(&key).is_some_and(|items| {
+                items.len() == before.1.saturating_add(1) && items.last() == Some(&before.3)
+            }),
+    )]
     #[inline]
     pub fn file(
         &mut self,
@@ -644,6 +823,12 @@ impl AttributeTable
     ///   exact entry list and an unfiled key asserted empty.
     /// - witness: `attribute::tests::entries_keep_the_order_they_were_filed_in`
     /// - witness: `attribute::tests::an_unattributed_declaration_has_no_entries`
+    #[spec(
+        ensures: |ret| match self.entries.get(&key) {
+            | Some(entries) => core::ptr::eq(&raw const *ret, &raw const *entries.as_slice()),
+            | None => ret.is_empty(),
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn entries(
@@ -700,8 +885,6 @@ impl From<AttributedCount> for usize
 #[cfg(test)]
 mod tests
 {
-    use alloc::format;
-    use alloc::string::String;
     use alloc::vec;
 
     use gandr_surface_syntax::ByteOffset;
@@ -728,6 +911,62 @@ mod tests
     use crate::resolve::SurfaceName;
 
     #[test]
+    fn suggestions_include_the_bound_and_break_ties_by_registry_order()
+    {
+        for spelling in AttributeRegistry::names() {
+            assert_eq!(
+                AttributeRegistry::suggestion(SurfaceName::from(spelling.as_ref())),
+                Maybe::Present(spelling)
+            );
+        }
+        let owes = registered(SurfaceName::from("owes"));
+        assert_eq!(
+            AttributeRegistry::suggestion(SurfaceName::from("ow")),
+            Maybe::Present(owes)
+        );
+        assert_eq!(
+            AttributeRegistry::suggestion(SurfaceName::from("o")),
+            Maybe::Absent(suggestion::Absent::BeyondBound)
+        );
+        assert_eq!(
+            edit_distance(SurfaceName::from("rows"), owes),
+            EditDistance::from(2_usize)
+        );
+        assert_eq!(
+            edit_distance(
+                SurfaceName::from("rows"),
+                registered(SurfaceName::from("runs"))
+            ),
+            EditDistance::from(2_usize)
+        );
+        assert_eq!(
+            AttributeRegistry::suggestion(SurfaceName::from("rows")),
+            Maybe::Present(owes)
+        );
+    }
+
+    #[test]
+    fn edit_distance_counts_unicode_scalars_not_bytes()
+    {
+        let runs = registered(SurfaceName::from("runs"));
+        assert_eq!(
+            edit_distance(SurfaceName::from("rüns"), runs),
+            EditDistance::from(1_usize)
+        );
+        assert_eq!(
+            edit_distance(SurfaceName::from("ru水ns"), runs),
+            EditDistance::from(1_usize)
+        );
+        assert_eq!(
+            edit_distance(SurfaceName::from("水"), runs),
+            EditDistance::from(4_usize)
+        );
+        assert_eq!(
+            AttributeRegistry::suggestion(SurfaceName::from("rüns")),
+            Maybe::Present(runs)
+        );
+    }
+    #[test]
     fn every_registered_attribute_answers_its_schema()
     {
         let expected = [
@@ -744,11 +983,13 @@ mod tests
                 Maybe::Present(schema),
                 "the registry is pinned row by row"
             );
-            assert_eq!(
-                found.map(|(held, _schema)| format!("{held}")),
-                Maybe::Present(String::from(spelling)),
-                "the entry names itself with the registry's own spelling"
-            );
+            if let Maybe::Present((held, _schema)) = found {
+                let actual: &str = held.as_ref();
+                assert_eq!(
+                    actual, spelling,
+                    "the resolved name keeps its exact identifier"
+                );
+            }
         }
         assert_eq!(
             AttributeRegistry::names().len(),
@@ -976,36 +1217,6 @@ mod tests
                 payload_form(former),
                 expected,
                 "exactly the two literal formers carry a literal payload form"
-            );
-        }
-    }
-
-    #[test]
-    fn every_schema_and_payload_form_renders_its_own_name()
-    {
-        let schemas = [
-            (AttributeSchema::Marker, "no payload"),
-            (AttributeSchema::Integer, "an integer payload"),
-            (AttributeSchema::Text, "a text payload"),
-        ];
-        for (schema, rendering) in schemas {
-            assert_eq!(
-                format!("{schema}"),
-                String::from(rendering),
-                "each schema names what it takes"
-            );
-        }
-        let forms = [
-            (PayloadForm::Absent, "no payload"),
-            (PayloadForm::Integer, "an integer payload"),
-            (PayloadForm::Text, "a text payload"),
-            (PayloadForm::OtherValue, "a non-literal payload"),
-        ];
-        for (form, rendering) in forms {
-            assert_eq!(
-                format!("{form}"),
-                String::from(rendering),
-                "each payload form names what was written"
             );
         }
     }

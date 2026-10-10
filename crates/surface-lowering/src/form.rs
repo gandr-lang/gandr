@@ -23,6 +23,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_surface_grammar::NamedKind;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_syntax::ByteSpan;
@@ -74,6 +75,22 @@ impl FormName
 {
     /// Every form name the lowering spells itself, rather than reading it off
     /// a mold.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: distinct authored form names, each realised by the grammar.
+    /// - provides: the diagnostic form-name inventory.
+    /// - fails: no claim enumerates names read dynamically from custom molds.
+    /// - panics: none.
+    /// - executable: none — the specification attribute does not support const
+    ///   items; functions consuming the inventory retain predicates.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pairwise name identity and grammar realisation are
+    ///   checked for this finite inventory, without assuming it contains every
+    ///   possible custom grammar kind.
+    /// - witness: `error::tests::the_form_names_are_pairwise_distinct`
+    /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
     pub const ALL: [Self; 26_usize] = [
         Self::ROOT,
         Self::UNIT,
@@ -314,6 +331,24 @@ impl TileName
 
     /// The three tiles that can name a parameter: an identifier, a type
     /// variable and a type identifier, the spellings the parameter list parses.
+    ///
+    /// # Specification
+    /// - requires: parameter tiles have been read under their own rule.
+    /// - ensures: identifier, type-variable and type-identifier labels are
+    ///   recognised as binder spellings rather than punctuation.
+    /// - provides: the shared binder-label class used by function readers.
+    /// - fails: membership alone does not admit a binder to the fragment.
+    /// - panics: none.
+    /// - executable: none — the specification attribute does not support const
+    ///   items; the function readers check admission in context.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary term parameters lower to a lambda chain,
+    ///   while a type-spelled parameter receives the typed unadmitted refusal.
+    ///   These witnesses concern binder recognition in function tails, not all
+    ///   custom grammar labels or all binder positions.
+    /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+    /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     pub const BINDERS: [Self; 3] = [Self::IDENTIFIER, Self::TYPE_VARIABLE, Self::TYPE_IDENTIFIER];
 }
 
@@ -331,6 +366,23 @@ impl AsRef<str> for TileName
 }
 
 /// What the lowering reads one named kind as.
+///
+/// # Specification
+/// - requires: the named kind and reading position supply the dispatch context.
+/// - ensures: each variant names one lowering interpretation; Unadmitted
+///   represents kinds outside the dispatch table.
+/// - provides: a typed dispatch result.
+/// - fails: no variant certifies that the form is valid in its position.
+/// - panics: none.
+/// - executable: none — the originating named kind is not retained; `former_of`
+///   checks the correspondence when producing the tag.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite dispatch table and absent kinds distinguish
+///   all current interpretations; positional admission is witnessed by the
+///   lowering readers rather than certified by this tag.
+/// - witness: `form::tests::every_dispatched_kind_is_pinned`
+/// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Former
 {
@@ -401,7 +453,22 @@ pub enum Former
 
 impl Former
 {
-    /// Every former, in declaration order.
+    /// Every former represented by the dispatch vocabulary.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: each dispatch former occurs once, including Unadmitted.
+    /// - provides: the complete current dispatch-result inventory.
+    /// - fails: never duplicates a classification.
+    /// - panics: none.
+    /// - executable: none — the specification attribute does not support const
+    ///   items; `former_of` checks the dispatch relation.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the inventory is pairwise distinct and equals the set
+    ///   of successful table outcomes plus the miss outcome. The evidence is
+    ///   bounded to the current closed enum and table.
+    /// - witness: `form::tests::every_dispatched_kind_is_pinned`
     pub const ALL: [Self; 27_usize] = [
         Self::Name,
         Self::Constructor,
@@ -434,6 +501,24 @@ impl Former
 }
 
 /// The named kinds the lowering reads, with the former each is read as.
+///
+/// # Specification
+/// - requires: nothing; named kinds are compared by exact spelling.
+/// - ensures: each admitted kind has one former; absent kinds dispatch to
+///   Unadmitted through `former_of`.
+/// - provides: the grammar-to-lowering dispatch table.
+/// - fails: does not certify positional admission of a dispatched form.
+/// - panics: none.
+/// - executable: none — the specification attribute does not support const
+///   items; `former_of` checks its result against this table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact kind/former pairs and declined kinds separate the
+///   dispatch outcomes; grammar realisation checks that every current table key
+///   names a built-in rule.
+/// - witness: `form::tests::every_dispatched_kind_is_pinned`
+/// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
+/// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
 pub const FORMERS: [(&str, Former); 28_usize] = [
     ("identifier", Former::Name),
     ("constructor", Former::Constructor),
@@ -488,6 +573,14 @@ pub const FORMERS: [(&str, Former); 28_usize] = [
 /// - witness: `form::tests::every_dispatched_kind_is_pinned`
 /// - witness: `form::tests::a_kind_outside_the_table_is_unadmitted`
 /// - witness: `form::tests::every_form_name_is_realised_by_the_grammar`
+#[spec(
+    ensures: |ret| match ret {
+        | Former::Unadmitted => FORMERS.iter().all(|&(entry, _)| entry != kind.0),
+        | former => FORMERS
+            .iter()
+            .any(|&(entry, held)| entry == kind.0 && held == former),
+    },
+)]
 #[inline]
 #[must_use]
 pub fn former_of(kind: NamedKind<'_>) -> Former
@@ -499,6 +592,21 @@ pub fn former_of(kind: NamedKind<'_>) -> Former
 }
 
 /// What the parser inserted where the source fell short of the grammar.
+///
+/// # Specification
+/// - requires: the originating parser node supplies the insertion context.
+/// - ensures: grout retains its shape and a minted close retains its family.
+/// - provides: the repair class independently of its source span.
+/// - fails: no variant certifies which node the parser inserted.
+/// - panics: none.
+/// - executable: none — the parser node is absent; `shape_of` checks its label
+///   against the returned repair.
+///
+/// # Adequacy
+/// - hypothesis: L3 — grout and a ghost close retain different exact payloads
+///   when their node labels are classified. The evidence covers those labels,
+///   not the parser's repair-selection algorithm.
+/// - witness: `form::tests::every_label_shape_is_read_and_unknown_molds_are_located`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Repair
 {
@@ -537,6 +645,22 @@ impl fmt::Display for Repair
 }
 
 /// One node of a molded tree, as the dispatch reads it.
+///
+/// # Specification
+/// - requires: a source node and grammar establish the classification.
+/// - ensures: forms pair their named kind with its dispatched former; root,
+///   layout and repairs remain distinct classes.
+/// - provides: the shape a lowering pass dispatches on.
+/// - fails: no shape authenticates its originating grammar.
+/// - panics: none.
+/// - executable: none — type refinements require the disabled logic feature;
+///   `shape_of` checks the name/former relation at construction.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all six label classes and an unknown mold exercise exact
+///   shape classification. These observations concern values returned by the
+///   reader, not arbitrary manually constructed Shape values.
+/// - witness: `form::tests::every_label_shape_is_read_and_unknown_molds_are_located`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Shape
 {
@@ -560,17 +684,48 @@ pub enum Shape
 /// The shape of `node` under `pbg`.
 ///
 /// # Specification
-/// - requires: `node` belongs to a tree molded under `pbg`.
+/// - requires: nothing; the supplied grammar interprets the node's mold.
 /// - ensures: the root reads as [`Shape::Root`], a form or tile as the form its
 ///   mold's named kind names, grout and a minted close as the repair they stand
 ///   for, and layout as [`Shape::Layout`].
 /// - provides: the one total reading of a node label every pass dispatches on.
-/// - fails: [`LoweringRefusal::UnknownMold`] when a form's mold is not in
-///   `pbg`'s table, which only a tree built under another table can carry.
+/// - fails: [`LoweringRefusal::UnknownMold`] when the mold is absent from the
+///   supplied table, including malformed hand-built labels. A recorded grammar
+///   fingerprint alone does not validate a mold.
 /// - panics: none.
 ///
 /// # Errors
 /// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all six label classes are observed as exact shapes,
+///   including a ghost close and an unknown mold with its exact location.
+///   Parsed forms also exercise grammar-relative named-kind dispatch; no claim
+///   authenticates which grammar originally produced an arbitrary node.
+/// - witness: `form::tests::every_label_shape_is_read_and_unknown_molds_are_located`
+/// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
+#[spec(
+    ensures: |ret| match node.label() {
+        | NodeLabel::Wald => ret == Ok(Shape::Root),
+        | NodeLabel::Space => ret == Ok(Shape::Layout),
+        | NodeLabel::Grout { shape, .. } => ret == Ok(Shape::Repair(Repair::Grout(shape))),
+        | NodeLabel::GhostClose { class, .. } => {
+            ret == Ok(Shape::Repair(Repair::GhostClose(class)))
+        },
+        | NodeLabel::Meld(mold) | NodeLabel::Tile(mold) => pbg.named_kind(mold).map_or_else(
+            |_| {
+                ret == Err(LoweringRefusal::UnknownMold {
+                    span: node.span(),
+                    mold,
+                })
+            },
+            |kind| {
+                matches!(ret, Ok(Shape::Form { name, former })
+    if name.0 == kind.0 && former == former_of(kind))
+            },
+        ),
+    },
+)]
 #[inline]
 pub fn shape_of<'source>(
     pbg: &Pbg,
@@ -604,6 +759,27 @@ pub fn shape_of<'source>(
 ///
 /// # Errors
 /// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — known molded labels resolve to their exact kind through
+///   shape classification; an absent mold reports both its identity and the
+///   rejected node span. These cases distinguish lookup success from a
+///   fabricated kind.
+/// - witness: `form::tests::every_label_shape_is_read_and_unknown_molds_are_located`
+#[spec(
+    requires: matches!(node.label(), NodeLabel::Meld(held) | NodeLabel::Tile(held) if held == mold),
+    ensures: |ret| match ret {
+        | Ok(kind) => pbg.named_kind(mold).is_ok_and(|held| held.0 == kind.0),
+        | Err(error) => {
+            pbg.named_kind(mold).is_err()
+                && error
+                    == LoweringRefusal::UnknownMold {
+                        span: node.span(),
+                        mold,
+                    }
+        },
+    },
+)]
 fn named_kind<'source>(
     pbg: &Pbg,
     node: &Node,
@@ -628,6 +804,28 @@ fn named_kind<'source>(
 ///
 /// # Errors
 /// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — own and foreign rule tiles are separated by parsed
+///   declaration pieces. An unknown child mold reports its own span after a
+///   valid prefix; unknown parent molds are covered before any child is read.
+/// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
+/// - witness: `form::tests::an_unknown_child_mold_retains_only_the_new_prefix`
+/// - witness: `form::tests::unknown_root_molds_clear_the_reused_buffer`
+#[spec(
+    requires: matches!(node.label(), NodeLabel::Meld(held) | NodeLabel::Tile(held) if held == mold),
+    ensures: |ret| match ret {
+        | Ok(rule) => pbg.rule_of(mold).is_ok_and(|held| held.name == rule.0),
+        | Err(error) => {
+            pbg.rule_of(mold).is_err()
+                && error
+                    == LoweringRefusal::UnknownMold {
+                        span: node.span(),
+                        mold,
+                    }
+        },
+    },
+)]
 fn rule_name<'source>(
     pbg: &Pbg,
     node: &Node,
@@ -648,6 +846,20 @@ fn rule_name<'source>(
 struct RuleIdentity(&'static str);
 
 /// What holds a node's children: a form of one rule, or the root.
+///
+/// # Specification
+/// - requires: the parent node and grammar establish its owning rule.
+/// - ensures: Root owns no tiles; Rule compares child rule identities.
+/// - provides: the ownership context for reading a child tile.
+/// - fails: does not validate child molds by itself.
+/// - panics: none.
+/// - executable: none — the parent node and grammar are not retained;
+///   `own_tile` checks the interpretation while both are available.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a parsed declaration separates own-rule tiles and a
+///   foreign number tile; its root reads the declaration as an operand.
+/// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Holder
 {
@@ -658,6 +870,22 @@ enum Holder
 }
 
 /// A child of a form, with the bytes it covers.
+///
+/// # Specification
+/// - requires: the node index and span refer to the same syntax tree.
+/// - ensures: the span records the bytes covered by that node.
+/// - provides: a tree-local child location.
+/// - fails: does not authenticate ownership of a numeric node index.
+/// - panics: none.
+/// - executable: none — the syntax tree needed to resolve the index is absent;
+///   `read_pieces` checks returned locations against its tree.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact parsed piece spans and a rejected child's location
+///   observe association with one tree. This does not certify foreign indices
+///   or manually assembled node/span pairs.
+/// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
+/// - witness: `form::tests::an_unknown_child_mold_retains_only_the_new_prefix`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Placed
 {
@@ -688,6 +916,22 @@ impl Placed
 }
 
 /// One child of a form, read against the form's own rule.
+///
+/// # Specification
+/// - requires: the parent rule and grammar determine child ownership.
+/// - ensures: Tile carries an own-rule label and location; Operand carries the
+///   location of another written form.
+/// - provides: the distinction consumed by form cursors.
+/// - fails: no piece certifies its ownership without the parent context.
+/// - panics: none.
+/// - executable: none — the parent rule and mold table are absent; `own_tile`
+///   checks their classification before returning a piece.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact declaration pieces distinguish keyword and
+///   punctuation tiles from a numeric operand, while a root supplies only
+///   operands.
+/// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Piece
 {
@@ -720,6 +964,21 @@ impl Piece
 }
 
 /// A repair the parser made among a form's children.
+///
+/// # Specification
+/// - requires: a repaired syntax node supplies the span and repair class.
+/// - ensures: both fields describe that same inserted node.
+/// - provides: the first repair retained beside a written-piece sequence.
+/// - fails: does not prove parser provenance from the two fields alone.
+/// - panics: none.
+/// - executable: none — the originating node is not retained; `read_pieces`
+///   checks the first repair against the actual children.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the parser's missing-operand repair has its exact class
+///   and empty span; a different later repair cannot replace the first record.
+/// - witness: `form::tests::a_repair_among_the_children_is_reported_beside_them`
+/// - witness: `form::tests::the_first_repair_survives_later_repairs`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Repaired
 {
@@ -730,6 +989,26 @@ pub struct Repaired
 }
 
 /// A form's children as its rule reads them.
+///
+/// # Specification
+/// - requires: a reading is interpreted with its syntax tree and parent.
+/// - ensures: written pieces follow child order with layout removed; the
+///   separate record names the first repair in that order.
+/// - provides: a reusable reading buffer whose successful contents are
+///   established by `read_pieces`.
+/// - fails: a refused reading may retain only its newly read prefix.
+/// - panics: none.
+/// - executable: none — tree, parent and traversal history are absent;
+///   `read_pieces` checks their relation while holding that context.
+///
+/// # Adequacy
+/// - hypothesis: L3 — parsed pieces and repairs establish exact successful
+///   contents; buffer reuse and a late unknown mold distinguish replacement,
+///   first repair and prefix-preserving refusal. Arbitrary field mutation is
+///   not certified.
+/// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
+/// - witness: `form::tests::reading_another_form_discards_old_pieces_and_repairs`
+/// - witness: `form::tests::an_unknown_child_mold_retains_only_the_new_prefix`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Pieces
 {
@@ -773,32 +1052,110 @@ impl Default for Pieces
 /// `read`.
 ///
 /// # Specification
-/// - requires: `position` names a node of `tree`, molded under `pbg`.
+/// - requires: `position` names a node of `tree`; `pbg` interprets its molds.
 /// - ensures: `read` is refilled from nothing: a one-tile form reads as itself,
 ///   its one own tile; a form of several tiles reads each child tile of its own
 ///   rule as an own tile and every other written child as an operand, in child
 ///   order; the root reads every written child as an operand; layout is dropped
 ///   everywhere, and the first grout or minted close among the children is
-///   reported beside the pieces rather than read as one.
+///   reported beside the pieces rather than read as one. Reading layout or a
+///   repair node itself leaves both fields empty.
 /// - provides: the one reading of a form's children every reader takes, so the
 ///   own-tile test is decided in one place, over one buffer reused from form to
 ///   form.
-/// - fails: [`LoweringRefusal::UnknownMold`] when a mold is not in `pbg`'s
-///   table.
+/// - fails: [`LoweringRefusal::UnknownMold`] on a mold lookup absent from
+///   `pbg`. Failure retains only the newly read prefix and any repair already
+///   encountered; previous buffer contents are always discarded.
 /// - panics: none.
 ///
 /// # Errors
 /// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — three decision surfaces (the own-rule test, the repair
-///   test, the one-tile case) separated by a parsed form mixing own tiles and
-///   operands, a parsed form holding grout, and a one-tile form, each asserted
-///   as an exact piece list.
+/// - hypothesis: L3 — parsed own/foreign tiles, root operands, repairs and a
+///   single-tile form separate the successful readings. Buffer reuse observes
+///   clearing both fields; an unknown child preserves only the new prefix,
+///   while an unknown parent or root tile leaves it empty. Layout and repairs
+///   read directly produce empty buffers. This does not validate all descendant
+///   molds.
 /// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
 /// - witness: `form::tests::a_repair_among_the_children_is_reported_beside_them`
 /// - witness: `form::tests::a_one_tile_form_is_its_own_tile`
+/// - witness: `form::tests::reading_another_form_discards_old_pieces_and_repairs`
+/// - witness: `form::tests::an_unknown_child_mold_retains_only_the_new_prefix`
+/// - witness: `form::tests::every_label_shape_is_read_and_unknown_molds_are_located`
+/// - witness: `form::tests::unknown_root_molds_clear_the_reused_buffer`
 #[inline]
+#[spec(
+    requires: tree.node(position).is_some(),
+    ensures: |ret| {
+        read.pieces.iter().all(|piece| {
+            let at = piece.placed();
+            tree.node(at.node)
+                .is_some_and(|held| held.span() == at.span)
+        }) && match ret {
+            | Ok(()) => tree.node(position).is_some_and(|node| match node.label() {
+                | NodeLabel::Tile(mold) => {
+                    read.repair == Maybe::Absent(repair::Absent::Unrepaired)
+                        && matches!(read.pieces.as_slice(), [Piece::Tile { label, at }]
+        if *at == Placed::of(position, node)
+            && pbg.mold(mold).is_ok_and(|held| held.label == label.0))
+                },
+                | NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. } | NodeLabel::Space => {
+                    read.pieces.is_empty()
+                        && read.repair == Maybe::Absent(repair::Absent::Unrepaired)
+                },
+                | NodeLabel::Wald | NodeLabel::Meld(_) => {
+                    let written = tree.children(position).filter_map(|child| {
+                        let held = tree.node(child)?;
+                        match held.label() {
+                            | NodeLabel::Space
+                            | NodeLabel::Grout { .. }
+                            | NodeLabel::GhostClose { .. } => None,
+                            | _ => Some(Placed::of(child, held)),
+                        }
+                    });
+                    let first_repair = tree
+                        .children(position)
+                        .find_map(|child| {
+                            let held = tree.node(child)?;
+                            let repair = match held.label() {
+                                | NodeLabel::Grout { shape, .. } => Repair::Grout(shape),
+                                | NodeLabel::GhostClose { class, .. } => {
+                                    Repair::GhostClose(class)
+                                },
+                                | _ => return None,
+                            };
+                            Some(Repaired {
+                                span: held.span(),
+                                repair,
+                            })
+                        })
+                        .map_or(Maybe::Absent(repair::Absent::Unrepaired), Maybe::Present);
+                    read.pieces.iter().map(|piece| piece.placed()).eq(written)
+                        && read.repair == first_repair
+                        && (node.label() != NodeLabel::Wald
+                            || read
+                                .pieces
+                                .iter()
+                                .all(|piece| matches!(*piece, Piece::Operand(_))))
+                },
+            }),
+            | Err(LoweringRefusal::UnknownMold { span, mold }) => {
+                let rejected = |index| {
+                    tree.node(index).is_some_and(|held| {
+                        held.span() == span
+                            && matches!(held.label(),
+        NodeLabel::Tile(found) | NodeLabel::Meld(found) if found == mold)
+                    })
+                };
+                (pbg.mold(mold).is_err() || pbg.rule_of(mold).is_err())
+                    && (rejected(position) || tree.children(position).any(rejected))
+            },
+            | Err(_) => false,
+        }
+    },
+)]
 pub fn read_pieces<'source>(
     pbg: &Pbg,
     tree: &SyntaxTree<'source>,
@@ -865,6 +1222,43 @@ pub fn read_pieces<'source>(
 ///
 /// # Errors
 /// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a parsed declaration distinguishes its own keyword/name
+///   tiles from its numeric operand. Root children remain operands. An unknown
+///   child mold under a named rule is refused at its own span after an earlier
+///   tile.
+/// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
+/// - witness: `form::tests::an_unknown_child_mold_retains_only_the_new_prefix`
+#[spec(
+    requires: held.label() == NodeLabel::Tile(mold) && placed.span == held.span(),
+    ensures: |ret| match ret {
+        | Ok(Piece::Operand(at)) => {
+            at == placed
+                && match own {
+                    | Holder::Root => true,
+                    | Holder::Rule(rule) => {
+                        pbg.rule_of(mold).is_ok_and(|child| child.name != rule.0)
+                    },
+                }
+        },
+        | Ok(Piece::Tile { label, at }) => {
+            at == placed
+                && matches!(own, Holder::Rule(rule)
+    if pbg.rule_of(mold).is_ok_and(|child| child.name == rule.0))
+                && pbg.mold(mold).is_ok_and(|tile| tile.label == label.0)
+        },
+        | Err(error) => {
+            matches!(own, Holder::Rule(_))
+                && (pbg.rule_of(mold).is_err() || pbg.mold(mold).is_err())
+                && error
+                    == LoweringRefusal::UnknownMold {
+                        span: held.span(),
+                        mold,
+                    }
+        },
+    },
+)]
 fn own_tile<'source>(
     pbg: &Pbg,
     held: &Node,
@@ -896,6 +1290,25 @@ fn own_tile<'source>(
 /// - provides: the first-repair rule of [`read_pieces`].
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the absent-to-present transition is observed with an
+///   exact repair and span; a different later repair leaves the first intact. A
+///   written piece remains present across both calls, separating note-taking
+///   from clearing.
+/// - witness: `form::tests::the_first_repair_survives_later_repairs`
+#[spec(
+    captures: before = (read.repair, read.pieces.len()),
+    ensures: read.pieces.len() == before.1
+        && read.repair
+            == match before.0 {
+                | Maybe::Present(first) => Maybe::Present(first),
+                | Maybe::Absent(_) => Maybe::Present(Repaired {
+                    span: placed.span,
+                    repair,
+                }),
+            },
+)]
 fn note_repair(
     read: &mut Pieces,
     placed: Placed,
@@ -921,6 +1334,29 @@ fn note_repair(
 ///
 /// # Errors
 /// [`LoweringRefusal::UnknownMold`] for a mold `pbg` does not hold.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a one-tile number and declaration punctuation observe
+///   exact labels from the grammar. An unknown root tile is refused with its
+///   mold and span while clearing the previous reading; no fallback label is
+///   admitted.
+/// - witness: `form::tests::a_one_tile_form_is_its_own_tile`
+/// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
+/// - witness: `form::tests::unknown_root_molds_clear_the_reused_buffer`
+#[spec(
+    requires: matches!(node.label(), NodeLabel::Meld(held) | NodeLabel::Tile(held) if held == mold),
+    ensures: |ret| match ret {
+        | Ok(label) => pbg.mold(mold).is_ok_and(|held| held.label == label.0),
+        | Err(error) => {
+            pbg.mold(mold).is_err()
+                && error
+                    == LoweringRefusal::UnknownMold {
+                        span: node.span(),
+                        mold,
+                    }
+        },
+    },
+)]
 fn tile_name<'source>(
     pbg: &Pbg,
     node: &Node,
@@ -936,6 +1372,24 @@ fn tile_name<'source>(
 }
 
 /// The operands standing between two of a form's own tiles.
+///
+/// # Specification
+/// - requires: a cursor supplies the maximal leading operand sequence.
+/// - ensures: Empty names its gap, One names its sole operand, and Several
+///   names its first two operands with a count of at least two.
+/// - provides: operand cardinality without allocating another sequence.
+/// - fails: does not retain the remaining operands for later inspection.
+/// - panics: none.
+/// - executable: none — type refinements require the disabled logic feature;
+///   `Cursor::operands` checks cardinality and payloads together.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, one, two and three operands separate every
+///   cardinality case. A following tile stops the run despite an operand beyond
+///   it.
+/// - witness: `form::tests::a_run_counts_the_operands_between_two_tiles`
+/// - witness: `form::tests::an_operand_run_stops_at_the_first_tile`
+/// - witness: `form::tests::an_empty_cursor_starts_at_the_form_start`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Run
 {
@@ -957,6 +1411,24 @@ pub enum Run
 }
 
 /// A reading position in a form's pieces.
+///
+/// # Specification
+/// - requires: the original piece slice and consumption history define the
+///   current reading position.
+/// - ensures: rest is the unconsumed suffix; edge is the last consumed piece
+///   span, initially an empty span at the form start.
+/// - provides: lookahead and consumption without copying the slice.
+/// - fails: does not authenticate that supplied pieces belong to a tree.
+/// - panics: none.
+/// - executable: none — the original prefix and history are not retained;
+///   cursor operations check each suffix/edge transition with captures.
+///
+/// # Adequacy
+/// - hypothesis: L3 — initially empty and mixed-piece cursors observe both edge
+///   sources; tile misses preserve position and maximal runs stop at tiles.
+/// - witness: `form::tests::an_empty_cursor_starts_at_the_form_start`
+/// - witness: `form::tests::a_cursor_reads_a_tile_only_by_its_label`
+/// - witness: `form::tests::an_operand_run_stops_at_the_first_tile`
 #[derive(Clone, Debug)]
 pub struct Cursor<'pieces>
 {
@@ -972,7 +1444,27 @@ impl<'pieces> Cursor<'pieces>
     /// A cursor before the first of `pieces`, a form covering `form`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; the supplied slice is read in its given order.
+    /// - ensures: the cursor borrows that slice without consuming a piece and
+    ///   starts with an empty edge at the form's start, not its end.
+    /// - provides: the initial lookahead and empty-hole position.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonzero, nonempty form span with an empty piece
+    ///   slice separates start from end. Mixed pieces exercise the retained
+    ///   first item; the predicate also checks the borrowed slice identity
+    ///   without copying it.
+    /// - witness: `form::tests::an_empty_cursor_starts_at_the_form_start`
+    /// - witness: `form::tests::a_cursor_reads_a_tile_only_by_its_label`
+    #[spec(
+        ensures: |ret| {
+            core::ptr::eq(&raw const *ret.rest, &raw const *pieces)
+                && ret.edge.start() == form.start()
+                && ret.edge.end() == form.start()
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn new(
@@ -995,6 +1487,22 @@ impl<'pieces> Cursor<'pieces>
     /// - provides: the lookahead every reader branches on.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed tile/operand reads observe the exact next piece
+    ///   before consumption, and the final read observes exhausted absence.
+    ///   Empty cursors exercise absence without a preceding successful read.
+    /// - witness: `form::tests::reading_keeps_piece_order_and_the_terminal_gap`
+    /// - witness: `form::tests::an_empty_cursor_starts_at_the_form_start`
+    #[spec(
+        ensures: |ret| {
+            ret == self
+                .rest
+                .first()
+                .copied()
+                .map_or(Maybe::Absent(cursor::Absent::Exhausted), Maybe::Present)
+        },
+    )]
     #[inline]
     pub fn peek(&self) -> Maybe<Piece, cursor::Absent>
     {
@@ -1013,6 +1521,21 @@ impl<'pieces> Cursor<'pieces>
     /// - provides: the branch test on a form's discriminating tile.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — matching tiles, another label, an operand and
+    ///   exhaustion separate presence, elsewhere and exhausted outcomes.
+    ///   Subsequent reads observe that lookahead did not consume the offered
+    ///   piece.
+    /// - witness: `form::tests::a_cursor_reads_a_tile_only_by_its_label`
+    /// - witness: `form::tests::reading_keeps_piece_order_and_the_terminal_gap`
+    #[spec(
+        ensures: |ret| match self.rest.first().copied() {
+            | Some(Piece::Tile { label: held, at }) if held == label => ret == Maybe::Present(at),
+            | Some(_) => ret == Maybe::Absent(cursor::Absent::Elsewhere),
+            | None => ret == Maybe::Absent(cursor::Absent::Exhausted),
+        },
+    )]
     #[inline]
     pub fn at(
         &self,
@@ -1045,6 +1568,24 @@ impl<'pieces> Cursor<'pieces>
     ///   matching tile, a tile of another label, an operand and an exhausted
     ///   cursor, each asserted with the cursor's position after it.
     /// - witness: `form::tests::a_cursor_reads_a_tile_only_by_its_label`
+    #[spec(
+        captures: before = (self.rest, self.edge),
+        ensures: |ret| match (before.0.split_first(), ret) {
+            | (Some((&Piece::Tile { label: held, at }, rest)), Maybe::Present(found)) => {
+                (held, found, self.edge) == (label, at, at.span)
+                    && core::ptr::eq(&raw const *self.rest, &raw const *rest)
+            },
+            | (Some((piece, _)), Maybe::Absent(cursor::Absent::Elsewhere)) => {
+                !matches!(*piece, Piece::Tile { label: held, .. } if held == label)
+                    && self.edge == before.1
+                    && core::ptr::eq(&raw const *self.rest, &raw const *before.0)
+            },
+            | (None, Maybe::Absent(cursor::Absent::Exhausted)) => {
+                self.edge == before.1 && core::ptr::eq(&raw const *self.rest, &raw const *before.0)
+            },
+            | _ => false,
+        },
+    )]
     #[inline]
     pub fn tile(
         &mut self,
@@ -1069,6 +1610,27 @@ impl<'pieces> Cursor<'pieces>
     ///   it does not read.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two different pieces are read in order, with
+    ///   lookahead before each and an exact terminal gap. Repeated exhaustion
+    ///   keeps that gap rather than inventing a piece or moving the edge.
+    /// - witness: `form::tests::reading_keeps_piece_order_and_the_terminal_gap`
+    /// - witness: `form::tests::an_empty_cursor_starts_at_the_form_start`
+    #[spec(
+        captures: before = (self.rest, self.edge),
+        ensures: |ret| match (before.0.split_first(), ret) {
+            | (Some((&piece, rest)), Maybe::Present(found)) => {
+                found == piece
+                    && self.edge == piece.placed().span
+                    && core::ptr::eq(&raw const *self.rest, &raw const *rest)
+            },
+            | (None, Maybe::Absent(cursor::Absent::Exhausted)) => {
+                self.edge == before.1 && core::ptr::eq(&raw const *self.rest, &raw const *before.0)
+            },
+            | _ => false,
+        },
+    )]
     #[inline]
     pub fn read(&mut self) -> Maybe<Piece, cursor::Absent>
     {
@@ -1092,10 +1654,53 @@ impl<'pieces> Cursor<'pieces>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the run's three cases separated by an empty hole
-    ///   between two tiles, a single operand and a juxtaposed pair, each
-    ///   asserted exactly with the gap's offset for the empty case.
+    /// - hypothesis: L3 — empty, one-, two- and three-operand runs distinguish
+    ///   the cardinality boundary and the first/extra payloads. A tile stops a
+    ///   two-item run even when another operand follows it; exact gaps and
+    ///   subsequent reads observe the retained suffix and the last consumed
+    ///   edge.
     /// - witness: `form::tests::a_run_counts_the_operands_between_two_tiles`
+    /// - witness: `form::tests::an_operand_run_stops_at_the_first_tile`
+    /// - witness: `form::tests::an_empty_cursor_starts_at_the_form_start`
+    #[spec(
+        captures: before = (self.rest, self.edge),
+        ensures: |ret| {
+            let count = before
+                .0
+                .iter()
+                .take_while(|&&piece| matches!(piece, Piece::Operand(_)))
+                .count();
+            before
+                .0
+                .split_at_checked(count)
+                .is_some_and(|(prefix, rest)| {
+                    let run_matches =
+                        match (prefix.first().copied(), prefix.get(1_usize).copied(), ret) {
+                            | (None, None, Run::Empty(span)) => {
+                                span.start() == before.1.end() && span.end() == before.1.end()
+                            },
+                            | (Some(Piece::Operand(first)), None, Run::One(held)) => held == first,
+                            | (
+                                Some(Piece::Operand(first)),
+                                Some(Piece::Operand(extra)),
+                                Run::Several {
+                                    first: held,
+                                    extra: second,
+                                    count: offered,
+                                },
+                            ) => {
+                                held == first
+                                    && second == extra
+                                    && offered == OperandCount::from(count)
+                            },
+                            | _ => false,
+                        };
+                    run_matches
+                        && core::ptr::eq(&raw const *self.rest, &raw const *rest)
+                        && self.edge == prefix.last().map_or(before.1, |piece| piece.placed().span)
+                })
+        },
+    )]
     #[inline]
     pub fn operands(&mut self) -> Run
     {
@@ -1135,6 +1740,22 @@ impl<'pieces> Cursor<'pieces>
     /// - provides: the position a reader names when a piece is out of place.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact next-piece spans are observed before
+    ///   consumption; exhaustion and an initially empty cursor instead report
+    ///   zero-width gaps at the last edge and form start respectively.
+    /// - witness: `form::tests::a_cursor_reads_a_tile_only_by_its_label`
+    /// - witness: `form::tests::reading_keeps_piece_order_and_the_terminal_gap`
+    /// - witness: `form::tests::an_empty_cursor_starts_at_the_form_start`
+    #[spec(
+        ensures: |ret| {
+            self.rest.first().map_or_else(
+                || ret.start() == self.edge.end() && ret.end() == self.edge.end(),
+                |piece| ret == piece.placed().span,
+            )
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn here(&self) -> ByteSpan
@@ -1148,7 +1769,21 @@ impl<'pieces> Cursor<'pieces>
     /// The zero-width span at the end of the last piece read.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: an empty span at the current edge's end.
+    /// - provides: the location of an empty operand run or exhausted cursor.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a nonzero initial form start and a consumed nonempty
+    ///   piece separate the two edge sources. Both endpoints are asserted, so
+    ///   returning the entire edge or its start is distinguished.
+    /// - witness: `form::tests::an_empty_cursor_starts_at_the_form_start`
+    /// - witness: `form::tests::a_cursor_reads_a_tile_only_by_its_label`
+    #[spec(
+        ensures: |ret| ret.start() == self.edge.end() && ret.end() == self.edge.end(),
+    )]
     fn gap(&self) -> ByteSpan
     {
         ByteSpan::new(self.edge.end(), self.edge.end()).unwrap_or(self.edge)
@@ -1163,6 +1798,26 @@ impl<'pieces> Cursor<'pieces>
     /// - provides: the one way a reader advances.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — tile and operand consumption observe the next item
+    ///   and the terminal gap. The predicate requires the offered placement to
+    ///   be the current piece and checks the exact borrowed suffix and new
+    ///   edge.
+    /// - witness: `form::tests::reading_keeps_piece_order_and_the_terminal_gap`
+    /// - witness: `form::tests::a_cursor_reads_a_tile_only_by_its_label`
+    /// - witness: `form::tests::an_operand_run_stops_at_the_first_tile`
+    #[spec(
+        requires: self
+            .rest
+            .first()
+            .is_some_and(|piece| piece.placed() == placed),
+        captures: before = self.rest,
+        ensures: before
+            .split_first()
+            .is_some_and(|(_, rest)| core::ptr::eq(&raw const *self.rest, &raw const *rest))
+            && self.edge == placed.span,
+    )]
     fn advance(
         &mut self,
         placed: Placed,
@@ -1180,6 +1835,7 @@ mod tests
 {
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_grammar::PBG_ONLY_KINDS;
     use gandr_surface_grammar::Pbg;
@@ -1226,7 +1882,42 @@ mod tests
     /// The pieces of the first declaration of `tree`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a module root whose first written child is a readable
+    ///   declaration, with all molds needed by that reading present in pbg.
+    /// - ensures: returned written pieces belong to the first written child
+    ///   rather than a later declaration.
+    /// - provides: the declaration reading used by parsed form witnesses.
+    /// - fails: never substitutes another declaration when reading fails.
+    /// - panics: if the fixture does not meet those requirements.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two clean declarations with different body spans
+    ///   observe first-child selection. A buffer from a separate repaired tree
+    ///   is then reused for the second declaration, observing replacement of
+    ///   both its written pieces and repair record.
+    /// - witness: `form::tests::reading_another_form_discards_old_pieces_and_repairs`
+    /// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
+    #[spec(
+        ensures: |ret| {
+            tree.children(tree.root())
+                .find(|&index| {
+                    tree.node(index).is_some_and(|node| {
+                        !matches!(
+                            node.label(),
+                            super::NodeLabel::Space
+                                | super::NodeLabel::Grout { .. }
+                                | super::NodeLabel::GhostClose { .. }
+                        )
+                    })
+                })
+                .is_some_and(|declaration| {
+                    ret.pieces.iter().all(|piece| {
+                        tree.children(declaration)
+                            .any(|child| child == piece.placed().node)
+                    })
+                })
+        },
+    )]
     fn first_declaration(
         pbg: &Pbg,
         tree: &SyntaxTree<'_>,
@@ -1244,7 +1935,40 @@ mod tests
     /// `pieces` as sketches, node positions dropped.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: one sketch per piece, in order, retaining tile labels and
+    ///   every span while omitting node positions.
+    /// - provides: exact source-oriented observations of a form reading.
+    /// - fails: never filters or reorders pieces.
+    /// - panics: allocation failure follows the allocator policy.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed own tiles and operands are asserted against
+    ///   source spans, while a one-tile form and a reused reading exercise the
+    ///   projection at different cardinalities. No statement compares node
+    ///   identities.
+    /// - witness: `form::tests::a_form_reads_its_own_tiles_apart_from_its_operands`
+    /// - witness: `form::tests::reading_another_form_discards_old_pieces_and_repairs`
+    /// - witness: `form::tests::a_one_tile_form_is_its_own_tile`
+    #[spec(
+        ensures: |ret| {
+            ret.len() == pieces.pieces.len()
+                && ret
+                    .iter()
+                    .zip(&pieces.pieces)
+                    .all(|(held, piece)| match (*held, *piece) {
+                        | (
+                            Sketch::Tile(label, span),
+                            Piece::Tile {
+                                label: expected,
+                                at,
+                            },
+                        ) => label == expected && span == at.span,
+                        | (Sketch::Operand(span), Piece::Operand(at)) => span == at.span,
+                        | _ => false,
+                    })
+        },
+    )]
     fn sketch(pieces: &Pieces) -> Vec<Sketch>
     {
         pieces
@@ -1477,12 +2201,20 @@ mod tests
                 former,
                 "the kind `{kind}` is read as its pinned former"
             );
+            assert!(Former::ALL.contains(&former));
         }
-        assert_eq!(
-            FORMERS.len(),
-            expected.len(),
-            "the table holds no row beyond the pinned ones"
-        );
+        assert!(Former::ALL.contains(&Former::Unadmitted));
+        for (index, former) in Former::ALL.into_iter().enumerate() {
+            assert!(
+                Former::ALL
+                    .iter()
+                    .skip(index.saturating_add(1_usize))
+                    .all(|&other| other != former)
+            );
+            assert!(
+                former == Former::Unadmitted || expected.iter().any(|&(_, held)| held == former)
+            );
+        }
     }
 
     #[test]
@@ -1515,6 +2247,331 @@ mod tests
                 pbg.rules().iter().any(|rule| rule.provenance == kind),
                 "the dispatched kind `{kind}` is realised by a rule of the built-in grammar"
             );
+        }
+    }
+
+    #[test]
+    fn an_empty_cursor_starts_at_the_form_start()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let mut reading = Cursor::new(&[], at(4_usize, 9_usize));
+        assert_eq!(reading.here(), at(4_usize, 4_usize));
+        assert_eq!(reading.gap(), at(4_usize, 4_usize));
+        assert_eq!(reading.operands(), Run::Empty(at(4_usize, 4_usize)));
+        assert_eq!(reading.read(), Maybe::Absent(cursor::Absent::Exhausted));
+        assert_eq!(
+            reading.tile(TileName::DEF),
+            Maybe::Absent(cursor::Absent::Exhausted)
+        );
+        assert_eq!(reading.here(), at(4_usize, 4_usize));
+    }
+
+    #[test]
+    fn reading_keeps_piece_order_and_the_terminal_gap()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let keyword = Piece::Tile {
+            label: TileName::DEF,
+            at: Placed {
+                node: NodeIndex::from(1_usize),
+                span: at(2_usize, 5_usize),
+            },
+        };
+        let operand = Piece::Operand(Placed {
+            node: NodeIndex::from(2_usize),
+            span: at(6_usize, 9_usize),
+        });
+        let pieces = [keyword, operand];
+        let mut reading = Cursor::new(&pieces, at(2_usize, 12_usize));
+        for expected in pieces {
+            assert_eq!(reading.peek(), Maybe::Present(expected));
+            assert_eq!(reading.here(), expected.placed().span);
+            assert_eq!(reading.read(), Maybe::Present(expected));
+        }
+        assert_eq!(reading.peek(), Maybe::Absent(cursor::Absent::Exhausted));
+        assert_eq!(reading.read(), Maybe::Absent(cursor::Absent::Exhausted));
+        assert_eq!(reading.here(), at(9_usize, 9_usize));
+        assert_eq!(reading.read(), Maybe::Absent(cursor::Absent::Exhausted));
+        assert_eq!(reading.here(), at(9_usize, 9_usize));
+    }
+
+    #[test]
+    fn an_operand_run_stops_at_the_first_tile()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let placed = |node: usize, start: usize, end: usize| Placed {
+            node: NodeIndex::from(node),
+            span: at(start, end),
+        };
+        let first = placed(1_usize, 0_usize, 1_usize);
+        let second = placed(2_usize, 2_usize, 3_usize);
+        let comma = placed(3_usize, 3_usize, 4_usize);
+        let last = placed(4_usize, 5_usize, 6_usize);
+        let pieces = [
+            Piece::Operand(first),
+            Piece::Operand(second),
+            Piece::Tile {
+                label: TileName::COMMA,
+                at: comma,
+            },
+            Piece::Operand(last),
+        ];
+        let mut reading = Cursor::new(&pieces, at(0_usize, 6_usize));
+        assert_eq!(reading.operands(), Run::Several {
+            first,
+            extra: second,
+            count: OperandCount::from(2_usize),
+        });
+        assert_eq!(reading.here(), comma.span);
+        assert_eq!(reading.operands(), Run::Empty(at(3_usize, 3_usize)));
+        assert_eq!(reading.tile(TileName::COMMA), Maybe::Present(comma));
+        assert_eq!(reading.operands(), Run::One(last));
+        assert_eq!(reading.operands(), Run::Empty(at(6_usize, 6_usize)));
+    }
+
+    #[test]
+    fn the_first_repair_survives_later_repairs()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let written = Piece::Operand(Placed {
+            node: NodeIndex::from(1_usize),
+            span: at(0_usize, 1_usize),
+        });
+        let first = Placed {
+            node: NodeIndex::from(2_usize),
+            span: at(1_usize, 1_usize),
+        };
+        let later = Placed {
+            node: NodeIndex::from(3_usize),
+            span: at(3_usize, 3_usize),
+        };
+        let mut read = Pieces::new();
+        read.pieces.push(written);
+        super::note_repair(&mut read, first, Repair::Grout(GroutShape::Postfix));
+        let expected = Maybe::Present(Repaired {
+            span: first.span,
+            repair: Repair::Grout(GroutShape::Postfix),
+        });
+        assert_eq!(read.repair, expected);
+        super::note_repair(
+            &mut read,
+            later,
+            Repair::GhostClose(gandr_surface_syntax::ClosingClass::Bracket),
+        );
+        assert_eq!(read.repair, expected);
+        assert_eq!(read.pieces, [written]);
+    }
+
+    #[test]
+    fn reading_another_form_discards_old_pieces_and_repairs()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let tree = repaired(&pbg, SourceText::from("def x ;"));
+        let mut read = first_declaration(&pbg, &tree);
+        assert_eq!(
+            read.repair,
+            Maybe::Present(Repaired {
+                span: at(5_usize, 5_usize),
+                repair: Repair::Grout(GroutShape::Postfix),
+            })
+        );
+        let tree = parsed(&pbg, SourceText::from("def y = 3 ; def z = 4 ;"));
+        assert_eq!(sketch(&first_declaration(&pbg, &tree)), [
+            Sketch::Tile(TileName::DEF, at(0_usize, 3_usize)),
+            Sketch::Tile(TileName::IDENTIFIER, at(4_usize, 5_usize)),
+            Sketch::Tile(TileName::EQUALS, at(6_usize, 7_usize)),
+            Sketch::Operand(at(8_usize, 9_usize)),
+            Sketch::Tile(TileName::SEMICOLON, at(10_usize, 11_usize)),
+        ]);
+        let mut root = Pieces::new();
+        read_pieces(&pbg, &tree, tree.root(), &mut root).unwrap();
+        let second = root.pieces[1_usize].placed();
+        read_pieces(&pbg, &tree, second.node, &mut read).unwrap();
+        assert_eq!(
+            read.repair,
+            Maybe::Absent(super::repair::Absent::Unrepaired)
+        );
+        assert_eq!(sketch(&read), [
+            Sketch::Tile(TileName::DEF, at(12_usize, 15_usize)),
+            Sketch::Tile(TileName::IDENTIFIER, at(16_usize, 17_usize)),
+            Sketch::Tile(TileName::EQUALS, at(18_usize, 19_usize)),
+            Sketch::Operand(at(20_usize, 21_usize)),
+            Sketch::Tile(TileName::SEMICOLON, at(22_usize, 23_usize)),
+        ]);
+    }
+
+    #[test]
+    fn an_unknown_child_mold_retains_only_the_new_prefix()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let mut made = crate::fixture::Handmade::new(&pbg, SourceText::from("def x"));
+        let keyword = made.tile(
+            crate::fixture::Rule("def_value"),
+            crate::fixture::Spelled("def"),
+            at(0_usize, 3_usize),
+        );
+        let mold = gandr_surface_syntax::MoldId::from(u32::MAX);
+        let unknown = made.raw(super::NodeLabel::Tile(mold), at(4_usize, 5_usize), &[]);
+        let parent = made.meld(
+            crate::fixture::Rule("def_value"),
+            crate::fixture::Spelled("def"),
+            at(0_usize, 5_usize),
+            &[keyword, unknown],
+        );
+        let tree = made.finish(parent);
+        let mut read = Pieces::new();
+        read.pieces.push(Piece::Operand(Placed {
+            node: tree.root(),
+            span: at(0_usize, 5_usize),
+        }));
+        read.repair = Maybe::Present(Repaired {
+            span: at(0_usize, 0_usize),
+            repair: Repair::Grout(GroutShape::Convex),
+        });
+        assert_eq!(
+            read_pieces(&pbg, &tree, tree.root(), &mut read),
+            Err(crate::error::LoweringRefusal::UnknownMold {
+                span: at(4_usize, 5_usize),
+                mold
+            })
+        );
+        assert_eq!(sketch(&read), [Sketch::Tile(
+            TileName::DEF,
+            at(0_usize, 3_usize)
+        )]);
+        assert_eq!(
+            read.repair,
+            Maybe::Absent(super::repair::Absent::Unrepaired)
+        );
+    }
+
+    #[test]
+    fn unknown_root_molds_clear_the_reused_buffer()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let mold = gandr_surface_syntax::MoldId::from(u32::MAX);
+        for label in [super::NodeLabel::Tile(mold), super::NodeLabel::Meld(mold)] {
+            let mut made = crate::fixture::Handmade::new(&pbg, SourceText::from("x"));
+            let root = made.raw(label, at(0_usize, 1_usize), &[]);
+            let tree = made.finish(root);
+            let mut read = Pieces::new();
+            read.pieces.push(Piece::Operand(Placed {
+                node: tree.root(),
+                span: at(0_usize, 1_usize),
+            }));
+            read.repair = Maybe::Present(Repaired {
+                span: at(0_usize, 0_usize),
+                repair: Repair::Grout(GroutShape::Convex),
+            });
+            assert_eq!(
+                read_pieces(&pbg, &tree, tree.root(), &mut read),
+                Err(crate::error::LoweringRefusal::UnknownMold {
+                    span: at(0_usize, 1_usize),
+                    mold
+                })
+            );
+            assert!(read.pieces.is_empty());
+            assert_eq!(
+                read.repair,
+                Maybe::Absent(super::repair::Absent::Unrepaired)
+            );
+        }
+    }
+
+    #[test]
+    fn every_label_shape_is_read_and_unknown_molds_are_located()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let pbg = grammar();
+        let mut made = crate::fixture::Handmade::new(&pbg, SourceText::from("def 1 "));
+        let keyword = made.tile(
+            crate::fixture::Rule("def_value"),
+            crate::fixture::Spelled("def"),
+            at(0_usize, 3_usize),
+        );
+        let declaration = made.meld(
+            crate::fixture::Rule("def_value"),
+            crate::fixture::Spelled("def"),
+            at(0_usize, 3_usize),
+            &[keyword],
+        );
+        let number = made.tile(
+            crate::fixture::Rule("number.expression"),
+            crate::fixture::Spelled("number"),
+            at(4_usize, 5_usize),
+        );
+        let layout = made.raw(super::NodeLabel::Space, at(5_usize, 6_usize), &[]);
+        let grout = made.raw(
+            super::NodeLabel::Grout {
+                sort: gandr_surface_syntax::GroutSort::from(0_u16),
+                shape: GroutShape::Infix,
+            },
+            at(5_usize, 5_usize),
+            &[],
+        );
+        let ghost = made.raw(
+            super::NodeLabel::GhostClose {
+                sort: gandr_surface_syntax::GroutSort::from(0_u16),
+                class: gandr_surface_syntax::ClosingClass::Bracket,
+            },
+            at(5_usize, 5_usize),
+            &[],
+        );
+        let mold = gandr_surface_syntax::MoldId::from(u32::MAX);
+        let unknown = made.raw(super::NodeLabel::Tile(mold), at(5_usize, 6_usize), &[]);
+        let tree = made.module(at(0_usize, 6_usize), &[
+            declaration,
+            number,
+            layout,
+            grout,
+            ghost,
+            unknown,
+        ]);
+        assert_eq!(
+            super::shape_of(&pbg, tree.node(tree.root()).unwrap()),
+            Ok(super::Shape::Root)
+        );
+        let expected = [
+            Ok(super::Shape::Form {
+                name: FormName::DECLARATION,
+                former: Former::Declaration,
+            }),
+            Ok(super::Shape::Form {
+                name: FormName::from(NamedKind("number")),
+                former: Former::Number,
+            }),
+            Ok(super::Shape::Layout),
+            Ok(super::Shape::Repair(Repair::Grout(GroutShape::Infix))),
+            Ok(super::Shape::Repair(Repair::GhostClose(
+                gandr_surface_syntax::ClosingClass::Bracket,
+            ))),
+            Err(crate::error::LoweringRefusal::UnknownMold {
+                span: at(5_usize, 6_usize),
+                mold,
+            }),
+        ];
+        for (child, shape) in tree.children(tree.root()).zip(expected) {
+            assert_eq!(super::shape_of(&pbg, tree.node(child).unwrap()), shape);
+            if matches!(shape, Ok(super::Shape::Layout | super::Shape::Repair(_))) {
+                let mut read = Pieces::new();
+                read.pieces.push(Piece::Operand(Placed {
+                    node: tree.root(),
+                    span: at(0_usize, 6_usize),
+                }));
+                read.repair = Maybe::Present(Repaired {
+                    span: at(0_usize, 0_usize),
+                    repair: Repair::Grout(GroutShape::Convex),
+                });
+                read_pieces(&pbg, &tree, child, &mut read).unwrap();
+                assert!(read.pieces.is_empty());
+                assert_eq!(
+                    read.repair,
+                    Maybe::Absent(super::repair::Absent::Unrepaired)
+                );
+            }
         }
     }
 }

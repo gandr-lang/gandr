@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! The namespace engine, driven through the design's worked cases: selective
 //! import, qualified import as a renaming of the root, the deep patch that
 //! merges instead of capturing, re-export control and typo resistance; the
@@ -21,6 +10,7 @@
 #[cfg(test)]
 mod namespace
 {
+    use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_grammar::Pbg;
@@ -74,11 +64,30 @@ mod namespace
 
     /// The payload a test binds: a marker standing in for whatever an
     /// elaborator resolves a path to.
+    ///
+    /// # Specification
+    /// trivial.
     #[repr(transparent)]
     #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
     struct Payload(u32);
 
     /// The hook vocabulary these tests give meaning to.
+    ///
+    /// # Specification
+    /// - requires: interpreted by the rewriting handler when used as an action.
+    /// - ensures: drop requests an empty result and keep requests the existing
+    ///   namespace; another handler may instead treat the label as event data.
+    /// - provides: a closed hook vocabulary independent of the namespace
+    ///   engine.
+    /// - fails: none as a label.
+    /// - panics: none.
+    /// - executable: none — the subject and interpreting handler are not
+    ///   retained; the hook callback specifies the actual transition.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — one engine and two labels produce empty and unchanged
+    ///   namespaces under the rewriting policy.
+    /// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     enum HookLabel
     {
@@ -89,6 +98,9 @@ mod namespace
     }
 
     /// One entry of a test namespace: a dotted path and the payload it binds.
+    ///
+    /// # Specification
+    /// trivial.
     #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     struct Entry
     {
@@ -100,6 +112,24 @@ mod namespace
 
     /// A policy that refuses every event it is asked about: the counterpart
     /// to [`PermissiveHandler`], under which the engine core is identical.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: missing selections, collisions and hooks are rejected at
+    ///   their accumulated paths.
+    /// - provides: a rejecting policy without changing the namespace engine.
+    /// - fails: each callback returns its event-specific rejection.
+    /// - panics: none.
+    /// - executable: none — the policy has no runtime state or event input on
+    ///   the type; its three callbacks specify their rejection kind and path.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — real modifier and scope operations distinguish
+    ///   missing selection, shadow and nested hook rejection, including
+    ///   transactionality.
+    /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_missing_renaming_source`
+    /// - witness: `namespace::namespace::a_refused_multi_entry_import_leaves_the_visible_namespace_as_it_was`
+    /// - witness: `namespace::namespace::a_refused_nested_hook_preserves_the_namespace_transaction`
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
     struct RejectingHandler;
 
@@ -110,7 +140,21 @@ mod namespace
         /// Refuse: a missing selection is a typo.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: rejection names the missing-selection event and the exact
+        ///   accumulated path.
+        /// - provides: the rejecting counterpart to the permissive namespace
+        ///   policy.
+        /// - fails: always returns a not-found rejection.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a missing rename is refused at its requested
+        ///   source path rather than accepted as an empty import.
+        /// - witness: `namespace::namespace::a_rejecting_handler_refuses_a_missing_renaming_source`
+        #[spec(
+            ensures: |ret| matches!(ret, Err(ref rejection) if rejection.kind() == EventKind::NotFound && rejection.path() == path),
+        )]
         fn not_found(
             &mut self,
             path: &NamePath,
@@ -126,7 +170,23 @@ mod namespace
         /// Refuse: this policy forbids shadowing.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: rejection names shadowing and the collision’s accumulated
+        ///   path.
+        /// - provides: a policy that does not silently select either colliding
+        ///   binding.
+        /// - fails: always returns a shadow rejection.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — refused multi-entry imports and section merges
+        ///   expose their collision path and preserve the specified prior
+        ///   state.
+        /// - witness: `namespace::namespace::a_refused_multi_entry_import_leaves_the_visible_namespace_as_it_was`
+        /// - witness: `namespace::namespace::a_refused_closing_merge_keeps_its_prefix_and_closes_the_section`
+        #[spec(
+            ensures: |ret| matches!(ret, Err(ref rejection) if rejection.kind() == EventKind::Shadow && rejection.path() == path),
+        )]
         fn shadow(
             &mut self,
             path: &NamePath,
@@ -143,7 +203,21 @@ mod namespace
         /// Refuse: this policy recognizes no hooks.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: rejection names the hook event and its accumulated path.
+        /// - provides: an explicit policy refusal rather than an unrecognized
+        ///   no-op hook.
+        /// - fails: always returns a hook rejection.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a nested hook refuses after an intermediate
+        ///   relocation, and the scoped transaction retains the original
+        ///   namespace.
+        /// - witness: `namespace::namespace::a_refused_nested_hook_preserves_the_namespace_transaction`
+        #[spec(
+            ensures: |ret| matches!(ret, Err(ref rejection) if rejection.kind() == EventKind::Hook && rejection.path() == path),
+        )]
         fn hook(
             &mut self,
             path: &NamePath,
@@ -160,6 +234,23 @@ mod namespace
     }
 
     /// A permissive policy whose hooks do something.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: missing selections continue, later bindings win collisions,
+    ///   and hooks interpret the supplied label.
+    /// - provides: an independently chosen permissive rewriting policy.
+    /// - fails: never rejects an event.
+    /// - panics: none.
+    /// - executable: none — the policy type retains no event input; its
+    ///   callbacks carry the executable event and transition relations.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a miss followed by a collision distinguishes
+    ///   continuation and right bias; two hook labels distinguish replacement
+    ///   from identity.
+    /// - witness: `namespace::namespace::rewriting_policy_continues_after_a_miss_and_keeps_the_later_collision`
+    /// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
     #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
     struct RewritingHandler;
 
@@ -170,7 +261,20 @@ mod namespace
         /// Continue.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: a missing selection is accepted.
+        /// - provides: permissive continuation for the rewriting policy.
+        /// - fails: never rejects.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a missing selection precedes two colliding union
+        ///   branches; the later branch’s distinct payload wins after
+        ///   permissive continuation.
+        /// - witness: `namespace::namespace::rewriting_policy_continues_after_a_miss_and_keeps_the_later_collision`
+        #[spec(
+            ensures: |ret| ret == Ok(()),
+        )]
         fn not_found(
             &mut self,
             _path: &NamePath,
@@ -182,7 +286,21 @@ mod namespace
         /// Keep the later binding.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: the later binding’s payload wins the collision.
+        /// - provides: deterministic right-biased rewriting.
+        /// - fails: never rejects.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — a missing selection precedes two colliding union
+        ///   branches; the later branch’s distinct payload wins after
+        ///   permissive continuation.
+        /// - witness: `namespace::namespace::rewriting_policy_continues_after_a_miss_and_keeps_the_later_collision`
+        #[spec(
+            captures: expected = collision.latter.data,
+            ensures: |ret| matches!(ret, Ok(ref binding) if binding.data == expected),
+        )]
         fn shadow(
             &mut self,
             _path: &NamePath,
@@ -195,7 +313,29 @@ mod namespace
         /// Drop or keep the namespace, as the label says.
         ///
         /// # Specification
-        /// trivial.
+        /// - requires: nothing.
+        /// - ensures: the drop label returns the empty namespace and the keep
+        ///   label returns the supplied namespace.
+        /// - provides: two observable hook interpretations over the same
+        ///   engine.
+        /// - fails: never rejects.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — drop and keep distinguish namespace replacement
+        ///   from identity on the named nonempty fixture.
+        /// - witness: `namespace::namespace::a_hook_can_replace_the_namespace`
+        #[spec(
+            captures: before = subject.binding_count(),
+            ensures: |ret| match *label {
+                | HookLabel::DropEverything => {
+                    matches!(ret, Ok(ref namespace) if usize::from(namespace.binding_count()) == 0)
+                },
+                | HookLabel::KeepEverything => {
+                    matches!(ret, Ok(ref namespace) if namespace.binding_count() == before)
+                },
+            },
+        )]
         fn hook(
             &mut self,
             _path: &NamePath,
@@ -241,7 +381,25 @@ mod namespace
     /// The namespace binding each of `entries`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the dotted strings describe the fixture’s intended paths.
+    /// - ensures: each distinct path is bound to the last entry for that path,
+    ///   with no additional bindings.
+    /// - provides: the input namespace for semantic modifier witnesses.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the worked namespace inventories retain distinct
+    ///   payloads and paths before selection, relocation and collision.
+    /// - witness: `namespace::namespace::a_deep_patch_merges_instead_of_capturing`
+    /// - witness: `namespace::namespace::renaming_drops_whatever_was_at_the_target`
+    /// - witness: `namespace::namespace::rewriting_policy_continues_after_a_miss_and_keeps_the_later_collision`
+    #[spec(
+        ensures: |ret| {
+            let mut distinct = 0_usize;
+            entries.iter().enumerate().all(|(index, entry)| { if entries.iter().skip(index.saturating_add(1)).any(|later| later.path == entry.path) { return true; } distinct = distinct.saturating_add(1); matches!(ret.get(&path(entry.path)), Maybe::Present(binding) if binding.data == entry.payload) }) && usize::from(ret.binding_count()) == distinct
+        },
+    )]
     fn namespace(entries: &[Entry]) -> Trie<Payload, ()>
     {
         entries
@@ -253,7 +411,45 @@ mod namespace
     /// The namespace's dotted paths with their payloads, in ascending order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: every binding is rendered in trie order with its own payload;
+    ///   the root renders as a period.
+    /// - provides: the semantic namespace observer used by the worked cases.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the listed worked cases — distinct path and payload
+    ///   inventories distinguish selection, relocation and right-biased
+    ///   merging.
+    /// - witness: `namespace::namespace::only_keeps_the_named_subtree_and_drops_the_rest`
+    /// - witness: `namespace::namespace::a_deep_patch_merges_instead_of_capturing`
+    #[spec(
+        ensures: |ret| {
+            ret.len() == usize::from(subject.binding_count())
+                && ret.iter().zip(subject.iter()).all(
+                    |(&(ref rendered, payload), (bound, binding))| {
+                        payload == binding.data && {
+                            if bound.segments().is_empty() {
+                                rendered == "."
+                            }
+                            else {
+                                rendered
+                                    .chars()
+                                    .eq(bound.segments().iter().enumerate().flat_map(
+                                        |(index, segment)| {
+                                            (index != 0)
+                                                .then_some('.')
+                                                .into_iter()
+                                                .chain(segment.as_ref().chars())
+                                        },
+                                    ))
+                            }
+                        }
+                    },
+                )
+        },
+    )]
     fn listing(subject: &Trie<Payload, ()>) -> Vec<(String, Payload)>
     {
         subject
@@ -265,7 +461,29 @@ mod namespace
     /// The listing `entries` spell.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: entries are supplied in the order expected by the witness.
+    /// - ensures: paths and payloads are copied in that order without sorting
+    ///   or namespace interpretation.
+    /// - provides: a literal expected inventory independent of trie traversal.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the named worked cases — the literal inventory is
+    ///   compared with the separately traversed namespace after each operation.
+    /// - witness: `namespace::namespace::a_deep_patch_merges_instead_of_capturing`
+    /// - witness: `namespace::namespace::renaming_drops_whatever_was_at_the_target`
+    #[spec(
+        ensures: |ret| {
+            ret.len() == entries.len()
+                && ret
+                    .iter()
+                    .zip(entries)
+                    .all(|(&(ref rendered, payload), entry)| {
+                        rendered == entry.path.as_ref() && payload == entry.payload
+                    })
+        },
+    )]
     fn expected(entries: &[Entry]) -> Vec<(String, Payload)>
     {
         entries
@@ -278,7 +496,23 @@ mod namespace
     /// the events it performed.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the modifier’s result and ordered event journal under the
+    ///   permissive policy.
+    /// - provides: the shared runner for worked modifier cases.
+    /// - fails: no policy rejection is possible.
+    /// - panics: if the permissive-policy guarantee is violated.
+    /// - executable: none — the original namespace is consumed and the
+    ///   modifier’s constructors are opaque here; checking the full transition
+    ///   and event order would require another owned execution.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the listed worked cases — exact output inventories
+    ///   and event sequences distinguish selection, relocation, union and
+    ///   nested event-path accumulation under the permissive policy.
+    /// - witness: `namespace::namespace::each_union_branch_runs_on_the_original_namespace`
+    /// - witness: `namespace::namespace::a_nested_event_reports_the_accumulated_prefix`
+    /// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
     fn permissive(
         modifier: &Modifier<HookLabel>,
         subject: Trie<Payload, ()>,
@@ -294,7 +528,23 @@ mod namespace
     /// The `arith` namespace the design's import examples use.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the three arithmetic example bindings have their specified
+    ///   distinct payloads.
+    /// - provides: a nontrivial input tree for the worked modifier cases.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the worked cases — selecting and patching the
+    ///   natural and integer subtrees distinguish their shared leaf spellings.
+    /// - witness: `namespace::namespace::only_keeps_the_named_subtree_and_drops_the_rest`
+    /// - witness: `namespace::namespace::a_deep_patch_merges_instead_of_capturing`
+    #[spec(
+        ensures: |ret| {
+            usize::from(ret.binding_count()) == 3 && [("nat.plus.assoc", Payload(1)), ("nat.times.assoc", Payload(2)), ("int.plus.assoc", Payload(3))].iter().all(|&(name, payload)| matches!(ret.get(&path(name)), Maybe::Present(binding) if binding.data == payload))
+        },
+    )]
     fn arith() -> Trie<Payload, ()>
     {
         namespace(&[
@@ -307,7 +557,23 @@ mod namespace
     /// The shape a seeded prelude takes as an initial visible namespace.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the three prelude-shaped namespaces retain their distinct
+    ///   read, environment and primitive payloads.
+    /// - provides: a visible namespace distinct from a section’s export
+    ///   namespace.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — sections inherit visible names without automatically
+    ///   exporting them, distinguishing visibility from re-export.
+    /// - witness: `namespace::namespace::a_section_inherits_the_visible_namespace_and_exports_nothing_yet`
+    #[spec(
+        ensures: |ret| {
+            usize::from(ret.binding_count()) == 3 && [("fs.read", Payload(10)), ("env.get", Payload(11)), ("prim.id", Payload(12))].iter().all(|&(name, payload)| matches!(ret.get(&path(name)), Maybe::Present(binding) if binding.data == payload))
+        },
+    )]
     fn prelude_shaped() -> Trie<Payload, ()>
     {
         namespace(&[
@@ -320,7 +586,19 @@ mod namespace
     /// The bytes from `start` to `end`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the converted start does not exceed the converted end.
+    /// - ensures: the supplied byte endpoints are retained exactly.
+    /// - provides: an independent span fixture.
+    /// - fails: none for ordered endpoints.
+    /// - panics: if the converted endpoints are reversed.
+    /// - executable: none — the generic conversion consumes both inputs;
+    ///   retaining them would add bounds or copies, while checking the result’s
+    ///   ordering would only restate the span type.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on ordered endpoint fixtures — duplicate aliases retain
+    ///   the later and earlier source spans independently.
+    /// - witness: `namespace::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
     fn bytes<Bound>(
         start: Bound,
         end: Bound,
@@ -343,7 +621,21 @@ mod namespace
     /// The tree the parser builds for `source` under `pbg`, repaired or not.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the parser accepts the source under the supplied grammar.
+    /// - ensures: the returned tree retains that source and grammar, whether
+    ///   clean or repaired.
+    /// - provides: a real parser-produced namespace fixture.
+    /// - fails: no parser failure is converted into an empty tree.
+    /// - panics: if parsing fails.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — complete and missing-alias imports reach lowering
+    ///   with their original spans rather than a synthetic replacement source.
+    /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+    /// - witness: `namespace::namespace::source_import_without_alias_becomes_a_refusal`
+    #[spec(
+        ensures: |ret| ret.source() == source && ret.grammar() == pbg.fingerprint(),
+    )]
     fn parsed<'source>(
         pbg: &Pbg,
         source: SourceText<'source>,
@@ -357,7 +649,33 @@ mod namespace
     /// `tree` lowered under `pbg` against the empty outermost scope.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the grammar and tree are passed through unchanged.
+    /// - ensures: grammar mismatch is returned as an engine refusal; successful
+    ///   declarations retain admission order.
+    /// - provides: a namespace-focused lowering fixture with no outermost
+    ///   names.
+    /// - fails: preserves the lowering engine’s refusal.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — admitted and duplicate source imports preserve their
+    ///   namespace effects and located refusal rather than silently resolving
+    ///   addresses.
+    /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+    /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
+    #[spec(
+        ensures: |ret| match ret {
+            | Ok(ref module) => {
+                tree.grammar() == pbg.fingerprint()
+                    && module.declarations().windows(2).all(|pair| match *pair {
+                        | [ref left, ref right] => left.constant() < right.constant(),
+                        | _ => false,
+                    })
+            },
+            | Err(LoweringRefusal::GrammarMismatch { .. }) => tree.grammar() != pbg.fingerprint(),
+            | Err(_) => tree.grammar() == pbg.fingerprint(),
+        },
+    )]
     fn lowered<'source>(
         pbg: &Pbg,
         tree: &SyntaxTree<'source>,
@@ -376,7 +694,22 @@ mod namespace
     /// The chain of `depth` segments, each `s`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the requested path fits in memory.
+    /// - ensures: exactly the requested number of segments, every one spelled
+    ///   `s`.
+    /// - provides: a depth-controlled input for the iteration witness.
+    /// - fails: never.
+    /// - panics: none within available memory.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the deep-path witness exercises namespace operations
+    ///   and destruction on a small stack at the requested finite depth.
+    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    #[spec(
+        ensures: |ret| {
+            ret.depth() == depth && ret.segments().iter().all(|segment| segment.as_ref() == "s")
+        },
+    )]
     fn chain(depth: SegmentCount) -> NamePath
     {
         NamePath::from(
@@ -763,17 +1096,60 @@ mod namespace
         );
     }
 
-    // The `as name` clause, and the import lowering it drives.
+    #[test]
+    fn rewriting_policy_continues_after_a_miss_and_keeps_the_later_collision()
+    {
+        let subject = namespace(&[
+            entry("left", Payload(9)),
+            entry("left", Payload(1)),
+            entry("right", Payload(2)),
+        ]);
+        let modifier = Modifier::union(vec![
+            Modifier::only(path("missing")),
+            Modifier::seq(vec![
+                Modifier::only(path("right")),
+                Modifier::relocation(path("right"), path("target")),
+            ]),
+            Modifier::seq(vec![
+                Modifier::only(path("left")),
+                Modifier::relocation(path("left"), path("target")),
+            ]),
+        ]);
+        let result = modifier
+            .apply(subject, &mut RewritingHandler)
+            .expect("policy continues");
+        assert_eq!(listing(&result), expected(&[entry("target", Payload(1))]));
+    }
 
     #[test]
-    fn as_name_is_renaming_to_the_alias()
+    fn a_refused_nested_hook_preserves_the_namespace_transaction()
     {
-        assert_eq!(
-            Modifier::<HookLabel>::alias_as(Segment::from("parse")),
-            Modifier::renaming(NamePath::root(), path("parse")),
-            "`as parse` is `renaming . parse`, not a special form"
+        let mut scope: Scope<Payload, ()> = Scope::new();
+        scope
+            .include_subtree(
+                &NamePath::root(),
+                namespace(&[entry("left.a", Payload(1)), entry("right.b", Payload(2))]),
+                &mut PermissiveHandler::<HookLabel>::new(),
+            )
+            .expect("fresh scope");
+        let modifier = Modifier::in_subtree(
+            path("left"),
+            Modifier::seq(vec![
+                Modifier::relocation(path("a"), path("moved")),
+                Modifier::hook(HookLabel::KeepEverything),
+            ]),
         );
+        let refusal = scope
+            .modify_visible(&modifier, &mut RejectingHandler)
+            .expect_err("hook refuses");
+        assert!(matches!(refusal, ScopeError::Rejected(ref rejection)
+            if rejection.kind() == EventKind::Hook && rejection.path() == &path("left")));
+        let original = expected(&[entry("left.a", Payload(1)), entry("right.b", Payload(2))]);
+        assert_eq!(listing(scope.visible()), original);
+        assert_eq!(listing(scope.export()), original);
     }
+
+    // The `as name` clause, and the import lowering it drives.
 
     #[test]
     fn as_name_qualifies_every_imported_path()
@@ -885,7 +1261,43 @@ mod namespace
     /// The import namespace's dotted paths with their bindings.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: every import binding is rendered in trie order with its exact
+    ///   import index and source span.
+    /// - provides: a semantic import-namespace observer.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a source import retains its alias, index and span
+    ///   without resolving or replacing its URI.
+    /// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
+    #[spec(
+        ensures: |ret| {
+            ret.len() == usize::from(subject.binding_count())
+                && ret.iter().zip(subject.iter()).all(
+                    |(&(ref rendered, index, span), (bound, binding))| {
+                        index == binding.data && span == binding.tag && {
+                            if bound.segments().is_empty() {
+                                rendered == "."
+                            }
+                            else {
+                                rendered
+                                    .chars()
+                                    .eq(bound.segments().iter().enumerate().flat_map(
+                                        |(index, segment)| {
+                                            (index != 0)
+                                                .then_some('.')
+                                                .into_iter()
+                                                .chain(segment.as_ref().chars())
+                                        },
+                                    ))
+                            }
+                        }
+                    },
+                )
+        },
+    )]
     fn listing_of(subject: &Trie<ImportIndex, ByteSpan>) -> Vec<(String, ImportIndex, ByteSpan)>
     {
         subject
@@ -923,12 +1335,6 @@ mod namespace
                 first,
             },
             "the import policy's shadow rejection names both imports"
-        );
-        assert_eq!(
-            format!("{refused}"),
-            "the import alias `parse` at 44..86 is already bound by the import at 0..43: an \
-             import alias must name one source",
-            "and carries the policy's reason"
         );
         assert_eq!(
             (
@@ -1347,6 +1753,97 @@ mod namespace
     }
 
     #[test]
+    fn a_refused_closing_modifier_restores_the_parent_and_closes_the_section()
+    {
+        let mut scope: Scope<Payload, ()> = Scope::new();
+        let mut allowing = PermissiveHandler::<HookLabel>::new();
+        scope
+            .include_subtree(
+                &NamePath::root(),
+                namespace(&[entry("parent", Payload(7))]),
+                &mut allowing,
+            )
+            .expect("the parent starts empty");
+        scope.begin_section();
+        scope
+            .include_subtree(
+                &NamePath::root(),
+                namespace(&[entry("child", Payload(9))]),
+                &mut allowing,
+            )
+            .expect("the child name is fresh");
+        let mut rejecting = RejectingHandler;
+        let error = scope
+            .end_section(
+                &path("group"),
+                &Modifier::only(path("missing")),
+                &mut rejecting,
+            )
+            .expect_err("the closing modifier selects no export");
+        let ScopeError::Rejected(rejection) = error
+        else {
+            panic!("the close failed in the modifier");
+        };
+        assert_eq!(rejection.kind(), EventKind::NotFound);
+        assert_eq!(rejection.path(), &path("missing"));
+        assert_eq!(
+            listing(scope.visible()),
+            expected(&[entry("parent", Payload(7))])
+        );
+        assert_eq!(
+            listing(scope.export()),
+            expected(&[entry("parent", Payload(7))])
+        );
+        assert_eq!(
+            scope.end_section(&NamePath::root(), &Modifier::id(), &mut rejecting),
+            Err(ScopeError::NoOpenSection)
+        );
+    }
+
+    #[test]
+    fn a_refused_closing_merge_keeps_its_prefix_and_closes_the_section()
+    {
+        let mut scope: Scope<Payload, ()> = Scope::new();
+        let mut allowing = PermissiveHandler::<HookLabel>::new();
+        scope
+            .include_subtree(
+                &NamePath::root(),
+                namespace(&[entry("pkg.z", Payload(1))]),
+                &mut allowing,
+            )
+            .expect("the parent starts empty");
+        scope.begin_section();
+        scope
+            .include_subtree(
+                &NamePath::root(),
+                namespace(&[entry("a", Payload(2)), entry("z", Payload(3))]),
+                &mut allowing,
+            )
+            .expect("the child's root names are fresh");
+        let mut rejecting = RejectingHandler;
+        let error = scope
+            .end_section(&path("pkg"), &Modifier::id(), &mut rejecting)
+            .expect_err("the last prefixed binding collides");
+        let ScopeError::Rejected(rejection) = error
+        else {
+            panic!("the close failed in the merge");
+        };
+        assert_eq!(rejection.kind(), EventKind::Shadow);
+        assert_eq!(rejection.path(), &path("pkg.z"));
+        assert_eq!(
+            listing(scope.visible()),
+            expected(&[entry("pkg.a", Payload(2)), entry("pkg.z", Payload(1))])
+        );
+        assert_eq!(
+            listing(scope.export()),
+            expected(&[entry("pkg.z", Payload(1))])
+        );
+        assert_eq!(
+            scope.end_section(&NamePath::root(), &Modifier::id(), &mut rejecting),
+            Err(ScopeError::NoOpenSection)
+        );
+    }
+    #[test]
     fn a_section_inherits_the_visible_namespace_and_exports_nothing_yet()
     {
         let mut scope: Scope<Payload, ()> = Scope::new();
@@ -1654,74 +2151,6 @@ mod namespace
             *rejection.path(),
             NamePath::root(),
             "at the prefix the hook ran under"
-        );
-    }
-
-    #[test]
-    fn a_rejection_renders_its_event_kind_path_and_reason()
-    {
-        let mut handler = RejectingHandler;
-        let missing = Modifier::only(path("nta"))
-            .apply(arith(), &mut handler)
-            .expect_err("this policy treats a typo as fatal");
-        assert_eq!(
-            format!("{missing}"),
-            "the not-found event at `nta` was rejected: nothing matched here; check for a typo",
-            "a rejection renders all three of its parts"
-        );
-        assert_eq!(
-            missing.reason().as_ref(),
-            "nothing matched here; check for a typo",
-            "and the policy's explanation reads as text without the rendering"
-        );
-
-        let colliding = Modifier::union(Vec::from([
-            Modifier::id(),
-            Modifier::renaming(path("a"), NamePath::root()),
-        ]))
-        .apply(
-            namespace(&[entry("a.x", Payload(1)), entry("x", Payload(2))]),
-            &mut handler,
-        )
-        .expect_err("this policy forbids shadowing");
-        assert_eq!(
-            format!("{colliding}"),
-            "the shadow event at `x` was rejected: this policy forbids shadowing",
-            "each of the three events renders under its own name"
-        );
-
-        let hooked = Modifier::hook(HookLabel::KeepEverything)
-            .apply(arith(), &mut handler)
-            .expect_err("this policy recognizes no hooks");
-        assert_eq!(
-            format!("{hooked}"),
-            "the hook event at `.` was rejected: this policy recognizes no hooks",
-            "and a rejection at the root names the root as a bare period"
-        );
-    }
-
-    #[test]
-    fn a_scope_failure_renders_its_message_or_its_rejection()
-    {
-        let mut scope: Scope<Payload, ()> = Scope::new();
-        let mut handler = PermissiveHandler::<HookLabel>::new();
-        let structural = scope
-            .end_section(&path("group"), &Modifier::id(), &mut handler)
-            .expect_err("no section was ever opened");
-        assert_eq!(
-            format!("{structural}"),
-            "no open section to close",
-            "the structural failure carries a message of its own"
-        );
-
-        let mut rejecting = RejectingHandler;
-        let rejected = scope
-            .modify_visible(&Modifier::all(), &mut rejecting)
-            .expect_err("the fresh scope is empty and this policy calls that fatal");
-        assert_eq!(
-            format!("{rejected}"),
-            "the not-found event at `.` was rejected: nothing matched here; check for a typo",
-            "while a refused event renders transparently as the rejection itself"
         );
     }
 

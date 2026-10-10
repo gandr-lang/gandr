@@ -30,6 +30,7 @@ use alloc::vec::Vec;
 use core::fmt;
 use core::mem;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::namespace::path::NamePath;
@@ -74,9 +75,9 @@ quenchant_shape::reason_enum! {
 
 /// One binding: the payload a path reaches, and the tag that travels with it.
 ///
-/// The tag is opaque to every operation here — the carrier relocates and
-/// merges it but never reads it — so a consumer chooses what it carries: a
-/// source span, a provenance marker, `()`.
+/// Binding operations relocate and merge the opaque tag without interpreting
+/// it. Equality and debugging use its corresponding traits. A consumer may
+/// carry a source span, a provenance marker, or `()`.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Binding<Data, Tag>
 {
@@ -107,6 +108,21 @@ impl<Data, Tag> Binding<Data, Tag>
 /// `former` is the binding already present; `latter` arrives from the
 /// namespace being merged in. Which survives belongs to the caller, so both
 /// are handed over intact.
+///
+/// # Specification
+/// - requires: the producer supplies the earlier and arriving bindings of one
+///   collision.
+/// - ensures: the two roles remain distinct until the resolver chooses a
+///   survivor.
+/// - provides: collision policy without a carrier-imposed winner.
+/// - executable: none — the pair holds no namespace run establishing which
+///   binding was earlier.
+///
+/// # Adequacy
+/// - hypothesis: L3 — either side can survive a collision; non-unit tags travel
+///   with the binding passed to the resolver.
+/// - witness: `namespace::trie::tests::union_consults_the_resolver_on_a_collision`
+/// - witness: `namespace::trie::tests::relocation_and_collision_keep_payloads_with_their_tags`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Collision<Data, Tag>
 {
@@ -164,6 +180,19 @@ impl From<BindingCount> for usize
 }
 
 /// A node's position in its trie's arena.
+///
+/// # Specification
+/// - requires: the owning arena accompanies an index.
+/// - ensures: the value names a position only in that arena; zero is its root.
+/// - provides: non-recursive edges, not globally authenticated node identities.
+/// - executable: none — an index alone does not hold its arena or live-node
+///   set.
+///
+/// # Adequacy
+/// - hypothesis: L3 — moved and reused slots retain the same public map; L2 — a
+///   deep chain uses an arena rather than recursive ownership.
+/// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
+/// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct NodeId(usize);
@@ -175,6 +204,19 @@ impl NodeId
 }
 
 /// One edge: the segment that reaches a child, and the child.
+///
+/// # Specification
+/// - requires: the owning arena accompanies the edge.
+/// - ensures: its segment reaches its node in that arena.
+/// - provides: a labelled child reference.
+/// - executable: none — a detached edge holds no arena establishing target
+///   liveness.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nested paths, sibling preservation and slot reuse retain
+///   exact reachable bindings.
+/// - witness: `namespace::trie::tests::a_path_and_its_extension_are_independent_bindings`
+/// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
 #[derive(Clone, Debug)]
 struct Child
 {
@@ -186,6 +228,20 @@ struct Child
 
 /// One arena node: the binding at its path, and its children in ascending
 /// segment order.
+///
+/// # Specification
+/// - requires: child targets belong to the owning trie.
+/// - ensures: children have distinct segments in ascending order; the optional
+///   binding is independent of descendants.
+/// - provides: one node of an ordered finite map.
+/// - executable: none — this build's specification facade does not expose the
+///   type-item runtime; descent predicates check edges at operation boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a path and its extension coexist, and out-of-order inputs
+///   iterate in path order.
+/// - witness: `namespace::trie::tests::a_path_and_its_extension_are_independent_bindings`
+/// - witness: `namespace::trie::tests::borrowing_a_namespace_iterates_every_binding_in_order`
 #[derive(Clone, Debug)]
 struct Node<Data, Tag>
 {
@@ -211,6 +267,24 @@ impl<Data, Tag> Node<Data, Tag>
 }
 
 /// A namespace: the finite trie from hierarchical names to bindings.
+///
+/// # Specification
+/// - requires: externally observed states are completed operation boundaries.
+/// - ensures: the live root remains, edges target live nodes, freed slots are
+///   vacant, and the cached count equals bound nodes; non-root live nodes lead
+///   to a binding.
+/// - provides: a finite map independent of arena layout, with iterative walks.
+/// - executable: none — this build's specification facade does not expose the
+///   type-item runtime; operation predicates check counts, edges and allocation
+///   transitions.
+///
+/// # Adequacy
+/// - hypothesis: L3 — inserts, moves, refused merges and slot reuse retain
+///   exact maps; L2 — every walk handles the fixed deep-chain witness
+///   iteratively.
+/// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
+/// - witness: `namespace::trie::tests::a_declined_collision_keeps_the_binding_it_found`
+/// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
 #[derive(Clone)]
 pub struct Trie<Data, Tag>
 {
@@ -240,12 +314,26 @@ impl<Data, Tag> Trie<Data, Tag>
     /// The namespace with no bindings.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a single vacant root, no free slots and no bindings.
+    /// - provides: the empty carrier from which mutation starts.
+    /// - fails: never.
+    /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the empty namespace and a one-binding namespace, each
     ///   asserted as the exact emptiness.
     /// - witness: `namespace::trie::tests::the_empty_namespace_is_empty`
+    #[spec(
+        ensures: |ret| {
+            ret.nodes.len() == 1
+                && ret.vacant.is_empty()
+                && ret.count.0 == 0
+                && ret.nodes.first().is_some_and(|root| {
+                    matches!(root.binding, Maybe::Absent(_)) && root.children.is_empty()
+                })
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn empty() -> Self
@@ -273,6 +361,14 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - hypothesis: L3 — a fresh path and a repeated path, each asserted as
     ///   the exact answer and the exact listing after.
     /// - witness: `namespace::trie::tests::inserting_returns_the_binding_it_displaced`
+    #[spec(
+        captures: before = (self.count.0, matches!(self.get(path), Maybe::Present(_))),
+        ensures: |ret| {
+            matches!(self.get(path), Maybe::Present(_))
+                && matches!(ret, Maybe::Present(_)) == before.1
+                && self.count.0 == before.0.saturating_add(usize::from(!before.1))
+        },
+    )]
     #[inline]
     pub fn insert(
         &mut self,
@@ -311,6 +407,33 @@ impl<Data, Tag> Trie<Data, Tag>
     ///   it, each asserted as the exact answer.
     /// - witness: `namespace::trie::tests::a_path_bound_only_below_it_resolves_to_nothing`
     /// - witness: `namespace::trie::tests::a_path_and_its_extension_are_independent_bindings`
+    #[spec(
+        ensures: |ret| {
+            let expected = path
+                .segments()
+                .iter()
+                .try_fold(NodeId::ROOT, |parent, segment| {
+                    let node = self.nodes.get(parent.0)?;
+                    let position = node
+                        .children
+                        .binary_search_by(|edge| edge.segment.cmp(segment))
+                        .ok()?;
+                    node.children.get(position).map(|edge| edge.node)
+                })
+                .and_then(|target| self.nodes.get(target.0))
+                .and_then(|node| match node.binding {
+                    | Maybe::Present(ref binding) => Some(binding),
+                    | Maybe::Absent(_) => None,
+                });
+            match (ret, expected) {
+                | (Maybe::Present(actual), Some(expected)) => {
+                    core::ptr::eq(&raw const *actual, &raw const *expected)
+                },
+                | (Maybe::Absent(_), None) => true,
+                | (Maybe::Present(_), None) | (Maybe::Absent(_), Some(_)) => false,
+            }
+        },
+    )]
     #[inline]
     pub fn get(
         &self,
@@ -354,6 +477,25 @@ impl<Data, Tag> Trie<Data, Tag>
     ///   and an unbound root, each asserted as the exact resolution the
     ///   outermost scope builds on it.
     /// - witness: `recognition::recognition::a_path_is_governed_by_its_deepest_resolved_prefix`
+    /// - witness: `namespace::trie::tests::a_bound_root_does_not_bridge_a_gap_in_governed_resolution`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present((depth, _)) => {
+                usize::from(depth) > 0
+                    && usize::from(depth) <= path.segments().len()
+                    && self.count.0 > 0
+            },
+            | Maybe::Absent(_) => path.segments().first().is_none_or(|segment| {
+                match self.child(NodeId::ROOT, segment) {
+                    | Maybe::Present(node) => self
+                        .nodes
+                        .get(node.0)
+                        .is_none_or(|node| matches!(node.binding, Maybe::Absent(_))),
+                    | Maybe::Absent(_) => true,
+                }
+            }),
+        },
+    )]
     #[inline]
     pub fn resolved_prefix(
         &self,
@@ -400,6 +542,15 @@ impl<Data, Tag> Trie<Data, Tag>
     ///   shadowing record.
     /// - witness: `recognition::recognition::shadowing_a_builtin_warns_by_default_and_rejects_under_policy`
     /// - witness: `recognition::recognition::redeclaring_a_source_name_is_not_a_shadow_event`
+    /// - witness: `namespace::trie::tests::first_binding_prefers_a_bound_prefix_then_its_least_descendant`
+    #[spec(
+        ensures: |ret| match self.get(prefix) {
+            | Maybe::Present(expected) => {
+                matches!(ret, Maybe::Present(actual) if core::ptr::eq(&raw const *actual, &raw const *expected))
+            },
+            | Maybe::Absent(_) => self.count.0 > 0 || matches!(ret, Maybe::Absent(_)),
+        },
+    )]
     #[inline]
     pub fn first_at_or_below(
         &self,
@@ -431,7 +582,29 @@ impl<Data, Tag> Trie<Data, Tag>
     /// Every binding, in ascending path order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the frontier starts at the root, with an empty path and this
+    ///   trie borrowed.
+    /// - provides: the initial state of the ordered binding walk.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an out-of-order input yields its exact ordered
+    ///   bindings.
+    /// - witness: `namespace::trie::tests::borrowing_a_namespace_iterates_every_binding_in_order`
+    #[spec(
+        ensures: |ret| {
+            core::ptr::eq(&raw const *ret.trie, &raw const *self)
+                && ret.path.is_empty()
+                && ret.stack.len() == 1
+                && ret.stack.first().is_some_and(|visit| {
+                    visit.node == NodeId::ROOT
+                        && visit.depth == 0
+                        && matches!(visit.segment, Maybe::Absent(edge::Absent::Root))
+                })
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn iter(&self) -> Bindings<'_, Data, Tag>
@@ -463,7 +636,18 @@ impl<Data, Tag> Trie<Data, Tag>
     /// language's `all` performs on.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: EMPTY exactly when the cached binding census is zero.
+    /// - provides: the modifier emptiness observation.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an empty carrier and a carrier holding one binding.
+    /// - witness: `namespace::trie::tests::the_empty_namespace_is_empty`
+    #[spec(
+        ensures: |ret| ret.0 == (self.count.0 == 0),
+    )]
     #[inline]
     #[must_use]
     pub const fn emptiness(&self) -> Emptiness
@@ -494,6 +678,14 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
     /// - witness: `namespace::trie::tests::detaching_an_absent_prefix_yields_the_empty_namespace`
     /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    #[spec(
+        captures: before = self.count.0,
+        ensures: |ret| {
+            self.count.0 <= before
+                && ret.count.0 == before.saturating_sub(self.count.0)
+                && (!prefix.segments().is_empty() || self.count.0 == 0)
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn detach_subtree(
@@ -546,6 +738,12 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - witness: `namespace::trie::tests::grafting_drops_whatever_was_at_the_target`
     /// - witness: `namespace::trie::tests::grafting_keeps_bindings_outside_the_target`
     /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    #[spec(
+        captures: before = (self.count.0, subtree.count.0),
+        ensures: self.count.0 >= before.1
+            && self.count.0 <= before.0.saturating_add(before.1)
+            && (!prefix.segments().is_empty() || self.count.0 == before.1),
+    )]
     #[inline]
     pub fn graft_subtree(
         &mut self,
@@ -594,6 +792,10 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - hypothesis: L3 — two bindings at different depths, asserted as the
     ///   exact listing.
     /// - witness: `namespace::trie::tests::prefixing_moves_every_path`
+    #[spec(
+        captures: before = self.count.0,
+        ensures: |ret| ret.count.0 == before,
+    )]
     #[inline]
     #[must_use]
     pub fn into_prefixed(
@@ -637,6 +839,14 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - witness: `namespace::trie::tests::union_propagates_a_declining_resolver`
     /// - witness: `namespace::trie::tests::a_declined_collision_keeps_the_binding_it_found`
     /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    #[spec(
+        captures: before = (self.count.0, later.count.0),
+        ensures: |ret| {
+            self.count.0 >= before.0
+                && self.count.0 <= before.0.saturating_add(before.1)
+                && (ret.is_err() || self.count.0 >= before.1)
+        },
+    )]
     #[inline]
     pub fn union_resolving<Resolve, Failure>(
         &mut self,
@@ -692,6 +902,37 @@ impl<Data, Tag> Trie<Data, Tag>
     ///
     /// # Errors
     /// The failure `resolve` returns.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh and colliding arrivals, including refusal after
+    ///   a merged sibling, retain the exact surviving bindings.
+    /// - witness: `namespace::trie::tests::union_of_disjoint_namespaces_merges_pointwise`
+    /// - witness: `namespace::trie::tests::union_consults_the_resolver_on_a_collision`
+    /// - witness: `namespace::trie::tests::a_declined_collision_keeps_the_binding_it_found`
+    #[spec(
+        requires: chain.first() == Some(&NodeId::ROOT)
+            && chain.last().is_some_and(|node| node.0 < self.nodes.len()),
+        captures: before = (
+            self.count.0,
+            matches!(arriving, Maybe::Present(_)),
+            chain
+                .last()
+                .and_then(|node| self.nodes.get(node.0))
+                .is_some_and(|node| matches!(node.binding, Maybe::Present(_))),
+        ),
+        ensures: |ret| {
+            self.count.0
+                == before
+                    .0
+                    .saturating_add(usize::from(ret.is_ok() && before.1 && !before.2))
+                && (ret.is_err()
+                    || !before.1
+                    || chain
+                        .last()
+                        .and_then(|node| self.nodes.get(node.0))
+                        .is_some_and(|node| matches!(node.binding, Maybe::Present(_))))
+        },
+    )]
     fn merge_binding<Resolve, Failure>(
         &mut self,
         chain: &[NodeId],
@@ -747,6 +988,29 @@ impl<Data, Tag> Trie<Data, Tag>
     ///   occurs.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — collisions inserted out of order are reported at
+    ///   their exact whole paths in lexicographic order.
+    /// - witness: `namespace::trie::tests::union_reports_collisions_in_path_order`
+    /// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+    #[spec(
+        requires: chain.first() == Some(&NodeId::ROOT),
+        ensures: |ret| {
+            ret.segments().len() == chain.len().saturating_sub(1)
+                && chain
+                    .iter()
+                    .zip(chain.iter().skip(1))
+                    .zip(ret.segments())
+                    .all(|((parent, child), segment)| {
+                        self.nodes.get(parent.0).is_some_and(|node| {
+                            node.children
+                                .iter()
+                                .any(|edge| edge.node == *child && edge.segment == *segment)
+                        })
+                    })
+        },
+    )]
     fn path_of(
         &self,
         chain: &[NodeId],
@@ -773,7 +1037,36 @@ impl<Data, Tag> Trie<Data, Tag>
     /// The child of `parent` reached by `segment`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the parent belongs to this arena when present.
+    /// - ensures: returns the edge selected by the segment, or absence when the
+    ///   parent or edge is missing.
+    /// - provides: one binary-search step of a path descent.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — exact bound paths and absent prefixes traverse
+    ///   present and missing edges; whole-path queries do not accept
+    ///   descendants.
+    /// - witness: `namespace::trie::tests::a_path_bound_only_below_it_resolves_to_nothing`
+    /// - witness: `namespace::trie::tests::a_path_and_its_extension_are_independent_bindings`
+    #[spec(
+        ensures: |ret| {
+            ret == self
+                .nodes
+                .get(parent.0)
+                .and_then(|node| {
+                    let position = node
+                        .children
+                        .binary_search_by(|edge| edge.segment.cmp(segment))
+                        .ok()?;
+                    node.children.get(position)
+                })
+                .map_or(Maybe::Absent(binding::Absent::Unbound), |edge| {
+                    Maybe::Present(edge.node)
+                })
+        },
+    )]
     fn child(
         &self,
         parent: NodeId,
@@ -807,6 +1100,49 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - provides: the descent every binding operation shares.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — repeated insertion and a detach followed by new paths
+    ///   cover existing edges, new edges and vacant-slot reuse.
+    /// - witness: `namespace::trie::tests::inserting_returns_the_binding_it_displaced`
+    /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
+    #[spec(
+        requires: parent.0 < self.nodes.len(),
+        captures: before = (
+            self.count.0,
+            self.nodes.len(),
+            self.vacant.len(),
+            self.nodes.get(parent.0).map(|node| {
+                node.children
+                    .binary_search_by(|edge| edge.segment.cmp(&segment))
+            }),
+        ),
+        ensures: |ret| {
+            ret.0 < self.nodes.len()
+                && self.count.0 == before.0
+                && match before.3 {
+                    | Some(Ok(position)) => {
+                        self.nodes.len() == before.1
+                            && self.vacant.len() == before.2
+                            && self
+                                .nodes
+                                .get(parent.0)
+                                .and_then(|node| node.children.get(position))
+                                .is_some_and(|edge| edge.node == ret)
+                    },
+                    | Some(Err(position)) => {
+                        self.nodes.len() == before.1.saturating_add(usize::from(before.2 == 0))
+                            && self.vacant.len() == before.2.saturating_sub(1)
+                            && self
+                                .nodes
+                                .get(parent.0)
+                                .and_then(|node| node.children.get(position))
+                                .is_some_and(|edge| edge.node == ret)
+                    },
+                    | None => false,
+                }
+        },
+    )]
     fn child_or_new(
         &mut self,
         parent: NodeId,
@@ -840,7 +1176,31 @@ impl<Data, Tag> Trie<Data, Tag>
     /// The node at `segments` below the root, created along the way.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the arena has its live root.
+    /// - ensures: returns the node reached by all segments, creating missing
+    ///   edges without binding nodes.
+    /// - provides: the insertion descent.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fresh, repeated and nested paths resolve
+    ///   independently.
+    /// - witness: `namespace::trie::tests::inserting_returns_the_binding_it_displaced`
+    /// - witness: `namespace::trie::tests::a_path_and_its_extension_are_independent_bindings`
+    #[spec(
+        requires: !self.nodes.is_empty(),
+        captures: before = self.count.0,
+        ensures: |ret| {
+            self.count.0 == before
+                && segments.iter().try_fold(NodeId::ROOT, |parent, segment| {
+                    match self.child(parent, segment) {
+                        | Maybe::Present(child) => Some(child),
+                        | Maybe::Absent(_) => None,
+                    }
+                }) == Some(ret)
+        },
+    )]
     fn reach(
         &mut self,
         segments: &[Segment],
@@ -856,7 +1216,34 @@ impl<Data, Tag> Trie<Data, Tag>
     /// The nodes from the root to `segments`, created along the way.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the arena has its live root.
+    /// - ensures: returns the root followed by one node per segment, each
+    ///   reached from its predecessor; no binding is added.
+    /// - provides: the chain needed to graft and prune.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — grafts at the root, an occupied target and beside a
+    ///   bound sibling preserve the exact outside bindings; L2 — the deep walk
+    ///   is iterative.
+    /// - witness: `namespace::trie::tests::grafting_drops_whatever_was_at_the_target`
+    /// - witness: `namespace::trie::tests::grafting_keeps_bindings_outside_the_target`
+    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    #[spec(
+        requires: !self.nodes.is_empty(),
+        captures: before = self.count.0,
+        ensures: |ret| {
+            self.count.0 == before
+                && ret.len() == segments.len().saturating_add(1)
+                && ret.first() == Some(&NodeId::ROOT)
+                && ret.iter().zip(ret.iter().skip(1)).zip(segments).all(
+                    |((parent, child), segment)| {
+                        self.child(*parent, segment) == Maybe::Present(*child)
+                    },
+                )
+        },
+    )]
     fn reach_chain(
         &mut self,
         segments: &[Segment],
@@ -875,7 +1262,46 @@ impl<Data, Tag> Trie<Data, Tag>
     /// A vacant node's position, reusing a freed one first.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the arena has a live root and its free list contains vacant
+    ///   non-root positions.
+    /// - ensures: consumes the last free position before growing the arena; the
+    ///   returned slot is vacant and the binding census is unchanged.
+    /// - provides: reusable arena storage.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — public detach, graft and later insertion preserve
+    ///   exact bindings when abandoned slots can be reused.
+    /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
+    #[spec(
+        requires: !self.nodes.is_empty(),
+        captures: before = (
+            self.nodes.len(),
+            self.vacant.len(),
+            self.vacant.last().copied(),
+            self.count.0,
+        ),
+        ensures: |ret| {
+            self.count.0 == before.3
+                && ret.0 > 0
+                && self.nodes.get(ret.0).is_some_and(|node| {
+                    matches!(node.binding, Maybe::Absent(_)) && node.children.is_empty()
+                })
+                && match before.2 {
+                    | Some(reused) => {
+                        ret == reused
+                            && self.nodes.len() == before.0
+                            && self.vacant.len() == before.1.saturating_sub(1)
+                    },
+                    | None => {
+                        ret.0 == before.0
+                            && self.nodes.len() == before.0.saturating_add(1)
+                            && self.vacant.is_empty()
+                    },
+                }
+        },
+    )]
     fn allocate(&mut self) -> NodeId
     {
         if let Some(reused) = self.vacant.pop() {
@@ -889,7 +1315,33 @@ impl<Data, Tag> Trie<Data, Tag>
     /// Return `node`'s position to the vacancy list, emptied.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a detached, vacant non-root node not already on the free
+    ///   list.
+    /// - ensures: appends its position to the free list, leaves the slot vacant
+    ///   and changes no binding census.
+    /// - provides: reuse after pruning.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — detached branches can be replaced without leaking
+    ///   their old bindings into subsequent paths.
+    /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
+    /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
+    #[spec(
+        requires: node.0 > 0
+            && self.nodes.get(node.0).is_some_and(|slot| {
+                matches!(slot.binding, Maybe::Absent(_)) && slot.children.is_empty()
+            }),
+        captures: before = (self.count.0, self.nodes.len(), self.vacant.len()),
+        ensures: self.count.0 == before.0
+            && self.nodes.len() == before.1
+            && self.vacant.len() == before.2.saturating_add(1)
+            && self.vacant.last() == Some(&node)
+            && self.nodes.get(node.0).is_some_and(|slot| {
+                matches!(slot.binding, Maybe::Absent(_)) && slot.children.is_empty()
+            }),
+    )]
     fn free(
         &mut self,
         node: NodeId,
@@ -904,7 +1356,40 @@ impl<Data, Tag> Trie<Data, Tag>
     /// Take `node`'s binding and children, leaving it vacant.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the node is in this arena.
+    /// - ensures: moves its binding and children out, leaving a vacant slot;
+    ///   the caller updates the binding census when its larger move finishes.
+    /// - provides: destructive node extraction without cloning payloads.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — detach, graft and union retain moved bindings and
+    ///   discard only the selected target bindings.
+    /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
+    /// - witness: `namespace::trie::tests::grafting_drops_whatever_was_at_the_target`
+    /// - witness: `namespace::trie::tests::relocation_and_collision_keep_payloads_with_their_tags`
+    #[spec(
+        requires: node.0 < self.nodes.len(),
+        captures: before = (
+            self.count.0,
+            self.nodes.get(node.0).map(|slot| {
+                (
+                    matches!(slot.binding, Maybe::Present(_)),
+                    slot.children.len(),
+                )
+            }),
+        ),
+        ensures: |ret| {
+            self.count.0 == before.0
+                && self.nodes.get(node.0).is_some_and(|slot| {
+                    matches!(slot.binding, Maybe::Absent(_)) && slot.children.is_empty()
+                })
+                && before.1.is_some_and(|old| {
+                    matches!(ret.binding, Maybe::Present(_)) == old.0 && ret.children.len() == old.1
+                })
+        },
+    )]
     fn take(
         &mut self,
         node: NodeId,
@@ -918,7 +1403,39 @@ impl<Data, Tag> Trie<Data, Tag>
     /// Remove the edge from `parent` spelled `segment`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the parent is in this arena.
+    /// - ensures: removes exactly the matching edge when present; no binding
+    ///   census is adjusted by unlinking alone.
+    /// - provides: detachment before reclaiming a branch.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — detaching one prefix leaves its siblings reachable
+    ///   and the detached paths absent.
+    /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
+    /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
+    #[spec(
+        requires: parent.0 < self.nodes.len(),
+        captures: before = (
+            self.count.0,
+            self.nodes.get(parent.0).map(|node| {
+                (
+                    node.children.len(),
+                    node.children
+                        .binary_search_by(|edge| edge.segment.cmp(segment))
+                        .is_ok(),
+                )
+            }),
+        ),
+        ensures: self.count.0 == before.0
+            && matches!(self.child(parent, segment), Maybe::Absent(_))
+            && before.1.is_some_and(|old| {
+                self.nodes.get(parent.0).is_some_and(|node| {
+                    node.children.len() == old.0.saturating_sub(usize::from(old.1))
+                })
+            }),
+    )]
     fn unlink(
         &mut self,
         parent: NodeId,
@@ -943,6 +1460,24 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - provides: the drop half of a graft.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — replacing an occupied target drops its bindings but
+    ///   retains outside siblings; the moved branch can reuse the released
+    ///   slots.
+    /// - witness: `namespace::trie::tests::grafting_drops_whatever_was_at_the_target`
+    /// - witness: `namespace::trie::tests::grafting_keeps_bindings_outside_the_target`
+    /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
+    #[spec(
+        requires: node.0 < self.nodes.len(),
+        captures: before = (self.count.0, self.nodes.len(), self.vacant.len()),
+        ensures: self.count.0 <= before.0
+            && self.nodes.len() == before.1
+            && self.vacant.len() >= before.2
+            && self.nodes.get(node.0).is_some_and(|slot| {
+                matches!(slot.binding, Maybe::Absent(_)) && slot.children.is_empty()
+            }),
+    )]
     fn clear(
         &mut self,
         node: NodeId,
@@ -974,6 +1509,30 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - provides: the move shared by detaching and grafting.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — root and nested moves conserve exact bindings,
+    ///   including non-unit tags; L2 — a deep chain moves without recursive
+    ///   calls.
+    /// - witness: `namespace::trie::tests::detaching_at_the_root_takes_everything`
+    /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
+    /// - witness: `namespace::trie::tests::relocation_and_collision_keep_payloads_with_their_tags`
+    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    #[spec(
+        requires: from.0 < source.nodes.len()
+            && self.nodes.get(into.0).is_some_and(|node| {
+                matches!(node.binding, Maybe::Absent(_)) && node.children.is_empty()
+            }),
+        captures: before = (self.count.0, source.count.0),
+        ensures: source.count.0 <= before.1
+            && self.count.0
+                == before
+                    .0
+                    .saturating_add(before.1.saturating_sub(source.count.0))
+            && source.nodes.get(from.0).is_some_and(|node| {
+                matches!(node.binding, Maybe::Absent(_)) && node.children.is_empty()
+            }),
+    )]
     fn transplant(
         &mut self,
         source: &mut Self,
@@ -1016,6 +1575,23 @@ impl<Data, Tag> Trie<Data, Tag>
     /// - provides: the shape invariant after a detach or an empty graft.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — detachment preserves its sibling and later reuse has
+    ///   no old bindings; L2 — a long now-empty chain is reclaimed iteratively.
+    /// - witness: `namespace::trie::tests::detaching_rebases_and_leaves_the_rest`
+    /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
+    /// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
+    #[spec(
+        requires: chain.first() == Some(&NodeId::ROOT)
+            && chain.len() <= path.segments().len().saturating_add(1)
+            && chain.iter().all(|node| node.0 < self.nodes.len()),
+        captures: before = (self.count.0, self.nodes.len(), self.vacant.len()),
+        ensures: self.count.0 == before.0
+            && self.nodes.len() == before.1
+            && self.vacant.len() >= before.2
+            && !self.nodes.is_empty(),
+    )]
     fn prune(
         &mut self,
         chain: &[NodeId],
@@ -1049,7 +1625,34 @@ impl<Data, Tag> Trie<Data, Tag>
 /// Queue the children `edges` of a merged node, smallest segment on top.
 ///
 /// # Specification
-/// trivial.
+/// - requires: edges arrive in strictly ascending segment order.
+/// - ensures: appends one frame per edge in reverse order, retaining the parent
+///   and depth, so the smallest segment is popped first.
+/// - provides: the ordered union frontier.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — two collisions inserted out of order are visited in path
+///   order, with the resolver choosing each surviving binding.
+/// - witness: `namespace::trie::tests::union_reports_collisions_in_path_order`
+#[spec(
+    requires: edges
+        .iter()
+        .zip(edges.iter().skip(1))
+        .all(|(left, right)| left.segment < right.segment),
+    captures: before = (stack.len(), edges.len()),
+    ensures: stack.len() == before.0.saturating_add(before.1)
+        && stack.get(before.0 ..).is_some_and(|added| {
+            added
+                .iter()
+                .all(|frame| frame.parent == parent && frame.depth == depth)
+                && added
+                    .iter()
+                    .zip(added.iter().skip(1))
+                    .all(|(left, right)| left.segment > right.segment)
+        }),
+)]
 fn push_merges(
     stack: &mut Vec<Merge>,
     edges: Vec<Child>,
@@ -1069,6 +1672,20 @@ fn push_merges(
 
 /// One pending node of a union: a node of the later namespace and where it
 /// lands in this one.
+///
+/// # Specification
+/// - requires: the earlier and later arenas accompany a pending merge.
+/// - ensures: the arriving node is attached under the named parent and segment
+///   at the recorded depth.
+/// - provides: an explicit union worklist rather than recursive calls.
+/// - executable: none — a frame does not hold either arena or the current
+///   descent chain.
+///
+/// # Adequacy
+/// - hypothesis: L3 — collisions occur at full paths in order; L2 — a deep
+///   union uses the explicit frontier.
+/// - witness: `namespace::trie::tests::union_reports_collisions_in_path_order`
+/// - witness: `namespace::namespace::every_namespace_walk_is_iterative`
 #[derive(Debug)]
 struct Merge
 {
@@ -1100,11 +1717,17 @@ where
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — every listing assertion in the carrier and modifier
-    ///   witnesses compares through it, and the refused-scope witnesses assert
-    ///   equality of namespaces whose arenas were reshaped by an aborted union.
+    /// - hypothesis: L3 — a refused import preserves namespace equality, while
+    ///   detach, reuse and insertion produce an equal namespace through a
+    ///   different arena layout; tags participate in equality.
     /// - witness: `namespace::namespace::a_refused_multi_entry_import_leaves_the_visible_namespace_as_it_was`
-    /// - witness: `namespace::namespace::a_nested_modifier_survives_a_round_trip`
+    /// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
+    /// - witness: `namespace::trie::tests::relocation_and_collision_keep_payloads_with_their_tags`
+    #[spec(
+        ensures: |ret| {
+            (!ret || self.count == other.count) && (self.count.0 != 0 || other.count.0 != 0 || ret)
+        },
+    )]
     #[inline]
     fn eq(
         &self,
@@ -1188,7 +1811,31 @@ impl<Data, Tag> FromIterator<(NamePath, Binding<Data, Tag>)> for Trie<Data, Tag>
     /// displacing an earlier.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: binds each input path, a later repeated path replacing the
+    ///   earlier binding; the cached count matches the bound nodes.
+    /// - provides: namespace construction from ordered inputs.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a repeated path retains the last payload beside an
+    ///   independent path; empty and nested inputs exercise the carrier
+    ///   boundaries.
+    /// - witness: `namespace::trie::tests::collecting_repeats_keeps_the_last_binding`
+    /// - witness: `namespace::trie::tests::a_path_and_its_extension_are_independent_bindings`
+    #[spec(
+        ensures: |ret| {
+            !ret.nodes.is_empty()
+                && ret.vacant.is_empty()
+                && ret.count.0
+                    == ret
+                        .nodes
+                        .iter()
+                        .filter(|node| matches!(node.binding, Maybe::Present(_)))
+                        .count()
+        },
+    )]
     #[inline]
     fn from_iter<Source>(iter: Source) -> Self
     where
@@ -1203,6 +1850,20 @@ impl<Data, Tag> FromIterator<(NamePath, Binding<Data, Tag>)> for Trie<Data, Tag>
 }
 
 /// One pending node of an iteration.
+///
+/// # Specification
+/// - requires: the walked trie and current path accompany the visit.
+/// - ensures: the root visit has no incoming segment; descendants carry the
+///   edge segment and resulting path depth.
+/// - provides: one pending step of the ordered iterator.
+/// - executable: none — a visit holds neither the owning trie nor the path it
+///   extends.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact listings cover root-relative nested paths and
+///   out-of-order insertion.
+/// - witness: `namespace::trie::tests::borrowing_a_namespace_iterates_every_binding_in_order`
+/// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
 #[derive(Clone, Copy, Debug)]
 struct Visit<'trie>
 {
@@ -1215,6 +1876,21 @@ struct Visit<'trie>
 }
 
 /// The bindings of a namespace, in ascending path order.
+///
+/// # Specification
+/// - requires: construction starts through the trie's iterator entry point.
+/// - ensures: the frontier walks the borrowed trie in path order, yielding each
+///   binding with its owned path.
+/// - provides: ordered observation without exposing arena positions.
+/// - executable: none — this build's specification facade does not expose the
+///   type-item runtime; iterator predicates check the initial frontier and each
+///   yielded binding.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact iteration after out-of-order insertion and arena
+///   reuse fixes the finite ordering and binding correspondence.
+/// - witness: `namespace::trie::tests::borrowing_a_namespace_iterates_every_binding_in_order`
+/// - witness: `namespace::trie::tests::vacant_slots_do_not_change_namespace_equality_or_iteration`
 #[derive(Clone, Debug)]
 pub struct Bindings<'trie, Data, Tag>
 {
@@ -1245,6 +1921,15 @@ impl<'trie, Data, Tag> Iterator for Bindings<'trie, Data, Tag>
     ///   listing, asserted as the exact ordered listing.
     /// - witness: `namespace::trie::tests::borrowing_a_namespace_iterates_every_binding_in_order`
     /// - witness: `namespace::trie::tests::union_reports_collisions_in_path_order`
+    #[spec(
+        ensures: |ret| match ret.as_ref() {
+            | Some(pair) => {
+                pair.0.segments().iter().eq(self.path.iter().copied())
+                    && matches!(self.trie.get(&pair.0), Maybe::Present(binding) if core::ptr::eq(&raw const *binding, &raw const *pair.1))
+            },
+            | None => self.stack.is_empty(),
+        },
+    )]
     #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
@@ -1372,6 +2057,125 @@ mod tests
             .collect()
     }
 
+    #[test]
+    fn vacant_slots_do_not_change_namespace_equality_or_iteration()
+    {
+        let mut subject = namespace(&[entry("a.deep", Payload(1)), entry("b", Payload(2))]);
+        let moved = subject.detach_subtree(&path("a"));
+        subject.graft_subtree(&path("c"), moved);
+        let _fresh = subject.insert(&path("a"), Binding::new(Payload(5), ()));
+        let wanted = [
+            entry("a", Payload(5)),
+            entry("b", Payload(2)),
+            entry("c.deep", Payload(1)),
+        ];
+        assert_eq!(subject, namespace(&wanted));
+        assert_eq!(listing(&subject), expected(&wanted));
+        assert_eq!(subject.binding_count(), BindingCount::from(3_usize));
+        assert_eq!(
+            subject.get(&path("a.deep")),
+            Maybe::Absent(binding::Absent::Unbound)
+        );
+    }
+
+    #[test]
+    fn a_bound_root_does_not_bridge_a_gap_in_governed_resolution()
+    {
+        let mut subject = namespace(&[entry("", Payload(7)), entry("a.b", Payload(2))]);
+        assert_eq!(
+            subject.resolved_prefix(&NamePath::root()),
+            Maybe::Absent(binding::Absent::Unbound)
+        );
+        assert_eq!(
+            subject.resolved_prefix(&path("a.b")),
+            Maybe::Absent(binding::Absent::Unbound)
+        );
+        assert_eq!(
+            subject.get(&path("a.b")).map(|binding| binding.data),
+            Maybe::Present(Payload(2))
+        );
+        let _fresh = subject.insert(&path("a"), Binding::new(Payload(3), ()));
+        assert_eq!(
+            subject
+                .resolved_prefix(&path("a.b.c"))
+                .map(|(depth, binding)| (usize::from(depth), binding.data)),
+            Maybe::Present((2_usize, Payload(2)))
+        );
+    }
+
+    #[test]
+    fn first_binding_prefers_a_bound_prefix_then_its_least_descendant()
+    {
+        let mut subject = namespace(&[
+            entry("a.z", Payload(2)),
+            entry("a.a", Payload(1)),
+            entry("b", Payload(3)),
+        ]);
+        assert_eq!(
+            subject
+                .first_at_or_below(&path("a"))
+                .map(|binding| binding.data),
+            Maybe::Present(Payload(1))
+        );
+        let _fresh = subject.insert(&path("a"), Binding::new(Payload(9), ()));
+        assert_eq!(
+            subject
+                .first_at_or_below(&path("a"))
+                .map(|binding| binding.data),
+            Maybe::Present(Payload(9))
+        );
+        assert_eq!(
+            subject.first_at_or_below(&path("missing")),
+            Maybe::Absent(binding::Absent::Unbound)
+        );
+        let _root = subject.insert(&NamePath::root(), Binding::new(Payload(7), ()));
+        assert_eq!(
+            subject
+                .first_at_or_below(&NamePath::root())
+                .map(|binding| binding.data),
+            Maybe::Present(Payload(7))
+        );
+    }
+
+    #[test]
+    fn collecting_repeats_keeps_the_last_binding()
+    {
+        let subject = namespace(&[
+            entry("x", Payload(1)),
+            entry("y", Payload(2)),
+            entry("x", Payload(3)),
+        ]);
+        assert_eq!(subject.binding_count(), BindingCount::from(2_usize));
+        assert_eq!(
+            listing(&subject),
+            expected(&[entry("x", Payload(3)), entry("y", Payload(2))])
+        );
+    }
+
+    #[test]
+    fn relocation_and_collision_keep_payloads_with_their_tags()
+    {
+        let original: Trie<Payload, Payload> =
+            core::iter::once((path("a"), Binding::new(Payload(1), Payload(10)))).collect();
+        let mut relocated = original.into_prefixed(&path("pkg"));
+        let arriving: Trie<Payload, Payload> =
+            core::iter::once((path("pkg.a"), Binding::new(Payload(2), Payload(20)))).collect();
+        relocated
+            .union_resolving(arriving, &mut |at, collision| {
+                assert_eq!(at, &path("pkg.a"));
+                assert_eq!(collision.former, Binding::new(Payload(1), Payload(10)));
+                assert_eq!(collision.latter, Binding::new(Payload(2), Payload(20)));
+                Ok::<_, core::convert::Infallible>(collision.latter)
+            })
+            .expect("this resolver keeps the arriving binding");
+        assert_eq!(
+            relocated.get(&path("pkg.a")),
+            Maybe::Present(&Binding::new(Payload(2), Payload(20)))
+        );
+        let different_tag: Trie<Payload, Payload> =
+            core::iter::once((path("pkg.a"), Binding::new(Payload(2), Payload(99)))).collect();
+        assert_ne!(relocated, different_tag);
+    }
     #[test]
     fn the_empty_namespace_is_empty()
     {

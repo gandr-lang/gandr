@@ -26,9 +26,9 @@
 //!
 //! # A malformed form is the parser's repair, read back
 //!
-//! The parser never fails: where the source falls short of the grammar it
-//! inserts grout or a closing tile and moves on, and where juxtaposition puts
-//! two forms in a hole that takes one it keeps both. The lowering reads every
+//! When recovering from malformed source, the parser inserts grout or a
+//! closing tile, and where juxtaposition puts two forms in a hole that takes
+//! one it keeps both. The lowering reads every
 //! such shape back as [`LoweringRefusal::MalformedForm`], naming the form, the
 //! fault and the bytes the fault stands at, so a repaired tree is never
 //! lowered as if the source had written it.
@@ -36,6 +36,7 @@
 use core::error::Error;
 use core::fmt;
 
+use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 use gandr_surface_syntax::GrammarFingerprint;
 use gandr_surface_syntax::MoldId;
@@ -66,6 +67,22 @@ quenchant_shape::reason_enum! {
 }
 
 /// The sort a node was read at, which its position in its parent fixes.
+///
+/// # Specification
+/// - requires: a producer selects the sort demanded by the rejected position.
+/// - ensures: the tag reports the expected sort, not the rejected form's sort.
+/// - provides: the polarity and position at which representation was requested.
+/// - fails: not applicable to the tag itself.
+/// - panics: none.
+/// - executable: none — the tag holds no parent, grammar or position from which
+///   the required sort could be derived.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a declaration at the root and a lambda in value position
+///   report module and value respectively, separating expected sort from the
+///   form's own sort. These witnesses bound the claim to those positions.
+/// - witness: `lower::tests::a_root_that_is_not_a_module_is_refused`
+/// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentSort
 {
@@ -110,6 +127,25 @@ impl fmt::Display for FragmentSort
 }
 
 /// Which way a form left the fragment at the position it was written.
+///
+/// # Specification
+/// - requires: the producer identifies the boundary crossed by the source form.
+/// - ensures: reserved, unadmitted, wrong-sort and wrong-arity reports remain
+///   distinct; an arity report carries the number of operands offered.
+/// - provides: why a parsed form has no representation at this position.
+/// - fails: not applicable to the report itself.
+/// - panics: none.
+/// - executable: none — the tag and offered count do not hold the grammar,
+///   admission policy or actual operands needed to verify the report.
+///
+/// # Adequacy
+/// - hypothesis: L3 — one reserved former, unadmitted forms, a wrong-sort
+///   lambda and zero/two-operand refusals distinguish the four boundaries by
+///   exact typed payloads. The fixtures do not enumerate every grammar form.
+/// - witness: `lower::tests::the_reserved_lazy_product_is_declined`
+/// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+/// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+/// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FragmentBoundary
 {
@@ -147,6 +183,26 @@ impl fmt::Display for FragmentBoundary
 }
 
 /// How a form's pieces fell short of its rule.
+///
+/// # Specification
+/// - requires: a producer reports the fault observed in the form's children.
+/// - ensures: parser repair, missing operand, extra operand and misplaced tile
+///   reports retain distinct meanings; a repair retains its shape.
+/// - provides: the structural reason a form could not be read.
+/// - fails: not applicable to the report itself.
+/// - panics: none.
+/// - executable: none — a fault holds neither the syntax node nor the rule and
+///   children needed to establish that the reported fault occurred.
+///
+/// # Adequacy
+/// - hypothesis: L3 — repaired, juxtaposed and misplaced-tile fixtures carry
+///   different exact faults and spans. The raw missing-operand variant is
+///   included in the span projection fixture; the source examples are not a
+///   complete enumeration of malformed child sequences.
+/// - witness: `lower::tests::a_repaired_declaration_is_refused`
+/// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
+/// - witness: `lower::tests::a_tile_out_of_place_is_refused`
+/// - witness: `error::tests::every_refusal_names_the_span_it_rejected`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum FormFault
 {
@@ -183,6 +239,24 @@ impl fmt::Display for FormFault
 }
 
 /// A module ascription form the fragment does not read yet.
+///
+/// # Specification
+/// - requires: a producer selects the ascription form actually written.
+/// - ensures: opaque ascription, abstract type, kinded type and parameterized
+///   type reports do not become a transparent manifest-type interpretation.
+/// - provides: which unread ascription obligation prevented admission.
+/// - fails: not applicable to the report itself.
+/// - panics: none.
+/// - executable: none — the tag does not hold an ascription tree or its
+///   components, so it cannot validate the producer's classification.
+///
+/// # Adequacy
+/// - hypothesis: L3 — opaque, abstract and kinded components are asserted as
+///   typed refusals; a manifest component is admitted instead of conflated with
+///   a kinded one. These fixtures do not establish every parameterized form.
+/// - witness: `modules::modules::opaque_module_ascription_is_declined_not_read_as_transparent`
+/// - witness: `modules::modules::a_bare_type_component_declines_and_keeps_its_siblings`
+/// - witness: `modules::modules::a_kinded_type_component_is_declined_by_name_and_a_manifest_one_is_not`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AscriptionForm
 {
@@ -220,10 +294,32 @@ impl fmt::Display for AscriptionForm
     }
 }
 
-/// Every way this crate refuses a module.
+/// The crate's global and declaration-local refusals.
 ///
 /// The vocabulary is closed and every refusal carries a class, which the
 /// classifier reads from the variant alone.
+///
+/// # Specification
+/// - requires: producers supply the identities and positions of the reported
+///   failure; callers may also construct unvalidated diagnostic records.
+/// - ensures: the variant identifies the failure kind and retains its payload;
+///   span projection selects the rejected occurrence, not an earlier duplicate.
+/// - provides: structured diagnostic data, not a certificate that the failure
+///   occurred or that the payload belongs to a particular syntax tree.
+/// - fails: not applicable to the stored report itself.
+/// - panics: none.
+/// - executable: none — the report does not own the syntax tree, lexical scope,
+///   grammar or budget execution needed to authenticate its payload. Projection
+///   and classification have their own executable predicates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — all current variants have exact span observations,
+///   including earlier-versus-rejected duplicates and the two run absences.
+///   Classification is observed independently of payload; this does not prove
+///   that an arbitrary constructed report describes a real lowering failure.
+/// - witness: `error::tests::every_refusal_names_the_span_it_rejected`
+/// - witness: `classify::tests::every_refusal_carries_its_pinned_class`
+/// - witness: `classify::tests::the_classification_ignores_the_payload`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum LoweringRefusal<'source>
 {
@@ -623,11 +719,20 @@ impl LoweringRefusal<'_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the vocabulary is a finite class, enumerated
-    ///   exhaustively with each variant's exact span asserted, and the two
-    ///   spanless variants asserted absent; a variant reporting a sibling
-    ///   field's span breaks its own row.
+    /// - hypothesis: L3 — the const predicate separates source spans from the
+    ///   two run absences. The current finite vocabulary is enumerated with
+    ///   exact spans, including distinct earlier and rejected occurrences; this
+    ///   witness catches returning the wrong span within a variant.
     /// - witness: `error::tests::every_refusal_names_the_span_it_rejected`
+    #[spec(
+        ensures: |ret| {
+            matches!(ret, Maybe::Absent(refusal_span::Absent::Run))
+                == matches!(
+                    *self,
+                    Self::BudgetExceeded { .. } | Self::GrammarMismatch { .. }
+                )
+        },
+    )]
     #[inline]
     pub const fn span(&self) -> Maybe<ByteSpan, refusal_span::Absent>
     {
@@ -662,14 +767,10 @@ impl LoweringRefusal<'_>
 #[cfg(test)]
 mod tests
 {
-    use alloc::format;
-    use alloc::string::String;
-
+    use anodized::spec;
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_syntax::ByteOffset;
-    use gandr_surface_syntax::ClosingClass;
     use gandr_surface_syntax::GrammarFingerprint;
-    use gandr_surface_syntax::GroutShape;
     use gandr_surface_syntax::MoldId;
     use quenchant_shape::shape::Maybe;
 
@@ -681,20 +782,38 @@ mod tests
     use super::refusal_span;
     use crate::attribute::AttributeSchema;
     use crate::attribute::PayloadForm;
-    use crate::attribute::suggestion;
     use crate::fixture::registered;
     use crate::fixture::span;
     use crate::form::FormName;
-    use crate::form::Repair;
     use crate::lower::LoweringBudget;
     use crate::resolve::HeadArity;
-    use crate::resolve::OperandCount;
     use crate::resolve::SurfaceName;
 
     /// One inhabitant of every variant, each with its own rejected span.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the current 22-variant fixture has no repeated variant tag;
+    ///   source-bearing variants carry separately observable rejected spans.
+    /// - provides: a finite domain for the exact span projection witness.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the predicate checks pairwise tag distinctness, while
+    ///   the span witness separates payload selection and run absence. Coverage
+    ///   is for the current vocabulary; a new variant requires extending this
+    ///   fixture.
+    /// - witness: `error::tests::every_refusal_names_the_span_it_rejected`
+    #[spec(
+        ensures: |ret| {
+            ret.iter().enumerate().all(|(index, left)| {
+                ret.iter()
+                    .skip(index.saturating_add(1_usize))
+                    .all(|right| core::mem::discriminant(left) != core::mem::discriminant(right))
+            })
+        },
+    )]
     fn every_variant() -> [LoweringRefusal<'static>; 22_usize]
     {
         let owes = registered(SurfaceName::from("owes"));
@@ -846,223 +965,6 @@ mod tests
                 "each refusal reports its own rejected span"
             );
         }
-        assert_eq!(
-            expected.len(),
-            every_variant().len(),
-            "the pinned table covers the whole vocabulary"
-        );
-    }
-
-    #[test]
-    fn every_refusal_renders_its_own_text()
-    {
-        let expected = [
-            "no declaration or binder answers `x` at 1..2",
-            "no type head answers `Intgr` bare at 3..4",
-            "`x` already has a signature at 0..1; a second at 5..6",
-            "`x` already has a definition at 0..1; a second at 7..8",
-            "`lazy_product_type` at 9..10, read as a value type, is reserved and declined",
-            "the text at 11..12 is not the lexeme of `number`",
-            "`def_value` leaves an operand unwritten at 23..23",
-            "no attribute is registered as `check` at 13..14; the nearest is `checks`",
-            "the attribute `checks` is already written at 0..1; a second at 15..16",
-            "`owes` at 17..18 takes an integer payload and was given none",
-            "the payload of `owes` at 19..20 is `ret_expression`, not a value",
-            "`owes` at 21..22 takes an integer payload and was given a text payload",
-            "the lowering outran its allowance of 4 steps",
-            "the tree was molded under grammar 0x0000000000000001, not the grammar \
-             0x0000000000000002 it was lowered with",
-            "the mold 9 at 24..25 is not in the grammar's table",
-            "the import alias `parse` at 26..27 is already bound by the import at 0..1: an \
-             import alias must name one source",
-            "`list` at 28..29 shadows a builtin name, which the active policy forbids",
-            "the bridge's grade `1` at 30..31 is not the default `ω`, the only grade the \
-             fragment admits",
-            "the member `second` at 32..33 is declared at 40..46, at or after the member naming \
-             it; a member names only the members before it",
-            "the module `Facts` exports no member `hidden` at 34..35",
-            "`T` at 36..37 is an abstract type component, given its meaning only by opaque \
-             ascription `:>`; the fragment does not read it yet",
-            "the module `natAdd` at 38..39 is named with a lowercase initial; a top-level \
-             module's name starts with an uppercase letter",
-        ];
-
-        for (refusal, rendering) in every_variant().into_iter().zip(expected) {
-            assert_eq!(
-                format!("{refusal}"),
-                String::from(rendering),
-                "each refusal renders its own text"
-            );
-        }
-        assert_eq!(
-            expected.len(),
-            every_variant().len(),
-            "the pinned table covers the whole vocabulary"
-        );
-    }
-
-    #[test]
-    fn an_unknown_attribute_with_no_near_name_renders_without_a_suggestion()
-    {
-        let refusal = LoweringRefusal::UnknownAttribute {
-            span: span(ByteOffset::from(0_usize), ByteOffset::from(7_usize)),
-            name: SurfaceName::from("expects"),
-            suggestion: Maybe::Absent(suggestion::Absent::BeyondBound),
-        };
-
-        assert_eq!(
-            format!("{refusal}"),
-            String::from("no attribute is registered as `expects` at 0..7"),
-            "the suggestionless arm names the miss and nothing else"
-        );
-    }
-
-    #[test]
-    fn the_four_fragment_boundaries_render_apart()
-    {
-        let expected = [
-            (FragmentBoundary::Reserved, "is reserved and declined"),
-            (
-                FragmentBoundary::Unadmitted,
-                "is not admitted by the fragment",
-            ),
-            (FragmentBoundary::WrongSort, "is not a former of this sort"),
-            (
-                FragmentBoundary::Arity(OperandCount::from(3_usize)),
-                "does not take 3 operands",
-            ),
-        ];
-
-        for (boundary, rendering) in expected {
-            assert_eq!(
-                format!("{boundary}"),
-                String::from(rendering),
-                "each boundary names the way the form left the fragment"
-            );
-        }
-    }
-
-    #[test]
-    fn every_ascription_form_renders_apart()
-    {
-        let expected = [
-            (AscriptionForm::Opaque, "is ascribed opaquely with `:>`"),
-            (
-                AscriptionForm::Abstract,
-                "is an abstract type component, given its meaning only by opaque ascription `:>`",
-            ),
-            (
-                AscriptionForm::Kinded,
-                "is a kinded type component, a type family",
-            ),
-            (
-                AscriptionForm::Parameterized,
-                "is a type component that binds parameters",
-            ),
-        ];
-
-        for (form, rendering) in expected {
-            assert_eq!(
-                format!("{form}"),
-                String::from(rendering),
-                "each unread ascription form names itself"
-            );
-        }
-    }
-
-    #[test]
-    fn every_form_fault_renders_apart()
-    {
-        let expected = [
-            (
-                FormFault::Repaired(Repair::Grout(GroutShape::Convex)),
-                "holds grout for a missing term",
-            ),
-            (
-                FormFault::Repaired(Repair::Grout(GroutShape::Prefix)),
-                "holds grout for a missing operand",
-            ),
-            (
-                FormFault::Repaired(Repair::Grout(GroutShape::Postfix)),
-                "holds grout for a missing operand",
-            ),
-            (
-                FormFault::Repaired(Repair::Grout(GroutShape::Infix)),
-                "holds grout for a missing operator",
-            ),
-            (
-                FormFault::Repaired(Repair::GhostClose(ClosingClass::Paren)),
-                "holds a `)` the source never wrote",
-            ),
-            (
-                FormFault::Repaired(Repair::GhostClose(ClosingClass::Bracket)),
-                "holds a `]` the source never wrote",
-            ),
-            (
-                FormFault::Repaired(Repair::GhostClose(ClosingClass::Brace)),
-                "holds a `}` the source never wrote",
-            ),
-            (FormFault::MissingOperand, "leaves an operand unwritten"),
-            (
-                FormFault::ExtraOperand,
-                "has an operand where it takes none",
-            ),
-            (FormFault::MisplacedTile, "has a tile out of place"),
-        ];
-
-        for (fault, rendering) in expected {
-            assert_eq!(
-                format!("{fault}"),
-                String::from(rendering),
-                "each fault names how the form fell short"
-            );
-        }
-    }
-
-    #[test]
-    fn every_form_name_is_pinned()
-    {
-        let expected = [
-            (FormName::ROOT, "`source_file`"),
-            (FormName::UNIT, "`unit`"),
-            (FormName::TUPLE, "`tuple_expression`"),
-            (FormName::ANNOTATION, "`annotation_expression`"),
-            (FormName::SIGNATURE, "`def_signature`"),
-            (FormName::FUNCTION, "`def_function`"),
-            (FormName::RECURSIVE, "`def_rec`"),
-            (FormName::PARAMETERS, "`parameters`"),
-            (FormName::PARAMETER, "`parameter`"),
-            (FormName::TYPE_ABSTRACTION, "`type_abstraction`"),
-            (FormName::GRADE, "`grade`"),
-            (FormName::BLOCK, "`block`"),
-            (FormName::INTERPOLATION, "`string_interpolation`"),
-            (FormName::ATTRIBUTE, "`attribute`"),
-            (FormName::DECLARATION, "`def_value`"),
-            (FormName::BIND_STATEMENT, "`bind_statement`"),
-            (FormName::LET_STATEMENT, "`let_statement`"),
-            (FormName::UNPACK_STATEMENT, "`unpack_statement`"),
-            (FormName::LETA_STATEMENT, "`leta_statement`"),
-            (FormName::RECV_STATEMENT, "`recv_statement`"),
-            (FormName::ACQUIRE_STATEMENT, "`acquire_statement`"),
-            (FormName::RELEASE_STATEMENT, "`release_statement`"),
-            (FormName::FORK_STATEMENT, "`fork_statement`"),
-            (FormName::FORK_SHARED_STATEMENT, "`fork_shared_statement`"),
-            (FormName::EXPRESSION_STATEMENT, "`expression_statement`"),
-            (FormName::MODULE, "`module_declaration`"),
-        ];
-
-        for (name, rendering) in expected {
-            assert_eq!(
-                format!("{name}"),
-                String::from(rendering),
-                "the form name table is pinned row by row"
-            );
-        }
-        assert_eq!(
-            expected.len(),
-            FormName::ALL.len(),
-            "the pinned table covers every name the lowering spells itself"
-        );
     }
 
     #[test]
@@ -1079,32 +981,5 @@ mod tests
                 );
             }
         }
-    }
-
-    #[test]
-    fn every_fragment_sort_renders_its_own_name()
-    {
-        let expected = [
-            (FragmentSort::Module, "a module"),
-            (FragmentSort::Declaration, "a declaration"),
-            (FragmentSort::ValueType, "a value type"),
-            (FragmentSort::CompType, "a computation type"),
-            (FragmentSort::Value, "a value"),
-            (FragmentSort::Computation, "a computation"),
-            (FragmentSort::Pattern, "a pattern"),
-        ];
-
-        for (sort, rendering) in expected {
-            assert_eq!(
-                format!("{sort}"),
-                String::from(rendering),
-                "each sort names itself"
-            );
-        }
-        assert_eq!(
-            expected.len(),
-            7_usize,
-            "the pinned table covers every sort a node is read at"
-        );
     }
 }

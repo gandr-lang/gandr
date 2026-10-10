@@ -87,6 +87,7 @@ use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Sort;
 use gandr_core_term::ValueId;
+use gandr_core_term::ValueType;
 use gandr_core_term::ValueTypeId;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
@@ -242,6 +243,24 @@ quenchant_shape::reason_enum! {
 /// One step is charged per node visited, per binder frame walked, per module
 /// child and per attribute, so the allowance bounds the whole lowering rather
 /// than any single sweep.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The limit is shared across the lowering run rather than renewed
+///   for each pass.
+/// - provides: A nominal bound on charged work, including the zero allowance.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The value has no work history to inspect; `Fuel::new`
+///   and `Fuel::spend` check initialization and consumption.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the last allowed charge succeeds, the next charge names
+///   the original limit, and a module exceeding its allowance is refused.
+/// - witness: `lower::tests::the_last_step_of_an_allowance_is_spendable`
+/// - witness: `lower::tests::a_step_past_the_allowance_is_refused`
+/// - witness: `lower::tests::a_module_past_the_allowance_is_refused`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LoweringBudget(usize);
@@ -295,6 +314,24 @@ impl fmt::Display for LoweringBudget
 }
 
 /// One lowering's remaining allowance.
+///
+/// # Specification
+/// - requires: Instances are created by new and changed only by spend.
+/// - ensures: The remaining allowance never exceeds its original budget, and an
+///   exhausted tank remains exhausted.
+/// - provides: The shared state of all charged passes.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — Type-level invariant expansion is unavailable in the
+///   enabled specification facade; new and spend carry the executable state
+///   relation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — initialization and the last-success/first-refusal
+///   boundary distinguish off-by-one charging and preserve the reported
+///   allowance.
+/// - witness: `lower::tests::the_last_step_of_an_allowance_is_spendable`
+/// - witness: `lower::tests::a_step_past_the_allowance_is_refused`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Fuel
 {
@@ -309,7 +346,21 @@ impl Fuel
     /// A full tank at `budget`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the remaining allowance equals the supplied budget, whose
+    ///   original value is retained.
+    /// - provides: a shared tank for every charged pass.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the last permitted charge and first excess charge
+    ///   distinguish initialization from an off-by-one allowance.
+    /// - witness: `lower::tests::the_last_step_of_an_allowance_is_spendable`
+    /// - witness: `lower::tests::a_step_past_the_allowance_is_refused`
+    #[spec(
+        ensures: |ret| ret.remaining == budget.0 && ret.budget.0 == budget.0,
+    )]
     #[inline]
     #[must_use]
     pub const fn new(budget: LoweringBudget) -> Self
@@ -344,6 +395,20 @@ impl Fuel
     ///   allowance asserted.
     /// - witness: `lower::tests::the_last_step_of_an_allowance_is_spendable`
     /// - witness: `lower::tests::a_step_past_the_allowance_is_refused`
+    #[spec(
+        captures: before = (self.remaining, self.budget),
+        ensures: |ret| {
+            self.budget == before.1
+                && self.remaining == before.0.saturating_sub(1)
+                && ret
+                    == if before.0 == 0 {
+                        Err(LoweringRefusal::BudgetExceeded { budget: before.1 })
+                    }
+                    else {
+                        Ok(())
+                    }
+        },
+    )]
     #[inline]
     pub fn spend<'refusal>(&mut self) -> Result<(), LoweringRefusal<'refusal>>
     {
@@ -360,6 +425,25 @@ impl Fuel
 }
 
 /// How a node's position reads it.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: A reading retains its positional sort and, for framed readings,
+///   the binder frame used by its children.
+/// - provides: The context for classification and insertion decisions.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The tag retains neither its source position nor its
+///   scope; sort, family, frame and require specify its projections and
+///   interpretation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — lambda binding, forced heads and returner insertion
+///   distinguish the framed term and type positions on the listed sources.
+/// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+/// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
+/// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Reading
 {
@@ -389,7 +473,34 @@ impl Reading
     /// The sort a refusal at this position reports.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: unread and function positions report declarations, type
+    ///   positions their own type sort, and heads/results the computation sort
+    ///   they demand.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — wrong-sort refusals distinguish the expected value,
+    ///   computation and type positions; function sites report a declaration.
+    /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+    /// - witness: `lower::tests::a_computation_codomain_of_a_static_pi_is_refused`
+    /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (self, ret),
+                (Self::Unread | Self::Function, FragmentSort::Declaration)
+                    | (Self::ValueType(_), FragmentSort::ValueType)
+                    | (Self::CompType(_) | Self::Result(_), FragmentSort::CompType)
+                    | (Self::Value(_), FragmentSort::Value)
+                    | (
+                        Self::Computation(_) | Self::Head(_),
+                        FragmentSort::Computation
+                    )
+            )
+        },
+    )]
     const fn sort(self) -> FragmentSort
     {
         match self {
@@ -404,7 +515,35 @@ impl Reading
     /// The family of formers this reading admits.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: type and result readings admit the type family, term and head
+    ///   readings the term family, and unread/function readings neither.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — term and type fixtures exercise their reading
+    ///   families; a type in value position is quoted rather than rejected as a
+    ///   wrong family.
+    /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+    /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+    /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (self, ret),
+                (Self::Unread | Self::Function, Family::Neither)
+                    | (
+                        Self::ValueType(_) | Self::CompType(_) | Self::Result(_),
+                        Family::Type
+                    )
+                    | (
+                        Self::Value(_) | Self::Computation(_) | Self::Head(_),
+                        Family::Term
+                    )
+            )
+        },
+    )]
     const fn family(self) -> Family
     {
         match self {
@@ -420,7 +559,43 @@ impl Reading
     /// that names none.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: framed readings retain their frame, while unread and function
+    ///   readings use the outermost frame.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda body resolves its binder at the exact index;
+    ///   a reading without a binder is interpreted in the outermost scope.
+    /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (self, ret),
+                (
+                    Self::Unread
+                        | Self::Function
+                        | Self::ValueType(Frame::Outermost)
+                        | Self::CompType(Frame::Outermost)
+                        | Self::Value(Frame::Outermost)
+                        | Self::Computation(Frame::Outermost)
+                        | Self::Head(Frame::Outermost)
+                        | Self::Result(Frame::Outermost),
+                    Frame::Outermost
+                ) | (
+                    Self::ValueType(Frame::Inner(_))
+                        | Self::CompType(Frame::Inner(_))
+                        | Self::Value(Frame::Inner(_))
+                        | Self::Computation(Frame::Inner(_))
+                        | Self::Head(Frame::Inner(_))
+                        | Self::Result(Frame::Inner(_)),
+                    Frame::Inner(_)
+                )
+            )
+        },
+    )]
     const fn frame(self) -> Frame
     {
         match self {
@@ -440,7 +615,36 @@ impl Reading
     /// included, which takes a value type under an inserted returner.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: only a computation-type reading defaults to the computation
+    ///   universe; every other reading defaults to the value universe, all at
+    ///   level zero.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — static application decodes at the written universe or
+    ///   at the sort demanded by its position when no universe is written.
+    /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+    #[spec(
+        ensures: |ret| {
+            matches!(ret.level, LevelConstant::ZERO)
+                && matches!(
+                    (self, ret.sort),
+                    (Self::CompType(_), GroundSort::Computation)
+                        | (
+                            Self::Unread
+                                | Self::Function
+                                | Self::ValueType(_)
+                                | Self::Value(_)
+                                | Self::Computation(_)
+                                | Self::Head(_)
+                                | Self::Result(_),
+                            GroundSort::Value
+                        )
+                )
+        },
+    )]
     const fn positional_universe(self) -> Universe
     {
         match self {
@@ -459,7 +663,25 @@ impl Reading
     }
 }
 
-/// The two families of formers, which never stand in each other's place.
+/// Whether a former is a term, a type, or neither.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The family distinguishes term, type and non-expression forms
+///   without forbidding the explicitly admitted type-in-value reading.
+/// - provides: The coarse family check preceding former-specific admission.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — No originating former is retained; `family_of` and
+///   `classify_form` check classification and its quoting exception.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a computation in value position is refused, while a type
+///   in value position can be quoted or used as a static code.
+/// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+/// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+/// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Family
 {
@@ -474,7 +696,60 @@ enum Family
 /// The family `former` belongs to.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: syntax formers are classified as terms, types or neither
+///   independently of the demanded reading; static abstractions belong to the
+///   type-former family.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — term and type formers distinguish ordinary interpretation
+///   from the positional quote, including a static abstraction.
+/// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+/// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+/// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
+#[spec(
+    ensures: |ret| {
+        matches!(
+            (former, ret),
+            (
+                Former::Name
+                    | Former::Constructor
+                    | Former::Number
+                    | Former::Text
+                    | Former::Parenthesized
+                    | Former::Thunk
+                    | Former::Lambda
+                    | Former::Return
+                    | Former::Force
+                    | Former::Call
+                    | Former::Projection,
+                Family::Term
+            ) | (
+                Former::TypeHead
+                    | Former::Universe
+                    | Former::TypeApplication
+                    | Former::ThunkType
+                    | Former::ReturnerType
+                    | Former::ArrowType
+                    | Former::ProductType
+                    | Former::LazyProductType
+                    | Former::ValueFunctionType
+                    | Former::StaticAbstraction
+                    | Former::ParenthesizedType,
+                Family::Type
+            ) | (
+                Former::Declaration
+                    | Former::AttributeBlock
+                    | Former::Import
+                    | Former::Module
+                    | Former::Unadmitted,
+                Family::Neither
+            )
+        )
+    },
+)]
 const fn family_of(former: Former) -> Family
 {
     match former {
@@ -508,7 +783,26 @@ const fn family_of(former: Former) -> Family
     }
 }
 
-/// The sort a former produces, which a position must demand.
+/// The sort a former produces before positional bridges.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The tag describes the former’s own core family before any
+///   positional bridge is inserted.
+/// - provides: The input sort to the positional admission relation.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The producing former and demanded reading are not
+///   retained; require states the complete admission and insertion relation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — explicit and inserted force remain distinct, and a
+///   positive result acquires one returner rather than changing its source
+///   type.
+/// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
+/// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
+/// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Produced
 {
@@ -523,6 +817,24 @@ enum Produced
 }
 
 /// What the mint sweep writes over a node's own core node.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: A bare result is unchanged; an insertion request is interpreted
+///   against the lowered child family.
+/// - provides: The conversion to apply after the node’s own plan is minted.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The child is not retained on the tag; require selects
+///   requests and `Sink::bridge` checks the result family and provenance.
+///
+/// # Adequacy
+/// - hypothesis: L3 — forcing, returner insertion and quotation record the
+///   inserted node while preserving the authored child’s origin.
+/// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
+/// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
+/// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Bridge
 {
@@ -547,6 +859,23 @@ quenchant_shape::reason_enum! {
 
 /// A stretch of one of the lowerer's flat stores, which a plan reads its list
 /// from rather than owning one.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The endpoints denote a half-open range in a caller-selected flat
+///   store; they do not certify order or bounds by themselves.
+/// - provides: A borrowed-store coordinate rather than an owned list.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — No store is retained, and reversed ranges are admitted
+///   inputs to stretch; the accessor checks the borrowed range and empty
+///   fallback.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, full, interior, reversed and past-end ranges
+///   distinguish a valid selection from an invalid range.
+/// - witness: `lower::tests::recorded_ranges_keep_valid_members_and_reject_invalid_bounds`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Stretch
 {
@@ -557,6 +886,23 @@ struct Stretch
 }
 
 /// One `run x <- c ;` statement of a block.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The run position supplies the bind’s origin while the bound
+///   position supplies its computation.
+/// - provides: One source-ordered block binding.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — Neither the source tree nor the lowered-node table is
+///   retained; statement and `mint_block` check the coordinate roles.
+///
+/// # Adequacy
+/// - hypothesis: L3 — consecutive run bindings scope over the following
+///   computation and preserve their own source origins.
+/// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+/// - witness: `lower::tests::every_minted_node_has_an_origin`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Statement
 {
@@ -567,6 +913,23 @@ struct Statement
 }
 
 /// A block: its statements, in source order, and its last computation.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The statement range precedes one final computation, which is not
+///   replaced by an empty block result.
+/// - provides: A block plan over the shared statement store.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The statement store and child results are absent; block
+///   and `mint_block` check the range, final computation and bind order.
+///
+/// # Adequacy
+/// - hypothesis: L3 — chained binds preserve order; a block without its final
+///   computation is refused at the arity boundary.
+/// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+/// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Block
 {
@@ -577,6 +940,24 @@ struct Block
 }
 
 /// One parameter of a function tail.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The binder’s origin, introduced frame and optional written type
+///   remain separate coordinates.
+/// - provides: The data used to build a function’s lambda and signature spines.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The source, scope and lowered types are not retained;
+///   function, `mint_function` and `mint_signature` interpret those
+///   coordinates.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a typed parameter contributes to both spines, while an
+///   unstated type does not prevent the function body from lowering.
+/// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+/// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct Parameter
 {
@@ -590,6 +971,24 @@ struct Parameter
 
 /// A universe as the source wrote it: its sort and its level, each defaulted
 /// when left off.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The ground sort and nonnegative level are retained independently
+///   after explicit or positional defaulting.
+/// - provides: The universe at which a source type or code is read.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The spelling and reading position are absent;
+///   `universe_of` and `positional_universe` state their distinct defaulting
+///   rules.
+///
+/// # Adequacy
+/// - hypothesis: L3 — bare, explicitly sorted and explicitly levelled spellings
+///   keep their universes, including the universe of a decoded bound code.
+/// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
+/// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Universe
 {
@@ -603,6 +1002,20 @@ impl Universe
 {
     /// The universe a bare `Type` names and an unwritten one defaults to:
     /// the value types at the fuss-free level.
+    ///
+    /// # Specification
+    /// - requires: nothing.
+    /// - ensures: the value sort at level zero, not the computation sort.
+    /// - provides: the universe of a bare `Type` and the context-free default.
+    /// - fails: never.
+    /// - panics: none.
+    /// - executable: none — the specification attribute does not accept
+    ///   constant items; `universe_of` checks the resulting sort and level.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — bare and explicitly sorted universe spellings
+    ///   distinguish the value default from a computation universe.
+    /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
     const FUSS_FREE: Self = Self {
         sort: GroundSort::Value,
         level: LevelConstant::ZERO,
@@ -611,6 +1024,24 @@ impl Universe
 
 /// The code a decode reads its type from, and the head a static application
 /// applies.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: A bound code retains the use frame and binder identity until
+///   telescope indexing; a constant retains its admission coordinate.
+/// - provides: The common head of static applications and decoded types.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The scope and declaration store needed for resolution
+///   are absent; `resolve_name`, `static_application` and `mint_code` check
+///   their uses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — bound and declared codes decode at their written universe
+///   and static applications retain source argument order.
+/// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+/// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 enum Code
 {
@@ -640,6 +1071,24 @@ quenchant_shape::reason_enum! {
 }
 
 /// What a name resolved to.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: A binder retains its bound coordinate; a declaration retains its
+///   constant and available written signature.
+/// - provides: A resolved name that can become a term or static code.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — No name, lookup frame or declaration table is retained;
+///   `resolve_name` checks lookup and term checks the projection.
+///
+/// # Adequacy
+/// - hypothesis: L3 — local binders and earlier declarations produce different
+///   core references, and self-reference remains unresolved.
+/// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+/// - witness: `lower::tests::an_earlier_declaration_resolves_as_a_constant`
+/// - witness: `lower::tests::a_self_reference_is_unresolved`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Resolved
 {
@@ -660,7 +1109,26 @@ impl Resolved
     /// The plan of the value the name stands for in term position.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a resolved binder becomes a variable plan and a resolved
+    ///   declaration a constant plan, retaining the respective index.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — binder uses become de Bruijn variables, while earlier
+    ///   declarations become constants with their admission position.
+    /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+    /// - witness: `modules::modules::a_backward_member_reference_resolves`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (self, &ret),
+                (Self::Binder(_), &Plan::Variable(_))
+                    | (Self::Declaration { .. }, &Plan::Constant(_))
+            )
+        },
+    )]
     const fn term(self) -> Plan
     {
         match self {
@@ -671,6 +1139,25 @@ impl Resolved
 }
 
 /// A function tail's reading: `(params) -> T? { … }`.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The parameter range, optional result and block are retained
+///   separately so an incomplete signature does not discard the body.
+/// - provides: The two spines of a function tail.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The parameter store and lowered children are not
+///   retained; function, `mint_function` and `mint_signature` check the stored
+///   ranges and outcomes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero and multiple parameters preserve the body and
+///   signature distinction, including tails with an unstated type.
+/// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+/// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
+/// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct Function
 {
@@ -683,6 +1170,28 @@ struct Function
 }
 
 /// What the mint sweep does for one node, decided by the classification.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The selected former retains the child coordinates and flat-store
+///   ranges needed by the later mint sweep; transparent plans adopt their
+///   child.
+/// - provides: The classification-to-minting boundary without recursive source
+///   re-reading.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The source, stores and child results are absent; the
+///   readers specify each plan and `mint_plan` checks its output family and
+///   transparent case.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the admitted term and type formers retain their concrete
+///   core structure, while grouping adds no constructor.
+/// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+/// - witness: `lower::tests::a_grouping_lowers_to_what_it_wraps`
+/// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+/// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum Plan
 {
@@ -740,6 +1249,28 @@ enum Plan
 }
 
 /// A node's lowered core node, at the sort its own form produced.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The family tag prevents reading a value as a computation or type;
+///   a function can retain a body without a signature.
+/// - provides: A family-indexed result for later parents and declaration
+///   assembly.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — Arena membership cannot be checked from numeric
+///   identifiers alone; minting functions and family accessors state the
+///   executable result relations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — completed and one-sided declarations preserve their
+///   available halves, and function tails keep their body when a type is
+///   absent.
+/// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+/// - witness: `lower::tests::an_uncompleted_signature_is_the_obligation_producer`
+/// - witness: `lower::tests::a_bodiless_definition_lowers_its_body_alone`
+/// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Lowered
 {
@@ -762,23 +1293,92 @@ enum Lowered
 }
 
 /// Whether a form can stand where a value is expected.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The flag denotes admission to the syntactic value class, not
+///   successful name resolution or type checking.
+/// - provides: A value-form decision kept distinct from other Boolean
+///   decisions.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The tested former is not retained; `is_value_form`
+///   specifies the finite membership relation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the finite former table distinguishes syntactic values
+///   from computations and type forms before payload schema checks.
+/// - witness: `lower::tests::only_the_value_forms_can_stand_as_a_payload`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct ValueForm(bool);
 
 /// Whether a spelling is a numeric lexeme with a fraction or an exponent.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The flag distinguishes a well-formed but unsupported fractional
+///   spelling from a malformed integer spelling.
+/// - provides: A lexical refusal decision distinct from numeric evaluation.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — No input text is retained; fractional states the
+///   executable numeric-language predicate.
+///
+/// # Adequacy
+/// - hypothesis: L3 — decimal and exponent markers, missing fields, signs and
+///   non-ASCII digits separate unsupported numbers from malformed lexemes.
+/// - witness: `lower::tests::fractional_spellings_distinguish_unsupported_numbers_from_malformed_ones`
+/// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Fractional(bool);
 
 /// Whether a node lies inside an attribute payload, which lowers whatever
 /// its declaration's outcome.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The flag marks nodes that remain eligible for minting despite an
+///   enclosing declaration’s refusal.
+/// - provides: The payload exception to ordinary refusal pruning.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The node and enclosing attributes are absent; seed,
+///   `inherit_payload` and `mint_at` check marking and its effect.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an otherwise refused declaration retains its valid
+///   attribute payload, and invalid attributes still receive their diagnostics.
+/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+/// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct InPayload(bool);
 
 /// One form being classified: where it stands, what it is called, and how
 /// its position reads it.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: The location, form name and positional reading stay available
+///   together when constructing a located refusal.
+/// - provides: The source context shared by the form readers.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The grammar and source tree are not retained; readers
+///   check admission and one checks the operand-count projection.
+///
+/// # Adequacy
+/// - hypothesis: L3 — misplaced tiles, extra operands and wrong operand counts
+///   retain their distinct refusal kinds and source positions.
+/// - witness: `lower::tests::closing_and_exhaustion_distinguish_tiles_operands_and_gaps`
+/// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
+/// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Site
 {
@@ -807,7 +1407,50 @@ impl Site
     /// The refusal this form earns as the folded form `form`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the site identifies the refused source form.
+    /// - ensures: the refusal retains the supplied form and boundary at the
+    ///   site, with the sort demanded by its reading.
+    /// - provides: a positional refusal for a nested former.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — declined value, computation and type forms keep the
+    ///   position’s sort, distinct from the former’s own family.
+    /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+    /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (self.reading, ret),
+                (
+                    Reading::Unread | Reading::Function,
+                    LoweringRefusal::OutOfFragment {
+                        sort: FragmentSort::Declaration,
+                        ..
+                    }
+                ) | (Reading::ValueType(_), LoweringRefusal::OutOfFragment {
+                    sort: FragmentSort::ValueType,
+                    ..
+                }) | (
+                    Reading::CompType(_) | Reading::Result(_),
+                    LoweringRefusal::OutOfFragment {
+                        sort: FragmentSort::CompType,
+                        ..
+                    }
+                ) | (Reading::Value(_), LoweringRefusal::OutOfFragment {
+                    sort: FragmentSort::Value,
+                    ..
+                }) | (
+                    Reading::Computation(_) | Reading::Head(_),
+                    LoweringRefusal::OutOfFragment {
+                        sort: FragmentSort::Computation,
+                        ..
+                    }
+                )
+            )
+        },
+    )]
     const fn folded<'source>(
         self,
         form: FormName,
@@ -851,6 +1494,34 @@ impl Site
     ///
     /// # Errors
     /// [`LoweringRefusal::MalformedForm`] for a hole not holding one form.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — single-operand forms and an overfull hole distinguish
+    ///   success from an arity fault at the extra operand.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
+    #[spec(
+        ensures: |ret| {
+            matches!(
+                (run, ret),
+                (Run::One(_), Ok(_))
+                    | (
+                        Run::Empty(_),
+                        Err(LoweringRefusal::MalformedForm {
+                            fault: FormFault::MissingOperand,
+                            ..
+                        })
+                    )
+                    | (
+                        Run::Several { .. },
+                        Err(LoweringRefusal::MalformedForm {
+                            fault: FormFault::ExtraOperand,
+                            ..
+                        })
+                    )
+            )
+        },
+    )]
     const fn one<'source>(
         self,
         run: Run,
@@ -865,6 +1536,29 @@ impl Site
 }
 
 /// The lowering's working state, shared by both sweeps.
+///
+/// # Specification
+/// - requires: The grammar, tree and collected declarations describe one
+///   lowering run.
+/// - ensures: Per-node tables share the tree’s coordinate space; planned
+///   flat-store ranges and declaration ownership are interpreted only in that
+///   run.
+/// - provides: The state linking collection, classification, minting and
+///   assembly.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — Type-level invariant expansion is unavailable in the
+///   enabled specification facade; new and the phase boundaries carry
+///   executable table and state relations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — declaration isolation, manifest dependencies, origins and
+///   attribute retention are observed through parsed multi-declaration modules,
+///   not inferred from table lengths alone.
+/// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
+/// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+/// - witness: `lower::tests::every_minted_node_has_an_origin`
+/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
 struct Lowerer<'run, 'source>
 {
     /// The grammar the tree was molded under.
@@ -915,6 +1609,25 @@ struct Lowerer<'run, 'source>
 }
 
 /// Where the mint sweep writes: the arena and the origin table.
+///
+/// # Specification
+/// - requires: The arena and origin table belong to the current minting run;
+///   pre-existing arena nodes need not have entries in the new table.
+/// - ensures: Minting operations pair newly allocated nodes with written or
+///   inserted origins rather than treating an identifier as proof of ownership.
+/// - provides: The shared targets of core allocation and provenance recording.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — Allocation history is not a property of the pair of
+///   references; value, computation, atom and bridge specify each recording
+///   operation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — authored nodes, inserted force and derived function
+///   thunks retain distinct provenance on the listed source forms.
+/// - witness: `lower::tests::every_minted_node_has_an_origin`
+/// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
+/// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
 struct Sink<'run>
 {
     /// The arena the core nodes are minted into.
@@ -972,14 +1685,12 @@ struct Sink<'run>
 /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out.
 ///
 /// # Adequacy
-/// - hypothesis: L2 for the shape of what is produced — every accepted source
-///   is parsed by the real parser and lowered, and each declaration's lowered
-///   ids are read back out of the arena it wrote into and asserted as the exact
-///   core node, an oracle outside the lowering; L3 for the residue — one
-///   witness per refusal variant on a boundary-biased source, asserting the
-///   exact variant, its span and its classification, plus the admission-order
-///   and origin-coverage postconditions asserted over a multi-declaration
-///   module.
+/// - hypothesis: L2 — the listed parser fixtures compare produced core nodes
+///   with pinned semantic goldens read from the receiving arena. L3 — the
+///   listed malformed forms and budget boundaries distinguish located refusals,
+///   declaration isolation and origin coverage. These observations cover those
+///   fixtures and finite spelling tables, not every program or arbitrary
+///   grammar extensions.
 /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
 /// - witness: `lower::tests::an_uncompleted_signature_is_the_obligation_producer`
 /// - witness: `lower::tests::a_bodiless_definition_lowers_its_body_alone`
@@ -1052,6 +1763,38 @@ struct Sink<'run>
 /// - witness: `recognition::recognition::a_declaration_shadowing_a_builtin_is_rejected_under_policy`
 /// - witness: `recognition::recognition::user_shadowing_is_the_only_observable_delta`
 /// - witness: `recognition::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
+#[spec(
+    ensures: |ret| {
+        let agrees = tree.grammar() == pbg.fingerprint();
+        match ret.as_ref() {
+            | Ok(module) => {
+                agrees
+                    && usize::from(module.origins().declaration_count())
+                        == module.declarations().len()
+                    && module.declarations().windows(2).all(|pair| match *pair {
+                        | [ref left, ref right] => left.constant() < right.constant(),
+                        | _ => false,
+                    })
+                    && module.declarations().iter().all(|declaration| {
+                        match module.origins().declaration(declaration.origin()) {
+                            | Maybe::Present(origin) => {
+                                origin.span() == declaration.span()
+                                    && tree
+                                        .node(origin.node())
+                                        .is_some_and(|node| node.digest() == origin.digest())
+                            },
+                            | Maybe::Absent(_) => false,
+                        }
+                    })
+            },
+            | Err(&LoweringRefusal::GrammarMismatch {
+                tree: found,
+                grammar,
+            }) => !agrees && found == tree.grammar() && grammar == pbg.fingerprint(),
+            | Err(_) => agrees,
+        }
+    },
+)]
 #[inline]
 pub fn lower_module<'source>(
     pbg: &Pbg,
@@ -1137,7 +1880,57 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The state for lowering `tree`, everything unread.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the collected names and ownership positions describe this
+    ///   tree.
+    /// - ensures: one unread, unplanned, unminted, unbridged and unscoped cell
+    ///   is allocated per syntax node; scratch stores and export indexes start
+    ///   empty.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty working state is consumed by paired
+    ///   declarations, nested modules and attributed refusals without leaking
+    ///   prior node state.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `modules::modules::deeply_nested_modules_lower_and_resolve_at_every_depth`
+    #[spec(
+        ensures: |ret| {
+            let count = usize::from(tree.node_count());
+            ret.readings.len() == count
+                && ret
+                    .readings
+                    .iter()
+                    .all(|reading| matches!(*reading, Reading::Unread))
+                && ret.plans.len() == count
+                && ret
+                    .plans
+                    .iter()
+                    .all(|plan| matches!(*plan, Plan::Unplanned))
+                && ret.bridges.len() == count
+                && ret.bridges.iter().all(|bridge| *bridge == Bridge::Bare)
+                && ret.lowered.len() == count
+                && ret
+                    .lowered
+                    .iter()
+                    .all(|node| matches!(*node, Maybe::Absent(lowered::Absent::Unminted)))
+                && ret.payload.len() == count
+                && ret.payload.iter().all(|flag| !flag.0)
+                && ret.scopes.len() == count
+                && ret
+                    .scopes
+                    .iter()
+                    .all(|scope| matches!(*scope, Maybe::Absent(_)))
+                && ret.manifests.is_empty()
+                && ret.exported.is_empty()
+                && ret.witnessed.is_empty()
+                && ret.operands.is_empty()
+                && ret.statements.is_empty()
+                && ret.parameters.is_empty()
+                && ret.fuel == fuel
+        },
+    )]
     fn new(
         pbg: &'run Pbg,
         tree: &'run SyntaxTree<'source>,
@@ -1215,6 +2008,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `recognition::recognition::user_shadowing_is_the_only_observable_delta`
     /// - witness: `modules::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
     /// - witness: `modules::modules::a_hidden_member_is_admitted_and_absent_from_the_namespace`
+    #[spec(
+        captures: before = (self.collected.slots.len(), self.collected.structures.len()),
+        ensures: |_| {
+            self.collected.structures.len() == before.1
+                && self.collected.slots.len() >= before.0
+                && self.collected.slots.iter().enumerate().skip(before.0).all(
+                    |(index, slot)| {
+                        slot.role == Role::Held
+                            && slot.container == Container::TopLevel
+                            && usize::from(slot.constant) == index
+                            && matches!(
+                                slot.refusal,
+                                Maybe::Present((_, LoweringRefusal::ShadowedBuiltin { .. }))
+                            )
+                    },
+                )
+        },
+    )]
     fn declare(&mut self)
     {
         for slot in &mut self.collected.slots {
@@ -1258,6 +2069,34 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the per-module half of [`Self::declare`].
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — only exported value paths enter the module namespace,
+    ///   while a hidden member stays absent and nested namespaces govern their
+    ///   own paths.
+    /// - witness: `modules::modules::a_module_path_is_governed_through_lowering_not_merely_registered`
+    /// - witness: `modules::modules::a_hidden_member_is_admitted_and_absent_from_the_namespace`
+    #[spec(
+        captures: before = (self.exported.len(), self.collected.slots.len()),
+        ensures: |_| {
+            self.exported.len() >= before.0
+                && self.collected.slots.len() >= before.1
+                && self.collected.slots.len() <= before.1.saturating_add(1)
+                && self.exported.values().all(|slot| {
+                    self.collected
+                        .slots
+                        .get(usize::from(*slot))
+                        .is_some_and(|entry| entry.role == Role::Declared)
+                })
+                && self.collected.slots.iter().skip(before.1).all(|slot| {
+                    slot.role == Role::Held
+                        && matches!(
+                            slot.refusal,
+                            Maybe::Present((_, LoweringRefusal::ShadowedBuiltin { .. }))
+                        )
+                })
+        },
+    )]
     fn declare_module(
         &mut self,
         top: StructureIndex,
@@ -1359,6 +2198,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a lambda binder over a builtin under each policy,
     ///   asserted as the exact record and outcome.
     /// - witness: `recognition::recognition::a_binder_shadowing_a_builtin_is_rejected_under_policy`
+    #[spec(
+        ensures: |ret| {
+            ret == Ok(())
+                || ret
+                    == Err(LoweringRefusal::ShadowedBuiltin {
+                        span: binder.span,
+                        name,
+                    })
+        },
+    )]
     fn note_binder(
         &mut self,
         binder: Placed,
@@ -1396,6 +2245,34 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// [`LoweringRefusal::UnknownMold`] for a foreign mold.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — signatures and definitions seed different readings;
+    ///   manifest types and attribute payloads retain their own roots,
+    ///   including attributes of refused declarations.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    #[spec(
+        captures: before = (self.readings.len(), self.payload.len(), self.scopes.len()),
+        ensures: |ret| {
+            self.readings.len() == before.0
+                && self.payload.len() == before.1
+                && self.scopes.len() == before.2
+                && (ret.is_err()
+                    || self.collected.slots.iter().all(|slot| {
+                        slot.attributes
+                            .iter()
+                            .all(|attribute| match attribute.payload {
+                                | Payload::Unwritten => true,
+                                | Payload::Written(payload) => self
+                                    .payload
+                                    .get(usize::from(payload.node))
+                                    .is_none_or(|flag| flag.0),
+                            })
+                    }))
+        },
+    )]
     fn seed(&mut self) -> Result<(), LoweringRefusal<'source>>
     {
         let mut seeds: Vec<(NodeIndex, Reading)> = Vec::new();
@@ -1454,7 +2331,35 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The form a payload is written as, and whether it can stand as a value.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a known form yields its classification and value-form
+    ///   verdict; a missing node yields layout and a negative verdict.
+    /// - fails: with an unknown-mold refusal when the grammar cannot classify
+    ///   the node.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — value and non-value payloads take distinct schema
+    ///   paths while every eligible former is covered by the value-form
+    ///   classification table.
+    /// - witness: `lower::tests::only_the_value_forms_can_stand_as_a_payload`
+    /// - witness: `lower::tests::a_non_value_payload_is_refused`
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+    #[spec(
+        ensures: |ret| {
+            ret == self.tree.node(payload.node).map_or(
+                Ok((Shape::Layout, ValueForm(false))),
+                |node| {
+                    shape_of(self.pbg, node).map(|shape| {
+                        (shape, match shape {
+                            | Shape::Form { former, .. } => is_value_form(former),
+                            | Shape::Root | Shape::Repair(_) | Shape::Layout => ValueForm(false),
+                        })
+                    })
+                },
+            )
+        },
+    )]
     fn payload_former(
         &self,
         payload: Placed,
@@ -1492,6 +2397,33 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Errors
     /// [`LoweringRefusal::BudgetExceeded`] and
     /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — declaration refusals remain local while grammar and
+    ///   budget faults abort the run; classification spends at least one step
+    ///   per source node and does not allocate declaration slots.
+    /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
+    /// - witness: `lower::tests::a_tree_of_another_grammar_is_refused`
+    /// - witness: `lower::tests::a_module_past_the_allowance_is_refused`
+    #[spec(
+        captures: before = (
+            self.fuel.remaining,
+            self.collected.slots.len(),
+            self.plans.len(),
+        ),
+        ensures: |ret| {
+            self.collected.slots.len() == before.1
+                && self.plans.len() == before.2
+                && self.fuel.remaining <= before.0
+                && ret
+                    .as_ref()
+                    .err()
+                    .is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault)
+                && (ret.is_err()
+                    || self.fuel.remaining
+                        <= before.0.saturating_sub(usize::from(self.tree.node_count())))
+        },
+    )]
     fn classify(&mut self) -> Result<(), LoweringRefusal<'source>>
     {
         for position in self.tree.positions() {
@@ -1524,6 +2456,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the ownership half of the one-refusal-per-declaration rule.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — refusal and payload nodes remain owned by the correct
+    ///   declaration, including payloads lowered after their declaration is
+    ///   refused.
+    /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    #[spec(
+        captures: before = (
+            self.collected.owner.len(),
+            self.collected.owner_of(position),
+        ),
+        ensures: |_| {
+            self.collected.owner.len() == before.0
+                && self.collected.owner_of(position) == before.1
+                && (!matches!(before.1, Maybe::Present(_))
+                    || self
+                        .tree
+                        .children(position)
+                        .all(|child| matches!(self.collected.owner_of(child), Maybe::Present(_))))
+        },
+    )]
     fn inherit_owner(
         &mut self,
         position: NodeIndex,
@@ -1551,6 +2505,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the scope a type head inside a signature resolves against.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — manifest names in later component types resolve
+    ///   through the enclosing signature prefix rather than ambient source
+    ///   declarations.
+    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    #[spec(
+        captures: before = (
+            self.scopes.len(),
+            self.scopes.get(usize::from(position)).copied(),
+        ),
+        ensures: |_| {
+            self.scopes.len() == before.0
+                && self.scopes.get(usize::from(position)).copied() == before.1
+                && (!matches!(before.1, Some(Maybe::Present(_)))
+                    || self.tree.children(position).all(|child| {
+                        self.scopes
+                            .get(usize::from(child))
+                            .is_none_or(|scope| matches!(*scope, Maybe::Present(_)))
+                    }))
+        },
+    )]
     fn inherit_scope(
         &mut self,
         position: NodeIndex,
@@ -1580,6 +2556,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the payload half of what the mint sweep skips.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused declaration still mints its attribute
+    ///   payload without minting the refused signature or body.
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
+    #[spec(
+        captures: before = (self.payload.len(), self.in_payload(position)),
+        ensures: |_| {
+            self.payload.len() == before.0
+                && self.in_payload(position) == before.1
+                && (!before.1.0
+                    || self.tree.children(position).all(|child| {
+                        self.payload
+                            .get(usize::from(child))
+                            .is_none_or(|flag| flag.0)
+                    }))
+        },
+    )]
     fn inherit_payload(
         &mut self,
         position: NodeIndex,
@@ -1598,7 +2593,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Whether `position` lies inside an attribute payload.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a live position yields its stored payload flag; an
+    ///   out-of-range position is outside every payload.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — refused declarations keep payload interpretation
+    ///   separate from their signature and body.
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    #[spec(
+        ensures: |ret| {
+            ret.0
+                == self
+                    .payload
+                    .get(usize::from(position))
+                    .is_some_and(|flag| flag.0)
+        },
+    )]
     fn in_payload(
         &self,
         position: NodeIndex,
@@ -1623,6 +2636,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The form's first refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a read form gets its own plan or a located refusal;
+    ///   unread source and grammar faults are not mistaken for admitted terms.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::a_mold_the_grammar_does_not_hold_is_refused`
+    /// - witness: `lower::tests::a_repaired_declaration_is_refused`
+    #[spec(
+        captures: active = self.reading(position) != Reading::Unread
+            && self
+                .tree
+                .node(position)
+                .is_some_and(|node| matches!(shape_of(self.pbg, node), Ok(Shape::Form { .. }))),
+        ensures: |ret| {
+            (!active
+                || ret.is_err()
+                || self
+                    .plans
+                    .get(usize::from(position))
+                    .is_some_and(|plan| *plan != Plan::Unplanned))
+                && (self.reading(position) != Reading::Unread || ret.is_ok())
+        },
+    )]
     fn classify_node(
         &mut self,
         position: NodeIndex,
@@ -1671,6 +2707,33 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The form's first refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — repairs take precedence over admission, wrong
+    ///   families are refused, and a type read as a value is the explicit
+    ///   quoting exception.
+    /// - witness: `lower::tests::a_repaired_declaration_is_refused`
+    /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+    /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+    #[spec(
+        ensures: |ret| {
+            if let Maybe::Present(repaired) = pieces.repair {
+                ret == Err(site.fault(repaired.span, FormFault::Repaired(repaired.repair)))
+            }
+            else if family_of(former) != site.reading.family()
+                && !(family_of(former) == Family::Type && matches!(site.reading, Reading::Value(_)))
+            {
+                ret == Err(site.out(FragmentBoundary::WrongSort))
+            }
+            else {
+                ret.is_err()
+                    || self
+                        .plans
+                        .get(usize::from(site.at.node))
+                        .is_some_and(|plan| *plan != Plan::Unplanned)
+            }
+        },
+    )]
     fn classify_form(
         &mut self,
         site: Site,
@@ -1745,6 +2808,38 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
     /// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+    #[spec(
+        ensures: |ret| {
+            let expected = match (site.reading, produced) {
+                | (Reading::Value(frame), Produced::Value)
+                | (Reading::Computation(frame) | Reading::Head(frame), Produced::Computation)
+                | (Reading::ValueType(frame), Produced::ValueType)
+                | (Reading::CompType(frame) | Reading::Result(frame), Produced::CompType) => {
+                    Some((frame, Bridge::Bare))
+                },
+                | (Reading::Head(frame), Produced::Value) => {
+                    Some((frame, Bridge::Inserted(Insertion::Force)))
+                },
+                | (Reading::Result(frame), Produced::ValueType) => {
+                    Some((frame, Bridge::Inserted(Insertion::Returner)))
+                },
+                | (Reading::Value(frame), Produced::ValueType | Produced::CompType) => {
+                    Some((frame, Bridge::Inserted(Insertion::Quote)))
+                },
+                | _ => None,
+            };
+            match expected {
+                | Some((frame, bridge)) => {
+                    ret == Ok(frame)
+                        && self
+                            .bridges
+                            .get(usize::from(site.at.node))
+                            .is_none_or(|held| *held == bridge)
+                },
+                | None => ret == Err(site.out(FragmentBoundary::WrongSort)),
+            }
+        },
+    )]
     fn require(
         &mut self,
         site: Site,
@@ -1808,6 +2903,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `modules::modules::a_backward_member_reference_resolves`
     /// - witness: `lower::tests::a_self_reference_is_unresolved`
     /// - witness: `lower::tests::an_earlier_declaration_resolves_as_a_constant`
+    #[spec(
+        captures: before = self.fuel.remaining,
+        ensures: |ret| {
+            self.fuel.remaining <= before
+                && match ret {
+                    | Ok(Maybe::Present(Resolved::Declaration { constant, declared })) => {
+                        matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if usize::from(constant) < usize::from(own) && self.collected.slots.get(usize::from(constant)).is_some_and(|entry| entry.name == name && entry.constant == constant && declared == match entry.signature { Maybe::Present(Half { operand: Operand::Written(written), .. }) => Maybe::Present(written.node), _ => Maybe::Absent(binder_type::Absent::Untyped) }))
+                    },
+                    | Err(LoweringRefusal::ForwardMemberReference {
+                        span,
+                        name: refused,
+                        ..
+                    }) => span == site.at.span && refused == name,
+                    | _ => true,
+                }
+        },
+    )]
     fn resolve_name(
         &mut self,
         site: Site,
@@ -1882,6 +2994,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The name's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — local binders and earlier declarations resolve to
+    ///   their own variable or constant, while an undefined name keeps its
+    ///   source span.
+    /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+    /// - witness: `lower::tests::an_undefined_term_name_is_refused`
+    /// - witness: `modules::modules::a_backward_member_reference_resolves`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&(Plan::Variable(_) | Plan::Constant(_)))
+                )
+        },
+    )]
     fn name(
         &mut self,
         site: Site,
@@ -1926,6 +3055,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(
+                        &(Plan::Variable(_)
+                            | Plan::Constant(_)
+                            | Plan::Atom(_)
+                            | Plan::Universe(_))
+                    )
+                )
+        },
+    )]
     fn constructor(
         &mut self,
         site: Site,
@@ -1964,6 +3107,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The number's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — canonical integer magnitudes, fractional syntax and
+    ///   malformed lexemes separate successful literal plans from their
+    ///   refusals.
+    /// - witness: `lower::tests::an_integer_literal_is_its_canonical_magnitude`
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+    /// - witness: `lower::tests::a_malformed_integer_literal_is_refused`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::Literal(Literal::Integer(_)))
+                )
+        },
+    )]
     fn number(
         &mut self,
         site: Site,
@@ -1999,6 +3160,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The string's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — quoted strings decode their escapes; interpolation
+    ///   and malformed text retain their distinct located refusals.
+    /// - witness: `lower::tests::a_text_literal_is_the_bytes_between_its_quotes`
+    /// - witness: `lower::tests::a_text_literal_lowers_with_its_escapes_decoded`
+    /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+    /// - witness: `lower::tests::a_malformed_text_literal_is_refused`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::Literal(Literal::Text(_)))
+                )
+        },
+    )]
     fn text(
         &mut self,
         site: Site,
@@ -2042,6 +3220,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — grouping preserves its operand while a
+    ///   comma-separated tuple plans an eager pair rather than treating the
+    ///   commas as grouping.
+    /// - witness: `lower::tests::a_grouping_lowers_to_what_it_wraps`
+    /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&(Plan::Unit | Plan::Transparent(_) | Plan::Pair(_)))
+                )
+        },
+    )]
     fn parenthesized(
         &mut self,
         site: Site,
@@ -2099,11 +3293,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   computation is read, each asserted as the exact core node read back
     ///   out of the arena or the exact refusal.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
-    #[spec(ensures: |ret| ret.is_err()
-        || matches!(
-            self.plans.get(usize::from(site.at.node)),
-            Some(&Plan::Pair(members)) if members.end.saturating_sub(members.start) >= 2_usize
-        ))]
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::Pair(members)) if members.end.saturating_sub(members.start) >= 2_usize
+                )
+        },
+    )]
     fn pair(
         &mut self,
         site: Site,
@@ -2148,6 +3346,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The thunk's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a thunk keeps its block computation under suspension;
+    ///   an authored force reads that value before forcing its computation.
+    /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Thunk(Block { statements, .. })) if statements.start <= statements.end && statements.end <= self.statements.len())
+        },
+    )]
     fn thunk(
         &mut self,
         site: Site,
@@ -2182,6 +3392,18 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The lambda's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a lambda body uses its newly introduced binder and a
+    ///   lambda offered directly in value position is refused.
+    /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+    /// - witness: `lower::tests::a_lambda_in_value_position_is_refused`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Lambda(Block { statements, .. })) if statements.start <= statements.end && statements.end <= self.statements.len())
+        },
+    )]
     fn lambda(
         &mut self,
         site: Site,
@@ -2235,6 +3457,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
+    #[spec(
+        captures: parameters = self.parameters.len(),
+        ensures: |ret| {
+            ret.is_err()
+                || self
+                    .plans
+                    .get(usize::from(site.at.node))
+                    .is_some_and(|plan| match *plan {
+                        | Plan::Function(ref function) => {
+                            function.parameters.start == parameters
+                                && function.parameters.end == self.parameters.len()
+                                && function.block.statements.start <= function.block.statements.end
+                                && function.block.statements.end <= self.statements.len()
+                        },
+                        | _ => false,
+                    })
+        },
+    )]
     fn function(
         &mut self,
         site: Site,
@@ -2360,6 +3600,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
     /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
     /// - witness: `lower::tests::a_form_offered_the_wrong_operand_count_is_refused`
+    #[spec(
+        captures: before = (self.statements.len(), frame),
+        ensures: |ret| {
+            ret.as_ref().map_or(true, |block| {
+                block.statements.start == before.0
+                    && block.statements.end == self.statements.len()
+                    && matches!(self.reading(block.last), Reading::Computation(_))
+                    && (block.statements.start != block.statements.end
+                        || self.reading(block.last) == Reading::Computation(before.1))
+                    && matches!(cursor.peek(), Maybe::Absent(_))
+            })
+        },
+    )]
     fn block(
         &mut self,
         site: Site,
@@ -2455,6 +3708,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The statement's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each run statement reads its bound computation in the
+    ///   previous frame and introduces its name only for subsequent
+    ///   computations.
+    /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+    #[spec(
+        captures: before = self.statements.len(),
+        ensures: |ret| match ret {
+            | Ok(Frame::Inner(_)) => {
+                self.statements.len() == before.saturating_add(1_usize)
+                    && self.statements.last().is_some_and(|last| {
+                        last.run == run.node
+                            && self.reading(last.bound) == Reading::Computation(frame)
+                    })
+            },
+            | Ok(Frame::Outermost) => false,
+            | Err(_) => self.statements.len() == before,
+        },
+    )]
     fn statement(
         &mut self,
         cursor: &mut Cursor<'_>,
@@ -2504,6 +3777,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The pattern's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordinary run binders introduce the spelled name;
+    ///   wildcard and annotated patterns are refused rather than becoming
+    ///   ordinary names.
+    /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+    /// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+    #[spec(
+        ensures: |ret| {
+            ret.as_ref().map_or(true, |name| {
+                *name == self.name_at(binder)
+                    && self.tree.node(binder.node).is_some_and(|node| {
+                        matches!(
+                            shape_of(self.pbg, node),
+                            Ok(Shape::Form {
+                                former: Former::Name,
+                                ..
+                            })
+                        )
+                    })
+            })
+        },
+    )]
     fn binder_name(
         &self,
         statement: Site,
@@ -2548,6 +3844,28 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — force and return plan their own former over a value
+    ///   operand, and an author-written force is not marked as inserted.
+    /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || match self.plans.get(usize::from(site.at.node)) {
+                    | Some(&Plan::Force(operand)) => {
+                        keyword == TileName::FORCE
+                            && self.reading(operand) == Reading::Value(site.reading.frame())
+                    },
+                    | Some(&Plan::Return(operand)) => {
+                        keyword != TileName::FORCE
+                            && self.reading(operand) == Reading::Value(site.reading.frame())
+                    },
+                    | _ => false,
+                }
+        },
+    )]
     fn keyed(
         &mut self,
         site: Site,
@@ -2596,6 +3914,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::force_and_application_lower_over_their_children`
     /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
     /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
+    #[spec(
+        captures: start = self.operands.len(),
+        ensures: |ret| {
+            ret.is_err()
+                || match self.plans.get(usize::from(site.at.node)) {
+                    | Some(&Plan::Application(head, arguments)) => {
+                        arguments.start == start
+                            && arguments.end == self.operands.len()
+                            && self.reading(head) == Reading::Head(site.reading.frame())
+                            && self.operands.iter().skip(start).all(|&argument| {
+                                self.reading(argument) == Reading::Value(site.reading.frame())
+                            })
+                    },
+                    | _ => false,
+                }
+        },
+    )]
     fn call(
         &mut self,
         site: Site,
@@ -2655,6 +3990,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `modules::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
     /// - witness: `modules::modules::a_module_namespace_is_not_a_projectable_record`
     /// - witness: `modules::modules::a_hidden_or_absent_user_module_component_is_declined_as_a_hole`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::Constant(_))
+                )
+        },
+    )]
     fn projection(
         &mut self,
         site: Site,
@@ -2745,6 +4089,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// [`LoweringRefusal::MalformedForm`] for a malformed selection.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — single and deeply nested selections preserve their
+    ///   target and own member positions, which locate an unknown member at its
+    ///   depth.
+    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+    /// - witness: `modules::modules::a_deep_module_path_is_governed_at_the_depth_that_binds_it`
+    #[spec(
+        ensures: |ret| {
+            ret.as_ref().map_or(true, |&(target, selected)| {
+                pieces.first() == Some(&Piece::Operand(target))
+                    && matches!(
+                        pieces.get(1),
+                        Some(&Piece::Tile {
+                            label: TileName::DOT,
+                            ..
+                        })
+                    )
+                    && pieces.get(2)
+                        == Some(&Piece::Tile {
+                            label: TileName::IDENTIFIER,
+                            at: selected,
+                        })
+            })
+        },
+    )]
     fn link(
         site: Site,
         pieces: &[Piece],
@@ -2780,6 +4150,31 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// [`LoweringRefusal::ForwardMemberReference`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a backward member becomes its declared constant while
+    ///   a forward member is refused at the use, with the declaration retained.
+    /// - witness: `modules::modules::a_backward_member_reference_resolves`
+    /// - witness: `modules::modules::a_forward_member_reference_is_refused_by_position`
+    #[spec(
+        ensures: |ret| match self.collected.slots.get(usize::from(target)) {
+            | None => ret == Err(site.out(FragmentBoundary::Unadmitted)),
+            | Some(entry) => {
+                if matches!(self.collected.owner_of(site.at.node), Maybe::Present(own) if target >= own)
+                {
+                    ret == Err(LoweringRefusal::ForwardMemberReference {
+                        span: site.at.span,
+                        name: entry.name,
+                        declared: entry.named.span,
+                    })
+                }
+                else {
+                    ret.is_ok()
+                        && matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Constant(constant)) if constant == entry.constant)
+                }
+            },
+        },
+    )]
     fn select(
         &mut self,
         site: Site,
@@ -2837,6 +4232,23 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::every_type_atom_lowers_to_its_core_type`
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    #[spec(
+        captures: before = self.manifests.len(),
+        ensures: |ret| {
+            self.manifests.len() >= before
+                && self.manifests.len() <= before.saturating_add(1_usize)
+                && (ret.is_err()
+                    || matches!(
+                        self.plans.get(usize::from(site.at.node)),
+                        Some(
+                            &(Plan::Transparent(_)
+                                | Plan::Atom(_)
+                                | Plan::Decode(_, _, _)
+                                | Plan::StaticApplication(_, _))
+                        )
+                    ))
+        },
+    )]
     fn type_head(
         &mut self,
         site: Site,
@@ -2901,6 +4313,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — the bare spelling, a sort alone and a sort with a
     ///   level at each sort, each asserted as the exact core universe.
     /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::Universe(_))
+                )
+        },
+    )]
     fn universe(
         &mut self,
         site: Site,
@@ -2929,6 +4350,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The universe's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the supported spellings consume the complete form and
+    ///   the spelling without brackets denotes the fuss-free universe. Explicit
+    ///   sort and level values are checked by the same bounded spelling table.
+    /// - witness: `lower::tests::every_universe_spelling_lowers_to_its_universe`
+    #[spec(
+        captures: plain = {
+            let mut input = cursor.clone();
+            let _keyword = input.tile(TileName::UNIVERSE);
+            matches!(input.at(TileName::BRACKET_OPEN), Maybe::Absent(_))
+        },
+        ensures: |ret| {
+            ret.as_ref().map_or(true, |universe| {
+                matches!(cursor.peek(), Maybe::Absent(_))
+                    && (!plain || *universe == Universe::FUSS_FREE)
+            })
+        },
+    )]
     fn universe_of(
         &self,
         site: Site,
@@ -3005,9 +4445,13 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   of position, each observed through the decode it mints.
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
-    #[spec(ensures: |ret| ret.is_err()
-        || matches!(declared, Maybe::Present(_))
-        || ret.as_ref().is_ok_and(|universe| *universe == fallback))]
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(declared, Maybe::Present(_))
+                || ret.as_ref().is_ok_and(|universe| *universe == fallback)
+        },
+    )]
     fn written_universe(
         &mut self,
         declared: Maybe<NodeIndex, binder_type::Absent>,
@@ -3096,11 +4540,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::u_and_f_are_names`
     /// - witness: `lower::tests::an_applied_head_no_former_answers_is_refused`
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
-    #[spec(ensures: |ret| ret.is_err()
-        || matches!(
-            self.plans.get(usize::from(site.at.node)),
-            Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::StaticApplication(..)))
-        ))]
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&(Plan::Former(..) | Plan::Decode(..) | Plan::StaticApplication(..)))
+                )
+        },
+    )]
     fn type_application(
         &mut self,
         site: Site,
@@ -3194,16 +4642,20 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
-    #[spec(ensures: |ret| ret.is_err()
-        || match self.plans.get(usize::from(site.at.node)) {
-            | Some(&Plan::StaticApplication(_, planned)) => {
-                planned == applied && matches!(site.reading, Reading::Value(_))
-            },
-            | Some(&Plan::Decode(_, planned, _)) => {
-                planned == applied && !matches!(site.reading, Reading::Value(_))
-            },
-            | _ => false,
-        })]
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || match self.plans.get(usize::from(site.at.node)) {
+                    | Some(&Plan::StaticApplication(_, planned)) => {
+                        planned == applied && matches!(site.reading, Reading::Value(_))
+                    },
+                    | Some(&Plan::Decode(_, planned, _)) => {
+                        planned == applied && !matches!(site.reading, Reading::Value(_))
+                    },
+                    | _ => false,
+                }
+        },
+    )]
     fn static_application(
         &mut self,
         site: Site,
@@ -3268,6 +4720,22 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the thunk and returner spellings plan their
+    ///   respective bridge former, while unsupported grades produce a located
+    ///   refusal.
+    /// - witness: `lower::tests::the_thunk_and_returner_heads_lower_to_their_formers`
+    /// - witness: `lower::tests::a_graded_bridge_is_refused_by_name`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::Former(_, _))
+                )
+        },
+    )]
     fn formed_type(
         &mut self,
         site: Site,
@@ -3319,6 +4787,30 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — the default grade, a numeral and a name, each
     ///   asserted as the lowered bridge or the exact refusal.
     /// - witness: `lower::tests::a_graded_bridge_is_refused_by_name`
+    #[spec(
+        captures: input = {
+            let mut input = cursor.clone();
+            (input.read(), input.read(), input.peek())
+        },
+        ensures: |ret| {
+            ret.is_ok()
+                == matches!(
+                    input,
+                    (
+                        Maybe::Present(Piece::Tile {
+                            label: TileName::OMEGA,
+                            ..
+                        }),
+                        Maybe::Present(Piece::Tile {
+                            label: TileName::BRACKET_CLOSE,
+                            ..
+                        }),
+                        _
+                    )
+                )
+                && (ret.is_err() || cursor.peek() == input.2)
+        },
+    )]
     fn grade(
         &self,
         site: Site,
@@ -3356,6 +4848,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// [`LoweringRefusal::OutOfFragment`] for a sort mismatch.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — thunk and returner read the argument in opposite
+    ///   sorts; each then lowers to its own core bridge former, not the other
+    ///   one.
+    /// - witness: `lower::tests::the_thunk_and_returner_heads_lower_to_their_formers`
+    /// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || (matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Former(stored, child)) if stored == former && child == argument)
+                    && self.reading(argument)
+                        == match former {
+                            | TypeFormer::Thunk => Reading::CompType(site.reading.frame()),
+                            | TypeFormer::Returner => Reading::ValueType(site.reading.frame()),
+                        })
+        },
+    )]
     fn apply_former(
         &mut self,
         site: Site,
@@ -3408,12 +4918,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
     /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
     /// - witness: `lower::tests::a_computation_codomain_of_a_static_pi_is_refused`
-    #[spec(ensures: |ret| ret.is_err()
-        || match self.plans.get(usize::from(site.at.node)) {
-            | Some(&Plan::StaticPi(..)) => matches!(site.reading, Reading::ValueType(_)),
-            | Some(&Plan::Arrow(..)) => !matches!(site.reading, Reading::ValueType(_)),
-            | _ => false,
-        })]
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || match self.plans.get(usize::from(site.at.node)) {
+                    | Some(&Plan::StaticPi(..)) => matches!(site.reading, Reading::ValueType(_)),
+                    | Some(&Plan::Arrow(..)) => !matches!(site.reading, Reading::ValueType(_)),
+                    | _ => false,
+                }
+        },
+    )]
     fn arrow(
         &mut self,
         site: Site,
@@ -3465,8 +4979,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   where a computation type is read, each asserted as the exact core node
     ///   read back out of the arena or the exact refusal.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
-    #[spec(ensures: |ret| ret.is_err()
-        || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Product(..))))]
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::Product(..))
+                )
+        },
+    )]
     fn product(
         &mut self,
         site: Site,
@@ -3512,11 +5033,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   right, each asserted as the same core node the thunked arrow it stands
     ///   for lowers to.
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
-    #[spec(ensures: |ret| ret.is_err()
-        || matches!(
-            self.plans.get(usize::from(site.at.node)),
-            Some(&Plan::ValueFunction(domains, _)) if domains.start < domains.end
-        ))]
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::ValueFunction(domains, _)) if domains.start < domains.end
+                )
+        },
+    )]
     fn value_function(
         &mut self,
         site: Site,
@@ -3572,7 +5097,7 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
     #[spec(
         captures: before = self.operands.len(),
-        ensures: |ret| ret.is_err() || self.operands.len() > before
+        ensures: |ret| ret.is_err() || self.operands.len() > before,
     )]
     fn domains(
         &mut self,
@@ -3644,11 +5169,15 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   as the exact core node read back out of the arena or the exact
     ///   refusal.
     /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
-    #[spec(ensures: |ret| ret.is_err()
-        || matches!(
-            self.plans.get(usize::from(site.at.node)),
-            Some(&Plan::StaticLambda(_))
-        ))]
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(
+                    self.plans.get(usize::from(site.at.node)),
+                    Some(&Plan::StaticLambda(_))
+                )
+        },
+    )]
     fn static_abstraction(
         &mut self,
         site: Site,
@@ -3695,6 +5224,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The form's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — parenthesized type operands keep the surrounding
+    ///   reading and lower to the wrapped type rather than introducing a core
+    ///   constructor.
+    /// - witness: `lower::tests::an_arrow_lowers_under_a_thunk_type`
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || matches!(self.plans.get(usize::from(site.at.node)), Some(&Plan::Transparent(child)) if self.reading(child) == site.reading)
+        },
+    )]
     fn parenthesized_type(
         &mut self,
         site: Site,
@@ -3714,7 +5256,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// How `position` is read.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a live position yields its stored reading; an absent position
+    ///   is unread.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — paired declarations and refused siblings retain
+    ///   distinct readings through the ascending classification sweep.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
+    #[spec(
+        ensures: |ret| {
+            ret == self
+                .readings
+                .get(usize::from(position))
+                .copied()
+                .unwrap_or(Reading::Unread)
+        },
+    )]
     fn reading(
         &self,
         position: NodeIndex,
@@ -3729,7 +5290,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Read `position` as `reading`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a live position takes the supplied reading without resizing
+    ///   the table; an absent position changes nothing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — signatures, definitions and nested binder bodies
+    ///   receive their own expected sorts and frames.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+    #[spec(
+        captures: count = self.readings.len(),
+        ensures: |_| {
+            self.readings.len() == count
+                && self
+                    .readings
+                    .get(usize::from(position))
+                    .is_none_or(|held| *held == reading)
+        },
+    )]
     fn read(
         &mut self,
         position: NodeIndex,
@@ -3744,7 +5325,30 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Record `plan` for the form at `site`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a live position takes the supplied plan without resizing the
+    ///   table; an absent position changes nothing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — literals, applications and quoted types preserve
+    ///   their planned former through the minting sweep; their concrete
+    ///   operands are checked by the consumer witnesses rather than copied into
+    ///   a snapshot.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+    #[spec(
+        captures: before = (self.plans.len(), core::mem::discriminant(&plan)),
+        ensures: |_| {
+            self.plans.len() == before.0
+                && self
+                    .plans
+                    .get(usize::from(site.at.node))
+                    .is_none_or(|held| core::mem::discriminant(held) == before.1)
+        },
+    )]
     fn plan(
         &mut self,
         site: Site,
@@ -3759,7 +5363,25 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The source text of `placed`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a node with a source fragment yields that fragment; an absent
+    ///   fragment yields empty text.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — source literal text is interpreted at its own syntax
+    ///   node and malformed lexemes retain their exact refusal span.
+    /// - witness: `lower::tests::a_malformed_integer_literal_is_refused`
+    /// - witness: `lower::tests::a_malformed_text_literal_is_refused`
+    #[spec(
+        ensures: |ret| {
+            self.tree.fragment(placed.node).map_or_else(
+                || ret.as_ref().is_empty(),
+                |fragment| ret.as_ref() == fragment.as_ref(),
+            )
+        },
+    )]
     fn text_at(
         &self,
         placed: Placed,
@@ -3817,6 +5439,16 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
     /// - witness: `modules::modules::nested_member_signature_constrains_the_parent_binding`
     /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    #[spec(
+        ensures: |ret| {
+            ret.is_err()
+                || self.plans.iter().enumerate().all(|(position, plan)| {
+                    let position = NodeIndex::from(position);
+                    (self.collected.refused(position).0 && !self.in_payload(position).0)
+                        || *plan == Plan::Unplanned
+                })
+        },
+    )]
     fn mint(
         &mut self,
         sink: &mut Sink<'_>,
@@ -3880,6 +5512,38 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the per-position half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a refused declaration leaves its ordinary plans
+    ///   untouched but still permits its attribute payloads to mint; consumed
+    ///   plans are not minted twice when a manifest and the full traversal both
+    ///   reach them.
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    #[spec(
+        captures: before = (
+            self.collected.refused(position).0 && !self.in_payload(position).0,
+            matches!(
+                self.plans.get(usize::from(position)),
+                None | Some(&Plan::Unplanned)
+            ),
+            self.lowered_at(position),
+            self.plans.len(),
+            self.lowered.len(),
+        ),
+        ensures: self.plans.len() == before.3
+            && self.lowered.len() == before.4
+            && (if before.0 || before.1 {
+                self.lowered_at(position) == before.2
+            }
+            else {
+                matches!(
+                    self.plans.get(usize::from(position)),
+                    Some(&Plan::Unplanned)
+                )
+            }),
+    )]
     fn mint_at(
         &mut self,
         position: NodeIndex,
@@ -3916,7 +5580,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The origin of a core node the syntax node at `position` wrote.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a live syntax node yields its own position, digest and span
+    ///   as written provenance; a missing node is unminted.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each minted family records the syntax origin that
+    ///   produced it, independently of inserted bridges.
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
+    #[spec(
+        ensures: |ret| {
+            ret == self
+                .tree
+                .node(position)
+                .map_or(Maybe::Absent(lowered::Absent::Unminted), |node| {
+                    Maybe::Present(Origin::new(position, node.digest(), node.span()))
+                })
+        },
+    )]
     fn origin_at(
         &self,
         position: NodeIndex,
@@ -3942,6 +5626,89 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the per-node half of [`Self::mint`].
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the admitted plan families lower to their matching
+    ///   core families; grouping reuses its child result and an unplanned node
+    ///   cannot manufacture a value. Concrete constructors and origins are
+    ///   witnessed through complete declarations and the fragment-specific
+    ///   examples.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::a_grouping_lowers_to_what_it_wraps`
+    /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    #[spec(
+        captures: promised = (
+            match plan {
+                | Plan::Variable(_)
+                | Plan::Constant(_)
+                | Plan::Unit
+                | Plan::Literal(_)
+                | Plan::StaticApplication(..)
+                | Plan::Pair(_)
+                | Plan::StaticLambda(_)
+                | Plan::Thunk(_) => Some(Produced::Value),
+                | Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_) | Plan::Application(..) => {
+                    Some(Produced::Computation)
+                },
+                | Plan::Atom(_)
+                | Plan::Universe(_)
+                | Plan::ValueFunction(..)
+                | Plan::StaticPi(..)
+                | Plan::Product(..)
+                | Plan::Former(TypeFormer::Thunk, _) => Some(Produced::ValueType),
+                | Plan::Arrow(..) | Plan::Former(TypeFormer::Returner, _) => {
+                    Some(Produced::CompType)
+                },
+                | Plan::Decode(_, _, universe) => Some(match universe.sort {
+                    | GroundSort::Value => Produced::ValueType,
+                    | GroundSort::Computation => Produced::CompType,
+                }),
+                | Plan::Unplanned | Plan::Transparent(_) | Plan::Function(_) => None,
+            },
+            match plan {
+                | Plan::Transparent(child) => Some(self.lowered_at(child)),
+                | _ => None,
+            },
+            matches!(plan, Plan::Unplanned),
+            matches!(plan, Plan::Function(_)),
+        ),
+        ensures: |ret| {
+            promised.1.map_or_else(
+                || {
+                    if promised.2 {
+                        ret == Maybe::Absent(lowered::Absent::Unminted)
+                    }
+                    else if promised.3 {
+                        matches!(
+                            ret,
+                            Maybe::Absent(_) | Maybe::Present(Lowered::Function { .. })
+                        )
+                    }
+                    else {
+                        matches!(
+                            (promised.0, ret),
+                            (Some(_), Maybe::Absent(_))
+                                | (Some(Produced::Value), Maybe::Present(Lowered::Value(_)))
+                                | (
+                                    Some(Produced::Computation),
+                                    Maybe::Present(Lowered::Computation(_))
+                                )
+                                | (
+                                    Some(Produced::ValueType),
+                                    Maybe::Present(Lowered::ValueType(_))
+                                )
+                                | (
+                                    Some(Produced::CompType),
+                                    Maybe::Present(Lowered::CompType(_))
+                                )
+                        )
+                    }
+                },
+                |child| ret == child,
+            )
+        },
+    )]
     fn mint_plan(
         &self,
         plan: Plan,
@@ -4027,18 +5794,41 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   node read back out of the arena.
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
-    #[spec(ensures: |ret| match ret {
-        | Maybe::Present(id) => match sink.arena.value(id) {
-            | Some(&gandr_core_term::Value::StaticApplication(..)) => {
-                arguments.start < arguments.end
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(id) => match sink.arena.value(id) {
+                | Some(&gandr_core_term::Value::StaticApplication(..)) => {
+                    arguments.start < arguments.end
+                },
+                | Some(
+                    &(gandr_core_term::Value::Variable { .. }
+                    | gandr_core_term::Value::Constant(_)),
+                ) => arguments.start >= arguments.end,
+                | _ => false,
             },
-            | Some(&(gandr_core_term::Value::Variable { .. } | gandr_core_term::Value::Constant(_))) => {
-                arguments.start >= arguments.end
-            },
-            | _ => false,
+            | Maybe::Absent(_) => true,
         },
-        | Maybe::Absent(_) => true,
-    })]
+    )]
+    /// # Adequacy
+    /// - hypothesis: L3 — bound and constant codes are applied to their
+    ///   arguments in source order; every node in the static application spine
+    ///   records the written origin, rather than an inserted decode origin.
+    /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
+    /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    #[spec(
+        ensures: |ret| match stretch(&self.operands, arguments)
+            .iter()
+            .find_map(|&argument| match self.value_at(argument) {
+                | Maybe::Present(_) => None,
+                | Maybe::Absent(reason) => Some(reason),
+            }) {
+            | Some(reason) => ret == Maybe::Absent(reason),
+            | None => {
+                matches!(ret, Maybe::Present(id) if sink.origins.value(id) == Maybe::Present(origin))
+            },
+        },
+    )]
     fn mint_code(
         &self,
         code: Code,
@@ -4093,16 +5883,50 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   arena.
     /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
     /// - witness: `lower::tests::a_static_application_decodes_where_its_operator_says_or_where_it_stands`
-    #[spec(ensures: |ret| match (ret, universe.sort) {
-        | (Maybe::Present(Lowered::ValueType(id)), GroundSort::Value) => {
-            matches!(sink.arena.value_type(id), Some(&gandr_core_term::ValueType::Element { .. }))
+    #[spec(
+        ensures: |ret| match (ret, universe.sort) {
+            | (Maybe::Present(Lowered::ValueType(id)), GroundSort::Value) => {
+                matches!(
+                    sink.arena.value_type(id),
+                    Some(&gandr_core_term::ValueType::Element { .. })
+                )
+            },
+            | (Maybe::Present(Lowered::CompType(id)), GroundSort::Computation) => {
+                matches!(
+                    sink.arena.comp_type(id),
+                    Some(&gandr_core_term::CompType::Element { .. })
+                )
+            },
+            | (Maybe::Absent(_), _) => true,
+            | _ => false,
         },
-        | (Maybe::Present(Lowered::CompType(id)), GroundSort::Computation) => {
-            matches!(sink.arena.comp_type(id), Some(&gandr_core_term::CompType::Element { .. }))
+    )]
+    /// # Adequacy
+    /// - hypothesis: L3 — decoding uses the code’s written universe when
+    ///   available and marks the element node as inserted, retaining the code’s
+    ///   own origin.
+    /// - witness: `lower::tests::a_decode_reads_the_universe_its_code_was_written_at`
+    /// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
+    #[spec(
+        ensures: |ret| match stretch(&self.operands, arguments)
+            .iter()
+            .find_map(|&argument| match self.value_at(argument) {
+                | Maybe::Present(_) => None,
+                | Maybe::Absent(reason) => Some(reason),
+            }) {
+            | Some(reason) => ret == Maybe::Absent(reason),
+            | None => match (universe.sort, ret) {
+                | (GroundSort::Value, Maybe::Present(Lowered::ValueType(id))) => {
+                    sink.origins.value_type(id)
+                        == Maybe::Present(origin.inserted(Insertion::Decode))
+                },
+                | (GroundSort::Computation, Maybe::Present(Lowered::CompType(id))) => {
+                    sink.origins.comp_type(id) == Maybe::Present(origin.inserted(Insertion::Decode))
+                },
+                | _ => false,
+            },
         },
-        | (Maybe::Absent(_), _) => true,
-        | _ => false,
-    })]
+    )]
     fn mint_decode(
         &self,
         code: Code,
@@ -4151,13 +5975,41 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - hypothesis: L3 — a pair of two and a tuple of four, each asserted as
     ///   the exact core value read back out of the arena.
     /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
-    #[spec(ensures: |ret| match ret {
-        | Maybe::Present(Lowered::Value(id)) => {
-            matches!(sink.arena.value(id), Some(&gandr_core_term::Value::Pair(..)))
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::Value(id)) => {
+                matches!(
+                    sink.arena.value(id),
+                    Some(&gandr_core_term::Value::Pair(..))
+                )
+            },
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
         },
-        | Maybe::Present(_) => false,
-        | Maybe::Absent(_) => true,
-    })]
+    )]
+    /// # Adequacy
+    /// - hypothesis: L3 — eager pairs associate to the right and preserve the
+    ///   order of their member values; their new pair nodes record the pair’s
+    ///   origin.
+    /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    #[spec(
+        ensures: |ret| {
+            let written = stretch(&self.operands, members);
+            match written
+                .iter()
+                .find_map(|&member| match self.value_at(member) {
+                    | Maybe::Present(_) => None,
+                    | Maybe::Absent(reason) => Some(reason),
+                }) {
+                | Some(reason) => ret == Maybe::Absent(reason),
+                | None if written.len() < 2 => ret == Maybe::Absent(lowered::Absent::Unminted),
+                | None => {
+                    matches!(ret, Maybe::Present(Lowered::Value(id)) if sink.origins.value(id) == Maybe::Present(origin))
+                },
+            }
+        },
+    )]
     fn mint_pair(
         &self,
         members: Stretch,
@@ -4215,13 +6067,43 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   right, each asserted as the same core node the thunked arrow it stands
     ///   for lowers to.
     /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
-    #[spec(ensures: |ret| match ret {
-        | Maybe::Present(Lowered::ValueType(id)) => {
-            matches!(sink.arena.value_type(id), Some(&gandr_core_term::ValueType::Thunk(_)))
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(Lowered::ValueType(id)) => {
+                matches!(
+                    sink.arena.value_type(id),
+                    Some(&gandr_core_term::ValueType::Thunk(_))
+                )
+            },
+            | Maybe::Present(_) => false,
+            | Maybe::Absent(_) => true,
         },
-        | Maybe::Present(_) => false,
-        | Maybe::Absent(_) => true,
-    })]
+    )]
+    /// # Adequacy
+    /// - hypothesis: L3 — the value-function alias is a thunked arrow over a
+    ///   returner, with domains in written order and the alias’s own origin.
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    #[spec(
+        ensures: |ret| {
+            let missing = stretch(&self.operands, domains)
+                .iter()
+                .find_map(|&domain| match self.value_type_at(domain) {
+                    | Maybe::Present(_) => None,
+                    | Maybe::Absent(reason) => Some(reason),
+                })
+                .or_else(|| match self.value_type_at(codomain) {
+                    | Maybe::Present(_) => None,
+                    | Maybe::Absent(reason) => Some(reason),
+                });
+            match missing {
+                | Some(reason) => ret == Maybe::Absent(reason),
+                | None => {
+                    matches!(ret, Maybe::Present(Lowered::ValueType(id)) if sink.origins.value_type(id) == Maybe::Present(origin))
+                },
+            }
+        },
+    )]
     fn mint_value_function(
         &self,
         domains: Stretch,
@@ -4259,7 +6141,36 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Carry out a type former's plan.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the argument position is interpreted in this lowering run.
+    /// - ensures: a thunk consumes a computation type and a returner consumes a
+    ///   value type; successful nodes carry the supplied origin.
+    /// - provides: the core bridge type over the already lowered argument.
+    /// - fails: a missing or wrong-sort argument preserves its absence reason.
+    /// - panics: none under the origin table’s ordered-identifier invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — both bridge formers retain their argument type and
+    ///   stay distinct from one another and from ordinary names with similar
+    ///   spellings.
+    /// - witness: `lower::tests::the_thunk_and_returner_heads_lower_to_their_formers`
+    /// - witness: `lower::tests::the_bridge_tokens_are_compound_and_sum_is_unaffected`
+    /// - witness: `lower::tests::u_and_f_are_names`
+    #[spec(
+        ensures: |ret| match former {
+            | TypeFormer::Thunk => match self.comp_type_at(argument) {
+                | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
+                | Maybe::Present(_) => {
+                    matches!(ret, Maybe::Present(Lowered::ValueType(id)) if sink.origins.value_type(id) == Maybe::Present(origin))
+                },
+            },
+            | TypeFormer::Returner => match self.value_type_at(argument) {
+                | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
+                | Maybe::Present(_) => {
+                    matches!(ret, Maybe::Present(Lowered::CompType(id)) if sink.origins.comp_type(id) == Maybe::Present(origin))
+                },
+            },
+        },
+    )]
     fn mint_former(
         &self,
         former: TypeFormer,
@@ -4285,7 +6196,45 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// Carry out the plan of a former over already-minted children.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: child positions are interpreted in this lowering run.
+    /// - ensures: each supported plan yields its own term or type family, with
+    ///   the supplied origin on the new outer node.
+    /// - provides: core constructors over previously lowered children.
+    /// - fails: unsupported plans are Unminted; missing or wrong-sort children
+    ///   preserve the first required absence.
+    /// - panics: none under the origin table’s ordered-identifier invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — arrows, static products, pairs, abstraction and
+    ///   computation formers retain their distinct core constructors and child
+    ///   order. These witnesses cover the admitted fragment, not arbitrary
+    ///   foreign identifiers.
+    /// - witness: `lower::tests::an_arrow_lowers_under_a_thunk_type`
+    /// - witness: `lower::tests::the_eager_product_and_pair_lower_to_their_formers`
+    /// - witness: `lower::tests::a_static_abstraction_binds_its_name_over_a_quoted_body`
+    /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Absent(_) => true,
+            | Maybe::Present(Lowered::Value(id)) => {
+                matches!(*plan, Plan::StaticLambda(_) | Plan::Thunk(_))
+                    && sink.origins.value(id) == Maybe::Present(origin)
+            },
+            | Maybe::Present(Lowered::Computation(id)) => {
+                matches!(*plan, Plan::Return(_) | Plan::Force(_) | Plan::Lambda(_))
+                    && sink.origins.computation(id) == Maybe::Present(origin)
+            },
+            | Maybe::Present(Lowered::ValueType(id)) => {
+                matches!(*plan, Plan::StaticPi(_, _) | Plan::Product(_, _))
+                    && sink.origins.value_type(id) == Maybe::Present(origin)
+            },
+            | Maybe::Present(Lowered::CompType(id)) => {
+                matches!(*plan, Plan::Arrow(_, _))
+                    && sink.origins.comp_type(id) == Maybe::Present(origin)
+            },
+            | Maybe::Present(Lowered::Function { .. }) => false,
+        },
+    )]
     fn mint_over(
         &self,
         plan: &Plan,
@@ -4364,6 +6313,40 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the block half of thunks, lambdas and function tails.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — run statements wrap the final computation in source
+    ///   order, each bind records its run token, and an empty statement prefix
+    ///   leaves the existing final computation unchanged.
+    /// - witness: `lower::tests::a_block_binds_each_statement_over_the_next`
+    /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    #[spec(
+        ensures: |ret| match self.computation_at(block.last) {
+            | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
+            | Maybe::Present(last) => {
+                let statements = stretch(&self.statements, block.statements);
+                let missing = statements.iter().find_map(|statement| {
+                    match (
+                        self.computation_at(statement.bound),
+                        self.origin_at(statement.run),
+                    ) {
+                        | (Maybe::Absent(reason), _) | (_, Maybe::Absent(reason)) => Some(reason),
+                        | (Maybe::Present(_), Maybe::Present(_)) => None,
+                    }
+                });
+                match missing {
+                    | Some(reason) => ret == Maybe::Absent(reason),
+                    | None => match statements.first() {
+                        | None => ret == Maybe::Present(last),
+                        | Some(first) => {
+                            matches!(ret, Maybe::Present(id) if matches!((sink.origins.computation(id), self.origin_at(first.run)), (Maybe::Present(stored), Maybe::Present(expected)) if stored == expected))
+                        },
+                    },
+                }
+            },
+        },
+    )]
     fn mint_block(
         &self,
         block: Block,
@@ -4410,6 +6393,36 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the curried elimination of a lambda.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — applications associate to the left, force a value
+    ///   head only once when required, and preserve authored versus inserted
+    ///   origins.
+    /// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
+    /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
+    /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
+    #[spec(
+        captures: written = stretch(&self.operands, arguments),
+        ensures: |ret| match self.computation_at(head) {
+            | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
+            | Maybe::Present(called) => {
+                match written
+                    .iter()
+                    .find_map(|&argument| match self.value_at(argument) {
+                        | Maybe::Present(_) => None,
+                        | Maybe::Absent(reason) => Some(reason),
+                    }) {
+                    | Some(reason) => ret == Maybe::Absent(reason),
+                    | None if written.is_empty() => {
+                        ret == Maybe::Present(Lowered::Computation(called))
+                    },
+                    | None => {
+                        matches!(ret, Maybe::Present(Lowered::Computation(id)) if sink.origins.computation(id) == Maybe::Present(origin))
+                    },
+                }
+            },
+        },
+    )]
     fn mint_application(
         &self,
         head: NodeIndex,
@@ -4457,6 +6470,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the function tail's two halves, from one reading.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — function tails produce an inserted thunk over their
+    ///   lambda chain even when a missing parameter or result type prevents a
+    ///   signature.
+    /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+    /// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
+    /// - witness: `lower::tests::an_empty_parameter_list_lowers_to_a_thunked_computation`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Absent(_) => true,
+            | Maybe::Present(Lowered::Function { signature, body }) => {
+                sink.origins.value(body) == Maybe::Present(origin.inserted(Insertion::Thunk))
+                    && match signature {
+                        | Maybe::Absent(_) => true,
+                        | Maybe::Present(id) => {
+                            sink.origins.value_type(id) == Maybe::Present(origin)
+                        },
+                    }
+            },
+            | Maybe::Present(_) => false,
+        },
+    )]
     fn mint_function(
         &self,
         function: &Function,
@@ -4512,6 +6548,38 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   names, each asserted as the exact arrow read back out of the arena.
     /// - witness: `lower::tests::a_bare_type_binder_is_positive_at_the_fuss_free_level`
     /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+    #[spec(
+        ensures: |ret| match function.result {
+            | Maybe::Absent(_) => ret == Maybe::Absent(lowered::Absent::Unstated),
+            | Maybe::Present(result) => match self.comp_type_at(result) {
+                | Maybe::Absent(reason) => ret == Maybe::Absent(reason),
+                | Maybe::Present(_) => {
+                    let missing =
+                        parameters
+                            .iter()
+                            .find_map(|parameter| match parameter.declared {
+                                | Maybe::Absent(_) => Some(lowered::Absent::Unstated),
+                                | Maybe::Present(written) => match self.value_type_at(written) {
+                                    | Maybe::Absent(reason) => Some(reason),
+                                    | Maybe::Present(_) => None,
+                                },
+                            });
+                    match missing {
+                        | Some(reason) => ret == Maybe::Absent(reason),
+                        | None if parameters.iter().any(|parameter| {
+                            matches!(self.origin_at(parameter.binder), Maybe::Absent(_))
+                        }) =>
+                        {
+                            ret == Maybe::Absent(lowered::Absent::Unminted)
+                        },
+                        | None => {
+                            matches!(ret, Maybe::Present(id) if sink.origins.value_type(id) == Maybe::Present(origin))
+                        },
+                    }
+                },
+            },
+        },
+    )]
     fn mint_signature(
         &self,
         function: &Function,
@@ -4565,7 +6633,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// What `position` lowered to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a live position yields its stored lowering result; a missing
+    ///   position is unminted.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — independently lowered children feed their parent and
+    ///   a refused declaration does not prevent its sibling from lowering.
+    /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
+    #[spec(
+        ensures: |ret| {
+            ret == self
+                .lowered
+                .get(usize::from(position))
+                .copied()
+                .unwrap_or(Maybe::Absent(lowered::Absent::Unminted))
+        },
+    )]
     fn lowered_at(
         &self,
         position: NodeIndex,
@@ -4580,7 +6667,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The value `position` lowered to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: an unminted result preserves its reason, the requested family
+    ///   yields its id, and every other family yields an other-sort reason.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — concrete value, computation and type operands are
+    ///   read back in their own families while assembling completed
+    ///   declarations.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    #[spec(
+        ensures: |ret| {
+            ret == match self.lowered_at(position) {
+                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                | Maybe::Present(Lowered::Value(id)) => Maybe::Present(id),
+                | Maybe::Present(_) => Maybe::Absent(lowered::Absent::OtherSort),
+            }
+        },
+    )]
     fn value_at(
         &self,
         position: NodeIndex,
@@ -4598,7 +6705,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The computation `position` lowered to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: an unminted result preserves its reason, the requested family
+    ///   yields its id, and every other family yields an other-sort reason.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — concrete value, computation and type operands are
+    ///   read back in their own families while assembling completed
+    ///   declarations.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    #[spec(
+        ensures: |ret| {
+            ret == match self.lowered_at(position) {
+                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                | Maybe::Present(Lowered::Computation(id)) => Maybe::Present(id),
+                | Maybe::Present(_) => Maybe::Absent(lowered::Absent::OtherSort),
+            }
+        },
+    )]
     fn computation_at(
         &self,
         position: NodeIndex,
@@ -4616,7 +6743,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The value type `position` lowered to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: an unminted result preserves its reason, the requested family
+    ///   yields its id, and every other family yields an other-sort reason.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — concrete value, computation and type operands are
+    ///   read back in their own families while assembling completed
+    ///   declarations.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    #[spec(
+        ensures: |ret| {
+            ret == match self.lowered_at(position) {
+                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                | Maybe::Present(Lowered::ValueType(id)) => Maybe::Present(id),
+                | Maybe::Present(_) => Maybe::Absent(lowered::Absent::OtherSort),
+            }
+        },
+    )]
     fn value_type_at(
         &self,
         position: NodeIndex,
@@ -4634,7 +6781,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The computation type `position` lowered to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: an unminted result preserves its reason, the requested family
+    ///   yields its id, and every other family yields an other-sort reason.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — concrete value, computation and type operands are
+    ///   read back in their own families while assembling completed
+    ///   declarations.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::force_and_application_lower_over_their_children`
+    #[spec(
+        ensures: |ret| {
+            ret == match self.lowered_at(position) {
+                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                | Maybe::Present(Lowered::CompType(id)) => Maybe::Present(id),
+                | Maybe::Present(_) => Maybe::Absent(lowered::Absent::OtherSort),
+            }
+        },
+    )]
     fn comp_type_at(
         &self,
         position: NodeIndex,
@@ -4652,7 +6819,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The declared type the function tail at `position` lowered to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a function yields its stored signature result; an unminted
+    ///   result preserves its reason and other families yield an other-sort
+    ///   reason.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — signed and unsigned function tails preserve the body
+    ///   while differing in whether they supply a derived signature.
+    /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+    /// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
+    #[spec(
+        ensures: |ret| {
+            ret == match self.lowered_at(position) {
+                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                | Maybe::Present(Lowered::Function { signature, .. }) => signature,
+                | Maybe::Present(_) => Maybe::Absent(lowered::Absent::OtherSort),
+            }
+        },
+    )]
     fn signature_at(
         &self,
         position: NodeIndex,
@@ -4670,7 +6857,26 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The body the function tail at `position` lowered to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a function yields its body id; an unminted result preserves
+    ///   its reason and other families yield an other-sort reason.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — signed and unsigned function tails preserve the body
+    ///   while differing in whether they supply a derived signature.
+    /// - witness: `lower::tests::a_function_tail_lowers_to_a_thunked_lambda_chain`
+    /// - witness: `lower::tests::a_tail_missing_a_type_writes_its_definition_alone`
+    #[spec(
+        ensures: |ret| {
+            ret == match self.lowered_at(position) {
+                | Maybe::Absent(reason) => Maybe::Absent(reason),
+                | Maybe::Present(Lowered::Function { body, .. }) => Maybe::Present(body),
+                | Maybe::Present(_) => Maybe::Absent(lowered::Absent::OtherSort),
+            }
+        },
+    )]
     fn function_body_at(
         &self,
         position: NodeIndex,
@@ -4708,6 +6914,29 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Errors
     /// [`LoweringRefusal::BudgetExceeded`] and
     /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — attributes are drained and filed even for a refused
+    ///   declaration, while a failing schema is retained as a declaration
+    ///   refusal.
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
+    #[spec(
+        captures: before = self.collected.slots.len(),
+        ensures: |ret| {
+            self.collected.slots.len() == before
+                && ret
+                    .as_ref()
+                    .err()
+                    .is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault)
+                && (ret.is_err()
+                    || self
+                        .collected
+                        .slots
+                        .iter()
+                        .all(|slot| slot.attributes.is_empty()))
+        },
+    )]
     fn attribute(
         &mut self,
         table: &mut AttributeTable,
@@ -4732,6 +6961,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// As [`Self::attribute`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each written attribute spends one step, successful
+    ///   entries append under their declaration digest, and schema errors do
+    ///   not prevent other declarations from lowering.
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+    /// - witness: `lower::tests::the_attribute_diagnostics_fire_on_a_refused_declaration`
+    /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
+    #[spec(
+        captures: before = (
+            self.fuel.remaining,
+            slots.iter().fold(0_usize, |count, slot| {
+                count.saturating_add(slot.attributes.len())
+            }),
+            usize::from(table.attributed_count()),
+        ),
+        ensures: |ret| {
+            self.fuel.remaining <= before.0
+                && usize::from(table.attributed_count()) >= before.2
+                && ret
+                    .as_ref()
+                    .err()
+                    .is_none_or(|refusal| refusal.classify() == FailureClass::EngineFault)
+                && (ret.is_err() || self.fuel.remaining == before.0.saturating_sub(before.1))
+        },
+    )]
     fn attribute_slots(
         &mut self,
         slots: &mut [DeclarationSlot<'source>],
@@ -4780,6 +7035,39 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///
     /// # Errors
     /// The attribute's refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a filed entry adds exactly one recognized name and
+    ///   keeps its schema, payload and span; duplicate, unknown and ill-typed
+    ///   attributes leave the per-declaration seen list unchanged.
+    /// - witness: `lower::tests::an_attribute_written_twice_for_one_name_is_refused`
+    /// - witness: `lower::tests::an_unknown_attribute_is_refused_with_its_suggestion`
+    /// - witness: `lower::tests::a_payload_of_the_wrong_form_is_refused`
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+    #[spec(
+        captures: before = seen.len(),
+        ensures: |ret| match ret.as_ref() {
+            | Ok(&Filing::Filed(ref entry)) => {
+                seen.len() == before.saturating_add(1_usize)
+                    && seen.last() == Some(&(entry.name(), written.span))
+                    && entry.span() == written.span
+                    && AttributeRegistry::lookup(written.name)
+                        == Maybe::Present((entry.name(), entry.schema()))
+                    && match (written.payload, entry.payload()) {
+                        | (Payload::Unwritten, Maybe::Absent(payload::Absent::Marker)) => true,
+                        | (Payload::Written(placed), Maybe::Present(value)) => {
+                            self.value_at(placed.node) == Maybe::Present(value)
+                        },
+                        | _ => false,
+                    }
+            },
+            | Ok(&Filing::Unlowered) => {
+                seen.len() == before
+                    && matches!(written.payload, Payload::Written(placed) if matches!(self.value_at(placed.node), Maybe::Absent(_)))
+            },
+            | Err(_) => seen.len() == before,
+        },
+    )]
     fn read_attribute(
         &self,
         written: &WrittenAttribute<'source>,
@@ -4859,6 +7147,32 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// # Errors
     /// [`LoweringRefusal::NonValuePayload`] and
     /// [`LoweringRefusal::UnknownMold`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — an absent payload is distinguished from a non-value
+    ///   form and from an admitted value of the wrong schema-specific shape.
+    /// - witness: `lower::tests::a_schema_taking_a_payload_refuses_an_absent_one`
+    /// - witness: `lower::tests::a_non_value_payload_is_refused`
+    /// - witness: `lower::tests::a_payload_of_the_wrong_form_is_refused`
+    #[spec(
+        ensures: |ret| {
+            ret == match written.payload {
+                | Payload::Unwritten => Ok(PayloadForm::Absent),
+                | Payload::Written(placed) => match self.payload_former(placed) {
+                    | Err(refusal) => Err(refusal),
+                    | Ok((Shape::Form { former, .. }, ValueForm(true))) => Ok(payload_form(former)),
+                    | Ok((Shape::Form { name: form, .. }, ValueForm(false))) => {
+                        Err(LoweringRefusal::NonValuePayload {
+                            span: placed.span,
+                            name,
+                            form,
+                        })
+                    },
+                    | Ok(_) => Ok(PayloadForm::OtherValue),
+                },
+            }
+        },
+    )]
     fn payload_form_of(
         &self,
         written: &WrittenAttribute<'source>,
@@ -4888,7 +7202,27 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// The content identity of the node at `position`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: positions are interpreted in this source tree.
+    /// - ensures: a live node yields its digest; an absent node yields the
+    ///   all-zero digest.
+    /// - provides: declaration keys for attribute filing and origin records.
+    /// - fails: the fallback does not distinguish absence from an equal digest.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — filed attributes use the decorated declaration
+    ///   digest, including declarations already refused for an unrelated source
+    ///   error.
+    /// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+    /// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
+    #[spec(
+        ensures: |ret| {
+            ret == self
+                .tree
+                .node(position)
+                .map_or_else(|| NodeDigest::from([0_u8; 32_usize]), Node::digest)
+        },
+    )]
     fn digest_at(
         &self,
         position: NodeIndex,
@@ -4918,6 +7252,60 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   contributes no declaration, which the classification makes unreachable
     ///   for every slot but a held one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — completed, one-sided and refused declarations retain
+    ///   their own source metadata and appear in admission order; skipped
+    ///   unminted slots do not fabricate declaration origins or change constant
+    ///   coordinates.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::an_uncompleted_signature_is_the_obligation_producer`
+    /// - witness: `lower::tests::a_bodiless_definition_lowers_its_body_alone`
+    /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
+    /// - witness: `modules::modules::module_members_admit_in_source_order`
+    #[spec(
+        captures: before = usize::from(origins.declaration_count()),
+        ensures: |ret| {
+            usize::from(origins.declaration_count()) == before.saturating_add(ret.len())
+                && ret
+                    .iter()
+                    .map(|row| {
+                        (
+                            row.name(),
+                            row.container(),
+                            row.role(),
+                            row.constant(),
+                            row.span(),
+                            row.signature(),
+                            row.definition(),
+                            row.outcome(),
+                            origins.declaration(row.origin()),
+                        )
+                    })
+                    .eq(self.collected.slots.iter().enumerate().filter_map(
+                        |(position, slot)| match self.outcome(SlotIndex::from(position), slot) {
+                            | Maybe::Absent(_) => None,
+                            | Maybe::Present(outcome) => Some((
+                                slot.name,
+                                slot.container,
+                                slot.role,
+                                slot.constant,
+                                slot.introduced_by.span,
+                                slot.signature
+                                    .map(|half| self.digest_at(half.declaration.node)),
+                                slot.definition
+                                    .map(|half| self.digest_at(half.declaration.node)),
+                                outcome,
+                                Maybe::Present(Origin::new(
+                                    slot.introduced_by.node,
+                                    self.digest_at(slot.introduced_by.node),
+                                    slot.introduced_by.span,
+                                )),
+                            )),
+                        },
+                    ))
+        },
+    )]
     fn assemble(
         &self,
         origins: &mut OriginTable,
@@ -4958,7 +7346,77 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// What the slot at `position` amounts to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the slot and its member coordinates are interpreted in this
+    ///   lowering run.
+    /// - ensures: a stored refusal takes precedence; otherwise the available
+    ///   signature and body select Completed, Uncompleted or Bodied.
+    /// - provides: the declaration outcome without manufacturing absent halves.
+    /// - fails: a refused member witness is Unminted; if neither half exists,
+    ///   the signature’s absence is preserved.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the three successful half combinations remain
+    ///   distinct from a stored refusal, and an ascription witness does not
+    ///   resurrect a refused member. Explicit signatures keep precedence over
+    ///   derived ones.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::an_uncompleted_signature_is_the_obligation_producer`
+    /// - witness: `lower::tests::a_bodiless_definition_lowers_its_body_alone`
+    /// - witness: `modules::modules::a_nonempty_ascription_checks_each_component_at_its_member`
+    /// - witness: `modules::modules::member_signature_attaches_and_wins_over_derived_function_type`
+    #[spec(
+        ensures: |ret| {
+            if let Maybe::Present((_at, refusal)) = slot.refusal {
+                ret == Maybe::Present(DeclarationOutcome::Refused(refusal))
+            }
+            else if matches!(slot.definition, Maybe::Present(Half { operand: Operand::Member(target), .. }) if self.collected.slots.get(usize::from(target)).is_some_and(|member| matches!(member.refusal, Maybe::Present(_))))
+            {
+                ret == Maybe::Absent(lowered::Absent::Unminted)
+            }
+            else {
+                let declared = match slot.signature {
+                    | Maybe::Present(half) => match half.operand {
+                        | Operand::Written(written) => self.value_type_at(written.node),
+                        | Operand::Function => self.signature_at(half.declaration.node),
+                        | Operand::Member(_) => Maybe::Absent(lowered::Absent::Unminted),
+                    },
+                    | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
+                };
+                let body = match slot.definition {
+                    | Maybe::Present(half) => match half.operand {
+                        | Operand::Written(written) => self.value_at(written.node),
+                        | Operand::Function => self.function_body_at(half.declaration.node),
+                        | Operand::Member(_) => self
+                            .witnessed
+                            .get(&position)
+                            .copied()
+                            .map_or(Maybe::Absent(lowered::Absent::Unminted), Maybe::Present),
+                    },
+                    | Maybe::Absent(_) => Maybe::Absent(lowered::Absent::Unminted),
+                };
+                match ret {
+                    | Maybe::Present(DeclarationOutcome::Completed {
+                        declared_type,
+                        body: value,
+                    }) => {
+                        declared == Maybe::Present(declared_type) && body == Maybe::Present(value)
+                    },
+                    | Maybe::Present(DeclarationOutcome::Uncompleted { declared_type }) => {
+                        declared == Maybe::Present(declared_type)
+                            && matches!(body, Maybe::Absent(_))
+                    },
+                    | Maybe::Present(DeclarationOutcome::Bodied { body: value }) => {
+                        matches!(declared, Maybe::Absent(_)) && body == Maybe::Present(value)
+                    },
+                    | Maybe::Absent(reason) => {
+                        declared == Maybe::Absent(reason) && matches!(body, Maybe::Absent(_))
+                    },
+                    | Maybe::Present(DeclarationOutcome::Refused(_)) => false,
+                }
+            }
+        },
+    )]
     fn outcome(
         &self,
         position: SlotIndex,
@@ -5031,6 +7489,19 @@ impl<'run, 'source> Lowerer<'run, 'source>
     ///   did not lower.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a chain of manifest aliases carries the original
+    ///   located refusal into a member even when its body has independently
+    ///   failed; the unrelated following declaration still lowers.
+    /// - witness: `modules::modules::manifest_refusals_propagate_transitively_before_minting`
+    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    #[spec(
+        captures: before = (self.manifests.len(), self.collected.slots.len()),
+        ensures: |_| {
+            self.manifests.len() == before.0 && self.collected.slots.len() == before.1 && self.manifests.windows(2).all(|pair| match *pair { [left, right] => left.0 <= right.0, _ => false }) && self.manifests.iter().all(|&(held, head)| { if !matches!(self.collected.slots.get(usize::from(held)), Some(slot) if matches!(slot.refusal, Maybe::Present(_))) { return true; } match self.collected.owner_of(head) { Maybe::Absent(_) => true, Maybe::Present(owner) => self.collected.slots.get(usize::from(owner)).is_none_or(|slot| matches!(slot.refusal, Maybe::Present((at, _)) if at <= head)) } })
+        },
+    )]
     fn propagate_manifests(&mut self)
     {
         let mut named = core::mem::take(&mut self.manifests);
@@ -5066,6 +7537,73 @@ impl<'run, 'source> Lowerer<'run, 'source>
     /// - provides: the stratum half of [`LoweredModule`].
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — nested paths retain their member names, an ascription
+    ///   exports only its selected values and modules, and manifest components
+    ///   keep their lowered type or their explicit Unlowered status.
+    /// - witness: `modules::modules::nested_modules_lower_as_parent_members_and_project`
+    /// - witness: `modules::modules::module_signature_matching_hides_extra_members`
+    /// - witness: `modules::modules::a_manifest_type_component_expands_in_later_components`
+    #[spec(
+        ensures: |ret| {
+            ret.len() == self.collected.structures.len()
+                && ret
+                    .iter()
+                    .zip(&self.collected.structures)
+                    .all(|(lowered, structure)| {
+                        if lowered.path().last() != Some(&structure.name)
+                            || lowered.span() != structure.declared_by.span
+                            || lowered.coerced() != structure.coerced
+                            || lowered.types().len() != structure.types.len()
+                        {
+                            return false;
+                        }
+                        let mut values = lowered.values().iter();
+                        let mut modules = lowered.modules().iter();
+                        for &export in &structure.exports {
+                            match export {
+                                | Member::Slot(slot) => {
+                                    if self.collected.slots.get(usize::from(slot)).is_some_and(
+                                        |member| {
+                                            !values.next().is_some_and(|value| {
+                                                value.name == member.name
+                                                    && value.constant == member.constant
+                                            })
+                                        },
+                                    ) {
+                                        return false;
+                                    }
+                                },
+                                | Member::Module(nested) => {
+                                    if self
+                                        .collected
+                                        .structures
+                                        .get(usize::from(nested))
+                                        .is_some_and(|member| modules.next() != Some(&member.name))
+                                    {
+                                        return false;
+                                    }
+                                },
+                            }
+                        }
+                        values.next().is_none()
+                            && modules.next().is_none()
+                            && lowered.types().iter().zip(&structure.types).all(
+                                |(lowered, manifest)| {
+                                    lowered.name == manifest.name
+                                        && lowered.defined
+                                            == match self.value_type_at(manifest.defined.node) {
+                                                | Maybe::Present(id) => Maybe::Present(id),
+                                                | Maybe::Absent(_) => {
+                                                    Maybe::Absent(manifest_type::Absent::Unlowered)
+                                                },
+                                            }
+                                },
+                            )
+                    })
+        },
+    )]
     fn structures(&self) -> Vec<LoweredStructure<'source>>
     {
         let mut lowered = Vec::with_capacity(self.collected.structures.len());
@@ -5116,6 +7654,24 @@ impl<'run, 'source> Lowerer<'run, 'source>
 }
 
 /// What reading one attribute produced, short of a refusal.
+///
+/// # Specification
+/// - requires: coordinates, when present, are interpreted in their originating
+///   run.
+/// - ensures: A filed entry has passed registry and payload checks; an
+///   unlowered payload contributes no entry or seen-name update.
+/// - provides: The non-refusal outcome of reading one attribute.
+/// - fails: none as a data value; interpretation belongs to its consumers.
+/// - panics: none as a data value.
+/// - executable: none — The written attribute and seen-name list are absent;
+///   `read_attribute` states the executable filing and state-update relation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — valid entries are filed under the declaration digest,
+///   while a refused declaration can still retain an independently valid
+///   payload.
+/// - witness: `lower::tests::an_attribute_is_filed_under_its_declaration_digest`
+/// - witness: `lower::tests::a_refused_declarations_attributes_are_filed_under_its_digest`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum Filing
 {
@@ -5143,6 +7699,46 @@ impl Sink<'_>
     ///   decides.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — forced heads, positive results and quoted types
+    ///   acquire the intended inserted provenance, while an author-written
+    ///   force stays written.
+    /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
+    /// - witness: `lower::tests::a_positive_result_gains_a_returner_once`
+    /// - witness: `lower::tests::a_type_where_a_value_is_read_is_quoted`
+    /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
+    #[spec(
+        ensures: |ret| match bridge {
+            | Bridge::Bare => ret == minted,
+            | Bridge::Inserted(insertion) => match (minted, insertion, ret) {
+                | (Maybe::Absent(reason), ..) => ret == Maybe::Absent(reason),
+                | (
+                    Maybe::Present(Lowered::Value(_)),
+                    Insertion::Force,
+                    Maybe::Present(Lowered::Computation(id)),
+                ) => self.origins.computation(id) == Maybe::Present(origin.inserted(insertion)),
+                | (
+                    Maybe::Present(Lowered::ValueType(_)),
+                    Insertion::Returner,
+                    Maybe::Present(Lowered::CompType(id)),
+                ) => self.origins.comp_type(id) == Maybe::Present(origin.inserted(insertion)),
+                | (
+                    Maybe::Present(Lowered::ValueType(_) | Lowered::CompType(_)),
+                    Insertion::Quote,
+                    Maybe::Present(Lowered::Value(id)),
+                ) => self.origins.value(id) == Maybe::Present(origin.inserted(insertion)),
+                | (Maybe::Present(Lowered::Value(_)), Insertion::Force, _)
+                | (Maybe::Present(Lowered::ValueType(_)), Insertion::Returner, _)
+                | (
+                    Maybe::Present(Lowered::ValueType(_) | Lowered::CompType(_)),
+                    Insertion::Quote,
+                    _,
+                ) => false,
+                | _ => ret == Maybe::Absent(lowered::Absent::OtherSort),
+            },
+        },
+    )]
     fn bridge(
         &mut self,
         minted: Maybe<Lowered, lowered::Absent>,
@@ -5188,7 +7784,23 @@ impl Sink<'_>
     /// Record `id`'s origin and wrap it as a lowered value.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the value id follows all values already recorded in this
+    ///   origin table.
+    /// - ensures: the supplied origin is recorded under the value id and the
+    ///   lowered result retains that id and family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — every minted value has its own source origin, and an
+    ///   inserted force does not relabel the source value it consumes.
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
+    #[spec(
+        ensures: |ret| {
+            ret == Lowered::Value(id) && self.origins.value(id) == Maybe::Present(origin)
+        },
+    )]
     fn value(
         &mut self,
         id: ValueId,
@@ -5203,7 +7815,25 @@ impl Sink<'_>
     /// Record `id`'s origin and wrap it as a lowered computation.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the computation id follows all computations already recorded
+    ///   in this origin table.
+    /// - ensures: the supplied origin is recorded under the computation id and
+    ///   the lowered result retains that id and family.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — written and inserted computations retain their own
+    ///   source and provenance rather than borrowing an operand origin.
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    /// - witness: `lower::tests::a_value_head_is_forced_and_marked_inserted`
+    /// - witness: `lower::tests::an_author_written_force_is_not_marked_inserted`
+    #[spec(
+        ensures: |ret| {
+            ret == Lowered::Computation(id)
+                && self.origins.computation(id) == Maybe::Present(origin)
+        },
+    )]
     fn computation(
         &mut self,
         id: ComputationId,
@@ -5218,7 +7848,32 @@ impl Sink<'_>
     /// Mint `atom`'s value type and record its origin.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: newly minted type ids follow those already recorded in the
+    ///   origin table.
+    /// - ensures: the selected unit, integer or text value type is minted and
+    ///   receives the supplied origin.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — concrete nullary type heads mint their own core type
+    ///   and every minted type carries a source origin.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::every_minted_node_has_an_origin`
+    #[spec(
+        ensures: |ret| match ret {
+            | Lowered::ValueType(id) => {
+                self.origins.value_type(id) == Maybe::Present(origin)
+                    && self.arena.value_type(id)
+                        == Some(&match atom {
+                            | TypeAtom::Unit => ValueType::Unit,
+                            | TypeAtom::Integer => ValueType::Base(BaseType::Integer),
+                            | TypeAtom::Text => ValueType::Base(BaseType::String),
+                        })
+            },
+            | _ => false,
+        },
+    )]
     fn atom(
         &mut self,
         atom: TypeAtom,
@@ -5250,6 +7905,51 @@ impl Sink<'_>
 ///
 /// # Errors
 /// The lambda's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — zero, one and multiple binders select the documented
+///   arity boundary; a successful header consumes its closing parenthesis but
+///   not the following body, while typed binders remain outside this fragment.
+/// - witness: `lower::tests::parameter_headers_preserve_the_body_and_locate_refusals`
+/// - witness: `lower::tests::a_lambda_body_binds_its_own_de_bruijn_index`
+#[spec(
+    captures: input = cursor.clone(),
+    ensures: |ret| {
+        ret.as_ref().map_or(true, |binder| {
+            let mut input = input.clone();
+            if matches!(input.tile(TileName::PAREN_OPEN), Maybe::Absent(_)) {
+                return false;
+            }
+            let mut seen = false;
+            loop {
+                match input.read() {
+                    | Maybe::Present(Piece::Tile {
+                        label: TileName::IDENTIFIER,
+                        at,
+                    }) => {
+                        if seen || at != *binder {
+                            return false;
+                        }
+                        seen = true;
+                    },
+                    | Maybe::Present(Piece::Tile {
+                        label: TileName::COMMA,
+                        ..
+                    }) => {},
+                    | Maybe::Present(Piece::Tile {
+                        label: TileName::PAREN_CLOSE,
+                        ..
+                    }) => {
+                        return seen
+                            && cursor.peek() == input.peek()
+                            && cursor.here() == input.here();
+                    },
+                    | _ => return false,
+                }
+            }
+        })
+    },
+)]
 fn parameter<'source>(
     site: Site,
     cursor: &mut Cursor<'_>,
@@ -5286,6 +7986,21 @@ fn parameter<'source>(
 /// The statements a block opens with a keyword the fragment does not read, by
 /// that keyword, with the form a refusal names each by; `fork` is read apart,
 /// because its two statements share the keyword.
+///
+/// # Specification
+/// - requires: lookup is by a block’s leading keyword.
+/// - ensures: each listed keyword retains its distinct refused statement form;
+///   `fork` is handled separately because its shared form requires lookahead.
+/// - provides: the keyword-to-refusal naming table.
+/// - fails: no default entry for an unlisted keyword.
+/// - panics: none.
+/// - executable: none — the specification attribute does not accept constant
+///   items; `statement_form` checks the lookup and fork exception.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the reserved statement cases retain their own form names,
+///   including the ordinary/shared fork distinction outside this table.
+/// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
 const UNREAD_STATEMENTS: [(TileName, FormName); 6_usize] = [
     (TileName::VAL, FormName::LET_STATEMENT),
     (TileName::UNPACK, FormName::UNPACK_STATEMENT),
@@ -5306,6 +8021,37 @@ const UNREAD_STATEMENTS: [(TileName, FormName); 6_usize] = [
 ///   [`statement::Absent::NotAKeyword`] for a tile no statement starts with.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the reserved statement spellings receive their own form
+///   names, including the ordinary and shared fork distinction.
+/// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+#[spec(
+    captures: shared = label == TileName::FORK && {
+        let mut ahead = cursor.clone();
+        let _lead = ahead.read();
+        matches!(ahead.at(TileName::BANG), Maybe::Present(_))
+    },
+    ensures: |ret| {
+        ret == if label == TileName::FORK {
+            Maybe::Present(if shared {
+                FormName::FORK_SHARED_STATEMENT
+            }
+            else {
+                FormName::FORK_STATEMENT
+            })
+        }
+        else {
+            UNREAD_STATEMENTS
+                .iter()
+                .find(|&&(keyword, _form)| keyword == label)
+                .map_or(
+                    Maybe::Absent(statement::Absent::NotAKeyword),
+                    |&(_keyword, form)| Maybe::Present(form),
+                )
+        }
+    },
+)]
 fn statement_form(
     label: TileName,
     cursor: &Cursor<'_>,
@@ -5344,6 +8090,47 @@ fn statement_form(
 ///
 /// # Errors
 /// The form's refusal.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty and multi-argument calls append their own ordered
+///   operand range; a failure preserves the already-read prefix and locates the
+///   unexpected operand or tile instead of silently accepting a suffix.
+/// - witness: `lower::tests::argument_lists_preserve_prefixes_and_locate_the_first_fault`
+/// - witness: `lower::tests::a_call_applies_its_arguments_left_to_right`
+#[spec(
+    captures: before = (written.len(), cursor.clone()),
+    ensures: |ret| {
+        written.len() >= before.0
+            && ret.as_ref().map_or(true, |&()| {
+                let mut input = before.1.clone();
+                let mut appended = written.iter().skip(before.0);
+                if matches!(input.tile(TileName::PAREN_OPEN), Maybe::Absent(_)) {
+                    return false;
+                }
+                if matches!(input.tile(TileName::PAREN_CLOSE), Maybe::Present(_)) {
+                    return appended.next().is_none()
+                        && matches!(input.peek(), Maybe::Absent(_))
+                        && cursor.peek() == input.peek();
+                }
+                loop {
+                    match input.read() {
+                        | Maybe::Present(Piece::Operand(at))
+                            if appended.next() == Some(&at.node) => {},
+                        | _ => return false,
+                    }
+                    if matches!(input.tile(TileName::PAREN_CLOSE), Maybe::Present(_)) {
+                        break;
+                    }
+                    if matches!(input.tile(TileName::COMMA), Maybe::Absent(_)) {
+                        return false;
+                    }
+                }
+                appended.next().is_none()
+                    && matches!(input.peek(), Maybe::Absent(_))
+                    && cursor.peek() == input.peek()
+            })
+    },
+)]
 fn arguments<'source>(
     site: Site,
     cursor: &mut Cursor<'_>,
@@ -5378,7 +8165,24 @@ fn arguments<'source>(
 /// The entries of `store` that `stretch` names.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the range is interpreted against the supplied store.
+/// - ensures: an ordered in-bounds range returns that borrowed slice; a
+///   reversed or out-of-bounds range returns an empty slice.
+/// - provides: an allocation-free view of the recorded operand, parameter or
+///   statement range.
+/// - fails: invalid ranges are represented by the empty view.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — empty, interior and full ranges retain the requested
+///   members; reversed and past-end ranges do not read an unrelated prefix.
+/// - witness: `lower::tests::recorded_ranges_keep_valid_members_and_reject_invalid_bounds`
+#[spec(
+    ensures: |ret| match store.get(stretch.start .. stretch.end) {
+        | Some(expected) => core::ptr::eq(&raw const *ret, &raw const *expected),
+        | None => ret.is_empty(),
+    },
+)]
 fn stretch<Entry>(
     store: &[Entry],
     stretch: Stretch,
@@ -5390,7 +8194,35 @@ fn stretch<Entry>(
 /// Read the closing tile `label`, refusing anything else in its place.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor describes the site’s remaining pieces.
+/// - ensures: the requested tile is consumed if present; otherwise the cursor
+///   is unchanged and the refusal locates its current piece or gap.
+/// - provides: a checked closing tile for the form reader.
+/// - fails: an absent or different tile is `MisplacedTile`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — matching and mismatched closing tiles separate
+///   consumption from a located refusal, including the exhausted-cursor gap.
+/// - witness: `lower::tests::closing_and_exhaustion_distinguish_tiles_operands_and_gaps`
+#[spec(
+    captures: before = {
+        let found = cursor.at(label);
+        let here = cursor.here();
+        let mut next = cursor.clone();
+        if matches!(found, Maybe::Present(_)) {
+            let _piece = next.read();
+        }
+        (found, here, next.peek(), next.here())
+    },
+    ensures: |ret| {
+        ret == match before.0 {
+            | Maybe::Present(_) => Ok(()),
+            | Maybe::Absent(_) => Err(site.fault(before.1, FormFault::MisplacedTile)),
+        } && cursor.peek() == before.2
+            && cursor.here() == before.3
+    },
+)]
 fn closed<'source>(
     site: Site,
     cursor: &mut Cursor<'_>,
@@ -5406,7 +8238,31 @@ fn closed<'source>(
 /// Refuse a piece left after a form's last.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the cursor describes the site’s remaining pieces.
+/// - ensures: only an exhausted cursor succeeds; a remaining operand and a
+///   remaining tile yield their distinct located refusals.
+/// - provides: a check that a form reader consumed its complete input.
+/// - fails: an operand is `ExtraOperand` and a tile is `MisplacedTile`.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — remaining operands and tiles are distinguished from the
+///   terminal gap without consuming the unexpected piece.
+/// - witness: `lower::tests::closing_and_exhaustion_distinguish_tiles_operands_and_gaps`
+/// - witness: `lower::tests::a_juxtaposed_operand_is_refused`
+#[spec(
+    ensures: |ret| {
+        ret == match cursor.peek() {
+            | Maybe::Absent(_) => Ok(()),
+            | Maybe::Present(Piece::Operand(at)) => {
+                Err(site.fault(at.span, FormFault::ExtraOperand))
+            },
+            | Maybe::Present(Piece::Tile { at, .. }) => {
+                Err(site.fault(at.span, FormFault::MisplacedTile))
+            },
+        }
+    },
+)]
 fn exhausted<'source>(
     site: Site,
     cursor: &Cursor<'_>,
@@ -5442,6 +8298,20 @@ fn exhausted<'source>(
 ///   with each former's exact answer asserted, so promoting or demoting any
 ///   single former breaks one row.
 /// - witness: `lower::tests::only_the_value_forms_can_stand_as_a_payload`
+#[spec(
+    ensures: |ret| {
+        ret.0
+            == matches!(
+                former,
+                Former::Name
+                    | Former::Constructor
+                    | Former::Number
+                    | Former::Text
+                    | Former::Parenthesized
+                    | Former::Thunk
+            )
+    },
+)]
 const fn is_value_form(former: Former) -> ValueForm
 {
     ValueForm(matches!(
@@ -5480,6 +8350,69 @@ const fn is_value_form(former: Former) -> ValueForm
 /// - witness: `lower::tests::an_integer_literal_is_its_canonical_magnitude`
 /// - witness: `lower::tests::a_text_literal_is_the_bytes_between_its_quotes`
 /// - witness: `lower::tests::a_lexeme_of_the_wrong_shape_parses_to_nothing`
+#[spec(
+    ensures: |ret| {
+        let spelled: &str = text.as_ref();
+        match former {
+            | Former::Number => {
+                if spelled.is_empty() || !spelled.bytes().all(|byte| byte.is_ascii_digit()) {
+                    matches!(ret, Maybe::Absent(literal::Absent::Malformed))
+                }
+                else {
+                    let unpadded = spelled.trim_start_matches('0');
+                    let expected = if unpadded.is_empty() { "0" } else { unpadded };
+                    matches!(ret, Maybe::Present(Literal::Integer(ref integer)) if integer.sign() == Sign::NonNegative && integer.magnitude().as_ref() == expected)
+                }
+            },
+            | Former::Text => match spelled
+                .strip_prefix('"')
+                .and_then(|opened| opened.strip_suffix('"'))
+            {
+                | Some(content) => match ret {
+                    | Maybe::Present(Literal::Text(ref literal)) => {
+                        let content: &str = content;
+                        let actual: &str = literal.as_ref();
+                        let mut escaped = false;
+                        let mut after_cr = false;
+                        actual.chars().eq(content.chars().filter_map(|character| {
+                            if after_cr {
+                                after_cr = false;
+                                if character == '\n' {
+                                    return None;
+                                }
+                            }
+                            if escaped {
+                                escaped = false;
+                                match character {
+                                    | 'n' => Some('\n'),
+                                    | 't' => Some('\t'),
+                                    | 'r' => Some('\r'),
+                                    | '0' => Some('\0'),
+                                    | '\r' => {
+                                        after_cr = true;
+                                        None
+                                    },
+                                    | '\n' => None,
+                                    | other => Some(other),
+                                }
+                            }
+                            else if character == '\\' {
+                                escaped = true;
+                                None
+                            }
+                            else {
+                                Some(character)
+                            }
+                        }))
+                    },
+                    | _ => false,
+                },
+                | None => matches!(ret, Maybe::Absent(literal::Absent::Malformed)),
+            },
+            | _ => matches!(ret, Maybe::Absent(literal::Absent::NotALiteral)),
+        }
+    },
+)]
 fn parse_literal(
     former: Former,
     text: SourceFragment<'_>,
@@ -5530,7 +8463,59 @@ fn parse_literal(
 /// Decode the escapes of a string literal's or an import address's content.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the input is UTF-8 content without its surrounding quote tiles.
+/// - ensures: n, t, r and 0 escapes decode to their control characters; escaped
+///   LF and CRLF or CR are removed; every other escaped character loses only
+///   its backslash.
+/// - provides: decoded literal or import-address content, preserving unescaped
+///   Unicode.
+/// - fails: a trailing backslash contributes no character; unknown escapes are
+///   not rejected.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the named escape classes, CR/LF continuations, unknown
+///   escapes, Unicode and a trailing backslash have exact decoded values.
+/// - witness: `lower::tests::escape_decoding_covers_continuations_unknowns_and_unicode`
+/// - witness: `lower::tests::a_text_literal_lowers_with_its_escapes_decoded`
+#[spec(
+    ensures: |ret| {
+        let content: &str = content.as_ref();
+        let actual: &str = ret.as_str();
+        let mut escaped = false;
+        let mut after_cr = false;
+        actual.chars().eq(content.chars().filter_map(|character| {
+            if after_cr {
+                after_cr = false;
+                if character == '\n' {
+                    return None;
+                }
+            }
+            if escaped {
+                escaped = false;
+                match character {
+                    | 'n' => Some('\n'),
+                    | 't' => Some('\t'),
+                    | 'r' => Some('\r'),
+                    | '0' => Some('\0'),
+                    | '\r' => {
+                        after_cr = true;
+                        None
+                    },
+                    | '\n' => None,
+                    | other => Some(other),
+                }
+            }
+            else if character == '\\' {
+                escaped = true;
+                None
+            }
+            else {
+                Some(character)
+            }
+        }))
+    },
+)]
 #[inline]
 pub fn decode_escapes(content: SourceFragment<'_>) -> String
 {
@@ -5563,7 +8548,49 @@ pub fn decode_escapes(content: SourceFragment<'_>) -> String
 /// Whether `text` is a numeric lexeme with a fraction or an exponent.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the input is interpreted as an unsigned numeric lexeme.
+/// - ensures: a decimal or exponent marker is required; the whole part and each
+///   present fraction or exponent contain nonempty ASCII digits, with at most
+///   one exponent sign.
+/// - provides: the distinction between an unadmitted fractional number and a
+///   malformed integer spelling.
+/// - fails: malformed, unmarked, signed-whole and non-ASCII spellings return
+///   false.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — decimal and exponent boundaries distinguish unsupported
+///   fractional numbers from malformed spellings, including empty fields,
+///   repeated markers, exponent signs and non-ASCII digits.
+/// - witness: `lower::tests::fractional_spellings_distinguish_unsupported_numbers_from_malformed_ones`
+/// - witness: `lower::tests::forms_outside_the_fragment_are_unadmitted`
+#[spec(
+    ensures: |ret| {
+        let spelled: &str = text.as_ref();
+        let mut bytes = spelled.bytes().peekable();
+        let digits = |bytes: &mut core::iter::Peekable<core::str::Bytes<'_>>| {
+            let present = bytes.peek().is_some_and(u8::is_ascii_digit);
+            while bytes.peek().is_some_and(u8::is_ascii_digit) {
+                let _digit = bytes.next();
+            }
+            present
+        };
+        let whole = digits(&mut bytes);
+        let fraction = bytes.next_if_eq(&b'.').is_some();
+        let fraction_ok = !fraction || digits(&mut bytes);
+        let exponent = bytes.next_if(|&byte| matches!(byte, b'e' | b'E')).is_some();
+        let exponent_ok = !exponent || {
+            let _sign = bytes.next_if(|&byte| matches!(byte, b'+' | b'-'));
+            digits(&mut bytes)
+        };
+        ret.0
+            == (whole
+                && (fraction || exponent)
+                && fraction_ok
+                && exponent_ok
+                && bytes.next().is_none())
+    },
+)]
 fn fractional(text: SourceFragment<'_>) -> Fractional
 {
     let spelled: &str = text.as_ref();
@@ -5590,6 +8617,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_term::CompType;
     use gandr_core_term::CompTypeId;
     use gandr_core_term::Computation;
@@ -5663,7 +8691,32 @@ mod tests
     /// must accept.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the source parses cleanly and fits the default lowering
+    ///   allowance.
+    /// - ensures: emitted declaration origins lie within the supplied source,
+    ///   in admission order.
+    /// - provides: a real parser-to-lowering fixture over the supplied arena.
+    /// - fails: none on accepted fixtures.
+    /// - panics: if parsing or the lowering engine refuses the fixture.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the listed semantic goldens — complete and one-sided
+    ///   declarations retain their independently expected core structure.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::a_bodiless_definition_lowers_its_body_alone`
+    #[spec(
+        ensures: |ret| {
+            let spelled: &str = source.as_ref();
+            ret.declarations().iter().all(|declaration| {
+                let span = declaration.span();
+                usize::from(span.start()) <= usize::from(span.end())
+                    && usize::from(span.end()) <= spelled.len()
+            }) && ret.declarations().windows(2).all(|pair| match *pair {
+                | [ref left, ref right] => left.constant() < right.constant(),
+                | _ => false,
+            })
+        },
+    )]
     fn lowered<'source>(
         source: SourceText<'source>,
         arena: &mut CoreArena,
@@ -5685,7 +8738,25 @@ mod tests
     /// What each declaration of `module` amounts to, in admission order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: one outcome per declaration, preserving admission order and
+    ///   every refusal payload.
+    /// - provides: the semantic outcome sequence used by lowering witnesses.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mixed successful and refused declarations retain
+    ///   their individual outcomes rather than truncating at the first refusal.
+    /// - witness: `lower::tests::a_refused_declaration_leaves_the_others_lowered`
+    #[spec(
+        ensures: |ret| {
+            ret.iter().copied().eq(module
+                .declarations()
+                .iter()
+                .map(LoweredDeclaration::outcome))
+        },
+    )]
     fn outcomes<'source>(module: &LoweredModule<'source>) -> Vec<DeclarationOutcome<'source>>
     {
         module
@@ -5698,7 +8769,24 @@ mod tests
     /// The refusal the first declaration of `tree` carries.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the engine accepts the tree and its first declaration is
+    ///   refused.
+    /// - ensures: the first declaration’s located refusal, rather than an
+    ///   engine-wide refusal.
+    /// - provides: an exact refusal witness for parsed and deliberately
+    ///   malformed trees.
+    /// - fails: none on a fixture meeting the precondition.
+    /// - panics: if lowering fails or the first declaration is not refused.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — malformed lexemes and repaired declarations yield
+    ///   their specific located refusal through the real lowering entry point.
+    /// - witness: `lower::tests::a_malformed_integer_literal_is_refused`
+    /// - witness: `lower::tests::a_malformed_text_literal_is_refused`
+    /// - witness: `lower::tests::a_repaired_declaration_is_refused`
+    #[spec(
+        ensures: |ret| matches!(ret.span(), Maybe::Present(_)),
+    )]
     fn refusal_in<'source>(
         pbg: &Pbg,
         tree: &SyntaxTree<'source>,
@@ -5725,7 +8813,26 @@ mod tests
     /// parser must accept cleanly.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the source parses cleanly and its first declaration is
+    ///   refused.
+    /// - ensures: a declaration-local refusal whose location lies within the
+    ///   source.
+    /// - provides: the parsed-source refusal oracle.
+    /// - fails: none on a fixture meeting the precondition.
+    /// - panics: if parsing or lowering fails, or the first declaration
+    ///   succeeds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — unresolved term and type names retain their different
+    ///   refusal variants and the exact spelling’s span.
+    /// - witness: `lower::tests::an_undefined_term_name_is_refused`
+    /// - witness: `lower::tests::an_undefined_type_head_is_refused`
+    #[spec(
+        ensures: |ret| {
+            let spelled: &str = source.as_ref();
+            matches!(ret.span(), Maybe::Present(span) if usize::from(span.start()) <= usize::from(span.end()) && usize::from(span.end()) <= spelled.len())
+        },
+    )]
     fn refusal(source: SourceText<'_>) -> LoweringRefusal<'_>
     {
         let pbg = grammar();
@@ -5737,7 +8844,21 @@ mod tests
     /// The value `body` of `outcome`, which must lower a body.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the outcome has a lowered body.
+    /// - ensures: the body identifier from a completed or body-only
+    ///   declaration.
+    /// - provides: a checked extraction for structural core assertions.
+    /// - fails: never on the required outcome variants.
+    /// - panics: if the declaration has no body.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — complete and body-only declarations expose their
+    ///   actual literal bodies rather than substituting a signature coordinate.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::a_bodiless_definition_lowers_its_body_alone`
+    #[spec(
+        ensures: |ret| matches!(outcome, DeclarationOutcome::Completed { body, .. } | DeclarationOutcome::Bodied { body } if ret == body),
+    )]
     fn body_of(outcome: DeclarationOutcome<'_>) -> gandr_core_term::ValueId
     {
         match outcome {
@@ -5753,7 +8874,21 @@ mod tests
     /// The declared type of `outcome`, which must lower a signature.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the outcome has a lowered signature.
+    /// - ensures: the declared type from a completed or signature-only
+    ///   declaration.
+    /// - provides: a checked extraction for structural type assertions.
+    /// - fails: never on the required outcome variants.
+    /// - panics: if the declaration has no signature.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — complete and signature-only declarations retain the
+    ///   expected type while distinguishing an absent body.
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    /// - witness: `lower::tests::an_uncompleted_signature_is_the_obligation_producer`
+    #[spec(
+        ensures: |ret| matches!(outcome, DeclarationOutcome::Completed { declared_type, .. } | DeclarationOutcome::Uncompleted { declared_type } if ret == declared_type),
+    )]
     fn declared_of(outcome: DeclarationOutcome<'_>) -> gandr_core_term::ValueTypeId
     {
         match outcome {
@@ -5768,7 +8903,20 @@ mod tests
     /// The schema `name` is registered with.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the name is registered.
+    /// - ensures: the schema registered for that name.
+    /// - provides: the payload policy expected by refusal witnesses.
+    /// - fails: never for a registered name.
+    /// - panics: if the name is not registered.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — absent and wrong-form payloads name the schema that
+    ///   governs the attribute, not merely any registry entry.
+    /// - witness: `lower::tests::a_schema_taking_a_payload_refuses_an_absent_one`
+    /// - witness: `lower::tests::a_payload_of_the_wrong_form_is_refused`
+    #[spec(
+        ensures: |ret| matches!(AttributeRegistry::lookup(name), Maybe::Present((_entry, schema)) if ret == schema),
+    )]
     fn schema_of(name: SurfaceName<'_>) -> AttributeSchema
     {
         let Maybe::Present((_entry, schema)) = AttributeRegistry::lookup(name)
@@ -5782,7 +8930,26 @@ mod tests
     /// The integer literal `digits` spell.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a nonempty sequence of ASCII decimal digits.
+    /// - ensures: a nonnegative integer with the canonical unpadded magnitude.
+    /// - provides: an independently constructed literal expected by core
+    ///   witnesses.
+    /// - fails: never on valid decimal text.
+    /// - panics: on an empty or nondigit spelling.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — padded zero and nonzero spellings distinguish
+    ///   magnitude normalization from preserving the input’s padding.
+    /// - witness: `lower::tests::an_integer_literal_is_its_canonical_magnitude`
+    /// - witness: `lower::tests::a_completed_declaration_lowers_both_halves`
+    #[spec(
+        ensures: |ret| {
+            let spelled: &str = digits.as_ref();
+            let unpadded = spelled.trim_start_matches('0');
+            let expected = if unpadded.is_empty() { "0" } else { unpadded };
+            matches!(ret, Literal::Integer(ref literal) if literal.sign() == Sign::NonNegative && literal.magnitude().as_ref() == expected)
+        },
+    )]
     fn integer(digits: SourceFragment<'_>) -> Literal
     {
         let spelled: &str = digits.as_ref();
@@ -5794,7 +8961,24 @@ mod tests
     /// The text literal holding `content`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the text literal contains the supplied characters without
+    ///   escape decoding or delimiter stripping.
+    /// - provides: the expected decoded text for literal witnesses.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — escaped source text is compared with the explicitly
+    ///   decoded content, distinct from the source spelling.
+    /// - witness: `lower::tests::a_text_literal_lowers_with_its_escapes_decoded`
+    /// - witness: `lower::tests::a_text_literal_is_the_bytes_between_its_quotes`
+    #[spec(
+        ensures: |ret| {
+            let spelled: &str = content.as_ref();
+            matches!(ret, Literal::Text(ref literal) if literal.as_ref() == spelled)
+        },
+    )]
     fn text(content: SourceFragment<'_>) -> Literal
     {
         let spelled: &str = content.as_ref();
@@ -6942,6 +10126,23 @@ mod tests
     }
 
     /// One node of a core type, as [`spine`] walks it.
+    ///
+    /// # Specification
+    /// - requires: identifiers are interpreted in the supplied arena.
+    /// - ensures: the pending work retains whether the next node is a value or
+    ///   computation type.
+    /// - provides: a family-tagged traversal stack for the supported type
+    ///   fragment.
+    /// - fails: none as a data value.
+    /// - panics: none.
+    /// - executable: none — the arena and traversal stack are absent; `spine`
+    ///   checks the root token and its witnesses observe the ordered structure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the named semantic goldens — thunk, returner and
+    ///   arrow nodes are traversed across both type families.
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
     #[derive(Clone, Copy)]
     enum TypeNode
     {
@@ -6955,7 +10156,30 @@ mod tests
     /// minted at different arena positions compare by structure.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: an acyclic type graph rooted in the supplied arena.
+    /// - ensures: preorder tokens preserve the supported thunk, returner, arrow
+    ///   and product structure; unsupported or absent nodes are terminal
+    ///   diagnostic tokens.
+    /// - provides: an arena-coordinate-independent comparison for the supported
+    ///   type fragment.
+    /// - fails: never; this is not a complete serialization of every core type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the supported fragment only — explicit
+    ///   thunk/returner and arrow/product spellings yield pinned semantic
+    ///   preorder tokens; unsupported nodes are not claimed to have a
+    ///   structural encoding.
+    /// - witness: `lower::tests::the_alias_is_the_thunked_arrow`
+    /// - witness: `lower::tests::an_arrow_where_a_value_type_is_read_is_a_static_pi`
+    #[spec(
+        ensures: |ret| match arena.value_type(root) {
+            | Some(&ValueType::Thunk(_)) => ret.first().is_some_and(|token| token == "U"),
+            | Some(&ValueType::Product(..)) => ret.first().is_some_and(|token| token == "*"),
+            | Some(&ValueType::Unit) => ret.first().is_some_and(|token| token == "Unit"),
+            | _ => true,
+        },
+    )]
     fn spine(
         arena: &CoreArena,
         root: ValueTypeId,
@@ -8299,5 +11523,314 @@ mod tests
             Err(LoweringRefusal::BudgetExceeded { budget }),
             "the step past the allowance is refused, naming the allowance"
         );
+    }
+
+    /// Escape classes and continuations preserve their specified characters.
+    #[test]
+    fn escape_decoding_covers_continuations_unknowns_and_unicode()
+    {
+        for (written, expected) in [
+            ("plain λ", "plain λ"),
+            ("\\n\\t\\r\\0", "\n\t\r\0"),
+            ("a\\\nb", "ab"),
+            ("a\\\r\nb", "ab"),
+            ("a\\\rb", "ab"),
+            ("a\\q\\λ", "aqλ"),
+            ("a\\", "a"),
+            ("a\r\nb", "a\r\nb"),
+            ("\\\\", "\\"),
+            ("\\\r\\n", "\n"),
+        ] {
+            assert_eq!(
+                super::decode_escapes(SourceFragment::from(written)),
+                expected
+            );
+        }
+    }
+
+    /// Only complete unsigned decimal or exponent spellings are fractional.
+    #[test]
+    fn fractional_spellings_distinguish_unsupported_numbers_from_malformed_ones()
+    {
+        for (written, expected) in [
+            ("0.0", true),
+            ("01e+2", true),
+            ("1e-2", true),
+            ("1E0", true),
+            ("1.2e3", true),
+            ("", false),
+            ("3", false),
+            (".1", false),
+            ("1.", false),
+            ("1e", false),
+            ("1e+", false),
+            ("1e--2", false),
+            ("1.2.3", false),
+            ("1e2e3", false),
+            ("-1.0", false),
+            ("١.0", false),
+            ("1.٢", false),
+            ("1.0 ", false),
+        ] {
+            assert_eq!(super::fractional(SourceFragment::from(written)).0, expected);
+        }
+    }
+
+    /// Range boundaries keep selected members and never substitute a prefix.
+    #[test]
+    fn recorded_ranges_keep_valid_members_and_reject_invalid_bounds()
+    {
+        let entries = [11_u8, 22_u8, 33_u8];
+        for (start, end, expected) in [
+            (0_usize, 0_usize, [].as_slice()),
+            (0_usize, 3_usize, [11_u8, 22_u8, 33_u8].as_slice()),
+            (1_usize, 3_usize, [22_u8, 33_u8].as_slice()),
+            (2_usize, 1_usize, [].as_slice()),
+            (0_usize, 4_usize, [].as_slice()),
+            (4_usize, 4_usize, [].as_slice()),
+        ] {
+            assert_eq!(
+                super::stretch(&entries, super::Stretch { start, end }),
+                expected
+            );
+        }
+    }
+
+    /// Closing and exhaustion retain the first unexpected position.
+    #[test]
+    fn closing_and_exhaustion_distinguish_tiles_operands_and_gaps()
+    {
+        let placed = |index: usize, start: usize, end: usize| super::Placed {
+            node: super::NodeIndex::from(index),
+            span: span(ByteOffset::from(start), ByteOffset::from(end)),
+        };
+        let close = placed(1_usize, 2_usize, 3_usize);
+        let operand = placed(2_usize, 5_usize, 6_usize);
+        let site = super::Site {
+            at: placed(0_usize, 0_usize, 8_usize),
+            name: FormName::FUNCTION,
+            reading: super::Reading::Function,
+        };
+        let pieces = [
+            super::Piece::Tile {
+                label: super::TileName::PAREN_CLOSE,
+                at: close,
+            },
+            super::Piece::Operand(operand),
+        ];
+        let mut cursor = super::Cursor::new(&pieces, site.at.span);
+        let misplaced = LoweringRefusal::MalformedForm {
+            span: close.span,
+            form: FormName::FUNCTION,
+            fault: FormFault::MisplacedTile,
+        };
+        assert_eq!(super::exhausted(site, &cursor), Err(misplaced));
+        assert_eq!(
+            super::closed(site, &mut cursor, super::TileName::BRACE_CLOSE),
+            Err(misplaced)
+        );
+        assert_eq!(cursor.peek(), Maybe::Present(pieces[0_usize]));
+        assert_eq!(
+            super::closed(site, &mut cursor, super::TileName::PAREN_CLOSE),
+            Ok(())
+        );
+        assert_eq!(
+            super::exhausted(site, &cursor),
+            Err(LoweringRefusal::MalformedForm {
+                span: operand.span,
+                form: FormName::FUNCTION,
+                fault: FormFault::ExtraOperand,
+            })
+        );
+        assert_eq!(
+            cursor.read(),
+            Maybe::Present(super::Piece::Operand(operand))
+        );
+        assert_eq!(super::exhausted(site, &cursor), Ok(()));
+        assert_eq!(
+            super::closed(site, &mut cursor, super::TileName::PAREN_CLOSE),
+            Err(LoweringRefusal::MalformedForm {
+                span: span(ByteOffset::from(6_usize), ByteOffset::from(6_usize)),
+                form: FormName::FUNCTION,
+                fault: FormFault::MisplacedTile,
+            })
+        );
+    }
+
+    /// Parameter arities consume the header but preserve the following body.
+    #[test]
+    fn parameter_headers_preserve_the_body_and_locate_refusals()
+    {
+        let placed = |index: usize, start: usize, end: usize| super::Placed {
+            node: super::NodeIndex::from(index),
+            span: span(ByteOffset::from(start), ByteOffset::from(end)),
+        };
+        let lead = super::Piece::Tile {
+            label: super::TileName::FN,
+            at: placed(1_usize, 0_usize, 2_usize),
+        };
+        let open = super::Piece::Tile {
+            label: super::TileName::PAREN_OPEN,
+            at: placed(2_usize, 3_usize, 4_usize),
+        };
+        let first = placed(3_usize, 4_usize, 5_usize);
+        let identifier = super::Piece::Tile {
+            label: super::TileName::IDENTIFIER,
+            at: first,
+        };
+        let comma = super::Piece::Tile {
+            label: super::TileName::COMMA,
+            at: placed(4_usize, 5_usize, 6_usize),
+        };
+        let second = super::Piece::Tile {
+            label: super::TileName::IDENTIFIER,
+            at: placed(5_usize, 6_usize, 7_usize),
+        };
+        let close = super::Piece::Tile {
+            label: super::TileName::PAREN_CLOSE,
+            at: placed(6_usize, 7_usize, 8_usize),
+        };
+        let body = super::Piece::Operand(placed(7_usize, 9_usize, 12_usize));
+        let colon = super::Piece::Tile {
+            label: super::TileName::COLON,
+            at: placed(4_usize, 5_usize, 6_usize),
+        };
+        let form = FormName::from(NamedKind("lambda_expression"));
+        let site = super::Site {
+            at: placed(0_usize, 0_usize, 12_usize),
+            name: form,
+            reading: super::Reading::Computation(super::Frame::Outermost),
+        };
+        for (pieces, expected, next) in [
+            (
+                [lead, open, identifier, close, body].as_slice(),
+                Ok(first),
+                body,
+            ),
+            (
+                [lead, open, close, body].as_slice(),
+                Err(LoweringRefusal::OutOfFragment {
+                    span: site.at.span,
+                    form,
+                    sort: FragmentSort::Computation,
+                    boundary: FragmentBoundary::Arity(OperandCount::from(0_usize)),
+                }),
+                body,
+            ),
+            (
+                [lead, open, identifier, comma, second, close, body].as_slice(),
+                Err(LoweringRefusal::OutOfFragment {
+                    span: site.at.span,
+                    form,
+                    sort: FragmentSort::Computation,
+                    boundary: FragmentBoundary::Arity(OperandCount::from(2_usize)),
+                }),
+                body,
+            ),
+            (
+                [lead, open, identifier, colon, body].as_slice(),
+                Err(LoweringRefusal::OutOfFragment {
+                    span: site.at.span,
+                    form: FormName::PARAMETER,
+                    sort: FragmentSort::Computation,
+                    boundary: FragmentBoundary::Unadmitted,
+                }),
+                colon,
+            ),
+            (
+                [lead, identifier, close, body].as_slice(),
+                Err(LoweringRefusal::MalformedForm {
+                    span: first.span,
+                    form,
+                    fault: FormFault::MisplacedTile,
+                }),
+                identifier,
+            ),
+        ] {
+            let mut cursor = super::Cursor::new(pieces, site.at.span);
+            let _lead = cursor.tile(super::TileName::FN);
+            assert_eq!(super::parameter(site, &mut cursor), expected);
+            assert_eq!(cursor.peek(), Maybe::Present(next));
+        }
+    }
+
+    /// Argument failures retain appended operands and identify the first fault.
+    #[test]
+    fn argument_lists_preserve_prefixes_and_locate_the_first_fault()
+    {
+        let placed = |index: usize, start: usize, end: usize| super::Placed {
+            node: super::NodeIndex::from(index),
+            span: span(ByteOffset::from(start), ByteOffset::from(end)),
+        };
+        let open = super::Piece::Tile {
+            label: super::TileName::PAREN_OPEN,
+            at: placed(1_usize, 1_usize, 2_usize),
+        };
+        let first = placed(2_usize, 2_usize, 3_usize);
+        let second = placed(4_usize, 4_usize, 5_usize);
+        let comma = super::Piece::Tile {
+            label: super::TileName::COMMA,
+            at: placed(3_usize, 3_usize, 4_usize),
+        };
+        let close = super::Piece::Tile {
+            label: super::TileName::PAREN_CLOSE,
+            at: placed(5_usize, 5_usize, 6_usize),
+        };
+        let stray = placed(6_usize, 7_usize, 8_usize);
+        let site = super::Site {
+            at: placed(0_usize, 0_usize, 8_usize),
+            name: FormName::FUNCTION,
+            reading: super::Reading::Function,
+        };
+        let previous = super::NodeIndex::from(99_usize);
+        let trailing = super::Piece::Tile {
+            label: super::TileName::COMMA,
+            at: stray,
+        };
+        for (pieces, expected, appended) in [
+            ([open, close].as_slice(), Ok(()), [].as_slice()),
+            (
+                [
+                    open,
+                    super::Piece::Operand(first),
+                    comma,
+                    super::Piece::Operand(second),
+                    close,
+                ]
+                .as_slice(),
+                Ok(()),
+                [first.node, second.node].as_slice(),
+            ),
+            (
+                [
+                    open,
+                    super::Piece::Operand(first),
+                    close,
+                    super::Piece::Operand(stray),
+                ]
+                .as_slice(),
+                Err(LoweringRefusal::MalformedForm {
+                    span: stray.span,
+                    form: FormName::FUNCTION,
+                    fault: FormFault::ExtraOperand,
+                }),
+                [first.node].as_slice(),
+            ),
+            (
+                [open, super::Piece::Operand(first), close, trailing].as_slice(),
+                Err(LoweringRefusal::MalformedForm {
+                    span: stray.span,
+                    form: FormName::FUNCTION,
+                    fault: FormFault::MisplacedTile,
+                }),
+                [first.node].as_slice(),
+            ),
+        ] {
+            let mut cursor = super::Cursor::new(pieces, site.at.span);
+            let mut written = vec![previous];
+            assert_eq!(super::arguments(site, &mut cursor, &mut written), expected);
+            assert_eq!(written.first(), Some(&previous));
+            assert!(written.iter().skip(1_usize).eq(appended.iter()));
+        }
     }
 }

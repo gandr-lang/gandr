@@ -20,6 +20,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 use quenchant_shape::shape::Maybe;
 
@@ -121,6 +122,22 @@ impl fmt::Display for ImportUri
 }
 
 /// One `import "URI" as name ;`, as the source wrote it.
+///
+/// # Specification
+/// - requires: the caller supplies a decoded URI, alias and source span
+///   belonging to the same import declaration.
+/// - ensures: all three components are retained without resolving the URI.
+/// - provides: source-associated import metadata.
+/// - fails: construction does not validate source association or addresses.
+/// - panics: none.
+/// - executable: none — the syntax tree and written spelling are absent;
+///   parsing witnesses establish their association with these stored fields.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a quoted URI with escapes is retained decoded beside its
+///   exact alias and span, even when no such address exists. Raw constructors
+///   remain able to represent caller-supplied metadata.
+/// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ImportDeclaration<'source>
 {
@@ -185,6 +202,25 @@ impl<'source> ImportDeclaration<'source>
 
 /// A module's imports: the declarations in source order, and the scope their
 /// aliases are bound in.
+///
+/// # Specification
+/// - requires: nothing; the empty collection starts with an empty scope.
+/// - ensures: declarations remain in successful binding order; visible aliases
+///   correspond to their declaration indices and spans; the export remains
+///   empty. A rejected duplicate leaves both collections unchanged.
+/// - provides: an import inventory and its read-only namespace view.
+/// - fails: duplicate aliases are refused by bind, without address lookup.
+/// - panics: allocation failure follows the allocator policy.
+/// - executable: none — type refinements require the disabled logic feature;
+///   bind checks list/namespace counts and append metadata.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct parsed aliases resolve to successive declaration
+///   positions with an empty export. Repeating the same URI and alias still
+///   refuses, preserves the entire state and leaves the next position
+///   available.
+/// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
+/// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ModuleImports<'source>
 {
@@ -250,13 +286,41 @@ impl<'source> ModuleImports<'source>
     /// [`LoweringRefusal::DuplicateImportAlias`] for an alias already bound.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — two imports kept and bound in order, a second import
-    ///   of one alias refused naming both, each asserted exactly over the
-    ///   parsed source.
+    /// - hypothesis: L3 — parsed imports retain URI, alias, span and visible
+    ///   position. A duplicate names both sources; an identical URI does not
+    ///   bypass refusal or consume the next position. The predicate observes
+    ///   counts and append metadata without cloning the namespace; witnesses
+    ///   check the exact bindings and the complete rejected state.
     /// - witness: `namespace::namespace::source_import_reaches_the_namespace_engine_and_exposes_its_alias`
     /// - witness: `namespace::namespace::an_import_binds_its_alias_and_resolves_no_address`
     /// - witness: `namespace::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
     /// - witness: `namespace::namespace::duplicate_source_import_alias_becomes_a_refusal`
+    /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
+    #[spec(
+        captures: before = (self.declarations.len(), declaration.alias, declaration.span),
+        ensures: |ret| {
+            usize::from(self.scope.export().binding_count()) == 0_usize
+                && usize::from(self.scope.visible().binding_count()) == self.declarations.len()
+                && match ret {
+                    | Ok(()) => {
+                        before.0.checked_add(1_usize) == Some(self.declarations.len())
+                            && self
+                                .declarations
+                                .last()
+                                .is_some_and(|last| (last.alias, last.span) == (before.1, before.2))
+                    },
+                    | Err(LoweringRefusal::DuplicateImportAlias { span, alias, first }) => {
+                        self.declarations.len() == before.0
+                            && (span, alias) == (before.2, before.1)
+                            && self
+                                .declarations
+                                .iter()
+                                .any(|held| held.alias == alias && held.span == first)
+                    },
+                    | Err(_) => false,
+                }
+        },
+    )]
     #[inline]
     pub fn bind(
         &mut self,
@@ -291,6 +355,24 @@ impl<'source> ModuleImports<'source>
 }
 
 /// The import policy: every shadow is refused, every other event is inert.
+///
+/// # Specification
+/// - requires: namespace operations supply their event path and collision.
+/// - ensures: every shadow is refused; other events leave the import
+///   transformation unchanged.
+/// - provides: the one-source-per-alias policy used by `ModuleImports`.
+/// - fails: shadow callbacks return a typed rejection at the offered path.
+/// - panics: allocation failure follows the allocator policy.
+/// - executable: none — this stateless policy has no event payload to inspect;
+///   the shadow callback checks its typed rejection.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct imports succeed, while both different and
+///   identical URI duplicates dispatch a refusal. These import scenarios do not
+///   enumerate arbitrary modifier hooks, whose implementation forwards its
+///   subject.
+/// - witness: `namespace::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
+/// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct OneSource;
 
@@ -317,10 +399,33 @@ impl NamespaceEventHandler<ImportIndex, ByteSpan> for OneSource
     /// Refuse: one alias names one source.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; every collision is refused, even when its bindings
+    ///   have equal payloads.
+    /// - ensures: a Shadow rejection at the supplied path, with `ONE_SOURCE` as
+    ///   its reason.
+    /// - provides: duplicate-alias refusal without choosing either binding.
+    /// - fails: always returns the typed shadow rejection.
+    /// - panics: allocation failure follows the allocator policy.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — duplicate aliases with different and identical URIs
+    ///   dispatch this callback. Enforcement checks event kind, path and
+    ///   reason; the public refusal observes both source spans and unchanged
+    ///   import state.
+    /// - witness: `namespace::namespace::duplicate_source_import_alias_is_rejected_as_a_shadow`
+    /// - witness: `import::tests::an_identical_import_is_still_a_duplicate_and_preserves_the_next_position`
     ///
     /// # Errors
     /// Always, a shadow rejection at `path` for [`ONE_SOURCE`].
+    #[spec(
+        ensures: |ret| {
+            ret.as_ref().is_err_and(|rejection| {
+                rejection.kind() == EventKind::Shadow
+                    && rejection.path() == path
+                    && rejection.reason().as_ref() == ONE_SOURCE
+            })
+        },
+    )]
     #[inline]
     fn shadow(
         &mut self,
@@ -351,5 +456,77 @@ impl NamespaceEventHandler<ImportIndex, ByteSpan> for OneSource
     ) -> Result<Trie<ImportIndex, ByteSpan>, EventRejection>
     {
         Ok(subject)
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::string::String;
+
+    use gandr_surface_syntax::ByteOffset;
+    use quenchant_shape::shape::Maybe;
+
+    use super::ImportDeclaration;
+    use super::ImportIndex;
+    use super::ImportUri;
+    use super::ModuleImports;
+    use crate::error::LoweringRefusal;
+    use crate::fixture::span;
+    use crate::namespace::Binding;
+    use crate::namespace::NamePath;
+    use crate::namespace::Segment;
+    use crate::resolve::SurfaceName;
+
+    #[test]
+    fn an_identical_import_is_still_a_duplicate_and_preserves_the_next_position()
+    {
+        let at = |start: usize, end: usize| span(ByteOffset::from(start), ByteOffset::from(end));
+        let first = at(0_usize, 10_usize);
+        let repeated = at(11_usize, 21_usize);
+        let later = at(22_usize, 32_usize);
+        let mut imports = ModuleImports::new();
+        imports
+            .bind(ImportDeclaration::new(
+                ImportUri::from(String::from("file:///same.gandr")),
+                SurfaceName::from("same"),
+                first,
+            ))
+            .unwrap();
+        let before = imports.clone();
+        assert_eq!(
+            imports.bind(ImportDeclaration::new(
+                ImportUri::from(String::from("file:///same.gandr")),
+                SurfaceName::from("same"),
+                repeated,
+            )),
+            Err(LoweringRefusal::DuplicateImportAlias {
+                span: repeated,
+                alias: SurfaceName::from("same"),
+                first,
+            })
+        );
+        assert_eq!(imports, before);
+        imports
+            .bind(ImportDeclaration::new(
+                ImportUri::from(String::from("file:///next.gandr")),
+                SurfaceName::from("next"),
+                later,
+            ))
+            .unwrap();
+        let next = NamePath::from(alloc::vec::Vec::from([Segment::from("next")]));
+        assert_eq!(
+            imports.scope().resolve(&next),
+            Maybe::Present(&Binding::new(ImportIndex::from(1_usize), later))
+        );
+        assert_eq!(imports.declarations().len(), 2_usize);
+        assert_eq!(
+            imports.declarations().last().unwrap().uri().as_ref(),
+            "file:///next.gandr"
+        );
+        assert_eq!(
+            usize::from(imports.scope().export().binding_count()),
+            0_usize
+        );
     }
 }

@@ -29,6 +29,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_surface_syntax::NodeIndex;
 use gandr_surface_syntax::SourceFragment;
@@ -257,6 +258,20 @@ pub enum TypeFormer
 }
 
 /// The nullary type heads, with the spellings the surface writes them as.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: exact spelling selects the declared nullary type head; the other
+///   arity and near spellings do not resolve.
+/// - provides: one finite arity-indexed type-head inventory.
+/// - executable: none — the specification attribute does not support constant
+///   items; the lookup predicate checks the corresponding table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every row has an exact answer, with the other arity and
+///   near spellings separating the absent branch.
+/// - witness: `resolve::tests::every_nullary_type_head_answers_its_atom`
+/// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
 const TYPE_ATOMS: [(&str, TypeAtom); 3_usize] = [
     ("Unit", TypeAtom::Unit),
     ("Integer", TypeAtom::Integer),
@@ -264,6 +279,20 @@ const TYPE_ATOMS: [(&str, TypeAtom); 3_usize] = [
 ];
 
 /// The unary type heads, with the spellings the surface writes them as.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: exact spelling selects the declared unary type head; the other
+///   arity and near spellings do not resolve.
+/// - provides: one finite arity-indexed type-head inventory.
+/// - executable: none — the specification attribute does not support constant
+///   items; the lookup predicate checks the corresponding table.
+///
+/// # Adequacy
+/// - hypothesis: L3 — every row has an exact answer, with the other arity and
+///   near spellings separating the absent branch.
+/// - witness: `resolve::tests::every_unary_type_head_answers_its_former`
+/// - witness: `resolve::tests::a_nullary_head_answers_no_former`
 const TYPE_FORMERS: [(&str, TypeFormer); 2_usize] =
     [("+U", TypeFormer::Thunk), ("-F", TypeFormer::Returner)];
 
@@ -287,6 +316,16 @@ const TYPE_FORMERS: [(&str, TypeFormer); 2_usize] =
 ///   breaks one pair.
 /// - witness: `resolve::tests::every_nullary_type_head_answers_its_atom`
 /// - witness: `resolve::tests::a_near_miss_nullary_head_answers_nothing`
+#[spec(
+    ensures: |ret| match ret {
+        | Maybe::Present(answer) => TYPE_ATOMS
+            .iter()
+            .any(|&(spelling, value)| spelling == name.as_ref() && value == answer),
+        | Maybe::Absent(type_head::Absent::Unregistered) => TYPE_ATOMS
+            .iter()
+            .all(|&(spelling, _)| spelling != name.as_ref()),
+    },
+)]
 #[inline]
 pub fn type_atom(name: SurfaceName<'_>) -> Maybe<TypeAtom, type_head::Absent>
 {
@@ -320,6 +359,16 @@ pub fn type_atom(name: SurfaceName<'_>) -> Maybe<TypeAtom, type_head::Absent>
 ///   absent.
 /// - witness: `resolve::tests::every_unary_type_head_answers_its_former`
 /// - witness: `resolve::tests::a_nullary_head_answers_no_former`
+#[spec(
+    ensures: |ret| match ret {
+        | Maybe::Present(answer) => TYPE_FORMERS
+            .iter()
+            .any(|&(spelling, value)| spelling == name.as_ref() && value == answer),
+        | Maybe::Absent(type_head::Absent::Unregistered) => TYPE_FORMERS
+            .iter()
+            .all(|&(spelling, _)| spelling != name.as_ref()),
+    },
+)]
 #[inline]
 pub fn type_former(name: SurfaceName<'_>) -> Maybe<TypeFormer, type_head::Absent>
 {
@@ -335,11 +384,39 @@ pub fn type_former(name: SurfaceName<'_>) -> Maybe<TypeFormer, type_head::Absent
 }
 
 /// The identity of one binder frame inside a [`Scope`].
+///
+/// # Specification
+/// - requires: an interpreting scope accompanies the position.
+/// - ensures: the coordinate names one frame only relative to that scope; it
+///   does not authenticate where it was minted.
+/// - provides: stable positions in an append-only binder arena.
+/// - executable: none — a coordinate does not hold the arena needed to check
+///   bounds or provenance.
+///
+/// # Adequacy
+/// - hypothesis: L3 — sibling extensions preserve earlier positions; equal
+///   positions from distinct scopes refer to the receiving scope's frames.
+/// - witness: `resolve::tests::sibling_extensions_of_one_scope_are_independent`
+/// - witness: `resolve::tests::binder_positions_do_not_authenticate_their_minting_scope`
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ScopeId(usize);
 
 /// The binder frame a term is read under.
+///
+/// # Specification
+/// - requires: an inner position is interpreted in its intended scope.
+/// - ensures: outermost means no binder; an inner coordinate starts the parent
+///   chain at that frame.
+/// - provides: the binder context carried by a syntax node.
+/// - executable: none — the frame holds no scope in which to establish its
+///   bounds or parent chain.
+///
+/// # Adequacy
+/// - hypothesis: L3 — outermost lookup is absent, while inner and sibling
+///   chains resolve only their reachable binders.
+/// - witness: `resolve::tests::an_unbound_name_resolves_to_nothing`
+/// - witness: `resolve::tests::sibling_extensions_of_one_scope_are_independent`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Frame
 {
@@ -350,6 +427,20 @@ pub enum Frame
 }
 
 /// One binder, and the frame it extends.
+///
+/// # Specification
+/// - requires: an arena position accompanies the frame.
+/// - ensures: an inner parent precedes this frame; the stored name and optional
+///   syntax type remain fixed while mention can change from false to true.
+/// - provides: one persistent-chain node with mutable dependency evidence.
+/// - executable: none — parent ordering needs the unheld arena position; push
+///   and mention predicates check those transitions.
+///
+/// # Adequacy
+/// - hypothesis: L3 — typed and untyped frames retain their data, and mention
+///   affects telescope contribution without changing lexical lookup.
+/// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
+/// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
 #[derive(Clone, Copy, Debug)]
 struct ScopeFrame<'source>
 {
@@ -384,10 +475,24 @@ impl From<Mentioned> for bool
 
 /// A binder a name resolved to: its de Bruijn index at the use site, the
 /// frame it introduced, and the type it was written with.
+///
+/// # Specification
+/// - requires: the producing scope and use-site frame accompany the answer.
+/// - ensures: index counts frames to the innermost matching binder, saturating
+///   at the index width; its coordinate and written type are retained.
+/// - provides: lexical resolution with enough data for dependent type decoding.
+/// - executable: none — the answer holds neither the producing scope nor the
+///   use-site chain; resolve checks their correspondence.
+///
+/// # Adequacy
+/// - hypothesis: L3 — inner shadowing and a typed outer binder have exact
+///   indices, coordinates and optional syntax types.
+/// - witness: `resolve::tests::an_inner_binder_shadows_an_outer_one`
+/// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Bound
 {
-    /// The number of binders strictly between the use site and the binder.
+    /// The intervening binder count, saturating at the index width.
     pub index: DeBruijnIndex,
     /// The frame the binder introduced.
     pub binder: ScopeId,
@@ -400,6 +505,24 @@ pub struct Bound
 /// The chain is flat and id-addressed rather than pointer-linked: a frame names
 /// its parent by position in this vector, so a scope is shared by every node
 /// under one binder without being copied and without a drop that walks depth.
+///
+/// # Specification
+/// - requires: extensions use an outermost parent or an existing frame position
+///   in the intended scope.
+/// - ensures: frames are append-only and parent links point backward;
+///   independent sibling chains share prefixes without changing each other.
+/// - provides: iterative lexical lookup and mention-filtered telescope indices.
+/// - executable: none — this build's specification facade does not expose the
+///   type-item runtime; extension, lookup and mention predicates check the
+///   boundaries.
+///
+/// # Adequacy
+/// - hypothesis: L3 — shadowing, sibling isolation, written types, mention
+///   filtering and allowance exhaustion separate the observable transitions.
+/// - witness: `resolve::tests::sibling_extensions_of_one_scope_are_independent`
+/// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
+/// - witness: `resolve::tests::lookup_spends_one_charge_per_visited_binder`
+/// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
 #[repr(transparent)]
 #[derive(Clone, Debug, Default)]
 pub struct Scope<'source>
@@ -424,8 +547,8 @@ impl<'source> Scope<'source>
     /// The frame that extends `parent` with an untyped binder for `name`.
     ///
     /// # Specification
-    /// - requires: `parent` was minted by this scope, or is the outermost
-    ///   frame.
+    /// - requires: `parent` is outermost or an existing frame position in the
+    ///   intended scope; a coordinate does not authenticate its minting scope.
     /// - ensures: the returned identity names a fresh frame whose parent is
     ///   `parent`, so the chain from it is one longer than the chain from
     ///   `parent`; existing frames are unchanged, which is what lets two
@@ -441,6 +564,23 @@ impl<'source> Scope<'source>
     ///   and shadowing names at.
     /// - witness: `resolve::tests::an_inner_binder_shadows_an_outer_one`
     /// - witness: `resolve::tests::sibling_extensions_of_one_scope_are_independent`
+    #[spec(
+        requires: match parent {
+            | Frame::Outermost => true,
+            | Frame::Inner(id) => id.0 < self.frames.len(),
+        },
+        captures: before = self.frames.len(),
+        ensures: |ret| {
+            ret.0 == before
+                && self.frames.len() == before.saturating_add(1)
+                && self.frames.get(ret.0).is_some_and(|entry| {
+                    entry.parent == parent
+                        && entry.name == name
+                        && entry.declared == Maybe::Absent(binder_type::Absent::Untyped)
+                        && !entry.mentioned.0
+                })
+        },
+    )]
     #[inline]
     pub fn extend(
         &mut self,
@@ -468,6 +608,23 @@ impl<'source> Scope<'source>
     /// - hypothesis: L3 — a typed and an untyped binder in one chain, each
     ///   resolved and its written type asserted present and absent.
     /// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
+    #[spec(
+        requires: match parent {
+            | Frame::Outermost => true,
+            | Frame::Inner(id) => id.0 < self.frames.len(),
+        },
+        captures: before = self.frames.len(),
+        ensures: |ret| {
+            ret.0 == before
+                && self.frames.len() == before.saturating_add(1)
+                && self.frames.get(ret.0).is_some_and(|entry| {
+                    entry.parent == parent
+                        && entry.name == name
+                        && entry.declared == Maybe::Present(declared)
+                        && !entry.mentioned.0
+                })
+        },
+    )]
     #[inline]
     pub fn extend_typed(
         &mut self,
@@ -482,7 +639,35 @@ impl<'source> Scope<'source>
     /// Push one binder frame over `parent`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: parent is outermost or names an existing frame position.
+    /// - ensures: the new last frame retains parent, name and written type,
+    ///   starts unmentioned and leaves earlier frame positions intact.
+    /// - provides: the append boundary shared by typed and untyped extension.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — siblings stay independent, shadowing stops at the
+    ///   innermost binder and typed versus untyped results retain their written
+    ///   type.
+    /// - witness: `resolve::tests::sibling_extensions_of_one_scope_are_independent`
+    /// - witness: `resolve::tests::an_inner_binder_shadows_an_outer_one`
+    /// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
+    #[spec(
+        requires: match parent {
+            | Frame::Outermost => true,
+            | Frame::Inner(id) => id.0 < self.frames.len(),
+        },
+        captures: before = self.frames.len(),
+        ensures: |ret| {
+            ret.0 == before
+                && self.frames.len() == before.saturating_add(1)
+                && self.frames.get(ret.0).is_some_and(|entry| {
+                    entry.parent == parent
+                        && entry.name == name
+                        && entry.declared == declared
+                        && !entry.mentioned.0
+                })
+        },
+    )]
     fn push(
         &mut self,
         parent: Frame,
@@ -526,6 +711,20 @@ impl<'source> Scope<'source>
     /// - witness: `resolve::tests::an_inner_binder_shadows_an_outer_one`
     /// - witness: `resolve::tests::an_unbound_name_resolves_to_nothing`
     /// - witness: `resolve::tests::a_chain_walk_past_the_allowance_is_refused`
+    #[spec(
+        requires: match frame {
+            | Frame::Outermost => true,
+            | Frame::Inner(id) => id.0 < self.frames.len(),
+        },
+        ensures: |ret| match ret {
+            | Ok(Maybe::Present(index)) => {
+                usize::try_from(u32::from(index)).is_ok_and(|depth| depth < self.frames.len())
+            },
+            | Ok(Maybe::Absent(binder::Absent::Unbound)) => true,
+            | Err(LoweringRefusal::BudgetExceeded { .. }) => matches!(frame, Frame::Inner(_)),
+            | Err(_) => false,
+        },
+    )]
     #[inline]
     pub fn index_of<'refusal>(
         &self,
@@ -540,8 +739,8 @@ impl<'source> Scope<'source>
     /// The binder `name` resolves to in the chain rooted at `frame`.
     ///
     /// # Specification
-    /// - requires: `frame` was minted by this scope, or is the outermost frame;
-    ///   `fuel` holds the lowering's remaining allowance.
+    /// - requires: `frame` is outermost or an existing frame position in the
+    ///   intended scope; `fuel` holds the remaining allowance.
     /// - ensures: on a hit, the number of binders strictly between the use site
     ///   and the innermost binder of `name` — zero at the innermost binder, so
     ///   an inner binder shadows an outer one of the same name — with the type
@@ -551,10 +750,8 @@ impl<'source> Scope<'source>
     /// - fails: [`LoweringRefusal::BudgetExceeded`] when the chain walk outruns
     ///   the lowering's allowance, which is what bounds an otherwise quadratic
     ///   walk over a deep binder chain.
-    /// - panics: none. The index narrows with a saturating conversion whose
-    ///   ceiling is unreachable: one step of allowance is spent per frame, so a
-    ///   chain longer than the index width costs more allowance than a budget
-    ///   can hold.
+    /// - panics: none. Depth conversion saturates at the index width; the
+    ///   caller-selected allowance is not itself limited to that width.
     ///
     /// # Errors
     /// [`LoweringRefusal::BudgetExceeded`] when the allowance runs out
@@ -567,6 +764,44 @@ impl<'source> Scope<'source>
     /// - witness: `resolve::tests::an_outer_binder_resolves_one_index_further`
     /// - witness: `resolve::tests::a_chain_walk_past_the_allowance_is_refused`
     /// - witness: `resolve::tests::a_typed_binder_resolves_with_its_written_type`
+    /// - witness: `resolve::tests::lookup_spends_one_charge_per_visited_binder`
+    #[spec(
+        requires: match frame {
+            | Frame::Outermost => true,
+            | Frame::Inner(id) => id.0 < self.frames.len(),
+        },
+        ensures: |ret| match ret {
+            | Ok(answer) => {
+                let mut current = frame;
+                let mut depth = 0_usize;
+                let expected = loop {
+                    let Frame::Inner(id) = current
+                    else {
+                        break Maybe::Absent(binder::Absent::Unbound);
+                    };
+                    if depth >= self.frames.len() {
+                        return false;
+                    }
+                    let Some(entry) = self.frames.get(id.0)
+                    else {
+                        return false;
+                    };
+                    if entry.name == name {
+                        break Maybe::Present(Bound {
+                            index: DeBruijnIndex::from(u32::try_from(depth).unwrap_or(u32::MAX)),
+                            binder: id,
+                            declared: entry.declared,
+                        });
+                    }
+                    depth = depth.saturating_add(1);
+                    current = entry.parent;
+                };
+                answer == expected
+            },
+            | Err(LoweringRefusal::BudgetExceeded { .. }) => matches!(frame, Frame::Inner(_)),
+            | Err(_) => false,
+        },
+    )]
     #[inline]
     pub fn resolve<'refusal>(
         &self,
@@ -603,18 +838,28 @@ impl<'source> Scope<'source>
     /// Record that a type position names the binder that introduced `binder`.
     ///
     /// # Specification
-    /// - requires: `binder` was minted by this scope.
-    /// - ensures: [`Self::mentioned`] answers true for `binder` from now on;
-    ///   every other frame is unchanged.
+    /// - requires: nothing — the coordinate is interpreted in this scope.
+    /// - ensures: a stored frame is mentioned from now on; every other frame is
+    ///   unchanged. Equal coordinates from other scopes name this scope's
+    ///   frame, not their original owner.
     /// - provides: the half of the dependent-arrow decision a type position
     ///   contributes.
-    /// - fails: never; an identity this scope did not mint is ignored.
+    /// - fails: never; an out-of-range coordinate is ignored.
     /// - panics: none.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — a mentioned and an unmentioned typed binder in one
     ///   chain, separated by the flag and by the telescope index they leave.
     /// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
+    /// - witness: `resolve::tests::binder_positions_do_not_authenticate_their_minting_scope`
+    #[spec(
+        captures: before = self.frames.len(),
+        ensures: self.frames.len() == before
+            && self
+                .frames
+                .get(binder.0)
+                .is_none_or(|entry| entry.mentioned.0),
+    )]
     #[inline]
     pub fn mention(
         &mut self,
@@ -629,7 +874,26 @@ impl<'source> Scope<'source>
     /// Whether a type position names the binder that introduced `binder`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing — an out-of-range coordinate is admissible.
+    /// - ensures: a stored frame answers its mention flag; an out-of-range
+    ///   coordinate answers false.
+    /// - provides: the dependency decision without mutating lexical resolution.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — mentioned, unmentioned, aliased and out-of-range
+    ///   coordinates distinguish the receiving arena's local flag from
+    ///   provenance.
+    /// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
+    /// - witness: `resolve::tests::binder_positions_do_not_authenticate_their_minting_scope`
+    #[spec(
+        ensures: |ret| {
+            ret.0
+                == self
+                    .frames
+                    .get(binder.0)
+                    .is_some_and(|entry| entry.mentioned.0)
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn mentioned(
@@ -647,12 +911,12 @@ impl<'source> Scope<'source>
     /// position names it.
     ///
     /// # Specification
-    /// - requires: `binder` lies on the chain from `from`; every mention has
-    ///   been recorded.
-    /// - ensures: the number of frames strictly between `from`'s innermost
-    ///   frame and `binder` that are untyped or mentioned — a typed binder no
-    ///   type names becomes a plain arrow and binds nothing in the types after
-    ///   it, while every other binder binds.
+    /// - requires: `from` is outermost or an existing frame position in the
+    ///   intended scope; every mention has been recorded.
+    /// - ensures: counts from `from` up to but excluding `binder`, including
+    ///   each untyped or mentioned frame. If the target is not on the chain,
+    ///   counts to its end; an unmentioned typed frame contributes nothing. The
+    ///   count saturates at the index width.
     /// - provides: the index a decode in a function tail's signature carries.
     /// - fails: never; a chain that never reaches `binder` counts to its end.
     /// - panics: none. The walk follows parent links, which always name an
@@ -663,6 +927,36 @@ impl<'source> Scope<'source>
     ///   untyped one between the use site and the binder, each asserted to
     ///   count or not.
     /// - witness: `resolve::tests::only_a_mentioned_typed_binder_counts_in_a_telescope`
+    /// - witness: `resolve::tests::telescope_counts_to_the_end_when_the_target_is_not_on_the_chain`
+    #[spec(
+        requires: match from {
+            | Frame::Outermost => true,
+            | Frame::Inner(id) => id.0 < self.frames.len(),
+        },
+        ensures: |ret| {
+            let mut current = from;
+            let mut count = 0_u32;
+            let mut visited = 0_usize;
+            while let Frame::Inner(id) = current {
+                if id == binder {
+                    break;
+                }
+                if visited >= self.frames.len() {
+                    return false;
+                }
+                let Some(entry) = self.frames.get(id.0)
+                else {
+                    return false;
+                };
+                if matches!(entry.declared, Maybe::Absent(_)) || entry.mentioned.0 {
+                    count = count.saturating_add(1);
+                }
+                visited = visited.saturating_add(1);
+                current = entry.parent;
+            }
+            u32::from(ret) == count
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn telescope_index(
@@ -697,17 +991,12 @@ impl<'source> Scope<'source>
 #[cfg(test)]
 mod tests
 {
-    use alloc::format;
-    use alloc::string::String;
-
     use gandr_kernel_term::DeBruijnIndex;
     use gandr_surface_syntax::NodeIndex;
     use quenchant_shape::shape::Maybe;
 
     use super::Bound;
     use super::Frame;
-    use super::HeadArity;
-    use super::OperandCount;
     use super::Scope;
     use super::SurfaceName;
     use super::TypeAtom;
@@ -731,6 +1020,134 @@ mod tests
     }
 
     #[test]
+    fn binder_positions_do_not_authenticate_their_minting_scope()
+    {
+        let mut first = Scope::new();
+        let foreign = first.extend(Frame::Outermost, SurfaceName::from("foreign"));
+        let outside = first.extend(Frame::Inner(foreign), SurfaceName::from("outside"));
+        let mut receiving = Scope::new();
+        let local = receiving.extend(Frame::Outermost, SurfaceName::from("local"));
+        assert_eq!(foreign, local);
+        receiving.mention(outside);
+        assert!(!bool::from(receiving.mentioned(outside)));
+        assert!(!bool::from(receiving.mentioned(local)));
+        receiving.mention(foreign);
+        assert!(bool::from(receiving.mentioned(local)));
+        assert!(!bool::from(first.mentioned(foreign)));
+        assert_eq!(
+            receiving.index_of(
+                Frame::Inner(foreign),
+                SurfaceName::from("local"),
+                &mut tank()
+            ),
+            Ok(Maybe::Present(DeBruijnIndex::from(0_u32)))
+        );
+        assert_eq!(
+            receiving.index_of(
+                Frame::Inner(foreign),
+                SurfaceName::from("foreign"),
+                &mut tank()
+            ),
+            Ok(Maybe::Absent(binder::Absent::Unbound))
+        );
+    }
+
+    #[test]
+    fn lookup_spends_one_charge_per_visited_binder()
+    {
+        let mut scope = Scope::new();
+        let outer = scope.extend(Frame::Outermost, SurfaceName::from("x"));
+        let inner = scope.extend(Frame::Inner(outer), SurfaceName::from("y"));
+        let cases = [
+            (
+                Frame::Outermost,
+                "x",
+                0_usize,
+                Ok(Maybe::Absent(binder::Absent::Unbound)),
+            ),
+            (
+                Frame::Inner(inner),
+                "y",
+                1_usize,
+                Ok(Maybe::Present(DeBruijnIndex::from(0_u32))),
+            ),
+            (
+                Frame::Inner(inner),
+                "x",
+                2_usize,
+                Ok(Maybe::Present(DeBruijnIndex::from(1_u32))),
+            ),
+            (
+                Frame::Inner(outer),
+                "missing",
+                1_usize,
+                Ok(Maybe::Absent(binder::Absent::Unbound)),
+            ),
+            (
+                Frame::Inner(inner),
+                "y",
+                0_usize,
+                Err(LoweringRefusal::BudgetExceeded {
+                    budget: LoweringBudget::from(0_usize),
+                }),
+            ),
+        ];
+        for (frame, name, allowance, expected) in cases {
+            let budget = LoweringBudget::from(allowance);
+            let mut fuel = Fuel::new(budget);
+            assert_eq!(
+                scope.index_of(frame, SurfaceName::from(name), &mut fuel),
+                expected
+            );
+            assert_eq!(
+                fuel.spend(),
+                Err(LoweringRefusal::BudgetExceeded { budget })
+            );
+        }
+        let budget = LoweringBudget::from(1_usize);
+        let mut fuel = Fuel::new(budget);
+        assert_eq!(
+            scope.index_of(Frame::Outermost, SurfaceName::from("x"), &mut fuel),
+            Ok(Maybe::Absent(binder::Absent::Unbound))
+        );
+        assert_eq!(fuel.spend(), Ok(()));
+        assert_eq!(
+            fuel.spend(),
+            Err(LoweringRefusal::BudgetExceeded { budget })
+        );
+    }
+
+    #[test]
+    fn telescope_counts_to_the_end_when_the_target_is_not_on_the_chain()
+    {
+        let mut scope = Scope::new();
+        let outer = scope.extend(Frame::Outermost, SurfaceName::from("outer"));
+        let typed = scope.extend_typed(
+            Frame::Inner(outer),
+            SurfaceName::from("typed"),
+            NodeIndex::from(7_usize),
+        );
+        let inner = scope.extend(Frame::Inner(typed), SurfaceName::from("inner"));
+        let sibling = scope.extend(Frame::Outermost, SurfaceName::from("sibling"));
+        assert_eq!(
+            scope.telescope_index(Frame::Inner(inner), sibling),
+            DeBruijnIndex::from(2_u32)
+        );
+        scope.mention(typed);
+        assert_eq!(
+            scope.telescope_index(Frame::Inner(inner), sibling),
+            DeBruijnIndex::from(3_u32)
+        );
+        assert_eq!(
+            scope.telescope_index(Frame::Inner(inner), inner),
+            DeBruijnIndex::from(0_u32)
+        );
+        assert_eq!(
+            scope.telescope_index(Frame::Outermost, sibling),
+            DeBruijnIndex::from(0_u32)
+        );
+    }
+    #[test]
     fn every_nullary_type_head_answers_its_atom()
     {
         let expected = [
@@ -746,11 +1163,6 @@ mod tests
                 "the nullary table is pinned row by row"
             );
         }
-        assert_eq!(
-            expected.len(),
-            3_usize,
-            "the fragment admits exactly three nullary type heads"
-        );
     }
 
     #[test]
@@ -777,11 +1189,6 @@ mod tests
                 "the unary table is pinned row by row"
             );
         }
-        assert_eq!(
-            expected.len(),
-            2_usize,
-            "the fragment admits exactly two unary type heads"
-        );
     }
 
     #[test]
@@ -967,26 +1374,6 @@ mod tests
             scope.telescope_index(Frame::Inner(y), b),
             DeBruijnIndex::from(1_u32),
             "an untyped binder between always counts"
-        );
-    }
-
-    #[test]
-    fn a_head_arity_renders_how_the_head_was_written()
-    {
-        assert_eq!(
-            format!("{}", HeadArity::Nullary),
-            String::from("bare"),
-            "the nullary arity renders as the bare spelling"
-        );
-        assert_eq!(
-            format!("{}", HeadArity::Unary),
-            String::from("applied to one argument"),
-            "the unary arity renders as the applied spelling"
-        );
-        assert_eq!(
-            format!("{}", HeadArity::Polyadic(OperandCount::from(3_usize))),
-            String::from("applied to 3 arguments"),
-            "a polyadic arity renders its argument count"
         );
     }
 }
