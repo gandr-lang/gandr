@@ -1,14 +1,3 @@
-// Specification backfill pending (gandr-lang/gandr#9): the executable-
-// specification lints are allowed until this crate's own backfill lands.
-#![cfg_attr(
-    dylint_lib = "quenchant_dylints",
-    allow(
-        spec_attribute_present,
-        adequacy_present,
-        maybe_shape,
-        erased_error_signature
-    )
-)]
 //! Type operators, lowered and checked: the relative-monad witness written
 //! with every universe spelled out and with the defaults left off, each
 //! lowered, judged by the checker and readmitted to the kernel, the two
@@ -24,6 +13,7 @@ mod static_operators
 {
     use alloc::collections::BTreeMap;
 
+    use anodized::spec;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckRefusal;
     use gandr_core_checker::CheckingContext;
@@ -56,6 +46,25 @@ mod static_operators
     use quenchant_shape::shape::Maybe;
 
     /// The witness with every universe written at its sort and level.
+    ///
+    /// # Specification
+    /// - requires: interpreted by the built-in grammar and current core
+    ///   fragment.
+    /// - ensures: the fully explicit relative-monad signature and its two
+    ///   instances exercise static abstraction, application, universes and the
+    ///   value-function alias.
+    /// - provides: the explicit spelling in the semantic comparison.
+    /// - fails: none for this accepted source fixture.
+    /// - panics: none as a string value.
+    /// - executable: none — constant items do not accept the specification
+    ///   attribute; semantic meaning is observed by the full elaboration
+    ///   witness.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on this fixture — the operator checks, its two
+    ///   instances are owed, and the instantiated and explicitly expanded types
+    ///   export equal content digests.
+    /// - witness: `static_operators::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
     const EXPLICIT: &str = "\
         def raw_rel_monad : (Type[+, 0] -> Type[-, 0]) -> Type[+, 0] -> Type[+, 0] -> Type[+, 0] ;
         def raw_rel_monad = \\T. \\A. \\B. +U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)) ;
@@ -66,6 +75,22 @@ mod static_operators
     ";
 
     /// The same witness with the sort and level defaults left off.
+    ///
+    /// # Specification
+    /// - requires: interpreted by the same grammar and core fragment as the
+    ///   explicit fixture.
+    /// - ensures: omitting the permitted sort and level defaults preserves the
+    ///   explicit fixture’s verdicts and exported content.
+    /// - provides: the elided spelling in the semantic comparison.
+    /// - fails: none for this accepted source fixture.
+    /// - panics: none as a string value.
+    /// - executable: none — constant items do not accept the specification
+    ///   attribute; equivalence is observed after parsing, checking and export.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the paired fixtures only — explicit and elided
+    ///   spellings have identical normalized verdict and exported-digest views.
+    /// - witness: `static_operators::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
     const ELIDED: &str = "\
         def raw_rel_monad : (Type -> Type[-]) -> Type -> Type -> Type ;
         def raw_rel_monad = \\T. \\A. \\B. +U (A -> T(A)) * +U (+U (T(A)) -> +U (A -> T(B)) -> T(B)) ;
@@ -78,6 +103,24 @@ mod static_operators
     /// The witness's two sort errors: the carrier `T(A)`, a computation type,
     /// standing bare in an eager product and under a returner, where a value
     /// type is read.
+    ///
+    /// # Specification
+    /// - requires: interpreted by the built-in grammar and current core
+    ///   fragment.
+    /// - ensures: the negative carrier is refused in both a positive product
+    ///   position and a returner’s positive argument position.
+    /// - provides: the two sort-boundary counterexamples.
+    /// - fails: checking reports the computation universe where the value
+    ///   universe is required, both at level zero.
+    /// - panics: none as a string value.
+    /// - executable: none — constant items do not accept the specification
+    ///   attribute; the checker witness observes both exact universe pairs.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the product and returner contexts independently
+    ///   expose the expected and synthesized sorts and levels, not just any
+    ///   refusal.
+    /// - witness: `static_operators::static_operators::a_negative_carrier_where_a_value_type_is_read_names_both_universes`
     const SORT_ERRORS: &str = "\
         def in_a_product : (Type -> Type[-]) -> Type -> Type ;
         def in_a_product = \\T. \\A. T(A) * A ;
@@ -88,6 +131,24 @@ mod static_operators
     /// What one spelling elaborates to: the checker's verdict on each
     /// declaration, and each exported declaration's name with the content
     /// digests of its type and of its body when it has one.
+    ///
+    /// # Specification
+    /// - requires: interpreted as the stage artifact of a fully signed fixture.
+    /// - ensures: verdict order is separate from export order, and an absent
+    ///   body digest denotes a non-definition export.
+    /// - provides: a comparison free of arena-local identifiers.
+    /// - fails: it cannot certify typing or digest provenance without the
+    ///   erased arenas and reports.
+    /// - panics: none as a data value.
+    /// - executable: none — the intermediate checker report and decoded
+    ///   artifact are not retained; `elaborate` checks its observable category
+    ///   and export bound.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the named fixtures — normalized verdicts, exported
+    ///   names and type digests are compared with their expected semantic roles
+    ///   and with the independent explicit normal form.
+    /// - witness: `static_operators::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
     #[derive(Debug, Eq, PartialEq)]
     struct Elaborated
     {
@@ -101,7 +162,31 @@ mod static_operators
     /// and each declaration's structured name.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: clean top-level fixtures whose declarations all lower within
+    ///   the default budgets.
+    /// - ensures: checking preserves admission coordinates and every judged
+    ///   declaration has its structured name in the returned map.
+    /// - provides: the real parse, lower and check pipeline rather than a
+    ///   mocked verdict.
+    /// - fails: checking refusals remain in the report.
+    /// - panics: on parsing, repair, engine refusal or a declaration-local
+    ///   lowering refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on the explicit and elided operator fixtures, with L3
+    ///   negative product and returner positions — reports preserve the named
+    ///   declarations and expose the exact expected and synthesized universes.
+    /// - witness: `static_operators::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
+    /// - witness: `static_operators::static_operators::a_negative_carrier_where_a_value_type_is_read_names_both_universes`
+    #[spec(
+        ensures: |ret| {
+            ret.0
+                .judged()
+                .iter()
+                .map(gandr_core_checker::Judged::constant)
+                .eq(ret.1.keys().copied())
+        },
+    )]
     fn judge(
         source: SourceText<'_>,
         arena: &mut CoreArena,
@@ -161,7 +246,36 @@ mod static_operators
     /// `source` parsed, lowered, judged and readmitted.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: clean, fully signed top-level fixtures accepted by lowering
+    ///   and readable by the export decoder.
+    /// - ensures: verdict classes stay in admission order and exported names
+    ///   and type/body digests stay in export order; checked operators not
+    ///   representable in the artifact may remain unexported.
+    /// - provides: a semantic stage artifact for comparing the two spellings
+    ///   and their independently written normal forms.
+    /// - fails: checking and readmission may omit declarations from the export.
+    /// - panics: on a parser or lowering refusal, or an undecodable exported
+    ///   image.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on these two relative-monad spellings only — one
+    ///   checked operator stays local, two owed instances cross, and the
+    ///   instantiated type’s digest equals the independently spelled normal
+    ///   form.
+    /// - witness: `static_operators::static_operators::the_relative_monad_witness_elaborates_identically_in_both_spellings`
+    #[spec(
+        ensures: |ret| {
+            ret.verdicts
+                .iter()
+                .all(|&verdict| matches!(verdict, "checked" | "owed" | "refused"))
+                && ret.exported.len()
+                    <= ret
+                        .verdicts
+                        .iter()
+                        .filter(|&&verdict| matches!(verdict, "checked" | "owed"))
+                        .count()
+        },
+    )]
     fn elaborate(source: SourceText<'_>) -> Elaborated
     {
         let mut arena = CoreArena::new();

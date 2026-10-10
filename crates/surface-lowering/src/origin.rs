@@ -2,14 +2,11 @@
 //! carries, and the [`OriginTable`] mapping every minted core node back to the
 //! syntax node that produced it, written or inserted.
 //!
-//! # Types have origins from the first landing
+//! # Origins for every node family
 //!
-//! The table covers the type families as well as the term families. A checker
-//! that later wants to attach a note to a *type* it derived needs the carrier
-//! to exist already: retrofitting one means finding every mint site after the
-//! fact, and a traversal missing one arm loses the origins of everything under
-//! it silently. Building the table where the nodes are minted makes a new
-//! former acquire origins by construction rather than by a later sweep.
+//! The table covers type families as well as term families. A diagnostic can
+//! resolve a derived type without recovering its origin from a second walk.
+//! Each minting operation records its node in the corresponding family.
 //!
 //! # An origin carries both identities
 //!
@@ -37,6 +34,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
 use gandr_core_term::ValueId;
@@ -52,14 +50,29 @@ quenchant_shape::reason_enum! {
         /// The table holds no entry for the id or token asked about.
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
         pub enum Absent {
-            /// The id was not minted by this lowering, or the token not handed
-            /// out by this table.
+            /// No entry has the requested id, or the token is outside this
+            /// table's declaration list.
             Unrecorded,
         }
     }
 }
 
 /// One of the five bridges the lowering writes at a checked site.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the tag distinguishes force, thunk, returner, quote and decode.
+/// - provides: the kind of an insertion recorded in an origin.
+/// - fails: not applicable to the tag itself.
+/// - panics: not applicable to the tag itself.
+/// - executable: none — the tag carries no core node against which to check
+///   that the named bridge was inserted.
+///
+/// # Adequacy
+/// - hypothesis: L3 — an inserted force and a written origin remain distinct
+///   through recording and lookup; this does not prove that a bridge was
+///   needed.
+/// - witness: `origin::tests::lookups_separate_gaps_from_declaration_origins`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Insertion
 {
@@ -79,6 +92,20 @@ pub enum Insertion
 }
 
 /// Whether the source wrote a minted core node or the lowering inserted it.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: written syntax and an insertion of a named kind stay distinct.
+/// - provides: provenance without requiring the core to retain surface syntax.
+/// - fails: not applicable to the tag itself.
+/// - panics: not applicable to the tag itself.
+/// - executable: none — a provenance tag has neither the source tree nor the
+///   core node whose production it describes.
+///
+/// # Adequacy
+/// - hypothesis: L3 — exact origin equality separates a written node from an
+///   inserted force. The fixture checks preservation, not historical truth.
+/// - witness: `origin::tests::lookups_separate_gaps_from_declaration_origins`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Provenance
 {
@@ -90,6 +117,22 @@ pub enum Provenance
 }
 
 /// Where one minted core node came from.
+///
+/// # Specification
+/// - requires: nothing; the fields are admitted as supplied metadata.
+/// - ensures: the syntax position, content identity, span and provenance are
+///   carried together, without certifying that they describe one real node.
+/// - provides: the metadata a diagnostic resolves for a minted core node.
+/// - fails: not applicable to the record itself.
+/// - panics: not applicable to the record itself.
+/// - executable: none — the record does not retain the tree needed to verify
+///   the association between its position, digest and span.
+///
+/// # Adequacy
+/// - hypothesis: L3 — distinct complete origin values survive multi-entry
+///   lookup, including inserted provenance. No tree-membership claim is tested.
+/// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
+/// - witness: `origin::tests::lookups_separate_gaps_from_declaration_origins`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Origin
 {
@@ -261,6 +304,35 @@ impl From<OriginCount> for usize
 /// ascend with minting inside a family, so the vector is sorted by id by
 /// construction and a lookup is a binary search rather than a map: no hashing,
 /// no per-entry allocation, and an iteration order that is the mint order.
+///
+/// Core ids are arena-local slots, and declaration tokens are table-local
+/// indices. Lookup compares keys, not their minting histories: equal keys from
+/// different contexts are indistinguishable. Consumers retain the associated
+/// arena and table when interpreting an origin.
+///
+/// # Specification
+/// - requires: each recording call supplies an id after the preceding ids in
+///   its family; origin metadata itself is not validated here.
+/// - ensures: family entries are strictly ascending by id; declaration origins
+///   occupy a separate append-only token space and do not enter the node
+///   census.
+/// - provides: lookup of supplied metadata by key equality, without validating
+///   the key's minting context or consulting the syntax tree.
+/// - fails: not applicable to the stored representation itself.
+/// - panics: not applicable to the stored representation itself.
+/// - executable: none — the facade's type-refinement expansion requires its
+///   disabled logic feature; recording and census predicates check the order
+///   obligation at function boundaries instead.
+///
+/// # Adequacy
+/// - hypothesis: L3 — recording checks its new suffix and the census checks
+///   strict order in every family. Fixtures separate family lookups, gaps and
+///   declaration tokens; enforcement rejects a reversed value family. These
+///   observations do not establish the provenance of supplied metadata.
+/// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
+/// - witness: `origin::tests::lookups_separate_gaps_from_declaration_origins`
+/// - witness: `origin::tests::census_rejects_a_disordered_family`
+/// - witness: `origin::tests::keys_do_not_certify_their_minting_context`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OriginTable
 {
@@ -279,19 +351,34 @@ pub struct OriginTable
 /// Record one family's origin, keeping the vector ascending by id.
 ///
 /// # Specification
-/// - requires: `entries` is ascending by id, and `id` was minted after every id
-///   already in it, which the arena's own constructor-only minting establishes.
+/// - requires: entries are strictly ascending by id, and `id` follows every
+///   existing id in that family.
 /// - ensures: the pair is appended, so the vector stays ascending and the
 ///   lookup below stays a binary search.
 /// - provides: the one recording step every family shares, so no family can
 ///   drift into an unsorted vector.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the predicate checks the new id against the old suffix,
+///   the exact length change and the appended pair. Preservation of earlier
+///   origins is separated by looking them up after another append.
+/// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
+#[spec(
+    requires: entries.last().is_none_or(|&(held, _)| held < id),
+    captures: before = entries.len(),
+    ensures: before.checked_add(1_usize) == Some(entries.len())
+        && entries
+            .last()
+            .is_some_and(|&(held, ref written)| held == id && *written == origin),
+)]
 fn record<Id>(
     entries: &mut Vec<(Id, Origin)>,
     id: Id,
     origin: Origin,
-)
+) where
+    Id: Copy + Ord,
 {
     entries.push((id, origin));
 }
@@ -299,12 +386,31 @@ fn record<Id>(
 /// Find one family's origin by id.
 ///
 /// # Specification
-/// - requires: `entries` is ascending by id.
-/// - ensures: the origin recorded for `id`, and the unrecorded absence when no
-///   entry carries it — an id minted outside this lowering included.
+/// - requires: entries are strictly ascending by id.
+/// - ensures: the origin whose key equals `id`, or the unrecorded absence when
+///   no entry has that key. Minting context is not part of the comparison.
 /// - provides: the one lookup step every family shares.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a linear lookup is an independent oracle for the binary
+///   search on its stated sorted domain. Fixtures cover hits, empty input and
+///   missing ids before, within and after a nonempty family.
+/// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
+/// - witness: `origin::tests::an_unrecorded_id_has_no_origin`
+/// - witness: `origin::tests::lookups_separate_gaps_from_declaration_origins`
+/// - witness: `origin::tests::keys_do_not_certify_their_minting_context`
+#[spec(
+    ensures: |ret| {
+        ret == entries
+            .iter()
+            .find(|&&(held, _)| held == id)
+            .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, origin)| {
+                Maybe::Present(origin)
+            })
+    },
+)]
 fn find<Id>(
     entries: &[(Id, Origin)],
     id: Id,
@@ -395,9 +501,9 @@ impl OriginTable
     /// # Specification
     /// - requires: `origin` names the declaration form that introduced the
     ///   declaration's name.
-    /// - ensures: the returned token names exactly this origin and no other,
-    ///   and tokens are handed out in admission order, so a consumer echoing
-    ///   one back resolves the declaration it was given.
+    /// - ensures: the returned token indexes exactly this appended origin in
+    ///   this table; tokens follow admission order. Another table may mint an
+    ///   equal token for a different origin.
     /// - provides: the opaque handle a checker carries in place of a span.
     /// - fails: never.
     /// - panics: none.
@@ -408,6 +514,14 @@ impl OriginTable
     ///   each resolved back to its own origin and asserted exactly; a token
     ///   minted before the append would collide on the second.
     /// - witness: `origin::tests::a_declaration_token_resolves_to_its_own_origin`
+    #[spec(
+        captures: before = self.declarations.len(),
+        ensures: |ret| {
+            ret.0 == before
+                && before.checked_add(1_usize) == Some(self.declarations.len())
+                && self.declarations.get(ret.0) == Some(&origin)
+        },
+    )]
     #[inline]
     pub fn record_declaration(
         &mut self,
@@ -423,12 +537,11 @@ impl OriginTable
     /// The origin recorded for a value.
     ///
     /// # Specification
-    /// - requires: nothing — an id this table holds nothing for is admissible
-    ///   input, including one minted outside this lowering.
-    /// - ensures: exactly the origin recorded when the id was minted.
+    /// - requires: nothing; every value id is admissible as a lookup key.
+    /// - ensures: exactly the origin stored under an equal id in this table's
+    ///   value family. The id's minting arena is not authenticated.
     /// - provides: the term half of the origin lookup.
-    /// - fails: never; an id this lowering did not mint is the unrecorded
-    ///   absence.
+    /// - fails: never; a key with no entry yields the unrecorded absence.
     /// - panics: none.
     ///
     /// # Adequacy
@@ -437,6 +550,18 @@ impl OriginTable
     ///   holding more than one entry so the search cannot pass by accident.
     /// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
     /// - witness: `origin::tests::an_unrecorded_id_has_no_origin`
+    /// - witness: `origin::tests::keys_do_not_certify_their_minting_context`
+    #[spec(
+        ensures: |ret| {
+            ret == self
+                .values
+                .iter()
+                .find(|&&(held, _)| held == id)
+                .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, origin)| {
+                    Maybe::Present(origin)
+                })
+        },
+    )]
     #[inline]
     pub fn value(
         &self,
@@ -450,16 +575,27 @@ impl OriginTable
     ///
     /// # Specification
     /// - requires: nothing — an unrecorded id is admissible input.
-    /// - ensures: exactly the origin recorded when the id was minted.
+    /// - ensures: exactly the origin stored under an equal id in this table's
+    ///   computation family, without authenticating its minting arena.
     /// - provides: the computation half of the origin lookup.
-    /// - fails: never; an id this lowering did not mint is the unrecorded
-    ///   absence.
+    /// - fails: never; a key with no entry yields the unrecorded absence.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the same one search as the value family, separated by
-    ///   a recorded and an unrecorded id over a multi-entry family.
+    /// - hypothesis: L3 — the shared search checks a linear lookup oracle; this
+    ///   family's recorded entry is separated from the other families.
     /// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
+    #[spec(
+        ensures: |ret| {
+            ret == self
+                .computations
+                .iter()
+                .find(|&&(held, _)| held == id)
+                .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, origin)| {
+                    Maybe::Present(origin)
+                })
+        },
+    )]
     #[inline]
     pub fn computation(
         &self,
@@ -473,17 +609,27 @@ impl OriginTable
     ///
     /// # Specification
     /// - requires: nothing — an unrecorded id is admissible input.
-    /// - ensures: exactly the origin recorded when the id was minted; the type
-    ///   families are covered from the first landing rather than added later.
+    /// - ensures: exactly the origin stored under an equal id in this table's
+    ///   value-type family, without authenticating its minting arena.
     /// - provides: the value-type half of the origin lookup.
-    /// - fails: never; an id this lowering did not mint is the unrecorded
-    ///   absence.
+    /// - fails: never; a key with no entry yields the unrecorded absence.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the same one search as the value family, separated by
-    ///   a recorded and an unrecorded id over a multi-entry family.
+    /// - hypothesis: L3 — the shared search checks a linear lookup oracle; this
+    ///   family's recorded entry is separated from the other families.
     /// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
+    #[spec(
+        ensures: |ret| {
+            ret == self
+                .value_types
+                .iter()
+                .find(|&&(held, _)| held == id)
+                .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, origin)| {
+                    Maybe::Present(origin)
+                })
+        },
+    )]
     #[inline]
     pub fn value_type(
         &self,
@@ -497,16 +643,27 @@ impl OriginTable
     ///
     /// # Specification
     /// - requires: nothing — an unrecorded id is admissible input.
-    /// - ensures: exactly the origin recorded when the id was minted.
+    /// - ensures: exactly the origin stored under an equal id in this table's
+    ///   computation-type family, without authenticating its minting arena.
     /// - provides: the computation-type half of the origin lookup.
-    /// - fails: never; an id this lowering did not mint is the unrecorded
-    ///   absence.
+    /// - fails: never; a key with no entry yields the unrecorded absence.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the same one search as the value family, separated by
-    ///   a recorded and an unrecorded id over a multi-entry family.
+    /// - hypothesis: L3 — the shared search checks a linear lookup oracle; this
+    ///   family's recorded entry is separated from the other families.
     /// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
+    #[spec(
+        ensures: |ret| {
+            ret == self
+                .comp_types
+                .iter()
+                .find(|&&(held, _)| held == id)
+                .map_or(Maybe::Absent(origin::Absent::Unrecorded), |&(_, origin)| {
+                    Maybe::Present(origin)
+                })
+        },
+    )]
     #[inline]
     pub fn comp_type(
         &self,
@@ -519,21 +676,30 @@ impl OriginTable
     /// The origin a declaration token names.
     ///
     /// # Specification
-    /// - requires: nothing — a token this table did not mint is admissible
-    ///   input, which is what makes an echoed token safe to resolve.
-    /// - ensures: exactly the origin the token was minted for.
-    /// - provides: the resolution a driver performs on a checker's echoed
-    ///   token.
-    /// - fails: never; a token this table did not mint is the unrecorded
-    ///   absence.
+    /// - requires: nothing; every token is admissible as an index.
+    /// - ensures: the origin at the token's index in this table, regardless of
+    ///   which table minted the token or whether it was constructed directly.
+    /// - provides: the resolution a driver performs in the table associated
+    ///   with a checker's echoed token.
+    /// - fails: never; an out-of-bounds index yields the unrecorded absence.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 only — one checked lookup, separated by the boundary
-    ///   pair `count - 1` / `count`, the first asserted as an exact origin and
-    ///   the second asserted absent.
+    /// - hypothesis: L3 — checked indexing separates the last occupied index
+    ///   from the first out-of-bounds index. Equal tokens from distinct tables
+    ///   resolve in the queried table, separating indexing from ownership.
     /// - witness: `origin::tests::a_declaration_token_resolves_to_its_own_origin`
     /// - witness: `origin::tests::a_token_past_the_declaration_list_resolves_to_nothing`
+    /// - witness: `origin::tests::keys_do_not_certify_their_minting_context`
+    #[spec(
+        ensures: |ret| {
+            ret == self
+                .declarations
+                .get(token.0)
+                .copied()
+                .map_or(Maybe::Absent(origin::Absent::Unrecorded), Maybe::Present)
+        },
+    )]
     #[inline]
     pub fn declaration(
         &self,
@@ -549,7 +715,49 @@ impl OriginTable
     /// How many core nodes this table recorded an origin for.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the table's family-order invariant holds.
+    /// - ensures: the saturating sum of the four family lengths, excluding
+    ///   declaration origins; the stored family-order predicate still holds.
+    /// - provides: a census of the recorded core nodes, not syntax
+    ///   declarations.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the predicate checks the four-family sum and strict
+    ///   order. Multi-family and declaration-bearing tables separate omitted
+    ///   families and accidentally counting a declaration as a core node.
+    ///   Saturation is expressed, not allocated up to in these fixtures.
+    /// - witness: `origin::tests::each_family_answers_its_own_recorded_origins`
+    /// - witness: `origin::tests::lookups_separate_gaps_from_declaration_origins`
+    /// - witness: `origin::tests::census_rejects_a_disordered_family`
+    #[spec(
+        ensures: |ret| {
+            ret.0
+                == self
+                    .values
+                    .len()
+                    .saturating_add(self.computations.len())
+                    .saturating_add(self.value_types.len())
+                    .saturating_add(self.comp_types.len())
+                && self
+                    .values
+                    .windows(2)
+                    .all(|pair| matches!(pair, [first, second] if first.0 < second.0))
+                && self
+                    .computations
+                    .windows(2)
+                    .all(|pair| matches!(pair, [first, second] if first.0 < second.0))
+                && self
+                    .value_types
+                    .windows(2)
+                    .all(|pair| matches!(pair, [first, second] if first.0 < second.0))
+                && self
+                    .comp_types
+                    .windows(2)
+                    .all(|pair| matches!(pair, [first, second] if first.0 < second.0))
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn recorded_count(&self) -> OriginCount
@@ -705,5 +913,82 @@ mod tests
             Maybe::Absent(origin::Absent::Unrecorded),
             "one past the last token resolves to nothing"
         );
+    }
+
+    #[test]
+    fn lookups_separate_gaps_from_declaration_origins()
+    {
+        let mut arena = CoreArena::new();
+        let before = arena.value_unit();
+        let first = arena.value_unit();
+        let gap = arena.value_unit();
+        let last = arena.value_unit();
+        let after = arena.value_unit();
+        let inserted = at(NodeIndex::from(1_usize)).inserted(super::Insertion::Force);
+        let written = at(NodeIndex::from(4_usize));
+        let mut table = OriginTable::new();
+        table.record_value(first, inserted);
+        table.record_value(last, written);
+        let declaration = table.record_declaration(at(NodeIndex::from(9_usize)));
+
+        assert_eq!(table.value(first), Maybe::Present(inserted));
+        assert_eq!(table.value(last), Maybe::Present(written));
+        for missing in [before, gap, after] {
+            assert_eq!(
+                table.value(missing),
+                Maybe::Absent(origin::Absent::Unrecorded)
+            );
+        }
+        assert_eq!(
+            table.declaration(declaration),
+            Maybe::Present(at(NodeIndex::from(9_usize)))
+        );
+        assert_eq!(table.recorded_count(), OriginCount::from(2_usize));
+        assert_eq!(table.declaration_count(), OriginCount::from(1_usize));
+    }
+
+    #[test]
+    fn keys_do_not_certify_their_minting_context()
+    {
+        let mut arena = CoreArena::new();
+        let mut foreign_arena = CoreArena::new();
+        let recorded = arena.value_unit();
+        let foreign = foreign_arena.value_unit();
+        assert_eq!(recorded, foreign);
+
+        let first_origin = at(NodeIndex::from(1_usize));
+        let second_origin = at(NodeIndex::from(8_usize));
+        let mut first_table = OriginTable::new();
+        first_table.record_value(recorded, first_origin);
+        assert_eq!(first_table.value(foreign), Maybe::Present(first_origin));
+
+        let first_token = first_table.record_declaration(first_origin);
+        let mut second_table = OriginTable::new();
+        let second_token = second_table.record_declaration(second_origin);
+        assert_eq!(first_token, second_token);
+        assert_eq!(
+            first_table.declaration(second_token),
+            Maybe::Present(first_origin)
+        );
+        assert_eq!(
+            second_table.declaration(first_token),
+            Maybe::Present(second_origin)
+        );
+    }
+
+    #[cfg(anodized_panic)]
+    #[test]
+    #[should_panic]
+    fn census_rejects_a_disordered_family()
+    {
+        let mut arena = CoreArena::new();
+        let first = arena.value_unit();
+        let second = arena.value_unit();
+        let mut table = OriginTable::new();
+        table.record_value(first, at(NodeIndex::from(1_usize)));
+        table.record_value(second, at(NodeIndex::from(2_usize)));
+        assert_eq!(table.recorded_count(), OriginCount::from(2_usize));
+        table.values.swap(0_usize, 1_usize);
+        let _count = table.recorded_count();
     }
 }

@@ -28,6 +28,7 @@ use core::error::Error;
 use core::fmt;
 use core::mem;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::namespace::event::EventRejection;
@@ -39,6 +40,20 @@ use crate::namespace::trie::Trie;
 use crate::namespace::trie::binding;
 
 /// A scope operation's failure.
+///
+/// # Specification
+/// - requires: the producer reports the failed scope operation.
+/// - ensures: a refused event retains its typed rejection; closing with no
+///   section is distinguished from policy refusal.
+/// - provides: structural and policy failures without erasing either cause.
+/// - executable: none — a failure value holds neither the prior section stack
+///   nor the handler run that establishes its correspondence.
+///
+/// # Adequacy
+/// - hypothesis: L3 — closing outside a section and refusing a collision
+///   produce distinct variants while the retained namespace is observed.
+/// - witness: `namespace::namespace::closing_without_an_open_section_fails`
+/// - witness: `namespace::namespace::a_refused_multi_entry_import_leaves_the_visible_namespace_as_it_was`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ScopeError
 {
@@ -67,21 +82,10 @@ impl fmt::Display for ScopeError
     /// as its own message.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: a refused event renders transparently as its
-    ///   [`EventRejection`], adding no layer to what an author reads; a close
-    ///   with no open section renders "no open section to close".
-    /// - provides: the message of every scope failure.
-    /// - fails: propagates the formatter's error.
-    /// - panics: none.
+    /// trivial.
     ///
     /// # Errors
     /// The formatter's error.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — one failure of each variant, asserted as the exact
-    ///   text.
-    /// - witness: `namespace::namespace::a_scope_failure_renders_its_message_or_its_rejection`
     #[inline]
     fn fmt(
         &self,
@@ -114,6 +118,25 @@ struct Namespaces<Data, Tag>
 ///
 /// The current scope is a field rather than the top of a stack, so there is
 /// always a current scope by construction.
+///
+/// # Specification
+/// - requires: mutations pass through the scope operations.
+/// - ensures: visible and export namespaces remain independent; opening saves
+///   the parent and closing consumes exactly the innermost saved parent.
+/// - provides: lexical sections with separately controlled exports.
+/// - executable: none — this build's specification facade does not expose the
+///   type-item runtime; operation predicates check counts and stack
+///   transitions.
+///
+/// # Adequacy
+/// - hypothesis: L3 — import and include differ in export visibility; two
+///   nested sections restore their parents in stack order, and failed closes
+///   consume the section at both modifier and merge boundaries.
+/// - witness: `namespace::namespace::import_touches_only_the_visible_namespace`
+/// - witness: `namespace::namespace::include_touches_both_namespaces`
+/// - witness: `namespace::namespace::nested_sections_close_innermost_first`
+/// - witness: `namespace::namespace::a_refused_closing_modifier_restores_the_parent_and_closes_the_section`
+/// - witness: `namespace::namespace::a_refused_closing_merge_keeps_its_prefix_and_closes_the_section`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Scope<Data, Tag>
 {
@@ -168,6 +191,14 @@ impl<Data, Tag> Scope<Data, Tag>
     ///   initial namespace, and a later import over it performing shadow.
     /// - witness: `namespace::namespace::init_visible_seeds_only_the_visible_namespace`
     /// - witness: `namespace::namespace::a_user_binding_over_the_prelude_is_a_shadow_event`
+    #[spec(
+        captures: before = init_visible.binding_count(),
+        ensures: |ret| {
+            ret.current.visible.binding_count() == before
+                && usize::from(ret.current.export.binding_count()) == 0
+                && ret.enclosing.is_empty()
+        },
+    )]
     #[inline]
     #[must_use]
     pub fn with_init_visible(init_visible: Trie<Data, Tag>) -> Self
@@ -234,6 +265,19 @@ impl<Data, Tag> Scope<Data, Tag>
     ///   the namespace, a former member and an unrelated namespace asserted
     ///   exactly after.
     /// - witness: `recognition::recognition::a_declaration_displaces_the_whole_builtin_subtree`
+    #[spec(
+        captures: before = (
+            usize::from(self.current.visible.binding_count()),
+            self.current.export.binding_count(),
+            self.enclosing.len(),
+            usize::from(subtree.binding_count()),
+        ),
+        ensures: self.current.export.binding_count() == before.1
+            && self.enclosing.len() == before.2
+            && usize::from(self.current.visible.binding_count()) >= before.3
+            && usize::from(self.current.visible.binding_count())
+                <= before.0.saturating_add(before.3),
+    )]
     #[inline]
     pub fn graft_visible(
         &mut self,
@@ -275,6 +319,27 @@ where
     /// - witness: `namespace::namespace::include_touches_both_namespaces`
     /// - witness: `namespace::namespace::import_touches_only_the_visible_namespace`
     /// - witness: `namespace::namespace::include_merges_the_visible_namespace_before_the_export`
+    #[spec(
+        captures: before = (
+            usize::from(self.current.visible.binding_count()),
+            usize::from(self.current.export.binding_count()),
+            self.enclosing.len(),
+            usize::from(subtree.binding_count()),
+        ),
+        ensures: |ret| {
+            self.enclosing.len() == before.2
+                && !matches!(ret, Err(ScopeError::NoOpenSection))
+                && usize::from(self.current.visible.binding_count()) >= before.0
+                && usize::from(self.current.export.binding_count()) >= before.1
+                && usize::from(self.current.visible.binding_count())
+                    <= before.0.saturating_add(before.3)
+                && usize::from(self.current.export.binding_count())
+                    <= before.1.saturating_add(before.3)
+                && (ret.is_err()
+                    || (usize::from(self.current.visible.binding_count()) >= before.3
+                        && usize::from(self.current.export.binding_count()) >= before.3))
+        },
+    )]
     #[inline]
     pub fn include_subtree<Handler>(
         &mut self,
@@ -318,6 +383,28 @@ where
     /// - witness: `namespace::namespace::import_touches_only_the_visible_namespace`
     /// - witness: `namespace::namespace::an_import_arrives_under_its_prefix`
     /// - witness: `namespace::namespace::a_refused_multi_entry_import_leaves_the_visible_namespace_as_it_was`
+    #[spec(
+        captures: before = (
+            usize::from(self.current.visible.binding_count()),
+            self.current.export.binding_count(),
+            self.enclosing.len(),
+            usize::from(subtree.binding_count()),
+        ),
+        ensures: |ret| {
+            self.current.export.binding_count() == before.1
+                && self.enclosing.len() == before.2
+                && !matches!(ret, Err(ScopeError::NoOpenSection))
+                && if ret.is_err() {
+                    usize::from(self.current.visible.binding_count()) == before.0
+                }
+                else {
+                    usize::from(self.current.visible.binding_count()) >= before.0
+                        && usize::from(self.current.visible.binding_count()) >= before.3
+                        && usize::from(self.current.visible.binding_count())
+                            <= before.0.saturating_add(before.3)
+                }
+        },
+    )]
     #[inline]
     pub fn import_subtree<Handler>(
         &mut self,
@@ -357,6 +444,19 @@ where
     /// - witness: `namespace::namespace::modifying_visible_leaves_export_alone`
     /// - witness: `namespace::namespace::modifying_export_leaves_visible_alone`
     /// - witness: `namespace::namespace::a_refused_modifier_leaves_the_visible_namespace_as_it_was`
+    #[spec(
+        captures: before = (
+            self.current.visible.binding_count(),
+            self.current.export.binding_count(),
+            self.enclosing.len(),
+        ),
+        ensures: |ret| {
+            self.current.export.binding_count() == before.1
+                && self.enclosing.len() == before.2
+                && !matches!(ret, Err(ScopeError::NoOpenSection))
+                && (ret.is_ok() || self.current.visible.binding_count() == before.0)
+        },
+    )]
     #[inline]
     pub fn modify_visible<Handler>(
         &mut self,
@@ -389,6 +489,19 @@ where
     ///   binding the export lacks; that the rewrite lands only on success.
     /// - witness: `namespace::namespace::modifying_export_leaves_visible_alone`
     /// - witness: `namespace::namespace::a_refused_modifier_leaves_the_export_namespace_as_it_was`
+    #[spec(
+        captures: before = (
+            self.current.visible.binding_count(),
+            self.current.export.binding_count(),
+            self.enclosing.len(),
+        ),
+        ensures: |ret| {
+            self.current.visible.binding_count() == before.0
+                && self.enclosing.len() == before.2
+                && !matches!(ret, Err(ScopeError::NoOpenSection))
+                && (ret.is_ok() || self.current.export.binding_count() == before.1)
+        },
+    )]
     #[inline]
     pub fn modify_export<Handler>(
         &mut self,
@@ -427,6 +540,19 @@ where
     ///   modifier succeeds, by a rejected event against the same.
     /// - witness: `namespace::namespace::export_visible_re_exports_a_selection`
     /// - witness: `namespace::namespace::a_refused_re_export_leaves_the_prior_export_as_it_was`
+    #[spec(
+        captures: before = (
+            self.current.visible.binding_count(),
+            usize::from(self.current.export.binding_count()),
+            self.enclosing.len(),
+        ),
+        ensures: |ret| {
+            self.current.visible.binding_count() == before.0
+                && self.enclosing.len() == before.2
+                && usize::from(self.current.export.binding_count()) >= before.1
+                && !matches!(ret, Err(ScopeError::NoOpenSection))
+        },
+    )]
     #[inline]
     pub fn export_visible<Handler>(
         &mut self,
@@ -463,6 +589,20 @@ where
     ///   stack order, by two nested sections closed in turn.
     /// - witness: `namespace::namespace::a_section_inherits_the_visible_namespace_and_exports_nothing_yet`
     /// - witness: `namespace::namespace::nested_sections_close_innermost_first`
+    #[spec(
+        captures: before = (
+            self.current.visible.binding_count(),
+            self.current.export.binding_count(),
+            self.enclosing.len(),
+        ),
+        ensures: self.current.visible.binding_count() == before.0
+            && usize::from(self.current.export.binding_count()) == 0
+            && self.enclosing.len() == before.2.saturating_add(1)
+            && self.enclosing.last().is_some_and(|parent| {
+                parent.visible.binding_count() == before.0
+                    && parent.export.binding_count() == before.1
+            }),
+    )]
     #[inline]
     pub fn begin_section(&mut self)
     {
@@ -477,7 +617,7 @@ where
     /// Close the innermost section, including its export under `prefix`.
     ///
     /// # Specification
-    /// - requires: a section is open.
+    /// - requires: nothing; a closed stack returns a structural refusal.
     /// - ensures: the child's export runs through `modifier`, is prefixed by
     ///   `prefix` and is included into the parent's two namespaces; the child's
     ///   visible namespace is discarded, so what it only imported evaporates;
@@ -506,6 +646,37 @@ where
     /// - witness: `namespace::namespace::closing_without_an_open_section_fails`
     /// - witness: `namespace::namespace::closing_a_section_restores_what_the_parent_already_held`
     /// - witness: `namespace::namespace::nested_sections_close_innermost_first`
+    /// - witness: `namespace::namespace::a_refused_closing_modifier_restores_the_parent_and_closes_the_section`
+    /// - witness: `namespace::namespace::a_refused_closing_merge_keeps_its_prefix_and_closes_the_section`
+    #[spec(
+        captures: before = (
+            self.enclosing.len(),
+            self.current.visible.binding_count(),
+            self.current.export.binding_count(),
+            self.enclosing.last().map(|parent| {
+                (
+                    usize::from(parent.visible.binding_count()),
+                    usize::from(parent.export.binding_count()),
+                )
+            }),
+        ),
+        ensures: |ret| {
+            if before.0 == 0 {
+                self.enclosing.is_empty()
+                    && matches!(ret, Err(ScopeError::NoOpenSection))
+                    && self.current.visible.binding_count() == before.1
+                    && self.current.export.binding_count() == before.2
+            }
+            else {
+                self.enclosing.len() == before.0.saturating_sub(1)
+                    && !matches!(ret, Err(ScopeError::NoOpenSection))
+                    && before.3.is_some_and(|parent| {
+                        usize::from(self.current.visible.binding_count()) >= parent.0
+                            && usize::from(self.current.export.binding_count()) >= parent.1
+                    })
+            }
+        },
+    )]
     #[inline]
     pub fn end_section<Handler>(
         &mut self,

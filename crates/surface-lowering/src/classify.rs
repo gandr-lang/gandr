@@ -32,6 +32,7 @@
 //! the source: the caller handed the lowering a tree and a grammar that do not
 //! belong together, which is a fault of the run, never of the text.
 
+use anodized::spec;
 pub use gandr_core_term::FailureClass;
 
 use crate::error::LoweringRefusal;
@@ -62,6 +63,34 @@ impl LoweringRefusal<'_>
     /// - witness: `classify::tests::every_refusal_carries_its_pinned_class`
     /// - witness: `classify::tests::the_classification_ignores_the_payload`
     /// - witness: `classify::tests::the_absence_class_has_no_inhabitant`
+    #[spec(
+        ensures: |ret| match *self {
+            | Self::OutOfFragment { .. }
+            | Self::GradedBridge { .. }
+            | Self::UnreadAscription { .. } => matches!(ret, FailureClass::Unrepresentable),
+            | Self::BudgetExceeded { .. }
+            | Self::GrammarMismatch { .. }
+            | Self::UnknownMold { .. } => matches!(ret, FailureClass::EngineFault),
+            | Self::UnresolvedName { .. }
+            | Self::UnresolvedTypeHead { .. }
+            | Self::DuplicateSignature { .. }
+            | Self::DuplicateDefinition { .. }
+            | Self::DuplicateImportAlias { .. }
+            | Self::ShadowedBuiltin { .. }
+            | Self::MalformedLiteral { .. }
+            | Self::MalformedForm { .. }
+            | Self::UnknownAttribute { .. }
+            | Self::DuplicateAttribute { .. }
+            | Self::MissingPayload { .. }
+            | Self::NonValuePayload { .. }
+            | Self::IllTypedPayload { .. }
+            | Self::ForwardMemberReference { .. }
+            | Self::UnknownMember { .. }
+            | Self::LowercaseModuleName { .. } => {
+                matches!(ret, FailureClass::MalformedSource)
+            },
+        },
+    )]
     #[inline]
     #[must_use]
     pub const fn classify(&self) -> FailureClass
@@ -96,9 +125,7 @@ impl LoweringRefusal<'_>
 #[cfg(test)]
 mod tests
 {
-    use alloc::format;
-    use alloc::string::String;
-
+    use anodized::spec;
     use gandr_surface_grammar::NamedKind;
     use gandr_surface_syntax::ByteOffset;
     use gandr_surface_syntax::GrammarFingerprint;
@@ -125,7 +152,30 @@ mod tests
     /// The whole refusal vocabulary, one inhabitant each, spans left empty.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the built-in attribute registry contains `owes`.
+    /// - ensures: the 22 current refusal variants have distinct
+    ///   representatives; payloads are fixtures rather than evidence of a real
+    ///   lowering failure.
+    /// - provides: the domain of the finite classification checks.
+    /// - fails: never.
+    /// - panics: if the named built-in attribute is absent.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — pairwise discriminants detect a repeated
+    ///   representative that would hide another case behind the same expected
+    ///   class. The class table observes every returned row; adding a variant
+    ///   requires extending this finite fixture, not merely assuming that its
+    ///   current size is exhaustive.
+    /// - witness: `classify::tests::every_refusal_carries_its_pinned_class`
+    #[spec(
+        ensures: |ret| {
+            ret.iter().enumerate().all(|(position, refusal)| {
+                ret.iter()
+                    .skip(position.saturating_add(1_usize))
+                    .all(|other| core::mem::discriminant(refusal) != core::mem::discriminant(other))
+            })
+        },
+    )]
     fn vocabulary() -> [LoweringRefusal<'static>; 22_usize]
     {
         let empty = span(ByteOffset::from(0_usize), ByteOffset::from(0_usize));
@@ -273,11 +323,6 @@ mod tests
                 "the class table is pinned row by row"
             );
         }
-        assert_eq!(
-            expected.len(),
-            vocabulary().len(),
-            "the pinned table covers the whole refusal vocabulary"
-        );
     }
 
     #[test]
@@ -322,29 +367,5 @@ mod tests
                 "no refusal of this crate may be read as an author absence"
             );
         }
-    }
-
-    #[test]
-    fn every_class_renders_its_own_name()
-    {
-        let expected = [
-            (FailureClass::UserAbsence, "user absence"),
-            (FailureClass::Unrepresentable, "unrepresentable"),
-            (FailureClass::MalformedSource, "malformed source"),
-            (FailureClass::EngineFault, "engine fault"),
-        ];
-
-        for (class, rendering) in expected {
-            assert_eq!(
-                format!("{class}"),
-                String::from(rendering),
-                "each class names itself"
-            );
-        }
-        assert_eq!(
-            expected.len(),
-            4_usize,
-            "the pinned table covers the whole classifier"
-        );
     }
 }

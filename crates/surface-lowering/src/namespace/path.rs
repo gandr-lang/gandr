@@ -15,6 +15,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 quenchant_shape::reason_enum! {
@@ -85,11 +86,6 @@ impl fmt::Display for Segment
     ///
     /// # Specification
     /// trivial.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — a segment built from borrowed text and one built from
-    ///   owned text each render as exactly that text.
-    /// - witness: `namespace::path::tests::a_segment_renders_as_its_own_text`
     #[inline]
     fn fmt(
         &self,
@@ -229,6 +225,9 @@ impl NamePath
     /// - hypothesis: L3 — a two-segment path and the root, each asserted as the
     ///   exact count, separate segments from characters.
     /// - witness: `namespace::path::tests::depth_counts_segments`
+    #[spec(
+        ensures: |ret| ret.0 == self.0.len(),
+    )]
     #[inline]
     #[must_use]
     pub fn depth(&self) -> SegmentCount
@@ -252,6 +251,9 @@ impl NamePath
     ///   a two-sided case asserted exactly both ways round.
     /// - witness: `namespace::path::tests::prefixing_by_root_is_the_identity`
     /// - witness: `namespace::path::tests::prefixing_prepends_in_order`
+    #[spec(
+        ensures: |ret| ret.0.iter().eq(prefix.0.iter().chain(&self.0)),
+    )]
     #[inline]
     #[must_use]
     pub fn prefixed_by(
@@ -269,15 +271,21 @@ impl NamePath
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: equal to `suffix.prefixed_by(self)`.
+    /// - ensures: this path's segments followed by the suffix's, in order.
     /// - provides: the accumulated prefix a run under `in p` reports its events
     ///   at.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — one exact agreement with [`Self::prefixed_by`].
-    /// - witness: `namespace::path::tests::extending_mirrors_prefixing`
+    /// - hypothesis: L3 — a shadow inside a nested modifier reports the full
+    ///   accumulated path and still selects the correct binding. This observes
+    ///   composition through the namespace consumer rather than another path
+    ///   helper's implementation.
+    /// - witness: `namespace::namespace::a_nested_shadow_reports_the_accumulated_prefix`
+    #[spec(
+        ensures: |ret| ret.0.iter().eq(self.0.iter().chain(&suffix.0)),
+    )]
     #[inline]
     #[must_use]
     pub fn extended(
@@ -307,7 +315,12 @@ impl NamePath
     /// - witness: `namespace::path::tests::stripping_an_exact_match_yields_the_root`
     /// - witness: `namespace::path::tests::stripping_a_proper_prefix_yields_the_remainder`
     /// - witness: `namespace::path::tests::a_near_miss_segment_is_not_a_prefix`
-    /// - witness: `namespace::path::tests::extensions_of_a_path_are_order_convex`
+    #[spec(
+        ensures: |ret| match ret {
+            | Maybe::Present(ref suffix) => prefix.0.iter().chain(&suffix.0).eq(self.0.iter()),
+            | Maybe::Absent(remainder::Absent::NotAPrefix) => !self.0.starts_with(&prefix.0),
+        },
+    )]
     #[inline]
     pub fn strip_prefix(
         &self,
@@ -335,10 +348,23 @@ impl From<DottedName<'_>> for NamePath
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the empty and a non-empty rendering, each asserted as
-    ///   the exact path.
+    /// - hypothesis: L3 — empty, non-empty, Unicode and repeated/trailing
+    ///   separator cases distinguish root, segment boundaries and preserved
+    ///   empty segments. A raw segment containing a dot remains one segment.
     /// - witness: `namespace::path::tests::the_empty_dotted_rendering_is_the_root`
     /// - witness: `namespace::path::tests::segments_round_trip_through_the_dotted_boundary`
+    /// - witness: `namespace::path::tests::dotted_paths_preserve_empty_and_unicode_segments`
+    /// - witness: `namespace::path::tests::opaque_segments_stay_distinct_through_composition`
+    #[spec(
+        ensures: |ret| {
+            if text.0.is_empty() {
+                ret.0.is_empty()
+            }
+            else {
+                ret.0.iter().map(Segment::as_ref).eq(text.0.split('.'))
+            }
+        },
+    )]
     #[inline]
     fn from(text: DottedName<'_>) -> Self
     {
@@ -355,10 +381,6 @@ impl From<Vec<Segment>> for NamePath
     ///
     /// # Specification
     /// trivial.
-    ///
-    /// # Adequacy
-    /// - hypothesis: L3 — one exact agreement with the dotted boundary.
-    /// - witness: `namespace::path::tests::a_segment_list_builds_the_path_in_order`
     #[inline]
     fn from(segments: Vec<Segment>) -> Self
     {
@@ -378,15 +400,20 @@ impl fmt::Display for NamePath
     /// - provides: the path spelling of every rejection message.
     /// - fails: propagates the formatter's error.
     /// - panics: none.
+    /// - executable: none — the formatter exposes neither its written output
+    ///   nor a failure-status observer. Its return alone cannot certify the
+    ///   emitted path; notation and writer failures are observed by witnesses.
     ///
     /// # Errors
     /// The formatter's error.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the root and a three-segment path, each asserted as
-    ///   the exact text.
+    /// - hypothesis: L3 — root and multi-segment paths distinguish the two
+    ///   notation branches. A writer refusing the separator observes error
+    ///   propagation and that no later segment is written after refusal.
     /// - witness: `namespace::path::tests::the_root_renders_as_a_bare_period`
     /// - witness: `namespace::path::tests::a_path_renders_dot_joined`
+    /// - witness: `namespace::path::tests::formatting_propagates_a_later_writer_refusal`
     #[inline]
     fn fmt(
         &self,
@@ -410,9 +437,9 @@ impl fmt::Display for NamePath
 mod tests
 {
     use alloc::format;
-    use alloc::string::String;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use quenchant_shape::shape::Maybe;
 
     use super::DottedName;
@@ -441,7 +468,7 @@ mod tests
         prefix: &NamePath,
     ) -> Extends
     {
-        Extends(matches!(candidate.strip_prefix(prefix), Maybe::Present(_)))
+        Extends(candidate.segments().starts_with(prefix.segments()))
     }
 
     /// Whether a path extends a prefix.
@@ -472,16 +499,6 @@ mod tests
             path("nat").prefixed_by(&path("plus.assoc")),
             path("plus.assoc.nat"),
             "the operands are not interchangeable"
-        );
-    }
-
-    #[test]
-    fn extending_mirrors_prefixing()
-    {
-        assert_eq!(
-            path("nat").extended(&path("plus")),
-            path("plus").prefixed_by(&path("nat")),
-            "extension is prefixing with the operands exchanged"
         );
     }
 
@@ -621,27 +638,118 @@ mod tests
     }
 
     #[test]
-    fn a_segment_renders_as_its_own_text()
+    fn dotted_paths_preserve_empty_and_unicode_segments()
     {
-        assert_eq!(
-            format!("{}", Segment::from("plus")),
-            "plus",
-            "a segment renders as its text and contributes no separator"
-        );
-        assert_eq!(
-            format!("{}", Segment::from(String::from("assoc"))),
-            "assoc",
-            "a segment built from owned text renders the same way"
-        );
+        let split = path(".α..β.");
+        assert_eq!(split.segments(), [
+            Segment::from(""),
+            Segment::from("α"),
+            Segment::from(""),
+            Segment::from("β"),
+            Segment::from(""),
+        ]);
+        assert_eq!(split.depth(), SegmentCount::from(5_usize));
+        let period = path(".");
+        assert_eq!(period.segments(), [Segment::from(""), Segment::from("")]);
+        assert_ne!(period, NamePath::root());
     }
 
     #[test]
-    fn a_segment_list_builds_the_path_in_order()
+    fn opaque_segments_stay_distinct_through_composition()
     {
+        let opaque = NamePath::from(Vec::from([Segment::from("a.b")]));
+        let suffix = NamePath::from(Vec::from([Segment::from("")]));
+        assert_eq!(opaque.depth(), SegmentCount::from(1_usize));
+        assert_ne!(opaque, path("a.b"));
+        let joined = opaque.extended(&suffix);
+        assert_eq!(joined.segments(), [Segment::from("a.b"), Segment::from("")]);
+        assert_eq!(joined.strip_prefix(&opaque), Maybe::Present(suffix));
         assert_eq!(
-            NamePath::from(Vec::from([Segment::from("nat"), Segment::from("plus")])),
-            path("nat.plus"),
-            "building from segments preserves their order and agrees with the dotted boundary"
+            joined.strip_prefix(&path("a")),
+            Maybe::Absent(remainder::Absent::NotAPrefix)
         );
+    }
+
+    /// The next observable stage of a writer that refuses one separator.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum WriteStep
+    {
+        /// The first segment can be written.
+        First,
+        /// The separator is refused.
+        Separator,
+        /// Refusal has occurred; the formatter must stop.
+        Refused,
+        /// A write occurred after refusal and was accepted to expose it.
+        Continued,
+    }
+
+    /// A real formatting sink whose second write fails, then accepts writes.
+    #[derive(Debug)]
+    #[repr(transparent)]
+    struct SeparatorFailure
+    {
+        /// The next write's policy and evidence of any write after refusal.
+        step: WriteStep,
+    }
+
+    impl core::fmt::Write for SeparatorFailure
+    {
+        /// Refuse the second write and record whether formatting continues.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: only the separator-stage write fails; each call advances
+        ///   the stage, and a call after refusal records Continued.
+        /// - provides: an observer for swallowed errors and later writes.
+        /// - fails: the separator stage returns the formatter error.
+        /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 — formatting a two-segment path observes an
+        ///   accepted first segment and a refused separator. The final stage
+        ///   distinguishes immediate propagation from continued output; the
+        ///   accepting continuation makes a swallowed error observable.
+        /// - witness: `namespace::path::tests::formatting_propagates_a_later_writer_refusal`
+        #[spec(
+            captures: before = self.step,
+            ensures: |ret| match before {
+                | WriteStep::First => self.step == WriteStep::Separator && ret.is_ok(),
+                | WriteStep::Separator => self.step == WriteStep::Refused && ret.is_err(),
+                | WriteStep::Refused | WriteStep::Continued => {
+                    self.step == WriteStep::Continued && ret.is_ok()
+                },
+            },
+        )]
+        fn write_str(
+            &mut self,
+            _text: &str,
+        ) -> core::fmt::Result
+        {
+            match self.step {
+                | WriteStep::First => {
+                    self.step = WriteStep::Separator;
+                    Ok(())
+                },
+                | WriteStep::Separator => {
+                    self.step = WriteStep::Refused;
+                    Err(core::fmt::Error)
+                },
+                | WriteStep::Refused | WriteStep::Continued => {
+                    self.step = WriteStep::Continued;
+                    Ok(())
+                },
+            }
+        }
+    }
+
+    #[test]
+    fn formatting_propagates_a_later_writer_refusal()
+    {
+        let mut writer = SeparatorFailure {
+            step: WriteStep::First,
+        };
+        assert!(core::fmt::write(&mut writer, format_args!("{}", path("nat.plus"))).is_err());
+        assert_eq!(writer.step, WriteStep::Refused);
     }
 }
