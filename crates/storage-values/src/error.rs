@@ -40,6 +40,17 @@ impl fmt::Display for ChunkFrameField
     /// - provides: the field a malformed-chunk refusal names.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on all six chunk-frame fields observes pairwise
+    ///   distinct renderings and exact sink refusal. It distinguishes collapsed
+    ///   variants and swallowed errors without pinning diagnostic wording or
+    ///   covering alternate formatter modes.
+    /// - witness: `error::tests::fields_and_faults_remain_distinct`
     #[inline]
     fn fmt(
         &self,
@@ -99,6 +110,17 @@ impl fmt::Display for ManifestField
     /// - provides: the field a manifest refusal names.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on all thirteen manifest fields observes pairwise
+    ///   distinct renderings and exact sink refusal. It distinguishes collapsed
+    ///   variants and swallowed errors without pinning diagnostic wording or
+    ///   covering alternate formatter modes.
+    /// - witness: `error::tests::fields_and_faults_remain_distinct`
     #[inline]
     fn fmt(
         &self,
@@ -154,6 +176,17 @@ impl fmt::Display for ProfileField
     /// - provides: the field an incompatible-profile refusal names.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on all seven profile fields observes pairwise distinct
+    ///   renderings and exact sink refusal. It distinguishes collapsed variants
+    ///   and swallowed errors without pinning diagnostic wording or covering
+    ///   alternate formatter modes.
+    /// - witness: `error::tests::fields_and_faults_remain_distinct`
     #[inline]
     fn fmt(
         &self,
@@ -199,6 +232,17 @@ impl fmt::Display for EmissionFault
     /// - provides: the fault a malformed-emission refusal names.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on all five emission faults observes pairwise distinct
+    ///   renderings and exact sink refusal. It distinguishes collapsed variants
+    ///   and swallowed errors without pinning diagnostic wording or covering
+    ///   alternate formatter modes.
+    /// - witness: `error::tests::fields_and_faults_remain_distinct`
     #[inline]
     fn fmt(
         &self,
@@ -241,6 +285,17 @@ impl fmt::Display for ValueQuantity
     /// - provides: the quantity an overflow refusal names.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on all five arithmetic quantities observes pairwise
+    ///   distinct renderings and exact sink refusal. It distinguishes collapsed
+    ///   variants and swallowed errors without pinning diagnostic wording or
+    ///   covering alternate formatter modes.
+    /// - witness: `error::tests::fields_and_faults_remain_distinct`
     #[inline]
     fn fmt(
         &self,
@@ -416,6 +471,19 @@ impl fmt::Display for ValueError
     ///   [`Error`] rendering the implementation below inherits.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
+    ///
+    /// # Errors
+    /// Propagates the formatter's write failure.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on one representative of every variant observes all
+    ///   carried payloads, distinct messages and first-write sink refusal.
+    ///   Digests differ, offsets reach the u32 ceiling, and counts approach the
+    ///   u64 ceiling; the matrix distinguishes lost or narrowed payloads,
+    ///   collapsed variants and swallowed errors. It does not pin prose,
+    ///   exhaust the payload cross-product or sample later-write failures.
+    /// - witness: `error::tests::refusals_retain_payloads_and_propagate_sink_errors`
     #[inline]
     fn fmt(
         &self,
@@ -505,4 +573,246 @@ impl fmt::Display for ValueError
 
 impl Error for ValueError
 {
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::string::ToString as _;
+
+    use gandr_storage_chunker::TokenCount;
+
+    use super::ChunkFrameField;
+    use super::EmissionFault;
+    use super::ManifestField;
+    use super::ProfileField;
+    use super::ValueError;
+    use super::ValueQuantity;
+    use crate::ChildIndexBase;
+    use crate::ChunkDigest;
+    use crate::ConstructorTag;
+    use crate::DecodeWork;
+    use crate::TokenKind;
+    use crate::TokenOffset;
+
+    /// A sink that refuses the first formatted write.
+    #[derive(Debug)]
+    struct RefusingSink;
+
+    impl core::fmt::Write for RefusingSink
+    {
+        /// Refuses every offered write.
+        ///
+        /// # Specification
+        /// - requires: nothing.
+        /// - ensures: returns the formatting error.
+        /// - provides: the refusal observer for every display branch.
+        /// - fails: always returns the formatting error.
+        /// - panics: none.
+        ///
+        /// # Errors
+        /// Always returns the formatting error.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 on text offered by every error variant and each
+        ///   named field or fault observes the exact error, distinguishing a
+        ///   sink that accepts a write. Later-write failures are not sampled.
+        /// - witness: `error::tests::fields_and_faults_remain_distinct`
+        /// - witness: `error::tests::refusals_retain_payloads_and_propagate_sink_errors`
+        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        fn write_str(
+            &mut self,
+            _s: &str,
+        ) -> core::fmt::Result
+        {
+            Err(core::fmt::Error)
+        }
+    }
+
+    #[test]
+    fn fields_and_faults_remain_distinct()
+    {
+        macro_rules! check {
+            ($($variant:path),+ $(,)?) => {{
+                let values = [$($variant),+];
+                let rendered = values.map(|value| value.to_string());
+                for (index, value) in values.into_iter().enumerate() {
+                    assert!(!rendered[..index].contains(&rendered[index]));
+                    assert_eq!(
+                        core::fmt::write(&mut RefusingSink, format_args!("{value}")),
+                        Err(core::fmt::Error),
+                    );
+                }
+            }};
+        }
+        check!(
+            ChunkFrameField::Domain,
+            ChunkFrameField::Version,
+            ChunkFrameField::Header,
+            ChunkFrameField::BodyLength,
+            ChunkFrameField::Records,
+            ChunkFrameField::TokenCount,
+        );
+        check!(
+            ManifestField::Domain,
+            ManifestField::ManifestVersion,
+            ManifestField::CommitmentLength,
+            ManifestField::ChunkerCommitment,
+            ManifestField::DigestFamily,
+            ManifestField::CodecId,
+            ManifestField::CodecVersion,
+            ManifestField::ChildIndexBase,
+            ManifestField::BoundaryClassification,
+            ManifestField::ChunkFrameVersion,
+            ManifestField::RootDigest,
+            ManifestField::RootOffset,
+            ManifestField::TokenCount,
+        );
+        check!(
+            ProfileField::ChunkerCommitment,
+            ProfileField::DigestFamily,
+            ProfileField::CodecId,
+            ProfileField::CodecVersion,
+            ProfileField::ChildIndexBase,
+            ProfileField::BoundaryClassification,
+            ProfileField::ChunkFrameVersion,
+        );
+        check!(
+            EmissionFault::CloseWithoutOpen,
+            EmissionFault::PayloadOutsideConstructor,
+            EmissionFault::SecondRoot,
+            EmissionFault::UnclosedConstructor,
+            EmissionFault::EmptyValue,
+        );
+        check!(
+            ValueQuantity::TokenOffset,
+            ValueQuantity::TokenCount,
+            ValueQuantity::ByteLength,
+            ValueQuantity::ChunkCount,
+            ValueQuantity::LocalityBound,
+        );
+    }
+
+    #[test]
+    fn refusals_retain_payloads_and_propagate_sink_errors()
+    {
+        let expected = ChunkDigest::from([0x17; 32]);
+        let actual = ChunkDigest::from([0xc3; 32]);
+        let position = TokenOffset::from(u32::MAX);
+        let tag = ConstructorTag::from(0xa7);
+        let spent = DecodeWork::from(u64::MAX);
+        let ceiling = DecodeWork::from(u64::MAX - 1);
+        let declared = TokenCount::from(u64::MAX - 2);
+        let spliced = TokenCount::from(u64::MAX - 3);
+        let expected_text = expected.to_string();
+        let actual_text = actual.to_string();
+        let position_text = position.to_string();
+        let tag_text = tag.to_string();
+        let spent_text = spent.to_string();
+        let ceiling_text = ceiling.to_string();
+        let declared_text = declared.to_string();
+        let spliced_text = spliced.to_string();
+        let frame_field = ChunkFrameField::BodyLength.to_string();
+        let expected_kind = TokenKind::Open.to_string();
+        let found_kind = TokenKind::Word.to_string();
+        let emission_fault = EmissionFault::UnclosedConstructor.to_string();
+        let base = ChildIndexBase::ChunkLocal.to_string();
+        let quantity = ValueQuantity::LocalityBound.to_string();
+        let manifest_field = ManifestField::RootOffset.to_string();
+        let truncated_field = ManifestField::RootDigest.to_string();
+        let profile_field = ProfileField::CodecVersion.to_string();
+        let cases: [(ValueError, &[&str]); 18] = [
+            (ValueError::UnknownChunk { digest: expected }, &[
+                &expected_text,
+            ]),
+            (ValueError::DigestMismatch { expected, actual }, &[
+                &expected_text,
+                &actual_text,
+            ]),
+            (
+                ValueError::MalformedChunk {
+                    field: ChunkFrameField::BodyLength,
+                },
+                &[&frame_field],
+            ),
+            (ValueError::TruncatedStream { position }, &[&position_text]),
+            (ValueError::UnknownTokenKind { position }, &[&position_text]),
+            (
+                ValueError::UnexpectedToken {
+                    expected: TokenKind::Open,
+                    found: TokenKind::Word,
+                    position,
+                },
+                &[&expected_kind, &found_kind, &position_text],
+            ),
+            (
+                ValueError::UnexpectedConstructor {
+                    found: tag,
+                    position,
+                },
+                &[&tag_text, &position_text],
+            ),
+            (ValueError::SeamInFlatForm { position }, &[&position_text]),
+            (ValueError::TrailingTokens { position }, &[&position_text]),
+            (
+                ValueError::MalformedEmission {
+                    fault: EmissionFault::UnclosedConstructor,
+                },
+                &[&emission_fault],
+            ),
+            (
+                ValueError::UnsupportedIndexBase {
+                    base: ChildIndexBase::ChunkLocal,
+                },
+                &[&base],
+            ),
+            (
+                ValueError::ArithmeticOverflow {
+                    quantity: ValueQuantity::LocalityBound,
+                },
+                &[&quantity],
+            ),
+            (ValueError::DecodeBudgetExceeded { spent, ceiling }, &[
+                &spent_text,
+                &ceiling_text,
+            ]),
+            (
+                ValueError::MalformedManifest {
+                    field: ManifestField::RootOffset,
+                },
+                &[&manifest_field],
+            ),
+            (
+                ValueError::TruncatedManifest {
+                    field: ManifestField::RootDigest,
+                },
+                &[&truncated_field],
+            ),
+            (ValueError::TrailingManifestBytes, &[]),
+            (
+                ValueError::IncompatibleProfile {
+                    field: ProfileField::CodecVersion,
+                },
+                &[&profile_field],
+            ),
+            (ValueError::TokenCountMismatch { declared, spliced }, &[
+                &declared_text,
+                &spliced_text,
+            ]),
+        ];
+        let rendered = cases.each_ref().map(|case| case.0.to_string());
+        for (index, (error, payloads)) in cases.into_iter().enumerate() {
+            for payload in payloads {
+                assert!(
+                    rendered[index].contains(payload),
+                    "{error:?} omitted {payload}"
+                );
+            }
+            assert!(!rendered[.. index].contains(&rendered[index]));
+            assert_eq!(
+                core::fmt::write(&mut RefusingSink, format_args!("{error}")),
+                Err(core::fmt::Error),
+            );
+        }
+    }
 }

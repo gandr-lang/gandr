@@ -27,8 +27,9 @@ use crate::tokens::CanonicalValue;
 /// Fetches, verifies and decodes the value a pointer addresses.
 ///
 /// # Specification
-/// - requires: `pointer` addresses a constructor of a chunk `store` can answer
-///   for, under the profile the value was committed with.
+/// - requires: the selected codec interprets the profile under which the value
+///   was committed. Missing storage, malformed bytes and invalid offsets are
+///   admitted for refusal.
 /// - ensures: on success the value the subtree at the pointer decodes to; for a
 ///   root pointer [`crate::cam_commit`] returned, a value equal to the one
 ///   committed, with every seam invisible in the result.
@@ -40,21 +41,25 @@ use crate::tokens::CanonicalValue;
 ///   the chunk's records, [`ValueError::DecodeBudgetExceeded`], and the codec's
 ///   own refusals.
 /// - panics: none.
+/// - executable: none — the original value and the codec's equivalence relation
+///   are not available here. Replaying emission or storage reads would add
+///   codec execution and I/O, not observe the returned value alone.
 ///
 /// # Errors
 /// [`ValueError`] — as listed above.
 ///
 /// # Adequacy
-/// - hypothesis: L2 agreement — every generated value derefs back equal under
-///   every generated profile, and the dereffed value's flat bytes are the
-///   original's, the flat encoder holding no store and no scanner — plus L3 for
-///   the offset, separated by a hand-built non-zero offset that must address a
-///   different subtree of the same chunk than offset zero, and for the
-///   wrong-kind refusal, separated by a word whose leading byte is a tag.
+/// - hypothesis: L2 on generated trees of at most 4096 records observes exact
+///   value equality and flat-byte equality under generated profiles. L3 at
+///   offsets one and four in two literal chunks observes four exact leaves; a
+///   word whose leading byte is a valid tag is still refused by kind. These
+///   distinguish wrong digests or offsets, lost seams and kind coercion in the
+///   witness codecs, not an arbitrary consumer codec's round-trip law.
 /// - witness: `tests::laws::every_generated_value_commits_and_derefs_back_equal`
 /// - witness: `tests::laws::chunking_is_invisible_to_the_flat_form`
 /// - witness: `tests::values::a_committed_value_derefs_back_equal`
 /// - witness: `tests::values::an_interior_pointer_derefs_to_its_own_subtree`
+/// - witness: `tests::values::known_interior_addresses_select_distinct_values`
 /// - witness: `tests::values::a_word_is_never_read_as_a_tag`
 #[inline]
 pub fn cam_deref<Value>(

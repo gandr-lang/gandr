@@ -59,6 +59,19 @@ macro_rules! semantic_integer {
             /// - fails: propagates the formatter's own write failure
             ///   unchanged.
             /// - panics: none.
+            /// - executable: none — the formatter exposes no readable output
+            ///   buffer for a postcondition.
+            ///
+            /// # Errors
+            /// Returns `fmt::Error` when the sink refuses a write.
+            ///
+            /// # Adequacy
+            /// - hypothesis: L2 on zero, 37 and the primitive ceiling for the
+            ///   integer carriers listed in the witness compares signed,
+            ///   zero-padded rendering with the primitive. L3 sink refusal
+            ///   distinguishes swallowed errors. These fixed inputs distinguish
+            ///   substituted values and lost flags, not every formatting mode.
+            /// - witness: `units::tests::quantities_preserve_values_flags_and_refusal`
             #[inline]
             fn fmt(
                 &self,
@@ -353,5 +366,72 @@ impl AsRef<[u8]> for ManifestImageBuf
     fn as_ref(&self) -> &[u8]
     {
         self.0.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    /// A formatting sink that refuses every write.
+    #[derive(Debug)]
+    struct RefusingSink;
+
+    impl core::fmt::Write for RefusingSink
+    {
+        /// Refuses the offered text.
+        ///
+        /// # Specification
+        /// - requires: nothing; any text is admitted.
+        /// - ensures: returns the formatting error for every write.
+        /// - provides: the refusal observer for quantity rendering.
+        /// - fails: always returns the formatting error.
+        /// - panics: none.
+        ///
+        /// # Errors
+        /// Always returns the formatting error.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 on text from the quantity boundary matrix observes
+        ///   the exact error, distinguishing a sink that accepts a write.
+        /// - witness: `units::tests::quantities_preserve_values_flags_and_refusal`
+        #[anodized::spec(ensures: |ret| ret == Err(core::fmt::Error))]
+        fn write_str(
+            &mut self,
+            _text: &str,
+        ) -> core::fmt::Result
+        {
+            Err(core::fmt::Error)
+        }
+    }
+
+    #[test]
+    fn quantities_preserve_values_flags_and_refusal()
+    {
+        macro_rules! check {
+            ($quantity:ty, $primitive:ty) => {
+                for value in [0, 37, <$primitive>::MAX] {
+                    let quantity = <$quantity>::from(value);
+                    assert_eq!(
+                        alloc::format!("{quantity:+022}"),
+                        alloc::format!("{value:+022}"),
+                    );
+                    assert_eq!(
+                        core::fmt::write(&mut RefusingSink, format_args!("{quantity}")),
+                        Err(core::fmt::Error),
+                    );
+                }
+            };
+        }
+
+        check!(super::ChunkCount, usize);
+        check!(super::SeamDepth, usize);
+        check!(super::CanonicalWord, u64);
+        check!(super::CodecId, u16);
+        check!(super::CodecVersion, u16);
+        check!(super::ChunkFormatVersion, u16);
+        check!(super::ValueManifestVersion, u16);
+        check!(super::EditDepth, u64);
+        check!(super::ChunkBound, u64);
+        check!(super::DecodeWork, u64);
     }
 }
