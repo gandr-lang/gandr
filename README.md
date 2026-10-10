@@ -42,7 +42,7 @@ The policy lane restores the same enforcing test artifacts for witness discovery
 
 Archive creation stops the job if either tar or zstd fails.
 
-The pinned anodized fork supports executable specifications on ordinary and const functions without requiring `std`. `--cfg anodized_panic` enables enforcement for the whole build graph, including compile-time evaluation of const calls; without it, predicates remain type-checked but do not execute.
+The pinned anodized fork supports executable specifications on ordinary and const functions and type refinements without requiring `std` or the `logic` feature. `anodized::types::Spec::predicate` evaluates a type invariant directly. `--cfg anodized_panic` enables boundary enforcement for the whole build graph, including compile-time evaluation of const calls; without it, boundary predicates remain type-checked but do not execute.
 
 `mise run ci:act` runs the committed Linux CI workflow in a disposable checkout. Two host-wide slots bound concurrent gates across repositories and worktrees; further invocations wait until a slot frees. Dead holders are reclaimed. Each invocation uses distinct container names. Cached actions run without GitHub fetches; missing actions download on first use.
 
