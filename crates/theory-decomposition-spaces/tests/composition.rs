@@ -16,6 +16,7 @@ mod tests
     use gandr_theory_cell_complexes::Orientation;
     use gandr_theory_cell_complexes::Polarity;
     use gandr_theory_cell_complexes::ProdPat;
+    use gandr_theory_cell_complexes::SeamRole;
     use gandr_theory_cell_complexes::SequentAlphabet;
     use gandr_theory_coherent_resolutions::Overlap;
     use gandr_theory_coherent_resolutions::OverlapKind;
@@ -26,6 +27,10 @@ mod tests
     use gandr_theory_coherent_resolutions::replay_equivalent;
     use gandr_theory_decomposition_spaces::compose_directed;
     use gandr_theory_decomposition_spaces::compose_invertible;
+    use gandr_theory_dynamic_graphs::AcyclicityMaintenance;
+    use gandr_theory_dynamic_graphs::EdgeVerdict;
+    use gandr_theory_graphs::EdgeId;
+    use gandr_theory_graphs::NodeId;
 
     /// No rule fires at the candidate peak.
     #[derive(Clone, Copy, Debug)]
@@ -1330,5 +1335,254 @@ mod tests
             "the family yields distinct fused right-hand sides, never a single rule"
         );
         let _ = (linear_consumer, nonlinear_consumer);
+    }
+    /// The sequent alphabet's hole identity, which is what a flow-graph node is
+    /// keyed by.
+    type SeamHole = <SequentAlphabet as gandr_theory_cell_complexes::CellAlphabet>::Hole;
+
+    /// The sequent alphabet's metavariable, which a flow-graph node records.
+    type SeamVar = <SequentAlphabet as gandr_theory_cell_complexes::CellAlphabet>::Var;
+
+    /// The endpoints of `hole` among `cells`, read from each present cell's
+    /// live metadata.
+    ///
+    /// # Specification
+    /// - ensures: Returns only live metadata endpoints on the requested seam
+    ///   hole.
+    /// - fails: typed capacity, arithmetic or state errors described below.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 differential streams and L3 boundaries distinguish
+    ///   wrong verdicts, lost edges and invalid maintained state on finite
+    ///   graphs.
+    /// - witness: `composition::tests::the_gates_own_graph_streamed_incrementally_reproduces_its_verdict`
+
+    #[spec(ensures: |ret| ret.iter().all(|&(cell, ref var, _)| cells.contains(&cell) && SequentAlphabet::hole_of(var) == *hole))]
+    fn seam_endpoints(
+        cells: &[CellId],
+        hole: &SeamHole,
+        store: &CellStore,
+    ) -> Vec<(CellId, SeamVar, SeamRole)>
+    {
+        let mut endpoints = Vec::new();
+        for &cell in cells {
+            let Maybe::Present(entry) = store.get(cell)
+            else {
+                continue;
+            };
+            for (var, role) in SequentAlphabet::hole_flow(entry.meta(), hole) {
+                endpoints.push((cell, var, role));
+            }
+        }
+        endpoints
+    }
+
+    /// The dense identity of the `(cell, hole)` node, allocating one on first
+    /// sight.
+    ///
+    /// # Specification
+    /// - ensures: Interns each cell-and-hole pair exactly once.
+    /// - fails: typed capacity, arithmetic or state errors described below.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 differential streams and L3 boundaries distinguish
+    ///   wrong verdicts, lost edges and invalid maintained state on finite
+    ///   graphs.
+    /// - witness: `composition::tests::the_gates_own_graph_streamed_incrementally_reproduces_its_verdict`
+
+    #[spec(ensures: |ret| usize::try_from(u32::from(ret)).is_ok_and(|index| nodes.get(index) == Some(&(cell, SequentAlphabet::hole_of(var)))))]
+    fn intern_node(
+        nodes: &mut Vec<(CellId, SeamHole)>,
+        cell: CellId,
+        var: &SeamVar,
+    ) -> NodeId
+    {
+        let key = (cell, SequentAlphabet::hole_of(var));
+        if let Some(index) = nodes.iter().position(|entry| *entry == key) {
+            return NodeId::from(u32::try_from(index).expect("a fixture graph is small"));
+        }
+        let index = nodes.len();
+        nodes.push(key);
+        NodeId::from(u32::try_from(index).expect("a fixture graph is small"))
+    }
+
+    /// Appends `edge` unless it is already present.
+    ///
+    /// # Specification
+    /// - ensures: Retains the offered edge without duplicating it.
+    /// - fails: typed capacity, arithmetic or state errors described below.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 differential streams and L3 boundaries distinguish
+    ///   wrong verdicts, lost edges and invalid maintained state on finite
+    ///   graphs.
+    /// - witness: `composition::tests::the_gates_own_graph_streamed_incrementally_reproduces_its_verdict`
+
+    #[spec(ensures: |ret| edges.contains(&edge))]
+    fn push_edge(
+        edges: &mut Vec<EdgeId>,
+        edge: EdgeId,
+    )
+    {
+        if !edges.contains(&edge) {
+            edges.push(edge);
+        }
+    }
+
+    /// **The gate's flow graph as an edge stream**, derived from the public
+    /// alphabet surface exactly as [`compose_directed`]'s specification
+    /// describes the construction: `(cell, hole)` nodes over the two
+    /// certificates' participating cells and the seam holes of
+    /// `a.joins_at`, with an edge for every endpoint pair where one side
+    /// emits and the other absorbs.
+    ///
+    /// Deriving it here rather than reading the gate's own builder is the point
+    /// of the test below. If the specification's account of the construction
+    /// were wrong, this stream would carry different edges and the verdicts
+    /// would diverge — so what is checked is the characterization itself,
+    /// not only the maintenance that consumes it.
+    ///
+    /// # Specification
+    /// - ensures: Derives emit-to-absorb edges at the left recorded join.
+    /// - fails: typed capacity, arithmetic or state errors described below.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 differential streams and L3 boundaries distinguish
+    ///   wrong verdicts, lost edges and invalid maintained state on finite
+    ///   graphs.
+    /// - witness: `composition::tests::the_gates_own_graph_streamed_incrementally_reproduces_its_verdict`
+
+    #[spec(ensures: |ret| ret.iter().all(|edge| edge.source != edge.target) || participating(a).iter().any(|cell| participating(b).contains(cell)))]
+    fn characterized_stream(
+        a: &Tracelet,
+        b: &Tracelet,
+        store: &CellStore,
+    ) -> Vec<EdgeId>
+    {
+        let left_cells = participating(a);
+        let right_cells = participating(b);
+        let mut holes: Vec<SeamHole> = Vec::new();
+        for var in SequentAlphabet::metavariables(&a.joins_at) {
+            let hole = SequentAlphabet::hole_of(&var);
+            if !holes.contains(&hole) {
+                holes.push(hole);
+            }
+        }
+        let mut nodes: Vec<(CellId, SeamHole)> = Vec::new();
+        let mut edges: Vec<EdgeId> = Vec::new();
+        for hole in &holes {
+            let left = seam_endpoints(&left_cells, hole, store);
+            let right = seam_endpoints(&right_cells, hole, store);
+            if left.is_empty() || right.is_empty() {
+                // Not shared across the seam — no cross flow.
+                continue;
+            }
+            for &(left_cell, ref left_var, left_role) in &left {
+                for &(right_cell, ref right_var, right_role) in &right {
+                    let source = intern_node(&mut nodes, left_cell, left_var);
+                    let target = intern_node(&mut nodes, right_cell, right_var);
+                    let left_emits = matches!(left_role, SeamRole::Forward | SeamRole::Both);
+                    let left_absorbs = matches!(left_role, SeamRole::Backward | SeamRole::Both);
+                    let right_emits = matches!(right_role, SeamRole::Forward | SeamRole::Both);
+                    let right_absorbs = matches!(right_role, SeamRole::Backward | SeamRole::Both);
+                    if left_emits && right_absorbs {
+                        push_edge(&mut edges, EdgeId::new(source, target));
+                    }
+                    if right_emits && left_absorbs {
+                        push_edge(&mut edges, EdgeId::new(target, source));
+                    }
+                }
+            }
+        }
+        edges
+    }
+
+    #[test]
+    fn the_gates_own_graph_streamed_incrementally_reproduces_its_verdict()
+    {
+        let mut corpus: Vec<(&'static str, CellStore, Tracelet, Tracelet)> = Vec::new();
+        let (ground_store, ground_left, ground_right) = ground_chain();
+        corpus.push((
+            "ground chain, no seam metavariables",
+            ground_store,
+            ground_left,
+            ground_right,
+        ));
+        for &(label, left_mixed, right_mixed) in &[
+            ("producer left, consumer right", false, false),
+            ("mixed left, consumer right", true, false),
+            ("producer left, mixed right", false, true),
+            ("mixed on both sides", true, true),
+        ] {
+            let (store, left, right) =
+                variance_pair(SeamHoleMixed(left_mixed), SeamHoleMixed(right_mixed));
+            corpus.push((label, store, left, right));
+        }
+        let (shared_store, shared_left, shared_right) = mixed_pair();
+        corpus.push((
+            "two shared mixed holes",
+            shared_store,
+            shared_left,
+            shared_right,
+        ));
+
+        let mut edges_streamed: usize = 0;
+        let mut admitted_rows_with_edges: usize = 0;
+        let mut refused_rows_with_edges: usize = 0;
+
+        for &(label, ref store, ref left, ref right) in &corpus {
+            let gate_declines = compose_directed(left, right, store).is_err();
+            let stream = characterized_stream(left, right, store);
+            edges_streamed = edges_streamed.saturating_add(stream.len());
+
+            let mut reversed = stream.clone();
+            reversed.reverse();
+            for (arrival, offers) in [("as derived", &stream), ("reversed", &reversed)] {
+                let mut maintenance =
+                    AcyclicityMaintenance::new().expect("a fresh structure is available");
+                let mut refused = false;
+                for &offer in offers {
+                    let verdict = maintenance
+                        .insert_edge(offer)
+                        .expect("insertion is total over well-formed identifiers");
+                    if matches!(verdict, EdgeVerdict::Refused(_)) {
+                        refused = true;
+                        break;
+                    }
+                }
+                assert_eq!(
+                    gate_declines, refused,
+                    "{label}, streamed {arrival}: the incremental verdict must equal the gate's"
+                );
+            }
+
+            if !stream.is_empty() {
+                if gate_declines {
+                    refused_rows_with_edges = refused_rows_with_edges.saturating_add(1);
+                }
+                else {
+                    admitted_rows_with_edges = admitted_rows_with_edges.saturating_add(1);
+                }
+            }
+        }
+
+        // Non-vacuity: an agreement reached over empty graphs would agree about
+        // nothing, so the corpus must exercise both answers with edges present.
+        assert!(
+            edges_streamed > 0,
+            "the corpus must put real edges through the maintenance"
+        );
+        assert!(
+            refused_rows_with_edges > 0,
+            "the corpus must contain a declined composite whose graph is non-empty"
+        );
+        assert!(
+            admitted_rows_with_edges > 0,
+            "the corpus must contain an admitted composite whose graph is non-empty"
+        );
     }
 }

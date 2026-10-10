@@ -39,6 +39,7 @@ members = [
   "crates/theory-computads",
   "crates/theory-decomposition-spaces",
   "crates/theory-deep-inference",
+  "crates/theory-dynamic-graphs",
   "crates/theory-graphs",
   "crates/theory-levitation",
   "crates/theory-nominal-automata",
@@ -124,6 +125,7 @@ default-features = false
 # - theory-computads
 # - theory-decomposition-spaces
 # - theory-deep-inference
+# - theory-dynamic-graphs
 # - theory-graphs
 # - theory-levitation
 # - theory-nominal-automata
@@ -571,13 +573,26 @@ default-features = false
 [workspace.dependencies.gandr-theory-deep-inference]
 path = "crates/theory-deep-inference"
 
+# Standing insertion-only graph and offset-constraint maintenance.
+# features:
+# - none: alloc-only graph machinery.
+# consumers:
+# - theory-decomposition-spaces (dev)
+[workspace.dependencies.gandr-theory-dynamic-graphs]
+path = "crates/theory-dynamic-graphs"
+default-features = false
+
 # The precedence DAG, the walk machine, and the graph algorithms they read.
+# features:
+# - none: alloc-only graph machinery.
 # consumers:
 # - surface-grammar
 # - surface-parser
 # - theory-decomposition-spaces
+# - theory-dynamic-graphs
 [workspace.dependencies.gandr-theory-graphs]
 path = "crates/theory-graphs"
+default-features = false
 
 # The levitated description table: codes, rule faces, circuit rules and their
 # occurrence record, bridge arities.
@@ -590,10 +605,14 @@ path = "crates/theory-levitation"
 
 # The order-maintenance structure: stable handles over a total order with
 # constant-time comparison.
+# features:
+# - none: alloc-only order maintenance.
 # consumers:
 # - core-incremental
+# - theory-dynamic-graphs
 [workspace.dependencies.gandr-theory-orders]
 path = "crates/theory-orders"
+default-features = false
 
 # Exact, dynamically sized integers for native arithmetic.
 # features:
@@ -646,6 +665,7 @@ default-features = false
 # - theory-circuit-algebras (dev)
 # - theory-coherent-resolutions (dev)
 # - theory-deep-inference (dev)
+# - theory-dynamic-graphs (dev)
 # - theory-graphs (dev)
 # - theory-levitation (dev)
 # - theory-orders (dev)
@@ -693,6 +713,7 @@ default-features = false
 # - theory-computads
 # - theory-deep-inference
 # - theory-decomposition-spaces
+# - theory-dynamic-graphs
 # - theory-levitation
 # - theory-nominal-automata
 # - theory-sites
