@@ -112,7 +112,21 @@ impl Lift
     /// The lift of a code of level `natural` to the universe at `target`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `target` is strictly above `natural`.
+    /// - ensures: the natural and target levels are retained without changing
+    ///   their canonical expressions.
+    /// - panics: none.
+    /// - executable: none — `Level` exposes neither its representation nor a
+    ///   const-readable ordering or equality observer; this constructor must
+    ///   preserve its existing const interface.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — equal, smaller and larger value-code universes are
+    ///   distinguished by the bridge, and a genuine increase is independently
+    ///   checked after export. The witnesses observe the resulting coercion,
+    ///   not arbitrary direct construction outside the ordering premise.
+    /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
+    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
     #[inline]
     #[must_use]
     pub const fn new(
@@ -154,6 +168,24 @@ impl Lift
     /// - ensures: a quote of the lift of the type `code` denotes; a quote
     ///   decodes as it is minted, so a quoted `code` lifts its own type.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — quoted and named small codes are checked in a larger
+    ///   value universe, and kernel readmission observes the explicit lift;
+    ///   missing the quote, inner type or target changes that judgement.
+    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    /// - witness: `bridge::tests::a_code_constant_argument_unfolds_at_export`
+    #[spec(
+        requires: arena.value(code).is_some(),
+        ensures: |ret| matches!(arena.value(ret), Some(Value::Quote(quoted))
+            if matches!(arena.value_type(*quoted), Some(ValueType::Lift { inner, target })
+                if target == self.target() && match arena.value(code) {
+                    | Some(&Value::Quote(denoted)) => *inner == denoted,
+                    | Some(_) => matches!(arena.value_type(*inner), Some(ValueType::Element { code: held, target: natural })
+                        if *held == code && natural == self.natural()),
+                    | None => false,
+                })),
+    )]
     #[inline]
     pub fn mint(
         &self,
@@ -336,10 +368,26 @@ impl CodeDefinitions
     /// - requires: `body` is a closed value of the arena every later
     ///   certificate is asked over.
     /// - ensures: [`Self::body`] answers `body` for `constant` when `constant`
-    ///   follows every position recorded before it; a position out of order, or
-    ///   past the chain's entry space, is left rigid, which costs a later
-    ///   unfolding and never soundness.
+    ///   follows every position recorded before it and the chain has entry
+    ///   space; otherwise the table is unchanged. An unrecorded position stays
+    ///   rigid, and a repeated position keeps its earlier body.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ascending definitions, a skipped lower position and a
+    ///   repeated position expose their reducts; these distinguish replacing an
+    ///   accepted body, admitting out of order and losing a new definition.
+    ///   Exhausting the thirty-two-bit entry space is not constructed.
+    /// - witness: `code::tests::definitions_reject_reordering_without_replacing_earlier_bodies`
+    /// - witness: `code::tests::a_static_step_reduces_saturated_instances_and_redexes_only`
+    #[spec(
+        captures: [before = self.body(constant), count = self.bodies.len(), highest = self.bodies.last_key_value().map(|(&position, _)| position)],
+        ensures: if u32::try_from(count).is_ok() && highest.is_none_or(|previous| previous < constant) {
+            self.body(constant) == Maybe::Present(body) && self.bodies.len().checked_sub(count) == Some(1)
+        } else {
+            self.body(constant) == before && self.bodies.len() == count
+        },
+    )]
     #[inline]
     pub fn define(
         &mut self,
@@ -786,6 +834,7 @@ pub fn loose_reach(
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_core_term::BinderDepth;
     use gandr_core_term::CoreArena;
     use gandr_core_term::Sort;
@@ -808,7 +857,18 @@ mod tests
     /// The two atoms `reduct`, a quote of a product, pairs.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `reduct` quotes a product whose two children resolve.
+    /// - ensures: the two stored children are returned in product order.
+    /// - panics: the recipe did not produce such a quote.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a two-argument static operator receives distinct type
+    ///   codes, and its quoted product is asserted in argument order; this
+    ///   separates swapped substitution and wrong quoted children.
+    /// - witness: `code::tests::a_static_step_reduces_saturated_instances_and_redexes_only`
+    #[spec(ensures: |ret| matches!(arena.value(reduct), Some(Value::Quote(quoted))
+        if matches!(arena.value_type(*quoted), Some(ValueType::Product(first, second))
+            if arena.value_type(*first) == Some(&ret.0) && arena.value_type(*second) == Some(&ret.1))))]
     fn quoted_pair(
         arena: &CoreArena,
         reduct: ValueId,
@@ -991,5 +1051,41 @@ mod tests
                 "{message}"
             );
         }
+    }
+
+    #[test]
+    fn definitions_reject_reordering_without_replacing_earlier_bodies()
+    {
+        let mut arena = CoreArena::new();
+        let integer = arena.value_type_base(BaseType::Integer);
+        let string = arena.value_type_base(BaseType::String);
+        let original = arena.value_quote(integer);
+        let replacement = arena.value_quote(string);
+        let first = ConstantIndex::from(2_usize);
+        let earlier = ConstantIndex::from(1_usize);
+        let later = ConstantIndex::from(4_usize);
+        let reference = arena.value_constant(first);
+        let mut definitions = CodeDefinitions::new();
+        definitions.define(first, original);
+        definitions.define(first, replacement);
+        definitions.define(earlier, replacement);
+        definitions.define(later, replacement);
+        assert_eq!(definitions.body(first), Maybe::Present(original));
+        assert_eq!(
+            definitions.body(earlier),
+            Maybe::Absent(unfolding::Absent::Rigid)
+        );
+        assert_eq!(definitions.body(later), Maybe::Present(replacement));
+        let Maybe::Present(step) = definitions.reduce(&mut arena, reference).unwrap()
+        else {
+            panic!("the retained definition still unfolds");
+        };
+        assert_eq!(step.reduct(), original);
+        let certificate = definitions.certify(&arena, step).unwrap();
+        assert_eq!(certificate.reduct(), original);
+        assert_eq!(
+            certificate.verdict(),
+            gandr_core_nbe::MachineVerdict::Convertible
+        );
     }
 }

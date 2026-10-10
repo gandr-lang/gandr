@@ -40,12 +40,14 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use anodized::spec;
+use gandr_core_term::BinderDepth;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::Context;
 use gandr_core_term::CoreArena;
 use gandr_core_term::Value;
 use gandr_core_term::ValueId;
 use gandr_core_term::ValueTypeId;
+use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::BaseType;
 use gandr_kernel_term::ConstantIndex;
@@ -218,6 +220,21 @@ impl<'arena> CheckingContext<'arena>
     /// - intension: mints three value-type nodes into `arena` — the unit type,
     ///   the integer atom and the string atom — which every literal and unit
     ///   rule then hands out.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fresh context synthesises the three rigid atoms and
+    ///   rejects a first undeclared constant; admission and budget cases
+    ///   separate leaked prior state and a lost allowance. These cases do not
+    ///   quantify over allocation limits.
+    /// - witness: `context::tests::the_producer_declares_the_rigid_base_atoms`
+    /// - witness: `context::tests::an_undeclared_type_name_is_refused_by_name`
+    /// - witness: `judgement::tests::an_exhausted_allowance_is_refused_with_the_budget`
+    #[spec(ensures: |ret| ret.budget.0 == budget.0
+        && ret.signatures.is_empty() && ret.definitions.definitions().next().is_none()
+        && ret.lifts.is_empty() && matches!(ret.admitted, Maybe::Absent(admission::Absent::Fresh))
+        && matches!(ret.support, SupportLog::Off)
+        && ret.depth(Zone::Intuitionistic) == BinderDepth::default()
+        && ret.depth(Zone::Linear) == BinderDepth::default())]
     #[inline]
     #[must_use]
     pub fn new(
@@ -269,6 +286,13 @@ impl<'arena> CheckingContext<'arena>
     ///   and a position never admitted.
     /// - witness: `module::tests::a_later_declaration_reads_an_earlier_type`
     /// - witness: `module::tests::a_body_that_synthesised_nothing_supplies_no_type`
+    #[spec(ensures: |ret| {
+        let next = self.signatures.partition_point(|&(held, _)| held < constant);
+        match self.signatures.get(next) {
+            | Some(&(held, declared)) if held == constant => ret == Maybe::Present(declared),
+            | Some(_) | None => ret == Maybe::Absent(signature_table::Absent::Untyped),
+        }
+    })]
     #[inline]
     pub fn signature(
         &self,
@@ -294,9 +318,9 @@ impl<'arena> CheckingContext<'arena>
     /// - requires: nothing — an out-of-order position is admissible input and
     ///   refused.
     /// - ensures: on success `constant` is the highest position admitted,
-    ///   [`Self::signature`] answers `supplied` for it, and a code naming it
-    ///   unfolds to `unfolds` when one is present, exactly as after judging a
-    ///   declaration that supplied `supplied` and was accepted with that body.
+    ///   [`Self::signature`] answers `supplied` for it, and a present body is
+    ///   defined only when a type is supplied, with the elaboration performed
+    ///   by [`Self::define`]. A body without a supplied type is not installed.
     /// - provides: the seat an incremental caller places a reused verdict in;
     ///   the caller, not the context, vouches that the verdict still answers,
     ///   and passes the body exactly when the verdict it reuses accepted it.
@@ -315,6 +339,20 @@ impl<'arena> CheckingContext<'arena>
     ///   of order refused with the table unchanged, and an adopted body a later
     ///   decode unfolds to.
     /// - witness: `module::tests::an_adopted_answer_is_read_as_if_judged`
+    /// - witness: `context::tests::an_adopted_untyped_body_does_not_become_a_definition`
+    #[spec(
+        captures: [admitted = self.admitted, entries = self.signatures.len(), previous = self.definitions.body(constant)],
+        ensures: |ret| match ret {
+            | Ok(()) => self.admitted == Maybe::Present(constant)
+                && self.signature(constant) == supplied
+                && matches!((supplied, unfolds, self.definitions.body(constant)),
+                    (Maybe::Present(_), Maybe::Present(_), Maybe::Present(_))
+                        | (Maybe::Absent(_), _, Maybe::Absent(_))
+                        | (_, Maybe::Absent(_), Maybe::Absent(_))),
+            | Err(_) => self.admitted == admitted && self.signatures.len() == entries
+                && self.definitions.body(constant) == previous,
+        },
+    )]
     #[inline]
     pub fn adopt(
         &mut self,
@@ -349,6 +387,15 @@ impl<'arena> CheckingContext<'arena>
     ///   supported judgement whose support is asserted entry by entry and an
     ///   unsupported judgement before it whose reads stay out.
     /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
+    #[spec(
+        captures: before = match self.support { SupportLog::Off => None, SupportLog::Recording(ref log) => Some(log.len()) },
+        ensures: |ret| ret == self.signature(constant) && match (&self.support, before) {
+            | (&SupportLog::Off, None) => true,
+            | (&SupportLog::Recording(ref log), Some(count)) => log.len().checked_sub(1) == Some(count)
+                && log.last() == Some(&Consulted::new(constant, ret)),
+            | _ => false,
+        },
+    )]
     pub(crate) fn consult(
         &mut self,
         constant: ConstantIndex,
@@ -364,7 +411,16 @@ impl<'arena> CheckingContext<'arena>
     /// Start logging the answers handed out, discarding any earlier log.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; an earlier log is intentionally discarded.
+    /// - ensures: logging is active with no earlier consultation retained.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — consecutive supported judgements and preceding
+    ///   unsupported reads expose their own exact supports; stale entries or
+    ///   failure to start logging change the observed consultation sets.
+    /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
+    #[spec(ensures: matches!(self.support, SupportLog::Recording(ref log) if log.is_empty()))]
     pub(crate) fn start_support(&mut self)
     {
         self.support = SupportLog::Recording(Vec::new());
@@ -378,6 +434,18 @@ impl<'arena> CheckingContext<'arena>
     ///   [`Self::start_support`], or the empty support when none was started;
     ///   logging is off afterwards.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — successful and refused supported judgements expose
+    ///   the sorted answers actually read, including an interrupted prefix;
+    ///   lost entries or retained recording change the next observed support.
+    /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
+    /// - witness: `module::tests::a_refusal_cuts_the_support_where_the_run_stopped`
+    #[spec(
+        captures: before = match self.support { SupportLog::Off => 0, SupportLog::Recording(ref log) => log.len() },
+        ensures: |ret| matches!(self.support, SupportLog::Off)
+            && ret.consulted().len() <= before && ret.consulted().is_empty() == (before == 0),
+    )]
     pub(crate) fn finish_support(&mut self) -> Support
     {
         match core::mem::replace(&mut self.support, SupportLog::Off) {
@@ -431,6 +499,16 @@ impl<'arena> CheckingContext<'arena>
     ///   stands, and the kernel's replay of an unfolding over it declines
     ///   rather than certifies a wrong one.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — code definitions at their natural universe and a
+    ///   larger universe are observed by subsequent decoding and independent
+    ///   readmission; a missing body or lift changes those outcomes.
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    #[spec(ensures: matches!(self.definitions.body(constant), Maybe::Present(defined)
+        if defined == body || matches!(self.arena.value(defined), Some(Value::Quote(lifted))
+            if matches!(value_type_view(self.arena, *lifted), Ok(ValueTypeView::Lift { .. })))))]
     pub(crate) fn define(
         &mut self,
         constant: ConstantIndex,
@@ -451,6 +529,16 @@ impl<'arena> CheckingContext<'arena>
     /// - fails: the refusal reading `declared`'s weak head or the body's level
     ///   gives.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a quoted small type declared at its own universe or a
+    ///   larger one is observed through conversion and kernel readmission;
+    ///   dropped or incorrectly shaped elaborations change these decisions.
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|elaborated| elaborated == body
+        || matches!(self.arena.value(elaborated), Some(Value::Quote(lifted))
+            if matches!(value_type_view(self.arena, *lifted), Ok(ValueTypeView::Lift { .. })))))]
     fn elaborate(
         &mut self,
         declared: FormedValueType,
@@ -489,7 +577,20 @@ impl<'arena> CheckingContext<'arena>
     /// Record that the code `at` was checked at a universe above its own.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the natural level is strictly below the target.
+    /// - ensures: `at` has a recorded lift, replacing an earlier record there.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the value bridge on equal, lower and higher code
+    ///   levels distinguishes recording a genuine lift from recording an
+    ///   equality or refusal; readmission observes the resulting coercion.
+    /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
+    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    #[spec(
+        requires: bool::from(lift.natural().lt(lift.target())),
+        ensures: self.lifts.contains_key(&at),
+    )]
     pub(crate) fn record_lift(
         &mut self,
         at: ValueId,
@@ -520,6 +621,16 @@ impl<'arena> CheckingContext<'arena>
     /// # Errors
     /// - [`CheckRefusal::Undecided`] — an unfolding was not certified.
     /// - [`CheckRefusal::DanglingNode`] — a node does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — rigid formers and decodes through defined codes are
+    ///   observed by conversion, including a static instance; these separate
+    ///   changing a rigid id and stopping before a certified unfolding.
+    /// - witness: `conversion::tests::a_decode_of_a_defined_code_converts_with_its_body`
+    /// - witness: `bridge::tests::family_argument_at_wrong_classifier_raises_the_exact_variant`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|head|
+        value_type_view(self.arena, head).is_ok()
+            && (matches!(value_type_view(self.arena, value_type), Ok(ValueTypeView::Element { .. })) || head == value_type)))]
     pub(crate) fn whnf_value_type(
         &mut self,
         value_type: ValueTypeId,
@@ -557,6 +668,17 @@ impl<'arena> CheckingContext<'arena>
     /// # Errors
     /// - [`CheckRefusal::Undecided`] — an unfolding was not certified.
     /// - [`CheckRefusal::DanglingNode`] — a node does not resolve.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a computation decode and rigid returner or arrow
+    ///   expose the head through checking and readmission; a wrong head or
+    ///   altered rigid id changes these results. Arbitrary reduction lengths
+    ///   are outside these finite examples.
+    /// - witness: `formation::tests::every_comp_type_constructor_has_a_formation_rule`
+    /// - witness: `judgement::tests::every_comp_former_is_answered_in_both_modes`
+    #[spec(ensures: |ret| ret.is_err() || ret.is_ok_and(|head|
+        comp_type_view(self.arena, head).is_ok()
+            && (matches!(comp_type_view(self.arena, comp_type), Ok(CompTypeView::Element { .. })) || head == comp_type)))]
     pub(crate) fn whnf_comp_type(
         &mut self,
         comp_type: CompTypeId,
@@ -665,14 +787,35 @@ impl<'arena> CheckingContext<'arena>
     /// code: a quote's type's level, a constant's declared universe.
     ///
     /// # Specification
-    /// - requires: `code` is a body a code constant unfolded to, so a quote or
-    ///   a constant.
+    /// - requires: `code` is an accepted declaration body; `otherwise` is the
+    ///   fallback level when its syntax exposes no natural level.
     /// - ensures: the level of the quoted type for a quote, the level of the
     ///   universe a constant was declared at for a constant, and `otherwise`
     ///   for any other code.
     /// - fails: [`CheckRefusal::DanglingNode`] or the refusal reading a quoted
     ///   type's level gives.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — quoted and named type codes at equal and increased
+    ///   declaration levels expose their natural level through the inserted
+    ///   lift and independent readmission; other syntax uses the fallback,
+    ///   without a claim that it independently reveals a classifier.
+    /// - witness: `bridge::tests::a_smaller_type_at_a_larger_universe_readmits_with_a_lift`
+    /// - witness: `bridge::tests::a_code_constant_unfolds_in_conversion_and_its_trace_replays`
+    #[spec(ensures: |ret| match self.arena.value(code) {
+        | None => ret == Err(CheckRefusal::DanglingNode { node: CoreNode::Term(TermNode::Value(code)) }),
+        | Some(&Value::Constant(constant)) => match self.signature(constant) {
+            | Maybe::Present(declared) => match value_type_view(self.arena, declared.id()) {
+                | Ok(ValueTypeView::Universe { level, .. }) => ret.as_ref() == Ok(level),
+                | Ok(_) => ret.as_ref() == Ok(otherwise),
+                | Err(refusal) => ret == Err(CheckRefusal::from(refusal)),
+            },
+            | Maybe::Absent(_) => ret.as_ref() == Ok(otherwise),
+        },
+        | Some(&(Value::Quote(_) | Value::QuoteComputation(_))) => true,
+        | Some(_) => ret.as_ref() == Ok(otherwise),
+    })]
     fn code_level(
         &mut self,
         code: ValueId,
@@ -714,6 +857,18 @@ impl<'arena> CheckingContext<'arena>
             | Value::StaticLambda(_)
             | Value::StaticApplication(..) => Ok(otherwise.clone()),
         }
+    }
+
+    /// The number of binders open in `zone`, without borrowing them mutably.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn depth(
+        &self,
+        zone: Zone,
+    ) -> BinderDepth
+    {
+        self.binders.depth(zone)
     }
 
     /// The binders the judgement is under.
@@ -761,6 +916,14 @@ impl<'arena> CheckingContext<'arena>
     ///   separated by a first admission, a repeated position and a lower one,
     ///   each refusal asserted with both positions.
     /// - witness: `module::tests::an_admission_out_of_order_is_refused`
+    #[spec(
+        captures: previous = self.admitted,
+        ensures: |ret| match previous {
+            | Maybe::Present(admitted) if constant <= admitted => self.admitted == previous
+                && ret == Err(CheckRefusal::AdmissionOrder { constant, admitted }),
+            | Maybe::Present(_) | Maybe::Absent(_) => ret == Ok(()) && self.admitted == Maybe::Present(constant),
+        },
+    )]
     pub(crate) fn admit(
         &mut self,
         constant: ConstantIndex,
@@ -778,10 +941,24 @@ impl<'arena> CheckingContext<'arena>
     /// Record the type the admitted declaration at `constant` supplied.
     ///
     /// # Specification
-    /// - requires: `constant` is the position admitted last, so the table stays
-    ///   ascending.
+    /// - requires: `constant` is the position admitted last and no type has yet
+    ///   been recorded there, so the table stays strictly ascending.
     /// - ensures: [`Self::signature`] answers `declared` for `constant`.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — later declarations read earlier supplied types,
+    ///   including a refused signed body; absent types remain absent. These
+    ///   cases separate omitted or mispositioned records in ordered modules.
+    /// - witness: `module::tests::a_later_declaration_reads_an_earlier_type`
+    /// - witness: `module::tests::a_refused_signed_body_still_supplies_its_type`
+    #[spec(
+        requires: self.admitted == Maybe::Present(constant)
+            && self.signatures.last().is_none_or(|&(previous, _)| previous < constant),
+        captures: before = self.signatures.len(),
+        ensures: self.signatures.len().checked_sub(1) == Some(before)
+            && self.signatures.last() == Some(&(constant, declared)),
+    )]
     pub(crate) fn record(
         &mut self,
         constant: ConstantIndex,
@@ -906,6 +1083,37 @@ mod tests
                     if at == bound && synthesised == integer
             ),
             "an integer is no code, so its decode is refused at the variable: {refused:?}"
+        );
+    }
+    #[test]
+    fn an_adopted_untyped_body_does_not_become_a_definition()
+    {
+        let mut arena = CoreArena::new();
+        let unit = arena.value_type_unit();
+        let code = arena.value_quote(unit);
+        let constant = ConstantIndex::from(0_usize);
+        let reference = arena.value_constant(constant);
+        let mut context = CheckingContext::new(&mut arena, CheckBudget::DEFAULT);
+        assert_eq!(
+            context.adopt(
+                constant,
+                quenchant_shape::shape::Maybe::Absent(super::signature_table::Absent::Untyped),
+                quenchant_shape::shape::Maybe::Present(code),
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            crate::synthesise_value(&mut context, reference),
+            Err(CheckRefusal::UnknownConstant {
+                at: reference,
+                constant
+            })
+        );
+        assert_eq!(
+            context.unfold(reference),
+            Ok(quenchant_shape::shape::Maybe::Absent(
+                crate::unfolding::Absent::Rigid
+            ))
         );
     }
 }

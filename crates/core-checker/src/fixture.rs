@@ -9,6 +9,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::CompType;
 use gandr_core_term::CompTypeId;
 use gandr_core_term::ComputationId;
@@ -69,7 +70,18 @@ pub fn numeric_literal() -> Literal
 /// value types.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the receiving arena contains at most sixteen value types.
+/// - ensures: the returned id does not resolve in that receiving arena.
+/// - panics: none.
+/// - executable: none — the receiving arena is not an argument, and the opaque
+///   node id exposes no primitive index observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a context with only its seed atoms refuses the fixture id
+///   with its exact node identity; an accidentally valid low id changes that
+///   result. Arbitrary receiving-arena sizes are not claimed.
+/// - witness: `formation::tests::a_dangling_type_is_refused_as_a_fault`
+/// - witness: `conversion::tests::a_dangling_type_is_refused`
 pub fn dangling_value_type() -> ValueTypeId
 {
     let mut scratch = CoreArena::new();
@@ -83,7 +95,17 @@ pub fn dangling_value_type() -> ValueTypeId
 /// A value id past the end of any arena holding fewer than sixteen values.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the receiving arena contains at most sixteen values.
+/// - ensures: the returned id does not resolve in that receiving arena.
+/// - panics: none.
+/// - executable: none — the receiving arena is absent and the opaque value id
+///   has no primitive index observer.
+///
+/// # Adequacy
+/// - hypothesis: L3 — dangling-term judgement compares the exact fault and
+///   value id in a small receiving arena, separating accidental resolution or a
+///   wrong node family, not every arena cardinality.
+/// - witness: `judgement::tests::a_dangling_term_is_refused_as_a_fault`
 pub fn dangling_value() -> ValueId
 {
     let mut scratch = CoreArena::new();
@@ -98,7 +120,20 @@ pub fn dangling_value() -> ValueId
 /// `types`.
 ///
 /// # Specification
-/// trivial.
+/// - requires: no declaration has been admitted and every supplied type forms
+///   in the context.
+/// - ensures: each supplied type is the signature at its zero-based position.
+/// - panics: formation or admission violates the premise.
+///
+/// # Adequacy
+/// - hypothesis: L1 — bounded generated free and typed term pools read their
+///   seeded constant signatures; wrong positions or missing types change
+///   synthesis or checking, with no claim about invalid seed types.
+/// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+/// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
+#[spec(ensures: types.iter().enumerate().all(|(position, &declared)|
+    context.signature(ConstantIndex::from(position)).map(crate::formation::FormedValueType::id)
+        == quenchant_shape::shape::Maybe::Present(declared)))]
 pub fn seed(
     context: &mut CheckingContext<'_>,
     types: &[ValueTypeId],
@@ -122,7 +157,16 @@ impl Position
     /// The same position, counted round within `pool`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: `pool` is nonempty.
+    /// - ensures: the position modulo the pool length, within its bounds.
+    /// - panics: an empty pool violates the premise.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — singleton and three-entry pools, a wrapped index and
+    ///   the numeric ceiling expose exact selection and rotation; these
+    ///   separate truncation, off-by-one wrapping and skipped candidates.
+    /// - witness: `fixture::tests::wrapped_pool_positions_preserve_rotation_candidates`
+    #[spec(requires: !pool.is_empty(), ensures: |ret| self.0.checked_rem(pool.len()) == Some(ret.0))]
     fn within<Pooled>(
         self,
         pool: &[Pooled],
@@ -139,7 +183,16 @@ impl Position
 /// The entry at `position` of `pool`, counting round past its end.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `pool` is nonempty.
+/// - ensures: the entry at the position modulo the pool length.
+/// - panics: an empty pool violates the premise.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a wrapped selection in a three-entry pool and a singleton
+///   distinguish the modulo index from a clamped or shifted one. The generic
+///   element is observed by its equality in the witness.
+/// - witness: `fixture::tests::wrapped_pool_positions_preserve_rotation_candidates`
+#[spec(requires: !pool.is_empty())]
 fn pick<Pooled>(
     pool: &[Pooled],
     position: Position,
@@ -150,15 +203,30 @@ where
     pool[position.within(pool).0]
 }
 
+/// The concrete finite cyclic iterator used by recipe pool selection.
+type Rotated<'pool, Pooled> = core::iter::Take<
+    core::iter::Skip<core::iter::Cycle<core::iter::Copied<core::slice::Iter<'pool, Pooled>>>>,
+>;
+
 /// Every entry of `pool` once, starting at `position` and counting round past
 /// its end.
 ///
 /// # Specification
-/// trivial.
+/// - requires: `pool` is nonempty.
+/// - ensures: exactly one pool length of entries is yielded, beginning at the
+///   wrapped position and retaining cyclic order.
+/// - panics: an empty pool violates the premise.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a wrapped start in a three-entry pool observes every
+///   candidate in order, separating an omitted prefix, duplicate or wrong
+///   start; the singleton covers the wrap boundary.
+/// - witness: `fixture::tests::wrapped_pool_positions_preserve_rotation_candidates`
+#[spec(requires: !pool.is_empty(), ensures: |ret| ret.size_hint() == (pool.len(), Some(pool.len())))]
 fn rotated<Pooled>(
     pool: &[Pooled],
     position: Position,
-) -> impl Iterator<Item = Pooled> + '_
+) -> Rotated<'_, Pooled>
 where
     Pooled: Copy,
 {
@@ -254,7 +322,39 @@ impl TypeRecipe
     /// The pool the steps resolve to, seeds first.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; each position is wrapped into a seeded pool.
+    /// - ensures: the integer and its returner precede one entry per step;
+    ///   every child position names an earlier entry of its own family.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — zero to nine generated steps feed structural
+    ///   conversion, with L3 seeds and a mixed thunk/arrow recipe exposing
+    ///   child order, missing entries and incorrect pool-family selection.
+    /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
+    /// - witness: `fixture::tests::type_shapes_preserve_child_order_and_last_value`
+    #[spec(ensures: |ret| {
+        let mut values = 0_usize;
+        let mut comps = 0_usize;
+        ret.len().checked_sub(2) == Some(self.steps.len())
+            && matches!(ret.first(), Some(Entry::Value(ValueShape::Integer)))
+            && matches!(ret.get(1), Some(Entry::Comp(CompShape::Returner(Position(0)))))
+            && ret.iter().all(|entry| match *entry {
+                | Entry::Value(shape) => {
+                    let valid = match shape { ValueShape::Thunk(body) => body.0 < comps, _ => true };
+                    values = values.saturating_add(1);
+                    valid
+                },
+                | Entry::Comp(shape) => {
+                    let valid = match shape {
+                        CompShape::Returner(result) => result.0 < values,
+                        CompShape::Arrow(domain, codomain) => domain.0 < values && codomain.0 < comps,
+                    };
+                    comps = comps.saturating_add(1);
+                    valid
+                },
+            })
+    })]
     fn resolve(&self) -> Vec<Entry>
     {
         let mut values = Vec::from([ValueShape::Integer]);
@@ -290,7 +390,20 @@ impl TypeRecipe
     /// last computation type pushed.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: both selected roots resolve in their arena families and
+    ///   follow the recipe, whose children always refer to earlier pool
+    ///   entries.
+    /// - panics: a broken resolution invariant leaves a pool empty or a child
+    ///   out of bounds.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 over zero to nine steps compares independently minted
+    ///   trees by conversion and shape; L3 mixed formers expose the selected
+    ///   roots and child order, not arena exhaustion.
+    /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
+    /// - witness: `fixture::tests::type_shapes_preserve_child_order_and_last_value`
+    #[spec(ensures: |ret| arena.value_type(ret.0).is_some() && arena.comp_type(ret.1).is_some())]
     pub fn build_both(
         &self,
         arena: &mut CoreArena,
@@ -320,7 +433,17 @@ impl TypeRecipe
     /// Mint the recipe into `arena` at fresh ids; the last value type pushed.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the last value-type root of the recipe resolves in `arena`.
+    /// - panics: a broken pool invariant in `build_both`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — independently minted bounded recipes agree exactly
+    ///   when their preorder shapes agree; L3 mixed formers pin the last-value
+    ///   selection rather than the last computation entry.
+    /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
+    /// - witness: `fixture::tests::type_shapes_preserve_child_order_and_last_value`
+    #[spec(ensures: |ret| arena.value_type(ret).is_some())]
     pub fn build(
         &self,
         arena: &mut CoreArena,
@@ -332,7 +455,27 @@ impl TypeRecipe
     /// The preorder spelling of the last value type pushed.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a complete preorder tree, with one child after thunk and
+    ///   returner and domain before codomain after arrow; the root is a value
+    ///   type and the seed-only recipe spells the integer atom.
+    /// - panics: a broken resolution invariant names no pool entry.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — bounded recipe shapes are compared against the
+    ///   structural conversion decision; L3 a mixed arrow under a thunk
+    ///   separates child reversal, omitted children and wrong root selection.
+    /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
+    /// - witness: `fixture::tests::type_shapes_preserve_child_order_and_last_value`
+    #[spec(ensures: |ret| matches!(ret.first(), Some(Token::Integer | Token::String | Token::Unit | Token::Thunk))
+        && ret.iter().try_fold(1_usize, |pending, token| {
+            if pending == 0 { return None; }
+            match *token {
+                Token::Integer | Token::String | Token::Unit => pending.checked_sub(1),
+                Token::Thunk | Token::Returner => Some(pending),
+                Token::Arrow => pending.checked_add(1),
+            }
+        }) == Some(0))]
     pub fn shape(&self) -> Vec<Token>
     {
         let entries = self.resolve();
@@ -373,7 +516,18 @@ impl TypeRecipe
 /// Type recipes of up to ten steps.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: generated and shrunk recipes have fewer than ten steps, with
+///   positions below eight interpreted modulo the seeded pools.
+/// - panics: none.
+/// - executable: none — the constructor holds no generated recipe; the property
+///   ranges over future samples and shrinking.
+///
+/// # Adequacy
+/// - hypothesis: L1 — bounded recipes compare conversion with an independent
+///   preorder observer; the evidence concerns semantic shape and copying at
+///   fresh ids, not exhaustive constructor frequencies.
+/// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
 pub fn type_recipe() -> impl Strategy<Value = TypeRecipe>
 {
     let step = prop_oneof![
@@ -442,7 +596,19 @@ impl TermRecipe
     /// Mint every term of the recipe into `arena`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; every selection wraps into a seeded pool.
+    /// - ensures: one node per step plus unit and return-unit seeds, with each
+    ///   output id resolving in its declared family. Typing is unconstrained.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — zero to fifteen free-term steps compare synthesis and
+    ///   checking, including refusals; missing nodes, wrong families and
+    ///   misselected children change those judgements.
+    /// - witness: `judgement::tests::the_faces_agree_on_free_terms`
+    #[spec(ensures: |ret| ret.values.len().checked_add(ret.comps.len()).and_then(|count| count.checked_sub(2)) == Some(self.steps.len())
+        && ret.values.iter().all(|&value| arena.value(value).is_some())
+        && ret.comps.iter().all(|&comp| arena.computation(comp).is_some()))]
     pub fn build(
         &self,
         arena: &mut CoreArena,
@@ -503,7 +669,19 @@ impl TermRecipe
 /// Free term recipes of up to sixteen steps.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: recipes contain fewer than sixteen steps; variables are below
+///   index three, constants below position six, and pool positions below
+///   sixteen.
+/// - panics: none.
+/// - executable: none — no term recipe is available before the returned
+///   strategy is sampled, and the contract also covers future shrinking.
+///
+/// # Adequacy
+/// - hypothesis: L1 — generated free pools compare both judgement faces,
+///   observing success and exact refusal; this bounds the sampled syntax, not
+///   its probability distribution or exhaustive coverage.
+/// - witness: `judgement::tests::the_faces_agree_on_free_terms`
 pub fn term_recipe() -> impl Strategy<Value = TermRecipe>
 {
     let step = prop_oneof![
@@ -598,7 +776,23 @@ impl TypedRecipe
     /// Mint every term of the recipe into `arena`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing; every selection wraps into a seeded pool.
+    /// - ensures: output nodes and their types resolve, modes distinguish
+    ///   introduction from synthesis, and every recorded constant has a type.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — zero to nineteen typed steps are checked at their
+    ///   construction-derived types and synthesising terms reproduce those
+    ///   types; this separates wrong modes, child choices and constant types.
+    /// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
+    #[spec(ensures: |ret| ret.values.iter().all(|&(value, declared, mode)|
+        arena.value(value).is_some() && arena.value_type(declared).is_some()
+            && matches!(arena.value(value), Some(gandr_core_term::Value::Thunk(_))) == (mode == Mode::Checking))
+        && ret.comps.iter().all(|&(comp, declared, mode)|
+            arena.computation(comp).is_some() && arena.comp_type(declared).is_some()
+                && matches!(arena.computation(comp), Some(gandr_core_term::Computation::Return(_) | gandr_core_term::Computation::Lambda(_))) == (mode == Mode::Checking))
+        && ret.constants.iter().all(|&declared| arena.value_type(declared).is_some()))]
     pub fn build(
         &self,
         arena: &mut CoreArena,
@@ -731,7 +925,18 @@ impl TypedRecipe
 /// Well-typed recipes of up to twenty steps.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: generated and shrunk recipes have fewer than twenty typed steps,
+///   with bounded pool selections interpreted by the builder.
+/// - panics: none.
+/// - executable: none — recipe values and their shrinking are future
+///   observations unavailable at strategy construction.
+///
+/// # Adequacy
+/// - hypothesis: L1 — every built term checks at the type constructed beside
+///   it, and every synthesising term reproduces that type; this separates
+///   builder/type disagreement, not strategy distribution.
+/// - witness: `judgement::tests::well_typed_terms_synthesise_and_check_their_type`
 pub fn typed_recipe() -> impl Strategy<Value = TypedRecipe>
 {
     let step = prop_oneof![
@@ -768,7 +973,21 @@ impl AtomType
     /// The atom's type, minted into `arena`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the requested integer, string or unit atom resolves in the
+    ///   supplied arena.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — generated function domains, statements and results
+    ///   are checked and independently readmitted, separating an atom-family
+    ///   swap from the recipe's type oracle within the three-atom domain.
+    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    #[spec(ensures: |ret| match self {
+        Self::Integer => arena.value_type(ret) == Some(&ValueType::Base(BaseType::Integer)),
+        Self::String => arena.value_type(ret) == Some(&ValueType::Base(BaseType::String)),
+        Self::Unit => arena.value_type(ret) == Some(&ValueType::Unit),
+    })]
     fn mint(
         self,
         arena: &mut CoreArena,
@@ -784,7 +1003,21 @@ impl AtomType
     /// A closed value of the atom, minted into `arena`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: an integer literal, text literal or unit value inhabits the
+    ///   requested atom without free variables.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — functions with no in-scope binder return an atom
+    ///   inhabitant and cross the independent kernel checker; a wrong literal
+    ///   family disagrees with the recipe's result type.
+    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    #[spec(ensures: |ret| match self {
+        Self::Integer => matches!(arena.value(ret), Some(gandr_core_term::Value::Literal(Literal::Integer(_)))),
+        Self::String => matches!(arena.value(ret), Some(gandr_core_term::Value::Literal(Literal::Text(_)))),
+        Self::Unit => matches!(arena.value(ret), Some(gandr_core_term::Value::Unit)),
+    })]
     fn inhabitant(
         self,
         arena: &mut CoreArena,
@@ -843,7 +1076,16 @@ impl FunctionRecipe
     /// outermost first.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: parameters precede statement binders, each in input order.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — up to three parameters and two statements expose the
+    ///   chosen return variable through checking and kernel readmission;
+    ///   reversed or omitted scope entries change its expected type.
+    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    #[spec(ensures: |ret| ret.iter().eq(self.parameters.iter().chain(&self.statements)))]
     fn scope(&self) -> Vec<AtomType>
     {
         self.parameters
@@ -856,7 +1098,22 @@ impl FunctionRecipe
     /// Whether the function the recipe mints is well typed.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: well typed exactly when the selected in-scope atom equals the
+    ///   result atom; an empty scope returns a matching closed inhabitant.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — bounded generated functions compare this independent
+    ///   atom-selection oracle with checker acceptance and kernel readmission;
+    ///   wrong de Bruijn order or a false typing classification disagrees.
+    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    #[spec(ensures: |ret| self.parameters.len().checked_add(self.statements.len()).is_some_and(|length| {
+        let chosen = self.returned.0.checked_rem(length)
+            .and_then(|position| self.parameters.iter().chain(&self.statements).nth(position))
+            .unwrap_or(&self.result);
+        (ret == Typing::WellTyped) == (*chosen == self.result)
+    }))]
     pub fn typing(&self) -> Typing
     {
         let scope = self.scope();
@@ -876,7 +1133,25 @@ impl FunctionRecipe
     /// force at the end of `constants`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: at most three parameters and two statements; appending
+    ///   statement constants fits the admission-position range.
+    /// - ensures: the declared type and body are thunks, and one constant type
+    ///   is appended per statement in statement order.
+    /// - panics: an index exceeds the bounded recipe domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1 — generated functions are checked against the recipe
+    ///   oracle and accepted ones are independently readmitted; misplaced
+    ///   binders, statement order or result types change those decisions.
+    /// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
+    #[spec(
+        requires: self.parameters.len() < 4 && self.statements.len() < 3
+            && constants.len().checked_add(self.statements.len()).is_some(),
+        captures: before = constants.len(),
+        ensures: |ret| constants.len().checked_sub(before) == Some(self.statements.len())
+            && matches!(arena.value_type(ret.declared), Some(ValueType::Thunk(_)))
+            && matches!(arena.value(ret.body), Some(gandr_core_term::Value::Thunk(_))),
+    )]
     pub fn build(
         &self,
         arena: &mut CoreArena,
@@ -932,7 +1207,18 @@ impl FunctionRecipe
 /// Function recipes of up to three parameters and two statements.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: recipes have zero to three parameters, zero to two statements,
+///   one of three result atoms and a bounded wrapped return position.
+/// - panics: none.
+/// - executable: none — generated recipes and shrinks are observed only when
+///   the returned strategy is run.
+///
+/// # Adequacy
+/// - hypothesis: L1 — bounded functions compare the atom oracle with checking,
+///   and accepted functions cross an independent kernel; this establishes
+///   sampled semantic agreement, not a distribution claim.
+/// - witness: `bridge::tests::every_checked_function_definition_is_readmitted`
 pub fn function_recipe() -> impl Strategy<Value = FunctionRecipe>
 {
     let atom = || {
@@ -956,4 +1242,90 @@ pub fn function_recipe() -> impl Strategy<Value = FunctionRecipe>
                 returned: Position(returned),
             },
         )
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::vec::Vec;
+
+    use gandr_core_term::CoreArena;
+    use gandr_core_term::ValueType;
+    use gandr_kernel_term::BaseType;
+
+    use super::AtomType;
+    use super::Position;
+    use super::Token;
+    use super::TypeRecipe;
+    use super::TypeStep;
+    use super::pick;
+    use super::rotated;
+
+    #[test]
+    fn wrapped_pool_positions_preserve_rotation_candidates()
+    {
+        let pool = [AtomType::Integer, AtomType::String, AtomType::Unit];
+        assert_eq!(pick(&pool, Position(5)), AtomType::Unit);
+        assert_eq!(rotated(&pool, Position(5)).collect::<Vec<_>>(), [
+            AtomType::Unit,
+            AtomType::Integer,
+            AtomType::String
+        ]);
+        assert_eq!(
+            Position(usize::MAX).within(&pool).0,
+            usize::MAX % pool.len()
+        );
+        assert_eq!(
+            pick(&[AtomType::String], Position(usize::MAX)),
+            AtomType::String
+        );
+        assert_eq!(
+            rotated(&[AtomType::String], Position(usize::MAX)).collect::<Vec<_>>(),
+            [AtomType::String]
+        );
+    }
+
+    #[test]
+    fn type_shapes_preserve_child_order_and_last_value()
+    {
+        let seed = TypeRecipe { steps: Vec::new() };
+        let mixed = TypeRecipe {
+            steps: Vec::from([
+                TypeStep::String,
+                TypeStep::Unit,
+                TypeStep::Returner(Position(2)),
+                TypeStep::Arrow(Position(1), Position(1)),
+                TypeStep::Thunk(Position(2)),
+            ]),
+        };
+        assert_eq!(seed.shape(), [Token::Integer]);
+        assert_eq!(mixed.shape(), [
+            Token::Thunk,
+            Token::Arrow,
+            Token::String,
+            Token::Returner,
+            Token::Unit
+        ]);
+        let mut arena = CoreArena::new();
+        let integer = seed.build(&mut arena);
+        assert_eq!(
+            arena.value_type(integer),
+            Some(&ValueType::Base(BaseType::Integer))
+        );
+        let (thunk, arrow) = mixed.build_both(&mut arena);
+        assert_eq!(arena.value_type(thunk), Some(&ValueType::Thunk(arrow)));
+        let Some(&gandr_core_term::CompType::Arrow { domain, codomain }) = arena.comp_type(arrow)
+        else {
+            panic!("the last computation is the mixed arrow");
+        };
+        assert_eq!(
+            arena.value_type(domain),
+            Some(&ValueType::Base(BaseType::String))
+        );
+        let Some(&gandr_core_term::CompType::Returner(result)) = arena.comp_type(codomain)
+        else {
+            panic!("the codomain returns the unit");
+        };
+        assert_eq!(arena.value_type(result), Some(&ValueType::Unit));
+    }
 }

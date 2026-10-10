@@ -11,6 +11,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
 
 use crate::declaration::OriginToken;
@@ -38,7 +39,16 @@ impl Absence
     ///   signature and a hole as its body; the hole rule is the only caller.
     /// - ensures: the accessors return exactly the arguments.
     /// - panics: none.
-    pub(crate) const fn new(
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — signed holes in a module expose their owed types,
+    ///   positions and origins through the ledger; unsigned holes and refused
+    ///   bodies distinguish absence from source failure. The constructor does
+    ///   not independently establish the declaration premise.
+    /// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
+    /// - witness: `module::tests::a_refusal_never_enters_the_ledger`
+    #[spec(ensures: |ret| ret.constant() == constant && ret.declared() == declared && ret.origin() == origin)]
+    pub(crate) fn new(
         constant: ConstantIndex,
         declared: FormedValueType,
         origin: OriginToken,
@@ -238,6 +248,11 @@ impl ObligationLedger
     /// - hypothesis: L3 — the surface is the append order, separated by two
     ///   holes recorded in module order and read back in that order.
     /// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
+    #[spec(
+        captures: count = self.entries.len(),
+        ensures: self.entries.len().checked_sub(1) == Some(count)
+            && self.entries.last() == Some(&entry),
+    )]
     #[inline]
     pub fn record(
         &mut self,
