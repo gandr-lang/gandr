@@ -42,6 +42,19 @@ use crate::region::Program;
 use crate::region::Reference;
 
 /// Where in its item a refusal stood.
+///
+/// # Specification
+/// - requires: a node site is interpreted against its associated item's table.
+/// - ensures: a reached node names its table index; an unreached node invents
+///   no index. The variant alone does not certify an arbitrary index.
+/// - executable: none — this declaration has no call boundary; the owning table
+///   and arena-node correspondence are external to a stored site.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the projection witnesses use fixed breadth-first table
+///   coordinates for all four arena-node sorts and a node outside the walk.
+///   They certify projected sites, not arbitrary constructed indices.
+/// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Site
 {
@@ -53,6 +66,21 @@ pub enum Site
 }
 
 /// A checking-only form met where a type had to be synthesised.
+///
+/// # Specification
+/// - requires: a projected checking form is interpreted in its item's table.
+/// - ensures: projection retains the checking-only former and its site, or the
+///   hole marker without the producer's origin coordinate.
+/// - executable: none — this declaration has no call boundary; the source
+///   checking form and its arena are not part of a stored value.
+///
+/// # Adequacy
+/// - hypothesis: L3 — real hole and thunk refusals and structural lambda,
+///   return and static-lambda payloads separate the five tags and their node
+///   sorts. The structural corpus does not establish checker reachability.
+/// - witness: `typing::tests::each_verdict_projects_to_its_typing`
+/// - witness: `typing::tests::each_refusal_projects_its_payload`
+/// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Form
 {
@@ -69,6 +97,24 @@ pub enum Form
 }
 
 /// A refusal, projected.
+///
+/// # Specification
+/// - requires: a projected refusal is interpreted in its item's table and
+///   reference layout; type tables use their own discovery coordinates.
+/// - ensures: projection preserves the refusal kind, semantic payloads and
+///   mapped sites, omitting only admission-order positions and origins.
+/// - executable: none — this declaration has no call boundary; a stored refusal
+///   does not retain the source judgement or coordinate context.
+///
+/// # Adequacy
+/// - hypothesis: L3 — real checking refusals and a finite structural payload
+///   corpus distinguish item sites, independent type-table roots, named and
+///   unoccupied references, classifier direction and arity direction. The
+///   corpus does not certify arbitrary stored values or establish that the
+///   checker emits each structural case. Internal admission-order and
+///   machine-invariant refusals remain outside its witnessed domain.
+/// - witness: `typing::tests::each_refusal_projects_its_payload`
+/// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Refusal
 {
@@ -216,6 +262,21 @@ pub enum Refusal
 }
 
 /// An item's typing: its verdict, projected.
+///
+/// # Specification
+/// - requires: a projected typing is interpreted against its source judgement.
+/// - ensures: projection preserves the four verdict classes, conversion counts
+///   and semantic type or refusal content, not arena coordinates.
+/// - executable: none — this declaration has no call boundary; the source
+///   judgement needed to certify a constructed typing is external.
+///
+/// # Adequacy
+/// - hypothesis: L3 — real checked, synthesised, owed and refused declarations
+///   distinguish all four classes; independent integer content and exact
+///   refusal payloads distinguish coordinate projection from arena-id copying.
+///   The finite cases do not certify arbitrary values of this public enum.
+/// - witness: `typing::tests::each_verdict_projects_to_its_typing`
+/// - witness: `typing::tests::each_refusal_projects_its_payload`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum Typing
 {
@@ -241,6 +302,22 @@ pub enum Typing
 
 /// What a projection reads beside the verdict: the arena its ids resolve in,
 /// the program its positions resolve through, and the item's sites.
+///
+/// # Specification
+/// - requires: arena ids, layout positions and sites refer to the same
+///   judgement context; the arena may include nodes minted by checking.
+/// - ensures: projection reads that context without retaining arena ids or
+///   admission positions in its results; absent sites remain unreached.
+/// - executable: none — this declaration has no call boundary, and ownership
+///   correspondence between its three borrowed inputs has no retained proof.
+///
+/// # Adequacy
+/// - hypothesis: L3 — projection over a noisy arena and a fixed item graph
+///   distinguishes arena indices, item indices and type-table indices. Actual
+///   checking witnesses include types minted after item encoding. These
+///   observations assume the three inputs share their stated context.
+/// - witness: `typing::tests::each_verdict_projects_to_its_typing`
+/// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
 pub struct Projection<'arena, 'layout, 'sites>
 {
     /// The arena the verdict's ids resolve in.
@@ -267,11 +344,22 @@ impl Projection<'_, '_, '_>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are the per-variant maps, separated by
-    ///   one item per verdict and per refusal the fragment can reach, each
-    ///   asserted as an exact typing against content built by hand.
+    /// - hypothesis: L3 — real declarations separate all four verdict classes
+    ///   and conversion counts. Six checker refusal classes distinguish named
+    ///   coordinates and type content, without claiming all refusal variants or
+    ///   all valid arenas have been exercised through this entry.
     /// - witness: `typing::tests::each_verdict_projects_to_its_typing`
     /// - witness: `typing::tests::each_refusal_projects_its_payload`
+    #[anodized::spec(ensures: |ret| match *verdict {
+        | Verdict::Checked { evidence, .. } => {
+            matches!(ret, Typing::Checked { conversions } if conversions == evidence.conversions())
+        },
+        | Verdict::Synthesised { synthesised, .. } => {
+            matches!(ret, Typing::Synthesised { conversions, .. } if conversions == synthesised.conversions())
+        },
+        | Verdict::Owed(_) => matches!(ret, Typing::Owed),
+        | Verdict::Refused(_) => matches!(ret, Typing::Refused(_)),
+    })]
     pub(crate) fn typing(
         &self,
         verdict: &Verdict,
@@ -322,7 +410,19 @@ impl Projection<'_, '_, '_>
     /// The site of an arena node.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the node is interpreted in this projection's arena.
+    /// - ensures: a listed node yields exactly its stored table index;
+    ///   otherwise the site is unreached, even if the arena holds the node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — fixed item-local sites of four node sorts and one
+    ///   same-arena node outside the item walk distinguish absent membership
+    ///   from arena validity. No arbitrary-table well-formedness is claimed.
+    /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
+    #[anodized::spec(ensures: |ret| match self.sites.of(node) {
+        Maybe::Present(index) => ret == Site::Node(index),
+        Maybe::Absent(_) => ret == Site::Unreached,
+    })]
     fn site(
         &self,
         node: ArenaNode,
@@ -368,7 +468,151 @@ impl Projection<'_, '_, '_>
     /// The projected refusal.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the payload's coordinates are interpreted in this arena and
+    ///   layout. The refusal need not be reachable from a checker run.
+    /// - ensures: the refusal kind is preserved; node payloads use item sites,
+    ///   type payloads use independent type tables, and positions use named
+    ///   references. Scalar payloads remain exact; origins and admission-order
+    ///   coordinates are intentionally omitted.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — real checker errors and a finite structural corpus
+    ///   separate all four site sorts, unreached nodes, type-content direction,
+    ///   checking-form tags, arity direction and classifier positions. The
+    ///   corpus does not prove checker reachability; internal admission-order
+    ///   and machine-invariant cases are outside the witnessed domain.
+    /// - witness: `typing::tests::each_refusal_projects_its_payload`
+    /// - witness: `typing::tests::refusal_payloads_use_item_coordinates_and_type_content`
+    #[anodized::spec(ensures: |ret| match (refusal, &ret) {
+        | (
+            CheckRefusal::TypeMismatch(Mismatch::Value { at, .. }),
+            &Refusal::TypeMismatch { at: projected, .. },
+        )
+        | (CheckRefusal::SortMismatch { at, .. }, &Refusal::SortMismatch { at: projected, .. })
+        | (
+            CheckRefusal::LevelMismatch { at, .. },
+            &Refusal::LevelMismatch { at: projected, .. },
+        )
+        | (CheckRefusal::Undecided { at }, &Refusal::Undecided { at: projected })
+        | (
+            CheckRefusal::StaticLambdaArgument { at },
+            &Refusal::StaticLambdaArgument { at: projected },
+        ) => projected == self.site(ArenaNode::Value(at)),
+        | (
+            CheckRefusal::TypeMismatch(Mismatch::Computation { at, .. }),
+            &Refusal::TypeMismatch { at: projected, .. },
+        )
+        | (
+            CheckRefusal::DependentBind { at, .. },
+            &Refusal::DependentBind { at: projected, .. },
+        ) => projected == self.site(ArenaNode::Computation(at)),
+        | (
+            CheckRefusal::ShapeMismatch { at, wanted, .. },
+            &Refusal::ShapeMismatch {
+                at: projected,
+                wanted: returned,
+                ..
+            },
+        ) => projected == self.term_site(at) && wanted == returned,
+        | (
+            CheckRefusal::NotSynthesisable { form },
+            &Refusal::NotSynthesisable { form: projected },
+        ) => match (form, projected) {
+            | (CheckingForm::Thunk(id), Form::Thunk(at))
+            | (CheckingForm::StaticLambda(id), Form::StaticLambda(at)) => {
+                at == self.site(ArenaNode::Value(id))
+            },
+            | (CheckingForm::Lambda(id), Form::Lambda(at))
+            | (CheckingForm::Return(id), Form::Return(at)) => {
+                at == self.site(ArenaNode::Computation(id))
+            },
+            | (CheckingForm::Hole(_), Form::Hole) => true,
+            | _ => false,
+        },
+        | (
+            CheckRefusal::UnknownConstant { at, constant },
+            &Refusal::UnknownConstant {
+                at: projected,
+                constant: ref returned,
+            },
+        ) => {
+            projected == self.site(ArenaNode::Value(at))
+                && self
+                    .layout
+                    .items
+                    .binary_search_by_key(&constant, |item| item.declaration().constant())
+                    .ok()
+                    .and_then(|ordinal| self.layout.references.get(ordinal))
+                    .map_or_else(
+                        || matches!(*returned, Reference::Unoccupied),
+                        |expected| returned == expected,
+                    )
+        },
+        | (
+            CheckRefusal::OutOfFragment { at, former },
+            &Refusal::OutOfFragment {
+                at: projected,
+                former: returned,
+            },
+        ) => projected == self.core_site(at) && former == returned,
+        | (
+            CheckRefusal::UnboundIndex {
+                at,
+                zone,
+                index,
+                depth,
+            },
+            &Refusal::UnboundIndex {
+                at: projected,
+                zone: returned_zone,
+                index: returned_index,
+                depth: returned_depth,
+            },
+        ) => {
+            projected == self.site(ArenaNode::Value(at))
+                && zone == returned_zone
+                && index == returned_index
+                && depth == returned_depth
+        },
+        | (
+            CheckRefusal::BudgetExceeded { budget },
+            &Refusal::BudgetExceeded { budget: returned },
+        ) => budget == returned,
+        | (CheckRefusal::DanglingNode { node }, &Refusal::DanglingNode { at }) => {
+            at == self.core_site(node)
+        },
+        | (CheckRefusal::AdmissionOrder { .. }, &Refusal::AdmissionOrder)
+        | (CheckRefusal::MachineInvariant, &Refusal::MachineInvariant) => true,
+        | (
+            CheckRefusal::FamilyArity {
+                at,
+                expected,
+                actual,
+            },
+            &Refusal::FamilyArity {
+                at: projected,
+                expected: returned_expected,
+                actual: returned_actual,
+            },
+        ) => {
+            projected == self.site(ArenaNode::Value(at))
+                && expected == returned_expected
+                && actual == returned_actual
+        },
+        | (
+            CheckRefusal::FamilyArgumentClassifier { at, position, .. },
+            &Refusal::FamilyArgumentClassifier {
+                at: projected,
+                position: returned,
+                ..
+            },
+        ) => projected == self.site(ArenaNode::Value(at)) && position == returned,
+        | (
+            CheckRefusal::StaticClassifierExpected { at, .. },
+            &Refusal::StaticClassifierExpected { at: projected, .. },
+        ) => projected == self.site(ArenaNode::ValueType(at)),
+        | _ => false,
+    })]
     fn refusal(
         &self,
         refusal: CheckRefusal,
@@ -510,10 +754,24 @@ impl Projection<'_, '_, '_>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the differential suite projects the checker's module
-///   entry through this function on every generated program and compares the
-///   result against the incremental run.
+/// - hypothesis: L2 — the generated differential suite compares this public
+///   projection against incremental typings over bounded well-formed edits. It
+///   does not establish all arena-growth histories or the truth of an arbitrary
+///   verdict supplied without its judgement context.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
+#[anodized::spec(
+    requires: usize::from(ordinal) < program.items().len(),
+    ensures: |ret| match *verdict {
+        | Verdict::Checked { evidence, .. } => {
+            matches!(ret, Typing::Checked { conversions } if conversions == evidence.conversions())
+        },
+        | Verdict::Synthesised { synthesised, .. } => {
+            matches!(ret, Typing::Synthesised { conversions, .. } if conversions == synthesised.conversions())
+        },
+        | Verdict::Owed(_) => matches!(ret, Typing::Owed),
+        | Verdict::Refused(_) => matches!(ret, Typing::Refused(_)),
+    }
+)]
 #[inline]
 #[must_use]
 pub fn project(
@@ -581,7 +839,31 @@ mod tests
     /// `budget` in a fresh context.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: finite arena input; supplied ids are interpreted in it,
+    ///   including unresolved ids that the checker must refuse by name.
+    /// - ensures: a fresh one-item judgement and its coordinate-free typing are
+    ///   returned under the supplied budget; verdict class and conversion
+    ///   counts agree between the two results.
+    /// - panics: only if the fixed one-item construction loses its declaration
+    ///   or violates the program's ordering invariant.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — checked, synthesised, owed and refused one-item
+    ///   inputs exercise the fresh-context path, including zero budget and
+    ///   unknown names. The fixture does not model multi-item admission or
+    ///   resumed state.
+    /// - witness: `typing::tests::each_verdict_projects_to_its_typing`
+    /// - witness: `typing::tests::each_refusal_projects_its_payload`
+    #[anodized::spec(ensures: |ret| match ret.0 {
+        | Verdict::Checked { evidence, .. } => {
+            matches!(ret.1, Typing::Checked { conversions } if conversions == evidence.conversions())
+        },
+        | Verdict::Synthesised { synthesised, .. } => {
+            matches!(ret.1, Typing::Synthesised { conversions, .. } if conversions == synthesised.conversions())
+        },
+        | Verdict::Owed(_) => matches!(ret.1, Typing::Owed),
+        | Verdict::Refused(_) => matches!(ret.1, Typing::Refused(_)),
+    })]
     fn judged(
         arena: CoreArena,
         signature: Maybe<ValueTypeId, signature::Absent>,
@@ -813,5 +1095,220 @@ mod tests
             Typing::Refused(Refusal::BudgetExceeded { budget: exhausted }),
             "an exhausted allowance is named"
         );
+    }
+
+    #[test]
+    fn refusal_payloads_use_item_coordinates_and_type_content()
+    {
+        let mut arena = crate::fixture::noisy(crate::fixture::Noise(9));
+        let unit = arena.value_unit();
+        let returned = arena.computation_return(unit);
+        let thunk = arena.value_thunk(returned);
+        let unit_type = arena.value_type_unit();
+        let returner = arena.comp_type_returner(unit_type);
+        let thunk_type = arena.value_type_thunk(returner);
+        let quote = arena.value_quote(thunk_type);
+        let root = arena.value_pair(quote, thunk);
+        let integer = arena.value_type_base(BaseType::Integer);
+        let integer_returner = arena.comp_type_returner(integer);
+        let unreached = arena.value_unit();
+        let program = Program::new(arena, vec![Item::new(
+            ItemKey::from("it"),
+            Declaration::new(
+                ConstantIndex::from(17_usize),
+                Maybe::Absent(signature::Absent::Unsigned),
+                Maybe::Present(root),
+                OriginToken::from(0_usize),
+            ),
+        )])
+        .expect("one item ascends");
+        let encoded = encode_item(
+            program.arena(),
+            program.layout(),
+            ItemOrdinal::from(0_usize),
+        );
+        let projection = Projection {
+            arena: program.arena(),
+            layout: program.layout(),
+            sites: &encoded.sites,
+        };
+        // The specified breadth-first walk is pair, quote, thunk, thunk type,
+        // return, returner, unit value, unit type. Arena noise is not a site.
+        let value_site = Site::Node(NodeIndex::from(6_usize));
+        let computation_site = Site::Node(NodeIndex::from(4_usize));
+        let type_site = Site::Node(NodeIndex::from(7_usize));
+        let comp_type_site = Site::Node(NodeIndex::from(5_usize));
+        let unit_content = || TypeContent::from_nodes(vec![ContentNode::UnitType]);
+        let returner_content = || {
+            TypeContent::from_nodes(vec![
+                ContentNode::Returner(NodeIndex::from(1_usize)),
+                ContentNode::UnitType,
+            ])
+        };
+        let cases = [
+            (
+                super::CheckRefusal::TypeMismatch(super::Mismatch::Computation {
+                    at: returned,
+                    synthesised: returner,
+                    expected: integer_returner,
+                }),
+                Refusal::TypeMismatch {
+                    at: computation_site,
+                    synthesised: returner_content(),
+                    expected: TypeContent::from_nodes(vec![
+                        ContentNode::Returner(NodeIndex::from(1_usize)),
+                        ContentNode::Base(BaseType::Integer),
+                    ]),
+                },
+            ),
+            (
+                super::CheckRefusal::ShapeMismatch {
+                    at: super::TermNode::Computation(returned),
+                    wanted: super::ExpectedShape::Arrow,
+                    found: super::TypeNode::Computation(returner),
+                },
+                Refusal::ShapeMismatch {
+                    at: computation_site,
+                    wanted: super::ExpectedShape::Arrow,
+                    found: returner_content(),
+                },
+            ),
+            (
+                super::CheckRefusal::NotSynthesisable {
+                    form: super::CheckingForm::Lambda(returned),
+                },
+                Refusal::NotSynthesisable {
+                    form: Form::Lambda(computation_site),
+                },
+            ),
+            (
+                super::CheckRefusal::NotSynthesisable {
+                    form: super::CheckingForm::Return(returned),
+                },
+                Refusal::NotSynthesisable {
+                    form: Form::Return(computation_site),
+                },
+            ),
+            (
+                super::CheckRefusal::NotSynthesisable {
+                    form: super::CheckingForm::StaticLambda(unit),
+                },
+                Refusal::NotSynthesisable {
+                    form: Form::StaticLambda(value_site),
+                },
+            ),
+            (
+                super::CheckRefusal::UnknownConstant {
+                    at: unit,
+                    constant: ConstantIndex::from(17_usize),
+                },
+                Refusal::UnknownConstant {
+                    at: value_site,
+                    constant: Reference::Item {
+                        key: ItemKey::from("it"),
+                        occurrence: crate::boundary::Occurrence::from(0_usize),
+                    },
+                },
+            ),
+            (
+                super::CheckRefusal::OutOfFragment {
+                    at: super::CoreNode::Type(super::TypeNode::Computation(returner)),
+                    former: UnadmittedFormer::Sum,
+                },
+                Refusal::OutOfFragment {
+                    at: comp_type_site,
+                    former: UnadmittedFormer::Sum,
+                },
+            ),
+            (
+                super::CheckRefusal::DanglingNode {
+                    node: super::CoreNode::Term(super::TermNode::Value(unreached)),
+                },
+                Refusal::DanglingNode {
+                    at: Site::Unreached,
+                },
+            ),
+            (
+                super::CheckRefusal::SortMismatch {
+                    at: unit,
+                    synthesised: unit_type,
+                    expected: integer,
+                },
+                Refusal::SortMismatch {
+                    at: value_site,
+                    synthesised: unit_content(),
+                    expected: base(BaseType::Integer),
+                },
+            ),
+            (
+                super::CheckRefusal::LevelMismatch {
+                    at: unit,
+                    synthesised: integer,
+                    expected: unit_type,
+                },
+                Refusal::LevelMismatch {
+                    at: value_site,
+                    synthesised: base(BaseType::Integer),
+                    expected: unit_content(),
+                },
+            ),
+            (
+                super::CheckRefusal::DependentBind {
+                    at: returned,
+                    synthesised: returner,
+                },
+                Refusal::DependentBind {
+                    at: computation_site,
+                    synthesised: returner_content(),
+                },
+            ),
+            (
+                super::CheckRefusal::Undecided { at: unit },
+                Refusal::Undecided { at: value_site },
+            ),
+            (
+                super::CheckRefusal::FamilyArity {
+                    at: unit,
+                    expected: super::StaticArity::from(2_u32),
+                    actual: super::StaticArity::from(5_u32),
+                },
+                Refusal::FamilyArity {
+                    at: value_site,
+                    expected: super::StaticArity::from(2_u32),
+                    actual: super::StaticArity::from(5_u32),
+                },
+            ),
+            (
+                super::CheckRefusal::FamilyArgumentClassifier {
+                    at: unit,
+                    position: super::ArgumentPosition::from(3_u32),
+                    synthesised: unit_type,
+                    expected: integer,
+                },
+                Refusal::FamilyArgumentClassifier {
+                    at: value_site,
+                    position: super::ArgumentPosition::from(3_u32),
+                    synthesised: unit_content(),
+                    expected: base(BaseType::Integer),
+                },
+            ),
+            (
+                super::CheckRefusal::StaticLambdaArgument { at: unit },
+                Refusal::StaticLambdaArgument { at: value_site },
+            ),
+            (
+                super::CheckRefusal::StaticClassifierExpected {
+                    at: unit_type,
+                    found: integer,
+                },
+                Refusal::StaticClassifierExpected {
+                    at: type_site,
+                    found: base(BaseType::Integer),
+                },
+            ),
+        ];
+        for (refusal, expected) in cases {
+            assert_eq!(projection.refusal(refusal), expected);
+        }
     }
 }

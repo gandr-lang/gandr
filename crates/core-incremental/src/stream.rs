@@ -49,6 +49,22 @@ quenchant_shape::reason_enum! {
 /// branch refuted hides a match the finished program will take, and calling
 /// it satisfied claims one it may not. `Possibly` is the third answer that
 /// keeps checking from blocking on an unfinished program.
+///
+/// # Specification
+/// - requires: the producer classifies a branch against its scrutinee and the
+///   possible fillings of holes.
+/// - ensures: the three labels remain distinct when stored and published;
+///   transport does not turn uncertainty into satisfaction or refutation.
+/// - executable: none — the declaration has no call boundary and carries
+///   neither the branch nor its scrutinee; classification is the producer's
+///   obligation, not a property the stream can reconstruct.
+///
+/// # Adequacy
+/// - hypothesis: L3 — supplied satisfied, possible and refuted labels survive
+///   the liveness map and event stream in their recorded order. These witnesses
+///   establish transport only, not the truth of a producer's classification.
+/// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
+/// - witness: `stream::tests::an_origin_carries_exactly_one_liveness_entry`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum BranchStatus
 {
@@ -65,6 +81,21 @@ pub enum BranchStatus
 /// No core position appears here: a match is a fact about source the
 /// programmer wrote, and the stream never interprets the coordinates beyond
 /// identifying and ordering matches by them.
+///
+/// # Specification
+/// - requires: the producer interprets the coordinates in its source records.
+/// - ensures: origins are identified and ordered lexicographically by
+///   submission, source item and match index, not by a core item position.
+/// - executable: none — this declaration has no call boundary; comparison is
+///   derived from its ordered fields and source ownership is external.
+///
+/// # Adequacy
+/// - hypothesis: L3 — reversed insertion order separates source-item priority
+///   from match-index priority; an extreme retained origin beside an unretained
+///   submission witnesses submission order without a core-item membership test.
+///   The cases do not certify the producer's source-coordinate assignment.
+/// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
+/// - witness: `stream::tests::unretained_marks_dominate_stored_matches`
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MatchOrigin
 {
@@ -77,6 +108,24 @@ pub struct MatchOrigin
 }
 
 /// The match liveness a stream publishes, keyed by origin.
+///
+/// # Specification
+/// - requires: recorded statuses and source-retention marks come from a
+///   producer; they may name no item of a particular core resume.
+/// - ensures: one latest branch vector is held per origin, including an empty
+///   vector; a marked submission publishes one missing-source event instead of
+///   any stored matches from that submission.
+/// - executable: none — this declaration has no call boundary. Mutation and
+///   stream-construction predicates check its state and publication relations;
+///   the producer's classification and retention facts are external.
+///
+/// # Adequacy
+/// - hypothesis: L3 — replacement, a zero-branch match, idempotent marking and
+///   insertion on both sides of a retention mark separate latest-value storage
+///   from publication. Semantic classification remains a producer obligation.
+/// - witness: `stream::tests::an_origin_carries_exactly_one_liveness_entry`
+/// - witness: `stream::tests::an_empty_branch_vector_remains_a_match`
+/// - witness: `stream::tests::unretained_marks_dominate_stored_matches`
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Liveness
 {
@@ -109,9 +158,21 @@ impl Liveness
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surface is the keyed insert, separated by
-    ///   recording one origin twice and counting the stream's match events.
+    /// - hypothesis: L3 — insertion, displacement and exact latest publication
+    ///   distinguish replacement from accidental duplicate or stale entries. A
+    ///   zero-branch vector remains an entry rather than being dropped. These
+    ///   cases do not establish whether the supplied statuses are true.
     /// - witness: `stream::tests::an_origin_carries_exactly_one_liveness_entry`
+    /// - witness: `stream::tests::an_empty_branch_vector_remains_a_match`
+    #[anodized::spec(
+        captures: [before_length = self.matches.len(), previous_length = self.matches.get(&origin).map(Vec::len), incoming_length = branches.len()],
+        ensures: |ret| self.matches.get(&origin).is_some_and(|stored| stored.len() == incoming_length)
+            && before_length.checked_add(usize::from(previous_length.is_none())) == Some(self.matches.len())
+            && match ret {
+                Maybe::Present(ref displaced) => Some(displaced.len()) == previous_length,
+                Maybe::Absent(displaced::Absent::Fresh) => previous_length.is_none(),
+            }
+    )]
     #[inline]
     pub fn insert(
         &mut self,
@@ -134,9 +195,17 @@ impl Liveness
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surface is the unretained mark, separated by an
-    ///   unretained submission beside a retained one.
+    /// - hypothesis: L3 — a submission with no stored matches still publishes
+    ///   its mark; repeated marking and insertions before and after a mark
+    ///   retain one missing-source event and suppress that submission's
+    ///   matches.
     /// - witness: `stream::tests::an_unretained_submission_is_published_not_omitted`
+    /// - witness: `stream::tests::unretained_marks_dominate_stored_matches`
+    #[anodized::spec(
+        captures: [before = self.unretained.len(), present = self.unretained.contains(&submission)],
+        ensures: self.unretained.contains(&submission)
+            && before.checked_add(usize::from(!present)) == Some(self.unretained.len())
+    )]
     #[inline]
     pub fn mark_unretained(
         &mut self,
@@ -149,7 +218,16 @@ impl Liveness
     /// Whether the map publishes nothing.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: true exactly when neither a match entry nor a missing-source
+    ///   mark is held; an entry with zero branches still publishes a match.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty, match-only, mark-only and combined states
+    ///   distinguish the two independent ways liveness can be nonempty.
+    /// - witness: `stream::tests::an_empty_branch_vector_remains_a_match`
+    /// - witness: `stream::tests::an_unretained_submission_is_published_not_omitted`
+    #[anodized::spec(ensures: |ret| bool::from(ret) == (self.matches.is_empty() && self.unretained.is_empty()))]
     #[inline]
     #[must_use]
     pub fn is_empty(&self) -> LivenessEmpty
@@ -159,6 +237,23 @@ impl Liveness
 }
 
 /// One event of the synthesis stream.
+///
+/// # Specification
+/// - requires: an event is interpreted as part of its stream and against the
+///   resume or producer coordinates its payload names.
+/// - ensures: streams frame ordered item events and then ordered liveness
+///   events; a missing-source marker is not an empty set of matches.
+/// - executable: none — this declaration has no call boundary; sequence
+///   position and the source of its payload are external to an isolated event.
+///
+/// # Adequacy
+/// - hypothesis: L3 — item-prefix ordering, exact branch vectors,
+///   missing-source dominance and an empty framed stream distinguish the
+///   observable event classes. The witnesses cover generated streams, not
+///   arbitrary event lists.
+/// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
+/// - witness: `stream::tests::unretained_marks_dominate_stored_matches`
+/// - witness: `stream::tests::an_empty_stream_finishes_once_and_remains_exhausted`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SynthesisEvent
 {
@@ -200,6 +295,24 @@ pub enum SynthesisEvent
 }
 
 /// A deterministic, resumable sequence of synthesis events.
+///
+/// # Specification
+/// - requires: constructed from a validated resume and optional liveness.
+/// - ensures: its cursor begins before Started, advances once per yielded event
+///   and stays exhausted after Completed; events retain their specified source
+///   order and payload interpretation.
+/// - executable: none — this declaration has no requires/ensures call boundary;
+///   constructor and iterator predicates check framing and cursor transitions,
+///   while resume and producer provenance are external.
+///
+/// # Adequacy
+/// - hypothesis: L3 — nonempty item and liveness streams distinguish section
+///   order; the empty resume distinguishes framing from item presence and
+///   repeated terminal reads from a restarted iterator. The observed streams do
+///   not establish producer provenance or an unbounded work estimate.
+/// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
+/// - witness: `stream::tests::unretained_marks_dominate_stored_matches`
+/// - witness: `stream::tests::an_empty_stream_finishes_once_and_remains_exhausted`
 #[derive(Clone, Debug)]
 pub struct SynthesisStream
 {
@@ -218,6 +331,48 @@ impl SynthesisStream
     /// - ensures: the stream [`Self::from_resume_with_liveness`] gives with an
     ///   empty map.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — empty and two-item resumes separate framing from item
+    ///   presence. The repeated key retains distinct source occurrences, and
+    ///   three terminal reads distinguish exhaustion from a restarted iterator.
+    ///   Other item counts and typing variants remain outside these finite
+    ///   cases.
+    /// - witness: `stream::tests::an_empty_stream_finishes_once_and_remains_exhausted`
+    /// - witness: `stream::tests::a_plain_stream_addresses_each_source_item_once`
+    #[anodized::spec(ensures: |ret| {
+        let count = resume.checkpoints().items().len();
+        ret.events.len().checked_sub(2) == Some(count)
+            && ret.cursor == 0
+            && matches!(ret.events.first(), Some(&SynthesisEvent::Started { item_count }) if usize::from(item_count) == count)
+            && ret.events.last() == Some(&SynthesisEvent::Completed)
+            && ret
+                .events
+                .get(1 .. count.saturating_add(1))
+                .is_some_and(|events| {
+                    events
+                        .iter()
+                        .enumerate()
+                        .all(|(ordinal, event)| match *event {
+                            | SynthesisEvent::Item {
+                                index,
+                                handle,
+                                ref typing,
+                                adoption,
+                            } => {
+                                usize::from(index) == ordinal
+                                    && resume.handles().get(ordinal) == Some(&handle)
+                                    && resume.adoptions().get(ordinal) == Some(&adoption)
+                                    && resume
+                                        .checkpoints()
+                                        .items()
+                                        .get(ordinal)
+                                        .is_some_and(|checkpoint| checkpoint.typing() == typing)
+                            },
+                            | _ => false,
+                        })
+                })
+    })]
     #[inline]
     #[must_use]
     pub fn from_resume(resume: &Resume) -> Self
@@ -240,14 +395,98 @@ impl SynthesisStream
     ///   over the matches.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are the section order, the keying and
-    ///   the unretained events, separated by matches recorded out of order, an
-    ///   origin recorded twice, an unretained submission beside a retained one,
-    ///   and an empty map.
+    /// - hypothesis: L3 — reversed origin insertion, replacement, empty branch
+    ///   vectors, missing-source marks without matches and marks that suppress
+    ///   stored matches distinguish section order, origin order and precedence.
+    ///   An extreme source origin remains independent of core item membership.
+    ///   These finite cases do not establish an unbounded work estimate.
     /// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
     /// - witness: `stream::tests::an_origin_carries_exactly_one_liveness_entry`
     /// - witness: `stream::tests::an_unretained_submission_is_published_not_omitted`
-    /// - witness: `stream::tests::absent_liveness_leaves_the_stream_unchanged`
+    /// - witness: `stream::tests::unretained_marks_dominate_stored_matches`
+    /// - witness: `stream::tests::an_empty_branch_vector_remains_a_match`
+    #[anodized::spec(ensures: |ret| {
+        let count = resume.checkpoints().items().len();
+        let retained = liveness
+            .matches
+            .keys()
+            .filter(|origin| !liveness.unretained.contains(&origin.submission))
+            .count();
+        let tail_count = liveness.unretained.len().checked_add(retained);
+        ret.events.len().checked_sub(2) == tail_count.and_then(|tail| count.checked_add(tail))
+            && ret.cursor == 0
+            && matches!(ret.events.first(), Some(&SynthesisEvent::Started { item_count }) if usize::from(item_count) == count)
+            && ret.events.last() == Some(&SynthesisEvent::Completed)
+            && ret
+                .events
+                .get(1 .. count.saturating_add(1))
+                .is_some_and(|events| {
+                    events
+                        .iter()
+                        .enumerate()
+                        .all(|(ordinal, event)| match *event {
+                            | SynthesisEvent::Item {
+                                index,
+                                handle,
+                                ref typing,
+                                adoption,
+                            } => {
+                                usize::from(index) == ordinal
+                                    && resume.handles().get(ordinal) == Some(&handle)
+                                    && resume.adoptions().get(ordinal) == Some(&adoption)
+                                    && resume
+                                        .checkpoints()
+                                        .items()
+                                        .get(ordinal)
+                                        .is_some_and(|checkpoint| checkpoint.typing() == typing)
+                            },
+                            | _ => false,
+                        })
+                })
+            && ret
+                .events
+                .iter()
+                .skip(count.saturating_add(1))
+                .take(ret.events.len().saturating_sub(count).saturating_sub(2))
+                .all(|event| match *event {
+                    | SynthesisEvent::Match {
+                        origin,
+                        ref branches,
+                    } => {
+                        !liveness.unretained.contains(&origin.submission)
+                            && liveness.matches.get(&origin) == Some(branches)
+                    },
+                    | SynthesisEvent::SourceNotRetained { submission } => {
+                        liveness.unretained.contains(&submission)
+                    },
+                    | _ => false,
+                })
+            && ret
+                .events
+                .iter()
+                .skip(count.saturating_add(1))
+                .zip(ret.events.iter().skip(count.saturating_add(2)))
+                .all(|(left, right)| match (left, right) {
+                    | (
+                        &SynthesisEvent::Match { origin: left, .. },
+                        &SynthesisEvent::Match { origin: right, .. },
+                    ) => left < right,
+                    | (
+                        &SynthesisEvent::Match { origin, .. },
+                        &SynthesisEvent::SourceNotRetained { submission },
+                    ) => origin.submission < submission,
+                    | (
+                        &SynthesisEvent::SourceNotRetained { submission },
+                        &SynthesisEvent::Match { origin, .. },
+                    ) => submission < origin.submission,
+                    | (
+                        &SynthesisEvent::SourceNotRetained { submission: left },
+                        &SynthesisEvent::SourceNotRetained { submission: right },
+                    ) => left < right,
+                    | (_, &SynthesisEvent::Completed) => true,
+                    | _ => false,
+                })
+    })]
     #[inline]
     #[must_use]
     pub fn from_resume_with_liveness(
@@ -309,7 +548,23 @@ impl Iterator for SynthesisStream
     /// The next event, or the end of the stream.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the next stored event is yielded and the cursor advances
+    ///   once; when no event remains, None is returned and the cursor stays
+    ///   fixed, including on repeated calls after completion.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — complete nonempty streams witness ordered
+    ///   advancement; an empty resume yields Started then Completed, followed
+    ///   by three terminal reads. This finite boundary distinguishes early
+    ///   stopping and restart.
+    /// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
+    /// - witness: `stream::tests::an_empty_stream_finishes_once_and_remains_exhausted`
+    #[anodized::spec(
+        captures: [before = self.cursor],
+        ensures: |ret| ret.as_ref() == self.events.get(before)
+            && self.cursor == if ret.is_some() { before.saturating_add(1) } else { before }
+    )]
     #[inline]
     fn next(&mut self) -> Option<Self::Item>
     {
@@ -362,7 +617,21 @@ mod tests
     /// are the ones this module builds.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: two unsigned integer items with repeated keys are judged in a
+    ///   fresh program, producing aligned checkpoint, handle and adoption
+    ///   vectors and synthesised typings.
+    /// - panics: if the fixed ascending program or its order cannot be built.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the ordered and replacement liveness scenarios use
+    ///   this two-item resume and observe its item prefix before liveness
+    ///   events. This fixture does not cover refused items or resumed adoption.
+    /// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
+    /// - witness: `stream::tests::an_origin_carries_exactly_one_liveness_entry`
+    #[anodized::spec(ensures: |ret| ret.checkpoints().items().len() == 2
+        && ret.handles().len() == 2 && ret.adoptions().len() == 2
+        && ret.checkpoints().items().iter().all(|checkpoint| matches!(*checkpoint.typing(), crate::typing::Typing::Synthesised { .. })))]
     fn two_item_resume() -> Resume
     {
         let mut arena = CoreArena::new();
@@ -407,7 +676,22 @@ mod tests
     /// The origins of the stream's match events, in order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: exactly the match-event origins are returned in their input
+    ///   order; framing, item and missing-source events contribute nothing.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — ordered streams with multiple origins, replacement
+    ///   and a missing-source marker distinguish filtering from source-item
+    ///   indexing. The witnessed inputs are constructed streams, not arbitrary
+    ///   permutations.
+    /// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
+    /// - witness: `stream::tests::an_origin_carries_exactly_one_liveness_entry`
+    /// - witness: `stream::tests::an_unretained_submission_is_published_not_omitted`
+    #[anodized::spec(ensures: |ret| ret.iter().copied().eq(events.iter().filter_map(|event| match *event {
+        SynthesisEvent::Match { origin, .. } => Some(origin),
+        _ => None,
+    })))]
     fn match_origins(events: &[SynthesisEvent]) -> Vec<MatchOrigin>
     {
         events
@@ -491,6 +775,13 @@ mod tests
             [at],
             "the stream carries one event for the origin"
         );
+        assert!(
+            events.contains(&SynthesisEvent::Match {
+                origin: at,
+                branches: vec![BranchStatus::Refuted],
+            }),
+            "the latest vector replaces the displaced value"
+        );
     }
 
     #[test]
@@ -498,10 +789,18 @@ mod tests
     {
         let mut liveness = Liveness::new();
         liveness.mark_unretained(SubmissionOrdinal::from(0_usize));
+        assert!(
+            !bool::from(liveness.is_empty()),
+            "a mark alone publishes liveness"
+        );
         let _displaced = liveness
             .insert(origin(Coordinate(1), Coordinate(0), Coordinate(0)), vec![
                 BranchStatus::Possibly,
             ]);
+        assert!(
+            !bool::from(liveness.is_empty()),
+            "marks and matches both count"
+        );
         let events: Vec<SynthesisEvent> =
             SynthesisStream::from_resume_with_liveness(&two_item_resume(), &liveness).collect();
         assert!(
@@ -518,23 +817,112 @@ mod tests
     }
 
     #[test]
-    fn absent_liveness_leaves_the_stream_unchanged()
+    fn an_empty_stream_finishes_once_and_remains_exhausted()
+    {
+        let mut program = Program::new(CoreArena::new(), Vec::new()).expect("empty program");
+        let resume = check_program(&mut program, CheckBudget::DEFAULT).expect("empty order");
+        let mut stream = SynthesisStream::from_resume(&resume);
+        assert_eq!(
+            stream.next(),
+            Some(SynthesisEvent::Started {
+                item_count: crate::boundary::ItemCount::from(0_usize)
+            })
+        );
+        assert_eq!(stream.next(), Some(SynthesisEvent::Completed));
+        for _ in 0_usize .. 3_usize {
+            assert_eq!(stream.next(), None);
+        }
+    }
+
+    #[test]
+    fn a_plain_stream_addresses_each_source_item_once()
     {
         let resume = two_item_resume();
-        let plain: Vec<SynthesisEvent> = SynthesisStream::from_resume(&resume).collect();
-        let empty: Vec<SynthesisEvent> =
-            SynthesisStream::from_resume_with_liveness(&resume, &Liveness::new()).collect();
-        assert_eq!(plain, empty, "no liveness, no extra events");
-        assert!(
-            bool::from(Liveness::new().is_empty()),
-            "the empty map says so of itself"
+        let mut stream = SynthesisStream::from_resume(&resume);
+        assert_eq!(
+            stream.next(),
+            Some(SynthesisEvent::Started {
+                item_count: crate::boundary::ItemCount::from(2_usize)
+            })
         );
-        assert!(
-            !plain.iter().any(|event| matches!(
-                *event,
-                SynthesisEvent::Match { .. } | SynthesisEvent::SourceNotRetained { .. }
-            )),
-            "nothing liveness-shaped appears"
+        for ordinal in 0_usize .. 2 {
+            let Some(SynthesisEvent::Item { index, handle, .. }) = stream.next()
+            else {
+                panic!("each source item has an event");
+            };
+            assert_eq!(usize::from(index), ordinal);
+            assert!(
+                matches!(resume.reference(handle), Maybe::Present(&crate::region::Reference::Item { occurrence, .. }) if usize::from(occurrence) == ordinal)
+            );
+        }
+        assert_eq!(stream.next(), Some(SynthesisEvent::Completed));
+        assert_eq!(stream.next(), None);
+    }
+
+    #[test]
+    fn an_empty_branch_vector_remains_a_match()
+    {
+        let mut liveness = Liveness::new();
+        assert!(bool::from(liveness.is_empty()));
+        let at = origin(
+            Coordinate(9),
+            Coordinate(usize::MAX),
+            Coordinate(usize::MAX),
         );
+        assert_eq!(
+            liveness.insert(at, Vec::new()),
+            Maybe::Absent(super::displaced::Absent::Fresh)
+        );
+        assert!(!bool::from(liveness.is_empty()));
+        let events: Vec<SynthesisEvent> =
+            SynthesisStream::from_resume_with_liveness(&two_item_resume(), &liveness).collect();
+        assert_eq!(match_origins(&events), [at]);
+        assert!(events.contains(&SynthesisEvent::Match {
+            origin: at,
+            branches: Vec::new()
+        }));
+    }
+
+    #[test]
+    fn unretained_marks_dominate_stored_matches()
+    {
+        let mut liveness = Liveness::new();
+        let hidden = origin(Coordinate(0), Coordinate(0), Coordinate(0));
+        let retained = origin(
+            Coordinate(1),
+            Coordinate(usize::MAX),
+            Coordinate(usize::MAX),
+        );
+        assert_eq!(
+            liveness.insert(hidden, vec![BranchStatus::Satisfied]),
+            Maybe::Absent(super::displaced::Absent::Fresh)
+        );
+        liveness.mark_unretained(SubmissionOrdinal::from(0_usize));
+        liveness.mark_unretained(SubmissionOrdinal::from(0_usize));
+        let Maybe::Present(displaced) = liveness.insert(hidden, vec![BranchStatus::Possibly])
+        else {
+            panic!("marking does not erase the stored vector");
+        };
+        assert_eq!(displaced.as_slice(), [BranchStatus::Satisfied]);
+        assert_eq!(
+            liveness.insert(retained, vec![BranchStatus::Refuted]),
+            Maybe::Absent(super::displaced::Absent::Fresh)
+        );
+        let mut tail =
+            SynthesisStream::from_resume_with_liveness(&two_item_resume(), &liveness).skip(3);
+        assert_eq!(
+            tail.next(),
+            Some(SynthesisEvent::SourceNotRetained {
+                submission: SubmissionOrdinal::from(0_usize)
+            })
+        );
+        let Some(SynthesisEvent::Match { origin, branches }) = tail.next()
+        else {
+            panic!("the retained source match follows the missing-source event");
+        };
+        assert_eq!(origin, retained);
+        assert_eq!(branches.as_slice(), [BranchStatus::Refuted]);
+        assert_eq!(tail.next(), Some(SynthesisEvent::Completed));
+        assert_eq!(tail.next(), None);
     }
 }

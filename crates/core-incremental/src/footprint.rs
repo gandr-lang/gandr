@@ -26,6 +26,21 @@ use crate::content::Sort;
 use crate::region::Reference;
 
 /// Whether an item's body is a hole.
+///
+/// # Specification
+/// - requires: interpreted with an item's body-presence field.
+/// - ensures: a missing body is a hole, including when its signature is
+///   present; a present root remains filled even when the root does not
+///   resolve.
+/// - panics: none.
+/// - executable: none — the body-presence field is external to this tag.
+///
+/// # Adequacy
+/// - hypothesis: L3 — absent and present bodies plus an unresolved root
+///   distinguish confusion between body presence, signature presence and node
+///   resolution through exact hole marks.
+/// - witness: `footprint::tests::hole_sets_has_hole`
+/// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HoleMark
 {
@@ -36,6 +51,28 @@ pub enum HoleMark
 }
 
 /// What an item's terms mention, conservatively.
+///
+/// # Specification
+/// - requires: a computed footprint is interpreted against its source content.
+/// - ensures: the scanner's type reads are a subset of its reads, with opacity
+///   and body-presence marks matching that content.
+/// - provides: inspectable read sets; a stored footprint is not evidence for
+///   adopting a checkpoint.
+/// - panics: none.
+/// - executable: none — the source content and the provenance of stored
+///   metadata are external; the scanner checks its own return boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — bound and free variables, shared type/term nodes,
+///   unreachable nodes and body-presence boundaries distinguish incorrect sets
+///   and marks by exact values. A corrupted stored footprint is separately
+///   shown not to control adoption. Reassembled metadata is not certified by
+///   the data declaration.
+/// - witness: `footprint::tests::shadowed_binder_is_not_a_read`
+/// - witness: `footprint::tests::free_occurrence_under_binders_is_read`
+/// - witness: `footprint::tests::a_term_visit_does_not_suppress_a_later_type_visit`
+/// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
+/// - witness: `tests::incremental::a_stored_footprint_is_not_an_adoption_input`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Footprint
 {
@@ -116,6 +153,21 @@ impl Footprint
 }
 
 /// Where a node is reached: among terms, or inside a type.
+///
+/// # Specification
+/// - requires: interpreted with the root and former path reaching a node.
+/// - ensures: signature and type-former paths retain their type-position mark
+///   independently of term-only paths to the same node.
+/// - panics: none.
+/// - executable: none — path ancestry is external to the carried tag.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a shared node reached first from the body and then from a
+///   signature distinguishes a single visited bit from independent position
+///   marks through exact type-read membership; a term-only reference in the
+///   mixed fixture must remain outside type reads.
+/// - witness: `footprint::tests::a_term_visit_does_not_suppress_a_later_type_visit`
+/// - witness: `footprint::tests::type_support_holds_only_type_positions`
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Position
 {
@@ -130,26 +182,38 @@ enum Position
 /// # Specification
 /// - requires: nothing.
 /// - ensures: the reads are the references of every node reachable from either
-///   root; the type reads are those of every node reachable through the
-///   signature or through a type former; the item is opaque exactly when its
-///   table holds an unresolved node; the hole mark is set exactly when the body
-///   is a hole.
+///   root; type reads include the references carried by a type former itself
+///   and by nodes reachable through the signature or a type former. The item is
+///   opaque exactly when its table holds an unresolved node; the hole mark is
+///   set exactly when the body is a hole.
 /// - provides: the read relation the value-changed closure runs over.
 /// - panics: none.
 /// - intension: visits each node at most once per position, so the scan is
 ///   linear in the table whatever its sharing.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surfaces are the reach of the walk, the position a
-///   node is reached in, the opacity and the hole mark, separated by a bound
-///   variable that is no read, a constant under binders that is one, a hole, a
-///   constant read from a signature, and a constant reached from the body and
-///   from the signature at once.
+/// - hypothesis: L3 — bound variables, free references under binders,
+///   signatures and term-first shared nodes distinguish false reads and lost
+///   type-position visits by exact sets. Three bounded tables separate a
+///   reachable cycle, unreachable references and unresolved nodes, absent roots
+///   and an out-of-range present root through exact sets and marks. These
+///   finite observations do not establish an unbounded work bound. A quoted
+///   abstract type separates promoting its own read from promoting children
+///   alone.
 /// - witness: `footprint::tests::shadowed_binder_is_not_a_read`
 /// - witness: `footprint::tests::free_occurrence_under_binders_is_read`
 /// - witness: `footprint::tests::hole_sets_has_hole`
 /// - witness: `footprint::tests::ascription_names_are_reads`
 /// - witness: `footprint::tests::type_support_holds_only_type_positions`
+/// - witness: `footprint::tests::a_term_visit_does_not_suppress_a_later_type_visit`
+/// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
+/// - witness: `footprint::tests::a_quoted_abstract_type_reads_its_own_reference_in_type_position`
+#[anodized::spec(ensures: |ret| ret.type_reads.is_subset(&ret.reads)
+    && ret.opacity == content.opacity()
+    && ret.hole == match content.body() {
+        Maybe::Absent(body::Absent::Hole) => HoleMark::Hole,
+        Maybe::Present(_) => HoleMark::Filled,
+    })]
 #[inline]
 #[must_use]
 pub fn footprint_of(content: &ItemContent) -> Footprint
@@ -172,6 +236,10 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
         else {
             continue;
         };
+        let position = match node.sort() {
+            | Sort::ValueType | Sort::CompType => Position::Type,
+            | Sort::Value | Sort::Computation => position,
+        };
         let mark = match position {
             | Position::Term => marks.first_mut(),
             | Position::Type => marks.last_mut(),
@@ -186,11 +254,7 @@ pub fn footprint_of(content: &ItemContent) -> Footprint
                 let _fresh = type_reads.insert(reference.clone());
             }
         }
-        let inner = match node.sort() {
-            | Sort::ValueType | Sort::CompType => Position::Type,
-            | Sort::Value | Sort::Computation => position,
-        };
-        queue.extend(node.children().iter().map(|(child, _)| (child, inner)));
+        queue.extend(node.children().iter().map(|(child, _)| (child, position)));
     }
     Footprint {
         reads,
@@ -247,12 +311,32 @@ mod tests
         }
     }
 
-    /// The footprint of the last item of a program whose earlier items are
-    /// holes named `a`, `b`, … at positions 0, 1, …, and whose last item has
-    /// `signature` and `body`.
+    /// The footprint of an appended item with `signature` and `body`, after
+    /// holes under the keys of `earlier` in their given order.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the supplied signature, body and their descendants resolve
+    ///   in `arena`; the fixture is finite.
+    /// - ensures: returns the appended item's transparent footprint, preserving
+    ///   the supplied body-presence mark and type-read inclusion.
+    /// - panics: when the fixture is refused as out of order or has an
+    ///   unresolved arena node.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — holes and filled bodies, bound and free variables and
+    ///   shared type/term references distinguish encoding the wrong item or
+    ///   losing its body/position information through exact marks and read
+    ///   sets.
+    /// - witness: `footprint::tests::hole_sets_has_hole`
+    /// - witness: `footprint::tests::shadowed_binder_is_not_a_read`
+    /// - witness: `footprint::tests::free_occurrence_under_binders_is_read`
+    /// - witness: `footprint::tests::a_term_visit_does_not_suppress_a_later_type_visit`
+    #[anodized::spec(ensures: |ret| ret.opacity == Opacity::Transparent
+        && ret.type_reads.is_subset(&ret.reads)
+        && ret.hole == match body {
+            Maybe::Absent(body::Absent::Hole) => HoleMark::Hole,
+            Maybe::Present(_) => HoleMark::Filled,
+        })]
     fn last_footprint(
         arena: CoreArena,
         earlier: &[ItemKey],
@@ -422,6 +506,99 @@ mod tests
             footprint.type_reads,
             BTreeSet::from([named(a_key)]),
             "only the signature's mention is type support, though the body shares its node"
+        );
+    }
+
+    #[test]
+    fn a_term_visit_does_not_suppress_a_later_type_visit()
+    {
+        let mut arena = CoreArena::new();
+        let a = arena.value_constant(ConstantIndex::from(0_usize));
+        let element = arena.value_type_element(a, Level::zero());
+        let key = ItemKey::from("a");
+        let footprint = last_footprint(
+            arena,
+            core::slice::from_ref(&key),
+            Maybe::Present(element),
+            Maybe::Present(a),
+        );
+        assert_eq!(footprint.reads, BTreeSet::from([named(&key)]));
+        assert_eq!(footprint.type_reads, BTreeSet::from([named(&key)]));
+    }
+
+    #[test]
+    fn a_quoted_abstract_type_reads_its_own_reference_in_type_position()
+    {
+        let mut arena = CoreArena::new();
+        let abstract_type = arena.value_type_abstract(ConstantIndex::from(0_usize));
+        let quoted = arena.value_quote(abstract_type);
+        let key = ItemKey::from("a");
+        let footprint = last_footprint(
+            arena,
+            core::slice::from_ref(&key),
+            Maybe::Absent(signature::Absent::Unsigned),
+            Maybe::Present(quoted),
+        );
+        assert_eq!(footprint.reads, BTreeSet::from([named(&key)]));
+        assert_eq!(footprint.type_reads, BTreeSet::from([named(&key)]));
+    }
+
+    #[test]
+    fn bounded_tables_separate_reachability_opacity_and_holes()
+    {
+        let key = ItemKey::from("reachable");
+        let cyclic = super::ItemContent::from_parts(
+            Reference::Unoccupied,
+            Maybe::Absent(signature::Absent::Unsigned),
+            Maybe::Present(crate::boundary::NodeIndex::from(0_usize)),
+            vec![
+                crate::content::ContentNode::Pair(
+                    crate::boundary::NodeIndex::from(0_usize),
+                    crate::boundary::NodeIndex::from(1_usize),
+                ),
+                crate::content::ContentNode::Constant(named(&key)),
+                crate::content::ContentNode::Constant(named(&ItemKey::from("unreachable"))),
+                crate::content::ContentNode::Unresolved(super::Sort::Value),
+            ],
+        );
+        let footprint = footprint_of(&cyclic);
+        assert_eq!(footprint.reads, BTreeSet::from([named(&key)]));
+        assert_eq!(footprint.type_reads, BTreeSet::new());
+        assert_eq!(
+            (footprint.opacity, footprint.hole),
+            (Opacity::Opaque, HoleMark::Filled)
+        );
+
+        let dangling = super::ItemContent::from_parts(
+            Reference::Unoccupied,
+            Maybe::Present(crate::boundary::NodeIndex::from(usize::MAX)),
+            Maybe::Present(crate::boundary::NodeIndex::from(usize::MAX)),
+            vec![crate::content::ContentNode::Unresolved(super::Sort::Value)],
+        );
+        let footprint = footprint_of(&dangling);
+        assert_eq!(
+            (footprint.reads, footprint.type_reads),
+            (BTreeSet::new(), BTreeSet::new())
+        );
+        assert_eq!(
+            (footprint.opacity, footprint.hole),
+            (Opacity::Opaque, HoleMark::Filled)
+        );
+
+        let empty = super::ItemContent::from_parts(
+            Reference::Unoccupied,
+            Maybe::Absent(signature::Absent::Unsigned),
+            Maybe::Absent(body::Absent::Hole),
+            vec![],
+        );
+        let footprint = footprint_of(&empty);
+        assert_eq!(
+            (footprint.reads, footprint.type_reads),
+            (BTreeSet::new(), BTreeSet::new())
+        );
+        assert_eq!(
+            (footprint.opacity, footprint.hole),
+            (Opacity::Transparent, HoleMark::Hole)
         );
     }
 }
