@@ -26,9 +26,15 @@ use gandr_storage_values::TokenSink;
 use gandr_storage_values::ValueError;
 use gandr_storage_values::ValueProfile;
 use proptest::prelude::Just;
+#[cfg(test)]
+use proptest::prelude::ProptestConfig;
 use proptest::prelude::Strategy;
 use proptest::prelude::any;
+#[cfg(test)]
+use proptest::prop_assert_eq;
 use proptest::prop_oneof;
+#[cfg(test)]
+use proptest::proptest;
 use proptest::sample::Index;
 
 /// The most records a generated value holds: a step whose node would pass it
@@ -121,6 +127,19 @@ impl Shape
     /// - fails: `ValueError::UnexpectedConstructor` at the reader's position
     ///   for a tag no shape carries.
     /// - panics: none.
+    ///
+    /// # Errors
+    /// An unknown tag, retaining its value and the reader's current position.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 literal encodings cover all seven shapes; tags just
+    ///   outside the assigned range are refused at the consumed open record.
+    /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    #[anodized::spec(ensures: |ret| match ret {
+        Ok(shape) => shape.tag() == tag,
+        Err(error) => !Self::ALL.iter().any(|shape| shape.tag() == tag)
+            && error == ValueError::UnexpectedConstructor { found: tag, position: reader.position() },
+    })]
     fn of_tag(
         tag: ConstructorTag,
         reader: &TokenReader<'_>,
@@ -161,6 +180,22 @@ enum Next
 }
 
 /// What an open constructor's decoder has yet to read.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: fixed fields are a suffix of a supported constructor schema;
+///   counted children are pending only after its fixed fields are exhausted.
+/// - provides: the decoder's admissible pending-field states.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 fixed fields, a zero-child list, counted children at the
+///   integer width and forged mixed/unknown field states separate transitions.
+/// - witness: `tests::generate::generated_refinements_reject_impossible_states`
+#[anodized::spec(maintains: self.fields.is_empty()
+    || (self.children == 0_u64 && Shape::ALL.iter().any(|shape|
+        shape.fields().ends_with(self.fields))))]
 #[derive(Clone, Copy, Debug)]
 struct Owed
 {
@@ -188,7 +223,30 @@ impl Owed
     /// then the close.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: this is an admissible pending-field state.
+    /// - ensures: consumes one fixed field before counted children; otherwise
+    ///   consumes one child, or returns close without changing an exhausted
+    ///   state.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 observes ordered fixed fields, zero and two children,
+    ///   repeated exhaustion and the maximum child count without wrapping.
+    /// - witness: `tests::generate::generated_refinements_reject_impossible_states`
+    #[anodized::spec(requires: anodized::types::Spec::predicate(self),
+        captures: [fields = self.fields, children = self.children],
+        ensures: |ret| anodized::types::Spec::predicate(self)
+            && match fields.split_first() {
+                Some((&field, rest)) => ret == Next::Field(field)
+                    && core::ptr::eq(core::ptr::from_ref(self.fields), core::ptr::from_ref(rest)) && self.children == children,
+                None => self.fields.is_empty() && if children == 0_u64 {
+                    ret == Next::Close && self.children == 0_u64
+                } else {
+                    ret == Next::Field(Field::Child)
+                        && self.children.checked_add(1_u64) == Some(children)
+                },
+            })]
     fn take(&mut self) -> Next
     {
         if let Some((&field, rest)) = self.fields.split_first() {
@@ -231,6 +289,22 @@ pub enum Item
 pub struct ItemIndex(pub usize);
 
 /// A constructor carrying a payload and no children, and where it sits.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the payload follows enough records to contain its leaf open and
+///   every enclosing constructor; its exact location needs its tree.
+/// - provides: a necessary bound on a leaf's index/depth evidence.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 distinct root-child and nested leaves have exact indices
+///   and depths; a zero index and depth reaching the payload index are refused.
+/// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+/// - witness: `tests::generate::generated_refinements_reject_impossible_states`
+#[anodized::spec(maintains: usize::try_from(u64::from(self.depth))
+    .is_ok_and(|depth| depth < self.payload.0))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Leaf
 {
@@ -241,6 +315,61 @@ pub struct Leaf
 }
 
 /// A generated value: a constructor tree held as its preorder records.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: records form exactly one complete value of the seven-shape codec,
+///   respecting fixed fields, counted children and all closes.
+/// - provides: structural admission independent of a particular wire image.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 all seven shapes have literal wire evidence; malformed
+///   roots, field kinds and child counts are rejected. The generator's 4096
+///   record bound belongs to its producer, not to this codec's value type.
+/// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+/// - witness: `tests::generate::generated_refinements_reject_impossible_states`
+#[anodized::spec(maintains: {
+    let mut open: Vec<Owed> = Vec::new();
+    let mut next = Next::Field(Field::Child);
+    let mut complete = false;
+    let mut valid = true;
+    for item in &self.0 {
+        if complete {
+            valid = false;
+            break;
+        }
+        let matched = match (next, item) {
+            (Next::Field(Field::Child), &Item::Open(shape)) => {
+                open.push(Owed::new(shape));
+                true
+            },
+            (Next::Field(Field::Word), &Item::Word(_))
+                | (Next::Field(Field::Bytes), &Item::Bytes(_)) => true,
+            (Next::Field(Field::Count), &Item::Word(count)) => {
+                if let Some(owed) = open.last_mut() {
+                    owed.children = u64::from(count);
+                    true
+                } else {
+                    false
+                }
+            },
+            (Next::Close, &Item::Close) => open.pop().is_some(),
+            _ => false,
+        };
+        if !matched {
+            valid = false;
+            break;
+        }
+        if let Some(owed) = open.last_mut() {
+            next = owed.take();
+        } else {
+            complete = true;
+        }
+    }
+    valid && complete
+})]
 #[repr(transparent)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Tree(pub Vec<Item>);
@@ -250,7 +379,20 @@ impl Tree
     /// Lists every constructor's open record, in preorder.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: exactly the indices carrying open records, strictly
+    ///   increasing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 a literal heterogeneous tree separates record indices
+    ///   from constructor ordinals and payload byte offsets.
+    /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    #[anodized::spec(ensures: |ret| ret.len()
+        == self.0.iter().filter(|item| matches!(item, Item::Open(_))).count()
+        && ret.iter().all(|index| matches!(self.0.get(index.0), Some(Item::Open(_))))
+        && ret.windows(2).all(|pair| pair.first() < pair.get(1)))]
     pub fn opens(&self) -> Vec<ItemIndex>
     {
         self.0
@@ -265,7 +407,22 @@ impl Tree
     /// event's run.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the records are a complete codec value.
+    /// - ensures: exactly the close-record indices except the root's final
+    ///   close, strictly increasing.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 nested and empty constructors retain all inner exits
+    ///   without treating the root's close as a boundary event.
+    /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    #[anodized::spec(requires: anodized::types::Spec::predicate(self),
+        ensures: |ret| ret.len() == self.0.iter().filter(|item|
+            matches!(item, Item::Close)).count().saturating_sub(1_usize)
+            && ret.iter().all(|index| self.0.get(index.0) == Some(&Item::Close)
+                && index.0 < self.0.len().saturating_sub(1_usize))
+            && ret.windows(2).all(|pair| pair.first() < pair.get(1)))]
     pub fn inner_closes(&self) -> Vec<ItemIndex>
     {
         let last = self.0.len().saturating_sub(1_usize);
@@ -284,7 +441,17 @@ impl Tree
     /// - ensures: the records from `open` through the close that matches it.
     /// - provides: a value that is a subtree of this one, for a store to hold
     ///   before this one is committed.
+    /// - fails: never within the admitted domain.
     /// - panics: when `open` is not an open record of this value.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 an interior tagged value retains its word and nested
+    ///   word leaf while excluding the following sibling and outer close.
+    /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    #[anodized::spec(requires: anodized::types::Spec::predicate(self)
+        && matches!(self.0.get(open.0), Some(Item::Open(_))),
+        ensures: |ret| anodized::types::Spec::predicate(&ret)
+            && self.0.get(open.0 ..).is_some_and(|suffix| suffix.starts_with(&ret.0)))]
     pub fn subtree(
         &self,
         open: ItemIndex,
@@ -311,7 +478,35 @@ impl Tree
     /// Lists every word and byte-string leaf with its depth, in preorder.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the records are a complete codec value.
+    /// - ensures: lists every word/bytes leaf's payload index and enclosing
+    ///   depth in preorder; tagged words, counts and interleaved bytes are not
+    ///   leaves.
+    /// - fails: never.
+    /// - panics: none within the admitted domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 heterogeneous siblings and a nested word leaf have
+    ///   exact indices and depths; nonleaf payload fields must be excluded.
+    /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    #[anodized::spec(requires: anodized::types::Spec::predicate(self),
+        ensures: |ret| {
+            let mut depth = 0_u64;
+            ret.iter().copied().eq(self.0.iter().enumerate().filter_map(|(index, item)| {
+                match *item {
+                    Item::Open(shape) => {
+                        let enclosing = depth;
+                        depth = depth.saturating_add(1_u64);
+                        matches!(shape, Shape::Word | Shape::Bytes).then(|| Leaf {
+                            payload: ItemIndex(index.saturating_add(1_usize)),
+                            depth: EditDepth::from(enclosing),
+                        })
+                    },
+                    Item::Close => { depth = depth.saturating_sub(1_u64); None },
+                    Item::Word(_) | Item::Bytes(_) => None,
+                }
+            }))
+        })]
     pub fn leaves(&self) -> Vec<Leaf>
     {
         let mut leaves = Vec::new();
@@ -346,7 +541,36 @@ impl Tree
     /// - requires: `leaf` is one of [`Tree::leaves`].
     /// - ensures: the value differs from before in that payload alone.
     /// - provides: the edit every locality observation is made over.
+    /// - fails: never within the admitted domain.
     /// - panics: when `leaf` names no payload of this value.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 distinct word, binary and empty-byte leaves pin the
+    ///   replacement and every untouched record, including a binary tail.
+    /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    #[anodized::spec(requires: anodized::types::Spec::predicate(self)
+        && leaf.payload.0 > 0_usize
+        && matches!(self.0.get(leaf.payload.0.saturating_sub(1_usize)),
+            Some(Item::Open(Shape::Word | Shape::Bytes)))
+        && u64::from(leaf.depth) == self.0.iter()
+            .take(leaf.payload.0.saturating_sub(1_usize)).fold(0_u64, |depth, item| match *item {
+                Item::Open(_) => depth.saturating_add(1_u64),
+                Item::Close => depth.saturating_sub(1_u64),
+                Item::Word(_) | Item::Bytes(_) => depth,
+            }),
+        captures: [count = self.0.len(), before = match self.0.get(leaf.payload.0) {
+            Some(&Item::Word(word)) => (Some(word), None),
+            Some(&Item::Bytes(Payload(ref bytes))) => (None, Some((bytes.len(), bytes.first().copied()))),
+            _ => (None, None),
+        }],
+        ensures: |ret| self.0.len() == count && anodized::types::Spec::predicate(self)
+            && match (before, self.0.get(leaf.payload.0)) {
+                ((Some(word), None), Some(&Item::Word(now))) => u64::from(now) == !u64::from(word),
+                ((None, Some((length, first))), Some(&Item::Bytes(Payload(ref bytes)))) =>
+                    bytes.len() == length.max(1_usize)
+                        && bytes.first().copied() == Some(first.map_or(0_u8, |byte| !byte)),
+                _ => false,
+            })]
     pub fn edit(
         &mut self,
         leaf: Leaf,
@@ -368,7 +592,22 @@ impl CanonicalValue for Tree
     /// Replays the records.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the records are a complete value of this codec.
+    /// - ensures: sends each typed record to the corresponding sink operation
+    ///   in order, stopping at the first refusal.
+    /// - fails: propagates the first sink error without rollback.
+    /// - panics: propagates a sink panic.
+    ///
+    /// # Errors
+    /// The first sink refusal.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 literal bytes cover all shapes, binary and empty
+    ///   payloads, fixed fields and counted children; L2 generated round trips
+    ///   are bounded by 4096 records, with repeated and deeply nested subtrees.
+    /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    /// - witness: `tests::laws::every_generated_value_round_trips_flat`
+    #[anodized::spec(requires: anodized::types::Spec::predicate(self))]
     fn emit_tokens<Sink>(
         &self,
         sink: &mut Sink,
@@ -391,7 +630,22 @@ impl CanonicalValue for Tree
     /// Reads one value, each constructor's fields by its tag.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: malformed input is admitted for refusal.
+    /// - ensures: returns exactly one complete value under this codec's field
+    ///   grammar and advances the reader, copying byte payloads into the value.
+    /// - fails: propagates reader errors or names an unknown constructor tag.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// Reader refusals and unknown constructor tags at their consumed position.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 all seven shapes have literal byte evidence; unknown
+    ///   tags and missing counted children are refused by kind and position.
+    /// - witness: `tests::generate::generated_codec_preserves_schema_and_leaf_edits`
+    #[anodized::spec(captures: spent = reader.spent(), ensures: |ret| ret.is_err()
+        || ret.as_ref().is_ok_and(|value| anodized::types::Spec::predicate(value)
+            && reader.spent() > spent))]
     fn decode_tokens(reader: &mut TokenReader<'_>) -> Result<Self, ValueError>
     {
         let mut items = Vec::new();
@@ -459,6 +713,42 @@ pub enum Slot
 struct RecordCount(u64);
 
 /// One built node.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the slots follow the shape's fixed/counting grammar and the
+///   cached record count includes an open and close. Child identities and the
+///   exact cache value require the owning arena.
+/// - provides: local structural admission for an arena node.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 repeated children, counted fans and mixed fields have exact
+///   flattenings; malformed field and count claims are rejected.
+/// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+/// - witness: `tests::generate::arena_refinements_reject_stale_metadata`
+#[anodized::spec(maintains: self.records.0 >= 2_u64 && {
+    let mut owed = Owed::new(self.shape);
+    let mut valid = true;
+    for slot in &self.slots {
+        let matched = match (owed.take(), slot) {
+            (Next::Field(Field::Child), &Slot::Child(_))
+                | (Next::Field(Field::Word), &Slot::Word(_))
+                | (Next::Field(Field::Bytes), &Slot::Bytes(_)) => true,
+            (Next::Field(Field::Count), &Slot::Word(count)) => {
+                owed.children = u64::from(count);
+                true
+            },
+            _ => false,
+        };
+        if !matched {
+            valid = false;
+            break;
+        }
+    }
+    valid && owed.take() == Next::Close
+})]
 #[derive(Clone, Debug)]
 struct Node
 {
@@ -466,7 +756,7 @@ struct Node
     shape: Shape,
     /// The node's fields, in the order its decoder reads them.
     slots: Vec<Slot>,
-    /// The records the node's tree flattens to.
+    /// The expanded record count, saturated at the counter's width.
     records: RecordCount,
     /// Whether a later node nests this one.
     nested: Nested,
@@ -488,6 +778,35 @@ enum Task
 }
 
 /// Constructor trees built bottom-up, every child naming an earlier node.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: each node has the declared slot grammar; child references point
+///   strictly backward, caches are saturated expanded counts, and a node is
+///   marked nested exactly when a later node references it.
+/// - provides: acyclic construction and faithful frontier/cache metadata.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 repeated references count twice when flattened but mark one
+///   existing node; forged forward edges, stale counts and wrong markers fail
+///   independently. No bounded-value restriction is imposed on the arena.
+/// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+/// - witness: `tests::generate::arena_refinements_reject_stale_metadata`
+#[anodized::spec(maintains: self.0.iter().enumerate().all(|(index, node)|
+    anodized::types::Spec::predicate(node)
+        && node.slots.iter().all(|slot| match *slot {
+            Slot::Child(child) => child.0 < index,
+            Slot::Word(_) | Slot::Bytes(_) => true,
+        })
+        && node.slots.iter().try_fold(2_u64, |total, slot| Some(total.saturating_add(match *slot {
+            Slot::Child(child) => self.0.get(child.0)?.records.0,
+            Slot::Word(_) | Slot::Bytes(_) => 1_u64,
+        }))) == Some(node.records.0)
+        && node.nested.0 == self.0.iter().skip(index.saturating_add(1_usize))
+            .any(|later| later.slots.iter().any(|slot|
+                matches!(*slot, Slot::Child(child) if child.0 == index)))))]
 #[repr(transparent)]
 #[derive(Clone, Debug, Default)]
 pub struct Arena(Vec<Node>);
@@ -497,7 +816,24 @@ impl Arena
     /// Counts the records a node with these fields flattens to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: every child index names a node of this arena.
+    /// - ensures: two envelope records plus one per payload field and each
+    ///   child's cached expanded count, saturated at `u64::MAX`.
+    /// - fails: never.
+    /// - panics: on an out-of-range child index.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 repeated children retain logical multiplicity; a
+    ///   compact doubling DAG reaches the counter width without flattening.
+    /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+    #[anodized::spec(requires: slots.iter().all(|slot| match *slot {
+        Slot::Child(child) => child.0 < self.0.len(),
+        Slot::Word(_) | Slot::Bytes(_) => true,
+    }), ensures: |ret| slots.iter().try_fold(2_u128, |total, slot|
+        Some(total.saturating_add(match *slot {
+            Slot::Child(child) => u128::from(self.0.get(child.0)?.records.0),
+            Slot::Word(_) | Slot::Bytes(_) => 1_u128,
+        }))).is_some_and(|total| u128::from(ret.0) == total.min(u128::from(u64::MAX))))]
     fn records(
         &self,
         slots: &[Slot],
@@ -518,7 +854,27 @@ impl Arena
     ///   node of this arena; a fan's count word equals its children.
     /// - ensures: the new node's id; each child is marked nested.
     /// - provides: the one way a node enters an arena.
+    /// - fails: never within the admitted domain.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 mixed fields and repeated child handles preserve their
+    ///   exact flattening; only referenced children leave the frontier.
+    /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+    #[anodized::spec(requires: slots.iter().all(|slot| match *slot {
+        Slot::Child(child) => child.0 < self.0.len(),
+        Slot::Word(_) | Slot::Bytes(_) => true,
+    }), captures: [entry = self.0.len(), width = slots.len()],
+        ensures: |ret| ret.0 == entry && self.0.len().checked_sub(entry) == Some(1_usize)
+            && self.0.get(ret.0).is_some_and(|node| node.shape == shape
+                && node.slots.len() == width && node.nested == Nested(false)
+                && anodized::types::Spec::predicate(node)
+                && node.records == self.records(&node.slots)
+                && node.slots.iter().all(|slot| match *slot {
+                    Slot::Child(child) => child.0 < ret.0
+                        && self.0.get(child.0).is_some_and(|child| child.nested == Nested(true)),
+                    Slot::Word(_) | Slot::Bytes(_) => true,
+                })))]
     pub fn push(
         &mut self,
         shape: Shape,
@@ -543,7 +899,20 @@ impl Arena
     /// Lists the nodes no later node nests, oldest first.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the nested markers reflect this arena's references.
+    /// - ensures: every unmarked node exactly once in ascending index order.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 an unused sibling remains a root while two references
+    ///   to one child remove that child only once from the frontier.
+    /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+    #[anodized::spec(ensures: |ret| ret.len() == self.0.iter()
+        .filter(|node| node.nested == Nested(false)).count()
+        && ret.iter().all(|id| self.0.get(id.0).is_some_and(|node| node.nested == Nested(false)))
+        && ret.windows(2).all(|pair| pair.first().zip(pair.get(1))
+            .is_some_and(|(left, right)| left.0 < right.0)))]
     fn frontier(&self) -> Vec<NodeId>
     {
         self.0
@@ -557,7 +926,25 @@ impl Arena
     /// Adds a fan over `children`, its count word first.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: every child names this arena; the count fits its wire word.
+    /// - ensures: appends a list with the exact child count and references in
+    ///   their supplied order, retaining repeated references.
+    /// - fails: never.
+    /// - panics: on an invalid child or unrepresentable count.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 empty and repeated-child lists bind the count word and
+    ///   flattened order; a wide fan reaches the record-budget boundary.
+    /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+    #[anodized::spec(requires: u64::try_from(children.len()).is_ok()
+        && children.iter().all(|child| child.0 < self.0.len()),
+        captures: entry = self.0.len(), ensures: |ret| ret.0 == entry
+            && self.0.len().checked_sub(entry) == Some(1_usize)
+            && self.0.get(ret.0).is_some_and(|node| node.shape == Shape::List
+                && anodized::types::Spec::predicate(node)
+                && node.slots.len().checked_sub(1_usize) == Some(children.len())
+                && node.slots.iter().skip(1_usize).zip(children).all(|(slot, child)|
+                    matches!(*slot, Slot::Child(held) if held == *child))))]
     pub fn list(
         &mut self,
         children: &[NodeId],
@@ -569,7 +956,27 @@ impl Arena
     /// Adds a node, or a word leaf when the node would pass the record budget.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the slots match the shape and all child indices are valid.
+    /// - ensures: appends the proposed node when its count is at most the
+    ///   budget; otherwise appends a three-record all-ones word leaf, without
+    ///   marking the discarded proposal's children as newly nested.
+    /// - fails: never.
+    /// - panics: on an invalid child index.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 counts exactly 4096 and 4097 distinguish the admitted
+    ///   boundary from replacement; repeated doubling also triggers fallback.
+    /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+    #[anodized::spec(requires: slots.iter().all(|slot| match *slot {
+        Slot::Child(child) => child.0 < self.0.len(),
+        Slot::Word(_) | Slot::Bytes(_) => true,
+    }), captures: [entry = self.0.len(), requested = self.records(&slots)],
+        ensures: |ret| ret.0 == entry && self.0.len().checked_sub(entry) == Some(1_usize)
+            && self.0.get(ret.0).is_some_and(|node| node.records <= RECORD_BUDGET
+                && anodized::types::Spec::predicate(node) && if requested > RECORD_BUDGET {
+                    node.shape == Shape::Word && node.records == RecordCount(3_u64)
+                        && node.slots == [Slot::Word(CanonicalWord::from(u64::MAX))]
+                } else { node.shape == shape && node.records == requested }))]
     fn within(
         &mut self,
         shape: Shape,
@@ -588,7 +995,17 @@ impl Arena
     /// - requires: the arena holds a node.
     /// - ensures: an earlier node of this arena.
     /// - provides: a selector's resolution.
+    /// - fails: never when the selector fits the host index width.
     /// - panics: on an empty arena.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 latest, oldest, wrapped and maximum-width selectors
+    ///   have exact indices in a three-node arena.
+    /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+    #[anodized::spec(requires: !self.0.is_empty() && usize::try_from(back.0).is_ok(),
+        ensures: |ret| usize::try_from(back.0).ok()
+            .and_then(|back| back.checked_rem(self.0.len()))
+            .and_then(|back| self.0.len().checked_sub(1_usize)?.checked_sub(back)) == Some(ret.0))]
     fn pick(
         &self,
         back: Back,
@@ -611,10 +1028,30 @@ impl Arena
     ///
     /// # Specification
     /// - requires: the arena holds a node, unless `step` is a leaf.
-    /// - ensures: the node the step built last; a node that would pass the
-    ///   record budget is built as a word leaf instead.
+    /// - ensures: names the last new node, replacing an over-budget proposal by
+    ///   a word leaf. A zero-length spine adds nothing and returns its selected
+    ///   existing node, which need not be within the producer budget.
     /// - provides: a generated step's resolution.
+    /// - fails: never within the admitted host-index and memory bounds.
     /// - panics: a step naming a child of an empty arena.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 repeated references, a zero-length spine and a
+    ///   multi-level spine separate reuse from bounded new construction.
+    /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+    #[anodized::spec(requires: !self.0.is_empty()
+        || matches!(*step, Step::Unit | Step::Word(_) | Step::Bytes(_)),
+        captures: entry = self.0.len(), ensures: |ret| if let Step::Spine(SpineLength(0_u32), _, back) = *step {
+            self.0.len() == entry && ret == self.pick(back)
+        } else {
+            let added = if let Step::Spine(length, _, _) = *step {
+                usize::try_from(length.0).ok()
+            } else { Some(1_usize) };
+            self.0.len().checked_sub(entry) == added
+                && ret.0.checked_add(1_usize) == Some(self.0.len())
+                && self.0.get(ret.0).is_some_and(|node| node.records <= RECORD_BUDGET
+                    && anodized::types::Spec::predicate(node))
+        })]
     fn step(
         &mut self,
         step: &Step,
@@ -666,11 +1103,22 @@ impl Arena
     /// Flattens one node's tree into its preorder records.
     ///
     /// # Specification
-    /// - requires: `root` is a node of this arena.
+    /// - requires: `root` names a valid node and its expanded tree fits memory.
     /// - ensures: the records of `root`'s tree, a node named twice written
     ///   twice.
     /// - provides: the value an arena describes.
+    /// - fails: never within the admitted domain.
     /// - panics: when `root` is not a node of this arena.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 repeated child identities produce repeated record
+    ///   subsequences, while exact-budget and one-past values distinguish the
+    ///   codec's unrestricted grammar from the bounded producer.
+    /// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+    #[anodized::spec(requires: root.0 < self.0.len(),
+        ensures: |ret| anodized::types::Spec::predicate(&ret)
+            && self.0.get(root.0).is_some_and(|node|
+                u64::try_from(ret.0.len()) == Ok(node.records.0)))]
     pub fn tree(
         &self,
         root: NodeId,
@@ -704,7 +1152,24 @@ impl Arena
 /// Returns a fan's fields: its count word, then its children.
 ///
 /// # Specification
-/// trivial.
+/// - requires: the child count fits a canonical word.
+/// - ensures: one count word followed by exactly the supplied child handles, in
+///   order and retaining repetitions.
+/// - fails: never.
+/// - panics: if the host slice count exceeds the canonical word width.
+///
+/// # Adequacy
+/// - hypothesis: L3 empty and repeated-child fans flatten through the real
+///   arena list constructor with exact counts and child order.
+/// - witness: `tests::generate::arena_counts_and_bounds_keep_semantic_nodes`
+#[anodized::spec(requires: u64::try_from(children.len()).is_ok(),
+    ensures: |ret| ret.len().checked_sub(1_usize) == Some(children.len())
+        && ret.first().is_some_and(|slot| match *slot {
+            Slot::Word(count) => u64::try_from(children.len()) == Ok(u64::from(count)),
+            Slot::Bytes(_) | Slot::Child(_) => false,
+        })
+        && ret.iter().skip(1_usize).zip(children).all(|(slot, child)|
+            matches!(*slot, Slot::Child(held) if held == *child)))]
 fn fan(children: &[NodeId]) -> Vec<Slot>
 {
     let count = CanonicalWord::from(u64::try_from(children.len()).expect("a fan width"));
@@ -756,7 +1221,18 @@ pub enum Step
 ///   over every such node, the oldest dropped until the fan fits the record
 ///   budget; every node a step built is in the value unless dropped.
 /// - provides: a generated value's resolution.
+/// - fails: never within the admitted memory and selector widths.
 /// - panics: when `first` names a child.
+///
+/// # Adequacy
+/// - hypothesis: L3 repeated-child steps preserve reuse and an over-budget
+///   frontier drops exactly its oldest root; generated L2 consumers range over
+///   at most forty steps, each spine of at most ninety-six constructors.
+/// - witness: `tests::generate::builds_preserve_reuse_and_trim_oldest_roots`
+/// - witness: `tests::laws::every_generated_value_commits_and_derefs_back_equal`
+#[anodized::spec(requires: matches!(*first, Step::Unit | Step::Word(_) | Step::Bytes(_)),
+    ensures: |ret| anodized::types::Spec::predicate(&ret)
+        && u64::try_from(ret.0.len()).is_ok_and(|count| count <= RECORD_BUDGET.0))]
 fn build(
     first: &Step,
     steps: &[Step],
@@ -784,7 +1260,18 @@ fn build(
 /// values, so equal payloads and so repeated subtrees are common.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples the full word domain, with extra weight on zero, the
+///   all-ones word and zero through seven.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 bounded generated values exercise payload encoding;
+///   this is not a statistical frequency claim.
+/// - witness: `tests::laws::every_generated_value_round_trips_flat`
 fn word() -> impl Strategy<Value = CanonicalWord>
 {
     prop_oneof![
@@ -799,7 +1286,18 @@ fn word() -> impl Strategy<Value = CanonicalWord>
 /// Generates a byte string, biased toward the empty one.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples arbitrary binary payloads of zero through 300 bytes, with
+///   extra weight on empty and short payloads.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 bounded generated values exercise empty, short and
+///   longer binary payloads without claiming exhaustive byte coverage.
+/// - witness: `tests::laws::every_generated_value_round_trips_flat`
 fn payload() -> impl Strategy<Value = Payload>
 {
     prop_oneof![
@@ -814,7 +1312,18 @@ fn payload() -> impl Strategy<Value = Payload>
 /// spines, and toward the few before it so subtrees repeat.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples the full selector width, with extra weight on the latest
+///   node and the preceding three.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 bounded values exercise wrapped references and sharing;
+///   exact selector boundaries have a separate arena witness.
+/// - witness: `tests::laws::every_generated_value_round_trips_flat`
 fn back() -> impl Strategy<Value = Back>
 {
     prop_oneof![
@@ -828,7 +1337,18 @@ fn back() -> impl Strategy<Value = Back>
 /// Generates a leaf step, biased toward the empty-payload constructor.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples only unit, word and bytes steps, with unit twice the
+///   weight of either payload-bearing branch.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 bounded values start from a complete leaf before any
+///   child-selection step.
+/// - witness: `tests::laws::every_generated_value_round_trips_flat`
 fn leaf() -> impl Strategy<Value = Step>
 {
     prop_oneof![
@@ -841,7 +1361,19 @@ fn leaf() -> impl Strategy<Value = Step>
 /// Generates one build step.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples leaves, paired/repeated children, tagged and labelled
+///   children, fans of at most 48 children and spines of one through 96
+///   constructors.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 values use at most forty such steps; the per-step spine
+///   bound is not an overall depth bound.
+/// - witness: `tests::laws::every_generated_value_round_trips_flat`
 fn step() -> impl Strategy<Value = Step>
 {
     prop_oneof![
@@ -860,7 +1392,18 @@ fn step() -> impl Strategy<Value = Step>
 /// Generates a canonical value.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples complete seven-shape values with at most 4096 records,
+///   built from a leaf and at most forty subsequent steps.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 cases check exact flat codec round trips within this
+///   producer bound.
+/// - witness: `tests::laws::every_generated_value_round_trips_flat`
 pub fn tree() -> impl Strategy<Value = Tree>
 {
     (
@@ -874,7 +1417,18 @@ pub fn tree() -> impl Strategy<Value = Tree>
 /// widest, under which divisibility almost never decides.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples one, powers of two from two through 65536, values three
+///   through 99, and the widest nonzero parameter.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 bounded cut cases compare the implementation with the
+///   independent scanner across generated divisibility parameters.
+/// - witness: `tests::laws::the_cuts_agree_with_a_reference_scanner`
 pub fn kappa() -> impl Strategy<Value = Kappa>
 {
     prop_oneof![
@@ -891,7 +1445,18 @@ pub fn kappa() -> impl Strategy<Value = Kappa>
 /// widest.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples the supplied kappa, positive values at or below it, one,
+///   two through 24, or the maximum word; a cap need not be at most kappa.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 bounded cut cases independently check cap and residue
+///   decisions; scalar cap extremes also have fixed witnesses.
+/// - witness: `tests::laws::the_cuts_agree_with_a_reference_scanner`
 pub fn cap(kappa: Kappa) -> impl Strategy<Value = TokenCap>
 {
     let kappa = u64::from(kappa);
@@ -908,7 +1473,18 @@ pub fn cap(kappa: Kappa) -> impl Strategy<Value = TokenCap>
 /// Generates a codec identity, which no chunking decision reads.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples both complete 16-bit identity components; these label the
+///   profile without changing cut decisions.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 bounded histories compare root identity before and
+///   after prior commits under generated profiles.
+/// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
 fn codec() -> impl Strategy<Value = CodecIdentity>
 {
     (any::<u16>(), any::<u16>()).prop_map(|(id, version)| {
@@ -936,7 +1512,18 @@ pub fn profile_of(
 /// Generates a typed profile.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples supported absolute-index profiles with generated codec
+///   identities and correlated nonzero kappa/cap choices.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 bounded histories compare cold and populated stores
+///   under these profiles.
+/// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
 pub fn profile() -> impl Strategy<Value = ValueProfile>
 {
     kappa()
@@ -944,11 +1531,24 @@ pub fn profile() -> impl Strategy<Value = ValueProfile>
         .prop_map(|(kappa, cap, codec)| profile_of(kappa, cap, codec))
 }
 
-/// Generates a value with a profile whose cap a run reaches exactly at one of
-/// the value's boundary events, or passes by one record there.
+/// Generates a value and a cap at, or one record below, a selected pre-cut
+/// boundary position; earlier cuts may reset the actual pending run.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples a bounded value and an absolute profile whose cap equals
+///   the record index after a selected non-root close, or one less clamped to
+///   one; values without such a close use one. Earlier cuts can reset the
+///   actual run before that event.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 cut cases compare actual decisions with the independent
+///   scanner, rather than assuming the selected event is the first cut.
+/// - witness: `tests::laws::the_cuts_agree_with_a_reference_scanner`
 fn value_at_a_cap() -> impl Strategy<Value = (Tree, ValueProfile)>
 {
     tree()
@@ -975,17 +1575,45 @@ fn value_at_a_cap() -> impl Strategy<Value = (Tree, ValueProfile)>
         })
 }
 
-/// Generates the cut rule's inputs: half with a cap at a boundary event, half
-/// with any profile.
+/// Generates cut inputs from equally weighted event-targeted and independent
+/// value/profile branches.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: equally weights pre-cut event-targeted caps and independently
+///   generated value/profile pairs.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 bounded cases compare actual cuts, including cap and
+///   residue interactions, against a separate scanner.
+/// - witness: `tests::laws::the_cuts_agree_with_a_reference_scanner`
 pub fn cut_case() -> impl Strategy<Value = (Tree, ValueProfile)>
 {
     prop_oneof![value_at_a_cap(), (tree(), profile())]
 }
 
 /// Where a value committed before the law's own value comes from.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: a fresh recipe contains a complete value; relative recipes defer
+///   their source and selection to the supplied main value.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L2 bounded histories resolve fresh and relative recipes before
+///   real commits; subtree and leaf selection have literal oracles.
+/// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
+/// - witness: `tests::generate::prior_recipes_select_only_tree_values`
+#[anodized::spec(maintains: match *self {
+    Self::Fresh(ref value) => anodized::types::Spec::predicate(value),
+    Self::Subtree(_) | Self::Edited(_) | Self::Itself => true,
+})]
 #[derive(Clone, Debug)]
 pub enum PriorValue
 {
@@ -1004,7 +1632,56 @@ impl PriorValue
     /// Resolves the prior value against the law's own.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: a fresh recipe holds a complete value; relative recipes
+    ///   receive a complete main value.
+    /// - ensures: returns the exact fresh or main value, the indexed complete
+    ///   subtree, or the main value with only the indexed leaf payload edited.
+    ///   A value without payload leaves remains unchanged by an edit recipe.
+    /// - fails: never.
+    /// - panics: none within the admitted domain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 selectors have literal subtree and edit oracles; tagged
+    ///   words and interleaved labels are not payload leaves, and a leafless
+    ///   value admits the edit recipe without selecting from empty.
+    /// - witness: `tests::generate::prior_recipes_select_only_tree_values`
+    /// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
+    #[anodized::spec(requires: anodized::types::Spec::predicate(self)
+        && (matches!(*self, Self::Fresh(_)) || anodized::types::Spec::predicate(main)),
+        ensures: |ret| anodized::types::Spec::predicate(&ret) && match *self {
+            Self::Fresh(ref value) => ret == *value,
+            Self::Itself => ret == *main,
+            Self::Subtree(index) => {
+                let count = main.0.iter().filter(|item| matches!(item, Item::Open(_))).count();
+                count > 0_usize && main.0.iter().enumerate()
+                    .filter_map(|(at, item)| matches!(item, Item::Open(_)).then_some(at))
+                    .nth(index.index(count)).is_some_and(|at|
+                        at.checked_add(ret.0.len()).and_then(|end| main.0.get(at..end))
+                            .is_some_and(|items| ret.0.as_slice() == items))
+            },
+            Self::Edited(index) => {
+                let count = main.0.windows(2_usize).filter(|records| matches!(records,
+                    [Item::Open(Shape::Word), Item::Word(_)]
+                        | [Item::Open(Shape::Bytes), Item::Bytes(_)])).count();
+                if count == 0_usize { ret == *main } else {
+                    main.0.windows(2_usize).enumerate().filter_map(|(at, records)|
+                        if matches!(records, [Item::Open(Shape::Word), Item::Word(_)]
+                            | [Item::Open(Shape::Bytes), Item::Bytes(_)]) {
+                            at.checked_add(1_usize)
+                        } else { None }).nth(index.index(count)).is_some_and(|payload|
+                            main.0.len() == ret.0.len()
+                                && main.0.iter().zip(&ret.0).enumerate().all(|(at, (before, after))|
+                                    if at == payload { match (before, after) {
+                                        (&Item::Word(before), &Item::Word(after)) => u64::from(after) == !u64::from(before),
+                                        (&Item::Bytes(Payload(ref before)), &Item::Bytes(Payload(ref after))) =>
+                                            before.split_first().map_or_else(|| after.as_slice() == [0_u8],
+                                                |(head, tail)| after.split_first().is_some_and(|(changed, rest)|
+                                                    *changed == !*head && rest == tail)),
+                                        _ => false,
+                                    }} else { before == after }))
+                }
+            },
+        })]
     pub fn resolve(
         &self,
         main: &Tree,
@@ -1071,7 +1748,18 @@ pub struct Prior
 /// value.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: weights unrelated fresh trees, selected subtrees, single-leaf
+///   edits and the main value itself in the ratio one to two to two to one.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 bounded histories exercise prior commits drawn from
+///   these recipes; no frequency assertion substitutes for root equality.
+/// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
 fn prior_value() -> impl Strategy<Value = PriorValue>
 {
     prop_oneof![
@@ -1086,7 +1774,18 @@ fn prior_value() -> impl Strategy<Value = PriorValue>
 /// which shared subtrees can share chunks.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: weights the main profile three to one against an independently
+///   generated supported profile.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 bounded histories distinguish compatible sharing from
+///   changed profile identities through exact root equality.
+/// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
 fn prior_profile() -> impl Strategy<Value = PriorProfile>
 {
     prop_oneof![
@@ -1098,7 +1797,18 @@ fn prior_profile() -> impl Strategy<Value = PriorProfile>
 /// Generates a value, its profile, and the values a store holds before it.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing beyond the typed arguments.
+/// - ensures: samples a bounded main value, its supported absolute profile and
+///   zero through six prior value/profile recipes.
+/// - fails: never.
+/// - panics: none within the bounded generation domain.
+/// - executable: none — the opaque strategy exposes no pure observer of its
+///   possible samples; drawing a sample advances a runner.
+///
+/// # Adequacy
+/// - hypothesis: L2 256 cases compare the same main commit in an empty store
+///   and a store populated by the resolved prior recipes.
+/// - witness: `tests::laws::a_root_pointer_does_not_depend_on_what_the_store_holds`
 pub fn history() -> impl Strategy<Value = (Tree, ValueProfile, Vec<Prior>)>
 {
     (
@@ -1109,4 +1819,497 @@ pub fn history() -> impl Strategy<Value = (Tree, ValueProfile, Vec<Prior>)>
             0_usize ..= 6_usize,
         ),
     )
+}
+
+/// Literal heterogeneous bytes separate schema fields, leaf locations and
+/// edits.
+#[test]
+fn generated_codec_preserves_schema_and_leaf_edits()
+{
+    let image = [
+        1_u8, 0x36, 2, 8, 0, 0, 0, 0, 0, 0, 0, 1, 0x30, 5, 1, 0x31, 2, 8, 7, 6, 5, 4, 3, 2, 1, 5,
+        1, 0x32, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 5, 1, 0x33, 1, 0x30, 5, 1, 0x30, 5, 5, 1,
+        0x34, 2, 7, 0, 0, 0, 0, 0, 0, 0, 1, 0x31, 2, 11, 0, 0, 0, 0, 0, 0, 0, 5, 5, 1, 0x35, 1,
+        0x30, 5, 3, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0x30, 5, 5, 1, 0x36, 2, 0, 0, 0, 0, 0, 0, 0, 0, 5,
+        1, 0x32, 3, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5,
+    ];
+    let high = CanonicalWord::from(0x0102_0304_0506_0708_u64);
+    let expected = Tree(vec![
+        Item::Open(Shape::List),
+        Item::Word(8_u64.into()),
+        Item::Open(Shape::Unit),
+        Item::Close,
+        Item::Open(Shape::Word),
+        Item::Word(high),
+        Item::Close,
+        Item::Open(Shape::Bytes),
+        Item::Bytes(Payload(vec![0_u8, 0xFF])),
+        Item::Close,
+        Item::Open(Shape::Pair),
+        Item::Open(Shape::Unit),
+        Item::Close,
+        Item::Open(Shape::Unit),
+        Item::Close,
+        Item::Close,
+        Item::Open(Shape::Tagged),
+        Item::Word(7_u64.into()),
+        Item::Open(Shape::Word),
+        Item::Word(11_u64.into()),
+        Item::Close,
+        Item::Close,
+        Item::Open(Shape::Labelled),
+        Item::Open(Shape::Unit),
+        Item::Close,
+        Item::Bytes(Payload(Vec::new())),
+        Item::Open(Shape::Unit),
+        Item::Close,
+        Item::Close,
+        Item::Open(Shape::List),
+        Item::Word(0_u64.into()),
+        Item::Close,
+        Item::Open(Shape::Bytes),
+        Item::Bytes(Payload(Vec::new())),
+        Item::Close,
+        Item::Close,
+    ]);
+    let decoded = gandr_storage_values::decode_flat::<Tree>(gandr_storage_values::TokenBody::from(
+        image.as_slice(),
+    ))
+    .expect("the literal seven-shape image decodes");
+    assert_eq!(decoded, expected);
+    assert_eq!(
+        gandr_storage_values::encode_flat(&decoded)
+            .expect("the value encodes")
+            .as_ref(),
+        image
+    );
+    assert!(anodized::types::Spec::predicate(&decoded));
+    assert!(
+        decoded
+            .opens()
+            .iter()
+            .map(|index| index.0)
+            .eq([0_usize, 2, 4, 7, 10, 11, 13, 16, 18, 22, 23, 26, 29, 32])
+    );
+    assert!(
+        decoded
+            .inner_closes()
+            .iter()
+            .map(|index| index.0)
+            .eq([3_usize, 6, 9, 12, 14, 15, 20, 21, 24, 27, 28, 31, 34])
+    );
+    let leaves = [
+        Leaf {
+            payload: ItemIndex(5_usize),
+            depth: EditDepth::from(1_u64),
+        },
+        Leaf {
+            payload: ItemIndex(8_usize),
+            depth: EditDepth::from(1_u64),
+        },
+        Leaf {
+            payload: ItemIndex(19_usize),
+            depth: EditDepth::from(2_u64),
+        },
+        Leaf {
+            payload: ItemIndex(33_usize),
+            depth: EditDepth::from(1_u64),
+        },
+    ];
+    assert_eq!(decoded.leaves(), leaves);
+    assert!(leaves.iter().all(anodized::types::Spec::predicate));
+    assert_eq!(
+        decoded.subtree(ItemIndex(16_usize)),
+        Tree(vec![
+            Item::Open(Shape::Tagged),
+            Item::Word(7_u64.into()),
+            Item::Open(Shape::Word),
+            Item::Word(11_u64.into()),
+            Item::Close,
+            Item::Close
+        ])
+    );
+    for (leaf, replacement) in [
+        (leaves[0], Item::Word(CanonicalWord::from(!u64::from(high)))),
+        (leaves[1], Item::Bytes(Payload(vec![0xFF_u8, 0xFF_u8]))),
+        (leaves[3], Item::Bytes(Payload(vec![0_u8]))),
+    ] {
+        let mut edited = decoded.clone();
+        edited.edit(leaf);
+        assert!(
+            edited
+                .0
+                .iter()
+                .eq(decoded
+                    .0
+                    .iter()
+                    .enumerate()
+                    .map(|(index, item)| if index == leaf.payload.0 {
+                        &replacement
+                    }
+                    else {
+                        item
+                    }))
+        );
+    }
+    for tag in [0x2F_u8, 0x37_u8] {
+        let unknown = [1_u8, tag, 5];
+        assert_eq!(
+            gandr_storage_values::decode_flat::<Tree>(gandr_storage_values::TokenBody::from(
+                unknown.as_slice()
+            )),
+            Err(ValueError::UnexpectedConstructor {
+                found: ConstructorTag::from(tag),
+                position: gandr_storage_values::TokenOffset::from(1_u32)
+            })
+        );
+    }
+    let missing_child = [1_u8, 0x36, 2, 2, 0, 0, 0, 0, 0, 0, 0, 1, 0x30, 5, 5];
+    assert_eq!(
+        gandr_storage_values::decode_flat::<Tree>(gandr_storage_values::TokenBody::from(
+            missing_child.as_slice()
+        )),
+        Err(ValueError::UnexpectedToken {
+            expected: gandr_storage_values::TokenKind::Open,
+            found: gandr_storage_values::TokenKind::Close,
+            position: gandr_storage_values::TokenOffset::from(4_u32)
+        })
+    );
+}
+
+/// Field state and complete-value admission reject impossible transitions.
+#[test]
+fn generated_refinements_reject_impossible_states()
+{
+    let mut fixed = Owed::new(Shape::Labelled);
+    for expected in [
+        Next::Field(Field::Child),
+        Next::Field(Field::Bytes),
+        Next::Field(Field::Child),
+        Next::Close,
+        Next::Close,
+    ] {
+        assert_eq!(fixed.take(), expected);
+    }
+    let mut counted = Owed {
+        fields: &[],
+        children: 2_u64,
+    };
+    assert_eq!(counted.take(), Next::Field(Field::Child));
+    assert_eq!(counted.children, 1_u64);
+    assert_eq!(counted.take(), Next::Field(Field::Child));
+    assert_eq!(counted.children, 0_u64);
+    assert_eq!(counted.take(), Next::Close);
+    let mut widest = Owed {
+        fields: &[],
+        children: u64::MAX,
+    };
+    assert_eq!(widest.take(), Next::Field(Field::Child));
+    assert_eq!(widest.children, u64::MAX.saturating_sub(1_u64));
+    assert!(!anodized::types::Spec::predicate(&Owed {
+        fields: &[Field::Word],
+        children: 1_u64
+    }));
+    assert!(!anodized::types::Spec::predicate(&Owed {
+        fields: &[Field::Word, Field::Word],
+        children: 0_u64
+    }));
+    for leaf in [
+        Leaf {
+            payload: ItemIndex(0_usize),
+            depth: EditDepth::from(0_u64),
+        },
+        Leaf {
+            payload: ItemIndex(1_usize),
+            depth: EditDepth::from(1_u64),
+        },
+    ] {
+        assert!(!anodized::types::Spec::predicate(&leaf));
+    }
+    for items in [
+        vec![],
+        vec![Item::Close],
+        vec![Item::Open(Shape::Unit)],
+        vec![
+            Item::Open(Shape::Word),
+            Item::Bytes(Payload(Vec::new())),
+            Item::Close,
+        ],
+        vec![
+            Item::Open(Shape::List),
+            Item::Word(2_u64.into()),
+            Item::Open(Shape::Unit),
+            Item::Close,
+            Item::Close,
+        ],
+        vec![
+            Item::Open(Shape::Unit),
+            Item::Close,
+            Item::Open(Shape::Unit),
+            Item::Close,
+        ],
+    ] {
+        assert!(!anodized::types::Spec::predicate(&Tree(items)));
+    }
+}
+
+/// Reused nodes retain multiplicity; bounded insertion does not constrain
+/// decoding.
+#[test]
+fn arena_counts_and_bounds_keep_semantic_nodes()
+{
+    let mut arena = Arena::default();
+    let word = arena.push(Shape::Word, vec![Slot::Word(7_u64.into())]);
+    let unit = arena.push(Shape::Unit, Vec::new());
+    let pair = arena.push(Shape::Pair, vec![Slot::Child(word), Slot::Child(word)]);
+    let pair_items = vec![
+        Item::Open(Shape::Pair),
+        Item::Open(Shape::Word),
+        Item::Word(7_u64.into()),
+        Item::Close,
+        Item::Open(Shape::Word),
+        Item::Word(7_u64.into()),
+        Item::Close,
+        Item::Close,
+    ];
+    assert_eq!(arena.tree(pair).0, pair_items);
+    assert_eq!(arena.frontier(), vec![unit, pair]);
+    assert_eq!(arena.pick(Back(0_u32)), pair);
+    assert_eq!(arena.pick(Back(2_u32)), word);
+    assert_eq!(arena.pick(Back(3_u32)), pair);
+    assert_eq!(arena.pick(Back(u32::MAX)), pair);
+    assert_eq!(
+        arena.step(&Step::Spine(SpineLength(0_u32), 99_u64.into(), Back(0_u32))),
+        pair
+    );
+    assert_eq!(arena.frontier(), vec![unit, pair]);
+    let spine = arena.step(&Step::Spine(
+        SpineLength(2_u32),
+        u64::MAX.into(),
+        Back(0_u32),
+    ));
+    let mut spine_items = vec![
+        Item::Open(Shape::Tagged),
+        Item::Word(0_u64.into()),
+        Item::Open(Shape::Tagged),
+        Item::Word(u64::MAX.into()),
+    ];
+    spine_items.extend(pair_items);
+    spine_items.extend([Item::Close, Item::Close]);
+    assert_eq!(arena.tree(spine).0, spine_items);
+    let empty = arena.list(&[]);
+    assert_eq!(arena.tree(empty).0, vec![
+        Item::Open(Shape::List),
+        Item::Word(0_u64.into()),
+        Item::Close
+    ]);
+    let list = arena.list(&[word, unit, word]);
+    assert_eq!(arena.tree(list).0, vec![
+        Item::Open(Shape::List),
+        Item::Word(3_u64.into()),
+        Item::Open(Shape::Word),
+        Item::Word(7_u64.into()),
+        Item::Close,
+        Item::Open(Shape::Unit),
+        Item::Close,
+        Item::Open(Shape::Word),
+        Item::Word(7_u64.into()),
+        Item::Close,
+        Item::Close
+    ]);
+    assert_eq!(arena.frontier(), vec![spine, empty, list]);
+    assert!(anodized::types::Spec::predicate(&arena));
+
+    let mut boundary = Arena::default();
+    let unit = boundary.push(Shape::Unit, Vec::new());
+    let wide = boundary.list(&vec![unit; 2044_usize]);
+    let word = boundary.push(Shape::Word, vec![Slot::Word(7_u64.into())]);
+    let edge = boundary.within(Shape::Pair, vec![Slot::Child(word), Slot::Child(wide)]);
+    assert_eq!(boundary.tree(edge).0.len(), 4096_usize);
+    let unused = boundary.push(Shape::Word, vec![Slot::Word(17_u64.into())]);
+    let replaced = boundary.within(Shape::Labelled, vec![
+        Slot::Child(unused),
+        Slot::Bytes(Payload(Vec::new())),
+        Slot::Child(wide),
+    ]);
+    assert_eq!(boundary.tree(replaced).0, vec![
+        Item::Open(Shape::Word),
+        Item::Word(u64::MAX.into()),
+        Item::Close
+    ]);
+    assert_eq!(boundary.frontier(), vec![edge, unused, replaced]);
+    let unbounded = boundary.push(Shape::Labelled, vec![
+        Slot::Child(unused),
+        Slot::Bytes(Payload(Vec::new())),
+        Slot::Child(wide),
+    ]);
+    let expanded = boundary.tree(unbounded);
+    assert_eq!(expanded.0.len(), 4097_usize);
+    assert!(anodized::types::Spec::predicate(&expanded));
+    assert_eq!(
+        boundary.step(&Step::Spine(SpineLength(0_u32), 0_u64.into(), Back(0_u32))),
+        unbounded
+    );
+    assert!(anodized::types::Spec::predicate(&boundary));
+
+    let mut bounded = Arena::default();
+    let mut root = bounded.push(Shape::Word, vec![Slot::Word(7_u64.into())]);
+    for _ in 0_u32 .. 9_u32 {
+        root = bounded.step(&Step::Twice(Back(0_u32)));
+    }
+    assert_eq!(bounded.tree(root).0.len(), 2558_usize);
+    root = bounded.step(&Step::Twice(Back(0_u32)));
+    assert_eq!(bounded.tree(root).0, vec![
+        Item::Open(Shape::Word),
+        Item::Word(u64::MAX.into()),
+        Item::Close
+    ]);
+
+    let mut saturated = Arena::default();
+    let mut root = saturated.push(Shape::Word, vec![Slot::Word(7_u64.into())]);
+    for level in 1_u32 ..= 63_u32 {
+        root = saturated.push(Shape::Pair, vec![Slot::Child(root), Slot::Child(root)]);
+        let exact = 5_u128
+            .checked_shl(level)
+            .expect("bounded shift")
+            .checked_sub(2_u128)
+            .expect("envelope subtraction");
+        assert_eq!(
+            saturated.0.get(root.0).expect("new node").records.0,
+            u64::try_from(exact).unwrap_or(u64::MAX)
+        );
+    }
+    assert!(anodized::types::Spec::predicate(&saturated));
+}
+
+/// Local grammar and cross-node metadata reject distinct forged claims.
+#[test]
+fn arena_refinements_reject_stale_metadata()
+{
+    for node in [
+        Node {
+            shape: Shape::Unit,
+            slots: Vec::new(),
+            records: RecordCount(1_u64),
+            nested: Nested(false),
+        },
+        Node {
+            shape: Shape::Word,
+            slots: vec![Slot::Bytes(Payload(Vec::new()))],
+            records: RecordCount(3_u64),
+            nested: Nested(false),
+        },
+        Node {
+            shape: Shape::List,
+            slots: vec![Slot::Word(2_u64.into()), Slot::Child(NodeId(0_usize))],
+            records: RecordCount(5_u64),
+            nested: Nested(false),
+        },
+    ] {
+        assert!(!anodized::types::Spec::predicate(&node));
+    }
+    let mut arena = Arena::default();
+    let word = arena.push(Shape::Word, vec![Slot::Word(7_u64.into())]);
+    let unit = arena.push(Shape::Unit, Vec::new());
+    let pair = arena.push(Shape::Pair, vec![Slot::Child(word), Slot::Child(unit)]);
+    assert!(anodized::types::Spec::predicate(&arena));
+    arena.0.get_mut(pair.0).expect("pair").records = RecordCount(6_u64);
+    assert!(!anodized::types::Spec::predicate(&arena));
+    arena.0.get_mut(pair.0).expect("pair").records = RecordCount(7_u64);
+    arena.0.get_mut(word.0).expect("word").nested = Nested(false);
+    assert!(!anodized::types::Spec::predicate(&arena));
+    arena.0.get_mut(word.0).expect("word").nested = Nested(true);
+    arena.0.get_mut(pair.0).expect("pair").nested = Nested(true);
+    assert!(!anodized::types::Spec::predicate(&arena));
+    arena.0.get_mut(pair.0).expect("pair").nested = Nested(false);
+    *arena
+        .0
+        .get_mut(pair.0)
+        .expect("pair")
+        .slots
+        .first_mut()
+        .expect("child") = Slot::Child(pair);
+    assert!(!anodized::types::Spec::predicate(&arena));
+    *arena
+        .0
+        .get_mut(pair.0)
+        .expect("pair")
+        .slots
+        .first_mut()
+        .expect("child") = Slot::Child(word);
+    assert!(anodized::types::Spec::predicate(&arena));
+}
+
+/// Root trimming preserves all retained values and only discards the oldest
+/// roots.
+#[test]
+fn builds_preserve_reuse_and_trim_oldest_roots()
+{
+    let reused = build(&Step::Word(1_u64.into()), &[
+        Step::Word(2_u64.into()),
+        Step::Pair(Back(0_u32), Back(1_u32)),
+    ]);
+    assert_eq!(reused.0, vec![
+        Item::Open(Shape::Pair),
+        Item::Open(Shape::Word),
+        Item::Word(2_u64.into()),
+        Item::Close,
+        Item::Open(Shape::Word),
+        Item::Word(1_u64.into()),
+        Item::Close,
+        Item::Close
+    ]);
+    let steps: Vec<_> = (1_u64 ..= 1364_u64)
+        .map(|word| Step::Word(word.into()))
+        .collect();
+    let trimmed = build(&Step::Word(0_u64.into()), &steps);
+    assert_eq!(trimmed.0.len(), 4095_usize);
+    assert_eq!(trimmed.0.first(), Some(&Item::Open(Shape::List)));
+    assert_eq!(trimmed.0.get(1_usize), Some(&Item::Word(1364_u64.into())));
+    assert!(
+        trimmed
+            .0
+            .iter()
+            .skip(2_usize)
+            .filter_map(|item| match *item {
+                | Item::Word(word) => Some(u64::from(word)),
+                | Item::Open(_) | Item::Bytes(_) | Item::Close => None,
+            })
+            .eq(1_u64 ..= 1364_u64)
+    );
+    assert!(anodized::types::Spec::predicate(&trimmed));
+}
+
+#[cfg(test)]
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+    /// Relative recipes select complete subtrees and only genuine payload leaves.
+    #[test]
+    fn prior_recipes_select_only_tree_values(index in any::<Index>()) {
+        let main = Tree(vec![Item::Open(Shape::Labelled), Item::Open(Shape::Tagged),
+            Item::Word(0x55_u64.into()), Item::Open(Shape::Word), Item::Word(7_u64.into()),
+            Item::Close, Item::Close, Item::Bytes(Payload(vec![0xAA_u8])),
+            Item::Open(Shape::Bytes), Item::Bytes(Payload(vec![0_u8, 0xFF_u8])),
+            Item::Close, Item::Close]);
+        let expected_subtree = [main.0.as_slice(), main.0.get(1_usize..7_usize).expect("tagged child"),
+            main.0.get(3_usize..6_usize).expect("word child"), main.0.get(8_usize..11_usize).expect("bytes child")];
+        let subtree = PriorValue::Subtree(index).resolve(&main);
+        prop_assert_eq!(subtree.0.as_slice(), expected_subtree[index.index(4_usize)]);
+        let mut expected_edit = main.clone();
+        if index.index(2_usize) == 0_usize {
+            *expected_edit.0.get_mut(4_usize).expect("word payload") = Item::Word((!7_u64).into());
+        } else {
+            *expected_edit.0.get_mut(9_usize).expect("bytes payload") = Item::Bytes(Payload(vec![0xFF_u8, 0xFF_u8]));
+        }
+        prop_assert_eq!(PriorValue::Edited(index).resolve(&main), expected_edit);
+        let empty_pair = Tree(vec![Item::Open(Shape::Pair), Item::Open(Shape::Bytes),
+            Item::Bytes(Payload(Vec::new())), Item::Close, Item::Open(Shape::Bytes),
+            Item::Bytes(Payload(Vec::new())), Item::Close, Item::Close]);
+        let mut expected_growth = empty_pair.clone();
+        let payload = if index.index(2_usize) == 0_usize { 2_usize } else { 5_usize };
+        *expected_growth.0.get_mut(payload).expect("selected empty payload") = Item::Bytes(Payload(vec![0_u8]));
+        prop_assert_eq!(PriorValue::Edited(index).resolve(&empty_pair), expected_growth);
+        let leafless = Tree(vec![Item::Open(Shape::Unit), Item::Close]);
+        prop_assert_eq!(PriorValue::Edited(index).resolve(&leafless), leafless);
+    }
 }

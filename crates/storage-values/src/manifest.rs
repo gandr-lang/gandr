@@ -160,6 +160,7 @@ impl fmt::Display for ManifestDigest
     /// - provides: the rendering a consumer stores or logs a manifest by.
     /// - fails: propagates the formatter's own write failure unchanged.
     /// - panics: none.
+    /// - executable: none — the formatter exposes no readable output buffer.
     ///
     /// # Adequacy
     /// - hypothesis: L2 agreement — the pinned identity renders as the
@@ -263,6 +264,22 @@ impl CodecIdentity
 }
 
 /// Every constant two deployments must agree on to share storage.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: the chunk frame version is the version this build reads. Both
+///   child index bases remain admissible metadata, although commit refuses the
+///   chunk-local base.
+/// - provides: supported framing metadata, not certification of stored bytes.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on one framed leaf and both declared index bases observes
+///   accepted metadata; a forged frame version two is rejected. This separates
+///   layout admission from the truth of a stored root or declared count.
+/// - witness: `manifest::tests::supported_versions_do_not_certify_storage_claims`
+#[spec(maintains: self.chunk_frame_version == ChunkFormatVersion::V1)]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ValueProfile
 {
@@ -293,6 +310,14 @@ impl ValueProfile
     /// - provides: the unit of agreement between two deployments.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on one literal leaf profile observes the framing
+    ///   refinement, and each independently changed admissible profile field
+    ///   moves the encoded manifest identity. These separate dropped arguments
+    ///   and incorrect framing versions, not equivalence of arbitrary codecs.
+    /// - witness: `manifest::tests::supported_versions_do_not_certify_storage_claims`
+    /// - witness: `tests::manifest::each_manifest_field_moves_the_identity`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.params == params
@@ -475,6 +500,23 @@ impl ValueProfile
 
 /// The identity of one committed value: its profile, its root, and the
 /// records a reader of the root delivers.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: carries the supported manifest and chunk frame versions. The root
+///   and token count are claims; verifying their truth needs the store.
+/// - provides: a canonical metadata description with separately checked data.
+/// - fails: never.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 rejects forged manifest or frame version two, admits a
+///   canonical image declaring zero records, then refuses that false count
+///   against a stored two-record leaf. This separates header validation from
+///   certification of content claims.
+/// - witness: `manifest::tests::supported_versions_do_not_certify_storage_claims`
+#[spec(maintains: self.manifest_version == ValueManifestVersion::V1
+    && anodized::types::Spec::predicate(&self.profile))]
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ValueManifest
 {
@@ -500,6 +542,14 @@ impl ValueManifest
     /// - provides: the description [`crate::cam_commit`] returns.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 on manifests produced by generated commits of at most
+    ///   4096 records observes complete metadata round trips. L3 changes each
+    ///   admissible field independently and observes a distinct identity,
+    ///   separating substituted profile, root or count fields.
+    /// - witness: `tests::manifest::a_manifest_round_trips_through_its_bytes`
+    /// - witness: `tests::manifest::each_manifest_field_moves_the_identity`
     #[inline]
     #[must_use]
     #[spec(ensures: |ret| ret.profile == profile
@@ -580,9 +630,10 @@ impl ValueManifest
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 agreement — one manifest's image, read back field by
-    ///   field against bytes written out by hand, and the manifests of
-    ///   generated commits under generated profiles decoding back equal.
+    /// - hypothesis: L2 on one hand-written 144-byte image observes every
+    ///   field, and manifests of generated commits of at most 4096 records
+    ///   round-trip completely. These separate field order, endian encoding and
+    ///   lost metadata in the exercised profiles.
     /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
     /// - witness: `tests::manifest::a_manifest_round_trips_through_its_bytes`
     #[inline]
@@ -662,12 +713,12 @@ impl ValueManifest
     /// [`ValueError`] — as listed above.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 agreement — generated manifests decode from their own
-    ///   images and re-encode to the same bytes — plus L3 for each refusal: a
-    ///   foreign domain, an unknown manifest version, each tagged field's
-    ///   unassigned values, a commitment under another algorithm or with zero
-    ///   kappa, every prefix of a valid image named by the field it ends inside
-    ///   as a layout table in the suite computes it, and one trailing byte.
+    /// - hypothesis: L2 on manifests of generated commits of at most 4096
+    ///   records observes exact re-encoding. L3 on a 144-byte golden image
+    ///   changes the domain, version and tags at their immediate boundaries,
+    ///   changes commitment length and algorithm, zeros kappa or cap, tries
+    ///   every strict prefix and appends a byte. Exact field refusals separate
+    ///   widened admission, unchecked extents and wrong refusal precedence.
     /// - witness: `tests::manifest::a_manifest_round_trips_through_its_bytes`
     /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
     /// - witness: `tests::manifest::a_manifest_image_is_refused_as_a_chunk`
@@ -675,7 +726,8 @@ impl ValueManifest
     #[spec(ensures: |ret| ret
         .as_ref()
         .ok()
-        .is_none_or(|manifest| manifest.encode().as_image() == image))]
+        .is_none_or(|manifest| manifest.encode().as_image() == image
+            && anodized::types::Spec::predicate(manifest)))]
     pub fn decode(image: ManifestImage<'_>) -> Result<Self, ValueError>
     {
         let mut cursor = ManifestCursor(image.into());
@@ -727,6 +779,7 @@ impl ValueManifest
     /// - witness: `tests::manifest::each_manifest_field_moves_the_identity`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.0 == *blake3::hash(self.encode().as_ref()).as_bytes())]
     pub fn identity(&self) -> ManifestDigest
     {
         // economy: hashes an encoded copy; a hashing sink beside the encoder
@@ -761,6 +814,8 @@ impl ValueManifest
     /// - witness: `tests::manifest::a_profile_mismatch_is_refused_before_any_chunk_is_read`
     /// - witness: `tests::manifest::a_matching_profile_reads_the_committed_value`
     #[inline]
+    #[spec(ensures: |ret| self.profile == *expected
+        || ret.as_ref().err() == self.profile.ensure_matches(expected).as_ref().err())]
     pub fn read_under<Value>(
         &self,
         store: &dyn ChunkStore,
@@ -796,12 +851,11 @@ impl ValueManifest
     /// [`ValueError`] — as listed above.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 agreement — for generated values under generated
-    ///   profiles, and for a value embedding another, committed into one store,
-    ///   the closure is the set of digests the store holds — plus L3 for a
-    ///   store missing one chunk two seams below the root, refused naming it,
-    ///   and a token count one past the spliced total, refused with both
-    ///   counts.
+    /// - hypothesis: L2 on generated values of at most 4096 records and
+    ///   one-value embeddings observes exact closure sets and logical counts.
+    ///   L3 names a missing chunk two seams below a depth-four root, and names
+    ///   both counts when a declaration is one below or above the spliced
+    ///   total. These separate missing descendants and unchecked declarations.
     /// - witness: `tests::closure::the_closure_is_every_chunk_the_commit_wrote`
     /// - witness: `tests::closure::a_missing_descendant_fails_the_closure_by_name`
     /// - witness: `tests::closure::a_manifest_overstating_its_tokens_fails_the_closure`
@@ -809,7 +863,8 @@ impl ValueManifest
     #[spec(ensures: |ret| ret
         .as_ref()
         .ok()
-        .is_none_or(|closure| closure.digests().contains(&self.root.digest())))]
+        .is_none_or(|closure| closure.digests().contains(&self.root.digest())
+            && anodized::types::Spec::predicate(closure)))]
     pub fn closure(
         &self,
         store: &dyn ChunkStore,
@@ -852,8 +907,20 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError::TruncatedManifest`] — the image ends inside `field`.
-    #[spec(captures: [entry = self.0.len()],
-        ensures: |ret| ret.is_err() || self.0.len().saturating_add(WIDTH) == entry)]
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on a three-byte cursor takes zero and two bytes, then
+    ///   refuses a two-byte field with one remaining without movement. The full
+    ///   manifest witness checks every prefix of a 144-byte image. These
+    ///   distinguish wrong widths, wrong bytes and mutation on truncation.
+    /// - witness: `manifest::tests::fixed_width_reads_preserve_suffixes_and_refusal_state`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
+    #[spec(captures: input = self.0, ensures: |ret|
+        ret.is_ok() == (input.len() >= WIDTH)
+        && ret.as_ref().ok().is_none_or(|bytes|
+            input.split_first_chunk::<WIDTH>().is_some_and(|(expected, rest)|
+                bytes.0 == *expected && self.0 == rest))
+        && (ret.is_ok() || self.0 == input))]
     fn take<const WIDTH: usize>(
         &mut self,
         field: ManifestField,
@@ -882,6 +949,17 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on every prefix of a 144-byte image and changed first
+    ///   or last domain byte observes the exact domain refusal before later
+    ///   fields. The literal golden image observes accepted domain consumption,
+    ///   separating an ignored domain and wrong refusal precedence.
+    /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
+    #[spec(captures: input = self.0, ensures: |ret|
+        ret.is_ok() == input.starts_with(MANIFEST_DOMAIN)
+        && (ret.is_err() || input.strip_prefix(MANIFEST_DOMAIN) == Some(self.0)))]
     fn domain(&mut self) -> Result<(), ValueError>
     {
         let agrees = self
@@ -917,6 +995,15 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 admits version one in the literal golden and refuses
+    ///   versions zero and two, plus both truncated version prefixes. These
+    ///   distinguish a widened version gate, wrong width and a displaced
+    ///   refusal field.
+    /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|version| *version == ValueManifestVersion::V1))]
     fn manifest_version(&mut self) -> Result<ValueManifestVersion, ValueError>
     {
         let bytes = self.take::<2>(ManifestField::ManifestVersion)?;
@@ -951,6 +1038,22 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 refuses declared lengths 48, 50 and the width ceiling,
+    ///   a changed domain, the record algorithm, zero kappa, zero cap and every
+    ///   prefix. L2 binds the accepted literal commitment to its exact
+    ///   parameters. These separate unchecked extents, wrong algorithms and
+    ///   lossy parameter reads.
+    /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
+    #[spec(captures: input = self.0, ensures: |ret| ret.as_ref().ok().is_none_or(|params| {
+        let commitment = params.commitment();
+        let bytes = commitment.as_ref();
+        input.first_chunk::<8>().is_some_and(|length|
+            u64::from_le_bytes(*length) == u64::try_from(bytes.len()).unwrap_or(u64::MAX))
+            && input.get(8_usize ..).and_then(|rest| rest.strip_prefix(bytes)) == Some(self.0)
+    }))]
     fn chunker_params(&mut self) -> Result<TypedChunkerParams, ValueError>
     {
         let declared = self.take::<8>(ManifestField::CommitmentLength)?;
@@ -1019,6 +1122,17 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 admits tag one and refuses zero, two and a missing
+    ///   byte, observing exact field and subsequent golden metadata. These
+    ///   separate tag admission from the output enum and catch wrong
+    ///   consumption.
+    /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
+    #[spec(captures: input = self.0, ensures: |ret|
+        ret.is_ok() == (input.first() == Some(&DIGEST_FAMILY_BLAKE3))
+        && (ret.is_err() || input.get(1_usize ..) == Some(self.0)))]
     fn digest_family(&mut self) -> Result<DigestFamily, ValueError>
     {
         let FieldBytes([tag]) = self.take::<1>(ManifestField::DigestFamily)?;
@@ -1044,6 +1158,19 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError::TruncatedManifest`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 reads the distinct literal codec identifier and version
+    ///   from the golden image; L3 refuses each short prefix under its own
+    ///   field. These distinguish byte order, swapped halves and reading past
+    ///   the available bytes.
+    /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
+    #[spec(captures: input = self.0, ensures: |ret| ret.as_ref().ok().is_none_or(|codec|
+        input.first_chunk::<4>().is_some_and(|&[a, b, c, d]|
+            codec.codec() == CodecId::from(u16::from_le_bytes([a, b]))
+                && codec.version() == CodecVersion::from(u16::from_le_bytes([c, d])))
+            && input.get(4_usize ..) == Some(self.0)))]
     fn codec(&mut self) -> Result<CodecIdentity, ValueError>
     {
         let codec = self.take::<2>(ManifestField::CodecId)?;
@@ -1068,6 +1195,22 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 admits tags one and two as distinct metadata bases, and
+    ///   refuses zero, three and a missing byte. This separates unsupported
+    ///   commit policy from manifest tag admission and detects a collapsed or
+    ///   widened discriminator.
+    /// - witness: `manifest::tests::supported_versions_do_not_certify_storage_claims`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
+    #[spec(captures: input = self.0, ensures: |ret|
+        ret.is_ok() == input.first().is_some_and(|tag|
+            *tag == INDEX_BASE_ABSOLUTE || *tag == INDEX_BASE_CHUNK_LOCAL)
+        && ret.as_ref().ok().is_none_or(|base|
+            input.first() == Some(&match *base {
+                ChildIndexBase::Absolute => INDEX_BASE_ABSOLUTE,
+                ChildIndexBase::ChunkLocal => INDEX_BASE_CHUNK_LOCAL,
+            }) && input.get(1_usize ..) == Some(self.0)))]
     fn index_base(&mut self) -> Result<ChildIndexBase, ValueError>
     {
         let FieldBytes([tag]) = self.take::<1>(ManifestField::ChildIndexBase)?;
@@ -1093,6 +1236,17 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 admits tag one in the golden image and refuses zero,
+    ///   two and a missing byte, observing the exact field. These distinguish
+    ///   the input discriminator and consumed width rather than restating the
+    ///   single-variant return type.
+    /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
+    #[spec(captures: input = self.0, ensures: |ret|
+        ret.is_ok() == (input.first() == Some(&BOUNDARY_EVERY_CONSTRUCTOR))
+        && (ret.is_err() || input.get(1_usize ..) == Some(self.0)))]
     fn boundary_classification(&mut self) -> Result<BoundaryClassification, ValueError>
     {
         let FieldBytes([tag]) = self.take::<1>(ManifestField::BoundaryClassification)?;
@@ -1118,6 +1272,14 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 admits frame version one and refuses zero, two and both
+    ///   truncated prefixes under the frame-version field. These separate a
+    ///   widened version gate, wrong endian order and wrong field reporting.
+    /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
+    #[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|version| *version == ChunkFormatVersion::V1))]
     fn chunk_frame_version(&mut self) -> Result<ChunkFormatVersion, ValueError>
     {
         let bytes = self.take::<2>(ManifestField::ChunkFrameVersion)?;
@@ -1145,6 +1307,19 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError::TruncatedManifest`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 reads digest bytes zero through 31 and offset
+    ///   0x01020304 from the literal golden image; L3 refuses every short
+    ///   prefix of both fields by name. These distinguish changed identities,
+    ///   byte order and offset truncation without requiring a stored root.
+    /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
+    #[spec(captures: input = self.0, ensures: |ret| ret.as_ref().ok().is_none_or(|root|
+        input.get(.. CHUNK_DIGEST_LEN) == Some(root.digest().as_ref())
+            && input.get(CHUNK_DIGEST_LEN ..).and_then(<[u8]>::first_chunk::<4>)
+                .is_some_and(|offset| root.offset() == TokenOffset::from(u32::from_le_bytes(*offset)))
+            && input.get(CHUNK_DIGEST_LEN.saturating_add(4_usize) ..) == Some(self.0)))]
     fn root(&mut self) -> Result<ContentPtr, ValueError>
     {
         let digest = self.take::<CHUNK_DIGEST_LEN>(ManifestField::RootDigest)?;
@@ -1168,6 +1343,18 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError::TruncatedManifest`] — as listed above.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 reads literal count 42, and L3 admits a declared zero
+    ///   before its separate closure mismatch. Every short count prefix is
+    ///   refused. These separate byte order, premature semantic validation and
+    ///   width errors.
+    /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
+    /// - witness: `manifest::tests::supported_versions_do_not_certify_storage_claims`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
+    #[spec(captures: input = self.0, ensures: |ret| ret.as_ref().ok().is_none_or(|count|
+        input.first_chunk::<8>().is_some_and(|bytes| *count == TokenCount::from(u64::from_le_bytes(*bytes)))
+            && input.get(8_usize ..) == Some(self.0)))]
     fn token_count(&mut self) -> Result<TokenCount, ValueError>
     {
         let bytes = self.take::<8>(ManifestField::TokenCount)?;
@@ -1187,6 +1374,13 @@ impl ManifestCursor<'_>
     ///
     /// # Errors
     /// [`ValueError::TrailingManifestBytes`] — bytes remain.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 admits the exact 144-byte golden image and refuses one
+    ///   appended byte; the exact image decodes completely. These distinguish
+    ///   accepting trailing bytes and falsely refusing the canonical end.
+    /// - witness: `tests::manifest::the_manifest_bytes_are_pinned`
+    /// - witness: `tests::manifest::each_malformed_manifest_is_refused_by_name`
     #[spec(ensures: |ret| ret.is_ok() == self.0.is_empty())]
     fn finish(self) -> Result<(), ValueError>
     {
@@ -1196,5 +1390,127 @@ impl ManifestCursor<'_>
         else {
             Err(ValueError::TrailingManifestBytes)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use gandr_storage_chunker::Kappa;
+    use gandr_storage_chunker::TokenCap;
+    use gandr_storage_chunker::TokenCount;
+    use gandr_storage_chunker::TypedChunkerParams;
+
+    use super::CodecIdentity;
+    use super::FieldBytes;
+    use super::INDEX_BASE_CHUNK_LOCAL;
+    use super::ManifestCursor;
+    use super::ValueManifest;
+    use super::ValueProfile;
+    use crate::ChildIndexBase;
+    use crate::ChunkFormatVersion;
+    use crate::ChunkStore as _;
+    use crate::CodecId;
+    use crate::CodecVersion;
+    use crate::ContentPtr;
+    use crate::InMemoryChunkStore;
+    use crate::ManifestField;
+    use crate::ManifestImage;
+    use crate::TokenBody;
+    use crate::TokenOffset;
+    use crate::ValueError;
+    use crate::ValueManifestVersion;
+    use crate::frame_chunk;
+
+    #[test]
+    fn fixed_width_reads_preserve_suffixes_and_refusal_state()
+    {
+        let bytes = [1_u8, 2, 3];
+        let mut cursor = ManifestCursor(bytes.as_slice());
+        assert_eq!(cursor.take::<0>(ManifestField::CodecId), Ok(FieldBytes([])));
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(cursor.0),
+            core::ptr::from_ref(bytes.as_slice())
+        ));
+        assert_eq!(
+            cursor.take::<2>(ManifestField::CodecId),
+            Ok(FieldBytes([1_u8, 2]))
+        );
+        assert_eq!(cursor.0, &[3_u8]);
+        assert!(core::ptr::eq(
+            core::ptr::from_ref(cursor.0),
+            core::ptr::from_ref(bytes.get(2_usize ..).expect("the one-byte suffix"))
+        ));
+        assert_eq!(
+            cursor.take::<2>(ManifestField::RootOffset),
+            Err(ValueError::TruncatedManifest {
+                field: ManifestField::RootOffset
+            })
+        );
+        assert_eq!(cursor.0, &[3_u8]);
+        assert_eq!(
+            cursor.take::<1>(ManifestField::DigestFamily),
+            Ok(FieldBytes([3_u8]))
+        );
+        assert!(cursor.0.is_empty());
+    }
+
+    #[test]
+    fn supported_versions_do_not_certify_storage_claims()
+    {
+        let params = TypedChunkerParams::new(
+            Kappa::try_from(4_u64).expect("nonzero kappa"),
+            TokenCap::try_from(64_u64).expect("nonzero cap"),
+        );
+        let profile = ValueProfile::new(
+            params,
+            CodecIdentity::new(CodecId::from(1_u16), CodecVersion::from(1_u16)),
+            ChildIndexBase::Absolute,
+        );
+        assert!(anodized::types::Spec::predicate(&profile));
+        let mut forged_profile = profile;
+        forged_profile.chunk_frame_version = ChunkFormatVersion::from(2_u16);
+        assert!(!anodized::types::Spec::predicate(&forged_profile));
+
+        let chunk = frame_chunk(TokenBody::from(&[1_u8, 42, 5][..])).expect("the leaf frames");
+        let mut store = InMemoryChunkStore::new();
+        store.insert(chunk.as_verified()).expect("the leaf stores");
+        let manifest = ValueManifest::new(
+            profile,
+            ContentPtr::new(chunk.digest(), TokenOffset::ZERO),
+            TokenCount::from(2_u64),
+        );
+        assert!(anodized::types::Spec::predicate(&manifest));
+        let mut forged = manifest;
+        forged.manifest_version = ValueManifestVersion::from(2_u16);
+        assert!(!anodized::types::Spec::predicate(&forged));
+        forged = manifest;
+        forged.profile = forged_profile;
+        assert!(!anodized::types::Spec::predicate(&forged));
+
+        let mut image = manifest.encode().as_ref().to_vec();
+        // The v1 layout names the index base at byte 96 and ends with the count.
+        *image.get_mut(96_usize).expect("the index-base field") = INDEX_BASE_CHUNK_LOCAL;
+        let count_start = image
+            .len()
+            .checked_sub(8_usize)
+            .expect("the count field exists");
+        image
+            .get_mut(count_start ..)
+            .expect("the count field")
+            .fill(0_u8);
+        let declared = ValueManifest::decode(ManifestImage::from(image.as_slice()))
+            .expect("supported metadata can make an unverified content claim");
+        assert_eq!(declared.profile().index_base(), ChildIndexBase::ChunkLocal);
+        assert_eq!(declared.token_count(), TokenCount::ZERO);
+        assert!(anodized::types::Spec::predicate(declared.profile()));
+        assert!(anodized::types::Spec::predicate(&declared));
+        assert_eq!(
+            declared.closure(&store),
+            Err(ValueError::TokenCountMismatch {
+                declared: TokenCount::ZERO,
+                spliced: TokenCount::from(2_u64),
+            })
+        );
     }
 }

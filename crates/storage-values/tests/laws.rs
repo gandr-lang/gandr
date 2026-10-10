@@ -139,7 +139,27 @@ proptest! {
 /// under a fan.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: a complete value containing every constructor shape, with
+///   pairwise distinct subtrees for the exact-path locality witness.
+/// - fails: never.
+/// - panics: none within the fixed construction's memory bound.
+///
+/// # Adequacy
+/// - hypothesis: L3 compares all subtree encodings for distinctness and
+///   observes every leaf's affected/shared partition under five cap choices at
+///   kappa one; the predicates admit a complete tree with all seven shapes.
+/// - witness: `tests::laws::an_edit_under_every_cut_affects_exactly_its_path`
+/// - witness: `tests::laws::a_value_mutated_after_commit_commits_anew_and_the_old_pointer_still_reads_the_old_value`
+#[anodized::spec(ensures: |ret| anodized::types::Spec::predicate(&ret)
+    && ret.0.iter().fold(0_u8, |seen, item| seen | match *item {
+        crate::generate::Item::Open(shape) => match shape {
+            Shape::Unit => 0x01_u8, Shape::Word => 0x02_u8, Shape::Bytes => 0x04_u8,
+            Shape::Pair => 0x08_u8, Shape::Tagged => 0x10_u8, Shape::Labelled => 0x20_u8,
+            Shape::List => 0x40_u8,
+        },
+        crate::generate::Item::Word(_) | crate::generate::Item::Bytes(_) | crate::generate::Item::Close => 0_u8,
+    }) == 0x7F_u8)]
 fn distinct_value() -> Tree
 {
     let mut arena = Arena::default();
@@ -198,10 +218,6 @@ fn an_edit_under_every_cut_affects_exactly_its_path()
         .map(|open| RecordIndex(open.0))
         .collect();
     let leaves = value.leaves();
-    assert!(
-        leaves.len() > 1_usize,
-        "the witness edits more than one leaf"
-    );
 
     let kappa = Kappa::try_from(1_u64).expect("kappa is nonzero");
     let codec = CodecIdentity::new(CodecId::from(1_u16), CodecVersion::from(1_u16));

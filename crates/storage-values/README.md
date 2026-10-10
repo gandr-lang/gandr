@@ -151,6 +151,10 @@ A chunk frames a body; its digest is BLAKE3 over the whole image, including the 
 image := "gandr:storage-values:chunk:v1" || u16le version || u64le token count || u64le body length || body
 ```
 
+Chunk insertion is first-write-wins: a fresh digest retains the offered image, while an existing digest retains its prior bytes. Reinsertion neither compares nor repairs those bytes. Loading recomputes the digest and checks the frame each time, so corrupted backing bytes are refused even after the original chunk is offered again. Equality of digests is not used as a deciding comparison of two images.
+
+The chunk refinements check the digest, frame and cached token count. A verified body's slice must point into its image, not merely contain equal bytes elsewhere. The witnesses include empty and three-record bodies, forged cached fields, corrupted storage and a wrong digest combined with a malformed domain to distinguish refusal precedence.
+
 A flat encoding is the same canonical body for a value that fits one chunk. Flat bodies contain no child records. A chunked value embeds each cut subtree as a child pointer at offset zero; interior content pointers can address other token offsets. Children nest in place rather than through a shared index table, so an insertion does not renumber sibling references. `cam_commit` rejects `ChildIndexBase::ChunkLocal` because this encoding carries no relative index base.
 
 A manifest names a value and the profile it was committed under; its identity is BLAKE3 over the whole image:
@@ -183,18 +187,24 @@ Each record appended to a body joins the scanner's count once, at the next bound
 
 Emission checking rejects empty output, multiple roots, unmatched closes, unclosed constructors and payload outside a constructor. A reader entering a child chunk consumes exactly one subtree and returns to its parent when that subtree closes.
 
+The flat sink's executable refinement bounds its addressed records by the bytes it has emitted. Its fixed wire witness checks all four flat record forms and the refusal positions for an embedded pointer and malformed emission; generated round trips cover values of at most 4096 records, not arbitrary consumer codecs.
+
 Every decode charges one accumulator for records, payload bytes and chunk-image bytes verified at seams. Work beyond `MAX_DECODE_WORK` (2^34) is rejected, including repeated reads through different paths to a shared chunk. Authentication establishes the bytes named by a pointer; the codec and consumer retain responsibility for value validity.
+
+The reader's executable refinement keeps spent work within the ceiling and forbids suspended chunk frames in flat mode. Fixed witnesses cover exact payload borrowing and charges, wrong record kinds, an interior child at offset two, and restoration of its parent's cursor. A refused read does not promise rollback of all cursor bookkeeping.
 
 ## The value manifest
 
 A `ContentPtr` names bytes; a reader also needs the rules that produced them. `ValueManifest` carries both: the root pointer and token count, and the profile fields a reader must agree with: chunker commitment, digest family, codec identity and version, child index base, boundary classification and chunk frame version. `encode` writes the image in [Byte languages](#byte-languages), `decode` reads it back, and `identity` hashes it.
 
-**The identity binds the profile.** Two manifests share an identity only when every field agrees, so one identity cannot name a value under two readings.
+**The identity binds the profile.** Subject to BLAKE3 collision resistance, the identity binds every field, including the profile under which a value is read.
 
 - **Alternatives.** Carrying the profile in every chunk frame lets a chunk be read alone, but spends the profile's bytes per chunk and stops identical bodies under different profiles from sharing. Letting each consumer choose which fields to bind lets two consumers name one value differently.
 - **Reversal.** If the chunk frame comes to carry the profile, the manifest shrinks to the root pointer and token count.
 
 **Decoding refuses by field.** `decode` reads the image in order through a cursor over the borrowed bytes, without recursion or allocation, and stops at the first fault: `MalformedManifest` names a field holding a value this build does not read (a foreign domain, another version, an unassigned tag, a commitment under another algorithm or with zero kappa or cap), `TruncatedManifest` names the field the image ends inside, and `TrailingManifestBytes` refuses bytes after the token count. The commitment is parsed by the chunker's documented layout; if the chunker exports a parser, decoding uses it instead. The manifest domain differs from the chunk domain, so neither image verifies as the other.
+
+Manifest and profile refinements admit only the supported layout versions; they do not certify a root's presence or the truth of a declared token count. A canonical zero-count declaration remains readable as metadata and is refused by `closure` when its stored value delivers two records. Cursor witnesses cover zero-width reads, exact suffix borrowing and unchanged state on a truncated fixed-width read.
 
 **The profile is checked before any load.** `read_under` compares the manifest's profile with the reader's and refuses with `IncompatibleProfile`, naming the first field that differs in image order, before the store is asked for a chunk. A matching profile reads through `cam_deref`.
 
@@ -218,7 +228,11 @@ A `ContentPtr` names bytes; a reader also needs the rules that produced them. `V
 
 `expected_chunk_bound` computes `2 + ceil(2d / kappa) + ceil(d / cap)` with checked arithmetic, using edit depth `d` and the profile's kappa and token cap. This is an expectation over boundary residues, not a worst-case guarantee for one edit.
 
+The numerator is widened before division, so a depth whose double exceeds sixty-four bits still receives a bound when the result fits. At depth `u64::MAX`, the widest kappa and cap give five, not overflow. Overflow is reserved for an unrepresentable bound; a regression witness separates numerator, quotient, sum and final-addition width boundaries.
+
 `measure_edit` walks the closure of the input and edited roots and counts chunks only the edited value's closure holds and chunks the two share. The locality suite compares the mean over all leaf edits of balanced corpora at depths two through eight with the bound. That finite measurement supplies evidence for those corpora, not a proof for arbitrary codecs or edits.
+
+Executable measurement refinements require the affected and shared counts to form a nonempty, representable partition. Fixed identical and disjoint one-chunk values witness both extremes without assuming the probabilistic bound.
 
 ## Laws and their witnesses
 
@@ -267,6 +281,22 @@ No API in this crate mutates a committed value or a stored chunk. `cam_commit` r
 ## Specification attributes
 
 `# Specification` blocks state the admitted behavior; executable `#[spec(...)]` predicates check supported conditions on executed calls. Trait declarations state implementor obligations. `cam_deref` relies on the consumer's codec round-trip law without requiring an equality implementation on its result type.
+
+The committing sink refines its live frame marks against the body and residue buffers it owns. Its literal nested-value witness checks exact stored bytes and record accounting; bounded generated values additionally compare cut positions against an independent scanner. Individual frame marks cannot establish these relationships without their owning buffers.
+
+Closure refinements require a nonempty loaded set and at least an open/close pair in a completed subtree. Traversal refinements bound spent work and bind cached pointer counts to loaded digests. A fixed repeated-reference witness distinguishes two offsets of the same chunk and counts each logical occurrence, while the digest set still deduplicates physical chunks.
+
+Shared fixtures refine a complete preorder tree, not merely a nonempty node list. Asymmetric byte goldens distinguish child order and leaf indices, and a five-kind scanner witness checks full child addresses. An exact callback trace enters two nested seams and returns to the outer source on the closing record, separating an observed maximum from the final depth. An empty emission script succeeds without invoking its sink; the enclosing encoders then refuse its missing value.
+
+The independent model checks exact borrowed wire extents, while cut and splice witnesses distinguish logical record positions from byte offsets at cap boundaries. Its ledger refinement compares listed identities with authenticated backing entries; equal cardinalities alone do not establish agreement.
+
+The generated codec refines the complete seven-shape field grammar, including counted children. Literal heterogeneous bytes distinguish leaf payloads from count words and interleaved fields, pin their depths and record indices, and preserve untouched data during word, binary and empty-byte edits. The generator's record budget constrains its producer rather than every value the codec can read.
+
+Arena refinements bind backward child references, saturated expanded counts and exact frontier markers. Boundary witnesses distinguish 4096-record admission from 4097-record replacement, preserve unused roots and retain repeated children by occurrence. A compact doubling DAG reaches the counter width without expanding it; a separate frontier witness discards exactly the oldest root when the combined value exceeds the budget.
+
+Prior-value recipes compare selected subtrees and edited leaves against their unchanged input without copying it into a predicate. Fixed field positions distinguish payload leaves from tagged words and interleaved labels, including empty-byte growth and leafless identity. Strategy factories state their sample bounds and an explicit executable exemption: observing a sample advances a runner. Their bounded round-trip, cut and history properties do not claim statistical frequencies or exhaustive coverage. Event-targeted caps describe positions before any earlier cut resets the pending run.
+
+Load-count witnesses distinguish refused backend requests from profile preflight, which performs no load, and exercise the final representable counter transition. Helpers that receive only a store and digest cannot inspect the loaded body in a predicate without repeating observable I/O; their child-reference ordering is covered by the existing missing-descendant scenario.
 
 ## License
 
