@@ -24,6 +24,32 @@ use crate::conv::equal_values;
 use crate::encoding::ContentTable;
 use crate::rewrite::substitute_comp_type;
 
+impl Identity
+{
+    /// Expose computed evidence without granting a checking capability.
+    ///
+    /// # Specification
+    /// - ensures: returns the native fibre inhabitant carried by this identity.
+    /// - fails: `NeutralFiber` for a suspended diagonal program.
+    /// - panics: none.
+    ///
+    /// # Errors
+    /// `RelationError::NeutralFiber`.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — higher replay consumes computed evidence, while a
+    ///   suspended sum diagonal cannot become an invented native value.
+    /// - witness: `higher_field::tests::higher_fibres_preserve_boundaries`
+    #[inline]
+    pub fn native_evidence(self) -> Result<ValueId, RelationError>
+    {
+        match self.proof {
+            | Proof::Native(value) => Ok(value),
+            | Proof::Diagonal => Err(RelationError::NeutralFiber),
+        }
+    }
+}
+
 /// A dependent transport computation in the experimental rule language.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Transport

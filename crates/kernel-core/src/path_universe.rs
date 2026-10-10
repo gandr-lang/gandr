@@ -269,7 +269,7 @@ impl Paths
     /// - hypothesis: L3 — the product witness separates its component ids.
     /// - witness: `path_universe::tests::it_computes_through_a_former`
     #[inline]
-    fn get(
+    pub fn get(
         &self,
         id: PathId,
     ) -> Result<&Path, PathError>

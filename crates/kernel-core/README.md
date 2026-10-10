@@ -20,6 +20,7 @@ The certified kernel's judgements: the defunctionalized checking machine, type f
 - [Conversion replay](#conversion-replay)
 - [Universe-path experiment](#universe-path-experiment)
 - [Identity and bridge recursion](#identity-and-bridge-recursion)
+- [Guarded higher fields](#guarded-higher-fields)
 - [Sharing and persistence](#sharing-and-persistence)
 - [Mutation findings](#mutation-findings)
 - [Specification attributes](#specification-attributes)
@@ -266,7 +267,7 @@ The experimental `identity_recursion` module folds one closed, level-zero code v
 
 `Relation::constant` and `Relation::cases` construct heterogeneous indexed bridge families. The distinguishing witness is `Br_U Unit Bool` with fibre Unit at `((), inl ())` and Empty at `((), inr ())`. It requires no equality on arbitrary elements and is not an equivalence. This refutes the broad claim that a relational bridge necessarily needs strict element equality beyond canonical data, **for this direct first-order construction**. It does not turn an arbitrary span into a relation: that translation would require endpoint fibres and their reindexing laws. Nor does it establish the full model laws of [Internal Parametricity, without an Interval](https://doi.org/10.1145/3632920).
 
-Identity evidence checks against its computed fibre. `reflexivity` constructs the diagonal; `compose` transports in the identity fibre, pairing both product components. `transport` accepts native representable level-zero motives and reduces reflexivity to the exact input. An unresolved non-reflexive transport retains its endpoints, proof, motive and input as a neutral operation, not a fabricated target value. Suspended sum reflexivity is a structural diagonal program. This does not provide J, arbitrary dependent motives, a general fibrancy theorem, higher fields or a nested universe.
+Identity evidence checks against its computed fibre. `reflexivity` constructs the diagonal; `compose` transports in the identity fibre, pairing both product components. `transport` accepts native representable level-zero motives and reduces reflexivity to the exact input. An unresolved non-reflexive transport retains its endpoints, proof, motive and input as a neutral operation, not a fabricated target value. Suspended sum reflexivity is a structural diagonal program. This relation module does not provide J, arbitrary dependent motives, a general fibrancy theorem or a nested universe. The separate higher-field module consumes its native evidence.
 
 At a thunk code, the fold records argument and result relations without comparing functions. `apply_related` checks two independently supplied arguments and their relation evidence. It crosses each `U` seam with `force`, applies the function, and relates the values returned through `F`. A variable or stuck application retains a function fibre and both application computations. It never becomes Empty because evaluation is stuck.
 
@@ -287,6 +288,31 @@ The arena handles remain scoped to their original nodes; callers must not trunca
 **Choice.** One code fold produces relation combinators; a shared evaluator computes both modes, while only identity carries reflexivity and transport. Separate per-mode recursions would duplicate the former clauses. Native identity syntax would prematurely couple this experiment to persistent declarations. **Reversal.** Integrating element identity requires native syntax, scoped dependent motives and checked reduction/substitution laws; accepting Abstract requires its missing interface, not a default relation.
 
 **Mutation scope.** The witnesses in `identity_recursion::tests` and `identity_recursion::function::tests` distinguish wrong sum branches, dropped product coordinates, negative equality on neutrals, forged identity evidence, incorrect universe classifiers, seal inspection and malformed Empty elimination. Function-specific boundaries include omitted or extra coverage, reused component dialogues, forged returned values, unchecked argument relations, bridge transport and application-motive action. No mutation score is claimed.
+
+## Guarded higher fields
+
+The experimental `higher_field` module computes `Rel₂(p, q)` by quoting the native fibre of two checked parallel identities and applying the same identity-mode code fold to their evidence. No relation clause is duplicated. Neutral fibres retain the existing named refusal; the field adds no equality decision on unknown indices.
+
+A `Codata` program is a flat graph of `Guard` and `Redirect` instructions. Each guard checks an inhabitant of the current higher fibre; its tail requests identity of that inhabitant with itself. The same API also observes any supplied pair of parallel native cells. A guarded cycle represents arbitrarily many requested diagonal layers without materializing an infinite structure. A cycle of redirects returns `NonProductive`. Success is a `Prefix` at exactly the requested positive `Depth`, not a verdict about an unobserved tail.
+
+`ObservationBudget` gives each observation an instruction allowance from `ReplayBudget`. Every redirect and guard consumes one unit; reaching the allowance before the requested depth returns `DepthBound`. Zero depth returns `ZeroDepth`. CBPV dialogues and path formation retain their independent replay ceilings. Native relation checking remains a terminating structural walk, not part of the instruction count. These bounds state replay scope, not a global cost theorem.
+
+`symmetry` checks that the source diagonal and inverse fibres have the same native type. It reindexes diagonal evidence into the path fibre, observes its higher identity with the supplied path evidence, and transports the diagonal in that fibre to produce the inverse. It then checks all four square faces and observes identity between the two boundary composites. Both Bool injections compute with distinct neutral Unit payloads and canonical evidence. A neutral proof-index action retains the existing transport boundary as `NeutralTransport`; this is not general dependent elimination.
+
+`unfold` checks two equivalence introductions and exposes the identity record:
+
+| Field | Observation |
+| ----- | ----------- |
+| Forward | Replay both translators at the input; check identity of their returned values and its higher diagonal. |
+| Backward | The same observation in the reverse direction. |
+| Source coherence | Replay both backward-after-forward composites to the input; observe identity between their reflected diagonal witnesses. |
+| Target coherence | The corresponding forward-after-backward coherence. |
+
+The negation and case-inlined triple-negation certificates satisfy all four fields at both Bool constructors, while certificate conversion remains `NotConvertible`. This is **replay-equivalence as identity, never in conversion**. The record is an identity type's observation interface: each point consumes supplied evidence; observing Base samples would not prove a universal field. Reflexivity and product certificate introductions retain their existing path operations; this record-unfolding operation requires `Equiv`.
+
+**Choice.** A first-order cyclic program makes guards and back edges inspectable and bounds each replay. Eager towers cannot represent infinite higher data; closures hide productivity obligations and allocate opaque continuations. The graph stores no checking verdict and adds no dependency or wire tag. **Reversal.** A native higher identity language would replace the auxiliary representation only with checked substitution, reduction and persistence rules. Function codes, universe and recursive codes, J and Flow are outside this module.
+
+**Mutation scope.** The higher-field module and its native-evidence projection: removed guards, uncharged redirects, early depth success, forged fibre evidence, dropped product coordinates, wrong square boundaries, substituted translator outputs and omitted round-trip coherence. The four witnesses target these boundaries without claiming a mutation campaign or metatheorem about infinite coherence.
 
 ## Sharing and persistence
 
