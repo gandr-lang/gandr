@@ -2,6 +2,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_render_remote::HlSpan;
 use gandr_surface_render_remote::OutKind;
 use gandr_surface_render_remote::TranscriptBlock;
@@ -56,7 +57,7 @@ impl From<usize> for Cells
     ///   machine maximum separate truncation, wrapping and off-by-one
     ///   saturation. Other counts follow the same conversion branch.
     /// - witness: `view::tests::cell_counts_saturate_without_wrapping`
-    #[anodized::spec(ensures: |ret| usize::from(ret.0) == count.min(usize::from(u16::MAX)))]
+    #[spec(ensures: |ret| usize::from(ret.0) == count.min(usize::from(u16::MAX)))]
     fn from(count: usize) -> Self
     {
         Self(u16::try_from(count).unwrap_or(u16::MAX))
@@ -248,7 +249,7 @@ fn draw_input(
 ///   colour appearance is outside these deterministic fixtures.
 /// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
 /// - witness: `view::tests::echo_clipping_keeps_utf8_gaps_and_first_accepted_spans`
-#[anodized::spec(ensures: |ref ret| ret.spans.iter().flat_map(|span| span.content.bytes())
+#[spec(ensures: |ref ret| ret.spans.iter().flat_map(|span| span.content.bytes())
     .eq(<&'static str>::from(row.lead).bytes().chain(row.text.bytes())))]
 fn paint<'block>(
     block: &'block TranscriptBlock,
@@ -296,7 +297,7 @@ fn paint<'block>(
 ///   These cases do not enumerate arbitrary span lists or terminal fonts.
 /// - witness: `view::tests::echo_clipping_keeps_utf8_gaps_and_first_accepted_spans`
 /// - witness: `launch::tests::a_submitted_keyword_is_painted_in_the_keyword_colour`
-#[anodized::spec(
+#[spec(
     captures: [prefix = painted.len()],
     ensures: painted.len() >= prefix && painted.iter().skip(prefix)
         .flat_map(|span| span.content.bytes()).eq(row.text.bytes()),

@@ -12,6 +12,7 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::CheckRefusal;
 use gandr_core_checker::CheckingForm;
 use gandr_core_checker::CoreNode;
@@ -174,7 +175,7 @@ impl Annotations
     /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
     /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
     /// - witness: `locus::tests::run_refusals_have_no_invented_source_locus`
-    #[anodized::spec(ensures: |ref ret| {
+    #[spec(ensures: |ref ret| {
         let located = match (refusal.span(), ret.primary) {
             (Maybe::Present(span), Maybe::Present(annotation)) =>
                 annotation.span == span && annotation.label == Label::Class(class),
@@ -265,7 +266,7 @@ impl Annotations
     /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
     /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
     /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
-    #[anodized::spec(ensures: |ref ret| {
+    #[spec(ensures: |ref ret| {
         let class = Class::Refusal(refusal.classify());
         let classified = match ret.primary {
             Maybe::Present(annotation) => annotation.label == Label::Class(class),
@@ -316,7 +317,7 @@ impl Annotations
 /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
 /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
 /// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
-#[anodized::spec(ensures: |ref ret| {
+#[spec(ensures: |ref ret| {
     let classified = match ret.primary {
         Maybe::Present(annotation) => annotation.label == Label::Class(class),
         Maybe::Absent(report_span::Absent::Unrecorded) => true,
@@ -456,7 +457,7 @@ quenchant_shape::reason_enum! {
 ///   outside these observations.
 /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
 /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
-#[anodized::spec(ensures: |ret| match (origin, ret) {
+#[spec(ensures: |ret| match (origin, ret) {
     (Maybe::Present(held), Maybe::Present(span)) => span == held.span(),
     (Maybe::Absent(_), Maybe::Absent(node_span::Absent::Unrecorded)) => true,
     _ => false,
@@ -488,7 +489,7 @@ where
 ///   record insertion order are outside these fixtures.
 /// - witness: `locus::tests::refusal_locations_keep_origin_families_and_missing_nodes_distinct`
 /// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
-#[anodized::spec(ensures: |ret| {
+#[spec(ensures: |ret| {
     let origin = match core {
         CoreNode::Term(TermNode::Value(at)) => origins.value(at),
         CoreNode::Term(TermNode::Computation(at)) => origins.computation(at),
@@ -531,7 +532,7 @@ fn node(
 ///   finite fixtures.
 /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
 /// - witness: `locus::tests::checker_fallbacks_preserve_causal_roles`
-#[anodized::spec(ensures: |ret| match (span, ret) {
+#[spec(ensures: |ret| match (span, ret) {
     (Maybe::Present(span), Maybe::Present(annotation)) =>
         annotation.span == span && annotation.label == label,
     (Maybe::Absent(node_span::Absent::Unrecorded), Maybe::Absent(report_context::Absent::Unrecorded)) => true,

@@ -27,6 +27,8 @@
 
 use core::num::NonZeroU64;
 
+use anodized::spec;
+
 use crate::commitment::AlgorithmVersion;
 use crate::commitment::CommitmentField;
 use crate::commitment::CommitmentWriter;
@@ -79,7 +81,7 @@ impl TryFrom<u64> for Kappa
     ///   the maximum as boundary witnesses; exact values and refusal reasons
     ///   distinguish broadened rejection, accepted zero and substituted values.
     /// - witness: `tests::typed::zero_constants_are_refused_by_reason`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Ok(value) => raw != 0 && value.0.get() == raw,
         Err(error) => raw == 0 && error == ChunkerError::InvalidParameters {
             reason: InvalidParameterReason::ZeroKappa,
@@ -164,7 +166,7 @@ impl TryFrom<u64> for TokenCap
     ///   the maximum as boundary witnesses; exact values and refusal reasons
     ///   distinguish broadened rejection, accepted zero and substituted values.
     /// - witness: `tests::typed::zero_constants_are_refused_by_reason`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Ok(value) => raw != 0 && value.0.get() == raw,
         Err(error) => raw == 0 && error == ChunkerError::InvalidParameters {
             reason: InvalidParameterReason::ZeroTokenCap,
@@ -304,7 +306,7 @@ impl TypedChunkerParams
     ///   width, endian order, omission and field swaps change the byte image.
     /// - witness: `tests::commitment::the_typed_commitment_is_pinned`
     /// - witness: `tests::commitment::each_typed_constant_moves_the_commitment`
-    #[anodized::spec(ensures: |ret| {
+    #[spec(ensures: |ret| {
         let bytes = ret.as_ref();
         let domain = crate::commitment::PARAMETER_DOMAIN;
         bytes.starts_with(domain)
@@ -358,7 +360,7 @@ impl BoundaryEvent
     ///   counts distinguish swapped fields and cumulative double counting.
     /// - witness: `tests::typed::the_cap_and_the_predicate_cut_at_their_boundaries`
     /// - witness: `tests::typed::zero_token_events_still_observe_the_residue`
-    #[anodized::spec(ensures: |ret| matches!(ret.tokens.const_eq(tokens), crate::units::ConstEquality::Equal) && matches!(ret.residue.const_eq(residue), crate::units::ConstEquality::Equal))]
+    #[spec(ensures: |ret| matches!(ret.tokens.const_eq(tokens), crate::units::ConstEquality::Equal) && matches!(ret.residue.const_eq(residue), crate::units::ConstEquality::Equal))]
     #[inline]
     #[must_use]
     pub const fn new(
@@ -499,7 +501,7 @@ impl TypedChunker
     /// - witness: `tests::typed::one_event_per_record_is_the_record_safe_degenerate_instance`
     /// - witness: `tests::typed::a_saturated_count_still_cuts`
     /// - witness: `tests::typed::zero_token_events_still_observe_the_residue`
-    #[anodized::spec(
+    #[spec(
         captures: pending = self.pending.saturating_plus(event.tokens),
         ensures: |ret| match ret {
             CutDecision::Cut(BoundaryReason::MaxTokenCap) =>

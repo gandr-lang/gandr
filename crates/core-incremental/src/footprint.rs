@@ -17,6 +17,7 @@ use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_checker::body;
 use quenchant_shape::shape::Maybe;
 
@@ -208,7 +209,7 @@ enum Position
 /// - witness: `footprint::tests::a_term_visit_does_not_suppress_a_later_type_visit`
 /// - witness: `footprint::tests::bounded_tables_separate_reachability_opacity_and_holes`
 /// - witness: `footprint::tests::a_quoted_abstract_type_reads_its_own_reference_in_type_position`
-#[anodized::spec(ensures: |ret| ret.type_reads.is_subset(&ret.reads)
+#[spec(ensures: |ret| ret.type_reads.is_subset(&ret.reads)
     && ret.opacity == content.opacity()
     && ret.hole == match content.body() {
         Maybe::Absent(body::Absent::Hole) => HoleMark::Hole,
@@ -273,6 +274,7 @@ mod tests
     use alloc::collections::BTreeSet;
     use alloc::vec;
 
+    use anodized::spec;
     use gandr_core_checker::Declaration;
     use gandr_core_checker::OriginToken;
     use gandr_core_checker::body;
@@ -331,7 +333,7 @@ mod tests
     /// - witness: `footprint::tests::shadowed_binder_is_not_a_read`
     /// - witness: `footprint::tests::free_occurrence_under_binders_is_read`
     /// - witness: `footprint::tests::a_term_visit_does_not_suppress_a_later_type_visit`
-    #[anodized::spec(ensures: |ret| ret.opacity == Opacity::Transparent
+    #[spec(ensures: |ret| ret.opacity == Opacity::Transparent
         && ret.type_reads.is_subset(&ret.reads)
         && ret.hole == match body {
             Maybe::Absent(body::Absent::Hole) => HoleMark::Hole,

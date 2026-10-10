@@ -13,6 +13,7 @@ use core::fmt;
 use core::slice;
 use std::path::Path;
 
+use anodized::spec;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Outcome;
 use gandr_surface_corpus::Settlement;
@@ -192,7 +193,7 @@ pub struct Entries<'step>
 /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
 /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
 /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
-#[anodized::spec(ensures: |ref ret| ret.verb == verb && match *step {
+#[spec(ensures: |ref ret| ret.verb == verb && match *step {
     Step::Fault { path, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path))
         && ret.text.as_ref().is_empty() && matches!(ret.cursor, Cursor::Done),
     Step::Source { path, text, .. } => core::ptr::eq(core::ptr::from_ref(ret.path), core::ptr::from_ref(path)) && core::ptr::eq(core::ptr::from_ref(ret.text.as_ref()), core::ptr::from_ref(text.as_ref())),
@@ -241,7 +242,7 @@ pub fn entries<'step>(
 ///   standing/composition pairs are outside the produced-step witnesses.
 /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
 /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
-#[anodized::spec(ensures: |ref ret| match (standing, composed, ret) {
+#[spec(ensures: |ref ret| match (standing, composed, ret) {
     (Standing::Pending, _, &Cursor::Done) => matches!(verb, Verb::Check(_)),
     (Standing::Pending, &Composed::Refused(expected), &Cursor::Last(Entry::Line(Line {
         path: actual, kind: LineKind::Pending(refusal),
@@ -337,7 +338,7 @@ impl<'step> Entries<'step>
     /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
     /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
     /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
-    #[anodized::spec(ensures: |ref ret| match (shown(declaration, self.verb), ret) {
+    #[spec(ensures: |ref ret| match (shown(declaration, self.verb), ret) {
         (Shown::Counted, &Maybe::Absent(unshown::Absent::Counted)) => true,
         (Shown::Goal, &Maybe::Present(Entry::Report(report))) =>
             core::ptr::eq(core::ptr::from_ref(report.path()), core::ptr::from_ref(self.path)) && report.class() == crate::Class::Goal,
@@ -420,7 +421,7 @@ impl<'step> Iterator for Entries<'step>
     /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
     /// - witness: `entry::tests::counted_declarations_preserve_visible_order_and_exhaustion`
     /// - witness: `entry::tests::faults_and_empty_sources_stay_exhausted`
-    #[anodized::spec(
+    #[spec(
         captures: [before = match self.cursor {
             Cursor::Done => 0_usize,
             Cursor::Last(_) => 1_usize,

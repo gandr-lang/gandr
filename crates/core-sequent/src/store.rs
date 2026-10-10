@@ -33,6 +33,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_kernel_term::ConstantIndex;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_kernel_term::Literal;
@@ -425,7 +426,7 @@ impl Store
     /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
     /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.values.len()],
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(entry)
@@ -461,7 +462,7 @@ impl Store
     /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         | Some(value) => usize::try_from(u32::from(id)).ok()
             .and_then(|offset| self.values.get(offset))
             .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(value))),
@@ -496,7 +497,7 @@ impl Store
     /// - witness: `tests::csl_fibration::nominal_identity_freshness_and_alias_coherence`
     /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.cells.len()],
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(entry)
@@ -530,7 +531,7 @@ impl Store
     /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret == usize::try_from(u32::from(id)).ok()
+    #[spec(ensures: |ret| ret == usize::try_from(u32::from(id)).ok()
         .and_then(|offset| self.cells.get(offset)).copied()
     )]
     pub fn cell(
@@ -564,7 +565,7 @@ impl Store
     /// - witness: `tests::csl_fibration::frame_preservation_under_forcing`
     /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.cell(cell)],
         ensures: |ret| match entry {
             | None => ret == Err(StoreFault::DanglingCell(cell)) && self.cell(cell).is_none(),
@@ -616,7 +617,7 @@ impl Store
     /// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
     /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.cell(cell)],
         ensures: |ret| if self.value(value).is_none() {
             ret == Err(StoreFault::DanglingValue(value)) && self.cell(cell) == entry
@@ -672,7 +673,7 @@ impl Store
     /// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
     /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.cell(cell)],
         ensures: |ret| match entry {
             | None => ret == Err(StoreFault::DanglingCell(cell)) && self.cell(cell).is_none(),
@@ -739,7 +740,7 @@ impl Store
     /// - witness: `store::tests::environments_bind_innermost_first`
     /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.value_bindings.len()],
         ensures: |ret| match ret {
             | Ok(extended) => extended.covalues == environment.covalues
@@ -793,7 +794,7 @@ impl Store
     /// - witness: `store::tests::environments_bind_innermost_first`
     /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.covalue_bindings.len()],
         ensures: |ret| match ret {
             | Ok(extended) => extended.values == environment.values
@@ -845,7 +846,7 @@ impl Store
     /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret == usize::try_from(u32::from(index)).ok()
+    #[spec(ensures: |ret| ret == usize::try_from(u32::from(index)).ok()
         .and_then(|offset| self.bound_values(environment).nth(offset))
     )]
     pub fn lookup_value(
@@ -890,7 +891,7 @@ impl Store
     /// - witness: `store::tests::both_binding_chains_preserve_outer_and_opposite_scopes`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret == usize::try_from(u32::from(index)).ok()
+    #[spec(ensures: |ret| ret == usize::try_from(u32::from(index)).ok()
         .and_then(|offset| core::iter::successors(
             match environment.covalues {
                 | CovalueScope::Empty => None,
@@ -983,7 +984,7 @@ impl Store
     /// - witness: `store::tests::frames_shrink_to_a_mark`
     /// - witness: `store::tests::frame_serial_exhaustion_preserves_the_region`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [height = self.frames.len(), serial = self.last_serial],
         ensures: |ret| match ret {
             | Ok(()) => height.checked_add(1) == Some(self.frames.len())
@@ -1024,7 +1025,7 @@ impl Store
     /// - witness: `store::tests::frame_serial_exhaustion_preserves_the_region`
     /// - witness: `store::tests::frames_shrink_to_a_mark`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [height = self.frames.len(), serial = self.last_serial],
         ensures: |ref ret| self.frames.len() == height.saturating_sub(1)
             && ret.is_some() == (height != 0) && self.last_serial == serial,
@@ -1052,7 +1053,7 @@ impl Store
     /// - witness: `store::tests::frame_serial_exhaustion_preserves_the_region`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret.height == FrameHeight::from(self.frames.len())
+    #[spec(ensures: |ret| ret.height == FrameHeight::from(self.frames.len())
         && ret.serial == self.frames.last().map_or(FrameSerial::BASE, |entry| entry.serial)
     )]
     pub fn mark(&self) -> ContinuationMark
@@ -1111,7 +1112,7 @@ impl Store
     /// - witness: `store::tests::frames_shrink_to_a_mark`
     /// - witness: `store::tests::shrinking_rejects_stale_marks_and_reports_dropped_update_faults`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.mark()],
         ensures: |ret| match ret {
             | Ok(()) => self.mark() == mark,
@@ -1167,7 +1168,7 @@ impl Store
     ///   mutation and a fabricated state for a dangling cell.
     /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
     /// - witness: `store::tests::cell_refusals_preserve_state_and_error_precedence`
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.cell(cell)],
         ensures: |ref ret| match *ret {
             | Ok(ref state) => Some(**state) == entry,
@@ -1218,7 +1219,7 @@ mod tests
     ///   malformed spellings are outside the fixture domain.
     /// - witness: `store::tests::cell_write_back_is_shared_and_nominal`
     /// - witness: `store::tests::heap_reads_preserve_identity_at_the_end`
-    #[anodized::spec(
+    #[spec(
         requires: !digits.0.is_empty() && digits.0.bytes().all(|byte| byte.is_ascii_digit()),
         ensures: |ref ret| match *ret {
             | HeapValue::Literal(Literal::Integer(ref integer)) => {

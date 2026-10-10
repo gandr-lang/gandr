@@ -594,6 +594,8 @@ mod tests
     use alloc::format;
     use alloc::vec::Vec;
 
+    use anodized::spec;
+
     use super::TreeBuilder;
     use crate::error::SyntaxError;
     use crate::label::NodeLabel;
@@ -683,7 +685,7 @@ mod tests
     ///   fragments. Swapping, shifting or clamping endpoints changes those
     ///   fragment observations.
     /// - witness: `build::tests::a_node_names_the_fragment_it_spans`
-    #[anodized::spec(requires: start <= end, ensures: |ret| ret.start() == start && ret.end() == end)]
+    #[spec(requires: start <= end, ensures: |ret| ret.start() == start && ret.end() == end)]
     fn span(
         start: ByteOffset,
         end: ByteOffset,
@@ -716,7 +718,7 @@ mod tests
     /// - witness: `build::tests::the_root_is_the_first_position`
     /// - witness: `build::tests::children_are_contiguous_and_in_source_order`
     /// - witness: `build::tests::the_same_subtree_in_two_sources_shares_its_digest`
-    #[anodized::spec(
+    #[spec(
         requires: [0_usize, 4, 5, 8, 9, 10, 12, 19, 20, 22].into_iter().all(|offset| {
             usize::from(padding).checked_add(offset).is_some_and(|position| source.as_ref().is_char_boundary(position))
         }),
@@ -814,7 +816,7 @@ mod tests
     /// - witness: `build::tests::children_are_contiguous_and_in_source_order`
     /// - witness: `build::tests::a_leaf_has_no_children`
     /// - witness: `build::tests::a_position_past_the_arena_has_no_children`
-    #[anodized::spec(ensures: |ret| ret.iter().copied().eq(tree.children(position)))]
+    #[spec(ensures: |ret| ret.iter().copied().eq(tree.children(position)))]
     fn children(
         tree: &SyntaxTree<'_>,
         position: NodeIndex,

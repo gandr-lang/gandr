@@ -14,6 +14,7 @@ use alloc::vec::Vec;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
@@ -190,7 +191,7 @@ pub struct Natural(pub u64);
 ///   magnitudes. The predicate checks a numeric round trip without formatting a
 ///   second string.
 /// - witness: `tests::common::lowering_handles_numeric_and_binding_boundaries`
-#[anodized::spec(
+#[spec(
     ensures: |ret| matches!(ret, Literal::Integer(ref literal) if literal.sign() == Sign::NonNegative && literal.magnitude().as_ref().parse::<u64>() == Ok(value.0)),
 )]
 pub fn integer(value: Natural) -> Literal
@@ -214,7 +215,7 @@ pub fn integer(value: Natural) -> Literal
 ///   covers arity, keys, dense metadata and resolved root presence; it does not
 ///   run a second lowering.
 /// - witness: `tests::common::lowering_handles_numeric_and_binding_boundaries`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret.items().len() == statements.len()
             && ret.items().iter().zip(statements).enumerate().all(
@@ -310,7 +311,7 @@ pub fn lower(statements: &[Stmt]) -> Program
 ///   agreement and disagreement.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
 /// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
-#[anodized::spec(
+#[spec(
     ensures: |ret| ret.len() == program.items().len(),
 )]
 pub fn batch(program: &Program) -> Vec<Typing>
@@ -344,7 +345,7 @@ pub fn batch(program: &Program) -> Vec<Typing>
 ///   compare with the module entry. The predicate checks budget, source keys,
 ///   arity and fresh judgement marks.
 /// - witness: `tests::incremental::edit_sequences_preserve_zero_drift`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret.checkpoints().budget() == CheckBudget::DEFAULT
             && ret.checkpoints().items().len() == statements.len()
@@ -421,7 +422,7 @@ pub fn failure(message: String) -> TestCaseError
 ///
 /// # Errors
 /// A test-case failure naming the broken obligation.
-#[anodized::spec(
+#[spec(
     captures: [budget = base.checkpoints().budget()],
     ensures: |ret| match ret {
         | Ok(ref step) => {
@@ -539,7 +540,7 @@ pub fn step(
 ///   exercises the underlying failure rather than pinning panic text.
 /// - witness: `tests::incremental::incremental_equals_from_scratch`
 /// - witness: `tests::incremental::a_stale_cached_typing_is_caught`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret.resumed.checkpoints().budget() == CheckBudget::DEFAULT
             && ret.resumed.checkpoints().items().len() == edited.len()
@@ -601,7 +602,7 @@ impl Scratch
     ///   path. The predicate checks the label without querying the file system
     ///   or repeating environment lookup.
     /// - witness: `tests::common::directory_snapshots_order_names_and_retain_bytes`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| {
             ret.0
                 .as_os_str()
@@ -643,7 +644,7 @@ impl Scratch
     ///   exact distinct bytes in name order. The predicate checks ordering
     ///   without rereading external state.
     /// - witness: `tests::common::directory_snapshots_order_names_and_retain_bytes`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| {
             ret.0
                 .windows(2)

@@ -872,6 +872,8 @@ mod tests
 {
     use alloc::collections::BTreeMap;
 
+    use anodized::spec;
+
     use super::Level;
     use super::LevelConstant;
     use super::LevelError;
@@ -1104,7 +1106,7 @@ mod tests
     ///   repeated successors.
     /// - witness: `level::tests::atom_iteration_preserves_order_and_offsets`
     /// - witness: `level::tests::max_absorbs_dominated_constant`
-    #[anodized::spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
+    #[spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
         && ret.atoms().eq(core::iter::once((variable, offset))))]
     fn var_plus(
         variable: LevelVar,

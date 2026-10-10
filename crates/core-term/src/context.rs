@@ -568,6 +568,7 @@ impl Context
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_kernel_term::DeBruijnIndex;
 
     use super::BinderDepth;
@@ -592,7 +593,7 @@ mod tests
     /// - hypothesis: L3 — unequal declared types distinguish the innermost
     ///   binder from the outer one as opening shifts de Bruijn indices.
     /// - witness: `context::tests::opening_a_binder_shifts_the_zones_indices`
-    #[anodized::spec(ensures: |ret| ret.1 != ret.2
+    #[spec(ensures: |ret| ret.1 != ret.2
         && ret.0.value_type(ret.1) == Some(&crate::ValueType::Unit)
         && ret.0.value_type(ret.2) == Some(&crate::ValueType::Product(ret.1, ret.1)))]
     fn two_types() -> (CoreArena, ValueTypeId, ValueTypeId)

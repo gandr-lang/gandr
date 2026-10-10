@@ -21,6 +21,7 @@
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
@@ -127,7 +128,7 @@ impl core::error::Error for UnfocusRefusal
 /// - witness: `unfocus::tests::a_capture_standing_as_a_value_is_outside_the_image`
 /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
 #[inline]
-#[anodized::spec(
+#[spec(
     captures: [mark = core.watermark()],
     ensures: |ret| match ret {
         | Ok(id) => core.computation(id).is_some(),
@@ -167,7 +168,7 @@ pub fn unfocus_command(
 /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
 /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
 #[inline]
-#[anodized::spec(
+#[spec(
     captures: [mark = core.watermark()],
     ensures: |ret| match ret {
         | Ok(id) => core.value(id).is_some(),
@@ -218,7 +219,7 @@ impl Depth
     ///   the ceiling observes each successor and the untouched opposite depth.
     ///   Swapped counters, wrapping and premature saturation are distinguished.
     /// - witness: `unfocus::tests::binder_depths_saturate_independently`
-    #[anodized::spec(ensures: |ret| ret.producers == self.producers.saturating_add(1)
+    #[spec(ensures: |ret| ret.producers == self.producers.saturating_add(1)
         && ret.covariables == self.covariables
     )]
     fn under_producer(self) -> Self
@@ -241,7 +242,7 @@ impl Depth
     ///   the ceiling observes each successor and the untouched opposite depth.
     ///   Swapped counters, wrapping and premature saturation are distinguished.
     /// - witness: `unfocus::tests::binder_depths_saturate_independently`
-    #[anodized::spec(ensures: |ret| ret.covariables == self.covariables.saturating_add(1)
+    #[spec(ensures: |ret| ret.covariables == self.covariables.saturating_add(1)
         && ret.producers == self.producers
     )]
     fn under_covariable(self) -> Self
@@ -317,7 +318,7 @@ pub enum Decoded
 /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
 /// - witness: `machine::tests::a_function_terminal_reads_back_closed_over_its_environment`
 /// - witness: `machine::tests::a_thunk_reads_back_closed_over_its_environment`
-#[anodized::spec(
+#[spec(
     requires: closing.iter().all(|id| core.value(*id).is_some()),
     captures: [mark = core.watermark()],
     ensures: |ret| match ret {
@@ -423,7 +424,7 @@ impl Unfocusing<'_>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     /// - witness: `unfocus::tests::decoding_result_stacks_refuse_underflow_and_surplus`
-    #[anodized::spec(ensures: |ret| ret.is_err() || (self.tasks.is_empty()
+    #[spec(ensures: |ret| ret.is_err() || (self.tasks.is_empty()
         && match ret {
             | Ok(Decoded::Value(id)) => self.values.as_slice() == [id] && self.computations.is_empty(),
             | Ok(Decoded::Computation(id)) => self.computations.as_slice() == [id] && self.values.is_empty(),
@@ -476,7 +477,7 @@ impl Unfocusing<'_>
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
-    #[anodized::spec(
+    #[spec(
         requires: match &task {
             | &Task::Pair => self.values.len() >= 2,
             | &Task::Injection(_) | &Task::Lift(_) | &Task::Return | &Task::Force => !self.values.is_empty(),
@@ -589,7 +590,7 @@ impl Unfocusing<'_>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
-    #[anodized::spec(
+    #[spec(
         captures: [work = self.tasks.len(), results = self.values.len()],
         ensures: |ret| if self.arena.producer(id).is_none() {
             ret == Err(UnfocusRefusal::DanglingProducer(id))
@@ -673,7 +674,7 @@ impl Unfocusing<'_>
     ///   value identity or variable index. Wrong subtraction, binder capture
     ///   and accidental linear substitution change these boundary readings.
     /// - witness: `unfocus::tests::closing_substitution_distinguishes_binders_and_zones`
-    #[anodized::spec(ensures: self.values.last().is_some_and(|value| {
+    #[spec(ensures: self.values.last().is_some_and(|value| {
         let past = if zone == Zone::Intuitionistic {
             u32::from(index).checked_sub(depth.producers)
         } else { None };
@@ -736,7 +737,7 @@ impl Unfocusing<'_>
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
     /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
-    #[anodized::spec(
+    #[spec(
         captures: [work = self.tasks.len()],
         ensures: |ret| if self.arena.command(id).is_none() {
             ret == Err(UnfocusRefusal::DanglingCommand(id))
@@ -840,7 +841,7 @@ impl Unfocusing<'_>
     ///   observe the scheduled body and binders.
     /// - witness: `unfocus::tests::decoding_refuses_missing_roots_and_malformed_heads`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
-    #[anodized::spec(ensures: |ret| ret == match self.arena.producer(id) {
+    #[spec(ensures: |ret| ret == match self.arena.producer(id) {
         | None => Err(UnfocusRefusal::DanglingProducer(id)),
         | Some(&ProducerNode::Cocase { ref arms }) if matches!(arms.as_ref(),
             &[crate::il::CopatternArm { destructor: DestructorTag::Apply, .. }]) => Ok(()),
@@ -899,7 +900,7 @@ impl Unfocusing<'_>
     /// - witness: `tests::focus_properties::hand_built_cases_cover_every_former`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_computations`
     /// - witness: `tests::focus_properties::unfocusing_inverts_focusing_on_generated_values`
-    #[anodized::spec(
+    #[spec(
         requires: !self.computations.is_empty(),
         captures: [work = self.tasks.len()],
         ensures: |ret| match self.arena.consumer(id) {
@@ -988,7 +989,7 @@ impl Unfocusing<'_>
     /// - hypothesis: L3 — distinct results expose wrong-end removal; the exact
     ///   empty-stack refusal exposes silent or stale underflow.
     /// - witness: `unfocus::tests::decoding_result_stacks_refuse_underflow_and_surplus`
-    #[anodized::spec(
+    #[spec(
         captures: [last = self.values.last().copied(), length = self.values.len()],
         ensures: |ret| ret == last.ok_or(UnfocusRefusal::DecodeInvariant)
             && self.values.len() == length.saturating_sub(1),
@@ -1015,7 +1016,7 @@ impl Unfocusing<'_>
     /// - hypothesis: L3 — distinct results expose wrong-end removal; the exact
     ///   empty-stack refusal exposes silent or stale underflow.
     /// - witness: `unfocus::tests::decoding_result_stacks_refuse_underflow_and_surplus`
-    #[anodized::spec(
+    #[spec(
         captures: [last = self.computations.last().copied(), length = self.computations.len()],
         ensures: |ret| ret == last.ok_or(UnfocusRefusal::DecodeInvariant)
             && self.computations.len() == length.saturating_sub(1),

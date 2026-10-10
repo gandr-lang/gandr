@@ -7,6 +7,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
@@ -70,7 +71,7 @@ use crate::generate::revalue;
 ///   boundaries distinguish changed, equal and absent integer selections.
 /// - witness: `tests::defects::the_generator_reaches_value_only_edits_under_type_position_reads`
 /// - witness: `tests::generate::revalue_preserves_metadata_and_classifies_exactly`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         (ret == Reached::Yes)
             == match *edit {
@@ -206,7 +207,7 @@ fn a_shadowing_program_under_a_type_position_read_checks_and_terminates()
 ///   predicate, which captures only the head variant rather than cloning it.
 /// - witness: `tests::defects::chain_respects_zero_and_singleton_lengths`
 /// - witness: `tests::defects::items_visited_for_a_head_edit_grow_linearly`
-#[anodized::spec(
+#[spec(
     captures: [head_kind = core::mem::discriminant(&head)],
     ensures: |ret| {
         ret.len() == usize::from(length)
@@ -317,7 +318,7 @@ fn items_visited_for_a_head_edit_grow_linearly()
 ///   independently observes the one resolving and one missing child, without
 ///   running the codec.
 /// - witness: `tests::defects::a_failed_store_leaves_the_store_as_it_was`
-#[anodized::spec(
+#[spec(
     ensures: |ret| {
         ret.items().len() == 1
             && ret.items().first().is_some_and(|item| {

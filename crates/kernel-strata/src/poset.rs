@@ -1696,6 +1696,8 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
+
     use super::AdmissionOutcome;
     use super::ConsistencyValue;
     use super::ConsistencyWitness;
@@ -2256,7 +2258,7 @@ mod tests
     ///   hypotheses and offsets.
     /// - witness: `poset::tests::paper_example_admits_with_a_validating_homomorphism`
     /// - witness: `poset::tests::paper_loop_variant_returns_a_validating_loop_witness`
-    #[anodized::spec(ensures: |ret| ret.iter().map(|constraint| constraint.left().atoms().next()
+    #[spec(ensures: |ret| ret.iter().map(|constraint| constraint.left().atoms().next()
         .map(|(variable, _)| variable)).eq([Some(y()), Some(var2()), Some(var3()), Some(var4())]))]
     fn paper_constraints() -> Vec<LandmarkConstraint>
     {
@@ -2348,7 +2350,7 @@ mod tests
     ///   homomorphism.
     /// - witness: `poset::tests::compilation_preserves_direction_order_and_subsumption`
     /// - witness: `poset::tests::paper_example_admits_with_a_validating_homomorphism`
-    #[anodized::spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
+    #[spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
         && ret.atoms().eq(core::iter::once((variable, offset))))]
     fn var_plus(
         variable: LevelVar,
@@ -2378,7 +2380,7 @@ mod tests
     ///   distinguish discarded constraints or a spurious admitting branch.
     /// - witness: `poset::tests::empty_constraint_set_admits_with_an_empty_certificate`
     /// - witness: `poset::tests::paper_example_admits_with_a_validating_homomorphism`
-    #[anodized::spec(ensures: |ret| validate_consistency(ret.constraints(), ret.consistency()).is_ok())]
+    #[spec(ensures: |ret| validate_consistency(ret.constraints(), ret.consistency()).is_ok())]
     fn admitted(constraints: Vec<LandmarkConstraint>) -> LandmarkPoset
     {
         match LandmarkPoset::admit(constraints).expect("admission does not overflow") {
@@ -2409,7 +2411,7 @@ mod tests
     /// - witness: `poset::tests::self_successor_equality_loops`
     /// - witness: `poset::tests::paper_loop_variant_returns_a_validating_loop_witness`
     /// - witness: `poset::tests::partial_loop_pins_the_shift_choice`
-    #[anodized::spec(ensures: |ret| validate_loop_witness(constraints, &ret).is_ok())]
+    #[spec(ensures: |ret| validate_loop_witness(constraints, &ret).is_ok())]
     fn looped(constraints: &[LandmarkConstraint]) -> LoopWitness
     {
         match LandmarkPoset::admit(constraints.to_vec()).expect("admission does not overflow") {

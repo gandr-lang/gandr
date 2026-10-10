@@ -29,6 +29,8 @@
 //! segment, which is what stops a long run from resetting its own accounting
 //! between pieces.
 
+use anodized::spec;
+
 use crate::error::BuildError;
 use crate::error::RenderError;
 use crate::error::RenderLimitKind;
@@ -196,7 +198,7 @@ impl BuildMeter
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.limits == limits
                 && u64::from(ret.used.doc_nodes) == 0
                 && u64::from(ret.used.text_bytes) == 0
@@ -234,7 +236,7 @@ impl BuildMeter
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret == self.used
     )]
     #[inline]
@@ -266,7 +268,7 @@ impl BuildMeter
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let next = u128::from(u64::from(self.used.doc_nodes)).saturating_add(u128::from(1_u64));
             let ceiling = Some(u64::from(u32::from(self.limits.max_doc_nodes)));
             ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::NodeCount } }
@@ -305,7 +307,7 @@ impl BuildMeter
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let next = u128::from(u64::from(self.used.text_bytes)).saturating_add(u128::from(u64::from(amount)));
             let ceiling = u64::try_from(usize::from(self.limits.max_text_bytes)).ok();
             ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::TextBytes } }
@@ -349,7 +351,7 @@ impl BuildMeter
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let next = u128::from(u64::from(self.used.verbatim_lines)).saturating_add(u128::from(u64::from(amount)));
             let ceiling = Some(u64::from(u32::from(self.limits.max_verbatim_lines)));
             ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::VerbatimLines } }
@@ -392,7 +394,7 @@ impl BuildMeter
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let next = u128::from(u64::from(self.used.build_steps)).saturating_add(u128::from(1_u64));
             let ceiling = Some(u64::from(self.limits.max_build_steps));
             ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: crate::error::BuildArithmetic::BuildSteps } }
@@ -435,7 +437,7 @@ impl BuildMeter
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
-    #[anodized::spec(
+    #[spec(
         captures: before = self.used,
         ensures: |ret| { let next = u128::from(u64::from(before.doc_nodes)).saturating_add(u128::from(1_u64));
             let ceiling = Some(u64::from(u32::from(self.limits.max_doc_nodes)));
@@ -483,7 +485,7 @@ impl BuildMeter
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
-    #[anodized::spec(
+    #[spec(
         captures: before = self.used,
         ensures: |ret| { let next = u128::from(u64::from(before.text_bytes)).saturating_add(u128::from(u64::from(amount)));
             let ceiling = u64::try_from(usize::from(self.limits.max_text_bytes)).ok();
@@ -534,7 +536,7 @@ impl BuildMeter
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
-    #[anodized::spec(
+    #[spec(
         captures: before = self.used,
         ensures: |ret| { let next = u128::from(u64::from(before.verbatim_lines)).saturating_add(u128::from(u64::from(amount)));
             let ceiling = Some(u64::from(u32::from(self.limits.max_verbatim_lines)));
@@ -585,7 +587,7 @@ impl BuildMeter
     ///   must leave the complete snapshot unchanged.
     /// - witness: `limits::tests::build_meter_charges_are_atomic_and_preflights_do_not_spend`
     /// - witness: `algebra::tests::build_usage_is_monotone_across_a_whole_document`
-    #[anodized::spec(
+    #[spec(
         captures: before = self.used,
         ensures: |ret| { let next = u128::from(u64::from(before.build_steps)).saturating_add(u128::from(1_u64));
             let ceiling = Some(u64::from(self.limits.max_build_steps));
@@ -765,7 +767,7 @@ impl RenderMeter
     ///   and mutation before refusal change those observations; peak counters
     ///   must retain their maximum.
     /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.limits == limits
                 && ret.live_plan_nodes == 0
                 && u64::from(ret.used.memo_states) == 0
@@ -816,7 +818,7 @@ impl RenderMeter
     ///   and mutation before refusal change those observations; peak counters
     ///   must retain their maximum.
     /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret == self.used
     )]
     #[inline]
@@ -842,7 +844,7 @@ impl RenderMeter
     ///   and mutation before refusal change those observations; peak counters
     ///   must retain their maximum.
     /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.used, self.live_plan_nodes),
         ensures: |ret| { let next = u128::from(u64::from(before.0.memo_states)).saturating_add(u128::from(1_u64));
             let limit = u64::from(self.limits.max_memo_states);
@@ -890,7 +892,7 @@ impl RenderMeter
     ///   and mutation before refusal change those observations; peak counters
     ///   must retain their maximum.
     /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.used, self.live_plan_nodes),
         ensures: |ret| { let next = u128::from(u64::from(before.0.frontier_entries)).saturating_add(u128::from(1_u64));
             let limit = u64::from(self.limits.max_frontier_entries);
@@ -939,7 +941,7 @@ impl RenderMeter
     ///   precedence and confusing a live gauge with a cumulative or peak
     ///   counter.
     /// - witness: `limits::tests::compound_plan_and_work_charges_refuse_before_any_counter_changes`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.used, self.live_plan_nodes),
         ensures: |ret| { let created = u128::from(u64::from(before.0.plan_nodes_created)).saturating_add(1);
             let live = u128::from(before.1).saturating_add(1);
@@ -1011,7 +1013,7 @@ impl RenderMeter
     ///   precedence and confusing a live gauge with a cumulative or peak
     ///   counter.
     /// - witness: `limits::tests::compound_plan_and_work_charges_refuse_before_any_counter_changes`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.used, self.live_plan_nodes),
         ensures: |_| self.used == before.0
                 && self.live_plan_nodes == before.1.saturating_sub(1)
@@ -1038,7 +1040,7 @@ impl RenderMeter
     ///   and mutation before refusal change those observations; peak counters
     ///   must retain their maximum.
     /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.used, self.live_plan_nodes),
         ensures: |ret| { let next = u128::from(u64::from(before.0.output_bytes)).saturating_add(u128::from(u64::from(amount)));
             let limit = u64::from(self.limits.max_output_bytes);
@@ -1093,7 +1095,7 @@ impl RenderMeter
     ///   and mutation before refusal change those observations; peak counters
     ///   must retain their maximum.
     /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let next = u128::from(u64::from(self.used.output_bytes)).saturating_add(u128::from(u64::from(amount)));
             let limit = u64::from(self.limits.max_output_bytes);
             ret.as_ref().map_or_else(|error| if next > u128::from(u64::MAX) { *error == RenderError::ArithmeticOverflow { operation: crate::error::RenderArithmetic::OutputBytes } }
@@ -1139,7 +1141,7 @@ impl RenderMeter
     ///   and mutation before refusal change those observations; peak counters
     ///   must retain their maximum.
     /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.used, self.live_plan_nodes),
         ensures: |ret| { let next = u128::from(u64::from(before.0.layout_steps)).saturating_add(u128::from(1_u64));
             let limit = u64::from(self.limits.max_layout_steps);
@@ -1188,7 +1190,7 @@ impl RenderMeter
     ///   precedence and confusing a live gauge with a cumulative or peak
     ///   counter.
     /// - witness: `limits::tests::compound_plan_and_work_charges_refuse_before_any_counter_changes`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.used, self.live_plan_nodes),
         ensures: |ret| { let next = u128::from(u64::from(before.0.resolver_work_entries)).saturating_add(1);
             let limit = u64::from(self.limits.max_resolver_work_entries);
@@ -1259,7 +1261,7 @@ impl RenderMeter
     ///   and mutation before refusal change those observations; peak counters
     ///   must retain their maximum.
     /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.used, self.live_plan_nodes),
         ensures: |ret| { let next = u128::from(u64::from(before.0.vm_steps)).saturating_add(u128::from(1_u64));
             let limit = u64::from(self.limits.max_vm_steps);
@@ -1312,7 +1314,7 @@ impl RenderMeter
     ///   and mutation before refusal change those observations; peak counters
     ///   must retain their maximum.
     /// - witness: `limits::tests::render_meter_charges_preserve_refusal_and_peak_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.used, self.live_plan_nodes),
         ensures: |ret| self.live_plan_nodes == before.1
                 && ret.as_ref().map_or_else(|error| self.used == before.0

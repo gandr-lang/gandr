@@ -9,6 +9,7 @@ use core::fmt;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_parser::Expected;
 use gandr_surface_parser::Lexeme;
@@ -1845,7 +1846,7 @@ fn expected_completion_names_the_next_tile_or_hole()
 ///   path and IO cause. Message context and a refusing formatter distinguish
 ///   error erasure and swallowed sink failures.
 /// - witness: `tests::acceptance::source_inventory_and_reads_preserve_context`
-#[anodized::spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.path == path, |_| true))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.path == path, |_| true))]
 fn read_source(path: &Path) -> Result<String, ReadSourceError>
 {
     std::fs::read_to_string(path).map_err(|source| ReadSourceError {
@@ -1868,7 +1869,7 @@ fn read_source(path: &Path) -> Result<String, ReadSourceError>
 ///   text and an invalid start index cover refusal. The predicate checks a
 ///   returned match; the witness additionally checks first-match selection.
 /// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
-#[anodized::spec(ensures: |ret| ret.is_none_or(|found| matches!(tree.node(found).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Meld(_) | NodeLabel::Wald)) && tree.children(found).any(|child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_))) && tree.fragment(child).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)))))]
+#[spec(ensures: |ret| ret.is_none_or(|found| matches!(tree.node(found).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Meld(_) | NodeLabel::Wald)) && tree.children(found).any(|child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_))) && tree.fragment(child).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)))))]
 fn find_meld_with_tile(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -1902,7 +1903,7 @@ fn find_meld_with_tile(
 ///   children from descendants and depth-first from breadth-first traversal.
 ///   Missing indices and absent text exercise the empty boundaries.
 /// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
-#[anodized::spec(ensures: |ret| ret.iter().map(String::as_str).eq(tree.children(id).filter(|&child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).map(|child| tree.fragment(child).map_or("", <&str>::from))))]
+#[spec(ensures: |ret| ret.iter().map(String::as_str).eq(tree.children(id).filter(|&child| matches!(tree.node(child).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).map(|child| tree.fragment(child).map_or("", <&str>::from))))]
 fn direct_tiles(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -1928,7 +1929,7 @@ fn direct_tiles(
 ///   inclusion. A tile root and an absent index cover traversal boundaries; the
 ///   predicate independently checks root coverage and missing-node behavior.
 /// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
-#[anodized::spec(ensures: |ret| ret.len() <= tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).count() && (id != tree.root() || ret.len() == tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).count()) && (tree.node(id).is_some() || ret.is_empty()))]
+#[spec(ensures: |ret| ret.len() <= tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).count() && (id != tree.root() || ret.len() == tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Tile(_)))).count()) && (tree.node(id).is_some() || ret.is_empty()))]
 fn descendant_tiles(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -1964,7 +1965,7 @@ fn descendant_tiles(
 ///   endpoint. Root coverage and absent indices are checked independently.
 /// - witness: `tests::acceptance::unclosed_definition_delimiter_does_not_absorb_following_definition`
 /// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
-#[anodized::spec(ensures: |ret| ret.len() <= tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. }))).count() && (id != tree.root() || ret.len() == tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. }))).count()) && (tree.node(id).is_some() || ret.is_empty()))]
+#[spec(ensures: |ret| ret.len() <= tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. }))).count() && (id != tree.root() || ret.len() == tree.positions().filter(|&at| matches!(tree.node(at).map(gandr_surface_syntax::Node::label), Some(NodeLabel::Grout { .. } | NodeLabel::GhostClose { .. }))).count()) && (tree.node(id).is_some() || ret.is_empty()))]
 fn descendant_grout_ends(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -1997,7 +1998,7 @@ fn descendant_grout_ends(
 ///   has context-dependent molds; exact first-match identity detects reversed
 ///   or breadth-first traversal. Missing text and indices cover None.
 /// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
-#[anodized::spec(ensures: |ret| ret.is_none_or(|mold| tree.positions().any(|at| tree.node(at).map(gandr_surface_syntax::Node::label) == Some(NodeLabel::Tile(mold)) && tree.fragment(at).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)))))]
+#[spec(ensures: |ret| ret.is_none_or(|mold| tree.positions().any(|at| tree.node(at).map(gandr_surface_syntax::Node::label) == Some(NodeLabel::Tile(mold)) && tree.fragment(at).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)))))]
 fn mold_of(
     tree: &SyntaxTree<'_>,
     id: NodeIndex,
@@ -2029,7 +2030,7 @@ fn mold_of(
 ///   than binder context. Its known grammar label and sort, plus absent text
 ///   and indices, reject wrong mold lookup and lost optional failure.
 /// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
-#[anodized::spec(ensures: |ret| ret.as_ref().is_none_or(|value| tree.positions().any(|at| match tree.node(at).map(gandr_surface_syntax::Node::label) { Some(NodeLabel::Tile(mold)) => tree.fragment(at).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)) && pbg.mold(mold).is_ok_and(|definition| definition.label == value.as_str()), _ => false })))]
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|value| tree.positions().any(|at| match tree.node(at).map(gandr_surface_syntax::Node::label) { Some(NodeLabel::Tile(mold)) => tree.fragment(at).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)) && pbg.mold(mold).is_ok_and(|definition| definition.label == value.as_str()), _ => false })))]
 fn mold_label_of(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -2053,7 +2054,7 @@ fn mold_label_of(
 ///   than binder context. Its known grammar label and sort, plus absent text
 ///   and indices, reject wrong mold lookup and lost optional failure.
 /// - witness: `tests::acceptance::tree_readers_preserve_preorder_and_missing_nodes`
-#[anodized::spec(ensures: |ret| ret.as_ref().is_none_or(|value| tree.positions().any(|at| match tree.node(at).map(gandr_surface_syntax::Node::label) { Some(NodeLabel::Tile(mold)) => tree.fragment(at).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)) && pbg.mold(mold).is_ok_and(|definition| definition.sort == *value), _ => false })))]
+#[spec(ensures: |ret| ret.as_ref().is_none_or(|value| tree.positions().any(|at| match tree.node(at).map(gandr_surface_syntax::Node::label) { Some(NodeLabel::Tile(mold)) => tree.fragment(at).is_some_and(|fragment| <&str>::from(fragment) == <&str>::from(wanted)) && pbg.mold(mold).is_ok_and(|definition| definition.sort == *value), _ => false })))]
 fn mold_sort_of(
     pbg: &Pbg,
     tree: &SyntaxTree<'_>,
@@ -2081,7 +2082,7 @@ fn mold_sort_of(
 ///   state.
 /// - witness: `tests::acceptance::expected_agrees_with_committed_finalize`
 /// - witness: `tests::acceptance::expected_completion_names_the_next_tile_or_hole`
-#[anodized::spec(ensures: |ret| ret.open_form_mold().is_none_or(|mold| pbg.mold(mold).is_ok()))]
+#[spec(ensures: |ret| ret.open_form_mold().is_none_or(|mold| pbg.mold(mold).is_ok()))]
 fn push_prefix<'pbg>(
     pbg: &'pbg Pbg,
     source: SourceFragment<'_>,

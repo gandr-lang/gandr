@@ -2,6 +2,7 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use quenchant_shape::shape::Maybe;
 
@@ -198,7 +199,7 @@ impl<Store> IncrementalSession<Store>
     /// - witness: `session::tests::submit_persists_and_streams_in_order`
     /// - witness: `session::tests::separately_reopened_file_session_resumes_supported_checkpoint`
     /// - witness: `session::tests::a_store_failure_retains_the_new_resume_for_the_next_submission`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         | Ok(census) => {
             matches!(self.last, Maybe::Present(ref latest) if latest.census() == census && latest.checkpoints().items().len() == program.items().len())
         },

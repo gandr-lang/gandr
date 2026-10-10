@@ -18,6 +18,7 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::CheckingContext;
 use gandr_core_checker::Declaration;
@@ -213,6 +214,7 @@ impl core::error::Error for ComposeFault<'_>
 /// module keeps is every lowering the crate performs.
 mod lowering
 {
+    use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_lowering::LoweredModule;
@@ -245,7 +247,7 @@ mod lowering
     ///   observation of lowering calls, not a proof of all work inside them.
     /// - witness: `compose::tests::each_composition_lowers_once`
     /// - witness: `script::tests::run_source_counts_lowerings_with_saturation`
-    #[anodized::spec(
+    #[spec(
         captures: [before = lowerings.0],
         ensures: lowerings.0 == before.saturating_add(1),
     )]
@@ -362,7 +364,7 @@ impl<'source> Lowering<'source>
 /// - witness: `compose::tests::each_composition_lowers_once`
 /// - witness: `script::tests::run_source_counts_lowerings_with_saturation`
 #[inline]
-#[anodized::spec(
+#[spec(
     captures: [before = lowerings.0],
     ensures: |ref ret| lowerings.0 == if matches!(ret, Err(ComposeFault::Parse(_))) {
         before
@@ -433,7 +435,7 @@ pub fn lower_source<'source>(
 /// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
 /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
 #[inline]
-#[anodized::spec(
+#[spec(
     captures: [
         expected_declarations = module.declarations().len(),
         expected_unstatable = module.declarations().iter().filter(|declaration|
@@ -515,7 +517,7 @@ pub fn judge_module(
 /// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
 /// - witness: `script::tests::run_source_counts_lowerings_with_saturation`
 #[inline]
-#[anodized::spec(
+#[spec(
     captures: [before = lowerings.0],
     ensures: |ref ret| lowerings.0 == if matches!(ret, Err(ComposeFault::Parse(_))) {
         before
@@ -559,7 +561,7 @@ pub fn compose<'source>(
 ///   not the lowering's reasons for rejecting arbitrary syntax.
 /// - witness: `compose::tests::a_refusal_at_a_declaration_form_is_unstatable`
 /// - witness: `compose::tests::form_refusals_retain_admission_order`
-#[anodized::spec(ensures: |ref ret| {
+#[spec(ensures: |ref ret| {
     let mut selected = ret.iter();
     module.declarations().iter().all(|declaration| {
         match (declaration.outcome(), declaration.signature(), declaration.definition()) {
@@ -615,7 +617,7 @@ fn unstatable<'source>(module: &LoweredModule<'source>) -> Vec<LoweringRefusal<'
 /// - witness: `compose::tests::each_outcome_adapts_to_its_halves`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ref ret| {
+#[spec(ensures: |ref ret| {
     let mut expected = module.declarations().iter().filter(|declaration|
         !matches!(declaration.outcome(), DeclarationOutcome::Refused(_)));
     ret.iter().all(|actual| expected.next().is_some_and(|lowered| {
@@ -691,7 +693,7 @@ pub fn adapt(module: &LoweredModule<'_>) -> Vec<Declaration>
 ///   refusal or certificate rejection.
 /// - witness: `compose::tests::a_kernel_disagreement_is_an_engine_fault`
 /// - witness: `compose::tests::the_kernel_artifact_holds_what_crossed_under_its_names`
-#[anodized::spec(ensures: |ref ret| match *ret {
+#[spec(ensures: |ref ret| match *ret {
     Ok(ref readmission) => readmission.readmitted().len() == verdicts.judged().len()
         && readmission.readmitted().iter().zip(verdicts.judged()).all(|(crossed, judged)|
             crossed.constant() == judged.constant() && matches!(*crossed.outcome(),
@@ -739,6 +741,7 @@ fn readmitted(
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::CheckingContext;
     use gandr_core_checker::Verdict;
@@ -790,7 +793,7 @@ mod tests
     ///   unusable or incompatible grammar, not equivalence over all syntax.
     /// - witness: `compose::tests::a_module_settles_every_declaration_once`
     /// - witness: `compose::tests::a_root_that_is_no_list_of_declarations_is_refused_whole`
-    #[anodized::spec(ensures: |ref ret|
+    #[spec(ensures: |ref ret|
         !ret.candidates(gandr_surface_grammar::TileLabel("def")).is_empty())]
     fn grammar() -> Pbg
     {
@@ -813,7 +816,7 @@ mod tests
     ///   witnesses use explicit simple names, not every naming form or failure.
     /// - witness: `compose::tests::a_module_settles_every_declaration_once`
     /// - witness: `compose::tests::the_root_decides_what_an_expectation_means`
-    #[anodized::spec(ensures: |ref ret| ret.declarations().iter()
+    #[spec(ensures: |ref ret| ret.declarations().iter()
         .all(|declaration| source.as_ref().contains(declaration.name().as_ref())))]
     fn settled<'source>(
         grammar: &Pbg,

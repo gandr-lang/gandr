@@ -7,6 +7,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arena::TextId;
@@ -226,7 +227,7 @@ impl PlanArena
     /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
     /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
     /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.slots.is_empty()
                 && ret.free.is_empty()
     )]
@@ -265,7 +266,7 @@ impl PlanArena
     /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
     /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
     /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.slots.len(), self.free.len(), self.free.last().copied(), self.free.last().and_then(|id| usize::try_from(id.slot).ok()).and_then(|index| self.slots.get(index)).map(|entry| entry.generation)),
         ensures: |ret| ret.as_ref().map_or(true,
             |id| usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)) == Some(&PlanSlot { generation: id.generation, references: 1, node: Maybe::Present(node) })
@@ -346,7 +347,7 @@ impl PlanArena
     /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
     /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
     /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = (usize::try_from(left.slot).ok().and_then(|index| self.slots.get(index)).copied(), usize::try_from(right.slot).ok().and_then(|index| self.slots.get(index)).copied()),
         ensures: |ret| ret.as_ref().map_or_else(|_error| usize::try_from(left.slot).ok().and_then(|index| self.slots.get(index)).copied() == before.0
                 && usize::try_from(right.slot).ok().and_then(|index| self.slots.get(index)).copied() == before.1,
@@ -398,7 +399,7 @@ impl PlanArena
     /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
     /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
     /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret == usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).map_or(Maybe::Absent(lookup::Absent::OutOfRange),
             |entry| if entry.generation == id.generation { entry.node }
             else { Maybe::Absent(lookup::Absent::Released) })
@@ -444,7 +445,7 @@ impl PlanArena
     /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
     /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
     /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = (usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).copied(), self.slots.len(), self.free.len()),
         ensures: |ret| self.slots.len() == before.1
                 && self.free.len() == before.2
@@ -500,7 +501,7 @@ impl PlanArena
     /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
     /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
     /// - witness: `plan::tests::plan_release_recycles_a_deep_sequence_iteratively`
-    #[anodized::spec(
+    #[spec(
         captures: before = (usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).copied(), self.slots.len(), self.free.len(), meter.usage()),
         ensures: |ret| self.slots.len() == before.1
                 && meter.usage() == before.3
@@ -572,7 +573,7 @@ impl PlanArena
     /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
     /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
     /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).map(|entry| &raw const *entry),
         ensures: |ret| ret.as_ref().map_or_else(|error| before.is_none()
                 && *error == RenderError::Invariant { invariant: RenderInvariant::PlanIdentity },
@@ -614,7 +615,7 @@ impl PlanArena
     /// - witness: `plan::tests::plan_generation_rejects_recycled_identity`
     /// - witness: `plan::tests::sequence_retention_preserves_aliases_and_rolls_back_refusals`
     /// - witness: `plan::tests::reference_and_generation_ceilings_preserve_identity_boundaries`
-    #[anodized::spec(
+    #[spec(
         captures: before = usize::try_from(id.slot).ok().and_then(|index| self.slots.get(index)).filter(|entry| entry.generation == id.generation
                 && matches!(entry.node, Maybe::Present(_))).map(|entry| &raw const *entry),
         ensures: |ret| ret.as_ref().map_or_else(|error| before.is_none()

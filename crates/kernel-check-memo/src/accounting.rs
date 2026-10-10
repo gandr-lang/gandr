@@ -334,6 +334,9 @@ where
 #[cfg(test)]
 mod tests
 {
+    #[cfg(anodized_panic)]
+    use anodized::spec;
+
     use super::MemoEntryCount;
     use super::MemoError;
 
@@ -364,7 +367,7 @@ mod tests
     ///   target-only flag or stale non-enforcing dependency.
     /// - witness: `accounting::tests::anodized_precondition_sentinel`
     #[cfg(anodized_panic)]
-    #[anodized::spec(requires: count != MemoEntryCount::zero())]
+    #[spec(requires: count != MemoEntryCount::zero())]
     fn require_nonzero(count: MemoEntryCount) -> MemoEntryCount
     {
         count
@@ -382,7 +385,7 @@ mod tests
     ///   enforcement from an unrelated panic or a silent unchecked return.
     /// - witness: `accounting::tests::anodized_postcondition_sentinel`
     #[cfg(anodized_panic)]
-    #[anodized::spec(ensures: |count| count != MemoEntryCount::zero())]
+    #[spec(ensures: |count| count != MemoEntryCount::zero())]
     fn false_postcondition() -> MemoEntryCount
     {
         MemoEntryCount::zero()

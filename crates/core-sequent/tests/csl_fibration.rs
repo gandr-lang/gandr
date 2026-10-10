@@ -30,6 +30,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_sequent::CellId;
 use gandr_core_sequent::ForceEntry;
 use gandr_core_sequent::HeapValue;
@@ -185,7 +186,7 @@ fn literal(seed: Seed) -> HeapValue
 /// - witness: `tests::csl_fibration::frame_preservation_under_forcing`
 /// - witness: `tests::csl_fibration::nominal_identity_freshness_and_alias_coherence`
 /// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
-#[anodized::spec(ensures: |ref ret| ret.len() == cells.len()
+#[spec(ensures: |ref ret| ret.len() == cells.len()
     && ret.iter().zip(cells).all(|(view, cell)| view.at_address == store.cell(cell.id)
         && view.through_handles.len() == cell.handles.len()
         && view.through_handles.iter().zip(&cell.handles).all(|(&state, &handle)| state == store.cell(handle)))
@@ -226,7 +227,7 @@ fn image(
 /// - witness: `tests::csl_fibration::frame_preservation_under_forcing`
 /// - witness: `tests::csl_fibration::nominal_identity_freshness_and_alias_coherence`
 /// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
-#[anodized::spec(ensures: |ref ret| ret.steps.len() == ops.len()
+#[spec(ensures: |ref ret| ret.steps.len() == ops.len()
     && ret.steps.iter().zip(ops).all(|(step, &op)| match (step.op, op) {
         | (Op::Allocate, Op::Allocate) => true,
         | (Op::Share(CellSlot(first)), Op::Share(CellSlot(second)))
@@ -396,7 +397,7 @@ fn arb_ops() -> impl Strategy<Value = Vec<Op>>
 ///   fixture domain.
 /// - witness: `tests::csl_fibration::black_hole_discipline_under_reentry`
 /// - witness: `tests::csl_fibration::frame_preservation_under_forcing`
-#[anodized::spec(ensures: |ret| ret == step.subject.and_then(|index|
+#[spec(ensures: |ret| ret == step.subject.and_then(|index|
     step.before.get(index).and_then(|view| view.at_address)
         .zip(step.after.get(index).and_then(|view| view.at_address))
 ))]

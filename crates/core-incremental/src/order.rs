@@ -18,6 +18,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
 
+use anodized::spec;
 use gandr_theory_orders::OrderError;
 use gandr_theory_orders::OrderMaintenance;
 use gandr_theory_orders::Pos;
@@ -135,7 +136,7 @@ impl ItemOrder
     ///   witnesses do not exhaust its identifiers or storage.
     /// - witness: `order::tests::seeding_preserves_duplicate_payloads_with_distinct_handles`
     /// - witness: `order::tests::empty_and_unchanged_splices_have_exact_censuses`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Ok((ref order, ref handles)) => handles.len() == references.len()
             && handles.iter().zip(references).all(|(&handle, reference)|
                 order.order.get(handle.0) == Some(reference))
@@ -190,7 +191,7 @@ impl ItemOrder
     /// - witness: `order::tests::handles_compare_in_the_edited_order`
     /// - witness: `order::tests::a_moved_item_costs_only_its_own_handle`
     /// - witness: `order::tests::empty_and_unchanged_splices_have_exact_censuses`
-    #[anodized::spec(
+    #[spec(
         requires: base.len() == base_references.len()
             && base.iter().zip(base_references).all(|(&handle, &reference)|
                 self.order.get(handle.0) == Some(reference)),
@@ -291,7 +292,7 @@ impl ItemOrder
     /// - witness: `order::tests::seeding_preserves_duplicate_payloads_with_distinct_handles`
     /// - witness: `order::tests::handles_compare_in_the_edited_order`
     /// - witness: `order::tests::comparisons_refuse_stale_and_foreign_operands`
-    #[anodized::spec(ensures: |ret| self.order.cmp(left.0, right.0).map_or_else(
+    #[spec(ensures: |ret| self.order.cmp(left.0, right.0).map_or_else(
         || ret == Maybe::Absent(handle::Absent::Stale),
         |ordering| ret == Maybe::Present(ordering),
     ))]
@@ -323,7 +324,7 @@ impl ItemOrder
     /// - witness: `order::tests::seeding_preserves_duplicate_payloads_with_distinct_handles`
     /// - witness: `order::tests::a_deleted_items_handle_goes_stale`
     /// - witness: `order::tests::comparisons_refuse_stale_and_foreign_operands`
-    #[anodized::spec(ensures: |ret| self.order.get(handle.0).map_or_else(
+    #[spec(ensures: |ret| self.order.get(handle.0).map_or_else(
         || ret == Maybe::Absent(handle::Absent::Stale),
         |reference| ret == Maybe::Present(reference),
     ))]
@@ -362,7 +363,7 @@ struct BasePosition(usize);
 ///   distinguish a wrong predecessor chain or descending selection. L3 also
 ///   covers the empty slice. Larger input classes are not exhausted.
 /// - witness: `order::tests::preserved_runs_match_an_exhaustive_subsequence_oracle`
-#[anodized::spec(ensures: |ret| {
+#[spec(ensures: |ret| {
     let mut previous = None;
     let mut selected = 0_usize;
     let mut ascending = true;
@@ -417,6 +418,7 @@ mod tests
     use alloc::vec::Vec;
     use core::cmp::Ordering;
 
+    use anodized::spec;
     use quenchant_shape::shape::Maybe;
 
     use super::ItemOrder;
@@ -465,7 +467,7 @@ mod tests
     /// - witness: `order::tests::handles_compare_in_the_edited_order`
     /// - witness: `order::tests::a_moved_item_costs_only_its_own_handle`
     /// - witness: `order::tests::empty_and_unchanged_splices_have_exact_censuses`
-    #[anodized::spec(ensures: |ret| ret.1.len() == base.len()
+    #[spec(ensures: |ret| ret.1.len() == base.len()
         && ret.2.len() == edited.len()
         && usize::from(ret.3.kept).checked_add(usize::from(ret.3.removed)) == Some(base.len())
         && usize::from(ret.3.kept).checked_add(usize::from(ret.3.inserted)) == Some(edited.len()))]

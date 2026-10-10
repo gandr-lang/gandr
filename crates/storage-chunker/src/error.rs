@@ -422,6 +422,8 @@ mod tests
     use core::fmt;
     use core::fmt::Write as _;
 
+    use anodized::spec;
+
     use super::ArithmeticOperation;
     use super::ChunkerError;
     use super::InvalidParameterReason;
@@ -640,7 +642,7 @@ mod tests
         /// - hypothesis: L3 on text emitted by this module's formatter cases;
         ///   the exact formatting result distinguishes falsely accepted writes.
         /// - witness: `error::tests::refusal_classes_remain_distinguishable`
-        #[anodized::spec(ensures: |ret| ret == Err(fmt::Error))]
+        #[spec(ensures: |ret| ret == Err(fmt::Error))]
         fn write_str(
             &mut self,
             _text: &str,

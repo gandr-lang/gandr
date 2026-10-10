@@ -1444,6 +1444,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_kernel_strata::Level;
     use gandr_kernel_term::BaseType;
     use gandr_kernel_term::ConstantIndex;
@@ -1565,7 +1566,7 @@ mod tests
     ///   the generator and static-test fragment has a separating spelling.
     /// - witness: `rewrite::tests::reference_helpers_have_ground_and_asymmetric_goldens`
     /// - witness: `rewrite::tests::substitution_replaces_a_free_occurrence`
-    #[anodized::spec(ensures: |ret| ret.first() == Some(&match root {
+    #[spec(ensures: |ret| ret.first() == Some(&match root {
         | Visit::CompType(id) => match arena.comp_type(id) {
             | Some(&CompType::Returner(_)) => Token::Returner,
             | Some(&CompType::Arrow { .. }) => Token::Arrow,
@@ -1748,7 +1749,7 @@ mod tests
         ///   reference.
         /// - witness: `rewrite::tests::reference_helpers_have_ground_and_asymmetric_goldens`
         /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
-        #[anodized::spec(requires: bound.0 > 0, ensures: |ret| ret.0 < bound.0)]
+        #[spec(requires: bound.0 > 0, ensures: |ret| ret.0 < bound.0)]
         fn below(
             &mut self,
             bound: Count,
@@ -1780,7 +1781,7 @@ mod tests
     ///   arities.
     /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
     /// - witness: `rewrite::tests::reference_helpers_have_ground_and_asymmetric_goldens`
-    #[anodized::spec(
+    #[spec(
         requires: frees.0.checked_add(fuel.0).is_some(),
         ensures: |ret| ret.nodes.first().is_some_and(|root| root.binders == 0 && match kind {
             | Kind::Comp => matches!(root.shape, Shape::Returner | Shape::Arrow | Shape::Pi | Shape::CompElement),
@@ -1920,7 +1921,7 @@ mod tests
     ///   against dropped children, reversed order and a misplaced binder.
     /// - witness: `rewrite::tests::instantiating_a_codomain_avoids_capture`
     /// - witness: `rewrite::tests::reference_helpers_have_ground_and_asymmetric_goldens`
-    #[anodized::spec(requires: !tree.nodes.is_empty(), ensures: |ret| match ret {
+    #[spec(requires: !tree.nodes.is_empty(), ensures: |ret| match ret {
         | Built::Value(id) => arena.value(id).is_some(),
         | Built::ValueType(id) => arena.value_type(id).is_some(),
         | Built::CompType(id) => arena.comp_type(id).is_some(),
@@ -2157,7 +2158,7 @@ mod tests
         ///   distinguishing loss of sharing from expansion of the exponentially
         ///   large unfolding.
         /// - witness: `rewrite::tests::a_shared_type_is_rewritten_once_per_node`
-        #[anodized::spec(ensures: |ret| {
+        #[spec(ensures: |ret| {
             let mut current = ret;
             let mut valid = true;
             for _ in 0_u32..64_u32 {

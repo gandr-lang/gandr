@@ -36,6 +36,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::ComputationId;
 use gandr_core_term::CoreArena;
 use gandr_core_term::ValueId;
@@ -115,7 +116,7 @@ impl Definitions
     ///   run.
     /// - witness: `machine::tests::constants_unfold_once_and_opaque_ones_stay_opaque`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.entries.len()],
         ensures: |ret| usize::from(ret) == entry && entry.checked_add(1) == Some(self.entries.len())
             && self.entries.get(entry) == Some(&definition),
@@ -446,7 +447,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::a_thunk_reads_back_closed_over_its_environment`
     /// - witness: `machine::tests::a_suspended_capture_has_no_reading`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         requires: self.store.value(value).is_some(),
         captures: [entry = core.watermark()],
         ensures: |ret| match ret {
@@ -480,7 +481,7 @@ impl<'program> Machine<'program>
     /// - hypothesis: L3 — as [`Self::read_back`].
     /// - witness: `machine::tests::a_thunk_reads_back_closed_over_its_environment`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         requires: self.store.value(value).is_some(),
         captures: [entry = core.watermark()],
         ensures: |ret| match ret {
@@ -537,7 +538,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
     /// - witness: `machine::tests::failed_unfolding_resets_every_active_constant`
     #[inline]
-    #[anodized::spec(ensures: |ref ret| match ret.as_ref() {
+    #[spec(ensures: |ref ret| match ret.as_ref() {
         | Ok(&Outcome::Halted(value)) => usize::from(budget) > 0 && self.store.value(value).is_some()
             && self.store.mark() == ContinuationMark::BASE,
         | Ok(&Outcome::Stuck(_)) => usize::from(budget) > 0,
@@ -583,7 +584,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::the_step_budget_bounds_a_run`
     /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
-    #[anodized::spec(ensures: |ref ret| match (control, ret.as_ref().copied()) {
+    #[spec(ensures: |ref ret| match (control, ret.as_ref().copied()) {
         | (Control::Return(value, mark), Ok(next)) => next == Next::Continue(Control::Pop(value)) && self.store.mark() == mark,
         | (Control::Pop(value), Ok(Next::Halt(held))) => held == value && self.store.mark() == ContinuationMark::BASE,
         | (Control::Run(..) | Control::Deliver(..), Ok(Next::Halt(_))) => false,
@@ -630,7 +631,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::polarity_decides_whether_a_capture_is_evaluated`
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
-    #[anodized::spec(ensures: |ref ret| match ret.as_ref().copied() {
+    #[spec(ensures: |ref ret| match ret.as_ref().copied() {
         | Err(_) => self.arena.command(id).is_some() || *ret == Err(Stop::Stuck(Stuck::IllFormedCommand(id))),
         | Ok(next) => self.arena.command(id).is_some_and(|&CommandNode::Cut { polarity, producer, consumer }| {
             let strict_capture = self.arena.producer(producer).and_then(|node| match *node {
@@ -703,7 +704,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
     /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
     /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
-    #[anodized::spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&next|
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&next|
         self.arena.consumer(consumer).is_some_and(|node| {
             if let Some((body, captured)) = self.suspended_capture(value)
                 && !matches!(node, &ConsumerNode::MuTilde { .. }) {
@@ -788,7 +789,7 @@ impl<'program> Machine<'program>
     ///   ordinary closures. Missing and non-capture values return none.
     /// - witness: `machine::tests::polarity_decides_whether_a_capture_is_evaluated`
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
-    #[anodized::spec(ensures: |ret| ret == match self.store.value(value) {
+    #[spec(ensures: |ret| ret == match self.store.value(value) {
         | Some(&HeapValue::Closure { producer, environment }) => match self.arena.producer(producer) {
             | Some(&ProducerNode::Mu { body }) => Some((body, environment)),
             | _ => None,
@@ -839,7 +840,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::case_selects_the_matching_arm`
     /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
     /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
-    #[anodized::spec(
+    #[spec(
         captures: [height = self.store.frame_height()],
         ensures: |ref ret| if usize::from(height) == 0 { *ret == Ok(Next::Halt(value)) }
             else { !matches!(ret, &Ok(Next::Halt(_))) },
@@ -894,7 +895,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
     /// - witness: `tests::differential::hand_built_exact_readback_cases_agree`
-    #[anodized::spec(
+    #[spec(
         requires: self.store.mark() == mark,
         captures: [forcing = match self.store.value(value) {
             | Some(&HeapValue::Thunk { body, environment, cell }) if head == DestructorTag::Force =>
@@ -1010,7 +1011,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
     /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
-    #[anodized::spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&next|
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&next|
         self.arena.consumer(arms).zip(self.store.value(value)).is_some_and(|(node, held)|
             match (node, held) {
                 | (&ConsumerNode::Case { arms: ref choices }, &HeapValue::Constructed { ref tag, ref fields }) =>
@@ -1103,7 +1104,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::forcing_reentry_shares_updates_and_abandonment_declines_them`
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
     /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
-    #[anodized::spec(
+    #[spec(
         captures: [height = self.store.frame_height()],
         ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|&mark| self.store.mark() == mark
             && self.arena.consumer(consumer).is_some_and(|node| match *node {
@@ -1189,7 +1190,7 @@ impl<'program> Machine<'program>
     ///   These distinguish reordering, omission and duplicated results.
     /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
     /// - witness: `tests::differential::hand_built_pure_spine_cases_agree`
-    #[anodized::spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|values|
+    #[spec(ensures: |ref ret| ret.is_err() || ret.as_ref().is_ok_and(|values|
         values.len() == producers.len() && values.iter().all(|value| self.store.value(*value).is_some())))]
     fn evaluate_all(
         &mut self,
@@ -1234,7 +1235,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::transition_refusals_name_the_first_invalid_endpoint`
     /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
-    #[anodized::spec(
+    #[spec(
         requires: !self.unfoldings.contains(&Unfolding::Running),
         ensures: |ref ret| !self.unfoldings.contains(&Unfolding::Running)
             && (ret.is_err() || ret.as_ref().is_ok_and(|&value|
@@ -1295,7 +1296,7 @@ impl<'program> Machine<'program>
     /// - witness: `machine::tests::pattern_fields_bind_last_innermost`
     /// - witness: `machine::tests::a_shared_thunk_is_forced_once`
     /// - witness: `tests::differential::the_l_machine_agrees_with_normalisation_by_evaluation`
-    #[anodized::spec(
+    #[spec(
         requires: results.iter().all(|value| self.store.value(*value).is_some()),
         ensures: |ref ret| ret.is_err() || (tasks.is_empty() && results.iter().all(|value| self.store.value(*value).is_some())),
     )]
@@ -1426,7 +1427,7 @@ impl<'program> Machine<'program>
     ///   indexing and retained running states.
     /// - witness: `machine::tests::constants_unfold_once_and_opaque_ones_stay_opaque`
     /// - witness: `machine::tests::failed_unfolding_resets_every_active_constant`
-    #[anodized::spec(ensures: |ref ret| *ret == self.unfoldings.get(usize::from(constant)).copied().ok_or(Stuck::UndefinedConstant(constant)))]
+    #[spec(ensures: |ref ret| *ret == self.unfoldings.get(usize::from(constant)).copied().ok_or(Stuck::UndefinedConstant(constant)))]
     fn unfolding(
         &self,
         constant: ConstantIndex,
@@ -1506,7 +1507,7 @@ mod tests
     /// - witness: `machine::tests::ret_is_a_terminal_value`
     /// - witness: `machine::tests::bind_threads_a_value`
     /// - witness: `machine::tests::application_binds_the_argument`
-    #[anodized::spec(
+    #[spec(
         requires: !digits.0.is_empty() && digits.0.bytes().all(|byte| byte.is_ascii_digit()),
         ensures: |ret| match core.value(ret) {
             | Some(&gandr_core_term::Value::Literal(Literal::Integer(ref integer))) => {
@@ -1547,7 +1548,7 @@ mod tests
     /// - witness: `machine::tests::ret_is_a_terminal_value`
     /// - witness: `machine::tests::bind_threads_a_value`
     /// - witness: `machine::tests::application_binds_the_argument`
-    #[anodized::spec(requires: core.computation(computation).is_some(), ensures: |ref ret| ret.starts_with('⟨') && ret.ends_with('⟩'))]
+    #[spec(requires: core.computation(computation).is_some(), ensures: |ref ret| ret.starts_with('⟨') && ret.ends_with('⟩'))]
     fn shown(
         core: &CoreArena,
         computation: ComputationId,
@@ -1583,7 +1584,7 @@ mod tests
     /// - witness: `machine::tests::case_selects_the_matching_arm`
     /// - witness: `machine::tests::application_binds_the_argument`
     /// - witness: `machine::tests::a_function_terminal_reads_back_closed_over_its_environment`
-    #[anodized::spec(requires: core.computation(computation).is_some(), ensures: |ref ret|
+    #[spec(requires: core.computation(computation).is_some(), ensures: |ref ret|
         core.computation(computation).is_some() && ret.starts_with('⟨') && ret.ends_with('⟩'))]
     fn evaluated(
         core: &mut CoreArena,

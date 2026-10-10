@@ -25,6 +25,7 @@ mod entailment_oracle
     //! node vector. Agreement failures are assertions, since agreement is
     //! the property under test; harness failures return [`TermFailure`].
 
+    use anodized::spec;
     use gandr_kernel_strata::AdmissionOutcome;
     use gandr_kernel_strata::Entailment;
     use gandr_kernel_strata::EntailmentHolds;
@@ -217,7 +218,7 @@ mod entailment_oracle
     ///   exact optional indices; folded successor values observe the chosen
     ///   edges.
     /// - witness: `entailment_oracle::entailment_oracle::selector_and_fold_boundaries`
-    #[anodized::spec(ensures: |ret| ret.map(|id| id.0) == u32::try_from(built.0).ok()
+    #[spec(ensures: |ret| ret.map(|id| id.0) == u32::try_from(built.0).ok()
         .and_then(|modulus| selector.0.checked_rem(modulus)).and_then(|index| usize::try_from(index).ok()))]
     fn pick(
         selector: NodeSelector,
@@ -245,7 +246,7 @@ mod entailment_oracle
     ///   selectors wrap backward, and shared joins preserve successor values.
     ///   Exact canonical results expose wrong fallback, selection or topology.
     /// - witness: `entailment_oracle::entailment_oracle::selector_and_fold_boundaries`
-    #[anodized::spec(ensures: |ret| ret.nodes.len() == shapes.len() && ret.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(ensures: |ret| ret.nodes.len() == shapes.len() && ret.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,
@@ -345,7 +346,7 @@ mod entailment_oracle
     ///   wrong constructor selection and lost or misordered edges.
     /// - witness: `entailment_oracle::entailment_oracle::selector_and_fold_boundaries`
     /// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
-    #[anodized::spec(requires: term.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(requires: term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,
@@ -388,7 +389,7 @@ mod entailment_oracle
     ///   first absent slot distinguish defaulted absence or an off-by-one
     ///   lookup through exact canonical levels and the dangling-child refusal.
     /// - witness: `entailment_oracle::entailment_oracle::selector_and_fold_boundaries`
-    #[anodized::spec(ensures: |ret| ret.as_ref().ok() == levels.get(id.0))]
+    #[spec(ensures: |ret| ret.as_ref().ok() == levels.get(id.0))]
     fn child(
         levels: &[Level],
         id: TermId,
@@ -413,7 +414,7 @@ mod entailment_oracle
     ///   validation and exact query verdicts expose an inverted branch or
     ///   discarded hypotheses.
     /// - witness: `entailment_oracle::entailment_oracle::poset_fixture_relation_boundaries`
-    #[anodized::spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|poset|
+    #[spec(ensures: |ret| ret.as_ref().is_err() || ret.as_ref().is_ok_and(|poset|
         gandr_kernel_strata::validate_consistency(poset.constraints(), poset.consistency()).is_ok()))]
     fn admitted(constraints: Vec<LandmarkConstraint>) -> Result<LandmarkPoset, TermFailure>
     {
@@ -441,7 +442,7 @@ mod entailment_oracle
     ///   answers.
     /// - witness: `entailment_oracle::entailment_oracle::poset_fixture_relation_boundaries`
     /// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
-    #[anodized::spec(ensures: |ret| ret.as_ref().is_ok_and(|poset| poset.constraints().is_empty()
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|poset| poset.constraints().is_empty()
         && poset.variables().is_empty()))]
     fn empty_poset() -> Result<LandmarkPoset, TermFailure>
     {
@@ -468,7 +469,7 @@ mod entailment_oracle
     ///   exact verdicts expose a missing, reversed or incorrectly shifted
     ///   fixture hypothesis.
     /// - witness: `entailment_oracle::entailment_oracle::poset_fixture_relation_boundaries`
-    #[anodized::spec(ensures: |ret| ret.as_ref().is_ok_and(|poset| poset.constraints().len() == 2
+    #[spec(ensures: |ret| ret.as_ref().is_ok_and(|poset| poset.constraints().len() == 2
         && poset.constraints().iter().zip([(x(), 0_u64, y()), (y(), 1_u64, z())])
             .all(|(constraint, (left, offset, right))| constraint.relation() == gandr_kernel_strata::ConstraintRelation::Leq
                 && constraint.left().atoms().eq(core::iter::once((left, gandr_kernel_strata::LevelOffset::from(offset))))
@@ -504,7 +505,7 @@ mod entailment_oracle
     /// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_evidence_validates`
     /// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
     /// - witness: `entailment_oracle::entailment_oracle::poset_fixture_relation_boundaries`
-    #[anodized::spec(ensures: |ret| ret == if bool::from(strict) {
+    #[spec(ensures: |ret| ret == if bool::from(strict) {
         poset.entails_lt(left, right).map_err(TermFailure::from)
     } else {
         poset.entails_leq(left, right).map_err(TermFailure::from)
@@ -565,7 +566,7 @@ mod entailment_oracle
     ///   variable offsets expose wrong mode shifts, lost constants and false
     ///   domination.
     /// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_agrees_with_the_free_oracle`
-    #[anodized::spec(requires: [left, right].iter().all(|term| term.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(requires: [left, right].iter().all(|term| term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,
@@ -612,7 +613,7 @@ mod entailment_oracle
     ///   countermodels.
     /// - witness: `entailment_oracle::entailment_oracle::prop_empty_poset_evidence_validates`
     /// - witness: `entailment_oracle::entailment_oracle::prop_fixed_poset_evidence_validates`
-    #[anodized::spec(requires: [left, right].iter().all(|term| term.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(requires: [left, right].iter().all(|term| term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,
@@ -649,7 +650,7 @@ mod entailment_oracle
     ///   distinguish a missing shift and a strict hypothesis interpreted as
     ///   non-strict.
     /// - witness: `entailment_oracle::entailment_oracle::prop_lt_equals_succ_leq_under_the_fixed_poset`
-    #[anodized::spec(requires: [left, right].iter().all(|term| term.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(requires: [left, right].iter().all(|term| term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,
@@ -689,7 +690,7 @@ mod entailment_oracle
     ///   comparisons expose a hypothesis that accidentally removes an existing
     ///   derivation.
     /// - witness: `entailment_oracle::entailment_oracle::prop_hypotheses_are_monotone`
-    #[anodized::spec(requires: [left, right].iter().all(|term| term.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(requires: [left, right].iter().all(|term| term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,
@@ -738,7 +739,7 @@ mod entailment_oracle
     ///   and two-edge chains expose an incorrect mode or a lost composed
     ///   entailment.
     /// - witness: `entailment_oracle::entailment_oracle::prop_entailment_order_laws_under_the_fixed_poset`
-    #[anodized::spec(requires: [first, second, third].iter().all(|term| term.nodes.iter().enumerate().all(|(at, node)| match *node {
+    #[spec(requires: [first, second, third].iter().all(|term| term.nodes.iter().enumerate().all(|(at, node)| match *node {
         TermNode::Zero | TermNode::Var(_) => true,
         TermNode::Succ(child) => child.0 < at,
         TermNode::Max(left, right) => left.0 < at && right.0 < at,

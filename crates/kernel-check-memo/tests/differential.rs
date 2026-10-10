@@ -32,6 +32,7 @@
 extern crate alloc;
 use alloc::collections::BTreeMap;
 
+use anodized::spec;
 use gandr_kernel_check_memo::CheckMemo;
 use gandr_kernel_check_memo::ContentAgreement;
 use gandr_kernel_check_memo::ContentDigest;
@@ -121,7 +122,7 @@ impl WalkCount
     ///   exact successors, while MAX must return `TallyOverflow`. Exact values
     ///   separate a missing increment, an early ceiling and wrapping.
     /// - witness: `differential::tests::counter_arithmetic_boundaries`
-    #[anodized::spec(ensures: |ret| ret.map(|count| count.0) == self.0.checked_add(1).ok_or(WorkloadError::TallyOverflow))]
+    #[spec(ensures: |ret| ret.map(|count| count.0) == self.0.checked_add(1).ok_or(WorkloadError::TallyOverflow))]
     fn successor(self) -> Result<Self, WorkloadError>
     {
         self.0
@@ -202,7 +203,7 @@ impl Plane
     /// - hypothesis: L3 — zero and a nonzero leaf tag on both planes separate
     ///   payload-dependent value from constant unit weight by exact outcomes.
     /// - witness: `differential::tests::plane_fold_boundaries`
-    #[anodized::spec(ensures: |ret| ret == match self { Self::Value => Outcome(u64::from(tag.0)), Self::Weight => Outcome(1) })]
+    #[spec(ensures: |ret| ret == match self { Self::Value => Outcome(u64::from(tag.0)), Self::Weight => Outcome(1) })]
     fn leaf_outcome(
         self,
         tag: LeafTag,
@@ -232,7 +233,7 @@ impl Plane
     ///   separate the value-plane order; zero, MAX - 1 and MAX separate
     ///   ordinary weight, final-step overflow and operand-sum overflow.
     /// - witness: `differential::tests::plane_fold_boundaries`
-    #[anodized::spec(ensures: |ret| match self {
+    #[spec(ensures: |ret| match self {
         Self::Value => ret == Ok(Outcome(left.0.rotate_left(1) ^ right.0.rotate_left(3) ^ 0x9e37_79b9)),
         Self::Weight => ret.map(|outcome| u128::from(outcome.0))
             == u128::from(left.0).checked_add(u128::from(right.0)).and_then(|sum| sum.checked_add(1))
@@ -358,7 +359,7 @@ impl Arena
     ///   distinguish index shifts and false success by exact `Node` values or
     ///   `NodeOutOfRange`.
     /// - witness: `differential::tests::arena_and_framing_boundaries`
-    #[anodized::spec(ensures: |ret| ret == self.nodes.get(id.0).copied().ok_or(WorkloadError::NodeOutOfRange))]
+    #[spec(ensures: |ret| ret == self.nodes.get(id.0).copied().ok_or(WorkloadError::NodeOutOfRange))]
     fn node(
         &self,
         id: NodeId,
@@ -386,7 +387,7 @@ impl Arena
     ///   or one-past-end lookup, distinguish mismatched indices and a
     ///   fabricated encoding by exact bytes or `MissingEncoding`.
     /// - witness: `differential::tests::arena_and_framing_boundaries`
-    #[anodized::spec(ensures: |ret| ret == self.encodings.get(id.0).ok_or(WorkloadError::MissingEncoding))]
+    #[spec(ensures: |ret| ret == self.encodings.get(id.0).ok_or(WorkloadError::MissingEncoding))]
     fn encoding(
         &self,
         id: NodeId,
@@ -410,7 +411,7 @@ impl Arena
     /// - hypothesis: L3 — empty, singleton and multi-node arenas separate
     ///   absence from the last minted identifier, catching an off-by-one root.
     /// - witness: `differential::tests::arena_and_framing_boundaries`
-    #[anodized::spec(ensures: |ret| ret.map(|id| id.0) == self.nodes.len().checked_sub(1).ok_or(WorkloadError::NodeOutOfRange))]
+    #[spec(ensures: |ret| ret.map(|id| id.0) == self.nodes.len().checked_sub(1).ok_or(WorkloadError::NodeOutOfRange))]
     fn root(&self) -> Result<NodeId, WorkloadError>
     {
         self.nodes
@@ -441,7 +442,7 @@ impl Arena
     ///   missing must refuse. This separates arena identity, plane omission and
     ///   fabricated content from the required support.
     /// - witness: `differential::tests::arena_and_framing_boundaries`
-    #[anodized::spec(requires: id.0 < self.nodes.len(),
+    #[spec(requires: id.0 < self.nodes.len(),
         ensures: |ret| ret.as_ref().ok().is_none_or(|support| support.plane == plane
             && self.encodings.get(id.0) == Some(&support.content)))]
     fn support(
@@ -471,7 +472,7 @@ impl Arena
     ///   indices. Repeated equal tags still mint distinct indices without
     ///   changing content.
     /// - witness: `differential::tests::arena_and_framing_boundaries`
-    #[anodized::spec(requires: self.nodes.len() == self.encodings.len(),
+    #[spec(requires: self.nodes.len() == self.encodings.len(),
         captures: [previous = self.nodes.len()],
         ensures: |ret| ret.0 == previous && previous.checked_add(1) == Some(self.nodes.len())
             && self.encodings.len() == self.nodes.len()
@@ -509,7 +510,7 @@ impl Arena
     ///   encoding-size ceiling belongs to the framing operation, not node-index
     ///   arithmetic.
     /// - witness: `differential::tests::arena_and_framing_boundaries`
-    #[anodized::spec(requires: left.0 < self.nodes.len() && right.0 < self.nodes.len(),
+    #[spec(requires: left.0 < self.nodes.len() && right.0 < self.nodes.len(),
         captures: [nodes_before = self.nodes.len(), encodings_before = self.encodings.len()],
         ensures: |ret| match ret {
             Ok(id) => id.0 == nodes_before && nodes_before.checked_add(1) == Some(self.nodes.len())
@@ -558,7 +559,7 @@ impl Arena
 ///   sets the size ceiling; allocating a larger-than-u32 payload is outside
 ///   these bounded witnesses.
 /// - witness: `differential::tests::arena_and_framing_boundaries`
-#[anodized::spec(captures: [prefix_len = bytes.0.len()],
+#[spec(captures: [prefix_len = bytes.0.len()],
     ensures: |ret| match u32::try_from(encoding.0.len()) {
         Ok(length) => ret.is_ok() && prefix_len.checked_add(4).and_then(|len| len.checked_add(encoding.0.len())) == Some(bytes.0.len())
             && bytes.0.get(prefix_len ..).is_some_and(|suffix| suffix.starts_with(&length.to_le_bytes()) && suffix.get(4 ..) == Some(encoding.0.as_slice())),
@@ -602,7 +603,7 @@ const LEAF: LeafTag = LeafTag(7);
 ///   Successful results must be a predecessor chain, not merely the right size.
 /// - witness: `differential::tests::workload_shape_boundaries`
 /// - witness: `differential::tests::the_collapse_is_a_closed_form_at_three_depths`
-#[anodized::spec(ensures: |ret| ret.as_ref().ok().is_none_or(|arena|
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|arena|
         u64::try_from(arena.nodes.len()).ok() == u64::from(depth.0).checked_add(1)
         && arena.nodes.iter().enumerate().all(|(index, node)| match *node {
             Node::Leaf(tag) => index == 0 && tag == LEAF,
@@ -641,7 +642,7 @@ fn shared_composite(depth: Depth) -> Result<Arena, WorkloadError>
 ///   witness.
 /// - witness: `differential::tests::workload_shape_boundaries`
 /// - witness: `differential::tests::the_unshared_spelling_costs_the_memoless_walk_identically`
-#[anodized::spec(ensures: |ret| ret.as_ref().ok().is_none_or(|arena|
+#[spec(ensures: |ret| ret.as_ref().ok().is_none_or(|arena|
         occurrence_count(depth).ok().map(|count| count.0) == u64::try_from(arena.nodes.len()).ok())
         && (depth.0 < usize::BITS || matches!(ret, Err(WorkloadError::DepthOverflow))))]
 fn unshared_spelling(depth: Depth) -> Result<Arena, WorkloadError>
@@ -724,7 +725,7 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 ///   independently calculated words, catching omitted plane bytes, reordered
 ///   bytes and a reused basis.
 /// - witness: `differential::tests::digest_and_agreement_boundaries`
-#[anodized::spec(ensures: |ret| u128::from(u64::from(ret))
+#[spec(ensures: |ret| u128::from(u64::from(ret))
     == core::iter::once(plane.tag().0).chain(encoding.0.iter().copied())
         .fold(u128::from(u64::from(basis)), |state, byte|
             (state ^ u128::from(byte)).wrapping_mul(u128::from(FNV_PRIME)) & u128::from(u64::MAX)))]
@@ -772,7 +773,7 @@ impl MemoKey for Support
     ///   digest, not collision freedom for arbitrary inputs.
     /// - witness: `differential::tests::digest_and_agreement_boundaries`
     /// - witness: `differential::tests::arena_and_framing_boundaries`
-    #[anodized::spec(ensures: |ret| ret.high() == fold(self.plane, &self.content, DigestWord::from(HIGH_BASIS))
+    #[spec(ensures: |ret| ret.high() == fold(self.plane, &self.content, DigestWord::from(HIGH_BASIS))
         && ret.low() == fold(self.plane, &self.content, DigestWord::from(LOW_BASIS)))]
     fn digest(&self) -> ContentDigest
     {
@@ -799,7 +800,7 @@ impl MemoKey for Support
     ///   Relocation leaves the relation unchanged because indices are absent.
     /// - witness: `differential::tests::digest_and_agreement_boundaries`
     /// - witness: `differential::tests::arena_and_framing_boundaries`
-    #[anodized::spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
+    #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
         == (self.plane == other.plane && self.content == other.content))]
     fn agreement(
         &self,
@@ -873,7 +874,7 @@ impl Tally
     ///   Both planes and both event kinds are observed, separating crossed
     ///   counters, an absent-plane default, early guards and partial mutation.
     /// - witness: `differential::tests::tally_boundaries`
-    #[anodized::spec(captures: [before = self.expansions(plane)],
+    #[spec(captures: [before = self.expansions(plane)],
         ensures: |ret| ret.map(|()| self.expansions(plane).0)
             == before.0.checked_add(1).ok_or(WorkloadError::TallyOverflow)
             && (ret.is_ok() || self.expansions(plane) == before))]
@@ -905,7 +906,7 @@ impl Tally
     ///   planes and both event kinds are observed, separating crossed counters,
     ///   an absent-plane default, early guards and partial mutation.
     /// - witness: `differential::tests::tally_boundaries`
-    #[anodized::spec(captures: [before = self.hits(plane)],
+    #[spec(captures: [before = self.hits(plane)],
         ensures: |ret| ret.map(|()| self.hits(plane).0)
             == before.0.checked_add(1).ok_or(WorkloadError::TallyOverflow)
             && (ret.is_ok() || self.hits(plane) == before))]
@@ -931,7 +932,7 @@ impl Tally
     /// - hypothesis: L3 — absent planes and distinct populated counters
     ///   distinguish zero defaults, a crossed event map and the wrong plane.
     /// - witness: `differential::tests::tally_boundaries`
-    #[anodized::spec(ensures: |ret| ret == self.expansions.get(&plane).copied().unwrap_or(WalkCount(0)))]
+    #[spec(ensures: |ret| ret == self.expansions.get(&plane).copied().unwrap_or(WalkCount(0)))]
     fn expansions(
         &self,
         plane: Plane,
@@ -952,7 +953,7 @@ impl Tally
     /// - hypothesis: L3 — absent planes and distinct populated counters
     ///   distinguish zero defaults, a crossed event map and the wrong plane.
     /// - witness: `differential::tests::tally_boundaries`
-    #[anodized::spec(ensures: |ret| ret == self.hits.get(&plane).copied().unwrap_or(WalkCount(0)))]
+    #[spec(ensures: |ret| ret == self.hits.get(&plane).copied().unwrap_or(WalkCount(0)))]
     fn hits(
         &self,
         plane: Plane,
@@ -1039,7 +1040,7 @@ enum Frame
 /// - witness: `differential::tests::workload_shape_boundaries`
 /// - witness: `differential::tests::a_served_root_skips_expansion_on_both_planes`
 /// - witness: `differential::tests::tally_boundaries`
-#[anodized::spec(requires: !arena.nodes.is_empty(),
+#[spec(requires: !arena.nodes.is_empty(),
     captures: [expansions_before = tally.expansions(plane), hits_before = tally.hits(plane)],
     ensures: |ret| ret.is_err() || (tally.expansions(plane) >= expansions_before
         && tally.hits(plane) >= hits_before
@@ -1133,7 +1134,7 @@ where
 ///   are then recalled through their content key with the exact outcome.
 /// - witness: `differential::tests::recording_liveness_boundary`
 /// - witness: `differential::tests::a_served_root_skips_expansion_on_both_planes`
-#[anodized::spec(requires: node.0 < arena.nodes.len(),
+#[spec(requires: node.0 < arena.nodes.len(),
     ensures: |ret| !matches!(Memo::ACTIVITY, MemoActivity::Inactive) || ret.is_ok())]
 fn remember<Memo>(
     arena: &Arena,
@@ -1216,7 +1217,7 @@ struct Run
 /// - witness: `differential::tests::the_collapse_is_a_closed_form_at_three_depths`
 /// - witness: `differential::tests::workload_shape_boundaries`
 /// - witness: `differential::tests::a_served_root_skips_expansion_on_both_planes`
-#[anodized::spec(requires: !arena.nodes.is_empty(),
+#[spec(requires: !arena.nodes.is_empty(),
     ensures: |ret| ret.as_ref().ok().is_none_or(|run|
         run.entries == memo.entry_count() && run.value_entries == memo.plane_entry_count(Plane::Value)
         && run.weight_entries == memo.plane_entry_count(Plane::Weight)
@@ -1262,7 +1263,7 @@ where
 ///   unrepresentable result and catch off-by-one guards.
 /// - witness: `differential::tests::occurrence_count_ceiling_is_representable`
 /// - witness: `differential::tests::the_collapse_is_a_closed_form_at_three_depths`
-#[anodized::spec(ensures: |ret| ret.map(|count| count.0)
+#[spec(ensures: |ret| ret.map(|count| count.0)
     == depth.0.checked_add(1).and_then(|power| 1_u128.checked_shl(power))
         .and_then(|value| value.checked_sub(1))
         .and_then(|value| u64::try_from(value).ok()).ok_or(WorkloadError::DepthOverflow))]
@@ -1296,7 +1297,7 @@ fn occurrence_count(depth: Depth) -> Result<WalkCount, WorkloadError>
 ///   zero and the u32 ceiling have exact results, separating a forgotten
 ///   increment from an unnecessary narrowing or overflow refusal.
 /// - witness: `differential::tests::counter_arithmetic_boundaries`
-#[anodized::spec(ensures: |ret| ret.map(|count| count.0) == u64::from(depth.0).checked_add(1).ok_or(WorkloadError::DepthOverflow))]
+#[spec(ensures: |ret| ret.map(|count| count.0) == u64::from(depth.0).checked_add(1).ok_or(WorkloadError::DepthOverflow))]
 fn distinct_content_count(depth: Depth) -> Result<WalkCount, WorkloadError>
 {
     let count = u64::from(depth.0)
@@ -1334,7 +1335,7 @@ fn served_count(depth: Depth) -> WalkCount
 ///   the u32 ceiling distinguish missing root goals, wrong factors and
 ///   premature narrowing by exact answers.
 /// - witness: `differential::tests::counter_arithmetic_boundaries`
-#[anodized::spec(ensures: |ret| ret.map(|count| count.0) == u64::from(depth.0).checked_mul(2).and_then(|count| count.checked_add(1)).ok_or(WorkloadError::DepthOverflow))]
+#[spec(ensures: |ret| ret.map(|count| count.0) == u64::from(depth.0).checked_mul(2).and_then(|count| count.checked_add(1)).ok_or(WorkloadError::DepthOverflow))]
 fn goal_count(depth: Depth) -> Result<WalkCount, WorkloadError>
 {
     let pairs = u64::from(depth.0)
@@ -1359,7 +1360,7 @@ fn goal_count(depth: Depth) -> Result<WalkCount, WorkloadError>
 ///   the target ceiling. L3 zero, an exact MAX sum and MAX plus one distinguish
 ///   omitted operands, premature refusal and wrapping.
 /// - witness: `differential::tests::counter_arithmetic_boundaries`
-#[anodized::spec(ensures: |ret| ret.map(|count| u128::from(count.0))
+#[spec(ensures: |ret| ret.map(|count| u128::from(count.0))
     == u128::from(first.0).checked_add(u128::from(second.0)).filter(|count| *count <= u128::from(u64::MAX)).ok_or(WorkloadError::TallyOverflow))]
 fn sum_counts(
     first: WalkCount,
@@ -1391,7 +1392,7 @@ fn sum_counts(
 ///   usize conversion, exercising success or refusal according to the target
 ///   width. Exact counts separate truncation from an identity conversion.
 /// - witness: `differential::tests::counter_arithmetic_boundaries`
-#[anodized::spec(ensures: |ret| ret.map(usize::from) == usize::try_from(count.0).map_err(|_error| WorkloadError::TallyOverflow))]
+#[spec(ensures: |ret| ret.map(usize::from) == usize::try_from(count.0).map_err(|_error| WorkloadError::TallyOverflow))]
 fn as_entries(count: WalkCount) -> Result<MemoEntryCount, WorkloadError>
 {
     let count = usize::try_from(count.0).map_err(|_error| WorkloadError::TallyOverflow)?;
@@ -1415,7 +1416,7 @@ fn as_entries(count: WalkCount) -> Result<MemoEntryCount, WorkloadError>
 ///   one above it distinguish an omitted factor, early refusal and wrapping
 ///   before the representation conversion.
 /// - witness: `differential::tests::counter_arithmetic_boundaries`
-#[anodized::spec(ensures: |ret| ret.map(usize::from)
+#[spec(ensures: |ret| ret.map(usize::from)
     == u128::from(count.0).checked_mul(2).filter(|count| *count <= u128::from(u64::MAX))
         .and_then(|count| usize::try_from(count).ok()).ok_or(WorkloadError::TallyOverflow))]
 fn both_planes(count: WalkCount) -> Result<MemoEntryCount, WorkloadError>

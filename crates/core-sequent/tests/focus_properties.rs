@@ -10,6 +10,7 @@ use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_sequent::CommandArena;
 use gandr_core_sequent::ConsumerId;
 use gandr_core_sequent::ConsumerNode;
@@ -58,7 +59,7 @@ use crate::generate::values;
 ///   made about arbitrary transformation passes.
 /// - witness: `tests::focus_properties::covariable_observation_includes_unreachable_nodes`
 /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
-#[anodized::spec(ensures: |ret| (ret == Agreement::Same) ==
+#[spec(ensures: |ret| (ret == Agreement::Same) ==
     (0_usize .. usize::from(arena.consumer_count())).all(|offset|
         u32::try_from(offset).is_ok_and(|at| arena.consumer(ConsumerId::from(at))
             .is_none_or(|node| !matches!(*node, ConsumerNode::Covariable(index) if index != CovariableIndex::from(0_u32))))))]

@@ -7,6 +7,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arena::DocArena;
@@ -87,7 +88,7 @@ impl OutputBuffer
     /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
     /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
     /// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| match usize::try_from(u64::from(capacity)) { Err(_error) => matches!(ret, Err(RenderError::ArithmeticOverflow { operation: RenderArithmetic::OutputBytes })), Ok(requested) => ret.as_ref().map_or_else(|error| *error == RenderError::AllocationFailed { site: RenderAllocationSite::Output },
             |buffer| buffer.text.is_empty()
                 && u64::from(buffer.bytes) == 0
@@ -130,7 +131,7 @@ impl OutputBuffer
     /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
     /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
     /// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.text.as_ptr(), self.text.len()),
         ensures: |ret| ret.as_ptr() == before.0
                 && ret.len() == before.1
@@ -166,7 +167,7 @@ impl OutputBuffer
     /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
     /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
     /// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
-    #[anodized::spec(
+    #[spec(
         captures: before = (self.text.len(), self.text.as_ptr(), self.text.capacity(), self.bytes, meter.usage()),
         ensures: |ret| ret.as_ref().map_or_else(|_error| self.text.len() == before.0
                 && self.text.as_ptr() == before.1
@@ -237,7 +238,7 @@ struct Fragment<'bytes>(&'bytes str);
 /// - witness: `vm::tests::append_refusals_preserve_unicode_output_and_meter_state`
 /// - witness: `vm::tests::execution_checks_identity_order_and_byte_reconciliation`
 /// - witness: `algebra::tests::render_vm_stack_limit_is_checked_before_output`
-#[anodized::spec(
+#[spec(
     captures: before = meter.usage(),
     ensures: |ret| ret.as_ref().map_or(true,
         |buffer| buffer.bytes == expected

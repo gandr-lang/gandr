@@ -26,6 +26,8 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
+
 use crate::present::DiagCard;
 use crate::present::GoalCard;
 use crate::present::HlSpan;
@@ -272,7 +274,7 @@ impl RenderFrame
     /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ref ret| matches!(
+    #[spec(ensures: |ref ret| matches!(
         (&ret.scope, &ret.body),
         (&FrameScope::Connection, &FrameBody::Hello { .. }),
     ))]
@@ -303,7 +305,7 @@ impl RenderFrame
     /// - witness: `wire::tests::every_body_variant_round_trips_through_json`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ref ret| matches!(
+    #[spec(ensures: |ref ret| matches!(
         (&ret.scope, &ret.body),
         (&FrameScope::Document(_), &FrameBody::Frame { .. }),
     ))]
@@ -336,7 +338,7 @@ impl RenderFrame
     /// - witness: `wire::tests::frame_body_is_adjacently_tagged_on_the_wire`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ref ret| matches!(
+    #[spec(ensures: |ref ret| matches!(
         (&ret.scope, &ret.body),
         (&FrameScope::Document(_), &FrameBody::Resync),
     ))]
@@ -364,7 +366,7 @@ impl RenderFrame
     /// - witness: `wire::tests::connection_scoped_constructors_omit_routing_keys`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ref ret| matches!(
+    #[spec(ensures: |ref ret| matches!(
         (&ret.scope, &ret.body),
         (&FrameScope::Connection, &FrameBody::Detach),
     ))]
@@ -614,7 +616,7 @@ impl RenderFrame
     /// - witness: `wire::tests::deserialize_rejects_doc_uri_doc_version_lockstep_violations`
     /// - witness: `wire::tests::deserialize_rejects_body_routing_mismatches`
     /// - witness: `wire::tests::decode_refusals_preserve_validation_precedence`
-    #[anodized::spec(
+    #[spec(
         captures: [
             schema = wire.schema_version,
             has_uri = wire.doc_uri.is_some(),
@@ -723,7 +725,7 @@ impl<'input> serde::Deserialize<'input> for RenderFrame
     /// - witness: `wire::tests::deserialize_rejects_body_routing_mismatches`
     /// - witness: `wire::tests::decode_refusals_preserve_validation_precedence`
     #[inline]
-    #[anodized::spec(ensures: |ref ret| ret.as_ref().map_or(true, |frame| matches!(
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |frame| matches!(
         (&frame.scope, &frame.body),
         (&FrameScope::Connection, &(FrameBody::Hello { .. } | FrameBody::Detach))
             | (&FrameScope::Document(_), &(FrameBody::Frame { .. } | FrameBody::Resync)),

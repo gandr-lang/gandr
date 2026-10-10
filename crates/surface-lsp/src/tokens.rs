@@ -9,6 +9,7 @@
 //! line, its terminators dropped. Lengths and columns count UTF-16 code units,
 //! read through the renderer seam's [`LineIndex`].
 
+use anodized::spec;
 use gandr_surface_render_remote::ByteOffset;
 use gandr_surface_render_remote::HlRole;
 use gandr_surface_render_remote::HlSpan;
@@ -126,7 +127,7 @@ impl AsRef<[u32]> for TokenStream
 ///   wrong classifications and lost declaration or built-in bits.
 /// - witness: `tokens::tests::every_classified_role_maps_inside_the_legend`
 /// - witness: `tokens::tests::the_legend_index_a_role_emits_names_what_that_role_means`
-#[anodized::spec(ensures: |ret| match ret {
+#[spec(ensures: |ret| match ret {
     Maybe::Present((kind, modifiers)) => role != HlRole::Other
         && usize::try_from(kind.0).is_ok_and(|index| index < TOKEN_TYPES.len())
         && modifiers.0 & !3_u32 == 0,
@@ -183,7 +184,7 @@ fn token_of_role(role: HlRole) -> Maybe<(TokenType, TokenModifiers), token_of_ro
 /// - witness: `tokens::tests::a_one_line_keyword_encodes_as_five_integers`
 /// - witness: `tokens::tests::a_multiline_span_splits_and_drops_the_terminator`
 /// - witness: `session::session::corpus_tokens_cover_the_highlighted_bytes`
-#[anodized::spec(ensures: |ret| ret.0.len().is_multiple_of(INTEGERS_PER_TOKEN)
+#[spec(ensures: |ret| ret.0.len().is_multiple_of(INTEGERS_PER_TOKEN)
     && ret.0.chunks_exact(INTEGERS_PER_TOKEN).all(|token|
         matches!(token, &[_, _, length, kind, bits] if length > 0
             && usize::try_from(kind).is_ok_and(|index| index < TOKEN_TYPES.len())
@@ -268,7 +269,7 @@ pub fn encode(
 /// - witness: `server::tests::a_token_straddling_the_range_edge_is_returned_whole`
 /// - witness: `server::tests::an_inverted_range_yields_no_tokens`
 /// - witness: `server::tests::an_empty_range_yields_no_tokens`
-#[anodized::spec(
+#[spec(
     captures: count = spans.iter().filter(|span| start < end
         && span.range.start() < span.range.end()
         && span.range.start() < end && start < span.range.end()).count(),
@@ -295,6 +296,7 @@ pub fn overlapping(
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
     use gandr_surface_render_remote::ByteOffset;
     use gandr_surface_render_remote::ByteRange;
     use gandr_surface_render_remote::HlRole;
@@ -371,7 +373,7 @@ mod tests
     ///   swapped or wrongly modified meanings by the independently encoded
     ///   stream's interpretation under the advertised legend.
     /// - witness: `tokens::tests::the_legend_index_a_role_emits_names_what_that_role_means`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Maybe::Present(ref meaning) => role != HlRole::Other && !meaning.name.is_empty()
             && meaning.modifiers.iter().all(|&name| matches!(name, "declaration" | "defaultLibrary")),
         Maybe::Absent(()) => role == HlRole::Other,
@@ -419,7 +421,7 @@ mod tests
     /// - hypothesis: L3 — all four low-bit combinations, also with a high bit
     ///   set, distinguish wrong bit selection and order through exact names.
     /// - witness: `tokens::tests::modifier_bits_and_skipped_spans_keep_their_meaning`
-    #[anodized::spec(ensures: |ret| ret.0.iter().copied().eq(
+    #[spec(ensures: |ret| ret.0.iter().copied().eq(
         TOKEN_MODIFIERS.into_iter().zip([1_u32, 2_u32])
             .filter_map(|(name, bit)| (modifiers.0 & bit != 0).then_some(name))))]
     fn modifier_names(modifiers: TokenModifiers) -> Names
@@ -447,7 +449,7 @@ mod tests
     /// - hypothesis: L3 — all ordered endpoints in 0..=4, including empty
     ///   spans, distinguish endpoint shifts through byte-set intersection.
     /// - witness: `tokens::tests::overlap_observes_half_open_bytes_including_empty_spans`
-    #[anodized::spec(requires: start <= end, ensures: |ret|
+    #[spec(requires: start <= end, ensures: |ret|
         ret.range.start() == ByteOffset::from(start)
             && ret.range.end() == ByteOffset::from(end) && ret.role == role)]
     fn span(

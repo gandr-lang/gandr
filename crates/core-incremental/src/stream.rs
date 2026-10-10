@@ -18,6 +18,7 @@ use alloc::collections::BTreeMap;
 use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::boundary::ItemCount;
@@ -164,7 +165,7 @@ impl Liveness
     ///   cases do not establish whether the supplied statuses are true.
     /// - witness: `stream::tests::an_origin_carries_exactly_one_liveness_entry`
     /// - witness: `stream::tests::an_empty_branch_vector_remains_a_match`
-    #[anodized::spec(
+    #[spec(
         captures: [before_length = self.matches.len(), previous_length = self.matches.get(&origin).map(Vec::len), incoming_length = branches.len()],
         ensures: |ret| self.matches.get(&origin).is_some_and(|stored| stored.len() == incoming_length)
             && before_length.checked_add(usize::from(previous_length.is_none())) == Some(self.matches.len())
@@ -201,7 +202,7 @@ impl Liveness
     ///   matches.
     /// - witness: `stream::tests::an_unretained_submission_is_published_not_omitted`
     /// - witness: `stream::tests::unretained_marks_dominate_stored_matches`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.unretained.len(), present = self.unretained.contains(&submission)],
         ensures: self.unretained.contains(&submission)
             && before.checked_add(usize::from(!present)) == Some(self.unretained.len())
@@ -227,7 +228,7 @@ impl Liveness
     ///   distinguish the two independent ways liveness can be nonempty.
     /// - witness: `stream::tests::an_empty_branch_vector_remains_a_match`
     /// - witness: `stream::tests::an_unretained_submission_is_published_not_omitted`
-    #[anodized::spec(ensures: |ret| bool::from(ret) == (self.matches.is_empty() && self.unretained.is_empty()))]
+    #[spec(ensures: |ret| bool::from(ret) == (self.matches.is_empty() && self.unretained.is_empty()))]
     #[inline]
     #[must_use]
     pub fn is_empty(&self) -> LivenessEmpty
@@ -340,7 +341,7 @@ impl SynthesisStream
     ///   cases.
     /// - witness: `stream::tests::an_empty_stream_finishes_once_and_remains_exhausted`
     /// - witness: `stream::tests::a_plain_stream_addresses_each_source_item_once`
-    #[anodized::spec(ensures: |ret| {
+    #[spec(ensures: |ret| {
         let count = resume.checkpoints().items().len();
         ret.events.len().checked_sub(2) == Some(count)
             && ret.cursor == 0
@@ -405,7 +406,7 @@ impl SynthesisStream
     /// - witness: `stream::tests::an_unretained_submission_is_published_not_omitted`
     /// - witness: `stream::tests::unretained_marks_dominate_stored_matches`
     /// - witness: `stream::tests::an_empty_branch_vector_remains_a_match`
-    #[anodized::spec(ensures: |ret| {
+    #[spec(ensures: |ret| {
         let count = resume.checkpoints().items().len();
         let retained = liveness
             .matches
@@ -560,7 +561,7 @@ impl Iterator for SynthesisStream
     ///   stopping and restart.
     /// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
     /// - witness: `stream::tests::an_empty_stream_finishes_once_and_remains_exhausted`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.cursor],
         ensures: |ret| ret.as_ref() == self.events.get(before)
             && self.cursor == if ret.is_some() { before.saturating_add(1) } else { before }
@@ -582,6 +583,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_checker::CheckBudget;
     use gandr_core_checker::Declaration;
     use gandr_core_checker::OriginToken;
@@ -629,7 +631,7 @@ mod tests
     ///   events. This fixture does not cover refused items or resumed adoption.
     /// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
     /// - witness: `stream::tests::an_origin_carries_exactly_one_liveness_entry`
-    #[anodized::spec(ensures: |ret| ret.checkpoints().items().len() == 2
+    #[spec(ensures: |ret| ret.checkpoints().items().len() == 2
         && ret.handles().len() == 2 && ret.adoptions().len() == 2
         && ret.checkpoints().items().iter().all(|checkpoint| matches!(*checkpoint.typing(), crate::typing::Typing::Synthesised { .. })))]
     fn two_item_resume() -> Resume
@@ -688,7 +690,7 @@ mod tests
     /// - witness: `stream::tests::liveness_follows_the_items_in_origin_order`
     /// - witness: `stream::tests::an_origin_carries_exactly_one_liveness_entry`
     /// - witness: `stream::tests::an_unretained_submission_is_published_not_omitted`
-    #[anodized::spec(ensures: |ret| ret.iter().copied().eq(events.iter().filter_map(|event| match *event {
+    #[spec(ensures: |ret| ret.iter().copied().eq(events.iter().filter_map(|event| match *event {
         SynthesisEvent::Match { origin, .. } => Some(origin),
         _ => None,
     })))]

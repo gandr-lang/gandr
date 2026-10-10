@@ -18,6 +18,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_checker::Declaration;
 use gandr_core_term::CoreArena;
 use gandr_kernel_term::ConstantIndex;
@@ -276,7 +277,7 @@ impl Layout
     ///   references.
     /// - witness: `region::tests::positions_must_ascend_and_may_skip`
     /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
-    #[anodized::spec(ensures: |ret| self.occupied.get(&position)
+    #[spec(ensures: |ret| self.occupied.get(&position)
         .and_then(|&ordinal| self.references.get(usize::from(ordinal)))
         .map_or_else(|| ret == Reference::Unoccupied, |reference| ret == *reference))]
     pub(crate) fn resolve(
@@ -306,7 +307,7 @@ impl Layout
     ///   occurrence references distinguish accidental naming by exact absence.
     /// - witness: `region::tests::a_repeated_key_counts_its_occurrences`
     /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
-    #[anodized::spec(ensures: |ret| match self.named.get(reference) {
+    #[spec(ensures: |ret| match self.named.get(reference) {
         Some(&ordinal) => ret == Maybe::Present(ordinal),
         None => ret == Maybe::Absent(naming::Absent::Unnamed),
     })]
@@ -379,7 +380,7 @@ impl Program
     /// - witness: `region::tests::a_repeated_key_counts_its_occurrences`
     /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
     /// - witness: `region::tests::the_first_position_violation_wins`
-    #[anodized::spec(
+    #[spec(
         captures: [item_count = items.len(),
         first_bad = items.windows(2).enumerate().find_map(|(index, pair)| {
             let (previous, next) = pair.first().zip(pair.last())?;
@@ -536,7 +537,7 @@ impl Program
     /// - witness: `region::tests::positions_must_ascend_and_may_skip`
     /// - witness: `region::tests::a_repeated_key_counts_its_occurrences`
     /// - witness: `region::tests::empty_and_extreme_programs_resolve_exactly`
-    #[anodized::spec(ensures: |ret| self.layout.occupied.get(&position)
+    #[spec(ensures: |ret| self.layout.occupied.get(&position)
         .and_then(|&ordinal| self.layout.references.get(usize::from(ordinal)))
         .map_or_else(|| ret == Reference::Unoccupied, |reference| ret == *reference))]
     #[inline]

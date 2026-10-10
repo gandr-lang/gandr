@@ -6,6 +6,7 @@
 //! rather than a batch to unpack. An outgoing message is a typed value until
 //! the transport encodes it, so the one fallible encoding sits at the stream.
 
+use anodized::spec;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -165,7 +166,7 @@ impl Malformed
     ///   numeric and string identifiers, distinguish wrong codes or lost
     ///   identifiers through their exact response envelope.
     /// - witness: `rpc::tests::a_batch_is_rejected`
-    #[anodized::spec(
+    #[spec(
         captures: code = match self { Self::Parse => ErrorCode::PARSE_ERROR, Self::Invalid(_) => ErrorCode::INVALID_REQUEST },
         ensures: |ret| matches!(ret, Outgoing::Failure { jsonrpc: VERSION, ref id, ref error }
             if error.code == code && (code != ErrorCode::PARSE_ERROR || id.0.is_null())),
@@ -267,7 +268,7 @@ pub struct Refusal
 /// - witness: `rpc::tests::a_request_is_classified`
 /// - witness: `rpc::tests::a_batch_is_rejected`
 /// - witness: `rpc::tests::decoder_rejections_keep_the_parse_error_class`
-#[anodized::spec(ensures: |ret| match ret {
+#[spec(ensures: |ret| match ret {
     Ok(Incoming::Request { ref id, ref params, .. }) =>
         (id.0.is_number() || id.0.is_string())
             && (params.is_null() || params.is_object() || params.is_array()),

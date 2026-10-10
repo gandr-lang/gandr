@@ -16,6 +16,7 @@ mod tests
     use alloc::collections::VecDeque;
     use std::io;
 
+    use anodized::spec;
     use gandr_core_incremental::ContentNode;
     use gandr_core_incremental::NodeIndex;
     use gandr_kernel_term::BaseType;
@@ -63,7 +64,7 @@ mod tests
         ///   changes these finite traces.
         /// - witness: `launch::tests::a_failed_input_preserves_its_cause_and_stops_reading`
         /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
-        #[anodized::spec(captures: [before = self.0.len()], ensures: |ref ret|
+        #[spec(captures: [before = self.0.len()], ensures: |ref ret|
         self.0.len() == before.saturating_sub(1) && (before != 0 || matches!(*ret, Input::Key(Key::Quit))))]
         fn next(&mut self) -> Input
         {
@@ -89,7 +90,7 @@ mod tests
         ///   Missing, reordered or extra submitted characters change those
         ///   observations; arbitrary inputs are outside this finite session.
         /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
-        #[anodized::spec(captures: [before = self.0.len()], ensures: |ref ret|
+        #[spec(captures: [before = self.0.len()], ensures: |ref ret|
             ret.0.len() > before && matches!(ret.0.back(), Some(&Input::Key(Key::Enter)))
             && ret.0.iter().skip(before).take(ret.0.len().saturating_sub(before).saturating_sub(1))
                 .all(|input| matches!(*input, Input::Key(Key::Char(_)))))]
@@ -124,7 +125,7 @@ mod tests
         ///   script; arbitrary input failures are covered separately through
         ///   direct queue construction.
         /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
-        #[anodized::spec(captures: [before = self.0.len(), tag = core::mem::discriminant(&input)],
+        #[spec(captures: [before = self.0.len(), tag = core::mem::discriminant(&input)],
             ensures: |ref ret| ret.0.len() == before.saturating_add(1)
                 && ret.0.back().is_some_and(|last| core::mem::discriminant(last) == tag))]
         fn then(
@@ -154,7 +155,7 @@ mod tests
     ///   failure is excluded.
     /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
     /// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
-    #[anodized::spec(ensures: |ref ret| ret.transcript().is_empty())]
+    #[spec(ensures: |ref ret| ret.transcript().is_empty())]
     fn app() -> App
     {
         App::new().expect("the face starts")
@@ -180,7 +181,7 @@ mod tests
     ///   this domain.
     /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
     /// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
-    #[anodized::spec(captures: [before = app.transcript().len()], ensures: |ret|
+    #[spec(captures: [before = app.transcript().len()], ensures: |ret|
         app.transcript().len() >= before && app.transcript().len() <= before.saturating_add(1)
             && (ret != Handled::Quit || app.transcript().len() == before))]
     fn enter<'line, Line>(
@@ -217,7 +218,7 @@ mod tests
     ///   selection or corrupted spelling changes the golden; other base atoms
     ///   are not enumerated.
     /// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
-    #[anodized::spec(ensures: |ref ret| !ret.contains(['\r', '\n']))]
+    #[spec(ensures: |ref ret| !ret.contains(['\r', '\n']))]
     fn base(base: BaseType) -> String
     {
         spell(&[ContentNode::Base(base)], NodeIndex::from(0))
@@ -243,7 +244,7 @@ mod tests
     ///   domain.
     /// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
     /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
-    #[anodized::spec(ensures: |ref ret| ret.area.x == 0 && ret.area.y == 0
+    #[spec(ensures: |ref ret| ret.area.x == 0 && ret.area.y == 0
         && ret.area.width == area.width && ret.area.height == area.height)]
     fn painted(
         app: &App,
@@ -279,7 +280,7 @@ mod tests
     ///   wide-character cells are not interpreted as additional displayed
     ///   glyphs by this text-only observer.
     /// - witness: `launch::tests::a_fixed_session_paints_as_the_golden`
-    #[anodized::spec(ensures: |ref ret| ret.len() == usize::from(buffer.area.height))]
+    #[spec(ensures: |ref ret| ret.len() == usize::from(buffer.area.height))]
     fn screen(buffer: &Buffer) -> Vec<String>
     {
         let area = buffer.area;
@@ -310,7 +311,7 @@ mod tests
     ///   outside them.
     /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
     /// - witness: `launch::tests::the_transcript_pane_follows_the_newest_rows`
-    #[anodized::spec(ensures: |ref ret| ret.len() <= usize::from(buffer.area.height)
+    #[spec(ensures: |ref ret| ret.len() <= usize::from(buffer.area.height)
         && ret.iter().all(|row| row.chars().next_back().is_none_or(|last| !last.is_whitespace())))]
     fn pane_rows(buffer: &Buffer) -> Vec<String>
     {
@@ -339,7 +340,7 @@ mod tests
     ///   hits, wrong window offsets or colours change this observation; wide
     ///   and combining characters are excluded from this helper's domain.
     /// - witness: `launch::tests::a_submitted_keyword_is_painted_in_the_keyword_colour`
-    #[anodized::spec(ensures: |ref ret| ret.iter().all(|colours|
+    #[spec(ensures: |ref ret| ret.iter().all(|colours|
         !colours.is_empty() && colours.len() <= usize::from(buffer.area.width)))]
     fn colours_of<'word, Word>(
         buffer: &Buffer,

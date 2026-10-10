@@ -60,6 +60,8 @@ mod walk;
 
 use std::path::PathBuf;
 
+use anodized::spec;
+
 pub use crate::compose::ComposeFault;
 pub use crate::compose::Composed;
 pub use crate::compose::Lowered;
@@ -216,7 +218,7 @@ impl core::fmt::Display for StatusReport
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 #[inline]
 #[must_use]
-#[anodized::spec(
+#[spec(
     captures: [
         status = matches!(invocation, Invocation::Status),
         verb = match &invocation {
@@ -252,6 +254,7 @@ mod tests
 {
     use std::path::PathBuf;
 
+    use anodized::spec;
     use quenchant_shape::shape::Maybe;
 
     use super::Goals;
@@ -279,7 +282,7 @@ mod tests
     ///   steps are outside this helper's admitted domain.
     /// - witness: `tests::check_routes_to_a_walk_under_the_check_verb`
     /// - witness: `tests::the_test_verb_routes_to_a_walk`
-    #[anodized::spec(requires: matches!(outcome, Outcome::Run { .. }))]
+    #[spec(requires: matches!(outcome, Outcome::Run { .. }))]
     fn first_fault_path(outcome: Outcome) -> PathBuf
     {
         let Outcome::Run { mut walk, .. } = outcome

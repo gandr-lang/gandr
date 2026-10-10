@@ -4,6 +4,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_grammar::PbgError;
 use gandr_surface_render_remote::TranscriptBlock;
@@ -82,7 +83,7 @@ impl App
     ///   are excluded.
     /// - witness: `app::tests::unicode_edits_and_empty_backspace_preserve_input_boundaries`
     /// - witness: `app::tests::a_fresh_loop_keeps_refusal_rows_plain`
-    #[anodized::spec(ensures: |ref ret| ret.as_ref().map_or(true, |app| app.line.is_empty() && app.waiting.is_empty() && app.transcript.is_empty() && app.repl.prompt() == Prompt::Fresh))]
+    #[spec(ensures: |ref ret| ret.as_ref().map_or(true, |app| app.line.is_empty() && app.waiting.is_empty() && app.transcript.is_empty() && app.repl.prompt() == Prompt::Fresh))]
     #[inline]
     pub fn new() -> Result<Self, PbgError>
     {
@@ -164,7 +165,7 @@ impl App
     /// - witness: `app::tests::completed_and_interrupted_waits_preserve_the_transcript`
     /// - witness: `launch::tests::the_face_drives_the_loop_from_its_keys`
     /// - witness: `launch::tests::a_waiting_buffer_shows_in_the_input_pane`
-    #[anodized::spec(
+    #[spec(
         requires: key != Key::Enter || !self.line.contains(['\r', '\n']),
         captures: [
             line_bytes = self.line.len(),

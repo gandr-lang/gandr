@@ -26,6 +26,7 @@ use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use anodized::spec;
 use gandr_surface_diagnostics::Entry;
 use gandr_surface_diagnostics::RenderStyle;
 use gandr_surface_diagnostics::TerminalCapability;
@@ -210,7 +211,7 @@ enum Screen
 /// - witness: `cli::cli::a_script_that_returns_a_value_leaves_successfully`
 /// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
 /// - witness: `cli::cli::an_ill_typed_script_is_refused_by_the_checker`
-#[anodized::spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(UNSETTLED) || ret == ExitCode::from(FAULTED))]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(UNSETTLED) || ret == ExitCode::from(FAULTED))]
 fn main() -> ExitCode
 {
     let cli = match <Cli as clap::Parser>::try_parse() {
@@ -292,7 +293,7 @@ fn main() -> ExitCode
 ///   framing, lost replies and collapsed clean/abrupt/fault statuses change
 ///   these traces. Arbitrary methods and live-editor timing are excluded.
 /// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
-#[anodized::spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(ABRUPT) || ret == ExitCode::from(FAULTED))]
 fn lsp() -> ExitCode
 {
     let mut input = std::io::stdin().lock();
@@ -336,7 +337,7 @@ fn lsp() -> ExitCode
 ///   quit change the observations. Interactive editing and terminal colour
 ///   appearance are outside these finite pipe sessions.
 /// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
-#[anodized::spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn repl(face: Face) -> ExitCode
 {
     let input = std::io::stdin();
@@ -387,7 +388,7 @@ fn repl(face: Face) -> ExitCode
 ///   these subprocess fixtures and is exercised by the smoke run.
 /// - witness: `cli::cli::smoke_is_terminal_free_but_interactive_tui_refuses_pipes`
 /// - witness: `cli::cli::unwritable_standard_output_exits_two`
-#[anodized::spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn tui(screen: Screen) -> ExitCode
 {
     let attached = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
@@ -432,7 +433,7 @@ fn tui(screen: Screen) -> ExitCode
 ///   The successful JSON surface is exercised by the command smoke; protocol
 ///   capability contents belong to the server rather than this adapter.
 /// - witness: `cli::cli::unwritable_standard_output_exits_two`
-#[anodized::spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
+#[spec(ensures: |ret| ret == ExitCode::SUCCESS || ret == ExitCode::from(FAULTED))]
 fn capabilities() -> ExitCode
 {
     let mut stdout = std::io::stdout().lock();
@@ -467,7 +468,7 @@ fn capabilities() -> ExitCode
 /// - witness: `cli::cli::help_exits_zero`
 /// - witness: `cli::cli::unwritable_standard_output_exits_two`
 /// - witness: `cli::cli::status_and_version_identify_the_same_build`
-#[anodized::spec(ensures: |ret| ret == ExitCode::from(FAULTED)
+#[spec(ensures: |ret| ret == ExitCode::from(FAULTED)
     || (!error.use_stderr() && ret == ExitCode::SUCCESS))]
 fn usage(error: &clap::Error) -> ExitCode
 {
@@ -510,7 +511,7 @@ fn usage(error: &clap::Error) -> ExitCode
 /// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
 /// - witness: `cli::cli::an_unreadable_path_exits_two`
 /// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
-#[anodized::spec(captures: [status = matches!(outcome, Outcome::Status(_))],
+#[spec(captures: [status = matches!(outcome, Outcome::Status(_))],
     ensures: |ref ret| ret.as_ref().map_or(true, |exit|
         (*exit == ExitCode::SUCCESS || *exit == ExitCode::from(UNSETTLED) || *exit == ExitCode::from(FAULTED))
             && (!status || *exit == ExitCode::SUCCESS)))]
@@ -554,7 +555,7 @@ fn render(
 /// - witness: `cli::cli::an_unreadable_path_exits_two`
 /// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
 /// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
-#[anodized::spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit| *exit == match walk.report().verdict(verb) {
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit| *exit == match walk.report().verdict(verb) {
     RunVerdict::Settled => ExitCode::SUCCESS,
     RunVerdict::Unsettled => ExitCode::from(UNSETTLED),
     RunVerdict::Faulted => ExitCode::from(FAULTED),
@@ -632,7 +633,7 @@ fn run(
 /// - witness: `cli::cli::a_script_with_no_program_is_refused`
 /// - witness: `cli::cli::the_value_of_a_run_is_printed_once`
 /// - witness: `cli::cli::a_failed_diagnostic_stream_stops_later_output`
-#[anodized::spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
+#[spec(ensures: |ref ret| ret.as_ref().map_or(true, |exit|
     *exit == ExitCode::SUCCESS || *exit == ExitCode::from(STOPPED) || *exit == ExitCode::from(UNREACHED)))]
 fn script(
     runnable: &mut Script,

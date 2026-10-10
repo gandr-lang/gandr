@@ -7,6 +7,8 @@
 
 use alloc::string::String;
 
+use anodized::spec;
+
 use crate::arena::DocArena;
 use crate::arena::DocId;
 use crate::error::RenderError;
@@ -185,7 +187,7 @@ pub struct Rendered
 /// - witness: `algebra::tests::render_tainted_root_preserves_promise_columns_and_indentation`
 /// - witness: `algebra::tests::render_limits_fail_without_partial_output`
 /// - witness: `resolve::tests::resolution_validates_inputs_before_work_and_charges_output_once`
-#[anodized::spec(
+#[spec(
     captures: before = meter.usage(),
     ensures: |ret| if arena.contains(root) == crate::arena::DocHandleStatus::Absent { matches!(ret, Err(RenderError::UnknownDoc))
             && meter.usage() == before }

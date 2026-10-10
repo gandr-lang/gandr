@@ -10,6 +10,7 @@
 use std::ffi::OsStr;
 use std::path::Path;
 
+use anodized::spec;
 use gandr_surface_corpus::CorpusRoot;
 
 /// The directory name of the strict root.
@@ -56,7 +57,7 @@ impl SourceRoot
     /// - witness: `root::tests::each_root_settles_under_its_corpus_root`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| matches!((self, ret),
+    #[spec(ensures: |ret| matches!((self, ret),
         (Self::Strict, CorpusRoot::Strict)
             | (Self::Fixture | Self::Pending, CorpusRoot::Fixture),
     ))]
@@ -119,7 +120,7 @@ impl core::fmt::Display for SourceRoot
 /// - witness: `root::tests::parent_components_are_classified_lexically`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ret| ret == path.ancestors().skip(1).find_map(|directory| {
+#[spec(ensures: |ret| ret == path.ancestors().skip(1).find_map(|directory| {
     let name = directory.file_name()?;
     if name == STRICT { Some(SourceRoot::Strict) }
     else if name == FIXTURE { Some(SourceRoot::Fixture) }

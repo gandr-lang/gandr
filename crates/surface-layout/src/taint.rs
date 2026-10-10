@@ -6,6 +6,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use quenchant_shape::shape::Maybe;
 
 use crate::arena::NodeId;
@@ -118,7 +119,7 @@ pub(crate) enum TaintPromise
 ///   only bounded summaries; witnesses observe complete callback traces without
 ///   replaying callbacks.
 /// - witness: `taint::tests::taint_and_merge_preserve_bias_order_context_and_first_failure`
-#[anodized::spec(
+#[spec(
     captures: before = match set { MeasureSet::Frontier(ref frontier) => (frontier.first().copied().map(TaintPromise::Ready), frontier.len() > 1), MeasureSet::Tainted(promise) => (Some(promise), false) },
     ensures: |ret| ret.as_ref().map_or_else(|_error| before.1,
         |set| match *set { MeasureSet::Frontier(ref frontier) => before.0.is_none()
@@ -164,7 +165,7 @@ pub(crate) fn taint(
 ///   only bounded summaries; witnesses observe complete callback traces without
 ///   replaying callbacks.
 /// - witness: `taint::tests::taint_and_merge_preserve_bias_order_context_and_first_failure`
-#[anodized::spec(
+#[spec(
     ensures: |ret| matches!(ret, MeasureSet::Tainted(TaintPromise::Deferred { doc: actual_doc, column: actual_column, indentation: actual_indentation }) if actual_doc == doc
             && actual_column == column
             && actual_indentation == indentation)
@@ -208,7 +209,7 @@ pub(crate) fn deferred(
 ///   only bounded summaries; witnesses observe complete callback traces without
 ///   replaying callbacks.
 /// - witness: `taint::tests::taint_and_merge_preserve_bias_order_context_and_first_failure`
-#[anodized::spec(
+#[spec(
     captures: before = (match left { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) }, match right { MeasureSet::Frontier(ref frontier) => (frontier.len(), frontier.first().copied(), frontier.last().copied(), None), MeasureSet::Tainted(promise) => (0, None, None, Some(promise)) }),
     ensures: |ret| ret.as_ref().map_or_else(|error| before.0.3.is_some() || before.1.3.is_some() || *error == RenderError::AllocationFailed { site: crate::error::RenderAllocationSite::Frontier },
         |set| match (before.0.3, before.1.3) { (None, None) => matches!(*set, MeasureSet::Frontier(ref frontier) if before.0.0.checked_add(before.1.0) == Some(frontier.len())
@@ -271,7 +272,7 @@ pub(crate) fn merge(
 ///   only bounded summaries; witnesses observe complete callback traces without
 ///   replaying callbacks.
 /// - witness: `taint::tests::taint_and_merge_preserve_bias_order_context_and_first_failure`
-#[anodized::spec(
+#[spec(
     ensures: |ret| ret == match *set { MeasureSet::Frontier(ref frontier) => frontier.first().copied().map_or(Maybe::Absent(first::Absent::Empty), Maybe::Present), MeasureSet::Tainted(TaintPromise::Ready(measure)) => Maybe::Present(measure), MeasureSet::Tainted(TaintPromise::Deferred { .. }) => Maybe::Absent(first::Absent::Deferred) }
 )]
 #[inline]
@@ -321,7 +322,7 @@ mod tests
     ///   only bounded summaries; witnesses observe complete callback traces
     ///   without replaying callbacks.
     /// - witness: `taint::tests::taint_and_merge_preserve_bias_order_context_and_first_failure`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.last_column == column
                 && ret.cost == LayoutCost::zero()
                 && u64::from(ret.output_bytes) == 0

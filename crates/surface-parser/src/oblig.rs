@@ -8,6 +8,7 @@
 
 use core::cmp::Ordering;
 
+use anodized::spec;
 use gandr_surface_syntax::ByteSpan;
 
 /// The number of obligation severity classes.
@@ -45,7 +46,7 @@ impl From<ObligClassIndex> for u8
     ///   differ.
     /// - witness: `oblig::tests::index_matches_ord_rank`
     #[inline]
-    #[anodized::spec(ensures: |ret| usize::from(ret) == index.0)]
+    #[spec(ensures: |ret| usize::from(ret) == index.0)]
     fn from(index: ObligClassIndex) -> Self
     {
         Self::try_from(usize::from(index)).unwrap_or(0)
@@ -106,7 +107,7 @@ impl From<ObligationCount> for usize
     ///   boundary.
     /// - witness: `oblig::tests::counts_convert_at_zero_and_the_wire_ceiling`
     #[inline]
-    #[anodized::spec(ensures: |ret| ret == Self::try_from(count.0).unwrap_or(Self::MAX))]
+    #[spec(ensures: |ret| ret == Self::try_from(count.0).unwrap_or(Self::MAX))]
     fn from(count: ObligationCount) -> Self
     {
         Self::try_from(u32::from(count)).unwrap_or(Self::MAX)
@@ -210,7 +211,7 @@ impl Oblig
     /// - witness: `oblig::tests::index_matches_ord_rank`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret.0 == match self { Self::MissingMeld => 0, Self::MissingTile => 1, Self::IncompleteTile => 2, Self::UnmoldedTok => 3, Self::InconMeld => 4, Self::ExtraMeld => 5, Self::ReservedKeyword => 6, Self::AmbiguousPrec => 7 })]
+    #[spec(ensures: |ret| ret.0 == match self { Self::MissingMeld => 0, Self::MissingTile => 1, Self::IncompleteTile => 2, Self::UnmoldedTok => 3, Self::InconMeld => 4, Self::ExtraMeld => 5, Self::ReservedKeyword => 6, Self::AmbiguousPrec => 7 })]
     pub const fn index(self) -> ObligClassIndex
     {
         ObligClassIndex(match self {
@@ -241,7 +242,7 @@ impl Oblig
     /// - witness: `oblig::tests::severity_ladder_is_low_to_high`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| matches!(ret, [Self::MissingMeld, Self::MissingTile, Self::IncompleteTile, Self::UnmoldedTok, Self::InconMeld, Self::ExtraMeld, Self::ReservedKeyword, Self::AmbiguousPrec]))]
+    #[spec(ensures: |ret| matches!(ret, [Self::MissingMeld, Self::MissingTile, Self::IncompleteTile, Self::UnmoldedTok, Self::InconMeld, Self::ExtraMeld, Self::ReservedKeyword, Self::AmbiguousPrec]))]
     pub const fn all() -> [Self; OBLIG_CLASS_COUNT]
     {
         [
@@ -301,7 +302,7 @@ impl ObligationInstance
     /// - witness: `meld::tests::degrout_flags_one_ambiguous_prec_at_the_smallest_span`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret.class.index().0 == class.index().0)]
+    #[spec(ensures: |ret| ret.class.index().0 == class.index().0)]
     pub const fn new(
         class: Oblig,
         span: ByteSpan,
@@ -341,7 +342,7 @@ impl From<ClassCount> for ObligationNet
     ///   through the delta ordering observed by candidate minimization.
     /// - witness: `oblig::tests::net_precedes_gross_and_is_signed`
     #[inline]
-    #[anodized::spec(ensures: |ret| ret.0 == i64::from(count.inserted.0).saturating_sub(i64::from(count.removed.0)))]
+    #[spec(ensures: |ret| ret.0 == i64::from(count.inserted.0).saturating_sub(i64::from(count.removed.0)))]
     fn from(count: ClassCount) -> Self
     {
         Self(i64::wrapping_sub(
@@ -408,7 +409,7 @@ impl Delta
     /// - witness: `oblig::tests::recording_saturates_each_class_without_cross_talk`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| { let mut remaining: &[ClassCount] = &ret.counts; let mut zero = true; while let Some((count, rest)) = remaining.split_first() { zero = zero && count.removed.0 == 0 && count.inserted.0 == 0; remaining = rest; } zero })]
+    #[spec(ensures: |ret| { let mut remaining: &[ClassCount] = &ret.counts; let mut zero = true; while let Some((count, rest)) = remaining.split_first() { zero = zero && count.removed.0 == 0 && count.inserted.0 == 0; remaining = rest; } zero })]
     pub const fn empty() -> Self
     {
         Self {
@@ -437,7 +438,7 @@ impl Delta
     ///   other classes detect wrapping, wrong slots and lost removal counts.
     /// - witness: `oblig::tests::recording_saturates_each_class_without_cross_talk`
     #[inline]
-    #[anodized::spec(captures: before = self.counts,
+    #[spec(captures: before = self.counts,
         ensures: self.counts.iter().zip(before).enumerate().all(|(index, (after, before))| {
             if index == usize::from(class.index()) {
                 after.removed.0 == before.removed.0.saturating_add(removed.0)
@@ -476,7 +477,7 @@ impl Delta
     ///   double increments and mutations of other classes.
     /// - witness: `oblig::tests::recording_saturates_each_class_without_cross_talk`
     #[inline]
-    #[anodized::spec(captures: before = self.counts.get(usize::from(class.index())).copied(),
+    #[spec(captures: before = self.counts.get(usize::from(class.index())).copied(),
         ensures: self.counts.get(usize::from(class.index())).zip(before).is_some_and(|(after, before)| {
             after.removed == before.removed && after.inserted.0 == before.inserted.0.saturating_add(1)
         }))]
@@ -503,7 +504,7 @@ impl Delta
     /// - witness: `oblig::tests::recording_saturates_each_class_without_cross_talk`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| self.counts.get(usize::from(class.index())).is_some_and(|count| ret == count.inserted))]
+    #[spec(ensures: |ret| self.counts.get(usize::from(class.index())).is_some_and(|count| ret == count.inserted))]
     pub fn inserted(
         &self,
         class: Oblig,
@@ -529,7 +530,7 @@ impl Delta
     /// - witness: `oblig::tests::net_precedes_gross_and_is_signed`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| bool::from(ret) == self.counts.iter().all(|count| count.removed.0 == 0 && count.inserted.0 == 0))]
+    #[spec(ensures: |ret| bool::from(ret) == self.counts.iter().all(|count| count.removed.0 == 0 && count.inserted.0 == 0))]
     pub fn is_empty(&self) -> DeltaEmptyStatus
     {
         DeltaEmptyStatus::from(self.counts.iter().all(|count| {
@@ -556,7 +557,7 @@ impl Ord for Delta
     /// - witness: `oblig::tests::equal_net_breaks_ties_on_gross_inserted`
     /// - witness: `oblig::tests::net_precedes_gross_and_is_signed`
     #[inline]
-    #[anodized::spec(ensures: |ret| ret == self.counts.iter().rev().map(|count| (i64::from(count.inserted.0).saturating_sub(i64::from(count.removed.0)), count.inserted)).cmp(other.counts.iter().rev().map(|count| (i64::from(count.inserted.0).saturating_sub(i64::from(count.removed.0)), count.inserted))))]
+    #[spec(ensures: |ret| ret == self.counts.iter().rev().map(|count| (i64::from(count.inserted.0).saturating_sub(i64::from(count.removed.0)), count.inserted)).cmp(other.counts.iter().rev().map(|count| (i64::from(count.inserted.0).saturating_sub(i64::from(count.removed.0)), count.inserted))))]
     fn cmp(
         &self,
         other: &Self,

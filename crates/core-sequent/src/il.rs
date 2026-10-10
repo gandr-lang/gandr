@@ -38,6 +38,7 @@ use alloc::boxed::Box;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::Zone;
 use gandr_kernel_strata::Level;
 use gandr_kernel_term::ConstantIndex;
@@ -114,7 +115,7 @@ impl ConstructorTag
     /// - witness: `il::tests::tag_arities_are_stable`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| match *self {
+    #[spec(ensures: |ret| match *self {
         | Self::Unit => matches!(ret, ProducerArity::ZERO),
         | Self::Pair => matches!(ret, ProducerArity::TWO),
         | Self::Injection(_) | Self::Lift(_) => matches!(ret, ProducerArity::ONE),
@@ -146,7 +147,7 @@ impl ConstructorTag
     /// - witness: `il::tests::tag_consumer_arities_are_declared`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| matches!(ret, ConsumerArity::ZERO))]
+    #[spec(ensures: |ret| matches!(ret, ConsumerArity::ZERO))]
     pub const fn consumer_arity(&self) -> ConsumerArity
     {
         match *self {
@@ -188,7 +189,7 @@ impl DestructorTag
     /// - witness: `il::tests::tag_arities_are_stable`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| matches!((self, ret),
+    #[spec(ensures: |ret| matches!((self, ret),
         (Self::Apply, ProducerArity::ONE) | (Self::Force, ProducerArity::ZERO)
     ))]
     pub const fn producer_arity(self) -> ProducerArity
@@ -217,7 +218,7 @@ impl DestructorTag
     /// - witness: `il::tests::tag_consumer_arities_are_declared`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| matches!(ret, ConsumerArity::ONE))]
+    #[spec(ensures: |ret| matches!(ret, ConsumerArity::ONE))]
     pub const fn consumer_arity(self) -> ConsumerArity
     {
         match self {
@@ -242,7 +243,7 @@ impl DestructorTag
     /// - witness: `il::tests::tag_arities_are_stable`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| matches!((self, ret),
+    #[spec(ensures: |ret| matches!((self, ret),
         (Self::Apply, Polarity::Negative) | (Self::Force, Polarity::Positive)
     ))]
     pub const fn polarity(self) -> Polarity
@@ -513,7 +514,7 @@ impl CommandArena
     /// - witness: `il::tests::truncation_drops_exactly_the_later_nodes`
     /// - witness: `il::tests::truncation_keeps_future_marks_and_drops_each_family`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.watermark()],
         ensures: self.producers.len() == usize::from(watermark.producers).min(usize::from(entry.producers))
             && self.consumers.len() == usize::from(watermark.consumers).min(usize::from(entry.consumers))
@@ -546,7 +547,7 @@ impl CommandArena
     /// - witness: `il::tests::lookup_boundaries_follow_each_family`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         | Some(node) => usize::try_from(u32::from(id)).ok()
             .and_then(|offset| self.producers.get(offset))
             .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(node))),
@@ -577,7 +578,7 @@ impl CommandArena
     /// - witness: `il::tests::lookup_boundaries_follow_each_family`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         | Some(node) => usize::try_from(u32::from(id)).ok()
             .and_then(|offset| self.consumers.get(offset))
             .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(node))),
@@ -608,7 +609,7 @@ impl CommandArena
     /// - witness: `il::tests::lookup_boundaries_follow_each_family`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         | Some(node) => usize::try_from(u32::from(id)).ok()
             .and_then(|offset| self.commands.get(offset))
             .is_some_and(|held| core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(node))),
@@ -685,7 +686,7 @@ impl CommandArena
     /// - witness: `il::tests::the_first_dangling_child_wins`
     /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.watermark()],
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.producers))
@@ -731,7 +732,7 @@ impl CommandArena
     /// - witness: `il::tests::the_first_dangling_child_wins`
     /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.watermark()],
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.consumers))
@@ -777,7 +778,7 @@ impl CommandArena
     /// - witness: `il::tests::the_first_dangling_child_wins`
     /// - witness: `boundary::tests::addresses_refuse_exactly_at_the_u32_ceiling`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.watermark()],
         ensures: |ret| match ret {
             | Ok(id) => usize::try_from(u32::from(id)) == Ok(usize::from(entry.commands))
@@ -822,7 +823,7 @@ impl CommandArena
     /// - witness: `il::tests::arena_allocates_and_reads_back`
     /// - witness: `il::tests::the_first_dangling_child_wins`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [entry = self.watermark()],
         ensures: |ret| match ret {
             | Ok(id) => self.command(id) == Some(&CommandNode::Cut { polarity, producer, consumer }),
@@ -861,7 +862,7 @@ impl CommandArena
     ///   refusal must retain the missing address.
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         | Ok(()) => self.producer(id).is_some(),
         | Err(error) => error == MintRefusal::DanglingProducer(id) && self.producer(id).is_none(),
     })]
@@ -893,7 +894,7 @@ impl CommandArena
     ///   refusal must retain the missing address.
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         | Ok(()) => self.consumer(id).is_some(),
         | Err(error) => error == MintRefusal::DanglingConsumer(id) && self.consumer(id).is_none(),
     })]
@@ -925,7 +926,7 @@ impl CommandArena
     ///   refusal must retain the missing address.
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         | Ok(()) => self.command(id).is_some(),
         | Err(error) => error == MintRefusal::DanglingCommand(id) && self.command(id).is_none(),
     })]
@@ -957,7 +958,7 @@ impl CommandArena
     ///   missing children expose omitted arms and changed failure precedence.
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[anodized::spec(ensures: |ref ret| ret.is_ok() == match *node {
+    #[spec(ensures: |ref ret| ret.is_ok() == match *node {
         | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Literal(_) => true,
         | ProducerNode::Constructor { ref producers, ref consumers, .. } =>
             producers.iter().all(|id| self.producer(*id).is_some())
@@ -1009,7 +1010,7 @@ impl CommandArena
     ///   missing children expose omitted arms and changed failure precedence.
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[anodized::spec(ensures: |ref ret| ret.is_ok() == match *node {
+    #[spec(ensures: |ref ret| ret.is_ok() == match *node {
         | ConsumerNode::Covariable(_) | ConsumerNode::Top => true,
         | ConsumerNode::MuTilde { body } => self.command(body).is_some(),
         | ConsumerNode::Destructor { ref producers, ref consumers, .. } =>
@@ -1058,7 +1059,7 @@ impl CommandArena
     ///   precedence. The observer is the exact first refusal.
     /// - witness: `il::tests::every_node_form_checks_its_child_families`
     /// - witness: `il::tests::the_first_dangling_child_wins`
-    #[anodized::spec(ensures: |ref ret| *ret == producers.iter()
+    #[spec(ensures: |ref ret| *ret == producers.iter()
         .find(|id| self.producer(**id).is_none())
         .map(|id| MintRefusal::DanglingProducer(*id))
         .or_else(|| consumers.iter().find(|id| self.consumer(**id).is_none())

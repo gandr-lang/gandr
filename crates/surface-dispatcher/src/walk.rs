@@ -18,6 +18,7 @@ use std::ffi::OsStr;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_surface_corpus::Settlement;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::PbgError;
@@ -91,7 +92,7 @@ impl Standing
     /// - witness: `walk::tests::each_root_stands_its_sources`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| match *composed {
+    #[spec(ensures: |ret| match *composed {
         Composed::Refused(_) => matches!((root, ret),
             (SourceRoot::Pending, Self::Pending)
                 | (SourceRoot::Strict | SourceRoot::Fixture, Self::Refused)),
@@ -278,7 +279,7 @@ impl Walk
     /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
     #[inline]
     #[must_use]
-    #[anodized::spec(
+    #[spec(
         captures: [offered = paths.len()],
         ensures: |ref ret| ret.arguments.len() == offered
             && usize::from(ret.report.sources().read()) == 0
@@ -349,7 +350,7 @@ impl Walk
     /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
     /// - witness: `walk::tests::an_explicit_link_uses_its_target_root_and_keeps_its_path`
     #[inline]
-    #[anodized::spec(
+    #[spec(
         captures: [pending_arguments = self.arguments.len(), was_answered = self.answered == Answered::Yes],
         ensures: |ref ret| match *ret {
             Maybe::Absent(walk_step::Absent::Exhausted) => pending_arguments == 0,
@@ -434,7 +435,7 @@ impl Walk
     ///   partway through directory iteration are outside these witnesses.
     /// - witness: `walk::tests::a_tree_is_walked_in_order`
     /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
-    #[anodized::spec(
+    #[spec(
         captures: [before = self.entries.len()],
         ensures: |ref ret| if ret.is_err() {
             self.entries.len() == before
@@ -488,7 +489,7 @@ impl Walk
     ///   counter saturation are not independently introduced here.
     /// - witness: `walk::tests::every_path_answers_in_order`
     /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
-    #[anodized::spec(
+    #[spec(
         captures: [
             expected_path = self.path.as_path(),
             before_faulted = usize::from(self.report.sources().faulted()),
@@ -538,7 +539,7 @@ impl Walk
     /// - witness: `walk::tests::every_path_answers_in_order`
     /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
     /// - witness: `walk::tests::an_explicit_link_uses_its_target_root_and_keeps_its_path`
-    #[anodized::spec(
+    #[spec(
         captures: [path_bytes = self.path.as_os_str().len()],
         ensures: |ref ret| match *ret {
             Step::Source { path, root, ref composed, standing, .. } =>
@@ -615,7 +616,7 @@ impl Walk
 /// - witness: `walk::tests::failed_reads_preserve_the_previous_source`
 /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
 /// - witness: `walk::tests::an_explicit_link_uses_its_target_root_and_keeps_its_path`
-#[anodized::spec(
+#[spec(
     captures: [before = text.len()],
     ensures: |ref ret| ret.is_ok() || text.len() == before,
 )]
@@ -643,7 +644,7 @@ pub fn read_source(
 ///   being lost or substituted. Argument markers are outside this helper's
 ///   domain.
 /// - witness: `walk::tests::a_tree_is_walked_in_order`
-#[anodized::spec(
+#[spec(
     requires: !matches!(*entry, Entry::Argument),
     ensures: |ret| match *entry {
         Entry::Directory(ref path) | Entry::Source(ref path) => ret == path,
@@ -665,6 +666,7 @@ mod tests
     use std::path::Path;
     use std::path::PathBuf;
 
+    use anodized::spec;
     use gandr_surface_syntax::SourceText;
     use quenchant_shape::shape::Maybe;
 
@@ -699,7 +701,7 @@ mod tests
         ///   interference.
         /// - witness: `walk::tests::a_tree_is_walked_in_order`
         /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
-        #[anodized::spec(ensures: |ref ret|
+        #[spec(ensures: |ref ret|
             std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()))]
         fn new(test: &Path) -> Self
         {
@@ -734,7 +736,7 @@ mod tests
         /// - witness: `walk::tests::a_tree_is_walked_in_order`
         /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
         /// - witness: `walk::tests::an_explicit_link_uses_its_target_root_and_keeps_its_path`
-        #[anodized::spec(requires: relative.is_relative() && relative.file_name().is_some()
+        #[spec(requires: relative.is_relative() && relative.file_name().is_some()
             && relative.components().all(|component|
                 matches!(component, std::path::Component::Normal(_))))]
         fn file(
@@ -765,7 +767,7 @@ mod tests
         ///   and observed absent afterward. This detects omitted cleanup on
         ///   normal exit, not unwinding or external permission changes.
         /// - witness: `walk::tests::late_changes_preserve_pending_sources_and_exhaustion`
-        #[anodized::spec(ensures: self.0.try_exists().is_ok_and(|exists| !exists))]
+        #[spec(ensures: self.0.try_exists().is_ok_and(|exists| !exists))]
         fn drop(&mut self)
         {
             let removed = std::fs::remove_dir_all(&self.0);
@@ -807,7 +809,7 @@ mod tests
         /// - witness: `walk::tests::a_tree_is_walked_in_order`
         /// - witness: `walk::tests::every_path_answers_in_order`
         /// - witness: `walk::tests::each_root_stands_its_sources`
-        #[anodized::spec(ensures: |ret| match (step, ret) {
+        #[spec(ensures: |ret| match (step, ret) {
             (&Step::Source { standing, .. }, Self::Source(observed)) => observed == standing,
             (&Step::Fault { fault: SourceFault::Unreadable(_), .. }, Self::Unreadable)
                 | (&Step::Fault { fault: SourceFault::NoSource, .. }, Self::NoSource)
@@ -848,7 +850,7 @@ mod tests
     /// - witness: `walk::tests::a_tree_is_walked_in_order`
     /// - witness: `walk::tests::every_path_answers_in_order`
     /// - witness: `walk::tests::each_root_stands_its_sources`
-    #[anodized::spec(ensures: |ref ret| {
+    #[spec(ensures: |ref ret| {
         let sources = ret.0.iter().filter(|row| matches!(row.1, Seen::Source(_))).count();
         ret.1.arguments.is_empty() && ret.1.entries.is_empty()
             && ret.1.answered == super::Answered::Yes

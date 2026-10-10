@@ -43,6 +43,7 @@
 
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_surface_grammar::CandidateCount;
 use gandr_surface_grammar::Pbg;
 use gandr_surface_grammar::Sort;
@@ -346,7 +347,7 @@ const KEYWORDS: &[&str] = &[
 /// - witness: `mold::tests::literal_and_shell_menus_are_exact`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ret| ret.is_empty() == matches!(lexeme, Lexeme::Space | Lexeme::Unknown) && ret.len() <= MAX_LABELS && (!matches!(lexeme, Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Punct) || ret.first().is_some_and(|label| label.0 == text.0)))]
+#[spec(ensures: |ret| ret.is_empty() == matches!(lexeme, Lexeme::Space | Lexeme::Unknown) && ret.len() <= MAX_LABELS && (!matches!(lexeme, Lexeme::LowerWord | Lexeme::UpperWord | Lexeme::Punct) || ret.first().is_some_and(|label| label.0 == text.0)))]
 pub fn candidate_labels<'text>(
     lexeme: Lexeme,
     text: TokenText<'text>,
@@ -458,7 +459,7 @@ const UPPER_KEYWORDS: &[&str] = &[
 ///   first successor. Returning the current token or skipping a significant
 ///   token changes its position and class.
 /// - witness: `mold::tests::lookahead_skips_only_space_and_never_the_current_token`
-#[anodized::spec(ensures: |ret| ret == tokens.iter().copied().enumerate().skip(index.0.saturating_add(1)).find(|&(_, token)| token.lexeme != Lexeme::Space).map(|(position, token)| (TokenIndex::from(position), token)))]
+#[spec(ensures: |ret| ret == tokens.iter().copied().enumerate().skip(index.0.saturating_add(1)).find(|&(_, token)| token.lexeme != Lexeme::Space).map(|(position, token)| (TokenIndex::from(position), token)))]
 fn next_significant(
     tokens: &[Token],
     index: TokenIndex,
@@ -533,7 +534,7 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret.candidates.is_empty() && ret.marks.is_empty() && ret.labels.iter().zip(ret.labels.iter().skip(1)).all(|(left, right)| left.as_ref() < right.as_ref()))]
+    #[spec(ensures: |ret| ret.candidates.is_empty() && ret.marks.is_empty() && ret.labels.iter().zip(ret.labels.iter().skip(1)).all(|(left, right)| left.as_ref() < right.as_ref()))]
     pub fn new(pbg: &'pbg Pbg) -> Self
     {
         let labels = pbg
@@ -562,7 +563,7 @@ impl<'pbg> Molder<'pbg>
     ///   Returning a stale mark or leaking dry-run source, slope or obligations
     ///   changes them.
     /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
-    #[anodized::spec(ensures: |ret| bool::from(state.delta_since(&ret).is_empty()))]
+    #[spec(ensures: |ret| bool::from(state.delta_since(&ret).is_empty()))]
     fn take_mark(
         &mut self,
         state: &MeldState<'_>,
@@ -597,7 +598,7 @@ impl<'pbg> Molder<'pbg>
     ///   neighbor expose the optional label. Off-by-one binary-search bounds or
     ///   a spurious fallback label change the answer.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
-    #[anodized::spec(ensures: |ret| ret == self.labels.iter().copied().find(|candidate| candidate.as_ref() == label.0))]
+    #[spec(ensures: |ret| ret == self.labels.iter().copied().find(|candidate| candidate.as_ref() == label.0))]
     fn candidate_label(
         &self,
         label: CandidateLabel<'_>,
@@ -632,7 +633,7 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::identifier_menu_is_wide`
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     #[inline]
-    #[anodized::spec(ensures: |ret| ret.0 == self.candidates.len() && self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
+    #[spec(ensures: |ret| ret.0 == self.candidates.len() && self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     pub fn candidate_count(
         &mut self,
         token: Token,
@@ -674,7 +675,7 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::unmoldable_token_takes_the_unmolded_path`
     /// - witness: `mold::tests::space_and_empty_stream_are_exact_noops`
     #[inline]
-    #[anodized::spec(requires: <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some())]
+    #[spec(requires: <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some())]
     pub fn mold(
         &mut self,
         state: &mut MeldState<'_>,
@@ -730,7 +731,7 @@ impl<'pbg> Molder<'pbg>
     /// - witness: `mold::tests::space_and_empty_stream_are_exact_noops`
     /// - witness: `parse::tests::parse_is_lossless_and_hash_stable`
     #[inline]
-    #[anodized::spec(requires: tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()))]
+    #[spec(requires: tokens.iter().all(|token| <&str>::from(src).get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some()))]
     pub fn mold_stream(
         &mut self,
         state: &mut MeldState<'_>,
@@ -783,7 +784,7 @@ impl<'pbg> Molder<'pbg>
     ///   loss and a non-no-op space.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     #[inline]
-    #[anodized::spec(requires: source.as_ref().get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some())]
+    #[spec(requires: source.as_ref().get(usize::try_from(token.start).unwrap_or(usize::MAX) .. usize::try_from(token.end).unwrap_or(usize::MAX)).is_some())]
     fn settle_shadowing<'src>(
         &self,
         state: &mut MeldState<'_>,
@@ -824,7 +825,7 @@ impl<'pbg> Molder<'pbg>
     ///   using a real fallback mold changes those observations.
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
     /// - witness: `mold::tests::unmoldable_token_takes_the_unmolded_path`
-    #[anodized::spec(ensures: |_| choice.is_some() || state.obligations().last().is_some_and(|obligation| obligation.class == crate::Oblig::UnmoldedTok))]
+    #[spec(ensures: |_| choice.is_some() || state.obligations().last().is_some_and(|obligation| obligation.class == crate::Oblig::UnmoldedTok))]
     fn push_choice(
         state: &mut MeldState<'_>,
         choice: Option<MoldId>,
@@ -870,7 +871,7 @@ impl<'pbg> Molder<'pbg>
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
-    #[anodized::spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
+    #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather<'src>(
         &mut self,
         state: &MeldState<'_>,
@@ -925,7 +926,7 @@ impl<'pbg> Molder<'pbg>
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
-    #[anodized::spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
+    #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather_reserved_fallback<'src>(
         &mut self,
         state: &MeldState<'_>,
@@ -981,7 +982,7 @@ impl<'pbg> Molder<'pbg>
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
-    #[anodized::spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
+    #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather_menu<'src>(
         &mut self,
         token: Token,
@@ -1021,7 +1022,7 @@ impl<'pbg> Molder<'pbg>
     ///   fallback change them.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
     /// - witness: `tests::acceptance::a_sign_block_may_be_named_with_a_primitive_type_spelling`
-    #[anodized::spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
+    #[spec(ensures: |_| self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right))]
     fn gather_labels(
         &mut self,
         labels: &[CandidateLabel<'_>],
@@ -1073,7 +1074,7 @@ impl<'pbg> Molder<'pbg>
     ///   Dropping the prefix, crossing to another form or ignoring the label
     ///   changes it.
     /// - witness: `mold::tests::candidate_gathering_is_a_canonical_union`
-    #[anodized::spec(captures: before = self.candidates.len(), ensures: |_| self.candidates.get(before ..).is_some_and(|tail| tail.iter().all(|right| self.pbg.adjacencies().binary_search(&(open, *right)).is_ok() && self.pbg.mold(*right).is_ok_and(|def| labels.iter().any(|label| label.0 == def.label)))))]
+    #[spec(captures: before = self.candidates.len(), ensures: |_| self.candidates.get(before ..).is_some_and(|tail| tail.iter().all(|right| self.pbg.adjacencies().binary_search(&(open, *right)).is_ok() && self.pbg.mold(*right).is_ok_and(|def| labels.iter().any(|label| label.0 == def.label)))))]
     fn push_form_successors(
         &mut self,
         labels: &[CandidateLabel<'_>],
@@ -1132,7 +1133,7 @@ impl<'pbg> Molder<'pbg>
     ///   obligation leakage; streaming and completion deltas distinguish their
     ///   scoring boundaries.
     /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
-    #[anodized::spec(captures: before = (state.admissibility_frontier(), state.obligations().len()), ensures: |_| state.admissibility_frontier() == before.0 && state.obligations().len() == before.1)]
+    #[spec(captures: before = (state.admissibility_frontier(), state.obligations().len()), ensures: |_| state.admissibility_frontier() == before.0 && state.obligations().len() == before.1)]
     fn key(
         &mut self,
         state: &mut MeldState<'_>,
@@ -1189,7 +1190,7 @@ impl<'pbg> Molder<'pbg>
     ///   obligation leakage; streaming and completion deltas distinguish their
     ///   scoring boundaries.
     /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
-    #[anodized::spec(captures: before = (state.admissibility_frontier(), state.obligations().len()), ensures: |_| state.admissibility_frontier() == before.0 && state.obligations().len() == before.1)]
+    #[spec(captures: before = (state.admissibility_frontier(), state.obligations().len()), ensures: |_| state.admissibility_frontier() == before.0 && state.obligations().len() == before.1)]
     fn completion(
         &mut self,
         state: &mut MeldState<'_>,
@@ -1234,7 +1235,7 @@ impl<'pbg> Molder<'pbg>
     ///   changes those observations; dry-run state is compared byte-for-byte.
     /// - witness: `mold::tests::pooled_marks_and_dry_runs_restore_exact_state`
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
-    #[anodized::spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), ensures: |ret| ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
+    #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), ensures: |ret| ret.map_or_else(|| self.candidates.is_empty(), |mold| self.candidates.contains(&mold)))]
     fn choose(
         &mut self,
         state: &mut MeldState<'_>,
@@ -1349,7 +1350,7 @@ impl<'pbg> Molder<'pbg>
     ///   grammar form. Admitting an otherwise forbidden mold or confusing a
     ///   colon-bearing binder with a call changes the committed structure.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
-    #[anodized::spec(ensures: |ret| !bool::from(ret) || bool::from(state.admits_at(mold, frontier)))]
+    #[spec(ensures: |ret| !bool::from(ret) || bool::from(state.admits_at(mold, frontier)))]
     fn direct_rule_binder_admits(
         &self,
         state: &MeldState<'_>,
@@ -1441,7 +1442,7 @@ impl<'pbg> Molder<'pbg>
     ///   mutations change the checkpoint bytes.
     /// - witness: `tests::acceptance::corpus_molds_to_zero_obligations`
     /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
-    #[anodized::spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some()), ensures: |ret| ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
+    #[spec(requires: self.candidates.iter().zip(self.candidates.iter().skip(1)).all(|(left, right)| left < right), captures: before = (self.candidates.len(), tokens.get(index.0).is_some()), ensures: |ret| ret.is_some() == (before.1 && before.0 > 0) && ret.is_none_or(|mold| self.pbg.mold(mold).is_ok()))]
     fn choose_stream<'src>(
         &mut self,
         state: &mut MeldState<'_>,
@@ -1554,7 +1555,7 @@ impl<'pbg> Molder<'pbg>
     ///   the window, using seven or nine tokens, or consuming trailing trivia
     ///   after the eighth token changes the preserved source.
     /// - witness: `mold::tests::lookahead_window_stops_after_eight_significant_tokens`
-    #[anodized::spec(requires: start.0 <= tokens.len())]
+    #[spec(requires: start.0 <= tokens.len())]
     fn mold_window<'src>(
         &mut self,
         state: &mut MeldState<'_>,
@@ -1595,6 +1596,7 @@ mod tests
     use alloc::vec;
     use core::error::Error;
 
+    use anodized::spec;
     use gandr_surface_grammar::CandidateCount;
     use gandr_surface_grammar::Pbg;
     use gandr_surface_grammar::built_in;
@@ -2035,7 +2037,7 @@ mod tests
     ///   without repair; a missing atom or invalid declaration changes the
     ///   result.
     /// - witness: `mold::tests::picks_the_obligation_minimum_mold`
-    #[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["def", "ret", "(", ")"].into_iter().all(|label| !pbg.candidates(gandr_surface_grammar::TileLabel(label)).is_empty())))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |pbg| ["def", "ret", "(", ")"].into_iter().all(|label| !pbg.candidates(gandr_surface_grammar::TileLabel(label)).is_empty())))]
     fn built() -> Result<Pbg, Box<dyn Error>>
     {
         let pbg = built_in()?;
@@ -2114,7 +2116,7 @@ mod tests
     ///   and obligation pairs across repeated independent runs; unstable
     ///   candidate order or missing layout changes them.
     /// - witness: `mold::tests::molding_is_deterministic_across_runs`
-    #[anodized::spec(ensures: |ret| ret.as_ref().map_or(true, |hash| hash.root_digest.is_some()))]
+    #[spec(ensures: |ret| ret.as_ref().map_or(true, |hash| hash.root_digest.is_some()))]
     fn mold_and_hash(
         pbg: &Pbg,
         src: SourceText<'_>,

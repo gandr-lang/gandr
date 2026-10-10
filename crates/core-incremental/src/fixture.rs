@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use std::path::Path;
 use std::path::PathBuf;
 
+use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Declaration;
 use gandr_core_checker::OriginToken;
@@ -106,7 +107,7 @@ impl Scratch
     ///   without allocating another path or claiming that cleanup succeeded.
     /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
     /// - witness: `session::tests::a_store_failure_retains_the_new_resume_for_the_next_submission`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| ret.0.as_os_str().as_encoded_bytes().ends_with(label.0.as_bytes()),
     )]
     pub fn new(label: Label) -> Self
@@ -146,7 +147,7 @@ impl Scratch
     /// - witness: `persistence::tests::a_failed_file_store_strands_no_temporary_in_the_record_directory`
     /// - witness: `persistence::tests::a_store_never_writes_through_a_file_it_did_not_create`
     /// - witness: `persistence::tests::concurrent_stores_of_one_address_leave_the_record_and_no_temporary`
-    #[anodized::spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left <= right))]
+    #[spec(ensures: |ret| ret.iter().zip(ret.iter().skip(1)).all(|(left, right)| left <= right))]
     pub fn entries(&self) -> Vec<String>
     {
         let mut names: Vec<String> = std::fs::read_dir(&self.0)
@@ -205,7 +206,7 @@ impl Drop for Scratch
 ///   not expose a per-family census, and the id ceiling is not tested.
 /// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-#[anodized::spec(ensures: |ret| (ret.watermark() == CoreArena::new().watermark()) == (noise.0 == 0))]
+#[spec(ensures: |ret| (ret.watermark() == CoreArena::new().watermark()) == (noise.0 == 0))]
 pub fn noisy(noise: Noise) -> CoreArena
 {
     let mut arena = CoreArena::new();
@@ -235,7 +236,7 @@ pub fn noisy(noise: Noise) -> CoreArena
 ///   spellings are outside this fixture corpus rather than claimed as covered.
 /// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
-#[anodized::spec(
+#[spec(
     requires: !digits.0.is_empty() && digits.0.bytes().all(|byte| byte.is_ascii_digit()),
     ensures: |ret| {
         let canonical = digits.0.trim_start_matches('0');
@@ -290,7 +291,7 @@ pub fn declaration(
 ///   These finite cases do not exercise padded digits or the arena id ceiling.
 /// - witness: `persistence::tests::meaningful_program_changes_and_source_order_change_identity`
 /// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
-#[anodized::spec(
+#[spec(
     requires: entries.iter().all(|&(_, digits)| !digits.0.is_empty() && digits.0.bytes().all(|byte| byte.is_ascii_digit())),
     ensures: |ret| {
         ret.items().len() == entries.len()
@@ -346,7 +347,7 @@ pub fn integers(
 ///   proved by this batch-fixture wrapper.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::independently_built_programs_have_identical_bytes_and_addresses`
-#[anodized::spec(ensures: |ret| ret.budget() == CheckBudget::DEFAULT
+#[spec(ensures: |ret| ret.budget() == CheckBudget::DEFAULT
     && ret.items().len() == program.items().len()
     && ret.items().iter().zip(&program.layout().references).all(|(checkpoint, reference)| checkpoint.content().reference() == reference))]
 pub fn checked(program: &mut Program) -> Checkpoints
@@ -376,7 +377,7 @@ pub fn checked(program: &mut Program) -> Checkpoints
 ///   refusal, arbitrary levels or the arena id ceiling.
 /// - witness: `persistence::tests::canonical_maps_and_supported_semantic_variants_round_trip`
 /// - witness: `persistence::tests::supported_nonempty_checkpoints_round_trip_in_memory_and_reopened_file`
-#[anodized::spec(ensures: |ret| {
+#[spec(ensures: |ret| {
         ret.items().iter().enumerate().all(|(ordinal, item)| {
             usize::from(item.declaration().constant()) == ordinal
                 && match item.declaration().signature() {

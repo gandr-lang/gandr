@@ -13,6 +13,7 @@ mod diagnostics
     use std::path::Path;
     use std::path::PathBuf;
 
+    use anodized::spec;
     use gandr_core_term::FailureClass;
     use gandr_surface_diagnostics::Annotation;
     use gandr_surface_diagnostics::Class;
@@ -77,7 +78,7 @@ def wrong = "text" ;
         ///   stale entries change those observations; concurrent writers and
         ///   I/O errors are excluded.
         /// - witness: `diagnostics::diagnostics::scratch_scope_removal_is_visible_to_a_new_walk`
-        #[anodized::spec(
+        #[spec(
             requires: test.file_name() == Some(test.as_os_str()),
             ensures: |ref ret| std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()),
         )]
@@ -113,7 +114,7 @@ def wrong = "text" ;
         ///   placement; concurrent writes and filesystem failures are outside
         ///   the domain.
         /// - witness: `diagnostics::diagnostics::scratch_scope_removal_is_visible_to_a_new_walk`
-        #[anodized::spec(
+        #[spec(
             requires: relative.file_name().is_some() && relative.components().all(|component| matches!(component,
                 std::path::Component::Normal(_) | std::path::Component::CurDir)),
             ensures: |ref ret| ret.starts_with(&self.0) && std::fs::metadata(ret).is_ok_and(|metadata|
@@ -150,7 +151,7 @@ def wrong = "text" ;
         ///   incomplete removal changes the observation; concurrent recreation
         ///   is excluded.
         /// - witness: `diagnostics::diagnostics::scratch_scope_removal_is_visible_to_a_new_walk`
-        #[anodized::spec(ensures: matches!(self.0.try_exists(), Ok(false)))]
+        #[spec(ensures: matches!(self.0.try_exists(), Ok(false)))]
         fn drop(&mut self)
         {
             let removed = std::fs::remove_dir_all(&self.0);
@@ -175,7 +176,7 @@ def wrong = "text" ;
     /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
     /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
     /// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
-    #[anodized::spec(ensures: |ref ret| match *ret {
+    #[spec(ensures: |ref ret| match *ret {
         Composed::Settled { ref report, .. } => report.declarations().iter().all(|declaration| text.fragment(declaration.span()).is_ok()),
         Composed::Refused(_) => true,
     })]
@@ -212,7 +213,7 @@ def wrong = "text" ;
     ///   fault steps and composition failure are excluded.
     /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
     /// - witness: `diagnostics::diagnostics::an_unsettled_declaration_renders_as_its_golden`
-    #[anodized::spec(ensures: |ref ret| matches!(*ret,
+    #[spec(ensures: |ref ret| matches!(*ret,
         Step::Source { path: held, root: actual, text: source, standing: Standing::Unsettled, .. }
             if core::ptr::eq(core::ptr::from_ref(held), core::ptr::from_ref(path)) && actual == root && core::ptr::eq(core::ptr::from_ref(source.as_ref()), core::ptr::from_ref(text.as_ref()))
     ))]
@@ -245,7 +246,7 @@ def wrong = "text" ;
     ///   locations under each verb. Reordering, dropping or misrouting reports
     ///   changes the sequence; mixed ledger streams are excluded.
     /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
-    #[anodized::spec(ensures: |ref ret| ret.iter().all(|report| match *step {
+    #[spec(ensures: |ref ret| ret.iter().all(|report| match *step {
         Step::Source { path, .. } | Step::Fault { path, .. } => core::ptr::eq(core::ptr::from_ref(report.path()), core::ptr::from_ref(path)),
     }))]
     fn reports<'step>(
@@ -277,7 +278,7 @@ def wrong = "text" ;
     ///   and repeated occurrences are outside the witnesses.
     /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
     /// - witness: `diagnostics::diagnostics::a_refused_declaration_renders_its_snippet`
-    #[anodized::spec(ensures: |ret| text.fragment(ret).is_ok_and(|fragment| fragment.as_ref() == needle.as_ref()))]
+    #[spec(ensures: |ret| text.fragment(ret).is_ok_and(|fragment| fragment.as_ref() == needle.as_ref()))]
     fn span_of(
         text: SourceText<'_>,
         needle: SourceText<'_>,
@@ -309,7 +310,7 @@ def wrong = "text" ;
     ///   retained controls change equality; other terminal controls and literal
     ///   source escapes are excluded.
     /// - witness: `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`
-    #[anodized::spec(ensures: |ref ret| ret.len() <= styled.as_ref().len() && !ret.contains('\u{1b}'))]
+    #[spec(ensures: |ref ret| ret.len() <= styled.as_ref().len() && !ret.contains('\u{1b}'))]
     fn unstyled(styled: &Rendered) -> String
     {
         let text: &str = styled.as_ref();

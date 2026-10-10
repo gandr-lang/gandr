@@ -10,6 +10,7 @@
 
 use core::error::Error;
 
+use anodized::spec;
 use gandr_surface_parser::parse;
 use gandr_surface_syntax::SourceText;
 
@@ -170,7 +171,7 @@ fn every_type_operator_spelling_reads_cleanly() -> Result<(), Box<dyn Error>>
 /// - witness: `tests::grammar::recursion_marker_instantiations_parse_cleanly`
 /// - witness: `tests::grammar::mixed_set_type_operators_require_parentheses`
 /// - witness: `tests::grammar::every_universe_spelling_reads_cleanly`
-#[anodized::spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.downcast_ref::<gandr_surface_parser::MeldError>().is_some(), |&()| true))]
+#[spec(ensures: |ret| ret.as_ref().map_or_else(|error| error.downcast_ref::<gandr_surface_parser::MeldError>().is_some(), |&()| true))]
 fn assert_parses_clean(
     case: CaseName,
     source: SourceText<'_>,

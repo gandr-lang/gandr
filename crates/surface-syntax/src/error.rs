@@ -141,6 +141,8 @@ mod tests
 {
     use alloc::format;
 
+    use anodized::spec;
+
     use super::SyntaxError;
     use crate::build::TreeBuilder;
     use crate::label::NodeLabel;
@@ -166,7 +168,7 @@ mod tests
     ///   in the rendered refusal; swapped or shifted endpoints change that
     ///   observable payload.
     /// - witness: `error::tests::every_refusal_renders_its_own_position`
-    #[anodized::spec(requires: start <= end, ensures: |ret| ret.start() == start && ret.end() == end)]
+    #[spec(requires: start <= end, ensures: |ret| ret.start() == start && ret.end() == end)]
     fn span(
         start: ByteOffset,
         end: ByteOffset,

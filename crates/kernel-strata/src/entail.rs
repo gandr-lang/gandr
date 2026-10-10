@@ -1072,6 +1072,8 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
+
     use super::Entailment;
     use super::EntailmentCountermodel;
     use super::EntailmentWitness;
@@ -1551,7 +1553,7 @@ mod tests
     ///   boundaries; exact validator errors expose a fixture that changes its
     ///   supplied index or shift.
     /// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
-    #[anodized::spec(ensures: |ret| ret.strict() == Strictness::NON_STRICT
+    #[spec(ensures: |ret| ret.strict() == Strictness::NON_STRICT
         && ret.derivation().steps().iter().map(|step| (step.clause(), step.shift()))
             .eq(core::iter::once((clause, shift))))]
     fn forged_witness(
@@ -1587,7 +1589,7 @@ mod tests
     ///   verdicts.
     /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
     /// - witness: `entail::tests::queries_mentioning_undeclared_variables_work`
-    #[anodized::spec(ensures: |ret| ret.constraints().is_empty() && ret.variables().is_empty())]
+    #[spec(ensures: |ret| ret.constraints().is_empty() && ret.variables().is_empty())]
     fn empty_poset() -> LandmarkPoset
     {
         admitted(vec![])
@@ -1610,7 +1612,7 @@ mod tests
     ///   hypothesis.
     /// - witness: `entail::tests::landmark_order_is_entailed`
     /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
-    #[anodized::spec(ensures: |ret| ret.constraints().len() == 1
+    #[spec(ensures: |ret| ret.constraints().len() == 1
         && ret.constraints().first().is_some_and(|constraint|
             constraint.relation() == crate::poset::ConstraintRelation::Leq
             && constraint.left().atoms().eq(core::iter::once((x(), LevelOffset::ZERO)))
@@ -1644,7 +1646,7 @@ mod tests
     /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
     /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
     /// - witness: `entail::tests::non_total_order_is_refused_with_a_countermodel`
-    #[anodized::spec(ensures: |ret| crate::poset::validate_consistency(ret.constraints(), ret.consistency()).is_ok())]
+    #[spec(ensures: |ret| crate::poset::validate_consistency(ret.constraints(), ret.consistency()).is_ok())]
     fn admitted(constraints: Vec<LandmarkConstraint>) -> LandmarkPoset
     {
         match LandmarkPoset::admit(constraints).expect("admission does not overflow") {
@@ -1706,7 +1708,7 @@ mod tests
     /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
     /// - witness: `entail::tests::shifted_landmark_order_is_entailed`
     /// - witness: `entail::tests::strictness_needs_a_strict_hypothesis`
-    #[anodized::spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
+    #[spec(ensures: |ret| ret.constant_part() == LevelConstant::ZERO
         && ret.atoms().eq(core::iter::once((variable, offset))))]
     fn var_plus(
         variable: LevelVar,
@@ -1740,7 +1742,7 @@ mod tests
     /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
     /// - witness: `entail::tests::landmark_order_is_entailed`
     /// - witness: `entail::tests::perturbed_witness_arms_are_rejected`
-    #[anodized::spec(ensures: |ret| ret.strict() == Strictness::NON_STRICT
+    #[spec(ensures: |ret| ret.strict() == Strictness::NON_STRICT
         && validate_entailment_witness(poset, left, right, &ret).is_ok())]
     fn holds(
         poset: &LandmarkPoset,
@@ -1784,7 +1786,7 @@ mod tests
     /// - witness: `entail::tests::non_total_order_is_refused_with_a_countermodel`
     /// - witness: `entail::tests::constants_cross_the_bottom_encoding`
     /// - witness: `entail::tests::perturbed_countermodel_arms_are_rejected`
-    #[anodized::spec(ensures: |ret| ret.strict() == Strictness::NON_STRICT
+    #[spec(ensures: |ret| ret.strict() == Strictness::NON_STRICT
         && validate_entailment_countermodel(poset, left, right, &ret).is_ok())]
     fn refuted(
         poset: &LandmarkPoset,

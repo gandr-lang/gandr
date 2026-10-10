@@ -24,6 +24,7 @@ use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_term::Zone;
 use gandr_kernel_term::DeBruijnIndex;
 use gandr_theory_cell_complexes::Polarity;
@@ -212,7 +213,7 @@ impl FreeSet
 /// - witness: `check::tests::a_head_answered_twice_is_rejected`
 /// - witness: `tests::focus_properties::focusing_is_total_on_generated_computations`
 #[inline]
-#[anodized::spec(ensures: |ref ret| match ret.as_ref() {
+#[spec(ensures: |ref ret| match ret.as_ref() {
     | Err(error) => arena.command(command).is_some() || *error == CheckRefusal::DanglingCommand(command),
     | Ok(free) => arena.command(command).is_some_and(|&CommandNode::Cut { producer, consumer, .. }|
         match arena.producer(producer) {
@@ -272,7 +273,7 @@ impl Depth
     ///   applied to distinct producer and covariable depths. Exact paired
     ///   counts distinguish exchanged arities, wrapping and premature clamping.
     /// - witness: `check::tests::scope_depths_widen_and_saturate_independently`
-    #[anodized::spec(ensures: |ret|
+    #[spec(ensures: |ret|
         ret.producers == self.producers.saturating_add(u32::try_from(usize::from(producers)).unwrap_or(u32::MAX))
             && ret.covariables == self.covariables.saturating_add(u32::try_from(usize::from(covariables)).unwrap_or(u32::MAX))
     )]
@@ -338,7 +339,7 @@ impl Walk<'_>
     /// - witness: `check::tests::dangling_reference_is_rejected`
     /// - witness: `check::tests::polarity_mismatch_is_rejected`
     /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
-    #[anodized::spec(
+    #[spec(
         captures: [work = self.stack.len()],
         ensures: |ref ret| ret.is_err() || (work.checked_add(2) == Some(self.stack.len())
             && self.arena.command(id).is_some_and(|&CommandNode::Cut { producer, consumer, .. }|
@@ -409,7 +410,7 @@ impl Walk<'_>
     /// - witness: `check::tests::a_head_answered_twice_is_rejected`
     /// - witness: `check::tests::child_refusals_follow_declared_precedence`
     /// - witness: `check::tests::scope_boundaries_keep_linear_variables_free`
-    #[anodized::spec(
+    #[spec(
         captures: [free = self.free.producers.len()],
         ensures: |ref ret| ret.is_err() || self.arena.producer(id).is_some_and(|node| match *node {
             | ProducerNode::Variable { zone, index } => match zone {
@@ -508,7 +509,7 @@ impl Walk<'_>
     /// - witness: `check::tests::a_head_answered_twice_is_rejected`
     /// - witness: `check::tests::child_refusals_follow_declared_precedence`
     /// - witness: `check::tests::scope_boundaries_keep_linear_variables_free`
-    #[anodized::spec(
+    #[spec(
         captures: [free = self.free.covariables.len()],
         ensures: |ref ret| ret.is_err() || self.arena.consumer(id).is_some_and(|node| match *node {
             | ConsumerNode::Covariable(index) => u32::from(index).checked_sub(depth.covariables)
@@ -601,7 +602,7 @@ impl Walk<'_>
     /// - witness: `check::tests::constructor_arity_is_checked`
     /// - witness: `check::tests::destructor_consumer_arity_is_checked`
     /// - witness: `check::tests::scope_tracks_binders`
-    #[anodized::spec(
+    #[spec(
         captures: [work = self.stack.len()],
         ensures: |ref ret| if ret.is_ok() {
             producers.len() == usize::from(producer_arity)
@@ -667,7 +668,7 @@ impl Walk<'_>
 ///   polarity or inherited polarity. Reclassified literals, functions, thunks
 ///   and captures change the table observation.
 /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
-#[anodized::spec(ensures: |ret| ret == match *node {
+#[spec(ensures: |ret| ret == match *node {
     | ProducerNode::Literal(_) | ProducerNode::Constructor { .. } | ProducerNode::Thunk { .. } => Some(Polarity::Positive),
     | ProducerNode::Cocase { .. } => Some(Polarity::Negative),
     | ProducerNode::Variable { .. } | ProducerNode::Constant(_) | ProducerNode::Mu { .. } => None,
@@ -696,7 +697,7 @@ fn producer_polarity(node: &ProducerNode) -> Option<Polarity>
 ///   heads, is observed at its exact intrinsic or inherited polarity. Swapped
 ///   observations and incorrectly fixed tails are distinguished.
 /// - witness: `check::tests::every_node_kind_declares_its_intrinsic_polarity`
-#[anodized::spec(ensures: |ret| ret == match *node {
+#[spec(ensures: |ret| ret == match *node {
     | ConsumerNode::Case { .. } | ConsumerNode::Destructor { tag: DestructorTag::Force, .. } => Some(Polarity::Positive),
     | ConsumerNode::Destructor { tag: DestructorTag::Apply, .. } => Some(Polarity::Negative),
     | ConsumerNode::Covariable(_) | ConsumerNode::MuTilde { .. } | ConsumerNode::Top => None,
@@ -764,7 +765,7 @@ mod tests
     /// - witness: `check::tests::scope_tracks_binders`
     /// - witness: `check::tests::destructor_consumer_arity_is_checked`
     /// - witness: `check::tests::a_head_answered_twice_is_rejected`
-    #[anodized::spec(
+    #[spec(
         captures: [kind = core::mem::discriminant(&consumer)],
         ensures: |ret| arena.command(ret).is_some_and(|node| match *node {
             | CommandNode::Cut { polarity, producer, consumer } => polarity == Polarity::Positive
@@ -803,7 +804,7 @@ mod tests
     /// - witness: `check::tests::scope_tracks_binders`
     /// - witness: `check::tests::constructor_arity_is_checked`
     /// - witness: `check::tests::polarity_mismatch_is_rejected`
-    #[anodized::spec(
+    #[spec(
         captures: [kind = core::mem::discriminant(&producer)],
         ensures: |ret| arena.command(ret).is_some_and(|node| match *node {
             | CommandNode::Cut { polarity, producer, consumer } => polarity == Polarity::Positive

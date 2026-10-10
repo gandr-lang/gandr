@@ -34,6 +34,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use gandr_core_term::ValueId;
 use gandr_kernel_term::ConstantIndex;
 use quenchant_shape::shape::Maybe;
@@ -233,7 +234,7 @@ impl ModuleReport
 /// - witness: `module::tests::a_refused_signed_body_still_supplies_its_type`
 /// - witness: `module::tests::a_body_that_synthesised_nothing_supplies_no_type`
 /// - witness: `module::tests::a_later_declaration_reads_an_earlier_type`
-#[anodized::spec(
+#[spec(
     captures: depth = context.depth(gandr_core_term::Zone::Intuitionistic),
     ensures: |ret| context.depth(gandr_core_term::Zone::Intuitionistic) == depth && match ret {
         | Verdict::Checked { declared, body, .. } => declaration.signature() == Maybe::Present(declared.id())
@@ -336,7 +337,7 @@ pub fn check_declaration(
 ///   position, and a refusal that stops the run before a later read.
 /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
 /// - witness: `module::tests::a_refusal_cuts_the_support_where_the_run_stopped`
-#[anodized::spec(ensures: |ret| {
+#[spec(ensures: |ret| {
     let entries = ret.support().consulted();
     entries.iter().zip(entries.iter().skip(1)).all(|(left, right)| left.constant() < right.constant())
         && entries.iter().all(|entry| entry.answer() == if entry.constant() == declaration.constant() {
@@ -378,7 +379,7 @@ pub fn check_declaration_supported(
 /// - witness: `module::tests::a_refusal_does_not_stop_the_run`
 /// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
 /// - witness: `module::tests::a_refusal_never_enters_the_ledger`
-#[anodized::spec(ensures: |ret| ret.judged.len() == declarations.len()
+#[spec(ensures: |ret| ret.judged.len() == declarations.len()
     && ret.judged.iter().zip(declarations).all(|(judged, declaration)|
         judged.constant == declaration.constant() && judged.origin == declaration.origin())
     && ret.ledger.entries().iter().copied().eq(ret.judged.iter().filter_map(|judged| match judged.verdict {
@@ -432,7 +433,7 @@ pub fn check_module(
 ///   synthesis refusal; unformed signatures are rejected before this rule.
 /// - witness: `module::tests::each_combination_of_halves_gets_its_verdict`
 /// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
-#[anodized::spec(ensures: |ret| match direction {
+#[spec(ensures: |ret| match direction {
     | Direction::Check(expected) => ret.is_ok_and(|absence| absence.constant() == constant
         && absence.declared() == expected && absence.origin() == origin),
     | Direction::Synthesise => ret == Err(CheckRefusal::NotSynthesisable { form: CheckingForm::Hole(constant) }),
@@ -456,6 +457,7 @@ mod tests
 {
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_core_term::CoreArena;
     use gandr_core_term::FailureClass;
     use gandr_core_term::ValueId;
@@ -503,7 +505,7 @@ mod tests
     ///   between admission position and diagnostic origin.
     /// - witness: `module::tests::each_combination_of_halves_gets_its_verdict`
     /// - witness: `module::tests::every_owed_hole_enters_the_ledger_in_order`
-    #[anodized::spec(
+    #[spec(
         requires: position.0.checked_add(100).is_some(),
         ensures: |ret| usize::from(ret.constant()) == position.0
             && Some(usize::from(ret.origin())) == position.0.checked_add(100)
@@ -943,7 +945,7 @@ mod tests
     ///   wrong order, missing answers or loss of an absence.
     /// - witness: `module::tests::the_support_holds_each_consulted_answer_once_in_position_order`
     /// - witness: `module::tests::a_refusal_cuts_the_support_where_the_run_stopped`
-    #[anodized::spec(ensures: |ret| ret.iter().copied().eq(supported.support().consulted().iter()
+    #[spec(ensures: |ret| ret.iter().copied().eq(supported.support().consulted().iter()
         .map(|entry| (entry.constant(), entry.answer().map(crate::formation::FormedValueType::id)))))]
     fn answers(
         supported: &super::Supported

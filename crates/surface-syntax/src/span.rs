@@ -654,6 +654,8 @@ impl ByteSpan
 #[cfg(test)]
 mod tests
 {
+    use anodized::spec;
+
     use super::ByteLength;
     use super::ByteOffset;
     use super::ByteSpan;
@@ -682,7 +684,7 @@ mod tests
     ///   exact start, end and extent values; endpoint swaps or clamping differ.
     /// - witness: `span::tests::an_ordinary_span_keeps_its_endpoints`
     /// - witness: `span::tests::a_span_length_is_its_byte_extent`
-    #[anodized::spec(
+    #[spec(
         requires: start <= end,
         ensures: |ret| ret.start() == start && ret.end() == end,
     )]

@@ -44,6 +44,7 @@ mod walk;
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_surface_layout::ComputationWidth;
 use gandr_surface_layout::LayoutOptions;
 pub use gandr_surface_layout::PageWidth;
@@ -95,7 +96,7 @@ impl ValueDepth
     ///   increment, premature saturation and wraparound; intervening counts are
     ///   governed by the same arithmetic but not enumerated.
     /// - witness: `tests::value_depth_saturates_without_wrapping`
-    #[anodized::spec(ensures: |ret| if self.0 == u32::MAX {
+    #[spec(ensures: |ret| if self.0 == u32::MAX {
         ret.0 == u32::MAX
     } else { matches!(ret.0.checked_sub(self.0), Some(1_u32)) })]
     const fn deeper(self) -> Self
@@ -224,7 +225,7 @@ impl fmt::Display for Presentation
 /// - witness: `goldens::tests::nullary_declared_data_uses_its_bare_name`
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
-#[anodized::spec(ensures: |ref ret| match *ret {
+#[spec(ensures: |ref ret| match *ret {
     Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
     Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
     Err(_) => true,
@@ -270,7 +271,7 @@ where
 /// - witness: `goldens::tests::record_value_breaks_fields_at_the_narrow_page`
 /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
 /// - witness: `goldens::tests::fidelity_follows_nodes_not_the_characters_of_a_name`
-#[anodized::spec(ensures: |ref ret| match *ret {
+#[spec(ensures: |ref ret| match *ret {
     Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
     Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
     Err(_) => true,
@@ -314,7 +315,7 @@ where
 /// - witness: `goldens::tests::misplaced_and_unreadable_nodes_spell_unknown`
 /// - witness: `goldens::tests::beyond_the_depth_limit_renders_deep`
 /// - witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`
-#[anodized::spec(ensures: |ref ret| match *ret {
+#[spec(ensures: |ref ret| match *ret {
     Ok(ref presentation) => !presentation.as_ref().contains(['\r', '\t']),
     Err(PresentationError::Render(RenderError::InvalidWidth)) => false,
     Err(_) => true,

@@ -19,6 +19,7 @@ use annotate_snippets::Origin;
 use annotate_snippets::Renderer;
 use annotate_snippets::Snippet;
 use annotate_snippets::renderer::DecorStyle;
+use anodized::spec;
 use gandr_core_term::FailureClass;
 use gandr_surface_corpus::DeclarationReport;
 use gandr_surface_corpus::Refusal;
@@ -266,7 +267,7 @@ impl<'step> Report<'step>
     /// - witness: `diagnostics::diagnostics::an_unsettled_declaration_renders_as_its_golden`
     /// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
     /// - witness: `diagnostics::diagnostics::each_verb_prints_its_entries`
-    #[anodized::spec(ensures: |ret| ret == match self.subject {
+    #[spec(ensures: |ret| ret == match self.subject {
         Subject::Refused { refusal, .. } => Class::Refusal(refusal.classify()),
         Subject::Unsettled { unsettlement, .. } => Class::Unsettled(unsettlement),
         Subject::Goal(_) => Class::Goal,
@@ -314,7 +315,7 @@ impl<'step> Report<'step>
     /// [`Run`]: report_span::Absent::Run
     /// [`Unrecorded`]: report_span::Absent::Unrecorded
     /// [`OutsideText`]: report_span::Absent::OutsideText
-    #[anodized::spec(ensures: |ret| match ret {
+    #[spec(ensures: |ret| match ret {
         Maybe::Present(span) => self.text.fragment(span).is_ok(),
         Maybe::Absent(_) => true,
     })]
@@ -347,7 +348,7 @@ impl<'step> Report<'step>
     ///   distinguish missing or substituted identifiers on the finite fixture
     ///   subjects, not every refusal vocabulary member.
     /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
-    #[anodized::spec(ensures: |ret| match (self.subject, ret) {
+    #[spec(ensures: |ret| match (self.subject, ret) {
         (Subject::Refused { refusal, .. }, Maybe::Present(spelling)) => spelling == refusal.name().spelling(),
         (Subject::Source(refusal), Maybe::Present(spelling)) => spelling == Refusal::Lowering(refusal).name().spelling(),
         (Subject::Unsettled { .. } | Subject::Goal(_), Maybe::Absent(report_identifier::Absent::Statement)) => true,
@@ -387,7 +388,7 @@ impl<'step> Report<'step>
     ///   and natural-language wording are excluded.
     /// - witness: `diagnostics::diagnostics::a_report_preserves_refusal_identity_and_title_payloads`
     /// - witness: `report::tests::notes_and_titles_preserve_numeric_roles_and_omit_empty_survivors`
-    #[anodized::spec(ensures: |ret| matches!((self.subject, ret.0),
+    #[spec(ensures: |ret| matches!((self.subject, ret.0),
         (Subject::Refused { .. }, Subject::Refused { .. })
             | (Subject::Unsettled { .. }, Subject::Unsettled { .. })
             | (Subject::Goal(_), Subject::Goal(_)) | (Subject::Source(_), Subject::Source(_))
@@ -426,7 +427,7 @@ impl<'step> Report<'step>
     /// [`Unnamed`]: report_context::Absent::Unnamed
     /// [`Unrecorded`]: report_context::Absent::Unrecorded
     /// [`OutsideText`]: report_context::Absent::OutsideText
-    #[anodized::spec(ensures: |ret| ret.iter().all(|slot| match *slot {
+    #[spec(ensures: |ret| ret.iter().all(|slot| match *slot {
         Maybe::Present(annotation) => self.text.fragment(annotation.span).is_ok(),
         Maybe::Absent(_) => true,
     }) && match self.subject {
@@ -478,7 +479,7 @@ impl<'step> Report<'step>
     /// - witness: `diagnostics::diagnostics::forced_styling_colors_actual_facade_annotations`
     /// - witness: `report::tests::literal_path_controls_are_not_styling_or_framing`
     /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
-    #[anodized::spec(ensures: |ref ret| match style {
+    #[spec(ensures: |ref ret| match style {
         RenderStyle::Plain => match self.subject {
             Subject::Goal(_) => ret.as_ref().starts_with("goal: "),
             Subject::Unsettled { .. } => ret.as_ref().starts_with("error: "),
@@ -585,7 +586,7 @@ impl<'step> Report<'step>
     /// - witness: `diagnostics::diagnostics::a_report_exposes_the_context_it_marks`
     /// - witness: `diagnostics::diagnostics::a_span_outside_the_text_is_unlocated`
     /// - witness: `report::tests::utf8_boundaries_are_checked_per_locus_without_clamping`
-    #[anodized::spec(ensures: |ref ret| {
+    #[spec(ensures: |ref ret| {
         let primary = match ret.primary {
             Maybe::Present(annotation) => self.text.fragment(annotation.span).is_ok() && match self.subject {
                 Subject::Refused { refusal, .. } => annotation.label == Label::Class(Class::Refusal(refusal.classify())),
@@ -680,7 +681,7 @@ quenchant_shape::reason_enum! {
 /// - witness: `diagnostics::diagnostics::a_type_mismatch_renders_as_a_located_report`
 /// - witness: `diagnostics::diagnostics::a_labeled_context_retains_its_locus_and_cause`
 /// - witness: `diagnostics::diagnostics::a_goal_renders_as_its_golden`
-#[anodized::spec(ensures: |ref ret| ret.is_empty() == matches!(annotation, Maybe::Absent(_))
+#[spec(ensures: |ref ret| ret.is_empty() == matches!(annotation, Maybe::Absent(_))
     && !ret.contains(['\r', '\n', '\u{1b}'])
 )]
 fn labelled<Reason>(annotation: Maybe<Annotation, Reason>) -> String

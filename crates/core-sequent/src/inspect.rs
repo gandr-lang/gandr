@@ -9,6 +9,8 @@
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 
+use anodized::spec;
+
 use crate::boundary::NodeCount;
 use crate::focus::FocusOrigin;
 use crate::focus::Provenance;
@@ -47,7 +49,7 @@ impl Stats
     /// - witness: `inspect::tests::totals_saturate_at_both_addition_boundaries`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| usize::from(ret) == usize::from(self.producers)
+    #[spec(ensures: |ret| usize::from(ret) == usize::from(self.producers)
         .saturating_add(usize::from(self.consumers)).saturating_add(usize::from(self.commands)))]
     pub fn total(&self) -> NodeCount
     {
@@ -76,7 +78,7 @@ impl Stats
 /// - witness: `inspect::tests::asymmetric_populations_and_unrecorded_roots_remain_distinct`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ret| ret.producers == arena.producer_count()
+#[spec(ensures: |ret| ret.producers == arena.producer_count()
     && ret.consumers == arena.consumer_count() && ret.commands == arena.command_count())]
 pub fn stats(arena: &CommandArena) -> Stats
 {
@@ -105,7 +107,7 @@ pub fn stats(arena: &CommandArena) -> Stats
 /// - witness: `inspect::tests::histograms_count_repeated_origins_without_inventing_categories`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ref ret|
+#[spec(ensures: |ref ret|
     ret.values().try_fold(0_usize, |total, &count| total.checked_add(usize::from(count))) == Some(usize::from(provenance.len()))
         && ret.iter().all(|(origin, count)| usize::from(*count) > 0
             && usize::from(*count) == provenance.entries().filter(|&(_, found)| found == *origin).count())
@@ -141,7 +143,7 @@ pub fn origin_histogram(provenance: &Provenance) -> BTreeMap<FocusOrigin, NodeCo
 /// - witness: `inspect::tests::histograms_count_repeated_origins_without_inventing_categories`
 #[inline]
 #[must_use]
-#[anodized::spec(ensures: |ref ret| ret.lines().count() == 2
+#[spec(ensures: |ref ret| ret.lines().count() == 2
     && ret.split_once('\n').is_some_and(|(_, population)| population.starts_with("nodes: ") && population.ends_with(" total)"))
     && ret.starts_with(match provenance.origin(root) {
         | Some(FocusOrigin::Return) => "root [return]: ",

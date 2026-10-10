@@ -13,6 +13,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use anodized::spec;
 use proptest::prelude::Just;
 use proptest::prelude::Strategy;
 use proptest::prelude::any;
@@ -219,7 +220,7 @@ pub fn program() -> impl Strategy<Value = Vec<Stmt>>
 ///   unchanged. The predicate checks length and selected target names without
 ///   cloning the input.
 /// - witness: `tests::generate::retarget_preserves_unselected_rows`
-#[anodized::spec(
+#[spec(
     captures: [length = statements.len()],
     ensures: |ret| {
         ret.len() == length
@@ -350,7 +351,7 @@ pub fn program_and_edits() -> impl Strategy<Value = (Vec<Stmt>, Vec<Edit>)>
 /// - witness: `tests::generate::edits_have_total_boundary_semantics`
 /// - witness: `tests::generate::coordinated_rename_rewrites_bindings_and_reads`
 /// - witness: `tests::generate::revalue_preserves_metadata_and_classifies_exactly`
-#[anodized::spec(
+#[spec(
     ensures: |ret| match *edit {
         | Edit::Insert(at, ref statement) => {
             let at = at.min(statements.len());
@@ -573,7 +574,7 @@ pub struct Rank(pub usize);
 ///   equality. Thunk/string-only input is absent, not an integer candidate. The
 ///   predicate captures only the selected ordinal and old number.
 /// - witness: `tests::generate::revalue_preserves_metadata_and_classifies_exactly`
-#[anodized::spec(
+#[spec(
     captures: [selected = 'selected: {
         let count = statements
             .iter()

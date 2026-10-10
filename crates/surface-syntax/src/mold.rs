@@ -8,6 +8,8 @@
 
 use core::num::TryFromIntError;
 
+use anodized::spec;
+
 /// One mold's position in the table of the grammar that assigned it.
 ///
 /// An id means nothing without its table: the [`GrammarFingerprint`] of the
@@ -87,7 +89,7 @@ impl TryFrom<usize> for MoldId
     ///   off-by-one upper bound.
     /// - witness: `mold::tests::a_host_index_past_the_id_width_is_refused`
     #[inline]
-    #[anodized::spec(ensures: |ret| ret.as_ref().map_or_else(
+    #[spec(ensures: |ret| ret.as_ref().map_or_else(
         |_| u32::try_from(position).is_err(),
         |id| usize::try_from(id.0) == Ok(position),
     ))]
@@ -271,7 +273,7 @@ impl ClosingClass
     /// - witness: `mold::tests::openers_and_closers_pair_by_family`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret == match spelling.0 { "(" => Some(Self::Paren), "[" => Some(Self::Bracket), "{" | "#{" => Some(Self::Brace), _ => None })]
+    #[spec(ensures: |ret| ret == match spelling.0 { "(" => Some(Self::Paren), "[" => Some(Self::Bracket), "{" | "#{" => Some(Self::Brace), _ => None })]
     pub fn opening(spelling: DelimSpelling<'_>) -> Option<Self>
     {
         match spelling.0 {
@@ -297,7 +299,7 @@ impl ClosingClass
     /// - witness: `mold::tests::openers_and_closers_pair_by_family`
     #[inline]
     #[must_use]
-    #[anodized::spec(ensures: |ret| ret == match spelling.0 { ")" => Some(Self::Paren), "]" => Some(Self::Bracket), "}" => Some(Self::Brace), _ => None })]
+    #[spec(ensures: |ret| ret == match spelling.0 { ")" => Some(Self::Paren), "]" => Some(Self::Bracket), "}" => Some(Self::Brace), _ => None })]
     pub fn closing(spelling: DelimSpelling<'_>) -> Option<Self>
     {
         match spelling.0 {

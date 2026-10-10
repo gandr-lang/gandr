@@ -17,6 +17,7 @@ mod cli
     use std::process::Output;
     use std::process::Stdio;
 
+    use anodized::spec;
     use gandr_surface_lsp::Body;
     use gandr_surface_lsp::read_frame;
     use gandr_surface_lsp::write_frame;
@@ -71,7 +72,7 @@ mod cli
         ///   removal change these observations. Concurrent external writers and
         ///   permission failures are excluded.
         /// - witness: `cli::cli::scratch_ownership_keeps_simultaneous_cases_independent`
-        #[anodized::spec(
+        #[spec(
             requires: test.file_name().is_some_and(|name| name == test.as_os_str()),
             ensures: |ref ret| ret.0.is_dir()
                 && std::fs::read_dir(&ret.0).is_ok_and(|mut entries| entries.next().is_none()),
@@ -110,7 +111,7 @@ mod cli
         ///   peer changes the observations; external mutations and failed
         ///   filesystem operations are excluded.
         /// - witness: `cli::cli::scratch_ownership_keeps_simultaneous_cases_independent`
-        #[anodized::spec(
+        #[spec(
             requires: !relative.as_os_str().is_empty() && relative.components()
                 .all(|component| matches!(component, std::path::Component::Normal(_))),
             ensures: |ref ret| ret.strip_prefix(&self.0).is_ok_and(|suffix| suffix == relative) && ret.is_file(),
@@ -147,7 +148,7 @@ mod cli
         ///   process verdict. Missing cleanup and overbroad deletion differ;
         ///   concurrent mutation is excluded.
         /// - witness: `cli::cli::scratch_ownership_keeps_simultaneous_cases_independent`
-        #[anodized::spec(ensures: !self.0.exists())]
+        #[spec(ensures: !self.0.exists())]
         fn drop(&mut self)
         {
             let removed = std::fs::remove_dir_all(&self.0);
@@ -172,7 +173,7 @@ mod cli
     /// - witness: `cli::cli::a_malformed_invocation_exits_two`
     /// - witness: `cli::cli::a_second_operand_is_refused`
     /// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
-    #[anodized::spec(ensures: |ref ret| ret.get_program() == std::ffi::OsStr::new(env!("CARGO_BIN_EXE_gandr"))
+    #[spec(ensures: |ref ret| ret.get_program() == std::ffi::OsStr::new(env!("CARGO_BIN_EXE_gandr"))
         && ret.get_args().eq(arguments.iter().map(AsRef::as_ref)))]
     fn gandr<Argument>(arguments: &[Argument]) -> Command
     where
@@ -202,7 +203,7 @@ mod cli
     /// - witness: `cli::cli::a_settled_run_exits_zero`
     /// - witness: `cli::cli::an_unreadable_path_exits_two`
     /// - witness: `cli::cli::unwritable_standard_output_exits_two`
-    #[anodized::spec(
+    #[spec(
         requires: command.get_program() == std::ffi::OsStr::new(env!("CARGO_BIN_EXE_gandr")),
         ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 2)),
     )]
@@ -227,7 +228,7 @@ mod cli
     /// - witness: `cli::cli::a_settled_run_exits_zero`
     /// - witness: `cli::cli::an_unsettled_run_exits_one`
     /// - witness: `cli::cli::an_unreadable_path_exits_two`
-    #[anodized::spec(requires: output.status.code().is_some(),
+    #[spec(requires: output.status.code().is_some(),
         ensures: |ret| output.status.code() == Some(ret.0))]
     fn code(output: &Output) -> Code
     {
@@ -249,7 +250,7 @@ mod cli
     ///   those observations; non-UTF-8 output is excluded.
     /// - witness: `cli::cli::the_value_of_a_run_is_printed_once`
     /// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
-    #[anodized::spec(ensures: |ref ret| ret.as_bytes() == output.stdout.as_slice())]
+    #[spec(ensures: |ref ret| ret.as_bytes() == output.stdout.as_slice())]
     fn stdout(output: &Output) -> String
     {
         String::from_utf8(output.stdout.clone()).expect("standard output is UTF-8")
@@ -271,7 +272,7 @@ mod cli
     /// - witness: `cli::cli::an_absent_script_is_refused_by_path`
     /// - witness: `cli::cli::an_ill_typed_script_is_refused_by_the_checker`
     /// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
-    #[anodized::spec(ensures: |ref ret| ret.as_bytes() == output.stderr.as_slice())]
+    #[spec(ensures: |ref ret| ret.as_bytes() == output.stderr.as_slice())]
     fn stderr(output: &Output) -> String
     {
         String::from_utf8(output.stderr.clone()).expect("standard error is UTF-8")
@@ -295,7 +296,7 @@ mod cli
     ///   arbitrary path spellings and embedded line terminators are not
     ///   enumerated.
     /// - witness: `cli::cli::the_test_verb_prints_every_fixture_and_pending_source`
-    #[anodized::spec(ensures: |ref ret| ret.iter().all(|line| !line.contains('\n')))]
+    #[spec(ensures: |ref ret| ret.iter().all(|line| !line.contains('\n')))]
     fn lines_of(
         output: &Output,
         path: &Path,
@@ -329,7 +330,7 @@ mod cli
     /// - witness: `cli::cli::a_settled_run_exits_zero`
     /// - witness: `cli::cli::an_unsettled_run_exits_one`
     /// - witness: `cli::cli::goals_report_an_obligation_without_failing`
-    #[anodized::spec(ensures: |ref ret| output.stdout.starts_with(ret.as_bytes())
+    #[spec(ensures: |ref ret| output.stdout.starts_with(ret.as_bytes())
         && !ret.contains("sources: ")
         && output.stdout.get(ret.len() ..).is_some_and(|tail| tail.starts_with(b"sources: ")))]
     fn printed(output: &Output) -> String
@@ -591,7 +592,7 @@ mod cli
     ///   Arbitrary bodies and size limits belong to the transport rather than
     ///   this finite session.
     /// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
-    #[anodized::spec(ensures: |ref ret| messages.last().map_or_else(
+    #[spec(ensures: |ref ret| messages.last().map_or_else(
         || ret.as_ref().is_empty(),
         |last| ret.as_ref().starts_with(b"Content-Length: ") && ret.as_ref().ends_with(last.0.as_bytes()),
     ))]
@@ -623,7 +624,7 @@ mod cli
     ///   writes or lost termination state changes those cases; large
     ///   backpressured sessions and external signals are excluded.
     /// - witness: `cli::cli::lsp_serves_a_session_over_the_standard_streams`
-    #[anodized::spec(ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 2)))]
+    #[spec(ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 2)))]
     fn served(input: &Body) -> Output
     {
         let mut child = gandr(&["lsp"])
@@ -702,7 +703,7 @@ mod cli
     ///   stream selection or reading beyond quit changes exact rows. Large
     ///   backpressured sessions and external signals are outside the domain.
     /// - witness: `cli::cli::a_piped_repl_session_prints_its_transcript`
-    #[anodized::spec(ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 2)))]
+    #[spec(ensures: |ref ret| matches!(ret.status.code(), Some(0 ..= 2)))]
     fn piped<Argument>(
         arguments: &[Argument],
         input: Text<'_>,
@@ -817,7 +818,7 @@ mod cli
     /// - witness: `cli::cli::a_script_that_returns_a_value_leaves_successfully`
     /// - witness: `cli::cli::a_script_that_blames_leaves_with_a_failure_status`
     /// - witness: `cli::cli::a_script_with_no_program_is_refused`
-    #[anodized::spec(ensures: |ref ret| ret.0.strip_prefix(&scratch.0).is_ok_and(|relative| relative == name)
+    #[spec(ensures: |ref ret| ret.0.strip_prefix(&scratch.0).is_ok_and(|relative| relative == name)
         && matches!(ret.1.status.code(), Some(0 ..= 2)))]
     fn run_script(
         scratch: &Scratch,

@@ -11,6 +11,8 @@
 //! A widening conversion is a `From`, a narrowing one is a `TryFrom` whose
 //! error is the owning crate error, and neither is an inherent method.
 
+use anodized::spec;
+
 use crate::error::BuildArithmetic;
 use crate::error::BuildError;
 use crate::error::BuildLimitKind;
@@ -762,7 +764,7 @@ impl TryFrom<usize> for ScalarWidth
     ///   result. The u64 refusal is unreachable on supported platforms with at
     ///   most 64-bit usize.
     /// - witness: `units::tests::platform_counts_narrow_without_loss`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| match (ret.as_ref(), u32::try_from(width)) { (Ok(value), Ok(expected)) => value.width == expected, (Err(error), Err(_)) => *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::ScalarWidth }, _ => false }
     )]
     #[inline]
@@ -1089,7 +1091,7 @@ impl TryFrom<usize> for TextBytesUsed
     ///   result. The u64 refusal is unreachable on supported platforms with at
     ///   most 64-bit usize.
     /// - witness: `units::tests::platform_counts_narrow_without_loss`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| match (ret.as_ref(), u64::try_from(bytes)) { (Ok(value), Ok(expected)) => value.bytes == expected, (Err(error), Err(_)) => *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::TextBytes }, _ => false }
     )]
     #[inline]
@@ -1126,7 +1128,7 @@ impl TryFrom<usize> for VerbatimLinesUsed
     ///   result. The u64 refusal is unreachable on supported platforms with at
     ///   most 64-bit usize.
     /// - witness: `units::tests::platform_counts_narrow_without_loss`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| match (ret.as_ref(), u64::try_from(lines)) { (Ok(value), Ok(expected)) => value.lines == expected, (Err(error), Err(_)) => *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::VerbatimLines }, _ => false }
     )]
     #[inline]
@@ -1162,7 +1164,7 @@ impl DocNodesUsed
     ///   shared-document witnesses cover lifetime accounting.
     /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
     /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let next = u128::from(self.nodes).saturating_add(u128::from(1_u64));
             let ceiling = Some(u64::from(limit.nodes));
             ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::NodeCount } }
@@ -1217,7 +1219,7 @@ impl TextBytesUsed
     ///   shared-document witnesses cover lifetime accounting.
     /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
     /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let next = u128::from(self.bytes).saturating_add(u128::from(amount.bytes));
             let ceiling = u64::try_from(limit.bytes).ok();
             ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::TextBytes } }
@@ -1277,7 +1279,7 @@ impl VerbatimLinesUsed
     ///   shared-document witnesses cover lifetime accounting.
     /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
     /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let next = u128::from(self.lines).saturating_add(u128::from(amount.lines));
             let ceiling = Some(u64::from(limit.lines));
             ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::VerbatimLines } }
@@ -1333,7 +1335,7 @@ impl BuildStepsUsed
     ///   shared-document witnesses cover lifetime accounting.
     /// - witness: `units::tests::checked_charges_preserve_exact_boundaries_and_error_precedence`
     /// - witness: `algebra::tests::each_build_ceiling_refuses_exactly_at_its_boundary`
-    #[anodized::spec(
+    #[spec(
         ensures: |ret| { let next = u128::from(self.steps).saturating_add(u128::from(1_u64));
             let ceiling = Some(limit.steps);
             ret.as_ref().map_or_else(|error| { if next > u128::from(u64::MAX) || ceiling.is_none() { *error == BuildError::ArithmeticOverflow { operation: BuildArithmetic::BuildSteps } }
