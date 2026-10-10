@@ -11,6 +11,7 @@
 
 use core::fmt;
 
+use anodized::spec;
 use gandr_core_incremental::Item;
 use gandr_core_incremental::ItemKey;
 use gandr_core_incremental::ItemSource;
@@ -61,11 +62,89 @@ quenchant_shape::reason_enum! {
 ///   order.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the surfaces are the key, the declaration and the
-///   position of each item, separated by a module whose middle declaration is
-///   refused, every item asserted at its exact key and at the adapted
-///   declaration of the same position.
+/// - hypothesis: L3 — a lowered module with a refused middle declaration, an
+///   explicit signature and an owed body; exact name keys, skipped admission
+///   positions and declaration payloads distinguish retaining refusals,
+///   reordering, misnaming and losing signature/body/origin data. Arena
+///   provenance is a caller premise, not inferred from local identifiers.
 /// - witness: `tests::items::each_unrefused_declaration_is_one_item_keyed_by_its_name`
+#[spec(
+    ensures: |ret| match ret {
+    Ok(ref result) => {
+        result.items().len()
+            == module
+                .declarations()
+                .iter()
+                .filter(|lowered| {
+                    !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                })
+                .count()
+            && result
+                .items()
+                .iter()
+                .zip(
+                    module
+                        .declarations()
+                        .iter()
+                        .filter(|lowered| {
+                            !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                        }),
+                )
+                .all(|(item, lowered)| {
+                    let declaration = item.declaration();
+                    item.key().as_ref() == lowered.name().as_ref().as_bytes()
+                        && declaration.constant() == lowered.constant()
+                        && usize::from(declaration.origin())
+                            == usize::from(lowered.origin())
+                        && match (
+                            lowered.outcome(),
+                            declaration.signature(),
+                            declaration.body(),
+                        ) {
+                            (
+                                DeclarationOutcome::Completed { declared_type, body },
+                                Maybe::Present(signature),
+                                Maybe::Present(value),
+                            ) => signature == declared_type && value == body,
+                            (
+                                DeclarationOutcome::Uncompleted { declared_type },
+                                Maybe::Present(signature),
+                                Maybe::Absent(_),
+                            ) => signature == declared_type,
+                            (
+                                DeclarationOutcome::Bodied { body },
+                                Maybe::Absent(_),
+                                Maybe::Present(value),
+                            ) => value == body,
+                            _ => false,
+                        }
+                })
+    }
+    Err(ProgramError::PositionOrder { ordinal, position, previous }) => {
+        position <= previous
+            && module
+                .declarations()
+                .iter()
+                .filter(|lowered| {
+                    !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                })
+                .nth(usize::from(ordinal))
+                .is_some_and(|lowered| lowered.constant() == position)
+            && usize::from(ordinal)
+                .checked_sub(1_usize)
+                .and_then(|before| {
+                    module
+                        .declarations()
+                        .iter()
+                        .filter(|lowered| {
+                            !matches!(lowered.outcome(), DeclarationOutcome::Refused(_))
+                        })
+                        .nth(before)
+                })
+                .is_some_and(|lowered| lowered.constant() == previous)
+    }
+},
+)]
 #[inline]
 pub fn program(
     module: &LoweredModule<'_>,
@@ -135,6 +214,21 @@ impl From<String> for Revision
 /// refusal of the revision as a whole crosses as its class and the span it
 /// names; the session, which keeps the text in reach, reports the refusal
 /// itself.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: retains the stage failure, or the whole-revision refusal class
+///   and optional source span.
+/// - executable: none — The error value has no original lowering operation or
+///   revision; refused specifies the retained class/span, and the item-source
+///   witness observes the source boundary.
+///
+/// # Adequacy
+/// - hypothesis: L3 — accepted declarations and a whole-revision refusal,
+///   observed at exact keys, failure class and source extent; the formatter
+///   witness distinguishes lost fields and swallowed sink failures.
+/// - witness: `tests::items::the_item_source_offers_a_revision_or_names_its_fault`
+/// - witness: `tests::items::revision_faults_retain_fields_and_sink_refusals`
 #[derive(Clone, Debug)]
 pub enum RevisionFault
 {
@@ -161,7 +255,27 @@ impl RevisionFault
     /// The fault a refusal of the whole revision crosses the seam as.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: preserves the refusal class and any source span; a run-level
+    ///   refusal remains explicitly spanless.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a top-level expression refused as a whole, observed
+    ///   at its exact failure class and source extent. Wrong class, erased span
+    ///   and shifted bytes are distinguishable; run-level absence is specified
+    ///   by the predicate but not reached by this source witness.
+    /// - witness: `tests::items::the_item_source_offers_a_revision_or_names_its_fault`
+    #[spec(
+        ensures: |ret| {
+    matches!(
+        ret, Self::Refused { class, span } if class == refusal.classify() && match (span,
+        refusal.span()) { (Maybe::Present(found), Maybe::Present(expected)) => found ==
+        expected, (Maybe::Absent(fault_span::Absent::Run), Maybe::Absent(_)) => true, _
+        => false, }
+    )
+},
+    )]
     fn refused(refusal: &LoweringRefusal<'_>) -> Self
     {
         Self::Refused {
@@ -179,7 +293,23 @@ impl fmt::Display for RevisionFault
     /// Writes the fault and what it names.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: writes the underlying stage fault, or the refusal class and
+    ///   every retained source-span endpoint.
+    /// - fails: propagates a refusing sink as `fmt::Error`.
+    /// - panics: none.
+    /// - executable: none — The formatter exposes neither emitted text nor
+    ///   readable sink state; the witness observes semantic fields and a
+    ///   refusing sink.
+    ///
+    /// # Errors
+    /// Returns `fmt::Error` when the sink refuses a write.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — span-bearing and spanless refusals plus a
+    ///   position-order fault; exact field values and sink errors distinguish
+    ///   omitted metadata and swallowed writes without pinning sentences.
+    /// - witness: `tests::items::revision_faults_retain_fields_and_sink_refusals`
     #[inline]
     fn fmt(
         &self,
@@ -206,6 +336,18 @@ impl core::error::Error for RevisionFault
 
 /// The dispatcher's parse and lowering, as the incremental checker's item
 /// source.
+///
+/// # Specification
+/// - requires: nothing.
+/// - ensures: retains the grammar used by every offered revision.
+/// - executable: none — The carrier stores a grammar but has no revision or
+///   call boundary. Its items method states the observable source relationship.
+///
+/// # Adequacy
+/// - hypothesis: L3 — accepted named declarations and a refused top-level
+///   expression through the built-in grammar; item identities and the refusal
+///   span distinguish a stale or misconfigured item source.
+/// - witness: `tests::items::the_item_source_offers_a_revision_or_names_its_fault`
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct SurfaceItems
@@ -248,9 +390,31 @@ impl ItemSource for SurfaceItems
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are a module offered as items and a
-    ///   revision refused whole, each asserted at its exact program or class.
+    /// - hypothesis: L3 — modules with distinct names and a top-level
+    ///   expression refused whole; exact admitted keys and refusal class/span
+    ///   distinguish stale revision input, invented names and misplaced
+    ///   diagnostics. The predicate checks source membership and span validity
+    ///   without replaying parse or lowering; program specifies exact
+    ///   lowered-item correspondence.
+    /// - witness: `tests::items::each_unrefused_declaration_is_one_item_keyed_by_its_name`
     /// - witness: `tests::items::the_item_source_offers_a_revision_or_names_its_fault`
+    #[spec(
+        ensures: |ret| match ret {
+    Ok(ref result) => {
+        result
+            .items()
+            .iter()
+            .all(|item| {
+                core::str::from_utf8(item.key().as_ref())
+                    .is_ok_and(|name| !name.is_empty() && revision.0.contains(name))
+            })
+    }
+    Err(RevisionFault::Refused { span: Maybe::Present(span), .. }) => {
+        revision.text().fragment(span).is_ok()
+    }
+    Err(_) => true,
+},
+    )]
     #[inline]
     fn items(
         &self,

@@ -33,6 +33,7 @@
 use core::fmt;
 use std::path::Path;
 
+use anodized::spec;
 use gandr_core_checker::CheckBudget;
 use gandr_core_checker::Verdict;
 use gandr_core_incremental::BackendArtifact;
@@ -160,6 +161,20 @@ impl CheckpointObserver for Quiet
 
 /// One import of the latest accepted revision, owned so it outlives the text
 /// that declared it.
+///
+/// # Specification
+/// - requires: the producing operation’s documented context.
+/// - ensures: The URI and source extent belong to one import declaration.
+/// - executable: none — The data record does not retain its module or source
+///   text and has no callable boundary; `Imports::of` checks the ordered source
+///   correspondence.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited accepted, refused or restored session
+///   observations, at their exact fields or state transitions. These are
+///   bounded concrete witnesses, not a universal proof of external store
+///   behavior.
+/// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ImportRow
 {
@@ -196,6 +211,19 @@ impl ImportRow
 
 /// The import scope of one revision: its rows and the namespace binding each
 /// alias to its row.
+///
+/// # Specification
+/// - requires: the producing operation’s documented context.
+/// - ensures: Rows and alias bindings belong to the same accepted revision.
+/// - executable: none — The aggregate has no runtime invocation; its producers
+///   check row payloads and its resolver checks alias-to-row interpretation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited accepted, refused or restored session
+///   observations, at their exact fields or state transitions. These are
+///   bounded concrete witnesses, not a universal proof of external store
+///   behavior.
+/// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
 #[derive(Clone, Debug)]
 struct Imports
 {
@@ -210,7 +238,18 @@ impl Imports
     /// The scope of a revision that declared no import.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: contains no import rows or alias bindings.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — resolving an unbound alias before submission and
+    ///   preserving the accepted import namespace after refusal. Row emptiness
+    ///   is executable; alias absence is observed through the resolver.
+    /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
+    #[spec(
+        ensures: |ret| ret.rows.is_empty(),
+    )]
     fn empty() -> Self
     {
         Self {
@@ -222,7 +261,29 @@ impl Imports
     /// The import scope `module` declared.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the module’s import scope and declarations belong to the
+    ///   same lowering.
+    /// - ensures: preserves every import URI and source span in declaration
+    ///   order and copies the alias scope that names those rows.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — two accepted import namespaces and a refused
+    ///   duplicate alias. Exact URIs and source declaration spans distinguish
+    ///   binding the wrong row or retaining the old namespace after acceptance.
+    /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
+    #[spec(
+        ensures: |ret| {
+    ret.rows.len() == module.imports().len()
+        && ret
+            .rows
+            .iter()
+            .zip(module.imports())
+            .all(|(row, declaration)| {
+                row.uri == *declaration.uri() && row.span == declaration.span()
+            })
+},
+    )]
     fn of(module: &LoweredModule<'_>) -> Self
     {
         Self {
@@ -241,7 +302,35 @@ impl Imports
     /// The row `path` resolves to.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: borrows the row named by the alias binding, or reports
+    ///   Unbound when the path or row is absent.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — bound and unbound aliases across accepted and refused
+    ///   revisions; exact declaration URIs and spans distinguish wrong bindings
+    ///   from missing ones.
+    /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
+    #[spec(
+        ensures: |ret| match self.scope.resolve(path) {
+    Maybe::Present(binding) => {
+        self.rows
+            .get(usize::from(binding.data))
+            .map_or(
+                matches!(ret, Maybe::Absent(import::Absent::Unbound)),
+                |row| {
+                    matches!(
+                        ret, Maybe::Present(found) if
+                        core::ptr::eq(core::ptr::from_ref(found),
+                        core::ptr::from_ref(row))
+                    )
+                },
+            )
+    }
+    Maybe::Absent(_) => matches!(ret, Maybe::Absent(import::Absent::Unbound)),
+},
+    )]
     fn resolve(
         &self,
         path: &NamePath,
@@ -260,17 +349,49 @@ impl Imports
 }
 
 /// Whether a submission's checkpoints reached the store.
+///
+/// # Specification
+/// - requires: the producing operation’s documented context.
+/// - ensures: Stored reports successful checkpoint persistence; Failed carries
+///   the store refusal while the session keeps its resume. External partial
+///   writes follow the store’s contract.
+/// - executable: none — The enum does not contain the store or the operation’s
+///   earlier state; `Session::submit` and the persistence-failure witness
+///   observe the transition.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited accepted, refused or restored session
+///   observations, at their exact fields or state transitions. These are
+///   bounded concrete witnesses, not a universal proof of external store
+///   behavior.
+/// - witness: `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Persistence
 {
     /// The store holds the submission's checkpoints at its program's address.
     Stored,
-    /// The store refused them and holds what it held before; the session still
-    /// resumes from the submission.
+    /// The store refused them; its own contract governs any partial writes.
+    /// The session still resumes from the submission.
     Failed(CheckpointStoreError),
 }
 
 /// What the incremental checker made of an accepted submission.
+///
+/// # Specification
+/// - requires: the producing operation’s documented context.
+/// - ensures: The census describes the accepted revision’s incremental pass,
+///   independently of whether persistence succeeded.
+/// - executable: none — The data declaration has no invocation or input program
+///   to compare; submission predicates and exact census witnesses provide that
+///   context.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited accepted, refused or restored session
+///   observations, at their exact fields or state transitions. These are
+///   bounded concrete witnesses, not a universal proof of external store
+///   behavior.
+/// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
+/// - witness: `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Resumed
 {
@@ -306,6 +427,24 @@ impl Resumed
 }
 
 /// Whether a submission's kernel checkpoint reached the block store.
+///
+/// # Specification
+/// - requires: the producing operation’s documented context.
+/// - ensures: Stored carries the manifest naming the committed kernel records;
+///   Failed preserves the first artifact or block-store refusal without
+///   discarding the accepted resume.
+/// - executable: none — The enum has neither its originating artifact nor store
+///   and no callable boundary; commit and readback operations check the
+///   relation.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a healthy in-memory store read back after reopening, and
+///   a store refusing its first insertion. Exact decoded declarations, refusal
+///   variants, and subsequent adoption distinguish false persistence from loss
+///   of the accepted resume; other store failures remain outside this bounded
+///   domain.
+/// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
+/// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum KernelCheckpoint
 {
@@ -320,6 +459,23 @@ pub enum KernelCheckpoint
 
 /// What one submitted revision became: the dispatcher's composition of its
 /// text, its standing, and what the incremental checker made of it.
+///
+/// # Specification
+/// - requires: the producing operation’s documented context.
+/// - ensures: The source frame, composition and standing describe one revision;
+///   accepted revisions carry resume, edits and kernel status, and every
+///   revision carries its source-ordered completion obligations.
+/// - executable: none — The result aggregate has no runtime invocation;
+///   `Session::submit` checks its state and the observation methods check
+///   source-frame and eligibility relations.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited accepted, refused or restored session
+///   observations, at their exact fields or state transitions. These are
+///   bounded concrete witnesses, not a universal proof of external store
+///   behavior.
+/// - witness: `tests::session::submission_owns_outcomes_after_session_advances`
+/// - witness: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`
 #[derive(Clone, Debug)]
 pub struct Submission<'text>
 {
@@ -442,14 +598,24 @@ impl<'text> Submission<'text>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are the carried set, its order and its
-    ///   lifetime, separated by a clean source, a recovering source whose
-    ///   severity order and source order disagree, a source refused whole, and
-    ///   a clean revision after a recovering one, each asserted at its exact
-    ///   rows against the parse's own buffer.
+    /// - hypothesis: L3 — clean, recovering, severity-inverted and wholly
+    ///   refused sources, followed by a clean revision. The exact parser rows
+    ///   and their stable source order distinguish lost repairs and stale
+    ///   obligations.
     /// - witness: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`
     /// - witness: `tests::diag_obligations::rows_are_in_source_order_not_severity_order`
     /// - witness: `tests::diag_obligations::a_clean_source_reports_no_obligations`
+    #[spec(
+        ensures: |ret| {
+    core::ptr::eq(
+        core::ptr::from_ref(ret),
+        core::ptr::from_ref(self.obligations.as_slice()),
+    )
+        && ret
+            .windows(2)
+            .all(|pair| matches!(pair, [left, right] if left.span <= right.span))
+},
+    )]
     #[inline]
     #[must_use]
     pub fn obligations(&self) -> &[ObligationInstance]
@@ -469,10 +635,20 @@ impl<'text> Submission<'text>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — every corpus source's submission is turned into a
-    ///   step and compared field by field with the step the dispatcher's walk
-    ///   yields for the same path.
+    /// - hypothesis: L3 — every checked-in corpus source, compared field by
+    ///   field with the batch step. This finite shared-pipeline agreement is
+    ///   not an independent semantic proof; the predicate checks the moved
+    ///   scalar observations without copying the composition.
     /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
+    #[spec(
+        captures: before = (self.root, self.text, self.standing),
+        ensures: |ret| {
+    matches!(
+        ret, Step::Source { path : found, root, text, standing, .. } if found == path &&
+        root == before.0 && text == before.1 && standing == before.2
+    )
+},
+    )]
     #[inline]
     #[must_use]
     pub fn into_step<'step>(
@@ -504,10 +680,41 @@ impl<'text> Submission<'text>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — as [`evaluate`].
+    /// - hypothesis: L3 — exact integer and function-call results, an owed
+    ///   body, a missing constant, a checker refusal and a wholly refused
+    ///   revision. These distinguish eligibility and evaluation; the predicate
+    ///   observes eligibility without running the machine twice.
     /// - witness: `tests::session::integer_literal_types_and_evaluates`
     /// - witness: `tests::session::nullary_function_call_evaluates`
     /// - witness: `tests::session::holes_decline_evaluation`
+    /// - witness: `tests::session::evaluation_declines_missing_and_refused_items`
+    #[spec(
+        ensures: |ret| match self.composed {
+    Composed::Settled { ref report, .. } => {
+        report
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.constant() == constant)
+            .map_or(
+                matches!(ret, Maybe::Absent(evaluation::Absent::Unaccepted)),
+                |declaration| match declaration.produced() {
+                    Produced::Judged(
+                        Verdict::Checked { .. } | Verdict::Synthesised { .. },
+                    ) => matches!(ret, Maybe::Present(_)),
+                    Produced::Judged(Verdict::Owed(_)) => {
+                        matches!(ret, Maybe::Absent(evaluation::Absent::Holed))
+                    }
+                    Produced::Judged(Verdict::Refused(_))
+                    | Produced::Unlowered(_)
+                    | Produced::Guarded(_) => {
+                        matches!(ret, Maybe::Absent(evaluation::Absent::Unaccepted))
+                    }
+                },
+            )
+    }
+    Composed::Refused(_) => matches!(ret, Maybe::Absent(evaluation::Absent::Unaccepted)),
+},
+    )]
     #[inline]
     pub fn evaluate(
         &mut self,
@@ -552,11 +759,28 @@ impl<'text> Submission<'text>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — an integer literal, a call of a nullary function and a
-///   goal are submitted, and each asserted at its exact evaluation or absence.
+/// - hypothesis: L3 — exact integer and function-call results plus owed and
+///   refused declarations. The result category is executable independently of
+///   machine execution; no duplicate evaluation is performed.
 /// - witness: `tests::session::integer_literal_types_and_evaluates`
 /// - witness: `tests::session::nullary_function_call_evaluates`
 /// - witness: `tests::session::holes_decline_evaluation`
+/// - witness: `tests::session::evaluation_declines_missing_and_refused_items`
+#[spec(
+    ensures: |ret| match declaration.produced() {
+    Produced::Judged(Verdict::Checked { .. } | Verdict::Synthesised { .. }) => {
+        matches!(ret, Maybe::Present(_))
+    }
+    Produced::Judged(Verdict::Owed(_)) => {
+        matches!(ret, Maybe::Absent(evaluation::Absent::Holed))
+    }
+    Produced::Judged(Verdict::Refused(_))
+    | Produced::Unlowered(_)
+    | Produced::Guarded(_) => {
+        matches!(ret, Maybe::Absent(evaluation::Absent::Unaccepted))
+    }
+},
+)]
 #[inline]
 pub fn evaluate<'text>(
     declaration: &DeclarationReport<'text>,
@@ -576,6 +800,22 @@ pub fn evaluate<'text>(
 
 /// Why a session could not take a revision, or could not reopen over one: an
 /// engine fault, never a verdict about the revision.
+///
+/// # Specification
+/// - requires: the producing operation’s documented context.
+/// - ensures: Each variant names an engine or persistence failure, distinct
+///   from a refused source revision.
+/// - executable: none — The error enum has no runtime call boundary or
+///   underlying operation to repeat; submission and reopen return the
+///   originating typed error.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited accepted, refused or restored session
+///   observations, at their exact fields or state transitions. These are
+///   bounded concrete witnesses, not a universal proof of external store
+///   behavior.
+/// - witness: `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`
+/// - witness: `tests::session::formatters_propagate_sink_refusals`
 #[derive(Clone, Debug)]
 pub enum SessionFault<'text>
 {
@@ -596,7 +836,20 @@ impl fmt::Display for SessionFault<'_>
     /// Writes the fault and what it names.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: formats the documented fault or state observations, leaving
+    ///   opaque stores uninspected; preserves the formatter’s refusal.
+    /// - panics: none.
+    /// - executable: none — The formatter exposes neither its previous bytes
+    ///   nor sink failure state. A postcondition cannot inspect the emitted
+    ///   text or distinguish success from refusal without writing again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store fault and both session debug views written
+    ///   into a refusing sink. The exact error result distinguishes swallowed
+    ///   formatting failures; English wording and debug layout are
+    ///   intentionally not pinned.
+    /// - witness: `tests::session::formatters_propagate_sink_refusals`
     #[inline]
     fn fmt(
         &self,
@@ -618,6 +871,21 @@ impl core::error::Error for SessionFault<'_>
 
 /// A session reopened over a revision, and whether its checkpoints were
 /// restored.
+///
+/// # Specification
+/// - requires: the producing operation’s documented context.
+/// - ensures: The restored item count corresponds to the session’s retained
+///   resume; an absence identifies why no checkpoint set was restored.
+/// - executable: none — The aggregate has no invocation; `Session::reopen`
+///   checks restored cardinality and resume presence without repeating I/O.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited accepted, refused or restored session
+///   observations, at their exact fields or state transitions. These are
+///   bounded concrete witnesses, not a universal proof of external store
+///   behavior.
+/// - witness: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`
+/// - witness: `tests::checkpoint::a_store_holding_nothing_reopens_fresh`
 pub struct Reopened<Store, Blocks>
 {
     /// The reopened session.
@@ -631,7 +899,20 @@ impl<Store, Blocks> fmt::Debug for Reopened<Store, Blocks>
     /// Writes the session and what was restored; the stores are opaque.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: formats the documented fault or state observations, leaving
+    ///   opaque stores uninspected; preserves the formatter’s refusal.
+    /// - panics: none.
+    /// - executable: none — The formatter exposes neither its previous bytes
+    ///   nor sink failure state. A postcondition cannot inspect the emitted
+    ///   text or distinguish success from refusal without writing again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store fault and both session debug views written
+    ///   into a refusing sink. The exact error result distinguishes swallowed
+    ///   formatting failures; English wording and debug layout are
+    ///   intentionally not pinned.
+    /// - witness: `tests::session::formatters_propagate_sink_refusals`
     #[inline]
     fn fmt(
         &self,
@@ -670,6 +951,23 @@ impl<Store, Blocks> Reopened<Store, Blocks>
 }
 
 /// The interactive session over successive revisions of one source.
+///
+/// # Specification
+/// - requires: the producing operation’s documented context.
+/// - ensures: The root and grammar remain fixed, accepted state advances with
+///   readable modules, whole-revision refusals retain it, and the counter
+///   records every lowering attempt.
+/// - executable: none — The state object has no callable type boundary and does
+///   not retain every prior revision; constructor, reopen and submit predicates
+///   check transitions, with exact-state witnesses.
+///
+/// # Adequacy
+/// - hypothesis: L3 — the cited accepted, refused or restored session
+///   observations, at their exact fields or state transitions. These are
+///   bounded concrete witnesses, not a universal proof of external store
+///   behavior.
+/// - witness: `tests::session::failed_submission_retains_latest_synthesis`
+/// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
 pub struct Session<Store, Blocks>
 {
     /// The grammar every revision is parsed under.
@@ -695,7 +993,20 @@ impl<Store, Blocks> fmt::Debug for Session<Store, Blocks>
     /// and the stores are opaque.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: formats the documented fault or state observations, leaving
+    ///   opaque stores uninspected; preserves the formatter’s refusal.
+    /// - panics: none.
+    /// - executable: none — The formatter exposes neither its previous bytes
+    ///   nor sink failure state. A postcondition cannot inspect the emitted
+    ///   text or distinguish success from refusal without writing again.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a store fault and both session debug views written
+    ///   into a refusing sink. The exact error result distinguishes swallowed
+    ///   formatting failures; English wording and debug layout are
+    ///   intentionally not pinned.
+    /// - witness: `tests::session::formatters_propagate_sink_refusals`
     #[inline]
     fn fmt(
         &self,
@@ -718,7 +1029,25 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// kernel checkpoints into `blocks`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: retains the supplied grammar, root and stores, with the
+    ///   default checking budget, no accepted revision, imports or snapshot,
+    ///   and zero lowering attempts.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a fresh session’s first revision, unbound import
+    ///   resolution and subsequent accepted/refused revisions. Initial absence
+    ///   and exact first census distinguish stale state or the wrong root.
+    /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
+    /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
+    #[spec(
+        ensures: |ret| {
+    ret.root == root && usize::from(ret.lowerings) == 0_usize
+        && ret.imports.rows.is_empty() && ret.snapshot.items().is_empty()
+        && matches!(ret.incremental.last(), Maybe::Absent(_))
+},
+    )]
     #[inline]
     #[must_use]
     pub fn new(
@@ -748,9 +1077,10 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - ensures: `revision` is lowered once. When the lowering reads a module
     ///   and `store` holds checkpoints `backend` judged for its program, the
     ///   session resumes from them and their item count is reported; otherwise
-    ///   the session is fresh, as [`Self::new`] makes it, and the reason is
-    ///   reported. Either way the session's import scope and snapshot are the
-    ///   revision's, and it reads and commits kernel checkpoints in `blocks`.
+    ///   the incremental session has no resume, and the reason is reported. The
+    ///   lowering attempt is counted in either case. The import scope and
+    ///   snapshot are the revision's, and it reads and commits kernel
+    ///   checkpoints in `blocks`.
     /// - provides: a session that outlives the process that wrote its
     ///   checkpoints: its next submission adopts every restored checkpoint that
     ///   still answers.
@@ -765,13 +1095,34 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// As above.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are the restored resume, the fresh
-    ///   fallback and the import scope, separated by a file store written by
-    ///   one session, the session dropped, and a second session reopened over
-    ///   the same directory whose next submission adopts every unchanged item;
-    ///   and by a store that holds nothing for the revision.
+    /// - hypothesis: L3 — a file store reopened after dropping its writer and
+    ///   an empty store, followed by an unchanged submission. Exact restored
+    ///   counts and adopted items distinguish fresh fallback from a usable
+    ///   checkpoint; no second store read occurs in the predicate.
     /// - witness: `tests::checkpoint::a_reopened_session_resumes_from_the_checkpoints_a_dropped_one_wrote`
     /// - witness: `tests::checkpoint::a_store_holding_nothing_reopens_fresh`
+    #[spec(
+        ensures: |ret| {
+    ret
+        .as_ref()
+        .is_ok_and(|reopened| {
+            reopened.session.root == root
+                && usize::from(reopened.session.lowerings) == 1_usize
+                && match reopened.restored {
+                    Maybe::Present(count) => {
+                        reopened.session.snapshot.items().len() == usize::from(count)
+                            && matches!(
+                                reopened.session.incremental.last(), Maybe::Present(resume)
+                                if resume.handles().len() == usize::from(count)
+                            )
+                    }
+                    Maybe::Absent(_) => {
+                        matches!(reopened.session.incremental.last(), Maybe::Absent(_))
+                    }
+                }
+        }) || ret.is_err()
+},
+    )]
     #[inline]
     pub fn reopen(
         grammar: Pbg,
@@ -854,17 +1205,19 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   and the session then holds the revision's resume, import scope and
     ///   snapshot. A revision the lowering refuses as a whole is reported as
     ///   [`Composed::Refused`] with no resume, no edits and no kernel
-    ///   checkpoint, and the session is unchanged. Either way the submission
-    ///   carries the parse's completion obligations, in source order.
+    ///   checkpoint. Its accepted state is unchanged, but the lowering attempt
+    ///   is counted. Either way the submission carries the parse's completion
+    ///   obligations, in source order.
     /// - provides: a report whose verdicts are the batch pipeline's, beside the
     ///   census of what the resume adopted, the manifest of the kernel
     ///   environment it leaves, the edits that led to it and the repairs the
     ///   parser made.
     /// - fails: [`SessionFault::Compose`] when the composition faults, with the
-    ///   session unchanged; [`SessionFault::Unordered`] when the lowered
-    ///   positions do not ascend, unchanged; [`SessionFault::Resume`] when the
-    ///   resume fails, the incremental checker then holding no resume so the
-    ///   next revision is judged whole.
+    ///   accepted state unchanged; [`SessionFault::Unordered`] when the lowered
+    ///   positions do not ascend, also retaining accepted state; each attempt
+    ///   remains counted. [`SessionFault::Resume`] occurs when the resume
+    ///   fails, the incremental checker then holding no resume so the next
+    ///   revision is judged whole.
     /// - panics: none.
     /// - economy: the lowered arena is cloned once per accepted revision, so
     ///   the judgement and the resume each check over their own copy; the
@@ -872,24 +1225,80 @@ impl<Store, Blocks> Session<Store, Blocks>
     ///   kernel artifact is decoded, cut and hashed once, linear in its bytes.
     ///
     /// # Errors
-    /// As above. A failure to persist is not an error: the submission
-    /// reports it as [`Persistence::Failed`] or [`KernelCheckpoint::Failed`].
+    /// As above. A persistence failure with a retained resume is carried as
+    /// [`Persistence::Failed`]; without a resume it is [`SessionFault::Store`].
+    /// A kernel checkpoint failure is carried as [`KernelCheckpoint::Failed`].
     ///
     /// # Adequacy
-    /// - hypothesis: L2 for the report — every source of both corpus roots is
-    ///   submitted whole and its submission compared with the dispatcher's step
-    ///   for the same path, field by field; L3 for the session state —
-    ///   successive revisions asserted at the census, the synthesis stream and
-    ///   the import scope they leave, a refused revision asserted to leave them
-    ///   unchanged, and the kernel checkpoint read back as exactly the decoding
-    ///   of the composition's artifact.
+    /// - hypothesis: L3 — finite corpus agreement with the batch pipeline;
+    ///   accepted, refused and edited revisions; exact synthesis, import,
+    ///   snapshot and lowering-count observations; and kernel readback.
+    ///   Generated edit/replay and incremental/batch witnesses provide
+    ///   independent bounded relational checks. The predicate avoids cloning
+    ///   prior session state or repeating parsing, judgement, evaluation or
+    ///   storage.
     /// - witness: `tests::corpus::every_source_submits_as_the_walk_composes_it`
     /// - witness: `tests::session::whole_file_submit_carries_definitions_forward`
-    /// - witness: `tests::session::successful_submissions_publish_whole_program_synthesis`
+    /// - witness: `tests::session::failed_submission_retains_latest_synthesis`
     /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
     /// - witness: `tests::edit::a_submission_carries_the_edits_from_the_last_accepted_revision`
     /// - witness: `tests::diag_obligations::lowered_carries_the_parse_obligations_verbatim`
+    /// - witness: `tests::checkpoint::a_store_failure_is_reported_and_the_session_still_resumes`
     /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
+    /// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
+    #[spec(
+        captures: before = (
+    usize::from(self.lowerings),
+    self.snapshot.items().len(),
+    self.imports.rows.len(),
+),
+        ensures: |ret| {
+    usize::from(self.lowerings) == before.0.saturating_add(1_usize)
+        && match ret {
+            Ok(ref submission) => {
+                submission.root == self.root && submission.text == revision
+                    && submission.standing
+                        == Standing::of(self.root, &submission.composed)
+                    && submission
+                        .obligations
+                        .windows(2)
+                        .all(|pair| {
+                            matches!(pair, [left, right] if left.span <= right.span)
+                        })
+                    && match submission.composed {
+                        Composed::Refused(_) => {
+                            matches!(
+                                submission.resumed,
+                                Maybe::Absent(resumed::Absent::RefusedWhole)
+                            )
+                                && matches!(
+                                    submission.edits,
+                                    Maybe::Absent(resumed::Absent::RefusedWhole)
+                                )
+                                && matches!(
+                                    submission.kernel,
+                                    Maybe::Absent(resumed::Absent::RefusedWhole)
+                                ) && self.snapshot.items().len() == before.1
+                                && self.imports.rows.len() == before.2
+                        }
+                        Composed::Settled { .. } => {
+                            matches!(submission.resumed, Maybe::Present(_))
+                                && matches!(submission.edits, Maybe::Present(_))
+                                && matches!(submission.kernel, Maybe::Present(_))
+                                && matches!(
+                                    self.incremental.last(), Maybe::Present(resume) if resume
+                                    .handles().len() == self.snapshot.items().len()
+                                )
+                        }
+                    }
+            }
+            Err(_) => {
+                self.snapshot.items().len() == before.1
+                    && self.imports.rows.len() == before.2
+            }
+        }
+},
+    )]
     #[inline]
     pub fn submit<'text>(
         &mut self,
@@ -1029,11 +1438,31 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the surfaces are a bound alias, an unbound path and a
-    ///   refused revision, separated by two accepted revisions each resolving
-    ///   its own aliases and a third declaring an alias twice that leaves the
-    ///   second's scope.
+    /// - hypothesis: L3 — bound and unbound aliases in two accepted revisions
+    ///   and a duplicate-alias refusal retaining the previous scope. Exact URI
+    ///   and source-span observations distinguish stale publication and wrong
+    ///   row resolution.
     /// - witness: `tests::session::import_namespace_carries_across_lines_and_resolves_source_declarations`
+    #[spec(
+        ensures: |ret| match self.imports.scope.resolve(path) {
+    Maybe::Present(binding) => {
+        self.imports
+            .rows
+            .get(usize::from(binding.data))
+            .map_or(
+                matches!(ret, Maybe::Absent(import::Absent::Unbound)),
+                |row| {
+                    matches!(
+                        ret, Maybe::Present(found) if
+                        core::ptr::eq(core::ptr::from_ref(found),
+                        core::ptr::from_ref(row))
+                    )
+                },
+            )
+    }
+    Maybe::Absent(_) => matches!(ret, Maybe::Absent(import::Absent::Unbound)),
+},
+    )]
     #[inline]
     pub fn resolve_import(
         &self,
@@ -1075,14 +1504,26 @@ impl<Store, Blocks> Session<Store, Blocks>
     /// [`ArtifactError`], as [`ArtifactManifest::read_under`] names it.
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — a kernel checkpoint one session wrote, its manifest
-    ///   carried as bytes, reads back from a session reopened over the same
-    ///   block store as exactly the decoding of the composition's artifact; and
-    ///   a manifest minted over bytes the kernel refuses, whose identity its
-    ///   own bytes reproduce and whose tree the block store holds and seals, is
-    ///   refused by the decoder.
+    /// - hypothesis: L3 — exact readback after reopening a real block store and
+    ///   a manifest whose identity and tree are valid but whose kernel bytes
+    ///   are refused. Format precedence and record/declaration cardinality are
+    ///   executable; full byte, key and cut correspondence is witnessed without
+    ///   repeating storage I/O.
     /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
     /// - witness: `tests::checkpoint::a_matching_identity_over_bytes_the_kernel_refuses_is_refused`
+    #[spec(
+        ensures: |ret| match ret {
+    Ok(ref decoded) => {
+        manifest.kernel_format() == gandr_kernel_term::FORMAT_VERSION
+            && u64::try_from(decoded.declarations().len().saturating_add(1_usize))
+                == Ok(u64::from(manifest.record_count()))
+    }
+    Err(ArtifactError::UnsupportedKernelFormat { found }) => {
+        found == manifest.kernel_format() && found != gandr_kernel_term::FORMAT_VERSION
+    }
+    Err(_) => manifest.kernel_format() == gandr_kernel_term::FORMAT_VERSION,
+},
+    )]
     #[inline]
     pub fn read_kernel(
         &self,
@@ -1131,9 +1572,23 @@ impl<Store, Blocks> Session<Store, Blocks>
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the checkpoint a submission carries reads back as exactly
-///   the decoding of the composition's artifact.
+/// - hypothesis: L3 — a committed artifact read back after reopening is exactly
+///   its independently decoded composition image. The predicate checks the
+///   current format and mandatory header record; store mutation and full record
+///   contents are observed by the readback witness rather than repeated in a
+///   postcondition. A first-insertion refusal is checked by its exact variant
+///   and continued resume/edit state, without assuming store rollback.
 /// - witness: `tests::checkpoint::a_reopened_session_reads_its_kernel_checkpoint_through_the_decoder`
+/// - witness: `tests::checkpoint::a_kernel_store_failure_preserves_resume_and_edit_state`
+#[spec(
+    ensures: |ret| match ret {
+    KernelCheckpoint::Stored(ref manifest) => {
+        manifest.kernel_format() == gandr_kernel_term::FORMAT_VERSION
+            && u64::from(manifest.record_count()) >= 1_u64
+    }
+    KernelCheckpoint::Failed(_) => true,
+},
+)]
 fn checkpoint_kernel<Blocks>(
     kernel: &EncodedArtifact,
     blocks: &mut Blocks,
@@ -1152,7 +1607,26 @@ where
 /// The reason a restore's absence gives a reopened session.
 ///
 /// # Specification
-/// trivial.
+/// - requires: nothing.
+/// - ensures: preserves each restore absence’s meaning as the corresponding
+///   reopen reason.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 for the three-variant mapping by the exhaustive const
+///   predicate; L3 for the externally observed missing-checkpoint branch when
+///   reopening an empty store.
+/// - witness: `tests::checkpoint::a_store_holding_nothing_reopens_fresh`
+#[spec(
+    ensures: |ret| {
+    matches!(
+        (reason, ret), (restored::Absent::AddressMismatch,
+        reopened::Absent::AddressMismatch) | (restored::Absent::NotStored,
+        reopened::Absent::NotStored) | (restored::Absent::OtherBackend,
+        reopened::Absent::OtherBackend)
+    )
+},
+)]
 const fn unrestored(reason: restored::Absent) -> reopened::Absent
 {
     match reason {
