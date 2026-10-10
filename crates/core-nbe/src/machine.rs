@@ -2765,6 +2765,8 @@ fn deeper(level: BinderLevel) -> Result<BinderLevel, ConversionFault>
 #[cfg(test)]
 mod tests
 {
+    mod trace_pairing;
+
     use alloc::collections::BTreeMap;
     use alloc::collections::BTreeSet;
     use alloc::vec::Vec;

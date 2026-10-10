@@ -521,6 +521,7 @@ default-features = false
 # consumers:
 # - core-checker (dev)
 # - core-incremental (dev)
+# - core-nbe (dev)
 # - core-sequent (dev)
 # - kernel-strata (dev)
 # - kernel-term (dev)

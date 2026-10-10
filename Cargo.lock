@@ -425,6 +425,7 @@ dependencies = [
  "gandr-kernel-core",
  "gandr-kernel-strata",
  "gandr-kernel-term",
+ "proptest",
  "tracing",
 ]
 
