@@ -45,15 +45,15 @@ impl LevelContext
     /// - requires: nothing — a constraint naming a variable outside the count
     ///   is admissible input and is refused here, since the kernel grants the
     ///   producer no credence about its own signature.
-    /// - ensures: `Ok(context)` carrying an admitted poset exactly when every
-    ///   constraint variable is strictly below `params` and the constraint set
-    ///   has a model; the poset then decides this declaration's universe
-    ///   comparisons and agrees with the free-fragment oracle when empty.
-    /// - provides: the per-declaration level context. Admission remains
-    ///   prose-only: constraints move into the oracle, and testing model
-    ///   existence would repeat that oracle rather than validate its evidence.
-    /// - fails: [`KernelError::LevelVariableOutOfScope`] for a constraint
-    ///   variable at or above the parameter count;
+    /// - ensures: `Ok(context)` retains the parameter count and constraints
+    ///   exactly when every constraint variable is strictly below `params` and
+    ///   the constraints have a model; the poset then decides this
+    ///   declaration's universe comparisons.
+    /// - provides: the per-declaration context. The predicate checks scope,
+    ///   retained counts and the returned model certificate. Loop witnesses are
+    ///   replayed in tests that retain the consumed input constraints.
+    /// - fails: [`KernelError::LevelVariableOutOfScope`] naming the first
+    ///   out-of-scope variable in constraint order, left side before right;
     ///   [`KernelError::InconsistentLevelConstraints`] when the constraints
     ///   loop, carrying the replayable pumping witness;
     ///   [`KernelError::LevelOracleFault`] on an oracle fault the theory
@@ -64,13 +64,34 @@ impl LevelContext
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L1/L2 — admission returns the oracle's own dichotomy as
-    ///   evidence, so a mutant admitting a looping set must forge a consistency
-    ///   witness; the L3 residues are the scope boundary and the empty context,
-    ///   pinned by an at-count constraint variable and by the empty admission.
+    /// - hypothesis: L1 validates returned consistency and looping evidence; L3
+    ///   at the parameter boundary and on an out-of-scope constraint after a
+    ///   loop distinguishes lost parameters, a false model, omitted scope
+    ///   checks and changed refusal precedence. Empty and one-constraint
+    ///   admitted contexts bound the positive cases.
     /// - witness: `levels::tests::an_empty_context_admits`
     /// - witness: `levels::tests::looping_constraints_are_refused`
     /// - witness: `levels::tests::an_out_of_scope_constraint_variable_is_refused`
+    /// - witness: `levels::tests::admission_checks_scope_before_a_loop_and_keeps_input_order`
+    #[spec(
+        captures: [
+            constraint_count = constraints.len(),
+            first_out_of_scope = constraints.iter().flat_map(constraint_variables)
+                .find(|variable| u32::from(variable.index()) >= u32::from(params)),
+        ],
+        ensures: |ret| match ret {
+            Ok(ref context) => first_out_of_scope.is_none() && context.params == params
+                && context.poset.constraints().len() == constraint_count
+                && context.poset.constraints().iter().flat_map(constraint_variables)
+                    .all(|variable| u32::from(variable.index()) < u32::from(params))
+                && gandr_kernel_strata::validate_consistency(
+                    context.poset.constraints(), context.poset.consistency()).is_ok(),
+            Err(KernelError::LevelVariableOutOfScope { variable }) => first_out_of_scope == Some(variable),
+            Err(KernelError::InconsistentLevelConstraints(_) | KernelError::LevelOracleFault(_)) =>
+                first_out_of_scope.is_none(),
+            Err(_) => false,
+        }
+    )]
     #[inline]
     pub fn admit(
         params: LevelParamCount,
@@ -106,10 +127,8 @@ impl LevelContext
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: `|ret| ret.is_ok() == level.atoms().all(|(variable, _offset)|
-    ///   u32::from(variable.index()) < u32::from(self.params))` — success
-    ///   exactly when every variable index is strictly below the parameter
-    ///   count.
+    /// - ensures: success exactly when every canonical atom is in scope;
+    ///   otherwise the refusal names the first out-of-scope atom.
     /// - provides: the scope check for a level embedded in a type.
     /// - fails: [`KernelError::LevelVariableOutOfScope`] naming the first
     ///   out-of-scope variable in the level's canonical atom order.
@@ -119,12 +138,19 @@ impl LevelContext
     /// [`KernelError::LevelVariableOutOfScope`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — the boundary is `index < params`, separated by an
-    ///   at-count variable (refused) and the variable one below it (accepted),
-    ///   each asserted as the exact variant or as success.
+    /// - hypothesis: L3 at the last admitted and first refused indices, and on
+    ///   a mixed canonical atom set with two refused variables; exact success
+    ///   and refusal payloads distinguish strictness, omission and selecting a
+    ///   later offender.
     /// - witness: `levels::tests::the_level_scope_boundary_is_exact`
+    /// - witness: `levels::tests::level_scope_reports_the_first_out_of_scope_canonical_atom`
     #[inline]
-    #[spec(ensures: |ret| ret.is_ok() == level.atoms().all(|(variable, _offset)| u32::from(variable.index()) < u32::from(self.params)))]
+    #[spec(ensures: |ret| match (&ret, level.atoms()
+        .find(|&(variable, _offset)| u32::from(variable.index()) >= u32::from(self.params))) {
+        (&Ok(()), None) => true,
+        (&Err(KernelError::LevelVariableOutOfScope { variable }), Some((expected, _offset))) => variable == expected,
+        _ => false,
+    })]
     pub fn check_level_scope(
         &self,
         level: &Level,
@@ -146,9 +172,10 @@ impl LevelContext
     /// - ensures: `Ok(())` exactly when `lower < upper` holds — under the
     ///   free-fragment oracle when no constraints are declared and under
     ///   landmark entailment otherwise, the two agreeing on the empty poset.
-    /// - provides: the universe rule and the strictness gate of an explicit
-    ///   lift. The order postcondition remains prose-only: repeating the
-    ///   oracle's decision would not validate its evidence.
+    /// - provides: the universe rule and a lift's strictness gate. The
+    ///   predicate checks refusal subjects, strictness and oracle family;
+    ///   witnesses validate the returned refutations without repeating the
+    ///   oracle's decision.
     /// - fails: [`KernelError::UniverseViolation`] carrying the oracle's
     ///   refutation; [`KernelError::LevelOracleFault`] on an oracle fault the
     ///   theory excludes.
@@ -158,16 +185,30 @@ impl LevelContext
     /// As `- fails:`.
     ///
     /// # Adequacy
-    /// - hypothesis: L1/L2 — the decision returns oracle evidence either way,
-    ///   so a mutant deciding wrongly must forge coherent evidence; the L3
-    ///   residues are irreflexivity and the successor boundary, and the third
-    ///   is the landmark path, which a declared hypothesis decides where the
-    ///   free oracle refuses.
+    /// - hypothesis: L1 validates free and landmark refutations against their
+    ///   original subjects; L3 at irreflexivity, a successor and a declared
+    ///   ordering distinguishes a non-strict query, swapped subjects, wrong
+    ///   oracle selection and a reversed decision on these cases.
     /// - witness: `levels::tests::the_universe_rule_is_the_free_strict_order`
     /// - witness: `levels::tests::the_universe_rule_is_irreflexive`
     /// - witness: `levels::tests::a_landmark_hypothesis_decides_the_universe_rule`
+    /// - witness: `levels::tests::a_landmark_refusal_preserves_subjects_and_a_valid_countermodel`
     #[inline]
-    #[spec(requires: lower.atoms().chain(upper.atoms()).all(|(variable, _offset)| u32::from(variable.index()) < u32::from(self.params)))]
+    #[spec(
+        requires: lower.atoms().chain(upper.atoms()).all(|(variable, _offset)| u32::from(variable.index()) < u32::from(self.params)),
+        ensures: |ret| match ret {
+            Ok(()) => true,
+            Err(KernelError::UniverseViolation(ref violation)) => violation.lower() == lower
+                && violation.upper() == upper && match *violation.refutation() {
+                    LevelOrderRefutation::Free(ref refutation) => self.poset.constraints().is_empty()
+                        && refutation.strict() == gandr_kernel_strata::Strictness::STRICT,
+                    LevelOrderRefutation::Landmark(ref countermodel) => !self.poset.constraints().is_empty()
+                        && countermodel.strict() == gandr_kernel_strata::Strictness::STRICT,
+                },
+            Err(KernelError::LevelOracleFault(_)) => !self.poset.constraints().is_empty(),
+            Err(_) => false,
+        }
+    )]
     pub fn check_universe_below(
         &self,
         lower: &Level,
@@ -217,7 +258,7 @@ fn universe_violation(
     )))
 }
 
-/// The variables a landmark constraint mentions, across both sides.
+/// The constraint's variables, left side before right, each in canonical order.
 ///
 /// # Specification
 /// trivial.
@@ -247,6 +288,17 @@ fn constraint_variables(constraint: &LandmarkConstraint) -> impl Iterator<Item =
 /// - fails: `KernelError::LevelVariableOutOfScope` naming the offending
 ///   variable.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 at the last admitted and first refused indices; exact
+///   success and error payloads distinguish a changed guard or wrong variable.
+/// - witness: `levels::tests::the_level_scope_boundary_is_exact`
+/// - witness: `levels::tests::an_out_of_scope_constraint_variable_is_refused`
+#[spec(ensures: |ret| ret == if u32::from(variable.index()) < u32::from(params) {
+    Ok(())
+} else {
+    Err(KernelError::LevelVariableOutOfScope { variable })
+})]
 #[inline]
 fn check_scope(
     params: LevelParamCount,
@@ -267,6 +319,7 @@ mod tests
     use alloc::vec;
     use alloc::vec::Vec;
 
+    use anodized::spec;
     use gandr_kernel_strata::LandmarkConstraint;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
@@ -314,6 +367,23 @@ mod tests
     /// - fails: never.
     /// - panics: when the successor leaves the representable range, which no
     ///   fixture here reaches.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on the constant-zero and variable-zero fixtures;
+    ///   universe and landmark decisions distinguish omitted successors and
+    ///   losing an atom or its canonical constant normalization.
+    /// - witness: `levels::tests::the_universe_rule_is_the_free_strict_order`
+    /// - witness: `levels::tests::a_landmark_hypothesis_decides_the_universe_rule`
+    #[spec(requires: u64::from(level.constant_part()) < u64::MAX
+        && level.atoms().all(|(_variable, offset)| u64::from(offset) < u64::MAX),
+    ensures: |ret| {
+        let constant = u64::from(level.constant_part());
+        ret.atoms().map(|(variable, offset)| (variable, u64::from(offset)))
+            .eq(level.atoms().map(|(variable, offset)| (variable, u64::from(offset).saturating_add(1))))
+            && u64::from(ret.constant_part()) == if level.atoms()
+                .any(|(_variable, offset)| u64::from(offset) >= constant) { 0 }
+                else { constant.saturating_add(1) }
+    })]
     fn succ(level: &Level) -> Level
     {
         level.succ().expect("the fixture levels are small")
@@ -330,6 +400,15 @@ mod tests
     /// - fails: never.
     /// - panics: when admission refuses, which an empty constraint set never
     ///   does.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on zero and two declared parameters; retained counts
+    ///   and exact free-order decisions distinguish lost parameters or an
+    ///   unintended constraint.
+    /// - witness: `levels::tests::an_empty_context_admits`
+    /// - witness: `levels::tests::the_universe_rule_is_the_free_strict_order`
+    /// - witness: `levels::tests::the_level_scope_boundary_is_exact`
+    #[spec(ensures: |ret| ret.params == params && ret.poset.constraints().is_empty())]
     fn empty_context(params: LevelParamCount) -> LevelContext
     {
         LevelContext::admit(params, Vec::new()).expect("an unconstrained context admits")
@@ -386,12 +465,23 @@ mod tests
             "the declared hypothesis decides an order the free oracle refuses"
         );
         let free = empty_context(LevelParamCount::from(2_u32));
-        assert!(
-            matches!(
-                free.check_universe_below(&low, &high),
-                Err(KernelError::UniverseViolation(_))
-            ),
-            "and without the hypothesis it is refused, so the hypothesis is load-bearing"
+        let refused = free
+            .check_universe_below(&low, &high)
+            .expect_err("the free oracle does not entail the declared ordering");
+        let KernelError::UniverseViolation(violation) = refused
+        else {
+            panic!("expected a universe refusal");
+        };
+        assert_eq!(violation.lower(), &low);
+        assert_eq!(violation.upper(), &high);
+        let crate::error::LevelOrderRefutation::Free(ref refutation) = *violation.refutation()
+        else {
+            panic!("expected a free-fragment refutation");
+        };
+        assert_eq!(refutation.strict(), gandr_kernel_strata::Strictness::STRICT);
+        assert_eq!(
+            gandr_kernel_strata::validate_refutation(&low, &high, refutation),
+            Ok(())
         );
     }
 
@@ -401,10 +491,15 @@ mod tests
         let variable = level_var(LevelVarIndex::from(0_u32));
         let constraint = LandmarkConstraint::leq(succ(&variable), variable)
             .expect("a variable-only constraint is well formed");
-        let refused = LevelContext::admit(LevelParamCount::from(1_u32), vec![constraint]);
-        assert!(
-            matches!(refused, Err(KernelError::InconsistentLevelConstraints(_))),
-            "a self-successor constraint has no model and is refused with its pumping witness"
+        let constraints = vec![constraint];
+        let refused = LevelContext::admit(LevelParamCount::from(1_u32), constraints.clone());
+        let Err(KernelError::InconsistentLevelConstraints(witness)) = refused
+        else {
+            panic!("expected a replayable looping refusal");
+        };
+        assert_eq!(
+            gandr_kernel_strata::validate_loop_witness(&constraints, &witness),
+            Ok(())
         );
     }
 
@@ -442,6 +537,77 @@ mod tests
             }),
             context.check_level_scope(&level_var(LevelVarIndex::from(2_u32))),
             "and the one past it is not"
+        );
+    }
+
+    #[test]
+    fn admission_checks_scope_before_a_loop_and_keeps_input_order()
+    {
+        let zero = level_var(LevelVarIndex::from(0_u32));
+        let looping = LandmarkConstraint::leq(succ(&zero), zero)
+            .expect("a variable-only constraint is well formed");
+        let first = var(LevelVarIndex::from(3_u32));
+        let second = var(LevelVarIndex::from(2_u32));
+        let out_of_scope = LandmarkConstraint::leq(Level::var(first), Level::var(second))
+            .expect("a variable-only constraint is well formed");
+        let refused =
+            LevelContext::admit(LevelParamCount::from(1_u32), vec![looping, out_of_scope])
+                .expect_err("scope is checked before the oracle runs");
+        assert_eq!(refused, KernelError::LevelVariableOutOfScope {
+            variable: first
+        });
+    }
+
+    #[test]
+    fn level_scope_reports_the_first_out_of_scope_canonical_atom()
+    {
+        let context = empty_context(LevelParamCount::from(2_u32));
+        let level = level_var(LevelVarIndex::from(3_u32))
+            .max(&level_var(LevelVarIndex::from(1_u32)))
+            .max(&level_var(LevelVarIndex::from(2_u32)));
+        assert_eq!(
+            context.check_level_scope(&level),
+            Err(KernelError::LevelVariableOutOfScope {
+                variable: var(LevelVarIndex::from(2_u32)),
+            })
+        );
+    }
+
+    #[test]
+    fn a_landmark_refusal_preserves_subjects_and_a_valid_countermodel()
+    {
+        let low = level_var(LevelVarIndex::from(0_u32));
+        let high = level_var(LevelVarIndex::from(1_u32));
+        let constraint = LandmarkConstraint::leq(low.clone(), high.clone())
+            .expect("a variable-only constraint is well formed");
+        let context = LevelContext::admit(LevelParamCount::from(2_u32), vec![constraint])
+            .expect("a non-strict ordering has a model");
+        let refused = context
+            .check_universe_below(&high, &low)
+            .expect_err("the reverse strict order is not entailed");
+        let KernelError::UniverseViolation(violation) = refused
+        else {
+            panic!("expected a universe refusal");
+        };
+        assert_eq!(violation.lower(), &high);
+        assert_eq!(violation.upper(), &low);
+        let crate::error::LevelOrderRefutation::Landmark(ref countermodel) =
+            *violation.refutation()
+        else {
+            panic!("expected a landmark countermodel");
+        };
+        assert_eq!(
+            countermodel.strict(),
+            gandr_kernel_strata::Strictness::STRICT
+        );
+        assert_eq!(
+            gandr_kernel_strata::validate_entailment_countermodel(
+                &context.poset,
+                &high,
+                &low,
+                countermodel,
+            ),
+            Ok(())
         );
     }
 }

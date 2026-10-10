@@ -216,9 +216,9 @@ impl From<OutstandingCount> for usize
 /// The content-start marks of declarations staged into the arena and not yet
 /// resolved by an admission, a bypass, or an abandonment.
 ///
-/// A multiset rather than a set: two sessions can legitimately record one mark
-/// — the first discarded, the second minting over the region it released — and
-/// resolving one of them must not resolve the other.
+/// A multiset rather than a set: sessions that reuse already-minted roots can
+/// finish without moving the watermark. Each retains an independent claim,
+/// and resolving one occurrence must not resolve every equal occurrence.
 #[repr(transparent)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct StagedMarks
@@ -241,6 +241,17 @@ impl StagedMarks
     ///   occurrence a later resolution removes exactly one of.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — four registrations, including a repeated middle mark,
+    ///   retain insertion order and are resolved one occurrence at a time.
+    /// - witness: `env::tests::registration_resolution_preserves_multiplicity_and_order`
+    #[spec(
+        captures: [entry_len = self.marks.len(), entry_count = self.marks.iter().filter(|&&held| held == mark).count()],
+        ensures: self.marks.len().checked_sub(1_usize) == Some(entry_len)
+            && self.marks.last() == Some(&mark)
+            && self.marks.iter().filter(|&&held| held == mark).count().checked_sub(1_usize) == Some(entry_count)
+    )]
     #[inline]
     fn register(
         &mut self,
@@ -253,17 +264,26 @@ impl StagedMarks
     /// Resolve one occurrence of `mark`, if it is held.
     ///
     /// # Specification
-    /// - requires: nothing — resolving a mark that is not held is a no-op, so a
-    ///   double resolution cannot remove another session's mark.
-    /// - ensures: exactly one occurrence of `mark` is gone; every other mark,
-    ///   including a second occurrence of this one, is untouched.
+    /// - requires: nothing; an absent mark leaves the multiset unchanged.
+    /// - ensures: the first occurrence of a held mark is removed and every
+    ///   other occurrence retains its order. An equal occurrence belonging to
+    ///   another session remains held until a separate resolution.
     /// - provides: the resolution every admission, bypass and abandonment
     ///   performs.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — repeated and absent resolutions distinguish removal
+    ///   of one occurrence from removal of all equal marks or another mark. The
+    ///   predicate checks counts; the witness also checks the exact order.
+    /// - witness: `env::tests::registration_resolution_preserves_multiplicity_and_order`
     #[inline]
-    #[spec(captures: [entry_len = self.marks.len(), entry_contains_mark = self.marks.contains(&mark)], ensures: arith::Int::from(self.marks.len())
-        == arith::sub(arith::Int::from(entry_len), arith::Int::from(usize::from(entry_contains_mark))))]
+    #[spec(
+        captures: [entry_len = self.marks.len(), entry_count = self.marks.iter().filter(|&&held| held == mark).count()],
+        ensures: self.marks.len() == entry_len.saturating_sub(usize::from(entry_count != 0_usize))
+            && self.marks.iter().filter(|&&held| held == mark).count() == entry_count.saturating_sub(1_usize)
+    )]
     fn resolve(
         &mut self,
         mark: ArenaWatermark,
@@ -320,6 +340,56 @@ impl StagedMarks
     }
 }
 
+/// The exclusively borrowed final registration of a live staging session.
+///
+/// While this borrow lives, no other registration can be appended or resolved.
+/// Dropping it removes the final entry; a finisher suppresses that destructor
+/// when ownership of the claim passes to a staged declaration.
+#[repr(transparent)]
+struct StagingClaim<'env>
+{
+    /// The nonempty multiset whose final entry belongs to this session.
+    outstanding: &'env mut StagedMarks,
+}
+
+impl Drop for StagingClaim<'_>
+{
+    /// Release the session's final registration without disturbing its prefix.
+    ///
+    /// # Specification
+    /// - requires: the exclusively borrowed multiset is nonempty; construction
+    ///   registered this session last and the borrow prevents intervening
+    ///   edits.
+    /// - ensures: the final registration is removed and the preceding sequence
+    ///   is unchanged. The predicate checks its length and final endpoint.
+    /// - provides: automatic claim release on ordinary and unwinding scope
+    ///   exit.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — explicit discard and implicit scope exit both
+    ///   preserve an earlier staged declaration's claim and permit its later
+    ///   admission. The witnesses cover ordinary scope exit, not every
+    ///   unwinding context.
+    /// - witness: `env::tests::implicit_staging_drop_releases_its_claim`
+    /// - witness: `env::tests::an_abandoned_staging_releases_its_claim`
+    #[spec(
+        requires: !self.outstanding.marks.is_empty(),
+        captures: [
+            entry_len = self.outstanding.marks.len(),
+            prefix_last = self.outstanding.marks.len().checked_sub(2_usize)
+                .and_then(|index| self.outstanding.marks.get(index)).copied()
+        ],
+        ensures: self.outstanding.marks.len() == entry_len.saturating_sub(1_usize)
+            && self.outstanding.marks.last().copied() == prefix_last
+    )]
+    fn drop(&mut self)
+    {
+        let _released = self.outstanding.marks.pop();
+    }
+}
+
 /// A borrowing staging session for one declaration's content.
 ///
 /// It wraps the term crate's builder so that finishing yields a
@@ -337,9 +407,8 @@ pub struct Staging<'env>
 {
     /// The wrapped builder, which owns the rollback.
     builder: DeclarationBuilder<'env>,
-    /// The environment's outstanding marks, so this session can register and
-    /// resolve its own.
-    outstanding: &'env mut StagedMarks,
+    /// The final registration, dropped after the builder rolls back the arena.
+    claim: StagingClaim<'env>,
 }
 
 impl<'env> Staging<'env>
@@ -355,6 +424,18 @@ impl<'env> Staging<'env>
     ///   content is minted without a mark a rejection must respect.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — a finished definition retains its claim, while a
+    ///   later implicit abandonment restores the prior arena and claim
+    ///   sequence.
+    /// - witness: `env::tests::implicit_staging_drop_releases_its_claim`
+    #[spec(
+        captures: [entry_mark = arena.watermark(), entry_len = outstanding.marks.len()],
+        ensures: |ret| ret.builder.content_start() == entry_mark
+            && ret.claim.outstanding.marks.len().checked_sub(1_usize) == Some(entry_len)
+            && ret.claim.outstanding.marks.last() == Some(&entry_mark)
+    )]
     #[inline]
     fn new(
         arena: &'env mut TermArena,
@@ -365,7 +446,7 @@ impl<'env> Staging<'env>
         outstanding.register(builder.content_start());
         Self {
             builder,
-            outstanding,
+            claim: StagingClaim { outstanding },
         }
     }
 
@@ -382,30 +463,55 @@ impl<'env> Staging<'env>
     /// Discard the staged content, restoring the arena and resolving the mark.
     ///
     /// # Specification
-    /// - requires: nothing.
-    /// - ensures: the arena is truncated back to this session's content-start
-    ///   and the session's mark is resolved, so nothing it minted survives and
-    ///   no later rejection is blocked by it.
+    /// - requires: the session owns its builder's start mark as the final
+    ///   registration, as established by construction and its exclusive borrow.
+    /// - ensures: each arena family is truncated to the lesser of its current
+    ///   length and this session's content-start; the final claim is released.
+    ///   No node minted by this session survives, and its claim cannot block a
+    ///   later admission.
     /// - provides: the abandonment path a producer takes before offering
     ///   anything, which is what makes a probe-before-stage discipline
     ///   unnecessary.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — explicit abandonment rolls back one newly minted
+    ///   value and releases a later claim so an earlier declaration admits.
+    /// - witness: `env::tests::an_abandoned_staging_leaves_the_arena_unchanged`
+    /// - witness: `env::tests::an_abandoned_staging_releases_its_claim`
+    #[spec(requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()))]
     #[inline]
     pub fn discard(self)
     {
-        let Self {
-            builder,
-            outstanding,
-        } = self;
-        outstanding.resolve(builder.content_start());
-        builder.discard();
+        // Fields drop in declaration order: the builder rolls back first, then
+        // the exclusively borrowed registration is released.
     }
 
     /// Finalize a definition over an already-minted declared type and body.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: this session owns the final registration for its builder's
+    ///   start mark, as established by construction and its exclusive borrow.
+    /// - ensures: the returned definition retains that start mark and the
+    ///   supplied level signature and roots. Its arena content and registration
+    ///   remain live until admission, bypass, or abandonment.
+    /// - provides: ownership transfer from a borrowing session to a staged
+    ///   declaration without triggering either rollback or claim release.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each of the four finishers leaves a later claim that
+    ///   blocks an earlier admission without truncating either region, and the
+    ///   retained declaration subsequently admits on its own.
+    /// - witness: `env::tests::every_finisher_retains_its_claim_until_admission`
+    #[spec(
+        requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
+        captures: [entry_start = self.builder.content_start()],
+        ensures: |ret| ret.content_start == entry_start
+            && *ret.declaration.content() == DeclarationContent::Def { declared, body }
+    )]
     #[inline]
     #[must_use]
     pub fn def(
@@ -416,6 +522,7 @@ impl<'env> Staging<'env>
     ) -> StagedDeclaration
     {
         let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
             declaration: self.builder.def(levels, declared, body),
@@ -425,7 +532,29 @@ impl<'env> Staging<'env>
     /// Finalize a definition carrying sealing provenance.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: this session owns the final registration for its builder's
+    ///   start mark, as established by construction and its exclusive borrow.
+    /// - ensures: the returned definition carrying the supplied sealing
+    ///   provenance retains that start mark and the supplied level signature
+    ///   and roots. Its arena content and registration remain live until
+    ///   admission, bypass, or abandonment.
+    /// - provides: ownership transfer from a borrowing session to a staged
+    ///   declaration without triggering either rollback or claim release.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each of the four finishers leaves a later claim that
+    ///   blocks an earlier admission without truncating either region, and the
+    ///   retained declaration subsequently admits on its own.
+    /// - witness: `env::tests::every_finisher_retains_its_claim_until_admission`
+    #[spec(
+        requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
+        captures: [entry_start = self.builder.content_start(), entry_provenance = provenance.len()],
+        ensures: |ret| ret.content_start == entry_start
+            && *ret.declaration.content() == DeclarationContent::Def { declared, body }
+            && ret.declaration.provenance().len() == entry_provenance
+    )]
     #[inline]
     #[must_use]
     pub fn sealed_def(
@@ -437,6 +566,7 @@ impl<'env> Staging<'env>
     ) -> StagedDeclaration
     {
         let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
             declaration: self.builder.sealed_def(levels, declared, body, provenance),
@@ -446,7 +576,27 @@ impl<'env> Staging<'env>
     /// Finalize an axiom over an already-minted declared type.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: this session owns the final registration for its builder's
+    ///   start mark, as established by construction and its exclusive borrow.
+    /// - ensures: the returned axiom retains that start mark and the supplied
+    ///   level signature and roots. Its arena content and registration remain
+    ///   live until admission, bypass, or abandonment.
+    /// - provides: ownership transfer from a borrowing session to a staged
+    ///   declaration without triggering either rollback or claim release.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each of the four finishers leaves a later claim that
+    ///   blocks an earlier admission without truncating either region, and the
+    ///   retained declaration subsequently admits on its own.
+    /// - witness: `env::tests::every_finisher_retains_its_claim_until_admission`
+    #[spec(
+        requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
+        captures: [entry_start = self.builder.content_start()],
+        ensures: |ret| ret.content_start == entry_start
+            && *ret.declaration.content() == DeclarationContent::Axiom { declared }
+    )]
     #[inline]
     #[must_use]
     pub fn axiom(
@@ -456,6 +606,7 @@ impl<'env> Staging<'env>
     ) -> StagedDeclaration
     {
         let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
             declaration: self.builder.axiom(levels, declared),
@@ -465,7 +616,27 @@ impl<'env> Staging<'env>
     /// Finalize a sealed abstract type at an already-minted universe kind.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: this session owns the final registration for its builder's
+    ///   start mark, as established by construction and its exclusive borrow.
+    /// - ensures: the returned abstract type retains that start mark and the
+    ///   supplied level signature and roots. Its arena content and registration
+    ///   remain live until admission, bypass, or abandonment.
+    /// - provides: ownership transfer from a borrowing session to a staged
+    ///   declaration without triggering either rollback or claim release.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — each of the four finishers leaves a later claim that
+    ///   blocks an earlier admission without truncating either region, and the
+    ///   retained declaration subsequently admits on its own.
+    /// - witness: `env::tests::every_finisher_retains_its_claim_until_admission`
+    #[spec(
+        requires: self.claim.outstanding.marks.last() == Some(&self.builder.content_start()),
+        captures: [entry_start = self.builder.content_start()],
+        ensures: |ret| ret.content_start == entry_start
+            && *ret.declaration.content() == DeclarationContent::AbstractType { kind }
+    )]
     #[inline]
     #[must_use]
     pub fn abstract_type(
@@ -475,6 +646,7 @@ impl<'env> Staging<'env>
     ) -> StagedDeclaration
     {
         let content_start = self.builder.content_start();
+        let _kept = core::mem::ManuallyDrop::new(self.claim);
         StagedDeclaration {
             content_start,
             declaration: self.builder.abstract_type(levels, kind),
@@ -628,19 +800,20 @@ impl Environment
     /// Begin building one declaration's content into this environment's arena.
     ///
     /// # Specification
-    /// - requires: the returned session mints exactly one declaration's content
-    ///   and is then finalized, with no other allocation into the arena
-    ///   interleaved.
+    /// - requires: the returned session builds at most one declaration's
+    ///   content and is then finalized or abandoned, with no other allocation
+    ///   into the arena interleaved.
     /// - ensures: a [`Staging`] borrowing the arena, with its content-start
     ///   watermark registered as outstanding. Abandoning the session truncates
-    ///   the arena back to that watermark and resolves the mark, so no
-    ///   partially minted content survives and no probe-before-stage discipline
-    ///   is owed. Finishing the session keeps the mark outstanding until the
-    ///   resulting declaration is admitted, bypassed, or abandoned.
+    ///   each family to the lesser of its current and entry lengths and
+    ///   resolves the mark, so no partially minted content survives and no
+    ///   probe-before-stage discipline is owed. Finishing the session keeps the
+    ///   mark outstanding until the resulting declaration is admitted,
+    ///   bypassed, or abandoned.
     /// - provides: the construction surface every arena-resident declaration is
-    ///   built through. This lifecycle specification remains prose-only: the
-    ///   returned borrow and its later finish/drop transitions outlive this
-    ///   call's postcondition.
+    ///   built through. Registration is checked at return; the later
+    ///   finish/drop transitions outlive this call and are witnessed
+    ///   separately.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -651,6 +824,14 @@ impl Environment
     ///   does, so an earlier declaration is refused).
     /// - witness: `env::tests::an_abandoned_staging_leaves_the_arena_unchanged`
     /// - witness: `env::tests::an_abandoned_staging_releases_its_claim`
+    /// - witness: `env::tests::implicit_staging_drop_releases_its_claim`
+    /// - witness: `env::tests::every_finisher_retains_its_claim_until_admission`
+    #[spec(
+        captures: [entry_mark = self.arena.watermark(), entry_len = self.outstanding.marks.len()],
+        ensures: |ret| ret.builder.content_start() == entry_mark
+            && ret.claim.outstanding.marks.len().checked_sub(1_usize) == Some(entry_len)
+            && ret.claim.outstanding.marks.last() == Some(&entry_mark)
+    )]
     #[inline]
     pub fn stage(&mut self) -> Staging<'_>
     {
@@ -695,6 +876,25 @@ impl Environment
     ///   above still resolves).
     /// - witness: `env::tests::abandoning_a_staged_declaration_releases_its_claim`
     /// - witness: `env::tests::abandoning_beneath_outstanding_content_retains_it`
+    /// - witness: `env::tests::abandonment_preserves_the_admission_floor`
+    #[spec(
+        captures: [
+            entry_mark = staged.content_start,
+            entry_len = self.outstanding.marks.len(),
+            entry_count = self.outstanding.marks.iter().filter(|&&held| held == staged.content_start).count(),
+            entry_entries = self.entries.len(),
+            entry_floor = self.admission_floor,
+            expected_mark = if self.outstanding.marks.iter().any(|&held| held.clamped_into(ArenaWatermark::default(), staged.content_start) != held) {
+                self.arena.watermark()
+            } else {
+                staged.content_start.clamped_into(self.admission_floor, self.arena.watermark())
+            }
+        ],
+        ensures: self.arena.watermark() == expected_mark
+            && self.admission_floor == entry_floor && self.entries.len() == entry_entries
+            && self.outstanding.marks.len() == entry_len.saturating_sub(usize::from(entry_count != 0_usize))
+            && self.outstanding.marks.iter().filter(|&&held| held == entry_mark).count() == entry_count.saturating_sub(1_usize)
+    )]
     #[inline]
     #[expect(
         clippy::needless_pass_by_value,
@@ -734,6 +934,17 @@ impl Environment
     ///   module.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — later outstanding content refuses an earlier
+    ///   admission; abandoning that later content removes the obstruction.
+    ///   Equal and lower marks are separated by the componentwise-count
+    ///   witness.
+    /// - witness: `env::tests::outstanding_later_staged_content_refuses_admission`
+    /// - witness: `env::tests::abandoning_a_staged_declaration_releases_its_claim`
+    /// - witness: `env::tests::marks_above_are_counted_componentwise`
+    #[spec(ensures: |ret| matches!(ret, OutstandingContent::Present)
+        == self.outstanding.marks.iter().any(|&held| held.clamped_into(ArenaWatermark::default(), mark) != held))]
     #[inline]
     fn outstanding_above(
         &self,
@@ -938,25 +1149,34 @@ impl Environment
     ///
     /// # Specification
     /// - requires: `id` was returned by this environment.
-    /// - ensures: the axioms and unchecked admissions the declaration
-    ///   transitively rests on, each ascending; an id this environment did not
-    ///   issue yields an empty report.
-    /// - provides: the per-declaration report of every escape hatch it rests
-    ///   on. Origin and transitive-closure claims remain prose-only: ids carry
-    ///   no environment identity, and checking the report independently
-    ///   requires another dependency-graph traversal.
+    /// - ensures: the axioms and unchecked admissions in the stored transitive
+    ///   dependency set, each ascending.
+    /// - provides: a positional projection of the precomputed dependency set.
+    ///   Origin is a caller obligation because ids carry no environment
+    ///   identity; completeness of that set is witnessed through admission and
+    ///   graph walks.
     /// - fails: never.
     /// - panics: none.
     ///
     /// # Adequacy
-    /// - hypothesis: L2 — the transitive closure is pinned by a chain, a
-    ///   definition on a definition on an axiom reporting the axiom, and by an
-    ///   unchecked admission surfacing in a dependent; the L3 residue is the
-    ///   closed definition's empty report.
+    /// - hypothesis: L2 — finite chains report their transitive axiom or
+    ///   unchecked admission, including a reference reached only through a
+    ///   code. L3 distinguishes a closed definition's empty report. These
+    ///   witnesses do not establish completeness for arbitrary dependency
+    ///   graphs.
     /// - witness: `env::tests::audit_reports_the_transitive_axiom`
     /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
     /// - witness: `env::tests::audit_reaches_an_axiom_named_only_inside_a_code`
     /// - witness: `env::tests::a_closed_definition_rests_on_nothing`
+    #[spec(ensures: |ret| match self.entries.get(usize::from(id.position())) {
+        None => ret.axioms.is_empty() && ret.unchecked.is_empty(),
+        Some(entry) => ret.axioms.iter().copied().eq(entry.rested_on.iter().copied().filter(|&position|
+            self.entries.get(usize::from(position)).is_some_and(|ancestor|
+                matches!(*ancestor.declaration.content(), DeclarationContent::Axiom { .. }))))
+            && ret.unchecked.iter().copied().eq(entry.rested_on.iter().copied().filter(|&position|
+                self.entries.get(usize::from(position)).is_some_and(|ancestor|
+                    matches!(ancestor.admission, Admission::Unchecked))))
+    })]
     #[inline]
     #[must_use]
     pub fn audit(
@@ -1002,8 +1222,9 @@ impl Environment
     /// kernel — would then be a false negative rather than a fact.
     ///
     /// # Specification
-    /// - requires: `content` is the declaration being admitted at `position`,
-    ///   whose references all name earlier admitted positions.
+    /// - requires: `position` is the next admission index and `content` is its
+    ///   declaration. Checked references name earlier admissions; a bypass is
+    ///   itself an audit reason even if it names an unknown position.
     /// - ensures: the union of the audits of every position the declared type
     ///   or a definition's body names, with `position` itself included exactly
     ///   when the declaration is an axiom or is being bypassed. Both reference
@@ -1015,6 +1236,24 @@ impl Environment
     ///   both faces" be a fact rather than a false negative.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L2 — the finite axiom and unchecked chains preserve their
+    ///   audit reasons through definitions and through type-level code edges.
+    ///   The predicate checks self-inclusion and the classification of every
+    ///   returned earlier position, not reachability of arbitrary graphs.
+    /// - witness: `env::tests::audit_reports_the_transitive_axiom`
+    /// - witness: `env::tests::audit_reports_a_transitive_unchecked_admission`
+    /// - witness: `env::tests::audit_reaches_an_axiom_named_only_inside_a_code`
+    #[spec(
+        requires: usize::from(position) == self.entries.len(),
+        ensures: |ret| ret.contains(&position)
+            == (matches!(*content, DeclarationContent::Axiom { .. }) || matches!(admission, Admission::Unchecked))
+            && ret.iter().all(|&ancestor| ancestor == position ||
+                (ancestor < position && self.entries.get(usize::from(ancestor)).is_some_and(|entry|
+                    matches!(entry.admission, Admission::Unchecked)
+                        || matches!(*entry.declaration.content(), DeclarationContent::Axiom { .. }))))
+    )]
     fn transitive_rest(
         &self,
         content: &DeclarationContent,
@@ -1079,23 +1318,51 @@ enum CodeEdges
 /// - ensures: exactly the set of positions reachable from `root`: every
 ///   constant and every sealed atom, where under [`CodeEdges::Stop`] the walk
 ///   does not cross from a decoding former into its code.
-/// - provides: both halves of the audit graph's direct edges, and the
-///   projection set the sealing-provenance gate is checked against. Exact
-///   reachability and the code-edge policy remain prose-only: an independent
-///   predicate would duplicate this traversal.
+/// - provides: both halves of the audit graph's direct edges and the projection
+///   set used by the sealing-provenance gate. Predicates check leaf,
+///   unreadable, direct-reference and root code-edge cases without repeating
+///   the traversal.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — constant roots and sealed atoms contribute their exact
-///   positions; opaque code edges do not leak into sealing provenance.
+/// - hypothesis: L3 — a pair containing a constant and a quoted atom separates
+///   the two reference forms. Value and computation decoding formers separate
+///   follow from stop, and unreadable roots are empty in all four families.
+///   Existing admission witnesses cover finite transitive chains through codes.
+/// - witness: `env::tests::reachability_separates_references_and_code_edges`
+/// - witness: `env::tests::unreadable_roots_contribute_no_references`
 /// - witness: `env::tests::audit_reaches_an_axiom_named_only_inside_a_code`
+///
 /// - witness: `env::tests::sealing_provenance_does_not_follow_codes`
 /// - witness: `env::tests::a_type_level_atom_reference_reaches_the_audit`
+///
+/// # Termination
+/// - reason: the walk is a loop over one explicit worklist, not recursion.
+/// - measure: lexicographically, reachable node identities not yet seen and
+///   pending worklist length. First visits reduce the former; revisits enqueue
+///   nothing and reduce the latter.
+/// - boundedness: the finite arena and its finite child-reference fields bound
+///   the reachable identities, including unreadable ones.
+/// - input recursion: none.
 #[spec(ensures: |ret| match root {
-    AnyNode::Value(id) => match arena.value(id) { Some(&Value::Constant(index)) => ret.len() == 1 && ret.contains(&index), Some(&Value::Variable(_) | &Value::Unit | &Value::Literal(_)) | None => ret.is_empty(), _ => true },
-    AnyNode::ValueType(id) => match arena.value_type(id) { Some(&ValueType::Abstract(index)) => ret.len() == 1 && ret.contains(&index), Some(&ValueType::Element { .. }) if matches!(codes, CodeEdges::Stop) => ret.is_empty(), Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Empty | &ValueType::Universe { .. }) | None => ret.is_empty(), _ => true },
-    _ => true,
+    AnyNode::Value(id) => match arena.value(id) {
+        Some(&Value::Constant(index)) => ret.len() == 1_usize && ret.contains(&index),
+        Some(&Value::Variable(_) | &Value::Unit | &Value::Literal(_)) | None => ret.is_empty(),
+        _ => true,
+    },
+    AnyNode::Computation(id) => arena.computation(id).is_some() || ret.is_empty(),
+    AnyNode::ValueType(id) => match arena.value_type(id) {
+        Some(&ValueType::Abstract(index)) => ret.len() == 1_usize && ret.contains(&index),
+        Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Empty | &ValueType::Universe { .. }) | None => ret.is_empty(),
+        Some(&ValueType::Element { .. } | &ValueType::PathUniverse(..)) if matches!(codes, CodeEdges::Stop) => ret.is_empty(),
+        _ => true,
+    },
+    AnyNode::CompType(id) => match arena.comp_type(id) {
+        None => ret.is_empty(),
+        Some(&CompType::Element { .. }) if matches!(codes, CodeEdges::Stop) => ret.is_empty(),
+        _ => true,
+    },
 })]
 fn collect_reachable(
     arena: &TermArena,
@@ -1285,6 +1552,19 @@ fn audited_type_constants(
 ///   gate on the one surface whose whole job is to be falsifiable.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 — a direct sealed atom is retained, while a value decoded
+///   from a constant contributes no projected atom. The existing sealing test
+///   verifies that a constant reachable only through a code cannot justify a
+///   provenance entry.
+/// - witness: `env::tests::reachability_separates_references_and_code_edges`
+/// - witness: `env::tests::sealing_provenance_does_not_follow_codes`
+#[spec(ensures: |ret| match arena.value_type(root) {
+    Some(&ValueType::Abstract(index)) => ret.len() == 1_usize && ret.contains(&index),
+    Some(&ValueType::Base(_) | &ValueType::Unit | &ValueType::Universe { .. } | &ValueType::Element { .. }) | None => ret.is_empty(),
+    _ => true,
+})]
 #[inline]
 pub(crate) fn projected_atoms(
     arena: &TermArena,
@@ -1300,6 +1580,7 @@ mod tests
     use alloc::string::String;
     use alloc::vec;
 
+    use anodized::spec;
     use gandr_kernel_strata::Level;
     use gandr_kernel_strata::LevelConstant;
     use gandr_kernel_term::BaseType;
@@ -1753,12 +2034,138 @@ mod tests
     /// - provides: the fixture the staging and rollback cases are written over.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — the fixture's distinct staged regions drive admission
+    ///   refusal, abandonment and subsequent successful admission. Predicates
+    ///   check its unit roots, starting mark and outstanding registration.
+    /// - witness: `env::tests::outstanding_later_staged_content_refuses_admission`
+    /// - witness: `env::tests::abandoning_a_staged_declaration_releases_its_claim`
+    #[spec(captures: [entry_mark = environment.arena().watermark(), entry_len = environment.outstanding.marks.len()],
+    ensures: |ret| ret.content_start == entry_mark
+        && environment.outstanding.marks.len().checked_sub(1_usize) == Some(entry_len)
+        && environment.outstanding.marks.last() == Some(&entry_mark)
+        && match *ret.declaration.content() {
+            super::DeclarationContent::Def { declared, body } =>
+                matches!(environment.arena().value_type(declared), Some(&super::ValueType::Unit))
+                && matches!(environment.arena().value(body), Some(&super::Value::Unit)),
+            _ => false,
+        })]
     fn stage_unit(environment: &mut Environment) -> StagedDeclaration
     {
         let mut staging = environment.stage();
         let declared = staging.arena().value_type_unit();
         let body = staging.arena().value_unit();
         staging.def(LevelSignature::monomorphic(), declared, body)
+    }
+
+    #[test]
+    fn registration_resolution_preserves_multiplicity_and_order()
+    {
+        let mut arena = TermArena::new();
+        let low = arena.watermark();
+        let _value = arena.value_unit();
+        let middle = arena.watermark();
+        let unit = arena.value_type_unit();
+        let _returner = arena.comp_type_returner(unit);
+        let high = arena.watermark();
+        let mut marks = StagedMarks::default();
+        for mark in [middle, low, middle, high] {
+            marks.register(mark);
+        }
+        assert_eq!([middle, low, middle, high], marks.marks.as_slice());
+        marks.resolve(middle);
+        assert_eq!([low, middle, high], marks.marks.as_slice());
+        marks.resolve(middle);
+        assert_eq!([low, high], marks.marks.as_slice());
+        marks.resolve(middle);
+        assert_eq!([low, high], marks.marks.as_slice());
+        marks.resolve(low);
+        marks.resolve(high);
+        assert!(marks.marks.is_empty());
+    }
+
+    #[test]
+    fn abandonment_preserves_the_admission_floor()
+    {
+        let mut environment = Environment::new();
+        let earlier = stage_unit(&mut environment);
+        let later = stage_unit(&mut environment);
+        let admitted = environment
+            .add_decl(later)
+            .expect("the later declaration admits");
+        let declared = environment
+            .entries()
+            .get(usize::from(admitted.position()))
+            .expect("the admitted declaration exists")
+            .declared_id();
+        let before = environment.arena().watermark();
+        environment.abandon(earlier);
+        assert_eq!(before, environment.arena().watermark());
+        assert!(matches!(
+            environment.arena().value_type(declared),
+            Some(&super::ValueType::Unit)
+        ));
+        let report = environment.audit(admitted);
+        assert!(report.axioms().is_empty());
+        assert!(report.unchecked_admissions().is_empty());
+    }
+
+    #[test]
+    fn reachability_separates_references_and_code_edges()
+    {
+        let mut arena = TermArena::new();
+        let constant = ConstantIndex::from(7_usize);
+        let atom = ConstantIndex::from(9_usize);
+        let code = arena.value_constant(constant);
+        let abstract_type = arena.value_type_abstract(atom);
+        let quote = arena.value_quote(abstract_type);
+        let pair = arena.value_pair(code, quote);
+        assert_eq!(
+            super::BTreeSet::from([constant, atom]),
+            super::collect_reachable(
+                &arena,
+                super::AnyNode::Value(pair),
+                super::CodeEdges::Follow
+            ),
+        );
+        assert_eq!(
+            super::BTreeSet::from([atom]),
+            super::projected_atoms(&arena, abstract_type)
+        );
+        let value_decode = arena.value_type_element(code, Level::zero());
+        let computation_decode = arena.comp_type_element(code, Level::zero());
+        for root in [
+            super::AnyNode::ValueType(value_decode),
+            super::AnyNode::CompType(computation_decode),
+        ] {
+            assert_eq!(
+                super::BTreeSet::from([constant]),
+                super::collect_reachable(&arena, root, super::CodeEdges::Follow),
+            );
+            assert!(super::collect_reachable(&arena, root, super::CodeEdges::Stop).is_empty());
+        }
+        assert!(super::projected_atoms(&arena, value_decode).is_empty());
+    }
+
+    #[test]
+    fn unreadable_roots_contribute_no_references()
+    {
+        let mut arena = TermArena::new();
+        let before = arena.watermark();
+        let value = arena.value_constant(ConstantIndex::from(7_usize));
+        let computation = arena.computation_return(value);
+        let value_type = arena.value_type_abstract(ConstantIndex::from(9_usize));
+        let comp_type = arena.comp_type_returner(value_type);
+        arena.truncate_to(before);
+        for root in [
+            super::AnyNode::Value(value),
+            super::AnyNode::Computation(computation),
+            super::AnyNode::ValueType(value_type),
+            super::AnyNode::CompType(comp_type),
+        ] {
+            assert!(super::collect_reachable(&arena, root, super::CodeEdges::Follow).is_empty());
+        }
     }
 
     #[test]
@@ -1913,6 +2320,75 @@ mod tests
         assert!(
             environment.add_decl(first).is_ok(),
             "a discarded session holds no claim, so the earlier declaration admits"
+        );
+    }
+
+    #[test]
+    fn every_finisher_retains_its_claim_until_admission()
+    {
+        enum Finisher
+        {
+            Definition,
+            SealedDefinition,
+            Axiom,
+            AbstractType,
+        }
+
+        for finisher in [
+            Finisher::Definition,
+            Finisher::SealedDefinition,
+            Finisher::Axiom,
+            Finisher::AbstractType,
+        ] {
+            let mut environment = Environment::new();
+            let earlier = stage_unit(&mut environment);
+            let later = {
+                let mut staging = environment.stage();
+                let declared = staging.arena().value_type_unit();
+                let body = staging.arena().value_unit();
+                let kind = staging
+                    .arena()
+                    .value_type_universe(GroundSort::Value, Level::zero());
+                match finisher {
+                    | Finisher::Definition => {
+                        staging.def(LevelSignature::monomorphic(), declared, body)
+                    },
+                    | Finisher::SealedDefinition => {
+                        staging.sealed_def(LevelSignature::monomorphic(), declared, body, vec![])
+                    },
+                    | Finisher::Axiom => staging.axiom(LevelSignature::monomorphic(), declared),
+                    | Finisher::AbstractType => {
+                        staging.abstract_type(LevelSignature::monomorphic(), kind)
+                    },
+                }
+            };
+            let before = environment.arena().watermark();
+            assert_eq!(
+                Err(KernelError::OutstandingStagedContent {
+                    above: OutstandingCount::from(1_usize)
+                }),
+                environment.add_decl(earlier),
+            );
+            assert_eq!(before, environment.arena().watermark());
+            assert!(environment.add_decl(later).is_ok());
+        }
+    }
+
+    #[test]
+    fn implicit_staging_drop_releases_its_claim()
+    {
+        let mut environment = Environment::new();
+        let first = stage_unit(&mut environment);
+        let before = environment.arena().watermark();
+        {
+            let mut abandoned = environment.stage();
+            let _discarded = abandoned.arena().value_unit();
+        }
+        assert_eq!(before, environment.arena().watermark());
+        assert_eq!(vec![first.content_start], environment.outstanding.marks);
+        assert!(
+            environment.add_decl(first).is_ok(),
+            "implicit abandonment cannot block an earlier declaration"
         );
     }
 
