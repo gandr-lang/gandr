@@ -99,7 +99,7 @@ The goldens live in `tests/golden/`, one `.narrow.txt` at 40 columns and one `.w
 
 The printer asks one question of its input, the former at a node, through the `Source` trait, and reads nothing else. `CoreSource` answers it over the core arena; `gandr-surface-repl` answers it over the incremental checker's content tables, beside the face that holds them, so this crate depends on neither the checkpoint store nor the table format.
 
-- **Alternatives.** Taking the core arena alone would make a face holding content tables mint a core arena first, duplicating the checker's own minting and adding the incremental tier to this crate's dependencies. The prior implementation printed surface types and values that the engine built for it, a tree that cannot be malformed and that no checkpoint holds.
+- **Alternatives.** Taking the core arena alone would make a face holding content tables mint a core arena first, duplicating the checker's own minting and adding the incremental tier to this crate's dependencies.
 - **Reversal.** A second reader needs more than the former per node — a span, an origin for a binder name — at which point the question widens, or the per-node dispatch shows in a profile.
 
 ## One spelling per former
@@ -108,40 +108,36 @@ Every former has exactly one spelling, the one the surface grammar parses, so a 
 
 A node the surface has no spelling for — a lift, the numeric atom, a linear or unbound variable, a term where a type stands — is written `?`, and a thunk value `<thunk>`; each makes the presentation approximate. Fidelity is recorded by the nodes the walk met, so a name that happens to contain `?` stays faithful.
 
-The prior implementation spelled its own surface — `Π(x : A). B`, `→`, `U` and `F` — and parenthesized every arrow, so `Integer → String → F Unit` printed as `(Integer → (String → F Unit))`. Here the spellings are the grammar's, and a right-nested chain is bare because the grammar parses it so: the REPL's corpus witness expects every signature's line to be its source's own text.
+A right-nested arrow chain stays bare because the grammar parses it so. The REPL's corpus witness expects each signature's line to be its source's own text.
 
-- **Alternatives.** Spelling the prior implementation's notation would print text the surface cannot read back. Parenthesizing every compound operand is simpler to state and makes every chain longer than its source.
+- **Alternatives.** A notation independent of the grammar would print text the surface cannot read back. Parenthesizing every compound operand is simpler to state but lengthens every chain.
 - **Reversal.** A ruled change to the grammar's spellings or bands; this crate follows it, never leads it.
 
 ## Break points
 
 A break point is a choice between the byte the one-line spelling carries there and a line break: after an arrow, an infix symbol and a comma, a space or a break indented two columns; before a bracket's closer, nothing or a break. The broken branch stands first, matching the layout engine's left-biased fallback when both alternatives are width-tainted. Each choice is independent of the others, so the least-cost layout may break inside a parenthesized operand where that alone fits the page: the narrow page of the example above breaks inside `+U (a -> -F b)`.
 
-- **Alternatives.** A group per arrow chain, breaking all of its arrows or none, outer chains before inner, reads as the prior implementation's long dependent arrow did; under the cost order, overflow then line count, it takes more lines than a single inner break, and the engine would choose it only if inner breaks were offered inside the outer group's broken branch alone.
+- **Alternatives.** A group per arrow chain would break all arrows or none, outer chains before inner ones. Under the cost order, overflow then line count, this can take more lines than a single inner break. Independent choices allow that shorter layout.
 - **Reversal.** A reader rules that a chain breaks whole; the walk then builds chain groups and the goldens move with it.
 
-The computation width is twice the page. Past it the engine resolves without its optimality guarantee: a frontier wins over a tainted promise, and two tainted promises retain the left alternative. At zero columns, both the inline space and the two-column continuation indentation exceed the computation width; the broken separator remains the fallback (`goldens::tests::doubly_tainted_pair_keeps_the_broken_separator`). A wider computation width admits more memoized states; twice the page bounds that work. The choice reverses when a wider computation width improves a presentation at an acceptable cost.
+The computation width is twice the page, saturating at its maximum. Past it the engine resolves without its optimality guarantee: a frontier wins over a tainted promise, and two tainted promises retain the left alternative. At zero columns, both the inline space and the two-column continuation indentation exceed the computation width; the broken separator remains the fallback (`goldens::tests::doubly_tainted_pair_keeps_the_broken_separator`). A wider computation width admits more memoized states. The choice reverses when a wider computation width improves a presentation at an acceptable cost.
 
 ## Binder names
 
-The core is nameless, so a dependent arrow's binder and a static abstraction's are generated: `a` through `z`, then `a1`, `b1`, and so on, the outermost binder first, skipping every name the type mentions — a constant or an abstract type of that name. The prior implementation printed the binder name its surface type carried.
+The core is nameless, so a dependent arrow's binder and a static abstraction's are generated: `a` through `z`, then `a1`, `b1`, and so on, the outermost binder first, skipping every constant or abstract-type name encountered by the scan. A new binder is refused when the candidate counter cannot advance; cached names remain available. Name avoidance refers to the scanned view, not an atomic snapshot of a changing source.
 
 - **Alternatives.** Printing a de Bruijn index reads as nothing the surface parses; reusing a mentioned name would make the codomain ambiguous.
 - **Reversal.** The core carries a binder's source name as an origin hint, and the printer prints it when no mentioned name collides.
 
 ## Bounds
 
-Nothing here recurses. The walk drains an explicit task stack; a value deeper than `DEPTH_LIMIT`, 32 value formers, is written as its outer formers around one `<deep>` leaf, as the prior implementation did; and a source is visited at most 65,536 times, so a malformed one — a cycle above all — is written `?` rather than looping. The pre-scan for mentioned names and the walk reach the same nodes, so the scan's budget bounds the walk too. A layout ceiling is a `PresentationError`, never partial output.
+Nothing here recurses. Values stop at `DEPTH_LIMIT`, 32 value formers, with one `<deep>` leaf; static-spine inspection obeys that depth limit too. The naming scan and scheduled document walk each allow at most 65,536 visits. The walk has its own budget because a source may change after the scan; either pass can refuse with `?`, approximate, rather than loop. A late walk refusal can leave unused documents charged to the builder. A layout ceiling returns `PresentationError`, never partial output. Witness: `walk::tests::changing_source_is_still_bounded_by_the_walk_budget`.
 
 ## Tests: the floor and the deferred rows
 
-The prior implementation's 16 golden tests are the floor. Eight are here under their names and eight wait for a former the core does not carry yet.
+The golden fixtures cover exact grammar spellings and their narrow and wide layouts; [Provided features](#provided-features) names their observers. Boundary witnesses cover truncation across all four core-node families, admission-table endpoints, depth saturation, candidate rounds, binder exhaustion, error causes and layout refusals.
 
-| Floor | Here | Deferred |
-| ----- | ---- | -------- |
-| 16 | 8 | 8 |
-
-The ported rows take the core's forms. `dependent_function_type_breaks_before_codomain` and `long_dependent_function_type_breaks_at_the_narrow_page` bind universes with generated names where the prior rows bound named values; the small one stays on one line at both pages, as before. `arrow_chain_breaks_before_each_continuation` is the same chain, bare. `record_value_breaks_fields_at_the_narrow_page` carries the prior record's three fields as a right-nested pair, and `nullary_declared_data_uses_its_bare_name` the nullary declared type as an abstract type. `string_controls_stay_in_one_escaped_literal`, `pair_of_injections_pins_sum_notation` and `beyond_the_depth_limit_renders_deep` keep their values, the last with `Inl(…)` where the prior row nested lists.
+Run `RUSTFLAGS="--cfg anodized_panic" cargo nextest run -p gandr-surface-pretty` to execute the predicates as well as the independent assertions. Adequacy blocks state the finite input domains and the mutations each witness distinguishes; they do not claim exhaustive coverage.
 
 Deferred, with the former each needs:
 
@@ -156,7 +152,7 @@ Deferred, with the former each needs:
 | `annotations_are_transparent` | an annotated value; no core value carries one |
 | `here_witness_pins_identity_notation` | the identity witness |
 
-The crate carries 16 tests: the eight ported rows and eight additional witnesses — every type former's spelling, universes, binder names, the static formers, every value leaf, malformed sources, fidelity by node, and the doubly-tainted separator at zero columns.
+Executable exemptions remain at opaque observation boundaries: the abstract source reader, child-handle provenance without its source, admission-table correspondence to declarations not held by the adapter, and formatting into an opaque destination. Their source contracts name the missing observer; concrete reader, borrowed-key and error-chain obligations retain executable predicates.
 
 ## License
 

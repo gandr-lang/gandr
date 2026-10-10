@@ -53,7 +53,21 @@ impl fmt::Display for PresentationError
     /// Writes the failure as one sentence naming what refused.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a one-line diagnostic preserving the wrapped failure's
+    ///   details and distinguishing document construction from rendering.
+    /// - provides: a human-readable presentation refusal.
+    /// - fails: a formatting error if the destination refuses a write.
+    /// - panics: none.
+    /// - executable: none — the formatter exposes neither written output nor an
+    ///   independent observer of the destination's write failures.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — distinct build and render limit failures retain their
+    ///   numeric bounds without line endings. Dropped, duplicated or replaced
+    ///   bounds change this observer; exact wording and rejecting destinations
+    ///   are outside these fixtures.
+    /// - witness: `error::tests::error_details_preserve_their_limits_and_sources`
     #[inline]
     fn fmt(
         &self,
@@ -81,6 +95,18 @@ impl core::error::Error for PresentationError
     /// - provides: the error chain a caller reports.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 — build and render limit failures expose their exact
+    ///   typed causes, while an unbalanced walk has no cause. Erasing a cause,
+    ///   changing its variant or replacing its bound changes this observer;
+    ///   other layout failure payloads are outside these fixtures.
+    /// - witness: `error::tests::error_details_preserve_their_limits_and_sources`
+    #[anodized::spec(ensures: |ret| match *self {
+        | Self::Build(ref error) => ret.and_then(|cause| cause.downcast_ref::<BuildError>()) == Some(error),
+        | Self::Render(ref error) => ret.and_then(|cause| cause.downcast_ref::<RenderError>()) == Some(error),
+        | Self::Unbalanced => ret.is_none(),
+    })]
     #[inline]
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)>
     {
@@ -89,5 +115,59 @@ impl core::error::Error for PresentationError
             | Self::Render(ref error) => Some(error),
             | Self::Unbalanced => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests
+{
+    use alloc::string::ToString as _;
+    use core::error::Error as _;
+
+    use gandr_surface_layout::error::BuildLimitKind;
+    use gandr_surface_layout::error::RenderLimitKind;
+
+    use super::BuildError;
+    use super::PresentationError;
+    use super::RenderError;
+
+    /// Diagnostic boundaries retain both concrete causes and numeric details.
+    #[test]
+    fn error_details_preserve_their_limits_and_sources()
+    {
+        let build = BuildError::LimitExceeded {
+            kind: BuildLimitKind::DocNodes,
+            limit: 17_u64.into(),
+        };
+        let render = RenderError::LimitExceeded {
+            kind: RenderLimitKind::OutputBytes,
+            limit: 29_u64.into(),
+        };
+        let build_error = PresentationError::Build(build);
+        let render_error = PresentationError::Render(render);
+        assert_eq!(
+            build_error
+                .source()
+                .and_then(|cause| cause.downcast_ref::<BuildError>()),
+            Some(&build),
+        );
+        assert!(matches!(
+            render_error.source().and_then(|cause| cause.downcast_ref::<RenderError>()),
+            Some(&RenderError::LimitExceeded { kind: RenderLimitKind::OutputBytes, limit })
+                if limit == 29_u64.into()
+        ));
+        for (error, bound) in [(build_error, 17_u64), (render_error, 29_u64)] {
+            let written = error.to_string();
+            assert!(!written.contains(['\r', '\n']));
+            assert!(
+                written
+                    .split_whitespace()
+                    .filter_map(|part| part.parse::<u64>().ok())
+                    .eq([bound])
+            );
+        }
+        let unbalanced = PresentationError::Unbalanced;
+        assert!(unbalanced.source().is_none());
+        assert!(!unbalanced.to_string().contains(['\r', '\n']));
     }
 }
