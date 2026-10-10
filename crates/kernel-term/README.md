@@ -161,19 +161,19 @@ Assigning an unassigned tag or kind byte, or filling a reserved slot that is fra
 
 ## Sharing and compression
 
-The kernel preserves sharing and never creates it. The crate has no interning table and no content-keyed memo of values; a decode hands over exactly the sharing the artifact encodes, id equality is a positive-only fast path deciding reflexive pairs, and any pass that creates sharing is elaborator-side. A decoded artifact owns its arena.
+Arena allocation does not intern nodes. Encoding does: child-first entry bytes are content keys shared across declaration segments, so separately allocated equal subgraphs can become one wire entry. Decoding preserves the sharing of the accepted canonical table in an owned, flat arena. Equal ids identify one node; distinct ids do not establish semantic inequality. This format interning is not an evaluation memo or a proof of typing or admission.
 
 Compression is a storage and transport concern. The canonical bytes are the bytes, and no codec sits inside a reader whose rejection vocabulary has to stay clean. The bytes are declaration-segmented and self-delimiting.
 
 ## Specification attributes
 
-The `# Specification` prose is the statement of record; a combined `#[spec(...)]` attribute mirrors it where the clause is a cheap runtime predicate.
+Clause-bearing items carry executable `#[spec(...)]` predicates or a local `executable: none` explanation, with `# Adequacy` linking their evidence. Checks observe decimal normalization, arena prefix frames, declaration lifecycle and metadata, exact wire fields, borrowed cursor ranges, typed refusals and budget precedence. Const predicates compare inner ordinals without adding a second identity vocabulary. A predicate checks its stated projection on an executed call; it does not turn a transported producer claim into admission evidence.
 
-- `check_budget` accepts exactly when both expanded-work caps hold, stated as one conjunction against the body's two sequential guards, where the amplification defence binds.
-- `EncodedArtifact::put_uvarint` states the terminator half of varint minimality, and `ArtifactImage::span` the in-bounds condition of every adversarial read.
-- `LevelSignature::new`, `DeclarationBuilder::sealed_def` and `DeclarationBuilder::abstract_type` pin the content variant and slot arity each finisher promises, which separates adjacent finishers that differ only in a variant.
+Encoding requires live, acyclic reachable graphs and an interner used with the unchanged arena it addresses. Enforced predicates reject stale roots. Treating a missing computation or computation type as a unit is not a valid alternative: those families have no unit former. A fallible recovery API would be a separate design, not a fabricated wire fallback. Arena ids carry neither provenance nor a reuse generation; a coincident ordinal alone cannot establish origin.
 
-Two sites keep prose and say why at the site. `TermArena::truncate_to` would panic on its documented stale-watermark no-op if `self.watermark() == watermark` were asserted. `TermArena::children_of` defines "strictly less than the node's own id" only within one family, and it is the edge relation every walk over the arena runs.
+Literal byte fixtures independently pin every former, payload and child position. Decoder witnesses vary every tag byte, proper prefixes, reference order and polarity, normalization residues and the arithmetic ceilings. Local normalization is not canonical-wire acceptance: decoding also compares the whole artifact with its re-encoding. That agreement check is not an independent format oracle. Budget witnesses use explicit expansion and widened arithmetic; the integration diamond model saturates the final tree size, including the exact `u64::MAX` boundary, rather than saturating a power before subtraction.
+
+The deep-graph witness walks 100,000 thunk-over-returner links to unit and drops the sole decoded owner on a 256 KiB stack. An entry count alone cannot prove depth. This is evidence for that shape and stack bound, not all graph shapes or allocation failures. Formatter effects, non-callable data and policy constants, the consuming builder-discard boundary and an opaque test strategy state their unobservable obligations and witnesses at their definitions.
 
 ## License
 
