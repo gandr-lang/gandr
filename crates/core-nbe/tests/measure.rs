@@ -1,3 +1,14 @@
+// Specification backfill pending (gandr-lang/gandr#9): the executable-
+// specification lints are allowed until this crate's own backfill lands.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        spec_attribute_present,
+        adequacy_present,
+        maybe_shape,
+        erased_error_signature
+    )
+)]
 //! The sharing measure against the erasure, and inside a small stack.
 //!
 //! # The expansion is what the unshared walk visits

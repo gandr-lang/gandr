@@ -1,3 +1,14 @@
+// Specification backfill pending (gandr-lang/gandr#9): the executable-
+// specification lints are allowed until this crate's own backfill lands.
+#![cfg_attr(
+    dylint_lib = "quenchant_dylints",
+    allow(
+        spec_attribute_present,
+        adequacy_present,
+        maybe_shape,
+        erased_error_signature
+    )
+)]
 //! Recognition as scoped resolution: the outermost scope seeded from ordered
 //! tables, the shadow policy that settles a source name over a builtin, and
 //! the lowering that declares every name and reports every binder against it.
