@@ -183,6 +183,9 @@ impl Unfoldings
     ///   opaque is compared by name only.
     /// - fails: never.
     /// - panics: none.
+    /// - executable: none — provenance and closure require the replay arena,
+    ///   which construction does not receive; lookup is the executable observer
+    ///   of the transferred vector.
     ///
     /// # Adequacy
     /// - hypothesis: L3 — the sole surface is the position lookup, separated by
@@ -209,6 +212,7 @@ impl Unfoldings
     /// # Adequacy
     /// - hypothesis: L3 — as [`Self::new`].
     /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
+    #[spec(ensures: |ret| ret == self.bodies.get(usize::from(constant)).copied().unwrap_or(Unfoldable::Opaque))]
     #[inline]
     #[must_use]
     pub fn unfolding(
@@ -270,6 +274,13 @@ impl Default for ReplayBudget
     /// - provides: the budget a caller with no measured bound passes.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: accepted, contradicted, and malformed finite traces
+    ///   run with the default budget; the numerical default is not pinned.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    #[spec(ensures: |ret| ret.0 == Self::DEFAULT.0)]
     #[inline]
     fn default() -> Self
     {
@@ -287,6 +298,12 @@ impl From<u64> for ReplayBudget
     /// - provides: the budget's construction.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: zero, one, and maximum budgets preserve the admission
+    ///   boundary through the public count wrapper.
+    /// - witness: `replay::tests::budget_exhaustion_survives_the_counter_ceiling`
+    #[spec(ensures: |ret| ret.0 == steps)]
     #[inline]
     fn from(steps: u64) -> Self
     {
@@ -304,6 +321,12 @@ impl From<ReplayBudget> for u64
     /// - provides: the budget's count.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: zero, one, and maximum budgets preserve the admission
+    ///   boundary through the public count wrapper.
+    /// - witness: `replay::tests::budget_exhaustion_survives_the_counter_ceiling`
+    #[spec(ensures: |ret| ret == budget.0)]
     #[inline]
     fn from(budget: ReplayBudget) -> Self
     {
@@ -326,6 +349,13 @@ impl From<usize> for TracePosition
     /// - provides: the position's construction.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: refusals at positions zero, one, and two retain their
+    ///   exact decision index; no larger trace is claimed.
+    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    #[spec(ensures: |ret| ret.0 == position)]
     #[inline]
     fn from(position: usize) -> Self
     {
@@ -343,6 +373,12 @@ impl From<TracePosition> for usize
     /// - provides: the position's count.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: consuming a decision at the position ceiling cannot
+    ///   wrap its reported index; consuming the end leaves it unchanged.
+    /// - witness: `replay::tests::trace_consumption_preserves_the_end_and_position_ceiling`
+    #[spec(ensures: |ret| ret == position.0)]
     #[inline]
     fn from(position: TracePosition) -> Self
     {
@@ -409,6 +445,8 @@ pub enum ReplayDecline
 ///   equivalence, distinct from this enum's Rust equality. The unit and
 ///   composition laws quantify over certified verdicts only. Purity also
 ///   preserves declines, without making them certified evidence.
+/// - executable: none — evidence equivalence needs two traces and their replay
+///   context, not one stored verdict.
 ///
 /// | Class | Verdict or reason |
 /// | --- | --- |
@@ -492,18 +530,23 @@ pub enum KernelVerdict
 /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
 /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
 /// - witness: `replay_laws::laws::replay_is_pure_across_repeated_and_cloned_arenas`
+/// - witness: `replay::tests::engine_decline_and_zero_budget_do_not_read_the_trace`
+/// - witness: `replay::tests::reduced_heads_retain_application_and_bind_frames`
 // Unit and cross-run purity are witnessed relations, not predicates over one
 // result. The executable clause checks their per-call boundary: rollback and
 // preservation of the claimed verdict, including the no-dialogue case.
-#[spec(captures: [entry = arena.watermark()], ensures: |ret| {
-    arena.watermark() == entry && matches!((claim, ret),
+#[spec(
+    captures: before = arena.watermark(),
+    ensures: |ret| arena.watermark() == before && match (claim, ret) {
+        (EngineClaim::Declined, KernelVerdict::Declined(ReplayDecline::EngineDeclined)) => true,
+        (EngineClaim::Declined, _) | (_, KernelVerdict::Declined(ReplayDecline::EngineDeclined)) => false,
         (EngineClaim::Convertible, KernelVerdict::Convertible)
         | (EngineClaim::NotConvertible, KernelVerdict::NotConvertible)
-        | (EngineClaim::Declined, KernelVerdict::Declined(ReplayDecline::EngineDeclined))
-        | (EngineClaim::Convertible | EngineClaim::NotConvertible,
-           KernelVerdict::Declined(ReplayDecline::Budget | ReplayDecline::Refused(_)))
-    )
-})]
+        | (_, KernelVerdict::Declined(ReplayDecline::Refused(_))) => budget.0 > 0,
+        (_, KernelVerdict::Declined(ReplayDecline::Budget)) => true,
+        _ => false,
+    },
+)]
 #[inline]
 #[must_use]
 pub fn replay<I>(
@@ -601,6 +644,18 @@ impl Frozen
     /// - provides: the frozen test a head's status reads.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a defined head is frozen only on the selected side,
+    ///   while an opaque head stays opaque on both sides.
+    /// - witness: `replay::tests::frozen_heads_are_side_local_and_opacity_takes_precedence`
+    #[spec(ensures: |ret| {
+        let selected = match side {
+            ConversionSide::Left => &self.left,
+            ConversionSide::Right => &self.right,
+        };
+        ret.len() == selected.len() && core::ptr::eq(ret.as_ptr(), selected.as_ptr())
+    })]
     fn side(
         &self,
         side: ConversionSide,
@@ -620,6 +675,16 @@ impl Frozen
     /// - provides: the effect of a `Freeze` decision.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: freezing either side changes only that side of a
+    ///   defined head; freezing an opaque head cannot make it unfoldable.
+    /// - witness: `replay::tests::frozen_heads_are_side_local_and_opacity_takes_precedence`
+    #[spec(
+        captures: other_count = self.side(opposite(side)).len(),
+        ensures: self.side(side).contains(&constant)
+            && self.side(opposite(side)).len() == other_count,
+    )]
     fn freeze(
         &mut self,
         side: ConversionSide,
@@ -838,6 +903,20 @@ impl Structure
     ///   refute through.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: empty neutral spines close positively, while ordered
+    ///   case and application premises admit only the selected refuting
+    ///   subgoal.
+    /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
+    #[spec(
+        captures: count = premises.len(),
+        ensures: |ret| match ret {
+            Self::Leaf(Expect::Convertible) => count == 0,
+            Self::Premises(ref children) => count > 0 && children.len() == count,
+            Self::Leaf(Expect::NotConvertible) => false,
+        },
+    )]
     fn of(premises: Vec<Premise>) -> Self
     {
         if premises.is_empty() {
@@ -986,6 +1065,20 @@ where
     ///   stack of goals, not recursion.
     /// - measure: the budget left: every goal's settling charges at least one
     ///   step, and the loop stops at the first charge past the budget.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: accepted finite traces, leftover decisions,
+    ///   contradictory claims, and a diverging term separate the driver
+    ///   outcomes; the bound is the charged steps, not elapsed time.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
+    #[spec(ensures: |ret| match ret {
+        Ok(()) => self.trace.size_hint() == (0, Some(0)),
+        Err(Stop::Refused(ReplayRefusal::Leftover { at })) => at.0 == self.position && self.trace.size_hint().0 > 0,
+        Err(Stop::Budget) => self.spent >= self.budget,
+        Err(Stop::Refused(_)) => true,
+    })]
     fn drive(
         &mut self,
         root: Goal,
@@ -1014,13 +1107,31 @@ where
     /// # Errors
     /// As [`Self::drive`].
     ///
+    /// # Termination
+    /// - reason: the `loop` below, which rewrites the goal in place, not
+    ///   recursion.
+    /// - measure: the budget left: every iteration charges one step.
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — at finite budgets, valid and corrupt dialogues
-    ///   separate positive replay, named refusal and exhaustion; no budget
-    ///   grants a verdict.
-    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    /// - hypothesis: L3: shared comparison, force, eta, and positive or
+    ///   negative decomposition preserve the owed verdict of every scheduled
+    ///   premise; finite traces and the budget witness do not establish
+    ///   completeness of conversion.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
     /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
-    #[spec(captures: before = self.spent, ensures: |ret| self.spent >= before && match ret { Ok(()) => self.spent <= self.budget, Err(Stop::Budget) => self.spent > self.budget, Err(_) => true })]
+    /// - witness: `replay::tests::the_replay_refuses_a_trace_that_does_not_replay`
+    #[spec(
+        captures: before = (self.spent, goals.len(), goal.expect),
+        ensures: |ret| {
+            let (spent, previous_goals, owed) = before;
+            self.spent >= spent
+                && (!matches!(ret, Err(Stop::Budget)) || self.spent >= self.budget)
+                && (ret.is_err() || (self.spent > spent && self.spent <= self.budget
+                    && goals.get(previous_goals..).is_some_and(|pending| pending.iter().all(|next| next.expect == owed))))
+        },
+    )]
     fn settle(
         &mut self,
         mut goal: Goal,
@@ -1105,12 +1216,27 @@ where
     /// [`Stop::Refused`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — named constant decisions consume evidence; shortcut
-    ///   and frozen refutations refuse rather than inheriting a positive
-    ///   premise.
+    /// - hypothesis: L3: named-head unfolding and postponed-head traces
+    ///   distinguish side and name mismatches; freeze and shortcut traces
+    ///   reject negative authority before consumption. These fixtures bound
+    ///   dispatch, not every possible spine.
     /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
     /// - witness: `replay::tests::a_frozen_branch_cannot_carry_a_refutation`
-    #[spec(captures: before = self.position, ensures: |ret| self.position >= before && ret.as_ref().map_or(true, |_| self.position > before))]
+    #[spec(
+        requires: shapes.iter().any(|shape| matches!(shape, &&Shape::Neutral(Head::Constant(_, Status::Defined), _))),
+        captures: before = (self.position, goals.len()),
+        ensures: |ret| self.position >= before.0 && self.position <= before.0.saturating_add(2)
+            && match ret {
+                Ok(Flow::Settled) => goal.expect == Expect::Convertible
+                    && self.position == before.0.saturating_add(1)
+                    && goals.get(before.1..).is_some_and(|pending| pending.iter().all(|next| next.expect == Expect::Convertible)),
+                Ok(Flow::Continue) => self.position > before.0
+                    && (self.position != before.0.saturating_add(2) || *postponed == Postponed::Nothing),
+                Err(Stop::Refused(ReplayRefusal::NonAuthoritative { at })) =>
+                    goal.expect == Expect::NotConvertible && at.0 == before.0 && self.position == before.0,
+                Err(_) => true,
+            },
+    )]
     fn constants(
         &mut self,
         goal: &mut Goal,
@@ -1252,6 +1378,29 @@ where
     ///
     /// # Errors
     /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a thunk against a neutral consumes two force decisions
+    ///   before eta; a wrong second decision refuses at its position without
+    ///   replacing either side.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    #[spec(
+        captures: before = (self.position, goal.left, goal.right),
+        ensures: |ret| if ret.is_ok() {
+            let agrees = |source, result| match (source, result) {
+                (Term::Value(value), Term::Computation(computation)) => match self.arena.value(value) {
+                    Some(&Value::Thunk(body)) => computation == body,
+                    Some(&(Value::Variable(_) | Value::Constant(_))) => self.arena.computation(computation) == Some(&Computation::Force(value)),
+                    _ => false,
+                },
+                _ => false,
+            };
+            self.position == before.0.saturating_add(2) && agrees(before.1, goal.left) && agrees(before.2, goal.right)
+        } else {
+            goal.left == before.1 && goal.right == before.2
+                && self.position >= before.0 && self.position <= before.0.saturating_add(2)
+        },
+    )]
     fn force(
         &mut self,
         goal: &mut Goal,
@@ -1284,14 +1433,18 @@ where
     /// [`Stop::Refused`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — forcing thunks exposes their bodies while native path
-    ///   introductions cannot masquerade as thunks.
+    /// - hypothesis: L3: replaying a suspended lambda against a free variable
+    ///   distinguishes opening a thunk from allocating a neutral force; other
+    ///   root classes are bounded by the executable local match.
     /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
     /// - witness: `path_universe::tests::no_k`
-    #[spec(ensures: |ret| match ret {
-        Ok(Term::Computation(body)) => match term { Term::Value(value) => match self.arena.value(value) { Some(&Value::Thunk(expected)) => body == expected, Some(&Value::Variable(_) | &Value::Constant(_)) => matches!(self.arena.computation(body), Some(&Computation::Force(found)) if found == value), _ => false }, Term::Computation(_) => false },
-        Err(Stop::Refused(ReplayRefusal::Unreadable)) => match term { Term::Value(value) => !matches!(self.arena.value(value), Some(&Value::Thunk(_) | &Value::Variable(_) | &Value::Constant(_))), Term::Computation(_) => true },
-        _ => false,
+    #[spec(ensures: |ret| match term {
+        Term::Value(value) => match self.arena.value(value) {
+            Some(&Value::Thunk(body)) => ret == Ok(Term::Computation(body)),
+            Some(&(Value::Variable(_) | Value::Constant(_))) => matches!(ret, Ok(Term::Computation(computation)) if self.arena.computation(computation) == Some(&Computation::Force(value))),
+            _ => ret == Err(unreadable()),
+        },
+        Term::Computation(_) => ret == Err(unreadable()),
     })]
     fn forced(
         &mut self,
@@ -1339,6 +1492,28 @@ where
     ///
     /// # Errors
     /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: eta on the neutral side opens the opposite lambda and
+    ///   introduces variable zero; a missing or wrong-side decision refuses
+    ///   after the same force prefix. The witness does not cover arbitrary open
+    ///   binder depths.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    #[spec(
+        captures: before = (self.position, goal.side(side), goal.side(opposite(side))),
+        ensures: |ret| if ret.is_ok() {
+            self.position == before.0.saturating_add(1)
+                && match (before.2, goal.side(opposite(side)), goal.side(side)) {
+                    (Term::Computation(lambda), Term::Computation(body), Term::Computation(applied)) =>
+                        self.arena.computation(lambda) == Some(&Computation::Lambda(body))
+                        && matches!(self.arena.computation(applied), Some(&Computation::Application(_, variable))
+                            if self.arena.value(variable) == Some(&Value::Variable(DeBruijnIndex::from(0)))),
+                    _ => false,
+                }
+        } else {
+            self.position == before.0 && goal.side(side) == before.1 && goal.side(opposite(side)) == before.2
+        },
+    )]
     fn eta(
         &mut self,
         goal: &mut Goal,
@@ -1379,10 +1554,12 @@ where
     ///
     /// # Specification
     /// - requires: the goal selected [`Rule::Structural`].
-    /// - ensures: a leaf closes at its verdict; a decomposition owing
-    ///   convertibility pushes every premise, and one owing a refutation pushes
-    ///   the premise the next `NegativeSubgoal` names.
-    /// - provides: the rules the vocabulary leaves implicit.
+    /// - ensures: a leaf closes at its verdict without consuming a decision. A
+    ///   decomposition may consume a leading `Decompose`; one owing
+    ///   convertibility pushes every premise, and one owing a refutation also
+    ///   consumes the `NegativeSubgoal` naming its selected premise. A refused
+    ///   negative subgoal leaves an already consumed `Decompose` consumed.
+    /// - provides: implicit structural rules and their optional trace marker.
     /// - fails: a refusal on a leaf against the owed verdict, or a refutation
     ///   without its negative subgoal.
     /// - panics: none.
@@ -1391,14 +1568,35 @@ where
     /// [`Stop::Refused`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — pair decomposition keeps both positive premises but a
-    ///   refutation selects exactly its named negative premise; a leaf rejects
-    ///   Decompose.
+    /// - hypothesis: L3: a pair and a case/application spine distinguish
+    ///   selecting the refuting premise from accepting a positive sibling or an
+    ///   out-of-range position; newly scheduled goals owe the parent verdict.
+    ///   Native path and flow fixtures separate an explicit decomposition from
+    ///   its subsequent refusal without restoring the consumed prefix.
     /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
     /// - witness: `path_universe::tests::it_computes_through_a_former`
+    /// - witness: `flow_universe::tests::formation_boundaries_refuse`
     #[spec(
-        captures: before = goals.len(),
-        ensures: |ret| match ret { Ok(()) => goals.len() >= before && goals.get(before..).is_some_and(|added| added.iter().all(|next| next.expect == goal.expect && next.frozen.left.is_empty() && next.frozen.right.is_empty())) && (goal.expect != Expect::NotConvertible || goals.len() <= before.saturating_add(1)), Err(_) => goals.len() == before },
+        requires: rule(left, right) == Rule::Structural,
+        captures: before = (goals.len(), self.position),
+        ensures: |ret| self.position >= before.1 && if ret.is_ok() {
+            goals.get(before.0..).is_some_and(|pending| {
+                pending.iter().all(|next| next.expect == goal.expect && next.frozen.left.is_empty() && next.frozen.right.is_empty())
+                    && if pending.is_empty() {
+                        self.position == before.1
+                    } else {
+                        match goal.expect {
+                            Expect::Convertible => self.position <= before.1.saturating_add(1),
+                            Expect::NotConvertible => pending.len() == 1
+                                && self.position >= before.1.saturating_add(1)
+                                && self.position <= before.1.saturating_add(2),
+                        }
+                    }
+            })
+        } else {
+            goals.len() == before.0 && self.position <= before.1.saturating_add(1)
+        },
     )]
     fn structural(
         &mut self,
@@ -1463,6 +1661,28 @@ where
     ///
     /// # Errors
     /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: return, lambda, pair, and neutral-spine fixtures
+    ///   distinguish ordered same-polarity premises from rigidly distinct
+    ///   leaves. The observer is the replayed positive or selected negative
+    ///   derivation, not a general normalization proof.
+    /// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
+    #[spec(ensures: |ret| match (left, right) {
+        (&Shape::Return(one), &Shape::Return(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one, other)]),
+        (&Shape::Lambda(one), &Shape::Lambda(other)) => matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::computations(one, other)]),
+        (&Shape::Former, &Shape::Former) => true,
+        (&Shape::Neutral(one, _), &Shape::Neutral(other, _)) if one == other => match ret {
+            Ok(Structure::Premises(ref premises)) => !premises.is_empty() && premises.iter().all(|premise|
+                matches!((premise.left, premise.right), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))),
+            Ok(Structure::Leaf(_)) => true,
+            Err(_) => false,
+        },
+        _ => ret == Ok(Structure::Leaf(Expect::NotConvertible)),
+    })]
     fn decompose(
         &self,
         goal: &Goal,
@@ -1513,19 +1733,32 @@ where
     /// [`Stop::Refused`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — asymmetric pair children keep order; native paths
-    ///   compare map syntax, not their evidence or extensional action.
+    /// - hypothesis: L3: pair refutations select the differing component and
+    ///   reject a positive sibling or an absent index; unit and distinct rigid
+    ///   leaves close at opposite verdicts. Quotes and larger former
+    ///   combinations are not claimed by these fixtures. Native path witnesses
+    ///   separate evidence from syntax; their predicate observes identity and
+    ///   root family without repeating conversion.
     /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
-    #[spec(ensures: |ret| match ret {
-        Ok(Structure::Premises(ref premises)) => match (self.arena.value(left), self.arena.value(right)) {
-            (Some(&Value::Pair(a, b)), Some(&Value::Pair(c, d))) => premises.iter().copied().eq([Premise::values(a, c), Premise::values(b, d)]),
-            (Some(&Value::Injection(a, x)), Some(&Value::Injection(b, y))) => a == b && premises.iter().copied().eq([Premise::values(x, y)]),
-            (Some(&Value::Lift { body: a, .. }), Some(&Value::Lift { body: b, .. })) => premises.iter().copied().eq([Premise::values(a, b)]),
-            _ => false,
-        },
-        Ok(Structure::Leaf(verdict)) if matches!(self.arena.value(left), Some(&Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. })) => (verdict == Expect::Convertible) == (equal_values(self.arena, left, right) == Convertibility::Convertible),
-        Ok(Structure::Leaf(_)) | Err(_) => true,
+    #[spec(ensures: |ret| match (self.arena.value(left), self.arena.value(right)) {
+        (None, _) | (_, None) => ret == Err(unreadable()),
+        (Some(one @ &(Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. })), Some(other)) =>
+            matches!(ret, Ok(Structure::Leaf(verdict)) if (left != right || verdict == Expect::Convertible)
+                && (core::mem::discriminant(one) == core::mem::discriminant(other) || verdict == Expect::NotConvertible)),
+        (Some(&Value::Unit), Some(&Value::Unit)) => ret == Ok(Structure::Leaf(Expect::Convertible)),
+        (Some(one @ &Value::Literal(_)), Some(other @ &Value::Literal(_))) =>
+            ret == Ok(Structure::Leaf(if one == other { Expect::Convertible } else { Expect::NotConvertible })),
+        (Some(&Value::Pair(one_first, one_second)), Some(&Value::Pair(other_first, other_second))) =>
+            matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_first, other_first), Premise::values(one_second, other_second)]),
+        (Some(&Value::Injection(one_side, one_body)), Some(&Value::Injection(other_side, other_body))) if one_side == other_side =>
+            matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_body, other_body)]),
+        (Some(&Value::Lift { target: ref one_target, body: one_body }), Some(&Value::Lift { target: ref other_target, body: other_body })) if one_target == other_target =>
+            matches!(ret, Ok(Structure::Premises(ref premises)) if premises.as_slice() == [Premise::values(one_body, other_body)]),
+        (Some(&Value::Quote(_)), Some(&Value::Quote(_))) | (Some(&Value::QuoteComputation(_)), Some(&Value::QuoteComputation(_))) =>
+            matches!(ret, Ok(Structure::Leaf(_)) | Err(Stop::Refused(ReplayRefusal::Unreadable))),
+        _ => ret == Ok(Structure::Leaf(Expect::NotConvertible)),
     })]
     fn formers(
         &self,
@@ -1633,6 +1866,21 @@ where
     ///
     /// # Errors
     /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: equal pairs, distinct rigid variables, thunks, and
+    ///   defined constants separate equality, rigid separation, and undecided
+    ///   comparison under both engine claims. Only root identity and polarity
+    ///   are executable here; the recursive relation is not rerun.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    #[spec(ensures: |ret| match (goal.left, goal.right) {
+        (Term::Value(left), Term::Value(right)) if left == right =>
+            ret == Ok(if self.arena.value(left).is_some() { Compared::Equal } else { Compared::Open }),
+        (Term::Computation(left), Term::Computation(right)) if left == right =>
+            ret == Ok(if self.arena.computation(left).is_some() { Compared::Equal } else { Compared::Open }),
+        (Term::Value(_), Term::Computation(_)) | (Term::Computation(_), Term::Value(_)) => ret == Err(unreadable()),
+        _ => ret.is_ok(),
+    })]
     fn compared(
         &self,
         goal: &Goal,
@@ -1670,19 +1918,32 @@ where
     /// - fails: never — a dangling id is flexible.
     /// - panics: none.
     ///
+    /// # Termination
+    /// - reason: the `while let Some(next) = work.pop()` loop over an explicit
+    ///   worklist, not recursion.
+    /// - measure: the multiset of arena positions on the worklist: a node is
+    ///   replaced by its children, which the arena minted before it within a
+    ///   family; a crossing between families is to a node the quote or the
+    ///   decode holds, and the arena is finite and acyclic across them.
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — quoted reducible terms do not justify negative
-    ///   equality, while native path records stay rigid regardless of
-    ///   translator reducibility.
+    /// - hypothesis: L3: units and distinct variables are rigid while thunks
+    ///   and defined constants prevent a shared comparison from closing
+    ///   negatively. This observer covers the root barriers and named pair
+    ///   fixtures, not every quoted type graph.
     /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
     /// - witness: `path_universe::tests::certificate_identity_stays_out_of_conversion`
     #[spec(ensures: |ret| match term {
         Term::Value(value) => match self.arena.value(value) {
-            Some(&Value::Unit | &Value::Literal(_) | &Value::Variable(_) | &Value::PathRefl(_) | &Value::PathProduct(..) | &Value::PathEquiv { .. }) => ret == Rigidity::Rigid,
+            Some(&(Value::Unit | Value::Literal(_) | Value::Variable(_) | Value::PathRefl(_) | Value::PathProduct(..) | Value::PathEquiv { .. })) => ret == Rigidity::Rigid,
+            Some(&Value::Constant(constant)) => (ret == Rigidity::Rigid) == (self.unfoldings.unfolding(constant) == Unfoldable::Opaque),
             Some(&Value::Thunk(_)) | None => ret == Rigidity::Flexible,
             _ => true,
         },
-        Term::Computation(id) => !matches!(self.arena.computation(id), Some(&Computation::Transport(..) | &Computation::Lambda(_) | &Computation::Bind(..) | &Computation::Case { .. }) | None) || ret == Rigidity::Flexible,
+        Term::Computation(computation) => match self.arena.computation(computation) {
+            Some(&(Computation::Transport(..) | Computation::Lambda(_) | Computation::Bind(..) | Computation::Case { .. })) | None => ret == Rigidity::Flexible,
+            _ => true,
+        },
     })]
     fn rigidity(
         &self,
@@ -1810,18 +2071,57 @@ where
     /// # Errors
     /// [`Stop::Refused`].
     ///
+    /// # Termination
+    /// - reason: the `loop` below, which descends a computation's head path,
+    ///   and the `while let` loop descending a value's static applications, not
+    ///   recursion.
+    /// - measure: the arena position of the focus, which falls at every descent
+    ///   because a child is minted before its parent.
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — native transport preserves neutral spines and path
-    ///   introductions remain formers; returned values and thunks never
-    ///   exchange polarity.
-    /// - witness: `path_universe::tests::refl_collapses`
+    /// - hypothesis: L3: force/eta traces and neutral case/application spines
+    ///   distinguish head classes and the order of their premises; static
+    ///   operator traces cover static application heads. The executable
+    ///   observer checks root shape and the outermost elimination without
+    ///   repeating the head walk.
     /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
-    #[spec(ensures: |ret| match ret {
-        Ok(Shape::Thunk(body)) => matches!(term, Term::Value(value) if matches!(self.arena.value(value), Some(&Value::Thunk(found)) if body == found)),
-        Ok(Shape::Lambda(body)) => matches!(term, Term::Computation(id) if matches!(self.arena.computation(id), Some(&Computation::Lambda(found)) if body == found)),
-        Ok(Shape::Return(value)) => matches!(term, Term::Computation(id) if matches!(self.arena.computation(id), Some(&Computation::Return(found)) if value == found)),
-        Ok(Shape::Former) => matches!(term, Term::Value(value) if self.arena.value(value).is_some_and(|node| !matches!(node, &Value::Variable(_) | &Value::Constant(_) | &Value::Thunk(_) | &Value::StaticApplication(..)))),
-        _ => true,
+    /// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
+    /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
+    /// - witness: `path_universe::tests::refl_collapses`
+    #[spec(ensures: |ret| match term {
+        Term::Value(value) => match self.arena.value(value) {
+            Some(&Value::Variable(index)) => matches!(ret, Ok(Shape::Neutral(Head::Variable(found), ref spine)) if found == index && spine.is_empty()),
+            Some(&Value::Constant(constant)) => matches!(ret, Ok(Shape::Neutral(head, ref spine)) if head == self.head(constant, frozen, side) && spine.is_empty()),
+            Some(&Value::Thunk(body)) => ret == Ok(Shape::Thunk(body)),
+            Some(&Value::StaticApplication(_, argument)) => match ret {
+                Ok(Shape::Neutral(_, ref spine)) => spine.last() == Some(&Elimination::StaticApply(argument))
+                    && spine.iter().all(|elimination| matches!(elimination, &Elimination::StaticApply(_))),
+                Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
+                _ => false,
+            },
+            Some(_) => ret == Ok(Shape::Former),
+            None => ret == Err(unreadable()),
+        },
+        Term::Computation(computation) => match self.arena.computation(computation) {
+            Some(&Computation::Lambda(body)) => ret == Ok(Shape::Lambda(body)),
+            Some(&Computation::Return(value)) => ret == Ok(Shape::Return(value)),
+            Some(node) => match ret {
+                Ok(Shape::Neutral(_, ref spine)) => match *node {
+                    Computation::Application(_, argument) => spine.last() == Some(&Elimination::Apply(argument)),
+                    Computation::Bind(_, body) => spine.last() == Some(&Elimination::Bind(body)),
+                    Computation::Force(_) => spine.as_slice() == [Elimination::Force],
+                    Computation::Absurd(_) => spine.as_slice() == [Elimination::Absurd],
+                    Computation::Transport(path, value) => if matches!(self.arena.value(path), Some(&Value::PathProduct(..))) {
+                        spine.as_slice() == [Elimination::ProductTransport(path)]
+                    } else { spine.as_slice() == [Elimination::Transport(value)] },
+                    Computation::Case { on_left, on_right, .. } => spine.as_slice() == [Elimination::Case(on_left, on_right)],
+                    _ => false,
+                },
+                Err(Stop::Refused(ReplayRefusal::Unreadable)) => true,
+                _ => false,
+            },
+            None => ret == Err(unreadable()),
+        },
     })]
     fn shape(
         &self,
@@ -1939,15 +2239,17 @@ where
     /// [`Stop::Refused`].
     ///
     /// # Adequacy
-    /// - hypothesis: L3 — only variables and constants head neutral
-    ///   eliminations; a native path cannot supply a force or case head.
+    /// - hypothesis: L3: a forced variable and a statically applied defined
+    ///   constant replay as neutral heads; a non-head value is refused by the
+    ///   local observer. The witnesses distinguish variable identity from the
+    ///   named constant rule.
     /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
     /// - witness: `path_universe::tests::no_k`
-    #[spec(ensures: |ret| match ret {
-        Ok(Head::Variable(index)) => matches!(self.arena.value(value), Some(&Value::Variable(found)) if index == found),
-        Ok(head @ Head::Constant(constant, _)) => matches!(self.arena.value(value), Some(&Value::Constant(found)) if constant == found && head == self.head(constant, frozen, side)),
-        Err(Stop::Refused(ReplayRefusal::Unreadable)) => !matches!(self.arena.value(value), Some(&Value::Variable(_) | &Value::Constant(_))),
-        Err(_) => false,
+    #[spec(ensures: |ret| ret == match self.arena.value(value) {
+        Some(&Value::Variable(index)) => Ok(Head::Variable(index)),
+        Some(&Value::Constant(constant)) => Ok(self.head(constant, frozen, side)),
+        _ => Err(unreadable()),
     })]
     fn value_head(
         &self,
@@ -1988,6 +2290,16 @@ where
     /// - provides: the status the constant rules read.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: body, operator, explicit opaque, and out-of-range
+    ///   entries are observed on both sides before and after freezing; opacity
+    ///   takes precedence over frozen membership.
+    /// - witness: `replay::tests::frozen_heads_are_side_local_and_opacity_takes_precedence`
+    #[spec(ensures: |ret| ret == Head::Constant(constant,
+        if self.unfoldings.unfolding(constant) == Unfoldable::Opaque { Status::Opaque }
+        else if frozen.side(side).contains(&constant) { Status::Frozen }
+        else { Status::Defined }))]
     fn head(
         &self,
         constant: ConstantIndex,
@@ -2022,13 +2334,26 @@ where
     /// # Errors
     /// [`Stop::Refused`].
     ///
+    /// # Termination
+    /// - reason: the `loop` descending the head path and the `while let` loop
+    ///   rebuilding it, not recursion.
+    /// - measure: the focus's arena position while descending, and the frames
+    ///   left while rebuilding.
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — unfolding one side leaves the opposite boundary
-    ///   unchanged and retains its elimination spine; operator argument order
-    ///   matters.
+    /// - hypothesis: L3: named-head traces distinguish the rewritten side and
+    ///   preserve the opposite side; operator instantiation preserves parameter
+    ///   order and ambient indices. The postcondition frames polarity and the
+    ///   untouched side without replaying substitution.
     /// - witness: `replay::tests::an_unfolding_fires_only_where_the_trace_names_its_head`
     /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
-    #[spec(captures: other = goal.side(opposite(side)), ensures: goal.side(opposite(side)) == other)]
+    #[spec(
+        captures: before = (goal.side(side), goal.side(opposite(side))),
+        ensures: |ret| goal.side(opposite(side)) == before.1 && if ret.is_ok() {
+            self.unfoldings.unfolding(constant) != Unfoldable::Opaque
+                && matches!((before.0, goal.side(side)), (Term::Value(_), Term::Value(_)) | (Term::Computation(_), Term::Computation(_)))
+        } else { goal.side(side) == before.0 },
+    )]
     fn unfold(
         &mut self,
         goal: &mut Goal,
@@ -2189,26 +2514,42 @@ where
     ///   none fires at its head, and the original id when none fired at all.
     /// - provides: the search-free reductions the trace never records.
     /// - fails: [`Stop::Budget`] on a term that reduces past the budget;
-    ///   [`ReplayRefusal::Unreadable`] on a dangling id.
+    ///   [`ReplayRefusal::Unreadable`] on a dangling computation or a value
+    ///   inspected by its reduction; a value root itself is left for shape
+    ///   checking.
     /// - panics: none.
     ///
     /// # Errors
     /// [`Stop::Budget`] or [`Stop::Refused`].
     ///
+    /// # Termination
+    /// - reason: the `loop` below, which takes one step per iteration, and the
+    ///   `while let` loop rebuilding the head path, not recursion.
+    /// - measure: the budget left, which every iteration charges; then the
+    ///   frames left.
+    ///
     /// # Adequacy
-    /// - hypothesis: L3 — beta and native transport reduce before decisions;
-    ///   values stay unchanged, and exhausted work cannot yield a computation
-    ///   result.
+    /// - hypothesis: L3: beta, force, bind, and injection reductions settle
+    ///   before decisions; a reduced head retains application and bind frames,
+    ///   while a self-application exhausts a finite budget. These observations
+    ///   bound weak-head behavior, not normalization completeness.
     /// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
+    /// - witness: `replay::tests::reduced_heads_retain_application_and_bind_frames`
+    /// - witness: `replay::tests::an_engine_decline_and_an_exhausted_budget_decline`
     /// - witness: `path_universe::tests::transport_computes`
     /// - witness: `path_universe::tests::refl_collapses`
-    #[spec(ensures: |ret| match (term, &ret) {
-        (Term::Value(value), &Ok(Term::Value(found))) => value == found,
-        (Term::Computation(_), &Ok(Term::Computation(id))) => self.spent <= self.budget && self.arena.computation(id).is_some(),
-        (Term::Computation(_), &Err(Stop::Budget)) => self.spent > self.budget,
-        (Term::Computation(_), &Err(Stop::Refused(_))) => true,
-        _ => false,
-    })]
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| match term {
+            Term::Value(_) => ret == Ok(term) && self.spent == before,
+            Term::Computation(_) => match ret {
+                Ok(Term::Computation(computation)) => self.spent > before && self.spent <= self.budget && self.arena.computation(computation).is_some(),
+                Err(Stop::Budget) => self.spent >= self.budget,
+                Err(Stop::Refused(_)) => true,
+                Ok(Term::Value(_)) => false,
+            },
+        },
+    )]
     fn whnf(
         &mut self,
         term: Term,
@@ -2315,7 +2656,22 @@ where
     /// `computation` under `frame`.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: the computation and the frame children live in the arena.
+    /// - ensures: an application keeps the computation as its head and the
+    ///   frame argument; a bind keeps it as the bound term and the frame body.
+    /// - provides: reconstruction of the unreduced outer elimination path.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a beta-reduced head under either an application or a
+    ///   bind remains convertible to the explicitly retained frame; dropping or
+    ///   exchanging the frame changes that verdict.
+    /// - witness: `replay::tests::reduced_heads_retain_application_and_bind_frames`
+    #[spec(ensures: |ret| self.arena.computation(ret) == Some(&match frame {
+        Frame::Apply(argument) => Computation::Application(computation, argument),
+        Frame::Bind(body) => Computation::Bind(computation, body),
+    }))]
     fn wrap(
         &mut self,
         computation: ComputationId,
@@ -2339,6 +2695,17 @@ where
     ///
     /// # Errors
     /// [`Stop::Refused`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: the same equal and rigidly separated pairs are
+    ///   replayed under both claims, distinguishing acceptance from a
+    ///   contradiction at the consumed decision.
+    /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+    #[spec(ensures: |ret| ret == if owed == verdict {
+        Ok(())
+    } else {
+        Err(Stop::Refused(ReplayRefusal::Contradicted { at: self.at() }))
+    })]
     fn close(
         &self,
         owed: Expect,
@@ -2355,26 +2722,58 @@ where
     ///
     /// # Specification
     /// - requires: nothing.
-    /// - ensures: the steps taken rise by one, saturating.
+    /// - ensures: an available step is charged exactly once; an exhausted
+    ///   budget is refused without changing the successful-step count.
     /// - provides: the replay's single bound.
-    /// - fails: [`Stop::Budget`] once the steps taken pass the budget.
+    /// - fails: [`Stop::Budget`] when no step remains, including at the counter
+    ///   ceiling.
     /// - panics: none.
     ///
     /// # Errors
     /// [`Stop::Budget`].
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: zero, one, and maximum budgets distinguish the last
+    ///   admitted step from every subsequent refusal; this bounds the counter
+    ///   transition, not the work within a replay step.
+    /// - witness: `replay::tests::budget_exhaustion_survives_the_counter_ceiling`
+    #[spec(
+        captures: before = self.spent,
+        ensures: |ret| if before < self.budget {
+            ret == Ok(()) && self.spent == before.saturating_add(1)
+        } else {
+            ret == Err(Stop::Budget) && self.spent == before
+        },
+    )]
     fn charge(&mut self) -> Result<(), Stop>
     {
-        self.spent = self.spent.saturating_add(1);
-        if self.spent > self.budget {
+        if self.spent >= self.budget {
             return Err(Stop::Budget);
         }
+        self.spent = self.spent.saturating_add(1);
         Ok(())
     }
 
     /// The next decision, unread.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: the next decision is observed without advancing its position.
+    /// - provides: lookahead shared by dispatch and refusal attribution.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: repeated lookahead preserves both a pending decision
+    ///   and the trace end; the reported position cannot wrap.
+    /// - witness: `replay::tests::trace_consumption_preserves_the_end_and_position_ceiling`
+    #[spec(
+        captures: before = self.position,
+        ensures: |ret| self.position == before && match ret {
+            Next::End => self.trace.size_hint() == (0, Some(0)),
+            Next::Decision(_) => self.trace.size_hint().0 > 0,
+        },
+    )]
     fn peek(&mut self) -> Next
     {
         match self.trace.peek() {
@@ -2386,7 +2785,21 @@ where
     /// Read past the next decision.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: a present decision advances the position with saturation; an
+    ///   exhausted trace leaves the position unchanged.
+    /// - provides: the consumed-prefix index carried by refusals.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: consuming the last decision and then the end separates
+    ///   advancement from exhaustion, including at the position ceiling.
+    /// - witness: `replay::tests::trace_consumption_preserves_the_end_and_position_ceiling`
+    #[spec(
+        captures: before = self.position,
+        ensures: self.position >= before && self.position <= before.saturating_add(1),
+    )]
     fn take(&mut self)
     {
         if self.trace.next().is_some() {
@@ -2406,7 +2819,22 @@ where
     /// The refusal for `next` read where it does not apply.
     ///
     /// # Specification
-    /// trivial.
+    /// - requires: nothing.
+    /// - ensures: an available decision is inapplicable at this position; an
+    ///   absent decision is exhausted rather than attributed to a slot.
+    /// - provides: the distinction between a wrong decision and a missing one.
+    /// - fails: never.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3: a missing eta decision and a wrong-side eta decision
+    ///   produce different refusals after the same force prefix.
+    /// - witness: `replay::tests::eta_and_force_open_the_suspended_sides`
+    #[spec(ensures: |ret| match (next, ret) {
+        (Next::Decision(_), Stop::Refused(ReplayRefusal::Inapplicable { at })) => at.0 == self.position,
+        (Next::End, Stop::Refused(ReplayRefusal::Exhausted)) => true,
+        _ => false,
+    })]
     const fn refuse(
         &self,
         next: Next,
@@ -2429,6 +2857,25 @@ where
 /// - provides: the rule table's dispatch, in the engine's order.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3: the finite product of former, thunk, lambda, return, and
+///   variable or constant head statuses observes constant priority, force
+///   priority, eta side, and structural fallback independently of term depth.
+/// - witness: `replay::tests::rule_dispatch_respects_constant_priority_and_eta_side`
+#[spec(ensures: |ret| {
+    let defined = [left, right].iter().any(|shape| matches!(shape, &&Shape::Neutral(Head::Constant(_, Status::Defined), _)));
+    let force = matches!((left, right), (&Shape::Thunk(_), &(Shape::Thunk(_) | Shape::Neutral(..))) | (&Shape::Neutral(..), &Shape::Thunk(_)));
+    let eta_left = matches!((left, right), (&Shape::Neutral(..), &Shape::Lambda(_)));
+    let eta_right = matches!((left, right), (&Shape::Lambda(_), &Shape::Neutral(..)));
+    match ret {
+        Rule::Constants => defined,
+        Rule::Force => !defined && force,
+        Rule::Eta(ConversionSide::Left) => !defined && !force && eta_left,
+        Rule::Eta(ConversionSide::Right) => !defined && !force && eta_right,
+        Rule::Structural => !defined && !force && !eta_left && !eta_right,
+    }
+})]
 fn rule(
     left: &Shape,
     right: &Shape,
@@ -2472,14 +2919,31 @@ fn rule(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — matching neutral eliminations retain their ordered
-///   premises; kind and length mismatches refute, including transport polarity.
+/// - hypothesis: L3: case branches followed by an application distinguish
+///   subgoal order; unequal spine lengths and application-versus-bind kinds
+///   refute without a decision; empty spines close positively. The fixtures do
+///   not enumerate all mixed spines.
+/// - witness: `replay::tests::neutral_spines_keep_subgoal_order_and_reject_kind_mismatches`
 /// - witness: `replay::tests::a_refutation_follows_its_negative_subgoal`
 /// - witness: `path_universe::tests::refl_collapses`
-#[spec(ensures: |ret| match ret {
-    Structure::Leaf(Expect::NotConvertible) => left.len() != right.len() || left.iter().zip(right).any(|(a, b)| core::mem::discriminant(a) != core::mem::discriminant(b)),
-    Structure::Leaf(Expect::Convertible) => left.len() == right.len() && left.iter().zip(right).all(|(a, b)| matches!((a, b), (&Elimination::Force, &Elimination::Force) | (&Elimination::Absurd, &Elimination::Absurd))),
-    Structure::Premises(ref premises) => left.len() == right.len() && left.iter().zip(right).all(|(a, b)| core::mem::discriminant(a) == core::mem::discriminant(b)) && premises.len() == left.iter().map(|item| match item { &Elimination::Force | &Elimination::Absurd => 0_usize, &Elimination::Case(..) => 2, _ => 1 }).sum::<usize>(),
+#[spec(ensures: |ret| {
+    let compatible = left.len() == right.len() && left.iter().zip(right).all(|(one, other)| core::mem::discriminant(one) == core::mem::discriminant(other));
+    match ret {
+        Structure::Leaf(Expect::NotConvertible) => !compatible,
+        Structure::Leaf(Expect::Convertible) => compatible && left.iter().all(|one| matches!(*one, Elimination::Force | Elimination::Absurd)),
+        Structure::Premises(ref premises) => compatible && !premises.is_empty() && {
+            let mut pending = premises.iter();
+            let ordered = left.iter().zip(right).all(|(one, other)| match (*one, *other) {
+                (Elimination::Force, Elimination::Force) | (Elimination::Absurd, Elimination::Absurd) => true,
+                (Elimination::Transport(one), Elimination::Transport(other)) | (Elimination::ProductTransport(one), Elimination::ProductTransport(other)) | (Elimination::Apply(one), Elimination::Apply(other)) | (Elimination::StaticApply(one), Elimination::StaticApply(other)) => pending.next() == Some(&Premise::values(one, other)),
+                (Elimination::Bind(one), Elimination::Bind(other)) => pending.next() == Some(&Premise::computations(one, other)),
+                (Elimination::Case(one_left, one_right), Elimination::Case(other_left, other_right)) =>
+                    pending.next() == Some(&Premise::computations(one_left, other_left)) && pending.next() == Some(&Premise::computations(one_right, other_right)),
+                _ => false,
+            });
+            ordered && pending.next().is_none()
+        },
+    }
 })]
 fn spines(
     left: &[Elimination],
@@ -2578,7 +3042,7 @@ mod tests
             sides,
             claim,
             trace.iter().copied(),
-            ReplayBudget::DEFAULT,
+            ReplayBudget::default(),
         )
     }
 
@@ -3249,6 +3713,319 @@ mod tests
                 assert_eq!(verdict, KernelVerdict::Declined(ReplayDecline::Budget));
                 assert_eq!(arena.watermark(), mark, "every reduct is truncated away");
             }
+        }
+    }
+
+    #[test]
+    fn budget_exhaustion_survives_the_counter_ceiling()
+    {
+        let mut arena = TermArena::new();
+        let unfoldings = Unfoldings::default();
+        for (spent, budget, expected, after) in [
+            (u64::MAX, u64::MAX, Err(super::Stop::Budget), u64::MAX),
+            (0, 0, Err(super::Stop::Budget), 0),
+            (0, 1, Ok(()), 1),
+            (u64::MAX.saturating_sub(1), u64::MAX, Ok(()), u64::MAX),
+        ] {
+            let mut run = super::Replay {
+                arena: &mut arena,
+                unfoldings: &unfoldings,
+                trace: core::iter::empty().peekable(),
+                position: 0,
+                spent,
+                budget: u64::from(ReplayBudget::from(budget)),
+                table: crate::ContentTable::new(),
+                memo: gandr_kernel_check_memo::NullMemo,
+            };
+            assert_eq!(run.charge(), expected);
+            assert_eq!(run.spent, after);
+            assert_eq!(run.charge(), Err(super::Stop::Budget));
+            assert_eq!(run.spent, after);
+        }
+    }
+
+    #[test]
+    fn trace_consumption_preserves_the_end_and_position_ceiling()
+    {
+        let mut arena = TermArena::new();
+        let unfoldings = Unfoldings::default();
+        for position in [0, usize::MAX] {
+            let mut replay = super::Replay {
+                arena: &mut arena,
+                unfoldings: &unfoldings,
+                trace: core::iter::once(SHARED).peekable(),
+                position,
+                spent: 0,
+                budget: 1,
+                table: crate::ContentTable::new(),
+                memo: gandr_kernel_check_memo::NullMemo,
+            };
+            assert_eq!(replay.peek(), super::Next::Decision(SHARED));
+            assert_eq!(replay.peek(), super::Next::Decision(SHARED));
+            assert_eq!(usize::from(replay.at()), position);
+            replay.take();
+            assert_eq!(usize::from(replay.at()), position.saturating_add(1));
+            assert_eq!(replay.peek(), super::Next::End);
+            replay.take();
+            assert_eq!(usize::from(replay.at()), position.saturating_add(1));
+            assert_eq!(replay.peek(), super::Next::End);
+        }
+    }
+
+    #[test]
+    fn frozen_heads_are_side_local_and_opacity_takes_precedence()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let unfoldings = Unfoldings::new(Vec::from([
+            Unfoldable::Body(unit),
+            Unfoldable::Operator {
+                parameters: ParameterCount::from(0),
+                body: unit,
+            },
+            Unfoldable::Opaque,
+        ]));
+        let replay = super::Replay {
+            arena: &mut arena,
+            unfoldings: &unfoldings,
+            trace: core::iter::empty().peekable(),
+            position: 0,
+            spent: 0,
+            budget: 1,
+            table: crate::ContentTable::new(),
+            memo: gandr_kernel_check_memo::NullMemo,
+        };
+        for (index, initial) in [
+            (0, super::Status::Defined),
+            (1, super::Status::Defined),
+            (2, super::Status::Opaque),
+            (3, super::Status::Opaque),
+            (usize::MAX, super::Status::Opaque),
+        ] {
+            let constant = ConstantIndex::from(index);
+            for side in [ConversionSide::Left, ConversionSide::Right] {
+                let mut frozen = super::Frozen::default();
+                assert_eq!(
+                    replay.head(constant, &frozen, side),
+                    super::Head::Constant(constant, initial)
+                );
+                frozen.freeze(side, constant);
+                let expected = if initial == super::Status::Opaque {
+                    initial
+                }
+                else {
+                    super::Status::Frozen
+                };
+                assert_eq!(
+                    replay.head(constant, &frozen, side),
+                    super::Head::Constant(constant, expected)
+                );
+                assert_eq!(
+                    replay.head(constant, &frozen, super::opposite(side)),
+                    super::Head::Constant(constant, initial)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rule_dispatch_respects_constant_priority_and_eta_side()
+    {
+        let mut arena = TermArena::new();
+        let unit = arena.value_unit();
+        let body = arena.computation_return(unit);
+        let name = ConstantIndex::from(0);
+        let shapes = [
+            super::Shape::Former,
+            super::Shape::Thunk(body),
+            super::Shape::Lambda(body),
+            super::Shape::Return(unit),
+            super::Shape::Neutral(super::Head::Variable(DeBruijnIndex::from(0)), Vec::new()),
+            super::Shape::Neutral(
+                super::Head::Constant(name, super::Status::Opaque),
+                Vec::new(),
+            ),
+            super::Shape::Neutral(
+                super::Head::Constant(name, super::Status::Frozen),
+                Vec::new(),
+            ),
+            super::Shape::Neutral(
+                super::Head::Constant(name, super::Status::Defined),
+                Vec::new(),
+            ),
+        ];
+        for (left_kind, left) in shapes.iter().enumerate() {
+            for (right_kind, right) in shapes.iter().enumerate() {
+                let expected = match (left_kind, right_kind) {
+                    | (7, _) | (_, 7) => super::Rule::Constants,
+                    | (1, 1 | 4 ..= 6) | (4 ..= 6, 1) => super::Rule::Force,
+                    | (2, 4 ..= 6) => super::Rule::Eta(ConversionSide::Right),
+                    | (4 ..= 6, 2) => super::Rule::Eta(ConversionSide::Left),
+                    | _ => super::Rule::Structural,
+                };
+                assert_eq!(
+                    super::rule(left, right),
+                    expected,
+                    "shape classes {left_kind}, {right_kind}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn neutral_spines_keep_subgoal_order_and_reject_kind_mismatches()
+    {
+        let mut arena = TermArena::new();
+        let none = Unfoldings::default();
+        let head = arena.value_variable(DeBruijnIndex::from(0));
+        let different = arena.value_variable(DeBruijnIndex::from(1));
+        let unit = arena.value_unit();
+        let same_branch = arena.computation_return(unit);
+        let differing_branch = arena.computation_return(different);
+        let left_case = arena.computation_case(head, same_branch, same_branch);
+        let right_case = arena.computation_case(head, same_branch, differing_branch);
+        let left = arena.computation_application(left_case, unit);
+        let right = arena.computation_application(right_case, unit);
+        let negative = |position| ConversionDecision::NegativeSubgoal {
+            position: SubgoalPosition::from(position),
+        };
+        let sides = ReplaySides::Computations(left, right);
+        assert_eq!(
+            run(&mut arena, &none, sides, EngineClaim::NotConvertible, &[
+                negative(1_u32),
+                negative(0_u32)
+            ]),
+            KernelVerdict::NotConvertible
+        );
+        assert_eq!(
+            run(&mut arena, &none, sides, EngineClaim::NotConvertible, &[
+                negative(0_u32),
+                negative(0_u32)
+            ]),
+            refused(ReplayRefusal::Contradicted {
+                at: TracePosition::from(2)
+            })
+        );
+        assert_eq!(
+            run(&mut arena, &none, sides, EngineClaim::NotConvertible, &[
+                negative(2_u32)
+            ]),
+            refused(ReplayRefusal::Contradicted {
+                at: TracePosition::from(1)
+            })
+        );
+        assert_eq!(
+            run(&mut arena, &none, sides, EngineClaim::NotConvertible, &[
+                negative(3_u32)
+            ]),
+            refused(ReplayRefusal::Inapplicable {
+                at: TracePosition::from(0)
+            })
+        );
+        let forced = arena.computation_force(head);
+        let applied = arena.computation_application(forced, unit);
+        let bound = arena.computation_bind(forced, same_branch);
+        for other in [forced, bound] {
+            assert_eq!(
+                run(
+                    &mut arena,
+                    &none,
+                    ReplaySides::Computations(applied, other),
+                    EngineClaim::NotConvertible,
+                    &[]
+                ),
+                KernelVerdict::NotConvertible
+            );
+        }
+        assert_eq!(
+            run(
+                &mut arena,
+                &none,
+                ReplaySides::Values(head, head),
+                EngineClaim::Convertible,
+                &[]
+            ),
+            KernelVerdict::Convertible
+        );
+    }
+
+    #[test]
+    fn reduced_heads_retain_application_and_bind_frames()
+    {
+        let mut arena = TermArena::new();
+        let none = Unfoldings::default();
+        let unit = arena.value_unit();
+        let ambient = arena.value_variable(DeBruijnIndex::from(0));
+        let beneath_binder = arena.value_variable(DeBruijnIndex::from(1));
+        let opened_head = arena.computation_force(ambient);
+        let body = arena.computation_force(beneath_binder);
+        let lambda = arena.computation_lambda(body);
+        let redex = arena.computation_application(lambda, unit);
+        let continuation = arena.computation_return(ambient);
+        let applied_redex = arena.computation_application(redex, unit);
+        let applied_normal = arena.computation_application(opened_head, unit);
+        let bound_redex = arena.computation_bind(redex, continuation);
+        let bound_normal = arena.computation_bind(opened_head, continuation);
+        let mark = arena.watermark();
+        for (left, right) in [(applied_redex, applied_normal), (bound_redex, bound_normal)] {
+            assert_eq!(
+                run(
+                    &mut arena,
+                    &none,
+                    ReplaySides::Computations(left, right),
+                    EngineClaim::Convertible,
+                    &[]
+                ),
+                KernelVerdict::Convertible
+            );
+            assert_eq!(arena.watermark(), mark);
+        }
+    }
+
+    #[test]
+    fn engine_decline_and_zero_budget_do_not_read_the_trace()
+    {
+        let mut arena = TermArena::new();
+        let none = Unfoldings::default();
+        let unit = arena.value_unit();
+        for (claim, budget, expected, consumed) in [
+            (
+                EngineClaim::Declined,
+                0_u64,
+                KernelVerdict::Declined(ReplayDecline::EngineDeclined),
+                0,
+            ),
+            (
+                EngineClaim::Convertible,
+                0,
+                KernelVerdict::Declined(ReplayDecline::Budget),
+                0,
+            ),
+            (EngineClaim::Convertible, 1, KernelVerdict::Convertible, 1),
+            (
+                EngineClaim::NotConvertible,
+                1,
+                refused(ReplayRefusal::Contradicted {
+                    at: TracePosition::from(1),
+                }),
+                1,
+            ),
+        ] {
+            let observed = core::cell::Cell::new(0_u32);
+            let trace = core::iter::once(SHARED)
+                .inspect(|_| observed.set(observed.get().saturating_add(1)));
+            assert_eq!(
+                replay(
+                    &mut arena,
+                    &none,
+                    ReplaySides::Values(unit, unit),
+                    claim,
+                    trace,
+                    ReplayBudget::from(budget)
+                ),
+                expected
+            );
+            assert_eq!(observed.get(), consumed);
         }
     }
 }

@@ -7,13 +7,12 @@
 //! is used where a type is expected. Over this vocabulary the definitional
 //! equality that needs is **type conversion only**, and it is exactly:
 //!
-//! - an **id-equality fast path**, which is **positive only**: two nodes named
-//!   by the same id in the same arena are the same node, so the pair is
-//!   discharged. Two *different* ids decide nothing and fall through to the
-//!   structural walk. That asymmetry is the whole of what keeps the fast path
-//!   sound without taking any table into the trusted base — it decides
-//!   reflexive pairs alone, and the kernel preserves the sharing a decode
-//!   handed it rather than creating more;
+//! - an **id-equality fast path**, which is **positive only**: a readable id
+//!   names one node in its arena, so an equal pair is discharged. An unreadable
+//!   equal pair refuses. Two *different* ids decide nothing and fall through to
+//!   the structural walk. The fast path decides readable reflexive pairs alone;
+//!   the kernel preserves the sharing a decode handed it rather than creating
+//!   more.
 //! - α-structural equality, which is syntactic identity because terms are
 //!   nameless; the dependent arrow binds, and binding costs nothing here for
 //!   the same reason — de Bruijn indices make two codomains under one binder
@@ -46,10 +45,11 @@
 //!
 //! # Fail-closed on an unreadable id
 //!
-//! A child id always resolves under the arena's minting invariant. Were one
-//! not to, the checked read yields nothing and the walk answers
-//! [`Convertibility::Distinct`] — refusing is the safe verdict, and it is the
-//! same posture the rest of the kernel takes toward a fault it excludes.
+//! A child id resolves under the arena's minting invariant. Every examined
+//! pair, including an equal-id pair, must have readable roots. A failed checked
+//! read answers [`Convertibility::Distinct`]. Identity does not recursively
+//! validate descendants: the arena's child-before-parent invariant supplies
+//! their validity.
 //!
 //! # Totality
 //!
@@ -110,32 +110,43 @@ enum ConversionGoal
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id is admissible input and fails closed.
-/// - ensures: [`Convertibility::Convertible`] exactly when the two are equal up
-///   to this subset's definitional equality; the relation is reflexive,
-///   symmetric and transitive.
+/// - ensures: [`Convertibility::Convertible`] exactly when readable roots are
+///   equal up to this subset's definitional equality. On valid arena graphs the
+///   relation is reflexive, symmetric and transitive.
 /// - provides: the type equality the checker invokes at a value mode switch.
-///   Definitional equality and its relational laws remain prose-only: this call
-///   has one pair, and no independent structural-equality predicate is
-///   available without duplicating the conversion walk.
+///   The predicate checks root readability, readable identity and head
+///   separation; the structural walk and its relational laws have the witnesses
+///   below rather than a second implementation in the predicate.
 /// - fails: never — a negative answer is [`Convertibility::Distinct`] rather
 ///   than an error.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2/L3 — reflexivity and separation are pinned over one former
-///   of every arm; the L3 residues are the positive-only id fast path (two
-///   distinct ids over equal content still convert, so the fast path is not
-///   doing the deciding), the canonical level comparison, and the nominal atom
-///   arm, each asserted exactly.
+/// - hypothesis: L1/L2/L3 — root readability, readable reflexivity and head
+///   separation are executable. The finite witnesses separate every value-type
+///   former, all three base atoms, canonical levels, nominal atoms and selected
+///   term forms; equal content at distinct ids still converts. They do not
+///   enumerate all graphs or establish the relational laws by exhaustive
+///   testing.
 /// - witness: `conv::tests::value_type_conversion_is_reflexive`
 /// - witness: `conv::tests::structurally_equal_types_at_distinct_ids_convert`
 /// - witness: `conv::tests::conversion_separates_every_former`
 /// - witness: `conv::tests::universes_convert_by_canonical_level`
 /// - witness: `conv::tests::sealed_atoms_are_nominal`
 /// - witness: `conv::tests::types_read_off_codes_converge_with_their_codes`
-/// - witness: `conv::tests::code_comparison_separates_every_term_former_without_reducing`
+/// - witness: `conv::tests::code_comparison_separates_selected_term_forms_without_reducing`
+/// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| match (arena.value_type(left), arena.value_type(right)) {
+    (Some(one), Some(other)) => if left == right {
+        ret == Convertibility::Convertible
+    } else {
+        ret == Convertibility::Distinct
+            || core::mem::discriminant(one) == core::mem::discriminant(other)
+    },
+    _ => ret == Convertibility::Distinct,
+})]
 pub fn convertible_value_types(
     arena: &TermArena,
     left: ValueTypeId,
@@ -149,24 +160,35 @@ pub fn convertible_value_types(
 ///
 /// # Specification
 /// - requires: nothing — an unreadable id is admissible input and fails closed.
-/// - ensures: [`Convertibility::Convertible`] exactly when the two are equal up
-///   to this subset's definitional equality; reflexive, symmetric, transitive.
-/// - provides: the type equality the checker invokes at a computation mode
-///   switch and at a case's branch convergence. Definitional equality and its
-///   relational laws remain prose-only for the same reason as
-///   [`convertible_value_types`].
+/// - ensures: [`Convertibility::Convertible`] exactly when readable roots are
+///   equal up to this subset's definitional equality; reflexive, symmetric and
+///   transitive on valid arena graphs.
+/// - provides: the type equality at a computation mode switch or a case's
+///   branch convergence. Its predicate checks the same root-level projection as
+///   [`convertible_value_types`]; child equality remains witnessed.
 /// - fails: never.
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2/L3 — as [`convertible_value_types`]; the residue is the
-///   arrow's two children, whose polarities differ, asserted by separating a
-///   pair that agrees on the domain and differs on the codomain.
+/// - hypothesis: L1/L2/L3 — unreadable identity and either unreadable side
+///   refuse, while readable identity converts. Arrow and dependent-arrow
+///   witnesses separate heads and each child position; these finite cases do
+///   not exhaust computation graphs.
 /// - witness: `conv::tests::computation_type_conversion_is_reflexive`
 /// - witness: `conv::tests::an_arrow_separates_on_either_child`
 /// - witness: `conv::tests::the_two_arrows_never_convert_across`
+/// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| match (arena.comp_type(left), arena.comp_type(right)) {
+    (Some(one), Some(other)) => if left == right {
+        ret == Convertibility::Convertible
+    } else {
+        ret == Convertibility::Distinct
+            || core::mem::discriminant(one) == core::mem::discriminant(other)
+    },
+    _ => ret == Convertibility::Distinct,
+})]
 pub fn convertible_comp_types(
     arena: &TermArena,
     left: CompTypeId,
@@ -189,13 +211,24 @@ pub fn convertible_comp_types(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — the walk is the one the type entries run, whose term arms
-///   are separated former by former; the residue is the entry, carried by the
-///   replay's closing witnesses.
-/// - witness: `conv::tests::code_comparison_separates_every_term_former_without_reducing`
+/// - hypothesis: L1/L3 — the root predicate and four-family truncation witness
+///   cover unreadable identity and either unreadable side. Selected term-form
+///   counterexamples and replay closures exercise structural comparison; they
+///   do not enumerate every value graph.
+/// - witness: `conv::tests::code_comparison_separates_selected_term_forms_without_reducing`
 /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+/// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| match (arena.value(left), arena.value(right)) {
+    (Some(one), Some(other)) => if left == right {
+        ret == Convertibility::Convertible
+    } else {
+        ret == Convertibility::Distinct
+            || core::mem::discriminant(one) == core::mem::discriminant(other)
+    },
+    _ => ret == Convertibility::Distinct,
+})]
 pub(crate) fn equal_values(
     arena: &TermArena,
     left: ValueId,
@@ -215,10 +248,22 @@ pub(crate) fn equal_values(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — as [`equal_values`].
+/// - hypothesis: L1/L3 — the four-family witness covers readable identity and
+///   unreadability on either side; replay closures cover representative
+///   alpha-equality and rigid separation, not every computation graph.
 /// - witness: `replay::tests::a_compared_pair_closes_on_alpha_equality_or_rigid_separation`
+/// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
 #[inline]
 #[must_use]
+#[spec(ensures: |ret| match (arena.computation(left), arena.computation(right)) {
+    (Some(one), Some(other)) => if left == right {
+        ret == Convertibility::Convertible
+    } else {
+        ret == Convertibility::Distinct
+            || core::mem::discriminant(one) == core::mem::discriminant(other)
+    },
+    _ => ret == Convertibility::Distinct,
+})]
 pub(crate) fn equal_computations(
     arena: &TermArena,
     left: ComputationId,
@@ -233,9 +278,8 @@ pub(crate) fn equal_computations(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `|ret| ret.is_ok() == matches!(convertible_value_types(arena,
-///   expected, actual), Convertibility::Convertible)` — success exactly when
-///   [`convertible_value_types`] converges.
+/// - ensures: success exactly when [`convertible_value_types`] converges; an
+///   unreadable root never converts, even to the same id.
 /// - provides: the checker's value mode-switch step.
 /// - fails: [`KernelError::ValueTypeMismatch`] carrying content witnesses of
 ///   both roots, which stay meaningful after the arena is truncated.
@@ -250,7 +294,18 @@ pub(crate) fn equal_computations(
 ///   both witnesses' heads asserted).
 /// - witness: `conv::tests::a_value_mismatch_names_both_heads`
 #[inline]
-#[spec(ensures: |ret| ret.is_ok() == matches!(convertible_value_types(arena, expected, actual), Convertibility::Convertible))]
+#[spec(ensures: |ret| {
+    let one = arena.value_type(expected);
+    let other = arena.value_type(actual);
+    match ret {
+        Ok(()) => one.is_some() && other.is_some()
+            && one.map(core::mem::discriminant) == other.map(core::mem::discriminant),
+        Err(KernelError::ValueTypeMismatch(ref mismatch)) => (expected != actual || one.is_none())
+            && mismatch.expected().head() == one.map_or(crate::error::ValueTypeHead::Unreadable, crate::error::ValueTypeHead::of)
+            && mismatch.actual().head() == other.map_or(crate::error::ValueTypeHead::Unreadable, crate::error::ValueTypeHead::of),
+        Err(_) => false,
+    }
+})]
 pub fn convert_value_type(
     arena: &TermArena,
     expected: ValueTypeId,
@@ -271,9 +326,8 @@ pub fn convert_value_type(
 ///
 /// # Specification
 /// - requires: nothing.
-/// - ensures: `|ret| ret.is_ok() == matches!(convertible_comp_types(arena,
-///   expected, actual), Convertibility::Convertible)` — success exactly when
-///   [`convertible_comp_types`] converges.
+/// - ensures: success exactly when [`convertible_comp_types`] converges; an
+///   unreadable root never converts, even to the same id.
 /// - provides: the checker's computation mode-switch step.
 /// - fails: [`KernelError::ComputationTypeMismatch`] carrying content witnesses
 ///   of both roots.
@@ -286,7 +340,18 @@ pub fn convert_value_type(
 /// - hypothesis: L3 — as [`convert_value_type`], on the computation plane.
 /// - witness: `conv::tests::a_computation_mismatch_names_both_heads`
 #[inline]
-#[spec(ensures: |ret| ret.is_ok() == matches!(convertible_comp_types(arena, expected, actual), Convertibility::Convertible))]
+#[spec(ensures: |ret| {
+    let one = arena.comp_type(expected);
+    let other = arena.comp_type(actual);
+    match ret {
+        Ok(()) => one.is_some() && other.is_some()
+            && one.map(core::mem::discriminant) == other.map(core::mem::discriminant),
+        Err(KernelError::ComputationTypeMismatch(ref mismatch)) => (expected != actual || one.is_none())
+            && mismatch.expected().head() == one.map_or(crate::error::CompTypeHead::Unreadable, crate::error::CompTypeHead::of)
+            && mismatch.actual().head() == other.map_or(crate::error::CompTypeHead::Unreadable, crate::error::CompTypeHead::of),
+        Err(_) => false,
+    }
+})]
 pub fn convert_comp_type(
     arena: &TermArena,
     expected: CompTypeId,
@@ -324,15 +389,15 @@ pub(crate) fn case_branch_mismatch(
 /// Run the conversion worklist to a verdict.
 ///
 /// # Specification
-/// - requires: `initial` is a same-polarity id pair.
-/// - ensures: [`Convertibility::Convertible`] exactly when every reachable
-///   sub-pair is id-equal or matches structurally with canonical level equality
-///   at level positions and nominal equality at atoms; the walk is iterative
-///   over a heap stack, so it is total on any depth.
-/// - provides: the shared engine of the two conversion faces. The pair's
-///   polarity is guaranteed by `ConversionGoal`; the reachable-pair and
-///   totality claims remain prose-only because they require an independent
-///   graph walk and a termination argument, not a wrapper predicate.
+/// - requires: nothing; [`ConversionGoal`] fixes each pair's family.
+/// - ensures: [`Convertibility::Convertible`] exactly when each examined pair
+///   has readable roots and either equal ids or matching structure, with
+///   canonical level equality and nominal atom equality. The iterative heap
+///   stack does not impose a host-stack depth limit.
+/// - provides: the shared engine of the conversion and term-equality faces. The
+///   predicate checks the initial roots' readability, identity and head
+///   separation; the graph judgement and termination argument are not replayed
+///   in the predicate.
 /// - fails: never — the verdict is the return value, and an unreadable id
 ///   yields [`Convertibility::Distinct`].
 /// - panics: none.
@@ -345,10 +410,10 @@ pub(crate) fn case_branch_mismatch(
 /// Without it two roots that share a subgraph re-walk every shared pair once
 /// per occurrence, so the work is the *expansion* of the compared graphs rather
 /// than their size — exponential in sharing depth on a term a decoder handed
-/// over. A pair discharged once stays discharged: over this vocabulary a type
-/// pair's verdict is a function of the two nodes alone, and any pair that fails
-/// returns immediately, so nothing is recorded as discharged while its own
-/// subtree is still undecided.
+/// over. The set records a pair before its children are compared. Its first
+/// expansion leaves every required child on the worklist; a repeated pair can
+/// therefore skip expansion without losing those obligations. Any failing
+/// child refuses immediately, and only an empty worklist permits conversion.
 ///
 /// The set is **per call and holds only pairs**. It creates no sharing, is
 /// never consulted for anything but skipping a repeat inside one comparison,
@@ -358,31 +423,51 @@ pub(crate) fn case_branch_mismatch(
 /// touch.
 ///
 /// # Adequacy
-/// - hypothesis: L2/L3 — the arm table is pinned by the per-former separation
-///   witnesses; the L3 residues are the fast path's positive-only direction and
-///   the fail-closed unreadable arm. The discharged set adds no extensional
-///   surface, and its intensional claim is separated by a shared composite
-///   whose comparison would otherwise be exponential in its depth.
+/// - hypothesis: L1/L2/L3 — root readability, identity and head separation are
+///   executable. Finite former and truncation witnesses separate the structural
+///   arms and all four identity paths. A shared composite at depth 30 exercises
+///   bounded expansion rather than proving the asymptotic claim by timing.
 /// - witness: `conv::tests::structurally_equal_types_at_distinct_ids_convert`
 /// - witness: `conv::tests::an_unreadable_id_fails_closed`
 /// - witness: `conv::tests::a_shared_composite_converts_without_expanding`
+/// - witness: `conv::tests::identity_requires_a_readable_root_in_every_family`
 #[spec(ensures: |ret| match initial {
-    ConversionGoal::ValueType(left, right) => if left == right { ret == Convertibility::Convertible } else { match (arena.value_type(left), arena.value_type(right)) {
-        (Some(a), Some(b)) => ret != Convertibility::Convertible || core::mem::discriminant(a) == core::mem::discriminant(b),
-        _ => ret == Convertibility::Distinct,
-    } },
-    ConversionGoal::CompType(left, right) => if left == right { ret == Convertibility::Convertible } else { match (arena.comp_type(left), arena.comp_type(right)) {
-        (Some(a), Some(b)) => ret != Convertibility::Convertible || core::mem::discriminant(a) == core::mem::discriminant(b),
-        _ => ret == Convertibility::Distinct,
-    } },
-    ConversionGoal::Value(left, right) => if left == right { ret == Convertibility::Convertible } else { match (arena.value(left), arena.value(right)) {
-        (Some(a), Some(b)) => ret != Convertibility::Convertible || core::mem::discriminant(a) == core::mem::discriminant(b),
-        _ => ret == Convertibility::Distinct,
-    } },
-    ConversionGoal::Computation(left, right) => if left == right { ret == Convertibility::Convertible } else { match (arena.computation(left), arena.computation(right)) {
-        (Some(a), Some(b)) => ret != Convertibility::Convertible || core::mem::discriminant(a) == core::mem::discriminant(b),
-        _ => ret == Convertibility::Distinct,
-    } },
+    ConversionGoal::ValueType(left, right) => match (arena.value_type(left), arena.value_type(right)) {
+    (Some(one), Some(other)) => if left == right {
+        ret == Convertibility::Convertible
+    } else {
+        ret == Convertibility::Distinct
+            || core::mem::discriminant(one) == core::mem::discriminant(other)
+    },
+    _ => ret == Convertibility::Distinct,
+},
+    ConversionGoal::CompType(left, right) => match (arena.comp_type(left), arena.comp_type(right)) {
+    (Some(one), Some(other)) => if left == right {
+        ret == Convertibility::Convertible
+    } else {
+        ret == Convertibility::Distinct
+            || core::mem::discriminant(one) == core::mem::discriminant(other)
+    },
+    _ => ret == Convertibility::Distinct,
+},
+    ConversionGoal::Value(left, right) => match (arena.value(left), arena.value(right)) {
+    (Some(one), Some(other)) => if left == right {
+        ret == Convertibility::Convertible
+    } else {
+        ret == Convertibility::Distinct
+            || core::mem::discriminant(one) == core::mem::discriminant(other)
+    },
+    _ => ret == Convertibility::Distinct,
+},
+    ConversionGoal::Computation(left, right) => match (arena.computation(left), arena.computation(right)) {
+    (Some(one), Some(other)) => if left == right {
+        ret == Convertibility::Convertible
+    } else {
+        ret == Convertibility::Distinct
+            || core::mem::discriminant(one) == core::mem::discriminant(other)
+    },
+    _ => ret == Convertibility::Distinct,
+},
 })]
 fn converge(
     arena: &TermArena,
@@ -398,9 +483,12 @@ fn converge(
         }
         match goal {
             | ConversionGoal::ValueType(left, right) => {
-                // The fast path, positive only: equal ids name one node, so the
-                // pair is discharged. Unequal ids decide nothing.
+                // Equal readable ids discharge one node. Unequal ids still
+                // require structural comparison.
                 if left == right {
+                    if arena.value_type(left).is_none() {
+                        return Convertibility::Distinct;
+                    }
                     continue;
                 }
                 let (Some(left), Some(right)) = (arena.value_type(left), arena.value_type(right))
@@ -534,6 +622,9 @@ fn converge(
             },
             | ConversionGoal::CompType(left, right) => {
                 if left == right {
+                    if arena.comp_type(left).is_none() {
+                        return Convertibility::Distinct;
+                    }
                     continue;
                 }
                 let (Some(left), Some(right)) = (arena.comp_type(left), arena.comp_type(right))
@@ -602,6 +693,9 @@ fn converge(
             },
             | ConversionGoal::Value(left, right) => {
                 if left == right {
+                    if arena.value(left).is_none() {
+                        return Convertibility::Distinct;
+                    }
                     continue;
                 }
                 let (Some(left), Some(right)) = (arena.value(left), arena.value(right))
@@ -722,6 +816,9 @@ fn converge(
             },
             | ConversionGoal::Computation(left, right) => {
                 if left == right {
+                    if arena.computation(left).is_none() {
+                        return Convertibility::Distinct;
+                    }
                     continue;
                 }
                 let (Some(left), Some(right)) = (arena.computation(left), arena.computation(right))
@@ -871,23 +968,35 @@ mod tests
         let unit = arena.value_type_unit();
         let integer = arena.value_type_base(BaseType::Integer);
         let string = arena.value_type_base(BaseType::String);
+        let numeric = arena.value_type_base(BaseType::Numeric);
         let product = arena.value_type_product(unit, integer);
         let sum = arena.value_type_sum(unit, integer);
         let returner = arena.comp_type_returner(unit);
         let thunk = arena.value_type_thunk(returner);
-        let separated = [
-            (integer, string),
-            (unit, integer),
-            (product, sum),
-            (product, thunk),
-            (sum, unit),
+        let universe = arena.value_type_universe(GroundSort::Value, Level::zero());
+        let atom = arena.value_type_abstract(ConstantIndex::from(0_usize));
+        let code = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let element = arena.value_type_element(code, Level::zero());
+        let lift = arena.value_type_lift(unit, level(LevelConstant::from(1)));
+        let static_pi = arena.value_type_static_pi(universe, universe);
+        let formers = [
+            unit, integer, string, numeric, product, sum, thunk, universe, atom, element, lift,
+            static_pi,
         ];
-        for (left, right) in separated {
-            assert_eq!(
-                Convertibility::Distinct,
-                convertible_value_types(&arena, left, right),
-                "distinct formers or distinct atoms do not convert"
-            );
+        for (one, left) in formers.iter().copied().enumerate() {
+            for (other, right) in formers.iter().copied().enumerate() {
+                let expected = if one == other {
+                    Convertibility::Convertible
+                }
+                else {
+                    Convertibility::Distinct
+                };
+                assert_eq!(
+                    expected,
+                    convertible_value_types(&arena, left, right),
+                    "formers {one}/{other}: distinct formers or base atoms separate in both directions"
+                );
+            }
         }
         let transposed = arena.value_type_product(integer, unit);
         assert_eq!(
@@ -1054,15 +1163,15 @@ mod tests
         );
     }
 
-    /// Every term former separates, which is what makes the descent into terms
-    /// a real comparison rather than a reflexivity check.
+    /// Selected term-form counterexamples make the descent into terms a real
+    /// comparison rather than a reflexivity check.
     ///
     /// A code is compared **without reducing**, so two applications separate on
     /// their head and argument rather than on what they would evaluate to —
     /// the incompleteness the convertibility machine closes, pinned here so it
     /// is a recorded property rather than a surprise.
     #[test]
-    fn code_comparison_separates_every_term_former_without_reducing()
+    fn code_comparison_separates_selected_term_forms_without_reducing()
     {
         let mut arena = TermArena::new();
         let zero = level(LevelConstant::from(0));
@@ -1161,6 +1270,60 @@ mod tests
     }
 
     #[test]
+    fn identity_requires_a_readable_root_in_every_family()
+    {
+        let mut arena = TermArena::new();
+        let live_value_type = arena.value_type_unit();
+        let live_comp_type = arena.comp_type_returner(live_value_type);
+        let live_value = arena.value_unit();
+        let live_computation = arena.computation_return(live_value);
+        let floor = arena.watermark();
+        let stale_value_type = arena.value_type_unit();
+        let stale_comp_type = arena.comp_type_returner(live_value_type);
+        let stale_value = arena.value_unit();
+        let stale_computation = arena.computation_return(live_value);
+        arena.truncate_to(floor);
+        let cases = [
+            ("value type", [
+                convertible_value_types(&arena, live_value_type, live_value_type),
+                convertible_value_types(&arena, stale_value_type, stale_value_type),
+                convertible_value_types(&arena, live_value_type, stale_value_type),
+                convertible_value_types(&arena, stale_value_type, live_value_type),
+            ]),
+            ("computation type", [
+                convertible_comp_types(&arena, live_comp_type, live_comp_type),
+                convertible_comp_types(&arena, stale_comp_type, stale_comp_type),
+                convertible_comp_types(&arena, live_comp_type, stale_comp_type),
+                convertible_comp_types(&arena, stale_comp_type, live_comp_type),
+            ]),
+            ("value", [
+                super::equal_values(&arena, live_value, live_value),
+                super::equal_values(&arena, stale_value, stale_value),
+                super::equal_values(&arena, live_value, stale_value),
+                super::equal_values(&arena, stale_value, live_value),
+            ]),
+            ("computation", [
+                super::equal_computations(&arena, live_computation, live_computation),
+                super::equal_computations(&arena, stale_computation, stale_computation),
+                super::equal_computations(&arena, live_computation, stale_computation),
+                super::equal_computations(&arena, stale_computation, live_computation),
+            ]),
+        ];
+        for (family, observed) in cases {
+            assert_eq!(
+                observed,
+                [
+                    Convertibility::Convertible,
+                    Convertibility::Distinct,
+                    Convertibility::Distinct,
+                    Convertibility::Distinct,
+                ],
+                "{family}: identity requires readability; either unreadable side refuses"
+            );
+        }
+    }
+
+    #[test]
     fn an_unreadable_id_fails_closed()
     {
         let mut arena = TermArena::new();
@@ -1208,6 +1371,7 @@ mod tests
         let unit = arena.value_type_unit();
         let returner = arena.comp_type_returner(unit);
         let arrow = arena.comp_type_arrow(unit, returner);
+        assert_eq!(Ok(()), convert_comp_type(&arena, returner, returner));
         let refused = convert_comp_type(&arena, returner, arrow);
         let KernelError::ComputationTypeMismatch(mismatch) =
             refused.expect_err("a separating pair refuses")

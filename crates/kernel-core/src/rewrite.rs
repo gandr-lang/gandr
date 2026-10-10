@@ -28,18 +28,16 @@
 //!
 //! # Unchanged is the identity, and that is what preserves sharing
 //!
-//! A node whose children all rewrite to themselves is **returned unchanged**
-//! rather than re-minted. Two things follow. The arena does not grow by a copy
-//! of every type a rewrite touches, which matters because a checker's
-//! intermediates are minted past the admission watermark. And the sharing a
-//! decode handed over survives a rewrite instead of being flattened into fresh
-//! nodes — the property the whole representation is built around.
+//! Reconstruction returns a node unchanged when its children did not change,
+//! rather than allocating another spelling. A zero shift returns its root
+//! directly, and an index already at the saturation ceiling is not re-minted.
+//! Memo hits may reuse another equal-content result from the same session, so
+//! content is preserved without promising identical arena ids across hits.
 //!
-//! A type carrying no code is closed, so it rewrites to itself and the walk
-//! hands back the node it was given rather than a copy. That is the common case
-//! and it costs nothing; a type that does carry a code rewrites through the
-//! code, which is the whole of what makes a context of types stop being a
-//! context of closed things.
+//! A type carrying no code is closed. Its reconstruction allocates no new term
+//! nodes; a type carrying a code rewrites through that code. Node dispatch
+//! borrows literal and level payloads, cloning a level only when a changed
+//! child requires a new node.
 //!
 //! # The memo is content-keyed, and it creates sharing among intermediates
 //!
@@ -130,6 +128,13 @@ impl From<BinderDepth> for usize
     ///   with.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at zero, ordinary depths and the u32 ceiling; exact
+    ///   machine-index and successor observations distinguish narrowing,
+    ///   wrapping and lost saturation.
+    /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
+    #[spec(ensures: |ret| ret == Self::try_from(depth.0).unwrap_or(Self::MAX))]
     #[inline]
     fn from(depth: BinderDepth) -> Self
     {
@@ -157,6 +162,13 @@ impl BinderDepth
     ///   mistake.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at zero, an ordinary depth, the predecessor of the
+    ///   ceiling and the ceiling; exact successors separate omission, wrapping
+    ///   and premature saturation.
+    /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
+    #[spec(ensures: |ret| ret.0 == self.0.saturating_add(1))]
     #[inline]
     fn deeper(self) -> Self
     {
@@ -176,6 +188,13 @@ impl BinderDepth
     ///   that many binders.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 at zero, an ordinary depth, the predecessor of the
+    ///   ceiling and the ceiling; exact successors separate omission, wrapping
+    ///   and premature saturation.
+    /// - witness: `rewrite::tests::binder_counts_saturate_at_the_representable_boundary`
+    #[spec(ensures: |ret| ret.0 == slots.0.saturating_add(1))]
     #[inline]
     #[must_use]
     pub fn past(slots: Self) -> Self
@@ -232,8 +251,15 @@ impl RewriteOutcome
     ///   not be.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 across every outcome family, using a carried id
+    ///   distinct from the fallback; exact projections distinguish a discarded
+    ///   matching result and adoption of a mismatched family.
+    /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
+    #[spec(ensures: |ret| ret == match self { Self::Value(id) => id, _ => original })]
     #[inline]
-    const fn value_or(
+    fn value_or(
         self,
         original: ValueId,
     ) -> ValueId
@@ -252,8 +278,15 @@ impl RewriteOutcome
     /// - provides: the fail-safe unwrapping of a child's result.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 across every outcome family, using a carried id
+    ///   distinct from the fallback; exact projections distinguish a discarded
+    ///   matching result and adoption of a mismatched family.
+    /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
+    #[spec(ensures: |ret| ret == match self { Self::Computation(id) => id, _ => original })]
     #[inline]
-    const fn computation_or(
+    fn computation_or(
         self,
         original: ComputationId,
     ) -> ComputationId
@@ -272,8 +305,15 @@ impl RewriteOutcome
     /// - provides: the fail-safe unwrapping of a child's result.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 across every outcome family, using a carried id
+    ///   distinct from the fallback; exact projections distinguish a discarded
+    ///   matching result and adoption of a mismatched family.
+    /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
+    #[spec(ensures: |ret| ret == match self { Self::ValueType(id) => id, _ => original })]
     #[inline]
-    const fn value_type_or(
+    fn value_type_or(
         self,
         original: ValueTypeId,
     ) -> ValueTypeId
@@ -292,8 +332,15 @@ impl RewriteOutcome
     /// - provides: the fail-safe unwrapping of a child's result.
     /// - fails: never.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 across every outcome family, using a carried id
+    ///   distinct from the fallback; exact projections distinguish a discarded
+    ///   matching result and adoption of a mismatched family.
+    /// - witness: `rewrite::tests::outcome_projections_keep_matching_ids_and_decline_other_families`
+    #[spec(ensures: |ret| ret == match self { Self::CompType(id) => id, _ => original })]
     #[inline]
-    const fn comp_type_or(
+    fn comp_type_or(
         self,
         original: CompTypeId,
     ) -> CompTypeId
@@ -331,10 +378,9 @@ impl RewriteSupport
     ///   used with.
     /// - ensures: two supports are equal exactly when the two goals rewrite the
     ///   same content the same way at the same binder depth.
-    /// - provides: the rewrite memo's key. Session provenance and equality
-    ///   across rewrite goals remain prose-only: a single invocation has no
-    ///   history token or second goal with an independent semantic
-    ///   interpretation.
+    /// - provides: the rewrite memo's key; the predicate checks its plane.
+    ///   Session provenance and agreement across goals require the paired
+    ///   witnesses rather than another encoding of the same invocation.
     /// - fails: never.
     /// - panics: none.
     ///
@@ -344,6 +390,10 @@ impl RewriteSupport
     ///   two encodings) and by one subject at two depths, each asserted
     ///   exactly.
     /// - witness: `rewrite::tests::two_rewrites_of_one_subject_are_two_supports`
+    #[spec(ensures: |ret| ret.plane == match goal {
+        RewriteGoal::Shift { .. } => RewritePlane::Shift,
+        RewriteGoal::Substitute { .. } => RewritePlane::Substitute,
+    })]
     #[must_use]
     fn build(
         table: &mut ContentTable,
@@ -404,6 +454,15 @@ impl MemoKey for RewriteSupport
     /// - provides: the deciding comparison every rewrite the session reuses is
     ///   served on.
     /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L3 on equal content, differing rewrite planes and binder
+    ///   depths, and forced digest collisions; exact agreement distinguishes
+    ///   content equality from bucket equality.
+    /// - witness: `rewrite::tests::two_rewrites_of_one_subject_are_two_supports`
+    /// - witness: `rewrite::tests::rewrite_agreement_ignores_colliding_digest_buckets`
+    #[spec(ensures: |ret| matches!(ret, ContentAgreement::Agree)
+        == (self.plane == other.plane && self.encoding == other.encoding))]
     #[inline]
     fn agreement(
         &self,
@@ -496,14 +555,13 @@ enum RewriteTask
 /// # Specification
 /// - requires: `table` is this session's; `memo` holds only entries this
 ///   session recorded against this arena.
-/// - ensures: the node with every free index rewritten, minted into `arena` as
-///   a checker intermediate; the node itself when nothing under it changed,
-///   which is what preserves the sharing a decode handed over. The walk is
-///   iterative, so it is total on any depth.
-/// - provides: the context-lookup shift the checker performs at every variable.
-///   Session origin and exact rewritten content remain prose-only: proving the
-///   shift and unchanged-node reuse requires a separate semantic traversal, not
-///   replaying the mutating rewrite.
+/// - ensures: free indices at or above the depth-adjusted cutoff are raised,
+///   clamped to the index ceiling. A zero amount returns the same id without
+///   opening the graph. Reconstruction reuses unchanged nodes; a memo hit may
+///   reuse an equal-content result minted by an earlier goal in the session.
+/// - provides: the context-lookup shift. The predicate checks zero-shift
+///   identity and readable or unreadable roots; the binder-aware content
+///   relation is witnessed without repeating a mutating traversal.
 /// - fails: never — an unreadable node rewrites to itself, which is the
 ///   fail-safe reading, and the goal that reaches it refuses on its own
 ///   account.
@@ -517,6 +575,12 @@ enum RewriteTask
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
 /// - witness: `adversarial_depth::adversarial_depth::the_rewrite_machines_are_total_on_a_code_carrying_chain`
+#[spec(ensures: |ret| (amount.0 != 0 || ret == subject)
+    && if arena.value_type(subject).is_some() {
+        arena.value_type(ret).is_some()
+    } else {
+        ret == subject
+    })]
 #[inline]
 #[must_use]
 pub fn shift_value_type<M>(
@@ -551,6 +615,12 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`shift_value_type`].
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+#[spec(ensures: |ret| (amount.0 != 0 || ret == subject)
+    && if arena.value(subject).is_some() {
+        arena.value(ret).is_some()
+    } else {
+        ret == subject
+    })]
 #[must_use]
 pub(crate) fn shift_value<M>(
     arena: &mut TermArena,
@@ -582,6 +652,12 @@ where
 /// - hypothesis: L3 — as [`shift_value_type`]; the residue is the three binding
 ///   formers, whose bound positions each step the depth in by one.
 /// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
+#[spec(ensures: |ret| (amount.0 != 0 || ret == subject)
+    && if arena.computation(subject).is_some() {
+        arena.computation(ret).is_some()
+    } else {
+        ret == subject
+    })]
 #[inline]
 #[must_use]
 pub(crate) fn shift_computation<M>(
@@ -618,6 +694,12 @@ where
 ///   observed through the check rules that weaken by it.
 /// - witness: `check::tests::a_plain_arrow_reads_its_codomain_outside_its_binder`
 /// - witness: `check::tests::a_bind_reads_its_expected_type_outside_its_binder`
+#[spec(ensures: |ret| (amount.0 != 0 || ret == subject)
+    && if arena.comp_type(subject).is_some() {
+        arena.comp_type(ret).is_some()
+    } else {
+        ret == subject
+    })]
 #[inline]
 #[must_use]
 pub(crate) fn shift_comp_type<M>(
@@ -645,14 +727,13 @@ where
 /// - requires: `subject` stands under exactly one binder more than
 ///   `replacement` does; `table` is this session's; `memo` holds only entries
 ///   this session recorded against this arena.
-/// - ensures: every occurrence of the innermost binder's variable is replaced
-///   by `replacement`, carried under each binder the walk crosses, and every
-///   index outside that binder is lowered by one; the node itself when nothing
-///   under it changed. The walk is iterative, so it is total on any depth.
-/// - provides: the instantiation an application at a dependent head performs.
-///   Binder and session provenance are not carried by these ids; exact
-///   substitution and unchanged-node reuse require a separate semantic
-///   traversal. These clauses remain prose-only.
+/// - ensures: every occurrence of the removed binder is replaced by the
+///   replacement carried beneath intervening binders, and outer indices fall by
+///   one. Reconstruction reuses unchanged children; memo hits may reuse an
+///   equal-content result. An unreadable subject returns itself.
+/// - provides: dependent application instantiation. The predicate checks
+///   unreadable-root identity and head preservation except at a code decode;
+///   the finite witnesses observe the binder-aware substitution relation.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -664,6 +745,9 @@ where
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
 /// - witness: `adversarial_depth::adversarial_depth::the_rewrite_machines_are_total_on_a_chain_deep_term`
+#[spec(ensures: |ret| arena.comp_type(subject).map_or(ret == subject, |source|
+    matches!(source, &CompType::Element { .. }) || arena.comp_type(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[inline]
 #[must_use]
 pub fn substitute_comp_type<M>(
@@ -704,6 +788,9 @@ where
     not(test),
     expect(dead_code, reason = "family face awaiting its first production caller")
 )]
+#[spec(ensures: |ret| arena.value_type(subject).map_or(ret == subject, |source|
+    matches!(source, &ValueType::Element { .. }) || arena.value_type(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
 pub(crate) fn substitute_value_type<M>(
     arena: &mut TermArena,
@@ -736,6 +823,9 @@ where
 /// # Adequacy
 /// - hypothesis: L3 — as [`substitute_comp_type`].
 /// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+#[spec(ensures: |ret| arena.value(subject).map_or(ret == subject, |source|
+    matches!(source, &Value::Variable(_)) || arena.value(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[must_use]
 pub(crate) fn substitute_value<M>(
     arena: &mut TermArena,
@@ -769,6 +859,9 @@ where
 /// - hypothesis: L3 — as [`substitute_comp_type`]; the residue is the entry,
 ///   carried by the replay's reduction witnesses.
 /// - witness: `replay::tests::the_replay_reduces_before_it_reads_a_decision`
+#[spec(ensures: |ret| arena.computation(subject).map_or(ret == subject, |source|
+    arena.computation(ret).is_some_and(|result|
+        core::mem::discriminant(source) == core::mem::discriminant(result))))]
 #[inline]
 #[must_use]
 pub(crate) fn substitute_computation<M>(
@@ -792,15 +885,13 @@ where
 /// - requires: `root` resolves in `arena`, or does not, in which case it
 ///   rewrites to itself.
 /// - ensures: the rewritten node, minted into `arena` where a child changed and
-///   reused where none did. Every node is opened once per distinct `(content,
-///   depth)` pair when the memo is active and once per occurrence when it is
-///   not, and **the answer is the same either way** — the memo is an
-///   optimization above a results stack that carries every intermediate, never
-///   the store the walk depends on.
-/// - provides: the shared engine of the two rewrites. Exact rewritten content,
-///   traversal counts, and memo independence remain prose-only: a return
-///   predicate has neither the execution trace nor an independent rewrite over
-///   the entry arena.
+///   reused where none did. A zero shift or an unreadable root returns its
+///   original outcome without traversal or memo lookup. Other memo hits may
+///   reuse equal-content results; memoized and memoless runs preserve the same
+///   content, with distinct-support versus occurrence-based expansion.
+/// - provides: the shared engine of the two rewrites. Predicates check family,
+///   zero-shift identity and unreadable-root fallback. The witnesses compare
+///   bounded memoized and memoless results rather than rerunning either walk.
 /// - fails: never.
 /// - panics: none.
 ///
@@ -823,12 +914,24 @@ where
 /// - input recursion: none.
 ///
 /// # Adequacy
-/// - hypothesis: L2 — the memoized and memoless runs are pinned against each
-///   other over a shared composite, node for node, which is the differential
-///   the memo's soundness rests on; the L3 residues are the per-former combine
-///   arms, carried by the two rewrites' own witnesses.
+/// - hypothesis: L2 at twelve shared pair levels: content digests and child
+///   sharing distinguish memo-induced result changes, not errors common to both
+///   recurrence implementations. L3 on zero shifts, saturated variables and
+///   unreadable roots: exact ids and watermarks separate needless minting and
+///   invalid memo aliases.
 /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
 /// - witness: `adversarial_depth::adversarial_depth::the_rewrite_machines_are_total_on_a_chain_deep_term`
+/// - witness: `rewrite::tests::a_zero_shift_reuses_its_code_carrying_subject`
+/// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
+/// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
+#[spec(ensures: |ret| (!matches!(rewrite, Rewrite::Shift { amount, .. } if amount.0 == 0)
+    || ret == outcome_of(root)) && match (root, ret) {
+    (AnyNode::Value(source), RewriteOutcome::Value(result)) => arena.value(source).is_some() || result == source,
+    (AnyNode::Computation(source), RewriteOutcome::Computation(result)) => arena.computation(source).is_some() || result == source,
+    (AnyNode::ValueType(source), RewriteOutcome::ValueType(result)) => arena.value_type(source).is_some() || result == source,
+    (AnyNode::CompType(source), RewriteOutcome::CompType(result)) => arena.comp_type(source).is_some() || result == source,
+    _ => false,
+})]
 fn run_rewrite<M>(
     arena: &mut TermArena,
     table: &mut ContentTable,
@@ -839,6 +942,18 @@ fn run_rewrite<M>(
 where
     M: CheckMemo<RewriteSupport, RewriteOutcome>,
 {
+    if matches!(rewrite, Rewrite::Shift { amount, .. } if amount == BinderDepth::NONE) {
+        return outcome_of(root);
+    }
+    let readable = match root {
+        | AnyNode::Value(id) => arena.value(id).is_some(),
+        | AnyNode::Computation(id) => arena.computation(id).is_some(),
+        | AnyNode::ValueType(id) => arena.value_type(id).is_some(),
+        | AnyNode::CompType(id) => arena.comp_type(id).is_some(),
+    };
+    if !readable {
+        return outcome_of(root);
+    }
     let mut tasks: Vec<RewriteTask> = Vec::new();
     let mut results: Vec<RewriteOutcome> = Vec::new();
     tasks.push(RewriteTask::Open(root, BinderDepth::NONE, rewrite));
@@ -937,19 +1052,32 @@ quenchant_shape::reason_enum! {
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — crossing a binder raises the replacement, while depth
-///   zero, a different occurrence and a shift retain their ordinary paths.
+/// - hypothesis: L3 on both rewrites, zero and positive depth, matching and
+///   different variables, another family and an unreadable value. Exact
+///   replacements and refusal reasons separate guard precedence and missing
+///   carrying; the nested-binder witness observes the raised replacement.
 /// - witness: `rewrite::tests::a_replacement_is_carried_under_the_binders_it_crosses`
 /// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
 /// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+/// - witness: `rewrite::tests::carrying_refusals_follow_rule_precedence`
 ///
 /// [`Absent`]: carrying::Absent
-#[spec(ensures: |ret| match ret {
-    Maybe::Present(value) => matches!(rewrite, Rewrite::Substitute { replacement } if value == replacement) && depth != BinderDepth::NONE && matches!(node, AnyNode::Value(id) if matches!(arena.value(id), Some(&Value::Variable(index)) if BinderDepth::from(u32::from(index)) == depth)),
-    Maybe::Absent(carrying::Absent::Shift) => matches!(rewrite, Rewrite::Shift { .. }),
-    Maybe::Absent(carrying::Absent::NoCrossedBinders) => matches!(rewrite, Rewrite::Substitute { .. }) && depth == BinderDepth::NONE,
-    Maybe::Absent(carrying::Absent::UnreadableValue) => matches!(node, AnyNode::Value(id) if arena.value(id).is_none()),
-    Maybe::Absent(carrying::Absent::DifferentOccurrence) => !matches!(node, AnyNode::Value(id) if matches!(arena.value(id), Some(&Value::Variable(index)) if BinderDepth::from(u32::from(index)) == depth)),
+#[spec(ensures: |ret| match rewrite {
+    Rewrite::Shift { .. } => matches!(ret, Maybe::Absent(carrying::Absent::Shift)),
+    Rewrite::Substitute { replacement } => {
+        if depth.0 == 0 {
+            matches!(ret, Maybe::Absent(carrying::Absent::NoCrossedBinders))
+        } else if let AnyNode::Value(id) = node {
+            match arena.value(id) {
+                None => matches!(ret, Maybe::Absent(carrying::Absent::UnreadableValue)),
+                Some(&Value::Variable(index)) if u32::from(index) == depth.0 =>
+                    matches!(ret, Maybe::Present(found) if found == replacement),
+                Some(_) => matches!(ret, Maybe::Absent(carrying::Absent::DifferentOccurrence)),
+            }
+        } else {
+            matches!(ret, Maybe::Absent(carrying::Absent::DifferentOccurrence))
+        }
+    },
 })]
 #[inline]
 fn carried_occurrence(
@@ -1039,33 +1167,23 @@ const fn outcome_of(node: AnyNode) -> RewriteOutcome
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — free indices beneath binders and native code children
-///   retain their positions; dropped or over-bound children change the rewrite.
+/// - hypothesis: L3 on lambda, bind, case and dependent-code positions; exact
+///   rewritten free indices separate dropped children, reversed result order
+///   and closing a nonbinding position. The predicate observes appended task
+///   arity, rewrite and bounded depth, not the whole schedule.
 /// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
+/// - witness: `rewrite::tests::bind_and_case_rewrites_distinguish_binding_positions`
 /// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
 /// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
-#[spec(captures: before = tasks.len(), ensures: tasks.len() == before.saturating_add(match node {
-        AnyNode::Value(id) => match arena.value(id) {
-            Some(&Value::PathEquiv { .. }) => 3,
-            Some(&Value::Pair(..) | &Value::StaticApplication(..) | &Value::PathProduct(..) | &Value::SessionPath { .. }) => 2,
-            Some(&Value::Injection(..) | &Value::Lift { .. } | &Value::Thunk(_) | &Value::Quote(_) | &Value::QuoteComputation(_) | &Value::PathRefl(_)) => 1,
-            _ => 0,
-        },
-        AnyNode::Computation(id) => match arena.computation(id) {
-            Some(&Computation::Case { .. }) => 3,
-            Some(&Computation::Application(..) | &Computation::Bind(..) | &Computation::Transport(..)) => 2,
-            Some(_) => 1, None => 0,
-        },
-        AnyNode::ValueType(id) => match arena.value_type(id) {
-            Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. } | &ValueType::PathUniverse(..)) => 2,
-            Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. } | &ValueType::List(_) | &ValueType::Session { .. }) => 1,
-            _ => 0,
-        },
-        AnyNode::CompType(id) => match arena.comp_type(id) {
-            Some(&CompType::Arrow { .. } | &CompType::Pi { .. }) => 2,
-            Some(_) => 1, None => 0,
-        },
-    }))]
+#[spec(captures: before = tasks.len(),
+    ensures: tasks.get(before ..).is_some_and(|added| added.len() == match node {
+    AnyNode::Value(id) => arena.value(id).map_or(0, |source| match *source { Value::Variable(_) | Value::Constant(_) | Value::Unit | Value::Literal(_) => 0, Value::PathEquiv { .. } => 3, Value::SessionPath { .. } | Value::PathProduct(..) | Value::Pair(..) | Value::StaticApplication(..) => 2, _ => 1 }),
+    AnyNode::Computation(id) => arena.computation(id).map_or(0, |source| match *source { Computation::Case { .. } => 3, Computation::Transport(..) | Computation::Application(..) | Computation::Bind(..) => 2, _ => 1 }),
+    AnyNode::ValueType(id) => arena.value_type(id).map_or(0, |source| match *source { ValueType::Base(_) | ValueType::Empty | ValueType::Unit | ValueType::Universe { .. } | ValueType::Abstract(_) => 0, ValueType::PathUniverse(..) | ValueType::Product(..) | ValueType::Sum(..) | ValueType::StaticPi { .. } => 2, _ => 1 }),
+    AnyNode::CompType(id) => arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } => 2, _ => 1 }),
+}
+        && added.iter().all(|task| matches!(*task, RewriteTask::Open(_, child_depth, step)
+            if step == rewrite && (child_depth == depth || child_depth == depth.deeper())))))]
 fn push_rewrite_children(
     arena: &TermArena,
     node: AnyNode,
@@ -1303,6 +1421,19 @@ fn push_rewrite_children(
 ///   close.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on unchanged closed types, rewritten variable codes and
+///   binding terms; observed result families and reconstructed contents
+///   distinguish wrong-family dispatch, wrong child order and lost identity.
+/// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
+/// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
+/// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
+#[spec(ensures: |ret| matches!((node, ret),
+    (AnyNode::Value(_), RewriteOutcome::Value(_))
+    | (AnyNode::Computation(_), RewriteOutcome::Computation(_))
+    | (AnyNode::ValueType(_), RewriteOutcome::ValueType(_))
+    | (AnyNode::CompType(_), RewriteOutcome::CompType(_))))]
 fn close_rewrite(
     arena: &mut TermArena,
     rewrite: Rewrite,
@@ -1338,6 +1469,15 @@ fn close_rewrite(
 ///   close ran — and reading it as unchanged cannot fabricate a node.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on empty and heterogeneous two-entry result stacks; exact
+///   returned nodes and the surviving entry distinguish dropping an extra
+///   result, reading the wrong end and fabricating the fallback.
+/// - witness: `rewrite::tests::result_stack_preserves_order_and_falls_back_only_when_empty`
+#[spec(captures: before = (results.len(), results.last().copied()),
+    ensures: |ret| results.len() == before.0.saturating_sub(1)
+        && ret == before.1.unwrap_or_else(|| outcome_of(original)))]
 #[inline]
 fn popped(
     results: &mut Vec<RewriteOutcome>,
@@ -1366,10 +1506,13 @@ fn popped(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — rewriting preserves the enclosing former and consumes
-///   exactly its child outcomes; unchanged closed nodes retain their
-///   identities.
+/// - hypothesis: L3 on a literal replacement, a pair of differently scoped
+///   variables, a carried replacement and an unreadable root; exact
+///   reconstructed terms distinguish wrong child order, wrong variable cases
+///   and fabricated fallback.
 /// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+/// - witness: `rewrite::tests::a_replacement_is_carried_under_the_binders_it_crosses`
+/// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
 /// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
 /// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
 #[spec(
@@ -1388,15 +1531,15 @@ fn close_value(
     results: &mut Vec<RewriteOutcome>,
 ) -> ValueId
 {
-    let Some(node) = arena.value(id).cloned()
+    let Some(node) = arena.value(id)
     else {
         return id;
     };
-    match node {
+    match *node {
         | Value::SessionPath {
             path_type,
             payload_paths,
-            evidence,
+            ref evidence,
         } => {
             let paths = popped(results, AnyNode::Value(payload_paths)).value_or(payload_paths);
             let classifier =
@@ -1405,7 +1548,7 @@ fn close_value(
                 id
             }
             else {
-                arena.value_session_path(classifier, evidence, paths)
+                arena.value_session_path(classifier, alloc::sync::Arc::clone(evidence), paths)
             }
         },
         | Value::PathRefl(code) => {
@@ -1431,7 +1574,7 @@ fn close_value(
             path_type,
             forward,
             backward,
-            evidence,
+            ref evidence,
         } => {
             let rewritten_backward = popped(results, AnyNode::Value(backward)).value_or(backward);
             let rewritten_forward = popped(results, AnyNode::Value(forward)).value_or(forward);
@@ -1448,7 +1591,7 @@ fn close_value(
                     rewritten_type,
                     rewritten_forward,
                     rewritten_backward,
-                    evidence,
+                    alloc::sync::Arc::clone(evidence),
                 )
             }
         },
@@ -1486,12 +1629,13 @@ fn close_value(
                 arena.value_injection(side, rewritten)
             }
         },
-        | Value::Lift { target, body } => {
+        | Value::Lift { ref target, body } => {
             let rewritten = popped(results, AnyNode::Value(body)).value_or(body);
             if rewritten == body {
                 id
             }
             else {
+                let target = target.clone();
                 arena.value_lift(target, rewritten)
             }
         },
@@ -1534,8 +1678,9 @@ fn close_value(
 /// binder that is now gone, so it lowers by one.
 ///
 /// # Specification
-/// - requires: `depth` is the number of binders crossed to reach this
-///   occurrence, and `index` is the occurrence's own de Bruijn index.
+/// - requires: `depth` counts crossed binders and `index` is this variable's
+///   index. A substituted occurrence at positive depth has already taken the
+///   carrying path and never reaches this close.
 /// - ensures: for a shift, the index rises by the amount exactly when it is at
 ///   or above the cutoff measured from this depth, and stands otherwise; for a
 ///   substitution, an index below the depth stands, an index equal to it
@@ -1544,6 +1689,34 @@ fn close_value(
 /// - provides: the whole variable rule of both machines, written once.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on indices below, at and above the cutoff or substituted
+///   binder, including zero shift and the u32 ceiling; exact variables,
+///   replacement identity and arena watermark separate scope errors, wrapping
+///   and allocating an unchanged occurrence.
+/// - witness: `rewrite::tests::shifting_raises_free_indices_and_spares_bound_ones`
+/// - witness: `rewrite::tests::substitution_replaces_lowers_and_spares`
+/// - witness: `rewrite::tests::a_saturated_variable_shift_reuses_the_unchanged_occurrence`
+#[spec(
+    requires: matches!(arena.value(id), Some(&Value::Variable(actual)) if actual == index),
+    requires: !matches!(rewrite, Rewrite::Substitute { .. }) || depth.0 == 0 || u32::from(index) != depth.0,
+    ensures: |ret| match rewrite {
+        Rewrite::Shift { cutoff, amount } => {
+            if u32::from(index) < cutoff.0.saturating_add(depth.0)
+                || u32::from(index).saturating_add(amount.0) == u32::from(index) {
+                ret == id
+            } else {
+                arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_add(amount.0))))
+            }
+        },
+        Rewrite::Substitute { replacement } => match u32::from(index).cmp(&depth.0) {
+            core::cmp::Ordering::Less => ret == id,
+            core::cmp::Ordering::Equal => ret == replacement,
+            core::cmp::Ordering::Greater => arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(u32::from(index).saturating_sub(1)))),
+        },
+    },
+)]
 fn rewrite_variable(
     arena: &mut TermArena,
     rewrite: Rewrite,
@@ -1569,7 +1742,12 @@ fn rewrite_variable(
                     arith::Int::from(index.0),
                     arith::Int::from(amount.0),
                 ));
-                arena.value_variable(DeBruijnIndex::from(raised))
+                if raised == index.0 {
+                    id
+                }
+                else {
+                    arena.value_variable(DeBruijnIndex::from(raised))
+                }
             }
         },
         | Rewrite::Substitute { replacement } => match index.cmp(&depth) {
@@ -1602,10 +1780,12 @@ fn rewrite_variable(
 /// - panics: none.
 ///
 /// # Adequacy
-/// - hypothesis: L3 — rewriting preserves the enclosing former and consumes
-///   exactly its child outcomes; unchanged closed nodes retain their
-///   identities.
+/// - hypothesis: L3 on lambda, bind and case bodies plus unreadable roots;
+///   exact free indices and surviving binders distinguish mixed result order,
+///   lost binding scope and an invented result.
 /// - witness: `rewrite::tests::a_binder_spares_what_it_binds`
+/// - witness: `rewrite::tests::bind_and_case_rewrites_distinguish_binding_positions`
+/// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
 /// - witness: `rewrite::tests::a_closed_type_shifts_to_itself`
 #[spec(
     captures: [before = results.len(), arity = match arena.computation(id) { Some(&Computation::Case { .. }) => 3, Some(&Computation::Application(..) | &Computation::Bind(..) | &Computation::Transport(..)) => 2, Some(_) => 1, None => 0 }],
@@ -1617,11 +1797,11 @@ fn close_computation(
     results: &mut Vec<RewriteOutcome>,
 ) -> ComputationId
 {
-    let Some(node) = arena.computation(id).cloned()
+    let Some(node) = arena.computation(id)
     else {
         return id;
     };
-    match node {
+    match *node {
         | Computation::Transport(path, value) => {
             let rewritten_value = popped(results, AnyNode::Value(value)).value_or(value);
             let rewritten_path = popped(results, AnyNode::Value(path)).value_or(path);
@@ -1732,6 +1912,7 @@ fn close_computation(
 /// - witness: `path_universe::tests::universe_fold_tests::universe_clause_is_native`
 /// - witness: `replay::tests::an_operator_unfolds_by_instantiating_its_parameters_in_order`
 /// - witness: `rewrite::tests::session_rewrites_preserve_graph_evidence_and_native_children`
+/// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
 #[spec(
     captures: [before = results.len(), arity = match arena.value_type(id) { Some(&ValueType::Product(..) | &ValueType::Sum(..) | &ValueType::StaticPi { .. } | &ValueType::PathUniverse(..)) => 2, Some(&ValueType::Thunk(_) | &ValueType::Lift { .. } | &ValueType::Element { .. } | &ValueType::List(_) | &ValueType::Session { .. }) => 1, _ => 0 }, element = match arena.value_type(id) { Some(&ValueType::Element { code, .. }) => Some(results.last().copied().map_or(code, |outcome| outcome.value_or(code))), _ => None }],
     ensures: |ret| results.len() == before.saturating_sub(arity) && element.map_or_else(
@@ -1745,11 +1926,11 @@ fn close_value_type(
     results: &mut Vec<RewriteOutcome>,
 ) -> ValueTypeId
 {
-    let Some(node) = arena.value_type(id).cloned()
+    let Some(node) = arena.value_type(id)
     else {
         return id;
     };
-    match node {
+    match *node {
         | ValueType::PathUniverse(source, target) => {
             let rewritten_target = popped(results, AnyNode::Value(target)).value_or(target);
             let rewritten_source = popped(results, AnyNode::Value(source)).value_or(source);
@@ -1765,13 +1946,16 @@ fn close_value_type(
         | ValueType::Empty
         | ValueType::Universe { .. }
         | ValueType::Abstract(_) => id,
-        | ValueType::Session { graph, payloads } => {
+        | ValueType::Session {
+            ref graph,
+            payloads,
+        } => {
             let rewritten = popped(results, AnyNode::ValueType(payloads)).value_type_or(payloads);
             if rewritten == payloads {
                 id
             }
             else {
-                arena.value_type_session(graph, rewritten)
+                arena.value_type_session(alloc::sync::Arc::clone(graph), rewritten)
             }
         },
         | ValueType::List(element) => {
@@ -1783,12 +1967,13 @@ fn close_value_type(
                 arena.value_type_list(rewritten)
             }
         },
-        | ValueType::Element { code, target } => {
+        | ValueType::Element { code, ref target } => {
             let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
             if rewritten == code {
                 id
             }
             else {
+                let target = target.clone();
                 arena.value_type_element(rewritten, target)
             }
         },
@@ -1835,12 +2020,13 @@ fn close_value_type(
                 arena.value_type_thunk(rewritten)
             }
         },
-        | ValueType::Lift { inner, target } => {
+        | ValueType::Lift { inner, ref target } => {
             let rewritten = popped(results, AnyNode::ValueType(inner)).value_type_or(inner);
             if rewritten == inner {
                 id
             }
             else {
+                let target = target.clone();
                 arena.value_type_lift(rewritten, target)
             }
         },
@@ -1857,17 +2043,29 @@ fn close_value_type(
 /// - provides: the computation-type arm of the combining half.
 /// - fails: never.
 /// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L3 on a closed returner, a dependent code decode and
+///   unreadable roots; exact resulting types distinguish omitted substitution,
+///   mismatched children and a fabricated fallback.
+/// - witness: `rewrite::tests::a_closed_type_instantiates_to_itself`
+/// - witness: `rewrite::tests::a_code_carrying_type_rewrites_through_its_code`
+/// - witness: `rewrite::tests::unreadable_subjects_rewrite_to_their_original_ids`
+#[spec(captures: before = results.len(),
+    ensures: |ret| results.len() == before.saturating_sub(arena.comp_type(id).map_or(0, |source| match *source { CompType::Arrow { .. } | CompType::Pi { .. } => 2, _ => 1 }))
+        && arena.comp_type(id).map_or(ret == id, |source| matches!(source, &CompType::Element { .. }) || arena.comp_type(ret).is_some_and(|result|
+            core::mem::discriminant(source) == core::mem::discriminant(result))))]
 fn close_comp_type(
     arena: &mut TermArena,
     id: CompTypeId,
     results: &mut Vec<RewriteOutcome>,
 ) -> CompTypeId
 {
-    let Some(node) = arena.comp_type(id).cloned()
+    let Some(node) = arena.comp_type(id)
     else {
         return id;
     };
-    match node {
+    match *node {
         | CompType::Returner(result) => {
             let rewritten = popped(results, AnyNode::ValueType(result)).value_type_or(result);
             if rewritten == result {
@@ -1903,12 +2101,13 @@ fn close_comp_type(
         },
         // As at the value decode: a substituted quote fires the decoding rule
         // in the constructor, so the rewrite never leaves the redex behind.
-        | CompType::Element { code, target } => {
+        | CompType::Element { code, ref target } => {
             let rewritten = popped(results, AnyNode::Value(code)).value_or(code);
             if rewritten == code {
                 id
             }
             else {
+                let target = target.clone();
                 arena.comp_type_element(rewritten, target)
             }
         },
@@ -1920,6 +2119,7 @@ mod tests
 {
     use alloc::string::String;
 
+    use anodized::spec;
     use gandr_kernel_check_memo::CheckMemo as _;
     use gandr_kernel_check_memo::ContentAgreement;
     use gandr_kernel_check_memo::MemoEntryCount;
@@ -1965,6 +2165,43 @@ mod tests
     fn index(depth: BinderDepth) -> DeBruijnIndex
     {
         DeBruijnIndex::from(u32::from(depth))
+    }
+
+    #[test]
+    fn a_zero_shift_reuses_its_code_carrying_subject()
+    {
+        let mut arena = TermArena::new();
+        let variable = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let subject = arena.value_type_element(variable, Level::zero());
+        let before = arena.watermark();
+        let shifted = shift_value_type(
+            &mut arena,
+            &mut ContentTable::new(),
+            &mut RewriteMemo::new(),
+            subject,
+            BinderDepth::NONE,
+            BinderDepth::NONE,
+        );
+        assert_eq!(shifted, subject);
+        assert_eq!(arena.watermark(), before);
+    }
+
+    #[test]
+    fn a_saturated_variable_shift_reuses_the_unchanged_occurrence()
+    {
+        let mut arena = TermArena::new();
+        let subject = arena.value_variable(DeBruijnIndex::from(u32::MAX));
+        let before = arena.watermark();
+        let shifted = shift_value(
+            &mut arena,
+            &mut ContentTable::new(),
+            &mut RewriteMemo::new(),
+            subject,
+            BinderDepth::NONE,
+            BinderDepth::from(1_u32),
+        );
+        assert_eq!(shifted, subject);
+        assert_eq!(arena.watermark(), before);
     }
 
     #[test]
@@ -2257,6 +2494,18 @@ mod tests
         /// # Specification
         /// - provides: a shared pair spine with exactly `levels` links.
         /// - panics: none.
+        ///
+        /// # Adequacy
+        /// - hypothesis: L3 at twelve shared pair levels; content equality
+        ///   between memo modes, thirteen distinct supports and shared versus
+        ///   duplicated children separate a collapsed fixture and a
+        ///   sharing-insensitive walk.
+        /// - witness: `rewrite::tests::the_memoized_rewrite_agrees_with_the_memoless_one`
+        #[spec(ensures: |ret| if levels.0 == 0 {
+            arena.value(ret) == Some(&Value::Variable(DeBruijnIndex::from(0_u32)))
+        } else {
+            matches!(arena.value(ret), Some(&Value::Pair(left, right)) if left == right)
+        })]
         fn shared_composite(
             arena: &mut TermArena,
             levels: ChainLength,
@@ -2504,5 +2753,309 @@ mod tests
             substituted
         );
         assert_eq!(arena.watermark(), before);
+    }
+
+    #[test]
+    fn binder_counts_saturate_at_the_representable_boundary()
+    {
+        for (raw, successor, machine) in [
+            (0_u32, 1_u32, 0_usize),
+            (7, 8, 7),
+            (u32::MAX.saturating_sub(1), u32::MAX, 0xffff_fffe),
+            (u32::MAX, u32::MAX, 0xffff_ffff),
+        ] {
+            let depth = BinderDepth::from(raw);
+            assert_eq!(u32::from(depth.deeper()), successor);
+            assert_eq!(u32::from(BinderDepth::past(depth)), successor);
+            assert_eq!(usize::from(depth), machine);
+        }
+    }
+
+    #[test]
+    fn outcome_projections_keep_matching_ids_and_decline_other_families()
+    {
+        let mut arena = TermArena::new();
+        let value = arena.value_unit();
+        let other_value = arena.value_variable(DeBruijnIndex::from(3_u32));
+        let computation = arena.computation_return(value);
+        let other_computation = arena.computation_force(other_value);
+        let value_type = arena.value_type_unit();
+        let other_value_type = arena.value_type_base(BaseType::Integer);
+        let comp_type = arena.comp_type_returner(value_type);
+        let other_comp_type = arena.comp_type_arrow(value_type, comp_type);
+        for (
+            outcome,
+            expected_value,
+            expected_computation,
+            expected_value_type,
+            expected_comp_type,
+        ) in [
+            (
+                super::RewriteOutcome::Value(other_value),
+                other_value,
+                computation,
+                value_type,
+                comp_type,
+            ),
+            (
+                super::RewriteOutcome::Computation(other_computation),
+                value,
+                other_computation,
+                value_type,
+                comp_type,
+            ),
+            (
+                super::RewriteOutcome::ValueType(other_value_type),
+                value,
+                computation,
+                other_value_type,
+                comp_type,
+            ),
+            (
+                super::RewriteOutcome::CompType(other_comp_type),
+                value,
+                computation,
+                value_type,
+                other_comp_type,
+            ),
+        ] {
+            assert_eq!(outcome.value_or(value), expected_value);
+            assert_eq!(outcome.computation_or(computation), expected_computation);
+            assert_eq!(outcome.value_type_or(value_type), expected_value_type);
+            assert_eq!(outcome.comp_type_or(comp_type), expected_comp_type);
+        }
+    }
+
+    #[test]
+    fn result_stack_preserves_order_and_falls_back_only_when_empty()
+    {
+        let mut arena = TermArena::new();
+        let value = arena.value_unit();
+        let value_type = arena.value_type_unit();
+        let original = AnyNode::Value(value);
+        let first = super::RewriteOutcome::ValueType(value_type);
+        let second = super::RewriteOutcome::Value(value);
+        let mut results = alloc::vec![first, second];
+        assert_eq!(super::popped(&mut results, original), second);
+        assert_eq!(results.as_slice(), &[first]);
+        assert_eq!(super::popped(&mut results, original), first);
+        assert_eq!(super::popped(&mut results, original), second);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn rewrite_agreement_ignores_colliding_digest_buckets()
+    {
+        let mut arena = TermArena::new();
+        let subject = AnyNode::Value(arena.value_variable(DeBruijnIndex::from(0_u32)));
+        let mut table = ContentTable::new();
+        let left = RewriteSupport::build(&mut table, &arena, RewriteGoal::Shift {
+            subject,
+            depth: BinderDepth::NONE,
+            cutoff: BinderDepth::NONE,
+            amount: BinderDepth::from(1_u32),
+        });
+        let mut right = RewriteSupport::build(&mut table, &arena, RewriteGoal::Shift {
+            subject,
+            depth: BinderDepth::from(1_u32),
+            cutoff: BinderDepth::NONE,
+            amount: BinderDepth::from(1_u32),
+        });
+        let mut same = left.clone();
+        same.digest = right.digest;
+        assert_eq!(left.agreement(&same), ContentAgreement::Agree);
+        right.digest = left.digest;
+        assert_eq!(left.agreement(&right), ContentAgreement::Differ);
+    }
+
+    #[test]
+    fn unreadable_subjects_rewrite_to_their_original_ids()
+    {
+        let mut arena = TermArena::new();
+        let replacement = arena.value_unit();
+        let floor = arena.watermark();
+        let first = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let second = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let computation = arena.computation_return(first);
+        let value_type = arena.value_type_unit();
+        let comp_type = arena.comp_type_returner(value_type);
+        arena.truncate_to(floor);
+        let mut results = alloc::vec![];
+        let step = super::Rewrite::Shift {
+            cutoff: BinderDepth::NONE,
+            amount: BinderDepth::from(1_u32),
+        };
+        assert_eq!(
+            super::close_value(&mut arena, step, first, BinderDepth::NONE, &mut results),
+            first
+        );
+        assert_eq!(
+            super::close_computation(&mut arena, computation, &mut results),
+            computation
+        );
+        assert_eq!(
+            super::close_value_type(&mut arena, value_type, &mut results),
+            value_type
+        );
+        assert_eq!(
+            super::close_comp_type(&mut arena, comp_type, &mut results),
+            comp_type
+        );
+        let mut table = ContentTable::new();
+        let mut memo = RewriteMemo::new();
+        for root in [
+            AnyNode::Value(first),
+            AnyNode::Value(second),
+            AnyNode::Computation(computation),
+            AnyNode::ValueType(value_type),
+            AnyNode::CompType(comp_type),
+        ] {
+            for rewrite in [
+                super::Rewrite::Shift {
+                    cutoff: BinderDepth::NONE,
+                    amount: BinderDepth::from(1_u32),
+                },
+                super::Rewrite::Substitute { replacement },
+            ] {
+                assert_eq!(
+                    super::run_rewrite(&mut arena, &mut table, &mut memo, rewrite, root),
+                    super::outcome_of(root)
+                );
+                assert_eq!(arena.watermark(), floor);
+            }
+        }
+    }
+
+    #[test]
+    fn bind_and_case_rewrites_distinguish_binding_positions()
+    {
+        let mut arena = TermArena::new();
+        let inner = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let outer = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let bound = arena.computation_return(inner);
+        let left = arena.computation_return(inner);
+        let right = arena.computation_return(outer);
+        let sequence = arena.computation_bind(bound, left);
+        let case = arena.computation_case(inner, left, right);
+        let mut table = ContentTable::new();
+        let mut memo = RewriteMemo::new();
+        let shifted = shift_computation(
+            &mut arena,
+            &mut table,
+            &mut memo,
+            sequence,
+            BinderDepth::NONE,
+            BinderDepth::from(3_u32),
+        );
+        let Some(&Computation::Bind(shifted_bound, shifted_body)) = arena.computation(shifted)
+        else {
+            panic!("expected bind");
+        };
+        let Some(&Computation::Return(raised)) = arena.computation(shifted_bound)
+        else {
+            panic!("expected returned outer variable");
+        };
+        assert_eq!(
+            arena.value(raised),
+            Some(&Value::Variable(DeBruijnIndex::from(3_u32)))
+        );
+        assert_eq!(
+            arena.computation(shifted_body),
+            Some(&Computation::Return(inner))
+        );
+        let shifted = shift_computation(
+            &mut arena,
+            &mut table,
+            &mut memo,
+            case,
+            BinderDepth::NONE,
+            BinderDepth::from(3_u32),
+        );
+        let Some(&Computation::Case {
+            scrutinee,
+            on_left,
+            on_right,
+        }) = arena.computation(shifted)
+        else {
+            panic!("expected case");
+        };
+        assert_eq!(
+            arena.value(scrutinee),
+            Some(&Value::Variable(DeBruijnIndex::from(3_u32)))
+        );
+        assert_eq!(
+            arena.computation(on_left),
+            Some(&Computation::Return(inner))
+        );
+        let Some(&Computation::Return(raised)) = arena.computation(on_right)
+        else {
+            panic!("expected returned external variable");
+        };
+        assert_eq!(
+            arena.value(raised),
+            Some(&Value::Variable(DeBruijnIndex::from(4_u32)))
+        );
+    }
+
+    #[test]
+    fn carrying_refusals_follow_rule_precedence()
+    {
+        let mut arena = TermArena::new();
+        let replacement = arena.value_unit();
+        let zero = arena.value_variable(DeBruijnIndex::from(0_u32));
+        let one = arena.value_variable(DeBruijnIndex::from(1_u32));
+        let computation = arena.computation_return(zero);
+        let floor = arena.watermark();
+        let unreadable = arena.value_unit();
+        arena.truncate_to(floor);
+        let shift = super::Rewrite::Shift {
+            cutoff: BinderDepth::NONE,
+            amount: BinderDepth::from(1_u32),
+        };
+        let substitute = super::Rewrite::Substitute { replacement };
+        let crossed = BinderDepth::from(1_u32);
+        for (rewrite, root, depth, expected) in [
+            (
+                shift,
+                AnyNode::Value(unreadable),
+                crossed,
+                super::Maybe::Absent(super::carrying::Absent::Shift),
+            ),
+            (
+                substitute,
+                AnyNode::Value(unreadable),
+                BinderDepth::NONE,
+                super::Maybe::Absent(super::carrying::Absent::NoCrossedBinders),
+            ),
+            (
+                substitute,
+                AnyNode::Computation(computation),
+                crossed,
+                super::Maybe::Absent(super::carrying::Absent::DifferentOccurrence),
+            ),
+            (
+                substitute,
+                AnyNode::Value(unreadable),
+                crossed,
+                super::Maybe::Absent(super::carrying::Absent::UnreadableValue),
+            ),
+            (
+                substitute,
+                AnyNode::Value(zero),
+                crossed,
+                super::Maybe::Absent(super::carrying::Absent::DifferentOccurrence),
+            ),
+            (
+                substitute,
+                AnyNode::Value(one),
+                crossed,
+                super::Maybe::Present(replacement),
+            ),
+        ] {
+            assert_eq!(
+                super::carried_occurrence(&arena, rewrite, root, depth),
+                expected
+            );
+        }
     }
 }
