@@ -184,6 +184,8 @@ enum Agreement
 /// - witness: `judgement::tests::a_mismatched_literal_is_refused_with_both_types`
 /// - witness: `judgement::tests::a_two_bridge_check_crosses_the_boundary_twice`
 /// - witness: `judgement::tests::a_value_type_in_a_computation_universe_is_a_sort_mismatch`
+/// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+#[spec(captures: before = *tally, ensures: *tally == before.crossed())]
 pub fn value_bridge(
     context: &mut CheckingContext<'_>,
     at: ValueId,
@@ -217,6 +219,7 @@ pub fn value_bridge(
             });
         }
         if found_level == wanted_level {
+            context.record_unlifted(at);
             return Ok(());
         }
         if found_sort == GroundSort::Value && bool::from(found_level.lt(&wanted_level)) {
@@ -375,8 +378,10 @@ pub fn decode_bridge(
 ///   same level and the same code: two codes agree when, each reduced at its
 ///   head, they are the same variable or constant, quotes of agreeing types,
 ///   static applications of agreeing heads to agreeing arguments, or static
-///   lambdas over agreeing bodies; [`Agreement::Apart`] at the first position
-///   they differ.
+///   lambdas over agreeing bodies; [`Agreement::Apart`] at the first rigid
+///   disagreement. Inside the private elaboration run, bare owed flex–rigid
+///   equations are accumulated instead: agreement is conditional on those
+///   residuals, and a later rigid disagreement still returns `Apart`.
 /// - fails: the refusal a view gives for a node outside the fragment or a
 ///   dangling id, and the unfolding's refusal when a decode or a code does not
 ///   reduce.
@@ -402,6 +407,8 @@ pub fn decode_bridge(
 /// - witness: `conversion::tests::static_codes_compare_by_head_argument_and_body`
 /// - witness: `conversion::tests::a_dangling_type_is_refused`
 /// - witness: `conversion::tests::the_id_fast_path_agrees_with_the_structural_decision`
+/// - witness: `elaboration::tests::owed_conversion_suspends`
+/// - witness: `elaboration::tests::residual_conjunction_does_not_hide_refusal`
 #[spec(ensures: |ret| match root {
     | Pairing::Values(left, right) if left == right => ret == Ok(Agreement::Convertible),
     | Pairing::Comps(left, right) if left == right => ret == Ok(Agreement::Convertible),
@@ -428,6 +435,13 @@ fn convert(
             | Pairing::Values(left, right) => {
                 let left = context.whnf_value_type(left)?;
                 let right = context.whnf_value_type(right)?;
+                if context.defer(
+                    crate::refusal::TypeNode::Value(left),
+                    crate::refusal::TypeNode::Value(right),
+                ) == crate::elaboration::Deferred::Yes
+                {
+                    continue;
+                }
                 match (
                     value_type_view(context.arena(), left)?,
                     value_type_view(context.arena(), right)?,
@@ -510,6 +524,13 @@ fn convert(
             | Pairing::Comps(left, right) => {
                 let left = context.whnf_comp_type(left)?;
                 let right = context.whnf_comp_type(right)?;
+                if context.defer(
+                    crate::refusal::TypeNode::Computation(left),
+                    crate::refusal::TypeNode::Computation(right),
+                ) == crate::elaboration::Deferred::Yes
+                {
+                    continue;
+                }
                 match (
                     comp_type_view(context.arena(), left)?,
                     comp_type_view(context.arena(), right)?,

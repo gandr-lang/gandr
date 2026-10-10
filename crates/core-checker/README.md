@@ -38,6 +38,7 @@ The core checking judgement: call-by-push-value core terms and a module of name-
 - [A lift and an unfolding cross as the kernel's own](#a-lift-and-an-unfolding-cross-as-the-kernels-own)
 - [A static operator crosses as its static normal form](#a-static-operator-crosses-as-its-static-normal-form)
 - [The export carries the producer's names](#the-export-carries-the-producers-names)
+- [Elaboration suspends on owed code constants](#elaboration-suspends-on-owed-code-constants)
 - [License](#license)
 <!-- tocstop -->
 
@@ -305,6 +306,12 @@ The recorded design reads each code back to static normal form with one trace pe
 `Readmission::export` encodes the environment the kernel built: each declaration that crossed, in kernel admission order, marked checked and carrying the `StructuredName` the producer gives its module position. The bridge keeps each declaration as it staged it, because the kernel's environment exposes an admitted declaration's audit and not its content, and names it only when it is written out. A flattened structure member is therefore exported as one declaration named by its segments, a declaration that did not cross is not in the artifact, and every reference in it is still the kernel position its target took; the name is never read.
 
 The alternatives were names on the checker's `Declaration`, which makes the judgement carry a surface fact it never reads, and a name table beside the artifact, which leaves the exported members nameless to anything reading the artifact alone. The choice reverses if a renamed module must export a byte-identical artifact; the names then move to that side table and the export writes none.
+
+## Elaboration suspends on owed code constants
+
+`elaboration::Session` produces `Checked(Output)` with a formed type and a core `ValueId` containing explicit universe transports. `Suspended` retains the source declaration, sorted unique residual equations, their owed-hole blocker set and suspended prerequisites. Only bare flex–rigid code equations suspend; a refusal is not a certified clash.
+
+The [elaboration specification](ELABORATION.md) gives the fragment, Slattery–Sterling calculus laws, fill/resume semantics, seven witnesses and design alternatives. Kernel readmission checks output typing; separate relational witnesses check equality, substitution and order.
 
 ## License
 

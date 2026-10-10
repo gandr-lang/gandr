@@ -378,6 +378,51 @@ pub fn check_module(
     }
 }
 
+/// Build bridge input from settled elaborated terms, with every lift explicit.
+///
+/// # Specification
+/// - requires: entries come from one elaboration session over the bridge arena.
+/// - ensures: suspensions are omitted; accepted output bodies define their
+///   constants, owed entries form the ledger, and the lift side table is empty.
+/// - panics: none.
+///
+/// # Adequacy
+/// - hypothesis: L1 — kernel readmission checks emitted terms without trusting
+///   residual premises or an implicit-lift side table.
+/// - witness: `elaboration::tests::every_fixture_the_checker_accepts_is_readmitted`
+/// - witness: `elaboration::tests::outputs_materialize_nested_lifts`
+#[anodized::spec(ensures: |ret| ret.lifts.is_empty())]
+pub fn elaborated_report(entries: &[crate::elaboration::Entry]) -> ModuleReport
+{
+    let mut judged = Vec::with_capacity(entries.len());
+    let mut ledger = ObligationLedger::new();
+    let mut definitions = BTreeMap::new();
+    for entry in entries {
+        let Maybe::Present((source, verdict)) = crate::elaboration::settled(entry)
+        else {
+            continue;
+        };
+        match verdict {
+            | Verdict::Owed(owed) => ledger.record(owed),
+            | Verdict::Checked { body, .. } | Verdict::Synthesised { body, .. } => {
+                definitions.insert(source.constant(), body);
+            },
+            | Verdict::Refused(_) => {},
+        }
+        judged.push(Judged {
+            constant: source.constant(),
+            origin: source.origin(),
+            verdict,
+        });
+    }
+    ModuleReport {
+        judged,
+        ledger,
+        definitions,
+        lifts: BTreeMap::new(),
+    }
+}
+
 /// The hole rule, in both directions.
 ///
 /// # Specification

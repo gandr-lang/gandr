@@ -202,6 +202,8 @@ pub struct CheckingContext<'arena>
     budget: CheckBudget,
     /// The answers the running supported judgement consulted, when one runs.
     support: SupportLog,
+    /// Residual equations recorded only inside the elaboration entry point.
+    deferrals: crate::elaboration::Deferrals,
 }
 
 impl<'arena> CheckingContext<'arena>
@@ -218,8 +220,19 @@ impl<'arena> CheckingContext<'arena>
     /// - intension: mints three value-type nodes into `arena` — the unit type,
     ///   the integer atom and the string atom — which every literal and unit
     ///   rule then hands out.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — rigid atoms retain their classifier, and the
+    ///   ordinary checker must not inherit the elaborator's owed-hole policy.
+    /// - witness: `context::tests::the_producer_declares_the_rigid_base_atoms`
+    /// - witness: `elaboration::tests::owed_conversion_suspends`
     #[inline]
     #[must_use]
+    #[spec(ensures: |ret| ret.signatures.is_empty() && ret.lifts.is_empty()
+        && matches!(ret.admitted, Maybe::Absent(admission::Absent::Fresh))
+        && ret.deferrals.owed.is_empty() && ret.deferrals.equations.is_empty()
+        && matches!(ret.deferrals.emission, crate::elaboration::Emission::Off)
+        && ret.budget == budget)]
     pub fn new(
         arena: &'arena mut CoreArena,
         budget: CheckBudget,
@@ -240,6 +253,7 @@ impl<'arena> CheckingContext<'arena>
             lifts: BTreeMap::new(),
             budget,
             support: SupportLog::Off,
+            deferrals: crate::elaboration::Deferrals::default(),
         }
     }
 
@@ -486,17 +500,90 @@ impl<'arena> CheckingContext<'arena>
         &self.lifts
     }
 
-    /// Record that the code `at` was checked at a universe above its own.
+    /// The residual collector, available only to the elaboration driver.
     ///
     /// # Specification
     /// trivial.
+    pub(crate) const fn deferrals(&mut self) -> &mut crate::elaboration::Deferrals
+    {
+        &mut self.deferrals
+    }
+
+    /// Record a permitted residual, or retain ordinary rigid conversion.
+    ///
+    /// # Specification
+    /// trivial.
+    pub(crate) fn defer(
+        &mut self,
+        left: TypeNode,
+        right: TypeNode,
+    ) -> crate::elaboration::Deferred
+    {
+        self.deferrals.defer(self.arena, left, right)
+    }
+
+    /// Record a code occurrence that needs no universe transport.
+    ///
+    /// # Specification
+    /// - requires: this occurrence checks at its natural universe.
+    /// - ensures: elaboration records an identity occurrence; ordinary checking
+    ///   is unchanged. Neither mode writes the ordinary lift side table.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — one shared code used at a higher and an equal
+    ///   universe distinguishes an identity occurrence from a missing record.
+    /// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+    /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
+    #[spec(captures: before = self.lifts.clone(), ensures: self.lifts == before)]
+    pub(crate) fn record_unlifted(
+        &mut self,
+        at: ValueId,
+    )
+    {
+        if let crate::elaboration::Emission::Recording(ref mut transports) = self.deferrals.emission
+        {
+            transports.record(at, crate::elaboration::CodeUse::Unchanged);
+        }
+    }
+
+    /// Record that the code `at` was checked at a universe above its own.
+    ///
+    /// # Specification
+    /// - requires: the natural level is strictly below the target.
+    /// - ensures: ordinary checking records this lift at `at`, replacing any
+    ///   earlier record there. Elaboration appends an occurrence instead,
+    ///   leaving the ordinary side table unchanged.
+    /// - panics: none.
+    ///
+    /// # Adequacy
+    /// - hypothesis: L1/L3 — equal, higher and lower universes distinguish
+    ///   genuine lifts from identity and refusal; shared uses distinguish
+    ///   occurrence-specific output from one transport per source node.
+    /// - witness: `conversion::tests::the_value_bridge_lifts_a_small_value_code_and_nothing_else`
+    /// - witness: `elaboration::tests::shared_code_occurrences_keep_distinct_transports`
+    #[spec(
+        requires: bool::from(lift.natural().lt(lift.target())),
+        captures: [before = self.lifts.clone(), expected = lift.clone()],
+        ensures: match self.deferrals.emission {
+            | crate::elaboration::Emission::Off => self.lifts.get(&at) == Some(&expected),
+            | crate::elaboration::Emission::Recording(_) => self.lifts == before,
+        },
+    )]
     pub(crate) fn record_lift(
         &mut self,
         at: ValueId,
         lift: Lift,
     )
     {
-        self.lifts.insert(at, lift);
+        match self.deferrals.emission {
+            | crate::elaboration::Emission::Off => {
+                self.lifts.insert(at, lift);
+            },
+            | crate::elaboration::Emission::Recording(ref mut transports) => {
+                transports.record(at, crate::elaboration::CodeUse::Lifted(lift));
+            },
+        }
     }
 
     /// The value type `value_type` stands for at its head: a decode of a code

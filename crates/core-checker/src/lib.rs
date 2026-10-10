@@ -153,6 +153,7 @@ mod code;
 mod context;
 mod conversion;
 mod declaration;
+pub mod elaboration;
 #[cfg(test)]
 mod fixture;
 mod formation;
