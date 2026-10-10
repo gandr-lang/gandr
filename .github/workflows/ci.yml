@@ -150,14 +150,21 @@ jobs:
             target/nextest/ci/junit.xml
             target/nextest/ci-enforcing/junit.xml
           if-no-files-found: ignore
+      # Compute once, before any restored build directory can add manifests.
+      # Artifacts and cache prefixes must describe the same compiler inputs.
+      - &identify-build-state
+        name: identify build-state inputs
+        env:
+          CI_STATE_INPUTS: ${{ hashFiles('**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}
+        run: printf 'CI_BUILD_FINGERPRINT=%s\n' "$CI_STATE_INPUTS" >> "$GITHUB_ENV"
       - &restore-test-state
         name: restore complete test state
         id: test-state-restore
         uses: *cache-restore
         with:
           path: build-state-${{ env.CI_BUILD_STATE }}.tar.zst
-          key: gandr-v1-test-state-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}-${{ github.sha }}
-          restore-keys: gandr-v1-test-state-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.cargo/config.toml') }}-
+          key: gandr-v1-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_FINGERPRINT }}-${{ github.sha }}
+          restore-keys: gandr-v1-test-state-${{ runner.os }}-${{ runner.arch }}-${{ env.CI_BUILD_FINGERPRINT }}-
           # Promotion already downloads the verified queue artifact.
           lookup-only: ${{ github.event_name == 'push' }}
       - &save-test-state
@@ -182,19 +189,20 @@ jobs:
         uses: *upload-artifact
         with:
           path: build-state-${{ github.job }}.tar.zst
-          name: build-state-${{ github.job }}
+          name: build-state-${{ github.job }}--${{ env.CI_BUILD_FINGERPRINT }}
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
       # Only this workflow's queue runs are trusted artifact producers:
       # GitHub sets the event, and only an owner-queued PR reaches the queue.
-      # Exact cache hits need no artifact download.
+      # Exact cache hits need no artifact download. A different manifest or
+      # toolchain fingerprint must never overwrite a compatible cache prefix.
       - &download-build-state
         name: download reusable queue build state
-        if: ${{ steps.test-state-restore.outputs.cache-hit != 'true' && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), format('build-state-{0}', env.CI_BUILD_STATE)) }}
+        if: ${{ steps.test-state-restore.outputs.cache-hit != 'true' && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), format('build-state-{0}--{1}', env.CI_BUILD_STATE, env.CI_BUILD_FINGERPRINT)) }}
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: build-state-${{ env.CI_BUILD_STATE }}
+          name: build-state-${{ env.CI_BUILD_STATE }}--${{ env.CI_BUILD_FINGERPRINT }}
           run-id: ${{ needs.build-state.outputs.run-id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - &unpack-build-state
@@ -333,6 +341,7 @@ jobs:
     steps: &workspace-test-steps
       - *git-checkout
       - *trust-workspace
+      - *identify-build-state
       - *install-policy-tools
       - *setup-rust
       - *restore-test-state
@@ -414,6 +423,7 @@ jobs:
       CI_BUILD_STATE: cargo-test
     steps:
       - *git-checkout
+      - *identify-build-state
       - *install-policy-tools
       - *setup-rust
       - *restore-test-state
@@ -557,7 +567,7 @@ jobs:
   promote-cargo-test:
     name: promote the build state (linux)
     needs: &promote-needs [build-state, ci-image-ref]
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), 'build-state-cargo-test') }}
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test--') }}
     runs-on: *linux
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -566,6 +576,7 @@ jobs:
     steps: &promote-steps
       - *git-checkout
       - *trust-workspace
+      - *identify-build-state
       - *install-policy-tools
       - *restore-test-state
       - *download-build-state
@@ -577,7 +588,7 @@ jobs:
   promote-test-macos:
     name: promote the build state (macos-arm64)
     needs: *promote-needs
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), 'build-state-cargo-test-macos') }}
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-test-macos--') }}
     runs-on: macos-latest
     permissions:
       contents: read
@@ -590,7 +601,7 @@ jobs:
   promote-dylint-crate:
     name: promote the compiler policy state
     needs: *promote-needs
-    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), 'build-state-cargo-dylint-crate') || contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), 'dylint-drivers')) }}
+    if: ${{ !cancelled() && !failure() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (contains(join(fromJSON(needs.build-state.outputs.artifacts || '[]'), ' '), 'build-state-cargo-dylint-crate--') || contains(fromJSON(needs.build-state.outputs.artifacts || '[]'), 'dylint-drivers')) }}
     runs-on: *linux
     permissions: *build-state-read-permissions
     container: *ci-image # zizmor: ignore[unpinned-images]
@@ -598,6 +609,7 @@ jobs:
       CI_BUILD_STATE: cargo-dylint-crate
     steps:
       - *git-checkout
+      - *identify-build-state
       - *install-policy-tools
       - *download-build-state
       - name: download the landing's Dylint drivers
